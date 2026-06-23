@@ -1,8 +1,9 @@
 use tauri::{AppHandle, Manager};
 
-use crate::adapters::Adapter;
+use crate::adapters::{Adapter, DEFAULT_TIMEOUT_MS};
 use crate::config::ConfigStore;
 use crate::introspect::Schema;
+use crate::query::{compile, validate, QueryResult, QuerySpec};
 use crate::secrets;
 use crate::types::ConnectionDef;
 
@@ -65,4 +66,41 @@ pub async fn get_schema(app: AppHandle, connection_id: String) -> Result<Schema,
     let schema = adapter.introspect().await.map_err(|e| e.to_string())?;
 
     Ok(schema)
+}
+
+#[tauri::command]
+pub async fn run_query(
+    app: AppHandle,
+    connection_id: String,
+    mut spec: QuerySpec,
+) -> Result<QueryResult, String> {
+    let config_store = app.state::<ConfigStore>();
+    let def = config_store
+        .get(&connection_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Connection not found".to_string())?;
+
+    let password = secrets::get_password(&connection_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Password not found in keyring".to_string())?;
+
+    let adapter = Adapter::connect(&def, &password)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let schema = adapter.introspect().await.map_err(|e| e.to_string())?;
+
+    let outcome = validate(&mut spec, &schema).map_err(|e| e.to_string())?;
+
+    let compiled = compile(&spec, def.dialect);
+
+    let mut result = adapter
+        .execute_query(&compiled, DEFAULT_TIMEOUT_MS)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    result.truncated = result.row_count >= outcome.limit as usize;
+    result.warnings = outcome.warnings;
+
+    Ok(result)
 }

@@ -48,3 +48,63 @@ export const DIALECTS: { value: Dialect; label: string; defaultPort: number }[] 
 export function qualifiedName(table: TableInfo): string {
 	return table.schema ? `${table.schema}.${table.name}` : table.name;
 }
+
+export type FilterOp = 'Eq' | 'Ne' | 'Gt' | 'Gte' | 'Lt' | 'Lte' | 'Like' | 'IsNull' | 'IsNotNull';
+
+export interface TableRef {
+	schema: string;
+	name: string;
+	alias: string;
+}
+
+export interface ColumnSel {
+	table_alias: string;
+	column: string;
+}
+
+export interface JoinSpec {
+	left_alias: string;
+	left_column: string;
+	right_alias: string;
+	right_column: string;
+}
+
+export interface FilterSpec {
+	table_alias: string;
+	column: string;
+	op: FilterOp;
+	value: string | null;
+}
+
+export interface QuerySpec {
+	tables: TableRef[];
+	columns: ColumnSel[];
+	joins: JoinSpec[];
+	filters: FilterSpec[];
+	limit: number;
+}
+
+export interface QueryResult {
+	columns: string[];
+	rows: JsonValue[][];
+	row_count: number;
+	truncated: boolean;
+	warnings: string[];
+}
+
+export type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
+
+export const FILTER_OPS: { value: FilterOp; label: string }[] = [
+	{ value: 'Eq', label: '=' },
+	{ value: 'Ne', label: '≠' },
+	{ value: 'Gt', label: '>' },
+	{ value: 'Gte', label: '≥' },
+	{ value: 'Lt', label: '<' },
+	{ value: 'Lte', label: '≤' },
+	{ value: 'Like', label: 'like' },
+	{ value: 'IsNull', label: 'is null' },
+	{ value: 'IsNotNull', label: 'is not null' }
+];
+
+export const MAX_LIMIT = 1000;
+export const DEFAULT_LIMIT = 100;

@@ -1,7 +1,8 @@
 use anyhow::Result;
-use sqlx::{MySqlPool, Row};
+use sqlx::{Column, MySqlPool, Row, TypeInfo};
 
 use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
+use crate::query::ir::{CompiledQuery, QueryResult};
 
 pub async fn connect(host: &str, port: u16, database: &str, username: &str, password: &str) -> Result<MySqlPool> {
     let options = sqlx::mysql::MySqlConnectOptions::new()
@@ -108,4 +109,78 @@ async fn introspect_indexes(pool: &MySqlPool, schema: &str, table: &str) -> Resu
     }
 
     Ok(index_map.into_values().collect())
+}
+
+pub async fn execute_query(pool: &MySqlPool, compiled: &CompiledQuery, timeout_ms: u32) -> Result<QueryResult> {
+    sqlx::query(&format!("SET SESSION MAX_EXECUTION_TIME = {}", timeout_ms))
+        .execute(pool)
+        .await?;
+
+    sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
+        .execute(pool)
+        .await?;
+
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION READ ONLY").execute(&mut *tx).await?;
+
+    let mut query = sqlx::query(&compiled.sql);
+    for param in &compiled.params {
+        query = query.bind(param);
+    }
+
+    let rows = query.fetch_all(&mut *tx).await?;
+    let row_count = rows.len();
+
+    let columns: Vec<String> = if rows.is_empty() {
+        Vec::new()
+    } else {
+        rows[0].columns().iter().map(|c| c.name().to_string()).collect()
+    };
+
+    let mut result_rows = Vec::new();
+    for row in &rows {
+        let mut row_values = Vec::new();
+        for (i, col) in row.columns().iter().enumerate() {
+            let value = decode_mysql_value(row, i, col.type_info().name());
+            row_values.push(value);
+        }
+        result_rows.push(row_values);
+    }
+
+    tx.commit().await?;
+
+    Ok(QueryResult {
+        columns,
+        rows: result_rows,
+        row_count,
+        truncated: false,
+        warnings: Vec::new(),
+    })
+}
+
+fn decode_mysql_value(row: &sqlx::mysql::MySqlRow, i: usize, type_name: &str) -> serde_json::Value {
+    use serde_json::Value;
+    match type_name {
+        "BOOLEAN" | "BOOL" | "TINYINT" => {
+            row.try_get::<Option<bool>, _>(i).map(|v| v.map(Value::Bool).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        }
+        "SMALLINT" | "MEDIUMINT" => {
+            row.try_get::<Option<i16>, _>(i).map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        }
+        "INT" | "INTEGER" => {
+            row.try_get::<Option<i32>, _>(i).map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        }
+        "BIGINT" => {
+            row.try_get::<Option<i64>, _>(i).map(|v| v.map(Value::from).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        }
+        "FLOAT" => {
+            row.try_get::<Option<f32>, _>(i).map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        }
+        "DOUBLE" => {
+            row.try_get::<Option<f64>, _>(i).map(|v| v.map(Value::from).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        }
+        _ => {
+            row.try_get::<Option<String>, _>(i).map(|v| v.map(Value::String).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        }
+    }
 }

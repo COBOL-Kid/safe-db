@@ -2,10 +2,13 @@ mod adapters;
 mod commands;
 mod config;
 mod introspect;
+mod query;
 mod secrets;
 mod types;
 
-use commands::{delete_connection, get_schema, list_connections, save_connection, test_connection};
+use commands::{
+    delete_connection, get_schema, list_connections, run_query, save_connection, test_connection,
+};
 use config::ConfigStore;
 use tauri::Manager;
 
@@ -33,6 +36,7 @@ pub fn run() {
             list_connections,
             delete_connection,
             get_schema,
+            run_query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

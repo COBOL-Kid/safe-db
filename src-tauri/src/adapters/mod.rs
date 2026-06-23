@@ -4,7 +4,10 @@ pub mod pg;
 use anyhow::Result;
 
 use crate::introspect::Schema;
+use crate::query::ir::{CompiledQuery, QueryResult};
 use crate::types::{ConnectionDef, Dialect};
+
+pub const DEFAULT_TIMEOUT_MS: u32 = 10_000;
 
 pub enum Adapter {
     Postgres(sqlx::PgPool),
@@ -36,6 +39,17 @@ impl Adapter {
         match self {
             Adapter::Postgres(pool) => pg::introspect(pool).await,
             Adapter::MySql(pool) => mysql::introspect(pool).await,
+        }
+    }
+
+    pub async fn execute_query(
+        &self,
+        compiled: &CompiledQuery,
+        timeout_ms: u32,
+    ) -> Result<QueryResult> {
+        match self {
+            Adapter::Postgres(pool) => pg::execute_query(pool, compiled, timeout_ms).await,
+            Adapter::MySql(pool) => mysql::execute_query(pool, compiled, timeout_ms).await,
         }
     }
 }

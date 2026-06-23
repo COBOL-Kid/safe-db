@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ConnectionDef, Schema } from './ir';
+import type { ConnectionDef, QueryResult, QuerySpec, Schema } from './ir';
 
 export async function testConnection(def: ConnectionDef, password: string): Promise<string> {
 	return invoke<string>('test_connection', { def, password });
@@ -19,4 +19,8 @@ export async function deleteConnection(id: string): Promise<void> {
 
 export async function getSchema(connectionId: string): Promise<Schema> {
 	return invoke<Schema>('get_schema', { connectionId });
+}
+
+export async function runQuery(connectionId: string, spec: QuerySpec): Promise<QueryResult> {
+	return invoke<QueryResult>('run_query', { connectionId, spec });
 }

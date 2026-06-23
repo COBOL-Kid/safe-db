@@ -2,8 +2,11 @@
 	import { schema } from '$lib/stores/schema.svelte';
 	import { qualifiedName, type TableInfo } from '$lib/ir';
 
+	let {
+		onAddTable
+	}: { onAddTable?: (table: TableInfo) => void } = $props();
+
 	let expanded = $state<Set<string>>(new Set());
-	let selected = $state<string | null>(null);
 
 	function tableKey(t: TableInfo): string {
 		return qualifiedName(t);
@@ -20,8 +23,9 @@
 		expanded = next;
 	}
 
-	function selectTable(t: TableInfo) {
-		selected = tableKey(t);
+	function addTable(e: MouseEvent, t: TableInfo) {
+		e.stopPropagation();
+		onAddTable?.(t);
 	}
 </script>
 
@@ -72,6 +76,16 @@
 							<span class="truncate">{table.name}</span>
 							<span class="shrink-0 text-xs text-slate-400">{table.columns.length}</span>
 						</button>
+						{#if onAddTable}
+							<button
+								type="button"
+								onclick={(e) => addTable(e, table)}
+								class="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-slate-200 hover:text-slate-700"
+								title="Add to canvas"
+							>
+								<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+							</button>
+						{/if}
 					</div>
 
 					{#if isOpen}

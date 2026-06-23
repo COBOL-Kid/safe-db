@@ -1,0 +1,183 @@
+<script lang="ts">
+	import TableCard from './TableCard.svelte';
+	import { query } from '$lib/stores/query.svelte';
+	import type { JoinSpec } from '$lib/ir';
+
+	const CARD_WIDTH = 224;
+	const HEADER_HEIGHT = 41;
+	const ROW_HEIGHT = 28;
+
+	let canvasEl: HTMLDivElement;
+
+	let dragTable: { alias: string; offsetX: number; offsetY: number } | null = $state(null);
+	let dragJoin: {
+		sourceAlias: string;
+		sourceColumn: string;
+		mouseX: number;
+		mouseY: number;
+	} | null = $state(null);
+
+	function getColumnY(alias: string, columnName: string): number {
+		const ct = query.tables.find((t) => t.alias === alias);
+		if (!ct) return 0;
+		const idx = ct.tableInfo.columns.findIndex((c) => c.name === columnName);
+		return ct.y + HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2;
+	}
+
+	function joinEdgePath(join: JoinSpec): string {
+		const sourceX = getTableRightX(join.left_alias);
+		const targetX = getTableLeftX(join.right_alias);
+		const sourceY = getColumnY(join.left_alias, join.left_column);
+		const targetY = getColumnY(join.right_alias, join.right_column);
+		const midX = (sourceX + targetX) / 2;
+		return `M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX} ${targetY}`;
+	}
+
+	function getTableRightX(alias: string): number {
+		const t = query.tables.find((t) => t.alias === alias);
+		return t ? t.x + CARD_WIDTH : 0;
+	}
+
+	function getTableLeftX(alias: string): number {
+		const t = query.tables.find((t) => t.alias === alias);
+		return t ? t.x : 0;
+	}
+
+	function getCanvasCoords(e: MouseEvent): { x: number; y: number } {
+		const rect = canvasEl.getBoundingClientRect();
+		return {
+			x: e.clientX - rect.left + canvasEl.scrollLeft,
+			y: e.clientY - rect.top + canvasEl.scrollTop
+		};
+	}
+
+	function handleMouseDown(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		const handle = target.closest('[data-drag-handle]') as HTMLElement | null;
+		if (handle) {
+			const alias = handle.dataset.dragHandle!;
+			const ct = query.tables.find((t) => t.alias === alias);
+			if (ct) {
+				const coords = getCanvasCoords(e);
+				dragTable = {
+					alias,
+					offsetX: coords.x - ct.x,
+					offsetY: coords.y - ct.y
+				};
+				e.preventDefault();
+			}
+		}
+	}
+
+	function handleStartJoin(e: MouseEvent, alias: string, column: string) {
+		const coords = getCanvasCoords(e);
+		dragJoin = {
+			sourceAlias: alias,
+			sourceColumn: column,
+			mouseX: coords.x,
+			mouseY: coords.y
+		};
+		e.preventDefault();
+		e.stopPropagation();
+	}
+
+	function handleMouseMove(e: MouseEvent) {
+		if (dragTable) {
+			const coords = getCanvasCoords(e);
+			query.moveTable(dragTable.alias, coords.x - dragTable.offsetX, coords.y - dragTable.offsetY);
+		} else if (dragJoin) {
+			const coords = getCanvasCoords(e);
+			dragJoin = { ...dragJoin, mouseX: coords.x, mouseY: coords.y };
+		}
+	}
+
+	function handleMouseUp(e: MouseEvent) {
+		if (dragJoin) {
+			const target = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+			const colRow = target?.closest('[data-indexed="true"]') as HTMLElement | null;
+			if (colRow) {
+				const targetAlias = colRow.dataset.alias!;
+				const targetColumn = colRow.dataset.column!;
+				if (targetAlias !== dragJoin.sourceAlias || targetColumn !== dragJoin.sourceColumn) {
+					query.addJoin({
+						left_alias: dragJoin.sourceAlias,
+						left_column: dragJoin.sourceColumn,
+						right_alias: targetAlias,
+						right_column: targetColumn
+					});
+				}
+			}
+		}
+		dragTable = null;
+		dragJoin = null;
+	}
+
+	function handleJoinClick(index: number) {
+		query.removeJoin(index);
+	}
+</script>
+
+<svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
+
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+	bind:this={canvasEl}
+	class="relative h-full w-full overflow-auto bg-slate-50"
+	role="application"
+	aria-label="Query canvas"
+	onmousedown={handleMouseDown}
+>
+	<div class="relative" style="min-width: 2400px; min-height: 1800px;">
+		<svg class="pointer-events-none absolute inset-0" style="width: 100%; height: 100%;">
+			{#each query.joins as join, i (i)}
+				<path
+					d={joinEdgePath(join)}
+					stroke="#0ea5e9"
+					stroke-width="2"
+					fill="none"
+					stroke-dasharray="0"
+				/>
+				<circle
+					cx={getTableRightX(join.left_alias)}
+					cy={getColumnY(join.left_alias, join.left_column)}
+					r="4"
+					fill="#0ea5e9"
+				/>
+				<circle
+					cx={getTableLeftX(join.right_alias)}
+					cy={getColumnY(join.right_alias, join.right_column)}
+					r="4"
+					fill="#0ea5e9"
+				/>
+			{/each}
+			{#if dragJoin}
+				{@const sourceX = getTableRightX(dragJoin.sourceAlias)}
+				{@const sourceY = getColumnY(dragJoin.sourceAlias, dragJoin.sourceColumn)}
+				<path
+					d={`M ${sourceX} ${sourceY} L ${dragJoin.mouseX} ${dragJoin.mouseY}`}
+					stroke="#0ea5e9"
+					stroke-width="2"
+					stroke-dasharray="5,3"
+					fill="none"
+					opacity="0.6"
+				/>
+			{/if}
+		</svg>
+
+		{#each query.tables as canvasTable (canvasTable.alias)}
+			<TableCard {canvasTable} onStartJoin={handleStartJoin} />
+		{/each}
+	</div>
+
+	{#if query.tables.length > 0}
+		<div class="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/90 px-3 py-1.5 text-xs text-slate-500 shadow-sm backdrop-blur">
+			{query.tables.length} table{query.tables.length !== 1 ? 's' : ''}
+			{#if query.joins.length > 0}
+				· {query.joins.length} join{query.joins.length !== 1 ? 's' : ''}
+			{/if}
+			{#if query.selectedColumns.size > 0}
+				· {query.selectedColumns.size} column{query.selectedColumns.size !== 1 ? 's' : ''}
+			{/if}
+		</div>
+	{/if}
+</div>
