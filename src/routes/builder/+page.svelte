@@ -2,6 +2,7 @@
 	import { connections } from '$lib/stores/connections.svelte';
 	import { schema } from '$lib/stores/schema.svelte';
 	import { query } from '$lib/stores/query.svelte';
+	import { savedQueries } from '$lib/stores/saved-queries.svelte';
 	import SchemaBrowser from '$lib/components/SchemaBrowser.svelte';
 	import Canvas from '$lib/components/Canvas.svelte';
 	import ResultsTable from '$lib/components/ResultsTable.svelte';
@@ -33,6 +34,19 @@
 
 	function handleClear() {
 		query.clear();
+	}
+
+	async function handleSaveQuery() {
+		if (!connections.activeId) return;
+		const name = prompt('Name this query:', `Query on ${query.tables.map((t) => t.tableInfo.name).join(', ')}`);
+		if (!name) return;
+		await savedQueries.save({
+			id: crypto.randomUUID(),
+			name,
+			connection_id: connections.activeId,
+			spec: query.spec,
+			created_at: Date.now().toString()
+		});
 	}
 
 	let showAddFilter = $state(false);
@@ -97,7 +111,7 @@
 <svelte:window onmousemove={handleResize} onmouseup={stopResize} />
 
 <div class="flex flex-1 flex-col overflow-hidden">
-	<div class="flex items-center justify-between border-b border-slate-200 px-6 py-3">
+	<div class="flex items-center justify-between border-b border-slate-200 px-6 py-3 dark:border-slate-800">
 		<div class="flex items-center gap-3">
 			{#if connections.active}
 				<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
@@ -114,8 +128,8 @@
 
 		<div class="flex items-center gap-3">
 			{#if query.tables.length > 0}
-				<div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5">
-					<label class="text-xs font-medium text-slate-500" for="limit-input">Limit</label>
+				<div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-700 dark:bg-slate-900">
+					<label class="text-xs font-medium text-slate-500 dark:text-slate-400" for="limit-input">Limit</label>
 					<input
 						id="limit-input"
 						type="number"
@@ -123,13 +137,20 @@
 						max={MAX_LIMIT}
 						value={query.limit}
 						oninput={(e) => query.setLimit(parseInt(e.currentTarget.value) || 1)}
-						class="w-16 rounded border border-slate-200 px-2 py-0.5 text-sm text-slate-700 outline-none focus:border-slate-400"
+						class="w-16 rounded border border-slate-200 px-2 py-0.5 text-sm outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800"
 					/>
 				</div>
 				<button
 					type="button"
+					onclick={handleSaveQuery}
+					class="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+				>
+					Save
+				</button>
+				<button
+					type="button"
 					onclick={handleClear}
-					class="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700"
+					class="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
 				>
 					Clear
 				</button>
@@ -138,7 +159,7 @@
 				type="button"
 				onclick={handleRun}
 				disabled={!query.canRun}
-				class="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-40"
+				class="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
 			>
 				{#if query.running}
 					<div class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>

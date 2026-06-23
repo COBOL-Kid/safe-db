@@ -2,14 +2,20 @@ mod adapters;
 mod commands;
 mod config;
 mod introspect;
+mod queries;
 mod query;
 mod secrets;
+mod settings;
 mod types;
 
 use commands::{
-    delete_connection, get_schema, list_connections, run_query, save_connection, test_connection,
+    clear_history, delete_connection, delete_saved_query, get_schema, get_settings,
+    list_connections, list_history, list_saved_queries, run_query, save_connection,
+    save_saved_query, save_settings, test_connection,
 };
 use config::ConfigStore;
+use queries::QueryStore;
+use settings::SettingsStore;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,8 +31,9 @@ pub fn run() {
             }
 
             let data_dir = app.path().app_data_dir()?;
-            let config_store = ConfigStore::new(data_dir);
-            app.manage(config_store);
+            app.manage(ConfigStore::new(data_dir.clone()));
+            app.manage(QueryStore::new(data_dir.clone()));
+            app.manage(SettingsStore::new(data_dir));
 
             Ok(())
         })
@@ -37,6 +44,13 @@ pub fn run() {
             delete_connection,
             get_schema,
             run_query,
+            list_saved_queries,
+            save_saved_query,
+            delete_saved_query,
+            list_history,
+            clear_history,
+            get_settings,
+            save_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

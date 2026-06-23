@@ -12,6 +12,11 @@ use crate::types::{ConnectionDef, Dialect};
 
 pub const DEFAULT_TIMEOUT_MS: u32 = 10_000;
 
+pub struct ExplainResult {
+    pub cost: Option<f64>,
+    pub warning: Option<String>,
+}
+
 #[cfg(feature = "oracle")]
 type OracleConn = std::sync::Mutex<oracle::Connection>;
 
@@ -102,6 +107,22 @@ impl Adapter {
                 let conn = conn.lock().map_err(|e| anyhow::anyhow!(e.to_string()))?;
                 oracle::execute_query(&conn, compiled, timeout_ms)
             }
+        }
+    }
+
+    pub async fn explain(&self, compiled: &CompiledQuery) -> Result<ExplainResult> {
+        match self {
+            Adapter::Postgres(pool) => pg::explain(pool, compiled).await,
+            Adapter::MySql(pool) => mysql::explain(pool, compiled).await,
+            Adapter::Mssql(_) => Ok(ExplainResult {
+                cost: None,
+                warning: Some("EXPLAIN cost guard not yet implemented for MSSQL".to_string()),
+            }),
+            #[cfg(feature = "oracle")]
+            Adapter::Oracle(_) => Ok(ExplainResult {
+                cost: None,
+                warning: Some("EXPLAIN cost guard not yet implemented for Oracle".to_string()),
+            }),
         }
     }
 }

@@ -37,16 +37,16 @@
 </script>
 
 <div class="flex flex-1 flex-col overflow-hidden">
-	<div class="flex items-center justify-between border-b border-slate-200 px-8 py-5">
+	<div class="flex items-center justify-between border-b border-slate-200 px-8 py-5 dark:border-slate-800">
 		<div>
-			<h1 class="text-xl font-semibold tracking-tight text-slate-900">Connections</h1>
-			<p class="mt-1 text-sm text-slate-500">Manage your database connections.</p>
+			<h1 class="text-xl font-semibold tracking-tight">Connections</h1>
+			<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Manage your database connections.</p>
 		</div>
 		{#if !showForm}
 			<button
 				type="button"
 				onclick={() => (showForm = true)}
-				class="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+				class="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
 			>
 				<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
 				Add Connection
@@ -66,15 +66,15 @@
 		{:else if connections.connections.length === 0}
 			<div class="flex h-64 items-center justify-center">
 				<div class="text-center">
-					<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+					<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
 						<svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
 					</div>
-					<p class="mt-4 text-sm font-medium text-slate-600">No connections yet</p>
+					<p class="mt-4 text-sm font-medium text-slate-600 dark:text-slate-300">No connections yet</p>
 					<p class="mt-1 text-sm text-slate-400">Add a connection to start exploring your data.</p>
 					<button
 						type="button"
 						onclick={() => (showForm = true)}
-						class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+						class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
 					>
 						Add Connection
 					</button>
@@ -83,7 +83,7 @@
 		{:else}
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				{#each connections.connections as conn (conn.id)}
-					<div class="group flex flex-col rounded-xl border border-slate-200 bg-white p-5 transition-all hover:border-slate-300 hover:shadow-md">
+					<div class="group flex flex-col rounded-xl border border-slate-200 bg-white p-5 transition-all hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
 						<div class="flex items-start justify-between">
 							<div class="flex items-center gap-2.5">
 								<div class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">

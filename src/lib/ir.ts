@@ -110,3 +110,30 @@ export const FILTER_OPS: { value: FilterOp; label: string }[] = [
 
 export const MAX_LIMIT = 1000;
 export const DEFAULT_LIMIT = 100;
+
+export interface SavedQuery {
+	id: string;
+	name: string;
+	connection_id: string;
+	spec: QuerySpec;
+	created_at: string;
+}
+
+export interface HistoryEntry {
+	id: string;
+	connection_id: string;
+	connection_name: string;
+	spec: QuerySpec;
+	row_count: number;
+	warnings: string[];
+	error: Option<string>;
+	timestamp: string;
+}
+
+type Option<T> = T | null;
+
+export interface Settings {
+	blocked_schemas: string[];
+	explain_cost_threshold: number;
+	theme: string;
+}

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use sqlx::{Column, PgPool, Row, TypeInfo};
 
+use crate::adapters::ExplainResult;
 use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
 use crate::query::ir::{CompiledQuery, QueryResult};
 
@@ -194,4 +195,28 @@ fn decode_pg_value(row: &sqlx::postgres::PgRow, i: usize, type_name: &str) -> se
             row.try_get::<Option<String>, _>(i).map(|v| v.map(Value::String).unwrap_or(Value::Null)).unwrap_or(Value::Null)
         }
     }
+}
+
+pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainResult> {
+    let explain_sql = format!("EXPLAIN (FORMAT JSON) {}", compiled.sql);
+
+    let mut query = sqlx::query(&explain_sql);
+    for param in &compiled.params {
+        query = query.bind(param);
+    }
+
+    let row = query.fetch_one(pool).await?;
+    let json_str: String = row.try_get(0)?;
+
+    let plan: serde_json::Value = serde_json::from_str(&json_str)?;
+    let cost = plan
+        .get(0)
+        .and_then(|v| v.get("Plan"))
+        .and_then(|v| v.get("Total Cost"))
+        .and_then(|v| v.as_f64());
+
+    Ok(ExplainResult {
+        cost,
+        warning: None,
+    })
 }

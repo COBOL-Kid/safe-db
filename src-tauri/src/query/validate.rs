@@ -48,7 +48,7 @@ pub struct ValidationOutcome {
     pub limit: u32,
 }
 
-pub fn validate(spec: &mut QuerySpec, schema: &Schema) -> Result<ValidationOutcome, String> {
+pub fn validate(spec: &mut QuerySpec, schema: &Schema, custom_blocked: &[String]) -> Result<ValidationOutcome, String> {
     let mut warnings = Vec::new();
 
     if spec.tables.is_empty() {
@@ -57,7 +57,7 @@ pub fn validate(spec: &mut QuerySpec, schema: &Schema) -> Result<ValidationOutco
 
     let mut table_aliases: HashSet<&str> = HashSet::new();
     for table in &spec.tables {
-        if BLOCKED_SCHEMAS.contains(&table.schema.as_str()) {
+        if is_blocked(&table.schema, custom_blocked) {
             return Err(format!("Schema '{}' is blocked (system/catalog schema)", table.schema));
         }
 
@@ -221,4 +221,11 @@ fn check_join_connectivity(spec: &QuerySpec) -> bool {
     }
 
     connected.len() == spec.tables.len()
+}
+
+fn is_blocked(schema: &str, custom: &[String]) -> bool {
+    if BLOCKED_SCHEMAS.contains(&schema) {
+        return true;
+    }
+    custom.iter().any(|s| s == schema)
 }
