@@ -9,7 +9,9 @@
 
 	const dialectLabels: Record<string, string> = {
 		Postgres: 'PostgreSQL',
-		MySql: 'MySQL'
+		MySql: 'MySQL',
+		Mssql: 'SQL Server',
+		Oracle: 'Oracle'
 	};
 
 	async function handleSaved() {

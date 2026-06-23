@@ -87,12 +87,12 @@
 
 		<div>
 			<span class="mb-1.5 block text-sm font-medium text-slate-700" id="cf-dialect-label">Database type</span>
-			<div class="flex gap-2" role="group" aria-labelledby="cf-dialect-label">
+			<div class="grid grid-cols-2 gap-2" role="group" aria-labelledby="cf-dialect-label">
 				{#each DIALECTS as d (d.value)}
 					<button
 						type="button"
 						onclick={() => selectDialect(d.value)}
-						class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors
+						class="rounded-lg border px-3 py-2 text-sm font-medium transition-colors
 							{dialect === d.value
 							? 'border-slate-900 bg-slate-900 text-white'
 							: 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}"

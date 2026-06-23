@@ -9,10 +9,17 @@ pub fn compile(spec: &QuerySpec, dialect: Dialect) -> CompiledQuery {
     let from_clause = build_from_clause(spec, dialect);
     let join_clause = build_join_clause(spec, dialect);
     let where_clause = build_where_clause(spec, dialect, &mut params, &mut param_idx);
-    let limit_clause = format!("LIMIT {}", spec.limit);
 
     let mut sql = String::new();
     sql.push_str("SELECT ");
+
+    match dialect {
+        Dialect::Mssql => {
+            sql.push_str(&format!("TOP {} ", spec.limit));
+        }
+        _ => {}
+    }
+
     sql.push_str(&select_clause);
     sql.push_str("\nFROM ");
     sql.push_str(&from_clause);
@@ -24,8 +31,19 @@ pub fn compile(spec: &QuerySpec, dialect: Dialect) -> CompiledQuery {
         sql.push_str("\nWHERE ");
         sql.push_str(&where_clause);
     }
-    sql.push_str("\n");
-    sql.push_str(&limit_clause);
+
+    match dialect {
+        Dialect::Mssql => {}
+        Dialect::Oracle => {
+            sql.push_str("\nFETCH FIRST ");
+            sql.push_str(&spec.limit.to_string());
+            sql.push_str(" ROWS ONLY");
+        }
+        _ => {
+            sql.push_str("\nLIMIT ");
+            sql.push_str(&spec.limit.to_string());
+        }
+    }
 
     CompiledQuery { sql, params }
 }
@@ -34,6 +52,8 @@ fn quote(ident: &str, dialect: Dialect) -> String {
     match dialect {
         Dialect::Postgres => format!("\"{}\"", ident.replace('"', "\"\"")),
         Dialect::MySql => format!("`{}`", ident.replace('`', "``")),
+        Dialect::Mssql => format!("[{}]", ident.replace(']', "]]")),
+        Dialect::Oracle => format!("\"{}\"", ident.replace('"', "\"\"")),
     }
 }
 
@@ -41,6 +61,8 @@ fn placeholder(idx: u32, dialect: Dialect) -> String {
     match dialect {
         Dialect::Postgres => format!("${}", idx),
         Dialect::MySql => "?".to_string(),
+        Dialect::Mssql => format!("@P{}", idx),
+        Dialect::Oracle => format!(":{}", idx),
     }
 }
 

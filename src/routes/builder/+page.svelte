@@ -16,7 +16,9 @@
 
 	const dialectLabels: Record<string, string> = {
 		Postgres: 'PostgreSQL',
-		MySql: 'MySQL'
+		MySql: 'MySQL',
+		Mssql: 'SQL Server',
+		Oracle: 'Oracle'
 	};
 
 	function addTable(table: TableInfo) {

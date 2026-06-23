@@ -15,4 +15,6 @@ pub struct ConnectionDef {
 pub enum Dialect {
     Postgres,
     MySql,
+    Mssql,
+    Oracle,
 }

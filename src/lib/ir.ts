@@ -1,4 +1,4 @@
-export type Dialect = 'Postgres' | 'MySql';
+export type Dialect = 'Postgres' | 'MySql' | 'Mssql' | 'Oracle';
 
 export interface ConnectionDef {
 	id: string;
@@ -42,7 +42,9 @@ export interface ConnectionWithSchema {
 
 export const DIALECTS: { value: Dialect; label: string; defaultPort: number }[] = [
 	{ value: 'Postgres', label: 'PostgreSQL', defaultPort: 5432 },
-	{ value: 'MySql', label: 'MySQL', defaultPort: 3306 }
+	{ value: 'MySql', label: 'MySQL', defaultPort: 3306 },
+	{ value: 'Mssql', label: 'SQL Server', defaultPort: 1433 },
+	{ value: 'Oracle', label: 'Oracle', defaultPort: 1521 }
 ];
 
 export function qualifiedName(table: TableInfo): string {
