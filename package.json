@@ -14,17 +14,24 @@
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",
-		"@sveltejs/kit": "^2.63.0",
+		"@sveltejs/kit": "^2.66.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
-		"@tailwindcss/vite": "^4.3.0",
+		"@tailwindcss/vite": "^4.3.1",
 		"@tauri-apps/cli": "^2.11.3",
-		"svelte": "^5.56.1",
+		"svelte": "^5.56.3",
 		"svelte-check": "^4.6.0",
-		"tailwindcss": "^4.3.0",
+		"tailwindcss": "^4.3.1",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2.11.1"
+	},
+	"devEngines": {
+		"runtime": {
+			"name": "node",
+			"version": "24.17.0",
+			"onFail": "download"
+		}
 	}
 }
