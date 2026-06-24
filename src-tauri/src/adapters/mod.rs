@@ -1,8 +1,8 @@
 pub mod mssql;
 pub mod mysql;
-pub mod pg;
 #[cfg(feature = "oracle")]
 pub mod oracle;
+pub mod pg;
 
 use anyhow::Result;
 
@@ -18,12 +18,12 @@ pub struct ExplainResult {
 }
 
 #[cfg(feature = "oracle")]
-type OracleConn = std::sync::Mutex<oracle::Connection>;
+type OracleConn = std::sync::Mutex<::oracle::Connection>;
 
 pub enum Adapter {
     Postgres(sqlx::PgPool),
     MySql(sqlx::MySqlPool),
-    Mssql(tokio::sync::Mutex<mssql::MssqlClient>),
+    Mssql(Box<tokio::sync::Mutex<mssql::MssqlClient>>),
     #[cfg(feature = "oracle")]
     Oracle(OracleConn),
 }
@@ -32,29 +32,33 @@ impl Adapter {
     pub async fn connect(def: &ConnectionDef, password: &str) -> Result<Self> {
         match def.dialect {
             Dialect::Postgres => {
-                let pool = pg::connect(&def.host, def.port, &def.database, &def.username, password).await?;
+                let pool = pg::connect(&def.host, def.port, &def.database, &def.username, password)
+                    .await?;
                 Ok(Adapter::Postgres(pool))
             }
             Dialect::MySql => {
-                let pool = mysql::connect(&def.host, def.port, &def.database, &def.username, password).await?;
+                let pool =
+                    mysql::connect(&def.host, def.port, &def.database, &def.username, password)
+                        .await?;
                 Ok(Adapter::MySql(pool))
             }
             Dialect::Mssql => {
-                let client = mssql::connect(&def.host, def.port, &def.database, &def.username, password).await?;
-                Ok(Adapter::Mssql(tokio::sync::Mutex::new(client)))
+                let client =
+                    mssql::connect(&def.host, def.port, &def.database, &def.username, password)
+                        .await?;
+                Ok(Adapter::Mssql(Box::new(tokio::sync::Mutex::new(client))))
             }
             #[cfg(feature = "oracle")]
             Dialect::Oracle => {
-                let conn = oracle::connect(&def.host, def.port, &def.database, &def.username, password)?;
+                let conn =
+                    oracle::connect(&def.host, def.port, &def.database, &def.username, password)?;
                 Ok(Adapter::Oracle(std::sync::Mutex::new(conn)))
             }
             #[cfg(not(feature = "oracle"))]
-            Dialect::Oracle => {
-                Err(anyhow::anyhow!(
-                    "Oracle support is not enabled. Build with: cargo build --features oracle \
+            Dialect::Oracle => Err(anyhow::anyhow!(
+                "Oracle support is not enabled. Build with: cargo build --features oracle \
                      (requires Oracle Instant Client SDK installed)"
-                ))
-            }
+            )),
         }
     }
 

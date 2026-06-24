@@ -105,19 +105,21 @@ pub async fn run_query(
 
     let schema = adapter.introspect().await.map_err(|e| e.to_string())?;
 
-    let outcome = validate(&mut spec, &schema, &settings.blocked_schemas).map_err(|e| e.to_string())?;
+    let outcome =
+        validate(&mut spec, &schema, &settings.blocked_schemas).map_err(|e| e.to_string())?;
 
     let compiled = compile(&spec, def.dialect);
 
     let mut warnings = outcome.warnings;
 
-    let explain_result = adapter
-        .explain(&compiled)
-        .await
-        .unwrap_or(crate::adapters::ExplainResult {
-            cost: None,
-            warning: Some("EXPLAIN failed".to_string()),
-        });
+    let explain_result =
+        adapter
+            .explain(&compiled)
+            .await
+            .unwrap_or(crate::adapters::ExplainResult {
+                cost: None,
+                warning: Some("EXPLAIN failed".to_string()),
+            });
 
     if let Some(cost) = explain_result.cost {
         if cost > settings.explain_cost_threshold {

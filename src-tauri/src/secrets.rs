@@ -3,6 +3,23 @@ use keyring_core::Entry;
 
 const SERVICE_NAME: &str = "safe-db";
 
+pub fn init_store() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    let store = apple_native_keyring_store::keychain::Store::new()
+        .map_err(|e| anyhow::anyhow!("failed to init macOS keychain store: {e}"))?;
+    #[cfg(target_os = "windows")]
+    let store = windows_native_keyring_store::Store::new()
+        .map_err(|e| anyhow::anyhow!("failed to init Windows credential store: {e}"))?;
+    #[cfg(target_os = "linux")]
+    let store = linux_keyutils_keyring_store::Store::new()
+        .map_err(|e| anyhow::anyhow!("failed to init linux-keyutils store: {e}"))?;
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    keyring_core::set_default_store(store);
+
+    Ok(())
+}
+
 pub fn save_password(connection_id: &str, password: &str) -> Result<()> {
     let entry = Entry::new(SERVICE_NAME, connection_id)?;
     entry.set_password(password)?;
