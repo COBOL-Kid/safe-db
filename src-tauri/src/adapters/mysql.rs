@@ -113,7 +113,7 @@ async fn introspect_indexes(pool: &MySqlPool, schema: &str, table: &str) -> Resu
 }
 
 pub async fn execute_query(pool: &MySqlPool, compiled: &CompiledQuery, timeout_ms: u32) -> Result<QueryResult> {
-    sqlx::query(&format!("SET SESSION MAX_EXECUTION_TIME = {}", timeout_ms))
+    sqlx::query(sqlx::AssertSqlSafe(format!("SET SESSION MAX_EXECUTION_TIME = {}", timeout_ms)))
         .execute(pool)
         .await?;
 
@@ -124,7 +124,7 @@ pub async fn execute_query(pool: &MySqlPool, compiled: &CompiledQuery, timeout_m
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION READ ONLY").execute(&mut *tx).await?;
 
-    let mut query = sqlx::query(&compiled.sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }
@@ -189,7 +189,7 @@ fn decode_mysql_value(row: &sqlx::mysql::MySqlRow, i: usize, type_name: &str) ->
 pub async fn explain(pool: &MySqlPool, compiled: &CompiledQuery) -> Result<ExplainResult> {
     let explain_sql = format!("EXPLAIN FORMAT=JSON {}", compiled.sql);
 
-    let mut query = sqlx::query(&explain_sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(explain_sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }

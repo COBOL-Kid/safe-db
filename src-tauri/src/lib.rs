@@ -18,6 +18,23 @@ use queries::QueryStore;
 use settings::SettingsStore;
 use tauri::Manager;
 
+fn init_keyring() -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    let store = apple_native_keyring_store::keychain::Store::new()
+        .map_err(|e| anyhow::anyhow!("failed to init macOS keychain store: {e}"))?;
+    #[cfg(target_os = "windows")]
+    let store = windows_native_keyring_store::Store::new()
+        .map_err(|e| anyhow::anyhow!("failed to init Windows credential store: {e}"))?;
+    #[cfg(target_os = "linux")]
+    let store = linux_keyutils_keyring_store::Store::new()
+        .map_err(|e| anyhow::anyhow!("failed to init linux-keyutils store: {e}"))?;
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    keyring_core::set_default_store(store);
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -29,6 +46,8 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            init_keyring()?;
 
             let data_dir = app.path().app_data_dir()?;
             app.manage(ConfigStore::new(data_dir.clone()));

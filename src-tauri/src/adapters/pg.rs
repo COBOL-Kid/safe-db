@@ -126,11 +126,11 @@ pub async fn execute_query(pool: &PgPool, compiled: &CompiledQuery, timeout_ms: 
         .execute(&mut *tx)
         .await?;
 
-    sqlx::query(&format!("SET LOCAL statement_timeout = {}", timeout_ms))
+    sqlx::query(sqlx::AssertSqlSafe(format!("SET LOCAL statement_timeout = {}", timeout_ms)))
         .execute(&mut *tx)
         .await?;
 
-    let mut query = sqlx::query(&compiled.sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }
@@ -139,7 +139,7 @@ pub async fn execute_query(pool: &PgPool, compiled: &CompiledQuery, timeout_ms: 
     let row_count = rows.len();
 
     let columns: Vec<String> = if rows.is_empty() {
-        let describe = sqlx::query(&compiled.sql).fetch_optional(&mut *tx).await?;
+        let describe = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str())).fetch_optional(&mut *tx).await?;
         if let Some(row) = describe {
             row.columns().iter().map(|c| c.name().to_string()).collect()
         } else {
@@ -200,7 +200,7 @@ fn decode_pg_value(row: &sqlx::postgres::PgRow, i: usize, type_name: &str) -> se
 pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainResult> {
     let explain_sql = format!("EXPLAIN (FORMAT JSON) {}", compiled.sql);
 
-    let mut query = sqlx::query(&explain_sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(explain_sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }

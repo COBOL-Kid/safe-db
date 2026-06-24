@@ -1,5 +1,5 @@
 use anyhow::Result;
-use keyring::Entry;
+use keyring_core::Entry;
 
 const SERVICE_NAME: &str = "safe-db";
 
@@ -13,7 +13,7 @@ pub fn get_password(connection_id: &str) -> Result<Option<String>> {
     let entry = Entry::new(SERVICE_NAME, connection_id)?;
     match entry.get_password() {
         Ok(password) => Ok(Some(password)),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(keyring_core::Error::NoEntry) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
@@ -22,7 +22,7 @@ pub fn delete_password(connection_id: &str) -> Result<()> {
     let entry = Entry::new(SERVICE_NAME, connection_id)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(keyring_core::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
