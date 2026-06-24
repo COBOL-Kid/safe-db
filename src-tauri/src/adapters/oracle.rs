@@ -221,7 +221,7 @@ fn sql_value_to_json(val: &oracle::SqlValue) -> serde_json::Value {
 
     match val.as_inner_value() {
         Ok(InnerValue::Int64(n)) => Value::from(n),
-        Ok(InnerValue::UInt64(n)) => Value::from(n as i64),
+        Ok(InnerValue::UInt64(n)) => Value::from(n),
         Ok(InnerValue::Float(f)) => Value::from(f as f64),
         Ok(InnerValue::Double(f)) => Value::from(f),
         Ok(InnerValue::Boolean(b)) => Value::from(b),
