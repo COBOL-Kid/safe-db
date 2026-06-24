@@ -13,7 +13,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "pnpm check && pnpm test:rust",
 		"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-		"test:smoke": "cargo test --manifest-path src-tauri/Cargo.toml secrets_round_trip pg_connect_and_test",
+		"test:smoke": "cargo test --manifest-path src-tauri/Cargo.toml --test secrets_smoke --test pg_smoke",
 		"tauri": "tauri"
 	},
 	"devDependencies": {
