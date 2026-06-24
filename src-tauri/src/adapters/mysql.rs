@@ -5,7 +5,13 @@ use crate::adapters::ExplainResult;
 use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
 use crate::query::ir::{CompiledQuery, QueryResult};
 
-pub async fn connect(host: &str, port: u16, database: &str, username: &str, password: &str) -> Result<MySqlPool> {
+pub async fn connect(
+    host: &str,
+    port: u16,
+    database: &str,
+    username: &str,
+    password: &str,
+) -> Result<MySqlPool> {
     let options = sqlx::mysql::MySqlConnectOptions::new()
         .host(host)
         .port(port)
@@ -54,7 +60,11 @@ pub async fn introspect(pool: &MySqlPool) -> Result<Schema> {
     Ok(Schema { tables })
 }
 
-async fn introspect_columns(pool: &MySqlPool, schema: &str, table: &str) -> Result<Vec<ColumnInfo>> {
+async fn introspect_columns(
+    pool: &MySqlPool,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<ColumnInfo>> {
     let rows = sqlx::query(
         "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
          FROM information_schema.COLUMNS
@@ -93,7 +103,8 @@ async fn introspect_indexes(pool: &MySqlPool, schema: &str, table: &str) -> Resu
     .fetch_all(pool)
     .await?;
 
-    let mut index_map: std::collections::HashMap<String, IndexInfo> = std::collections::HashMap::new();
+    let mut index_map: std::collections::HashMap<String, IndexInfo> =
+        std::collections::HashMap::new();
     for row in rows {
         let index_name: String = row.try_get("INDEX_NAME")?;
         let column_name: String = row.try_get("COLUMN_NAME")?;
@@ -112,19 +123,28 @@ async fn introspect_indexes(pool: &MySqlPool, schema: &str, table: &str) -> Resu
     Ok(index_map.into_values().collect())
 }
 
-pub async fn execute_query(pool: &MySqlPool, compiled: &CompiledQuery, timeout_ms: u32) -> Result<QueryResult> {
-    sqlx::query(&format!("SET SESSION MAX_EXECUTION_TIME = {}", timeout_ms))
-        .execute(pool)
-        .await?;
+pub async fn execute_query(
+    pool: &MySqlPool,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SET SESSION MAX_EXECUTION_TIME = {}",
+        timeout_ms
+    )))
+    .execute(pool)
+    .await?;
 
     sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
         .execute(pool)
         .await?;
 
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION READ ONLY").execute(&mut *tx).await?;
+    sqlx::query("SET TRANSACTION READ ONLY")
+        .execute(&mut *tx)
+        .await?;
 
-    let mut query = sqlx::query(&compiled.sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }
@@ -135,7 +155,11 @@ pub async fn execute_query(pool: &MySqlPool, compiled: &CompiledQuery, timeout_m
     let columns: Vec<String> = if rows.is_empty() {
         Vec::new()
     } else {
-        rows[0].columns().iter().map(|c| c.name().to_string()).collect()
+        rows[0]
+            .columns()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect()
     };
 
     let mut result_rows = Vec::new();
@@ -162,34 +186,41 @@ pub async fn execute_query(pool: &MySqlPool, compiled: &CompiledQuery, timeout_m
 fn decode_mysql_value(row: &sqlx::mysql::MySqlRow, i: usize, type_name: &str) -> serde_json::Value {
     use serde_json::Value;
     match type_name {
-        "BOOLEAN" | "BOOL" | "TINYINT" => {
-            row.try_get::<Option<bool>, _>(i).map(|v| v.map(Value::Bool).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "SMALLINT" | "MEDIUMINT" => {
-            row.try_get::<Option<i16>, _>(i).map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "INT" | "INTEGER" => {
-            row.try_get::<Option<i32>, _>(i).map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "BIGINT" => {
-            row.try_get::<Option<i64>, _>(i).map(|v| v.map(Value::from).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "FLOAT" => {
-            row.try_get::<Option<f32>, _>(i).map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "DOUBLE" => {
-            row.try_get::<Option<f64>, _>(i).map(|v| v.map(Value::from).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        _ => {
-            row.try_get::<Option<String>, _>(i).map(|v| v.map(Value::String).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
+        "BOOLEAN" | "BOOL" | "TINYINT" => row
+            .try_get::<Option<bool>, _>(i)
+            .map(|v| v.map(Value::Bool).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "SMALLINT" | "MEDIUMINT" => row
+            .try_get::<Option<i16>, _>(i)
+            .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "INT" | "INTEGER" => row
+            .try_get::<Option<i32>, _>(i)
+            .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "BIGINT" => row
+            .try_get::<Option<i64>, _>(i)
+            .map(|v| v.map(Value::from).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "FLOAT" => row
+            .try_get::<Option<f32>, _>(i)
+            .map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "DOUBLE" => row
+            .try_get::<Option<f64>, _>(i)
+            .map(|v| v.map(Value::from).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        _ => row
+            .try_get::<Option<String>, _>(i)
+            .map(|v| v.map(Value::String).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
     }
 }
 
 pub async fn explain(pool: &MySqlPool, compiled: &CompiledQuery) -> Result<ExplainResult> {
     let explain_sql = format!("EXPLAIN FORMAT=JSON {}", compiled.sql);
 
-    let mut query = sqlx::query(&explain_sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(explain_sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }

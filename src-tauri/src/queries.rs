@@ -47,12 +47,15 @@ impl QueryStore {
 
     pub fn list_saved(&self) -> Result<Vec<SavedQuery>> {
         let _guard = self.lock.lock().unwrap();
-        self.read_json::<Vec<SavedQuery>>(&self.saved_path).map(|v| v.unwrap_or_default())
+        self.read_json::<Vec<SavedQuery>>(&self.saved_path)
+            .map(|v| v.unwrap_or_default())
     }
 
     pub fn save_query(&self, query: SavedQuery) -> Result<()> {
         let _guard = self.lock.lock().unwrap();
-        let mut queries = self.read_json::<Vec<SavedQuery>>(&self.saved_path)?.unwrap_or_default();
+        let mut queries = self
+            .read_json::<Vec<SavedQuery>>(&self.saved_path)?
+            .unwrap_or_default();
         if let Some(existing) = queries.iter_mut().find(|q| q.id == query.id) {
             *existing = query;
         } else {
@@ -64,7 +67,9 @@ impl QueryStore {
 
     pub fn delete_saved(&self, id: &str) -> Result<()> {
         let _guard = self.lock.lock().unwrap();
-        let mut queries = self.read_json::<Vec<SavedQuery>>(&self.saved_path)?.unwrap_or_default();
+        let mut queries = self
+            .read_json::<Vec<SavedQuery>>(&self.saved_path)?
+            .unwrap_or_default();
         queries.retain(|q| q.id != id);
         self.write_json(&self.saved_path, &queries)?;
         Ok(())
@@ -72,12 +77,15 @@ impl QueryStore {
 
     pub fn list_history(&self) -> Result<Vec<HistoryEntry>> {
         let _guard = self.lock.lock().unwrap();
-        self.read_json::<Vec<HistoryEntry>>(&self.history_path).map(|v| v.unwrap_or_default())
+        self.read_json::<Vec<HistoryEntry>>(&self.history_path)
+            .map(|v| v.unwrap_or_default())
     }
 
     pub fn add_history(&self, entry: HistoryEntry) -> Result<()> {
         let _guard = self.lock.lock().unwrap();
-        let mut history = self.read_json::<Vec<HistoryEntry>>(&self.history_path)?.unwrap_or_default();
+        let mut history = self
+            .read_json::<Vec<HistoryEntry>>(&self.history_path)?
+            .unwrap_or_default();
         history.insert(0, entry);
         if history.len() > self.max_history {
             history.truncate(self.max_history);

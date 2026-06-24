@@ -8,7 +8,13 @@ use crate::query::ir::{CompiledQuery, QueryResult};
 
 pub type MssqlClient = Client<tokio_util::compat::Compat<TcpStream>>;
 
-pub async fn connect(host: &str, port: u16, database: &str, username: &str, password: &str) -> Result<MssqlClient> {
+pub async fn connect(
+    host: &str,
+    port: u16,
+    database: &str,
+    username: &str,
+    password: &str,
+) -> Result<MssqlClient> {
     let mut config = Config::new();
     config.host(host);
     config.port(port);
@@ -50,8 +56,14 @@ pub async fn introspect(client: &mut MssqlClient) -> Result<Schema> {
 
     let mut tables = Vec::new();
     for row in table_rows {
-        let schema: String = row.get::<&str, _>("TABLE_SCHEMA").unwrap_or_default().to_string();
-        let table_name: String = row.get::<&str, _>("TABLE_NAME").unwrap_or_default().to_string();
+        let schema: String = row
+            .get::<&str, _>("TABLE_SCHEMA")
+            .unwrap_or_default()
+            .to_string();
+        let table_name: String = row
+            .get::<&str, _>("TABLE_NAME")
+            .unwrap_or_default()
+            .to_string();
 
         let mut columns = introspect_columns(client, &schema, &table_name).await?;
         let indexes = introspect_indexes(client, &schema, &table_name).await?;
@@ -68,7 +80,11 @@ pub async fn introspect(client: &mut MssqlClient) -> Result<Schema> {
     Ok(Schema { tables })
 }
 
-async fn introspect_columns(client: &mut MssqlClient, schema: &str, table: &str) -> Result<Vec<ColumnInfo>> {
+async fn introspect_columns(
+    client: &mut MssqlClient,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<ColumnInfo>> {
     let rows = client
         .query(
             "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
@@ -83,9 +99,18 @@ async fn introspect_columns(client: &mut MssqlClient, schema: &str, table: &str)
 
     let mut columns = Vec::new();
     for row in rows {
-        let name: String = row.get::<&str, _>("COLUMN_NAME").unwrap_or_default().to_string();
-        let data_type: String = row.get::<&str, _>("DATA_TYPE").unwrap_or_default().to_string();
-        let is_nullable: String = row.get::<&str, _>("IS_NULLABLE").unwrap_or_default().to_string();
+        let name: String = row
+            .get::<&str, _>("COLUMN_NAME")
+            .unwrap_or_default()
+            .to_string();
+        let data_type: String = row
+            .get::<&str, _>("DATA_TYPE")
+            .unwrap_or_default()
+            .to_string();
+        let is_nullable: String = row
+            .get::<&str, _>("IS_NULLABLE")
+            .unwrap_or_default()
+            .to_string();
         columns.push(ColumnInfo {
             name,
             data_type,
@@ -96,7 +121,11 @@ async fn introspect_columns(client: &mut MssqlClient, schema: &str, table: &str)
     Ok(columns)
 }
 
-async fn introspect_indexes(client: &mut MssqlClient, schema: &str, table: &str) -> Result<Vec<IndexInfo>> {
+async fn introspect_indexes(
+    client: &mut MssqlClient,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<IndexInfo>> {
     let rows = client
         .query(
             "SELECT i.name AS index_name,
@@ -116,10 +145,17 @@ async fn introspect_indexes(client: &mut MssqlClient, schema: &str, table: &str)
         .into_first_result()
         .await?;
 
-    let mut index_map: std::collections::HashMap<String, IndexInfo> = std::collections::HashMap::new();
+    let mut index_map: std::collections::HashMap<String, IndexInfo> =
+        std::collections::HashMap::new();
     for row in rows {
-        let index_name: String = row.get::<&str, _>("index_name").unwrap_or_default().to_string();
-        let column_name: String = row.get::<&str, _>("column_name").unwrap_or_default().to_string();
+        let index_name: String = row
+            .get::<&str, _>("index_name")
+            .unwrap_or_default()
+            .to_string();
+        let column_name: String = row
+            .get::<&str, _>("column_name")
+            .unwrap_or_default()
+            .to_string();
         let is_unique: bool = row.get::<bool, _>("is_unique").unwrap_or(false);
         let is_primary: bool = row.get::<bool, _>("is_primary_key").unwrap_or(false);
 
@@ -135,7 +171,11 @@ async fn introspect_indexes(client: &mut MssqlClient, schema: &str, table: &str)
     Ok(index_map.into_values().collect())
 }
 
-pub async fn execute_query(client: &mut MssqlClient, compiled: &CompiledQuery, timeout_ms: u32) -> Result<QueryResult> {
+pub async fn execute_query(
+    client: &mut MssqlClient,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
     client
         .execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", &[])
         .await?;
@@ -170,10 +210,7 @@ pub async fn execute_query(client: &mut MssqlClient, compiled: &CompiledQuery, t
 
     let mut result_rows = Vec::new();
     for row in rows {
-        let row_data: Vec<serde_json::Value> = row
-            .into_iter()
-            .map(decode_mssql_value)
-            .collect();
+        let row_data: Vec<serde_json::Value> = row.into_iter().map(decode_mssql_value).collect();
         result_rows.push(row_data);
     }
 

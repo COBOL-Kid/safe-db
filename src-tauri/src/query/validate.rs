@@ -48,7 +48,11 @@ pub struct ValidationOutcome {
     pub limit: u32,
 }
 
-pub fn validate(spec: &mut QuerySpec, schema: &Schema, custom_blocked: &[String]) -> Result<ValidationOutcome, String> {
+pub fn validate(
+    spec: &mut QuerySpec,
+    schema: &Schema,
+    custom_blocked: &[String],
+) -> Result<ValidationOutcome, String> {
     let mut warnings = Vec::new();
 
     if spec.tables.is_empty() {
@@ -58,24 +62,31 @@ pub fn validate(spec: &mut QuerySpec, schema: &Schema, custom_blocked: &[String]
     let mut table_aliases: HashSet<&str> = HashSet::new();
     for table in &spec.tables {
         if is_blocked(&table.schema, custom_blocked) {
-            return Err(format!("Schema '{}' is blocked (system/catalog schema)", table.schema));
+            return Err(format!(
+                "Schema '{}' is blocked (system/catalog schema)",
+                table.schema
+            ));
         }
 
-        let table_info = find_table(schema, &table.schema, &table.name)
-            .ok_or_else(|| format!("Table '{}.{}' not found in schema", table.schema, table.name))?;
+        let table_info = find_table(schema, &table.schema, &table.name).ok_or_else(|| {
+            format!(
+                "Table '{}.{}' not found in schema",
+                table.schema, table.name
+            )
+        })?;
 
         if !table_aliases.insert(table.alias.as_str()) {
             return Err(format!("Duplicate table alias '{}'", table.alias));
         }
 
         for col in &spec.columns {
-            if col.table_alias == table.alias {
-                if !table_info.columns.iter().any(|c| c.name == col.column) {
-                    return Err(format!(
-                        "Column '{}.{}' does not exist",
-                        table.alias, col.column
-                    ));
-                }
+            if col.table_alias == table.alias
+                && !table_info.columns.iter().any(|c| c.name == col.column)
+            {
+                return Err(format!(
+                    "Column '{}.{}' does not exist",
+                    table.alias, col.column
+                ));
             }
         }
     }
@@ -91,10 +102,16 @@ pub fn validate(spec: &mut QuerySpec, schema: &Schema, custom_blocked: &[String]
 
     for join in &spec.joins {
         if !table_aliases.contains(join.left_alias.as_str()) {
-            return Err(format!("Join references unknown table alias '{}'", join.left_alias));
+            return Err(format!(
+                "Join references unknown table alias '{}'",
+                join.left_alias
+            ));
         }
         if !table_aliases.contains(join.right_alias.as_str()) {
-            return Err(format!("Join references unknown table alias '{}'", join.right_alias));
+            return Err(format!(
+                "Join references unknown table alias '{}'",
+                join.right_alias
+            ));
         }
 
         let left_table = find_table_by_alias(schema, spec, &join.left_alias)
@@ -106,12 +123,22 @@ pub fn validate(spec: &mut QuerySpec, schema: &Schema, custom_blocked: &[String]
             .columns
             .iter()
             .find(|c| c.name == join.left_column)
-            .ok_or_else(|| format!("Join column '{}.{}' does not exist", join.left_alias, join.left_column))?;
+            .ok_or_else(|| {
+                format!(
+                    "Join column '{}.{}' does not exist",
+                    join.left_alias, join.left_column
+                )
+            })?;
         let right_col = right_table
             .columns
             .iter()
             .find(|c| c.name == join.right_column)
-            .ok_or_else(|| format!("Join column '{}.{}' does not exist", join.right_alias, join.right_column))?;
+            .ok_or_else(|| {
+                format!(
+                    "Join column '{}.{}' does not exist",
+                    join.right_alias, join.right_column
+                )
+            })?;
 
         if !left_col.is_indexed {
             return Err(format!(
@@ -177,10 +204,17 @@ pub fn validate(spec: &mut QuerySpec, schema: &Schema, custom_blocked: &[String]
         warnings.push("No columns selected — query will select all columns".to_string());
     }
 
-    Ok(ValidationOutcome { warnings, limit: spec.limit })
+    Ok(ValidationOutcome {
+        warnings,
+        limit: spec.limit,
+    })
 }
 
-fn find_table<'a>(schema: &'a Schema, table_schema: &str, table_name: &str) -> Option<&'a TableInfo> {
+fn find_table<'a>(
+    schema: &'a Schema,
+    table_schema: &str,
+    table_name: &str,
+) -> Option<&'a TableInfo> {
     schema
         .tables
         .iter()

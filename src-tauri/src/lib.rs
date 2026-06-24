@@ -1,10 +1,10 @@
-mod adapters;
+pub mod adapters;
 mod commands;
 mod config;
 mod introspect;
 mod queries;
 mod query;
-mod secrets;
+pub mod secrets;
 mod settings;
 mod types;
 
@@ -29,6 +29,8 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            secrets::init_store()?;
 
             let data_dir = app.path().app_data_dir()?;
             app.manage(ConfigStore::new(data_dir.clone()));

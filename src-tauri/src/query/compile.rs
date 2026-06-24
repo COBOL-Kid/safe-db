@@ -13,22 +13,21 @@ pub fn compile(spec: &QuerySpec, dialect: Dialect) -> CompiledQuery {
     let mut sql = String::new();
     sql.push_str("SELECT ");
 
-    match dialect {
-        Dialect::Mssql => {
-            sql.push_str(&format!("TOP {} ", spec.limit));
-        }
-        _ => {}
+    if dialect == Dialect::Mssql {
+        sql.push_str(&format!("TOP {} ", spec.limit));
     }
 
     sql.push_str(&select_clause);
-    sql.push_str("\nFROM ");
+    sql.push('\n');
+    sql.push_str("FROM ");
     sql.push_str(&from_clause);
     if !join_clause.is_empty() {
-        sql.push_str("\n");
+        sql.push('\n');
         sql.push_str(&join_clause);
     }
     if !where_clause.is_empty() {
-        sql.push_str("\nWHERE ");
+        sql.push('\n');
+        sql.push_str("WHERE ");
         sql.push_str(&where_clause);
     }
 
@@ -73,7 +72,13 @@ fn build_select_clause(spec: &QuerySpec, dialect: Dialect) -> String {
 
     spec.columns
         .iter()
-        .map(|c| format!("{}.{}", quote(&c.table_alias, dialect), quote(&c.column, dialect)))
+        .map(|c| {
+            format!(
+                "{}.{}",
+                quote(&c.table_alias, dialect),
+                quote(&c.column, dialect)
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -135,9 +140,19 @@ fn build_join_clause(spec: &QuerySpec, dialect: Dialect) -> String {
                 );
 
                 let (left_alias, left_col, right_alias, right_col) = if alias_is_left {
-                    (join.right_alias.as_str(), join.right_column.as_str(), join.left_alias.as_str(), join.left_column.as_str())
+                    (
+                        join.right_alias.as_str(),
+                        join.right_column.as_str(),
+                        join.left_alias.as_str(),
+                        join.left_column.as_str(),
+                    )
                 } else {
-                    (join.left_alias.as_str(), join.left_column.as_str(), join.right_alias.as_str(), join.right_column.as_str())
+                    (
+                        join.left_alias.as_str(),
+                        join.left_column.as_str(),
+                        join.right_alias.as_str(),
+                        join.right_column.as_str(),
+                    )
                 };
 
                 let on_clause = format!(
@@ -167,7 +182,11 @@ fn build_where_clause(
         .filters
         .iter()
         .map(|f| {
-            let column_ref = format!("{}.{}", quote(&f.table_alias, dialect), quote(&f.column, dialect));
+            let column_ref = format!(
+                "{}.{}",
+                quote(&f.table_alias, dialect),
+                quote(&f.column, dialect)
+            );
             if !f.op.needs_value() {
                 format!("{} {}", column_ref, f.op.sql())
             } else {

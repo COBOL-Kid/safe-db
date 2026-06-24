@@ -5,7 +5,13 @@ use crate::adapters::ExplainResult;
 use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
 use crate::query::ir::{CompiledQuery, QueryResult};
 
-pub async fn connect(host: &str, port: u16, database: &str, username: &str, password: &str) -> Result<PgPool> {
+pub async fn connect(
+    host: &str,
+    port: u16,
+    database: &str,
+    username: &str,
+    password: &str,
+) -> Result<PgPool> {
     let options = sqlx::postgres::PgConnectOptions::new()
         .host(host)
         .port(port)
@@ -100,7 +106,8 @@ async fn introspect_indexes(pool: &PgPool, schema: &str, table: &str) -> Result<
     .fetch_all(pool)
     .await?;
 
-    let mut index_map: std::collections::HashMap<String, IndexInfo> = std::collections::HashMap::new();
+    let mut index_map: std::collections::HashMap<String, IndexInfo> =
+        std::collections::HashMap::new();
     for row in rows {
         let index_name: String = row.try_get("index_name")?;
         let column_name: String = row.try_get("column_name")?;
@@ -119,18 +126,25 @@ async fn introspect_indexes(pool: &PgPool, schema: &str, table: &str) -> Result<
     Ok(index_map.into_values().collect())
 }
 
-pub async fn execute_query(pool: &PgPool, compiled: &CompiledQuery, timeout_ms: u32) -> Result<QueryResult> {
+pub async fn execute_query(
+    pool: &PgPool,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
     let mut tx = pool.begin().await?;
 
     sqlx::query("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
         .execute(&mut *tx)
         .await?;
 
-    sqlx::query(&format!("SET LOCAL statement_timeout = {}", timeout_ms))
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SET LOCAL statement_timeout = {}",
+        timeout_ms
+    )))
+    .execute(&mut *tx)
+    .await?;
 
-    let mut query = sqlx::query(&compiled.sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }
@@ -139,14 +153,20 @@ pub async fn execute_query(pool: &PgPool, compiled: &CompiledQuery, timeout_ms: 
     let row_count = rows.len();
 
     let columns: Vec<String> = if rows.is_empty() {
-        let describe = sqlx::query(&compiled.sql).fetch_optional(&mut *tx).await?;
+        let describe = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()))
+            .fetch_optional(&mut *tx)
+            .await?;
         if let Some(row) = describe {
             row.columns().iter().map(|c| c.name().to_string()).collect()
         } else {
             Vec::new()
         }
     } else {
-        rows[0].columns().iter().map(|c| c.name().to_string()).collect()
+        rows[0]
+            .columns()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect()
     };
 
     let mut result_rows = Vec::new();
@@ -173,34 +193,41 @@ pub async fn execute_query(pool: &PgPool, compiled: &CompiledQuery, timeout_ms: 
 fn decode_pg_value(row: &sqlx::postgres::PgRow, i: usize, type_name: &str) -> serde_json::Value {
     use serde_json::Value;
     match type_name {
-        "BOOL" | "BOOLEAN" => {
-            row.try_get::<Option<bool>, _>(i).map(|v| v.map(Value::Bool).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "INT2" | "SMALLSERIAL" | "SMALLINT" => {
-            row.try_get::<Option<i16>, _>(i).map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "INT4" | "SERIAL" | "INTEGER" | "INT" => {
-            row.try_get::<Option<i32>, _>(i).map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "INT8" | "BIGSERIAL" | "BIGINT" => {
-            row.try_get::<Option<i64>, _>(i).map(|v| v.map(Value::from).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "FLOAT4" | "REAL" => {
-            row.try_get::<Option<f32>, _>(i).map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        "FLOAT8" | "DOUBLE PRECISION" => {
-            row.try_get::<Option<f64>, _>(i).map(|v| v.map(Value::from).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
-        _ => {
-            row.try_get::<Option<String>, _>(i).map(|v| v.map(Value::String).unwrap_or(Value::Null)).unwrap_or(Value::Null)
-        }
+        "BOOL" | "BOOLEAN" => row
+            .try_get::<Option<bool>, _>(i)
+            .map(|v| v.map(Value::Bool).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "INT2" | "SMALLSERIAL" | "SMALLINT" => row
+            .try_get::<Option<i16>, _>(i)
+            .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "INT4" | "SERIAL" | "INTEGER" | "INT" => row
+            .try_get::<Option<i32>, _>(i)
+            .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "INT8" | "BIGSERIAL" | "BIGINT" => row
+            .try_get::<Option<i64>, _>(i)
+            .map(|v| v.map(Value::from).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "FLOAT4" | "REAL" => row
+            .try_get::<Option<f32>, _>(i)
+            .map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        "FLOAT8" | "DOUBLE PRECISION" => row
+            .try_get::<Option<f64>, _>(i)
+            .map(|v| v.map(Value::from).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
+        _ => row
+            .try_get::<Option<String>, _>(i)
+            .map(|v| v.map(Value::String).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null),
     }
 }
 
 pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainResult> {
     let explain_sql = format!("EXPLAIN (FORMAT JSON) {}", compiled.sql);
 
-    let mut query = sqlx::query(&explain_sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(explain_sql.as_str()));
     for param in &compiled.params {
         query = query.bind(param);
     }
