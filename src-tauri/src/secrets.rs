@@ -21,12 +21,11 @@ pub fn cache_age_for_test(connection_id: &str) -> Option<Duration> {
 
 #[cfg(any(test, feature = "test-helpers"))]
 pub fn cache_set_age_for_test(connection_id: &str, age: Duration) {
-    if let Some(c) = CACHE.get() {
-        if let Ok(mut guard) = c.lock() {
-            if let Some(entry) = guard.get_mut(connection_id) {
-                entry.fetched_at = Instant::now() - age;
-            }
-        }
+    if let Some(c) = CACHE.get()
+        && let Ok(mut guard) = c.lock()
+        && let Some(entry) = guard.get_mut(connection_id)
+    {
+        entry.fetched_at = Instant::now() - age;
     }
 }
 

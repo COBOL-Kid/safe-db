@@ -35,10 +35,10 @@ pub async fn save_connection(
     let config_store = app.state::<ConfigStore>();
     config_store.save(def.clone()).map_err(|e| e.to_string())?;
 
-    if let Some(pw) = password {
-        if !pw.is_empty() {
-            secrets::save_password(&def.id, &pw).map_err(|e| e.to_string())?;
-        }
+    if let Some(pw) = password
+        && !pw.is_empty()
+    {
+        secrets::save_password(&def.id, &pw).map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -121,13 +121,13 @@ pub async fn run_query(
                 warning: Some("EXPLAIN failed".to_string()),
             });
 
-    if let Some(cost) = explain_result.cost {
-        if cost > settings.explain_cost_threshold {
-            warnings.push(format!(
-                "Estimated query cost ({:.0}) exceeds threshold ({:.0}) — this may be slow",
-                cost, settings.explain_cost_threshold
-            ));
-        }
+    if let Some(cost) = explain_result.cost
+        && cost > settings.explain_cost_threshold
+    {
+        warnings.push(format!(
+            "Estimated query cost ({:.0}) exceeds threshold ({:.0}) — this may be slow",
+            cost, settings.explain_cost_threshold
+        ));
     }
     if let Some(w) = explain_result.warning {
         warnings.push(w);
