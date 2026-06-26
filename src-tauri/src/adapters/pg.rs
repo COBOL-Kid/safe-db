@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::{Column, PgPool, Row, TypeInfo};
 
 use crate::adapters::ExplainResult;
-use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
+use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{CompiledQuery, QueryResult};
 
 pub async fn connect(

@@ -16,7 +16,7 @@ use commands::{
 use config::ConfigStore;
 use queries::QueryStore;
 use settings::SettingsStore;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -54,6 +54,11 @@ pub fn run() {
             get_settings,
             save_settings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if matches!(event, RunEvent::Exit) {
+                secrets::lock_credentials();
+            }
+        });
 }

@@ -2,7 +2,7 @@ use anyhow::Result;
 use oracle::sql_type::{InnerValue, ToSql};
 use oracle::{Connection, Row as OracleRow};
 
-use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
+use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{CompiledQuery, QueryResult};
 
 const BLOCKED_OWNERS: &[&str] = &[

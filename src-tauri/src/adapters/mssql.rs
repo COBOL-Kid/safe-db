@@ -3,7 +3,7 @@ use tiberius::{AuthMethod, Client, ColumnData, Config};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
-use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
+use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{CompiledQuery, QueryResult};
 
 pub type MssqlClient = Client<tokio_util::compat::Compat<TcpStream>>;

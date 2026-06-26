@@ -54,6 +54,11 @@
 			<div class="text-center">
 				<p class="text-sm font-medium text-red-600">Failed to load schema</p>
 				<p class="mt-1 break-all text-sm text-slate-400">{schema.error}</p>
+				{#if schema.error.includes('Open Connections') || schema.error.includes('save the connection')}
+					<p class="mt-3 text-xs text-slate-500">
+						Credentials may need to be re-saved after a keyring backend change.
+					</p>
+				{/if}
 			</div>
 		</div>
 	{:else if schema.filteredTables.length === 0}

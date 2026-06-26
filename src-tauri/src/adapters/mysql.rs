@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::{Column, Connection, MySqlPool, Row, TypeInfo};
 
 use crate::adapters::ExplainResult;
-use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
+use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{CompiledQuery, QueryResult};
 
 pub async fn connect(
@@ -141,45 +141,53 @@ pub async fn execute_query(
         .execute(&mut *conn)
         .await?;
 
-    let mut tx = conn.begin().await?;
+    let query_result: Result<(Vec<String>, Vec<Vec<serde_json::Value>>, usize)> = async {
+        let mut tx = conn.begin().await?;
 
-    let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
-    for param in &compiled.params {
-        query = query.bind(param);
-    }
-
-    let rows = query.fetch_all(&mut *tx).await?;
-    let row_count = rows.len();
-
-    let columns: Vec<String> = if rows.is_empty() {
-        Vec::new()
-    } else {
-        rows[0]
-            .columns()
-            .iter()
-            .map(|c| c.name().to_string())
-            .collect()
-    };
-
-    let mut result_rows = Vec::new();
-    for row in &rows {
-        let mut row_values = Vec::new();
-        for (i, col) in row.columns().iter().enumerate() {
-            let value = decode_mysql_value(row, i, col.type_info().name());
-            row_values.push(value);
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
+        for param in &compiled.params {
+            query = query.bind(param);
         }
-        result_rows.push(row_values);
+
+        let rows = query.fetch_all(&mut *tx).await?;
+        let row_count = rows.len();
+
+        let columns: Vec<String> = if rows.is_empty() {
+            Vec::new()
+        } else {
+            rows[0]
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect()
+        };
+
+        let mut result_rows = Vec::new();
+        for row in &rows {
+            let mut row_values = Vec::new();
+            for (i, col) in row.columns().iter().enumerate() {
+                let value = decode_mysql_value(row, i, col.type_info().name());
+                row_values.push(value);
+            }
+            result_rows.push(row_values);
+        }
+
+        tx.commit().await?;
+
+        Ok((columns, result_rows, row_count))
     }
+    .await;
 
-    tx.commit().await?;
-
-    sqlx::query(sqlx::AssertSqlSafe("SET SESSION MAX_EXECUTION_TIME = 0"))
+    let reset_result = sqlx::query(sqlx::AssertSqlSafe("SET SESSION MAX_EXECUTION_TIME = 0"))
         .execute(&mut *conn)
-        .await?;
+        .await;
+
+    let (columns, rows, row_count) = query_result?;
+    reset_result?;
 
     Ok(QueryResult {
         columns,
-        rows: result_rows,
+        rows,
         row_count,
         truncated: false,
         warnings: Vec::new(),

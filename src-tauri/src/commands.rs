@@ -4,7 +4,7 @@ use crate::adapters::{Adapter, DEFAULT_TIMEOUT_MS};
 use crate::config::ConfigStore;
 use crate::introspect::Schema;
 use crate::queries::{HistoryEntry, QueryStore, SavedQuery};
-use crate::query::{compile, validate, QueryResult, QuerySpec};
+use crate::query::{QueryResult, QuerySpec, compile, validate};
 use crate::secrets;
 use crate::settings::{Settings, SettingsStore};
 use crate::types::ConnectionDef;
@@ -33,13 +33,12 @@ pub async fn save_connection(
     password: Option<String>,
 ) -> Result<(), String> {
     let config_store = app.state::<ConfigStore>();
-    config_store.save(def.clone()).map_err(|e| e.to_string())?;
 
-    if let Some(pw) = password
-        && !pw.is_empty()
-    {
+    if let Some(pw) = password {
         secrets::save_password(&def.id, &pw).map_err(|e| e.to_string())?;
     }
+
+    config_store.save(def.clone()).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -66,9 +65,7 @@ pub async fn get_schema(app: AppHandle, connection_id: String) -> Result<Schema,
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Connection not found".to_string())?;
 
-    let password = secrets::get_password(&connection_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Password not found in keyring".to_string())?;
+    let password = secrets::password_for_connection(&connection_id)?;
 
     let adapter = Adapter::connect(&def, &password)
         .await
@@ -93,9 +90,7 @@ pub async fn run_query(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Connection not found".to_string())?;
 
-    let password = secrets::get_password(&connection_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Password not found in keyring".to_string())?;
+    let password = secrets::password_for_connection(&connection_id)?;
 
     let settings = settings_store.load().map_err(|e| e.to_string())?;
 

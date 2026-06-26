@@ -59,7 +59,7 @@
 		formError = null;
 		try {
 			const def = buildDef();
-			await api.saveConnection(def, password || null);
+			await api.saveConnection(def, password);
 			onSaved();
 		} catch (e) {
 			formError = String(e);

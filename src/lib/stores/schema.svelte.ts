@@ -20,16 +20,15 @@ class SchemaStore {
 
 	async load(connectionId: string) {
 		if (!browser) return;
-		if (this.loadedConnectionId === connectionId && this.schema) return;
+		if (this.loadedConnectionId === connectionId && (this.schema || this.error)) return;
 		this.loading = true;
 		this.error = null;
 		this.schema = null;
+		this.loadedConnectionId = connectionId;
 		try {
 			this.schema = await api.getSchema(connectionId);
-			this.loadedConnectionId = connectionId;
 		} catch (e) {
 			this.error = String(e);
-			this.loadedConnectionId = null;
 		} finally {
 			this.loading = false;
 		}
