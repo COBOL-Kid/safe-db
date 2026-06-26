@@ -27,7 +27,6 @@ describe('hydrateQueryFromSpec', () => {
 	let store: QueryStore;
 
 	beforeEach(() => {
-		QueryStore.resetAliasCounterForTests();
 		store = new QueryStore();
 	});
 
@@ -77,15 +76,30 @@ describe('hydrateQueryFromSpec', () => {
 		expect(store.limit).toBe(25);
 	});
 
-	it('skips tables missing from schema', () => {
+	it('skips joins and filters when referenced tables are missing', () => {
 		const spec: QuerySpec = {
 			tables: [
-				{ schema: 'safedb_test', name: 'missing', alias: 'saved_t0' },
-				{ schema: 'safedb_test', name: 'products', alias: 'saved_t1' }
+				{ schema: 'safedb_test', name: 'missing_a', alias: 'saved_t0' },
+				{ schema: 'safedb_test', name: 'missing_b', alias: 'saved_t1' },
+				{ schema: 'safedb_test', name: 'products', alias: 'saved_t2' }
 			],
-			columns: [{ table_alias: 'saved_t1', column: 'name' }],
-			joins: [],
-			filters: [],
+			columns: [{ table_alias: 'saved_t2', column: 'name' }],
+			joins: [
+				{
+					left_alias: 'saved_t0',
+					left_column: 'id',
+					right_alias: 'saved_t1',
+					right_column: 'id'
+				}
+			],
+			filters: [
+				{
+					table_alias: 'saved_t0',
+					column: 'name',
+					op: 'Like',
+					value: '%widget%'
+				}
+			],
 			limit: 100
 		};
 
@@ -94,5 +108,7 @@ describe('hydrateQueryFromSpec', () => {
 		expect(store.tables).toHaveLength(1);
 		expect(store.tables[0].tableInfo.name).toBe('products');
 		expect(store.selectedColumns.has('t0.name')).toBe(true);
+		expect(store.joins).toHaveLength(0);
+		expect(store.filters).toHaveLength(0);
 	});
 });

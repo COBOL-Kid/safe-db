@@ -18,7 +18,6 @@ describe('QueryStore', () => {
 	let store: QueryStore;
 
 	beforeEach(() => {
-		QueryStore.resetAliasCounterForTests();
 		store = new QueryStore();
 	});
 

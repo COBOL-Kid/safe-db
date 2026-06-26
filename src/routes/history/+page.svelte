@@ -45,7 +45,6 @@
 		schema.clear();
 		await schema.load(entry.connection_id);
 
-		query.clear();
 		hydrateQueryFromSpec(entry.spec, schema.tables, query);
 		goto('/builder');
 	}

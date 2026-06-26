@@ -36,9 +36,6 @@ importers:
       '@testing-library/user-event':
         specifier: ^14.6.1
         version: 14.6.1(@testing-library/dom@10.4.1)
-      '@vitest/coverage-v8':
-        specifier: ^4.1.9
-        version: 4.1.9(vitest@4.1.9)
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
@@ -894,8 +891,7 @@ packages:
       variants:
         - resolution:
             archive: tarball
-            bin:
-              node: bin/node
+            bin: bin/node
             integrity: sha256-Men8JJx0o6bf7KR1ginwA2IEWbQsN0n3xCPymZ0Jpyc=
             type: binary
             url: https://nodejs.org/download/release/v24.17.0/node-v24.17.0-aix-ppc64.tar.gz
@@ -904,8 +900,7 @@ packages:
               os: aix
         - resolution:
             archive: tarball
-            bin:
-              node: bin/node
+            bin: bin/node
             integrity: sha256-T8MmajcC7rw5zDdmHPTuzureMH4kKrZOTXznlJGX4R8=
             type: binary
             url: https://nodejs.org/download/release/v24.17.0/node-v24.17.0-darwin-arm64.tar.gz
@@ -914,8 +909,7 @@ packages:
               os: darwin
         - resolution:
             archive: tarball
-            bin:
-              node: bin/node
+            bin: bin/node
             integrity: sha256-gNpVL+A3KQyxMOnepZD17ut6pFBjbwyJq0FBVRHB7Cc=
             type: binary
             url: https://nodejs.org/download/release/v24.17.0/node-v24.17.0-darwin-x64.tar.gz
@@ -924,8 +918,7 @@ packages:
               os: darwin
         - resolution:
             archive: tarball
-            bin:
-              node: bin/node
+            bin: bin/node
             integrity: sha256-+qDVm6f+cEXJUO0JsZBXj7ju5z5DWGhtOPzJnKWMFIA=
             type: binary
             url: https://nodejs.org/download/release/v24.17.0/node-v24.17.0-linux-arm64.tar.gz
@@ -934,8 +927,7 @@ packages:
               os: linux
         - resolution:
             archive: tarball
-            bin:
-              node: bin/node
+            bin: bin/node
             integrity: sha256-gE7UoaDvKNWSQIuErCqF6FirkSTa2TPhK0MjYJQRuAk=
             type: binary
             url: https://nodejs.org/download/release/v24.17.0/node-v24.17.0-linux-ppc64le.tar.gz
@@ -944,8 +936,7 @@ packages:
               os: linux
         - resolution:
             archive: tarball
-            bin:
-              node: bin/node
+            bin: bin/node
             integrity: sha256-plnpwm/NZI8zWdv9KS8HhDQWgEDy+xrPPJwbzT/Deys=
             type: binary
             url: https://nodejs.org/download/release/v24.17.0/node-v24.17.0-linux-s390x.tar.gz
@@ -954,8 +945,7 @@ packages:
               os: linux
         - resolution:
             archive: tarball
-            bin:
-              node: bin/node
+            bin: bin/node
             integrity: sha256-4EckJ6p5GtgL3EJv98xzzdKO0PYW0f+WiaI6f0fxJl8=
             type: binary
             url: https://nodejs.org/download/release/v24.17.0/node-v24.17.0-linux-x64.tar.gz
@@ -964,8 +954,7 @@ packages:
               os: linux
         - resolution:
             archive: zip
-            bin:
-              node: node.exe
+            bin: node.exe
             integrity: sha256-SVdxL2f85Vd5zHlNm0354OgCoYyEGtWk5C8XvkkOY00=
             prefix: node-v24.17.0-win-arm64
             type: binary
@@ -975,8 +964,7 @@ packages:
               os: win32
         - resolution:
             archive: zip
-            bin:
-              node: node.exe
+            bin: node.exe
             integrity: sha256-8qozs1t1rKXz97hWdab2QjIBBT6TgZEeZJYfO9olKKs=
             prefix: node-v24.17.0-win-x64
             type: binary
@@ -984,28 +972,6 @@ packages:
           targets:
             - cpu: x64
               os: win32
-        - resolution:
-            archive: tarball
-            bin:
-              node: bin/node
-            integrity: sha256-zFT3OhpBCNnjJesgHZCyXuq2DtySsqEyQLKHenTFlto=
-            type: binary
-            url: https://unofficial-builds.nodejs.org/download/release/v24.17.0/node-v24.17.0-linux-arm64-musl.tar.gz
-          targets:
-            - cpu: arm64
-              os: linux
-              libc: musl
-        - resolution:
-            archive: tarball
-            bin:
-              node: bin/node
-            integrity: sha256-+ITJWMBlL3zQ6kP9w53d0amEVuqbGt7KhZZIR+Ljn7A=
-            type: binary
-            url: https://unofficial-builds.nodejs.org/download/release/v24.17.0/node-v24.17.0-linux-x64-musl.tar.gz
-          targets:
-            - cpu: x64
-              os: linux
-              libc: musl
     version: 24.17.0
     hasBin: true
 
@@ -1320,13 +1286,15 @@ snapshots:
       js-tokens: 4.0.0
       picocolors: 1.1.1
 
-  '@babel/helper-string-parser@7.29.7': {}
+  '@babel/helper-string-parser@7.29.7':
+    optional: true
 
   '@babel/helper-validator-identifier@7.29.7': {}
 
   '@babel/parser@7.29.7':
     dependencies:
       '@babel/types': 7.29.7
+    optional: true
 
   '@babel/runtime@7.29.7': {}
 
@@ -1334,8 +1302,10 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+    optional: true
 
-  '@bcoe/v8-coverage@1.0.2': {}
+  '@bcoe/v8-coverage@1.0.2':
+    optional: true
 
   '@bramus/specificity@2.4.2':
     dependencies:
@@ -1692,6 +1662,7 @@ snapshots:
       std-env: 4.1.0
       tinyrainbow: 3.1.0
       vitest: 4.1.9(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1)(vite@8.0.16(jiti@2.7.0))
+    optional: true
 
   '@vitest/expect@4.1.9':
     dependencies:
@@ -1753,6 +1724,7 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
       js-tokens: 10.0.0
+    optional: true
 
   axobject-query@4.1.0: {}
 
@@ -1830,7 +1802,8 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  has-flag@4.0.0: {}
+  has-flag@4.0.0:
+    optional: true
 
   html-encoding-sniffer@6.0.0:
     dependencies:
@@ -1838,7 +1811,8 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
-  html-escaper@2.0.2: {}
+  html-escaper@2.0.2:
+    optional: true
 
   indent-string@4.0.0: {}
 
@@ -1848,22 +1822,26 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
 
-  istanbul-lib-coverage@3.2.2: {}
+  istanbul-lib-coverage@3.2.2:
+    optional: true
 
   istanbul-lib-report@3.0.1:
     dependencies:
       istanbul-lib-coverage: 3.2.2
       make-dir: 4.0.0
       supports-color: 7.2.0
+    optional: true
 
   istanbul-reports@3.2.0:
     dependencies:
       html-escaper: 2.0.2
       istanbul-lib-report: 3.0.1
+    optional: true
 
   jiti@2.7.0: {}
 
-  js-tokens@10.0.0: {}
+  js-tokens@10.0.0:
+    optional: true
 
   js-tokens@4.0.0: {}
 
@@ -1959,10 +1937,12 @@ snapshots:
       '@babel/parser': 7.29.7
       '@babel/types': 7.29.7
       source-map-js: 1.2.1
+    optional: true
 
   make-dir@4.0.0:
     dependencies:
       semver: 7.8.5
+    optional: true
 
   mdn-data@2.27.1: {}
 
@@ -2042,7 +2022,8 @@ snapshots:
     dependencies:
       xmlchars: 2.2.0
 
-  semver@7.8.5: {}
+  semver@7.8.5:
+    optional: true
 
   set-cookie-parser@3.1.0: {}
 
@@ -2067,6 +2048,7 @@ snapshots:
   supports-color@7.2.0:
     dependencies:
       has-flag: 4.0.0
+    optional: true
 
   svelte-check@4.6.0(picomatch@4.0.4)(svelte@5.56.3)(typescript@6.0.3):
     dependencies:

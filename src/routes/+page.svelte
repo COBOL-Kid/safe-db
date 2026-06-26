@@ -30,7 +30,6 @@
 		schema.clear();
 		await schema.load(sq.connection_id);
 
-		query.clear();
 		hydrateQueryFromSpec(sq.spec, schema.tables, query);
 		goto('/builder');
 	}
