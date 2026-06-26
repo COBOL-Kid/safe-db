@@ -55,5 +55,25 @@ describe('SchemaStore', () => {
 		await store.load('conn-2');
 		expect(store.error).toContain('network down');
 		expect(store.schema).toBeNull();
+		expect(store.loadedConnectionId).toBeNull();
+	});
+
+	it('retries load after failure', async () => {
+		vi.mocked(api.getSchema)
+			.mockRejectedValueOnce(new Error('network down'))
+			.mockResolvedValueOnce(sampleSchema);
+		await store.load('conn-1');
+		expect(store.error).toContain('network down');
+		await store.load('conn-1');
+		expect(store.schema).toEqual(sampleSchema);
+		expect(store.error).toBeNull();
+		expect(api.getSchema).toHaveBeenCalledTimes(2);
+	});
+
+	it('skips refetch when schema is already loaded for the connection', async () => {
+		vi.mocked(api.getSchema).mockResolvedValue(sampleSchema);
+		await store.load('conn-1');
+		await store.load('conn-1');
+		expect(api.getSchema).toHaveBeenCalledTimes(1);
 	});
 });
