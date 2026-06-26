@@ -17,7 +17,7 @@ See `PLAN.md` for the full implementation plan and architecture.
 - `pnpm test` — frontend typecheck plus Rust tests
 - `pnpm test:rust` — Rust unit and smoke tests
 - `pnpm test:smoke` — keyring round-trip and env-gated Postgres smoke tests
-- `pnpm db:seed` — load `testdata_mysql.sql` into the local MySQL test DB (`--reset` via `db:seed:reset`); connection params via `SAFEDB_TEST_MYSQL_*` env vars
+- `pnpm db:seed` — load `testdata_mysql.sql` into the local MySQL test DB (`--reset` via `db:seed:reset`); connection params via `SAFEDB_TEST_MYSQL_*` env vars; pass `--docker` (or set `SAFEDB_TEST_MYSQL_DOCKER=<name>`) to run the `mysql` client inside a Docker container instead of needing a host-side `mysql-client` install
 - `pnpm tauri build` — production build
 - `cargo check` — verify Rust backend compiles (run in `src-tauri/`)
 - `cargo clippy -- -D warnings` — Rust lint gate (run in `src-tauri/`)
