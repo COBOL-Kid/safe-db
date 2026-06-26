@@ -14,6 +14,8 @@
 		"test": "pnpm check && pnpm test:rust",
 		"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
 		"test:smoke": "cargo test --manifest-path src-tauri/Cargo.toml --test secrets_smoke --test pg_smoke",
+		"db:seed": "bash scripts/seed_testdb.sh",
+		"db:seed:reset": "bash scripts/seed_testdb.sh --reset",
 		"tauri": "tauri"
 	},
 	"devDependencies": {

@@ -17,6 +17,7 @@ See `PLAN.md` for the full implementation plan and architecture.
 - `pnpm test` — frontend typecheck plus Rust tests
 - `pnpm test:rust` — Rust unit and smoke tests
 - `pnpm test:smoke` — keyring round-trip and env-gated Postgres smoke tests
+- `pnpm db:seed` — load `testdata_mysql.sql` into the local MySQL test DB (`--reset` via `db:seed:reset`); connection params via `SAFEDB_TEST_MYSQL_*` env vars
 - `pnpm tauri build` — production build
 - `cargo check` — verify Rust backend compiles (run in `src-tauri/`)
 - `cargo clippy -- -D warnings` — Rust lint gate (run in `src-tauri/`)
@@ -38,6 +39,8 @@ safe-db/
 │   └── tauri.conf.json
 ├── vite.config.ts        # Vite + SvelteKit + Tailwind + adapter-static config
 ├── PLAN.md               # Full implementation plan
+├── scripts/              # Repo-level shell scripts (e.g. seed_testdb.sh)
+├── testdata_mysql.sql    # MySQL DDL + seed data for the local test DB
 └── package.json
 ```
 
@@ -54,7 +57,7 @@ Standard commands live in `## Commands` above. Notes below are cloud-environment
 - **Toolchain**: Node `24.17.0` (`.nvmrc` + `package.json` `devEngines`) and `pnpm@10.14.0` (`packageManager`). Use a login shell or `nvm use` so Node 24 is on `PATH` before running `pnpm`. Rust `1.96.0+` is pinned in `src-tauri/rust-toolchain.toml` and `Cargo.toml` (`rust-version = "1.96.0"`). The Rust crate is on **edition 2024** — let-chains (`if let X = ... && let Y = ...`) are the preferred style for nested pattern matches, and `std::env::set_var` / `remove_var` are `unsafe` and must be wrapped accordingly.
 - **System deps** (already baked into the VM snapshot): Tauri 2 GTK/WebKit libs (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`, `librsvg2-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`, `build-essential`, `pkg-config`) plus `postgresql`.
 - **Running the desktop app**: `pnpm tauri dev` needs an X display — use `DISPLAY=:1` (the virtual display). `libEGL ... DRI3` warnings on launch are harmless (software rendering). `pnpm tauri dev` runs its own `pnpm dev` (vite on port `1420`, `strictPort`), so do NOT also run a standalone `pnpm dev` at the same time or the port will conflict.
-- **Testing DB connectivity**: the app reads from a real PG/MySQL DB. PostgreSQL is installed but not auto-started; start it with `sudo pg_ctlcluster 16 main start`. A throwaway demo DB can be created (role `safedb` / db `demo`) and connected via the in-app connection form (host `localhost`, port `5432`).
+- **Testing DB connectivity**: the app reads from a real PG/MySQL DB. For MySQL, `pnpm db:seed` loads `testdata_mysql.sql` (e-commerce schema: categories, products, customers, orders, order_items, inventory_log) into `safedb_test`; the script defaults to `localhost:3306` / `root` and reads `SAFEDB_TEST_MYSQL_*` env vars for overrides. PostgreSQL is installed but not auto-started; start it with `sudo pg_ctlcluster 16 main start`. A throwaway demo DB can be created (role `safedb` / db `demo`) and connected via the in-app connection form (host `localhost`, port `5432`).
 - **Credentials/keyring**: `keyring-core` with the macOS protected data store (`apple-native-keyring-store` feature `protected`), Windows credential store, and Linux kernel keyutils (`linux-keyutils-keyring-store`, headless, no D-Bus Secret Service required). The `protected` store needs the app to be sandboxed/signed; unsigned `pnpm tauri dev` runs will fail to initialize it. For dev iteration, set `SAFEDB_KEYCHAIN_BACKEND=disabled` to use the in-process memory store (no Keychain calls, no prompts; credentials do NOT survive an app restart). In-Rust password cache (15-minute TTL, `Zeroizing<String>`) sits in `src-tauri/src/secrets.rs` to keep queries off the Keychain hot path.
 - **Smoke tests**: `pnpm test:smoke` always runs the keyring round-trip test (which opts into the disabled backend, so it passes on any host). For Postgres smoke coverage, start PG (`sudo pg_ctlcluster 16 main start`), create the demo DB (`safedb` / `demo`), then export `SAFEDB_TEST_PG_HOST=localhost`, `SAFEDB_TEST_PG_DATABASE=demo`, `SAFEDB_TEST_PG_USER=safedb`, `SAFEDB_TEST_PG_PASSWORD=<password>` before running `pnpm test:smoke`.
 - Running a query currently surfaces an `EXPLAIN failed` guard warning (the cost-guard EXPLAIN step), but the query itself still executes and returns rows — this is app behavior, not an environment problem.
