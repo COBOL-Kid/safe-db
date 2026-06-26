@@ -61,4 +61,5 @@ class SettingsStore {
 	}
 }
 
+export { SettingsStore };
 export const settings = new SettingsStore();

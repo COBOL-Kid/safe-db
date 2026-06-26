@@ -1,0 +1,98 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { hydrateQueryFromSpec } from '$lib/hydrate-query';
+import { QueryStore } from '$lib/stores/query.svelte';
+import type { QuerySpec, TableInfo } from '$lib/ir';
+
+const products: TableInfo = {
+	schema: 'safedb_test',
+	name: 'products',
+	columns: [
+		{ name: 'id', data_type: 'int', nullable: false, is_indexed: true },
+		{ name: 'name', data_type: 'varchar', nullable: false, is_indexed: false }
+	],
+	indexes: []
+};
+
+const categories: TableInfo = {
+	schema: 'safedb_test',
+	name: 'categories',
+	columns: [
+		{ name: 'id', data_type: 'int', nullable: false, is_indexed: true },
+		{ name: 'name', data_type: 'varchar', nullable: false, is_indexed: true }
+	],
+	indexes: []
+};
+
+describe('hydrateQueryFromSpec', () => {
+	let store: QueryStore;
+
+	beforeEach(() => {
+		QueryStore.resetAliasCounterForTests();
+		store = new QueryStore();
+	});
+
+	it('remaps aliases and restores columns, joins, filters, and limit', () => {
+		const spec: QuerySpec = {
+			tables: [
+				{ schema: 'safedb_test', name: 'products', alias: 'saved_t0' },
+				{ schema: 'safedb_test', name: 'categories', alias: 'saved_t1' }
+			],
+			columns: [
+				{ table_alias: 'saved_t0', column: 'name' },
+				{ table_alias: 'saved_t1', column: 'name' }
+			],
+			joins: [
+				{
+					left_alias: 'saved_t0',
+					left_column: 'id',
+					right_alias: 'saved_t1',
+					right_column: 'id'
+				}
+			],
+			filters: [
+				{
+					table_alias: 'saved_t0',
+					column: 'name',
+					op: 'Like',
+					value: '%widget%'
+				}
+			],
+			limit: 25
+		};
+
+		hydrateQueryFromSpec(spec, [products, categories], store);
+
+		expect(store.tables).toHaveLength(2);
+		expect(store.tables[0].alias).toBe('t0');
+		expect(store.tables[1].alias).toBe('t1');
+		expect(store.selectedColumns.has('t0.name')).toBe(true);
+		expect(store.selectedColumns.has('t1.name')).toBe(true);
+		expect(store.joins[0]).toEqual({
+			left_alias: 't0',
+			left_column: 'id',
+			right_alias: 't1',
+			right_column: 'id'
+		});
+		expect(store.filters[0].table_alias).toBe('t0');
+		expect(store.limit).toBe(25);
+	});
+
+	it('skips tables missing from schema', () => {
+		const spec: QuerySpec = {
+			tables: [
+				{ schema: 'safedb_test', name: 'missing', alias: 'saved_t0' },
+				{ schema: 'safedb_test', name: 'products', alias: 'saved_t1' }
+			],
+			columns: [{ table_alias: 'saved_t1', column: 'name' }],
+			joins: [],
+			filters: [],
+			limit: 100
+		};
+
+		hydrateQueryFromSpec(spec, [products], store);
+
+		expect(store.tables).toHaveLength(1);
+		expect(store.tables[0].tableInfo.name).toBe('products');
+		expect(store.selectedColumns.has('t0.name')).toBe(true);
+	});
+});

@@ -6,6 +6,7 @@
 	import { savedQueries } from '$lib/stores/saved-queries.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { hydrateQueryFromSpec } from '$lib/hydrate-query';
 	import type { HistoryEntry } from '$lib/ir';
 
 	$effect(() => {
@@ -45,40 +46,7 @@
 		await schema.load(entry.connection_id);
 
 		query.clear();
-		const aliasMap = new Map<string, string>();
-		for (const t of entry.spec.tables) {
-			const tableInfo = schema.tables.find(
-				(st) => st.schema === t.schema && st.name === t.name
-			);
-			if (tableInfo) {
-				query.addTable(tableInfo);
-				const newAlias = query.tables[query.tables.length - 1].alias;
-				aliasMap.set(t.alias, newAlias);
-			}
-		}
-
-		for (const col of entry.spec.columns) {
-			const newAlias = aliasMap.get(col.table_alias);
-			if (newAlias) query.toggleColumn(newAlias, col.column);
-		}
-
-		for (const join of entry.spec.joins) {
-			query.addJoin({
-				left_alias: aliasMap.get(join.left_alias) ?? join.left_alias,
-				left_column: join.left_column,
-				right_alias: aliasMap.get(join.right_alias) ?? join.right_alias,
-				right_column: join.right_column
-			});
-		}
-
-		for (const filter of entry.spec.filters) {
-			query.addFilter({
-				...filter,
-				table_alias: aliasMap.get(filter.table_alias) ?? filter.table_alias
-			});
-		}
-
-		query.setLimit(entry.spec.limit);
+		hydrateQueryFromSpec(entry.spec, schema.tables, query);
 		goto('/builder');
 	}
 

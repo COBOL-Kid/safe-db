@@ -42,4 +42,5 @@ class SchemaStore {
 	}
 }
 
+export { SchemaStore };
 export const schema = new SchemaStore();

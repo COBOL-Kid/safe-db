@@ -1,4 +1,8 @@
 use safe_db_lib::adapters::pg;
+use safe_db_lib::query::compile::compile;
+use safe_db_lib::query::ir::{ColumnSel, QuerySpec, TableRef};
+use safe_db_lib::query::validate::validate;
+use safe_db_lib::types::Dialect;
 
 struct PgConfig {
     host: String,
@@ -53,4 +57,57 @@ async fn pg_connect_and_test() {
         version.to_ascii_lowercase().contains("postgresql"),
         "expected PostgreSQL version string, got: {version}"
     );
+}
+
+#[tokio::test]
+async fn pg_introspect_validate_compile_execute() {
+    let Some(config) = pg_config_from_env() else {
+        eprintln!(
+            "skipping pg_introspect_validate_compile_execute: set SAFEDB_TEST_PG_* env vars"
+        );
+        return;
+    };
+
+    let pool = pg::connect(
+        &config.host,
+        config.port,
+        &config.database,
+        &config.username,
+        &config.password,
+    )
+    .await
+    .expect("connect should succeed");
+
+    let schema = pg::introspect(&pool)
+        .await
+        .expect("introspect should succeed");
+    assert!(!schema.tables.is_empty(), "expected at least one user table");
+
+    let table = &schema.tables[0];
+    let column = table
+        .columns
+        .first()
+        .expect("first table should have columns");
+
+    let mut spec = QuerySpec {
+        tables: vec![TableRef {
+            schema: table.schema.clone(),
+            name: table.name.clone(),
+            alias: "t0".into(),
+        }],
+        columns: vec![ColumnSel {
+            table_alias: "t0".into(),
+            column: column.name.clone(),
+        }],
+        joins: vec![],
+        filters: vec![],
+        limit: 5,
+    };
+
+    let _outcome = validate(&mut spec, &schema, &[]).expect("validate should succeed");
+    let compiled = compile(&spec, Dialect::Postgres);
+    let result = pg::execute_query(&pool, &compiled, 10_000)
+        .await
+        .expect("execute should succeed");
+    assert!(result.row_count <= 5);
 }

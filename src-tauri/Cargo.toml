@@ -49,3 +49,4 @@ test-helpers = []
 
 [dev-dependencies]
 safe-db = { path = ".", features = ["test-helpers"] }
+tempfile = "3.25.0"

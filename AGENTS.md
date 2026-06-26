@@ -25,9 +25,11 @@ See the git history (early commits `P0`–`P4`) for the original implementation 
 - `pnpm dev` — frontend-only dev server on port 1420
 - `pnpm check` — svelte-check (TypeScript + Svelte type checking)
 - `pnpm check:watch` — svelte-check in watch mode
-- `pnpm test` — frontend typecheck plus Rust tests
+- `pnpm test` — `pnpm check`, frontend unit tests (`vitest`), and Rust tests
+- `pnpm test:unit` — Vitest unit/component tests (no database required)
+- `pnpm test:unit:watch` — Vitest in watch mode
 - `pnpm test:rust` — Rust unit and integration tests (`cargo test` in `src-tauri/`)
-- `pnpm test:smoke` — `secrets_smoke` (keyring round-trip) and `pg_smoke` (env-gated Postgres)
+- `pnpm test:smoke` — `secrets_smoke`, env-gated `pg_smoke`, and env-gated `mysql_smoke`
 - `pnpm db:seed:mysql` — load `testdata_mysql.sql` into the local MySQL test DB (`--reset` via `db:seed:mysql:reset`); auto-connects to `localhost:3306` as `root` into `safedb_test`, overridable via `SAFEDB_TEST_MYSQL_*` env vars. If no `mysql` client is on PATH, auto-detects a running mysql/mariadb Docker container and runs the client inside it via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`). When password is unset, reads `MYSQL_ROOT_PASSWORD` from the container env (docker-exec and host-client modes against localhost).
 - `pnpm tauri build` — production build
 - `cargo check` — verify Rust backend compiles (run in `src-tauri/`)
@@ -36,6 +38,16 @@ See the git history (early commits `P0`–`P4`) for the original implementation 
 
 ## Lint / typecheck
 Run `pnpm check` after editing Svelte/TS files. Run `cargo check` in `src-tauri/` after editing Rust. Run `cargo clippy -- -D warnings` before merging backend changes.
+
+## Testing
+- **Fast gate (CI/local default):** `pnpm test` — typecheck, Vitest (`src/**/*.test.ts`), and all Rust tests including `secrets_cache` and `stores` (no live DB required).
+- **Frontend only:** `pnpm test:unit` — query store, hydration, schema/settings stores, `ConnectionForm`, `ResultsTable`; mocks Tauri invoke and SvelteKit `$app/*` in `src/lib/test/setup.ts`.
+- **Backend unit tests:** inline `#[cfg(test)]` in `query/validate.rs`, `query/compile.rs`, `introspect.rs`.
+- **Smoke gate (optional, needs DB):** `pnpm test:smoke` after seeding/configuring databases:
+  - `secrets_smoke` — always runs (disabled keyring backend).
+  - `pg_smoke` — set `SAFEDB_TEST_PG_HOST`, `SAFEDB_TEST_PG_DATABASE`, `SAFEDB_TEST_PG_USER`, `SAFEDB_TEST_PG_PASSWORD` (optional `SAFEDB_TEST_PG_PORT`).
+  - `mysql_smoke` — seed with `pnpm db:seed:mysql`, then set `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_DATABASE`, `SAFEDB_TEST_MYSQL_USER` (optional `SAFEDB_TEST_MYSQL_PASSWORD`, `SAFEDB_TEST_MYSQL_PORT`; empty password is valid for local root).
+- Smoke tests skip gracefully when env vars are unset; `secrets_macos` remains `#[ignore]` for manual macOS verification.
 
 ## Project structure
 ```
@@ -90,7 +102,7 @@ Standard commands live in `## Commands` above. Notes below are cloud-environment
 - **Running the desktop app**: `pnpm tauri dev` needs an X display — use `DISPLAY=:1` (the virtual display). `libEGL ... DRI3` warnings on launch are harmless (software rendering). `pnpm tauri dev` runs its own `pnpm dev` (vite on port `1420`, `strictPort`), so do NOT also run a standalone `pnpm dev` at the same time or the port will conflict.
 - **Testing DB connectivity**: the app reads from a real PG/MySQL DB. For MySQL, `pnpm db:seed:mysql` loads `testdata_mysql.sql` (e-commerce schema: categories, products, customers, orders, order_items, inventory_log) into `safedb_test`; the script auto-connects to `localhost:3306` / `root` and reads `SAFEDB_TEST_MYSQL_*` env vars for overrides. PostgreSQL is installed but not auto-started; start it with `sudo pg_ctlcluster 16 main start`. A throwaway demo DB can be created (role `safedb` / db `demo`) and connected via the in-app connection form (host `localhost`, port `5432`).
 - **Credentials/keyring**: `keyring-core` with platform-native stores. On macOS the only OS-backed store is Apple **Protected Data** (`apple-native-keyring-store` feature `protected`); legacy Keychain is intentionally unsupported. The default (`SAFEDB_KEYCHAIN_BACKEND=auto`) uses Protected Data when available; in **debug** builds it falls back to in-memory `disabled` credentials when Protected Data is unavailable (unsigned `pnpm tauri dev`). In **release** builds, Protected Data must initialize or startup fails. Override with `protected` or `disabled`. Protected Data requires sandbox entitlements — see [src-tauri/Entitlements.plist](src-tauri/Entitlements.plist) and `bundle.macOS.entitlements` in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json). Windows uses the credential store; Linux uses kernel keyutils (`linux-keyutils-keyring-store`, headless). Builder/query paths use an in-process credential **session** in [src-tauri/src/secrets.rs](src-tauri/src/secrets.rs) so repeated `get_schema` / `run_query` calls do not hit the OS credential store after the first unlock.
-- **Smoke tests**: `pnpm test:smoke` runs `secrets_smoke` (opts into `disabled` backend, passes on any host) and `pg_smoke` (skipped unless `SAFEDB_TEST_PG_*` env vars are set). `secrets_cache` and `secrets_macos` are separate integration tests — the latter is `#[ignore]` and meant for manual macOS verification: `SAFEDB_KEYCHAIN_BACKEND=auto cargo test --test secrets_macos -- --ignored --nocapture`.
+- **Smoke tests**: `pnpm test:smoke` runs `secrets_smoke` (opts into `disabled` backend, passes on any host), env-gated `pg_smoke`, and env-gated `mysql_smoke` (seed with `pnpm db:seed:mysql` first). `secrets_cache` and `stores` run via `pnpm test:rust` / `pnpm test`. `secrets_macos` is `#[ignore]` and meant for manual macOS verification: `SAFEDB_KEYCHAIN_BACKEND=auto cargo test --test secrets_macos -- --ignored --nocapture`.
 - Running a query currently surfaces an `EXPLAIN failed` guard warning (the cost-guard EXPLAIN step), but the query itself still executes and returns rows — this is app behavior, not an environment problem.
 
 ## Learned User Preferences

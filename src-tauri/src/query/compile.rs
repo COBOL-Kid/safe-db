@@ -204,3 +204,99 @@ fn build_where_clause(
 
     conditions.join(" AND ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::ir::{ColumnSel, FilterOp, FilterSpec, JoinSpec, QuerySpec, TableRef};
+    use crate::types::Dialect;
+
+    fn two_table_spec() -> QuerySpec {
+        QuerySpec {
+            tables: vec![
+                TableRef {
+                    schema: "public".into(),
+                    name: "products".into(),
+                    alias: "t0".into(),
+                },
+                TableRef {
+                    schema: "public".into(),
+                    name: "categories".into(),
+                    alias: "t1".into(),
+                },
+            ],
+            columns: vec![ColumnSel {
+                table_alias: "t0".into(),
+                column: "id".into(),
+            }],
+            joins: vec![JoinSpec {
+                left_alias: "t0".into(),
+                left_column: "category_id".into(),
+                right_alias: "t1".into(),
+                right_column: "id".into(),
+            }],
+            filters: vec![
+                FilterSpec {
+                    table_alias: "t0".into(),
+                    column: "name".into(),
+                    op: FilterOp::Eq,
+                    value: Some("widget".into()),
+                },
+                FilterSpec {
+                    table_alias: "t0".into(),
+                    column: "deleted_at".into(),
+                    op: FilterOp::IsNull,
+                    value: None,
+                },
+            ],
+            limit: 50,
+        }
+    }
+
+    #[test]
+    fn postgres_compiles_quoting_placeholders_and_limit() {
+        let compiled = compile(&two_table_spec(), Dialect::Postgres);
+        assert!(compiled.sql.contains("SELECT \"t0\".\"id\""));
+        assert!(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""));
+        assert!(compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""));
+        assert!(compiled.sql.contains("\"t0\".\"name\" = $1"));
+        assert!(compiled.sql.contains("\"t0\".\"deleted_at\" IS NULL"));
+        assert!(compiled.sql.ends_with("LIMIT 50"));
+        assert_eq!(compiled.params, vec!["widget"]);
+    }
+
+    #[test]
+    fn mysql_compiles_backticks_and_question_mark_params() {
+        let compiled = compile(&two_table_spec(), Dialect::MySql);
+        assert!(compiled.sql.contains("SELECT `t0`.`id`"));
+        assert!(compiled.sql.contains("`t0`.`name` = ?"));
+        assert!(compiled.sql.ends_with("LIMIT 50"));
+        assert_eq!(compiled.params, vec!["widget"]);
+    }
+
+    #[test]
+    fn mssql_compiles_top_instead_of_limit() {
+        let compiled = compile(&two_table_spec(), Dialect::Mssql);
+        assert!(compiled.sql.contains("SELECT TOP 50 "));
+        assert!(compiled.sql.contains("[t0].[name] = @P1"));
+        assert!(!compiled.sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn oracle_compiles_fetch_first() {
+        let compiled = compile(&two_table_spec(), Dialect::Oracle);
+        assert!(compiled.sql.contains("FETCH FIRST 50 ROWS ONLY"));
+        assert!(compiled.sql.contains(":1"));
+    }
+
+    #[test]
+    fn empty_columns_select_star() {
+        let mut spec = two_table_spec();
+        spec.columns.clear();
+        spec.joins.clear();
+        spec.filters.clear();
+        spec.tables.truncate(1);
+        let compiled = compile(&spec, Dialect::Postgres);
+        assert!(compiled.sql.starts_with("SELECT *"));
+    }
+}

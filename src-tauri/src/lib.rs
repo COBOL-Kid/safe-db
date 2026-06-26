@@ -1,12 +1,12 @@
 pub mod adapters;
 mod commands;
-mod config;
-mod introspect;
-mod queries;
-mod query;
+pub mod config;
+pub mod introspect;
+pub mod queries;
+pub mod query;
 pub mod secrets;
-mod settings;
-mod types;
+pub mod settings;
+pub mod types;
 
 use commands::{
     clear_history, delete_connection, delete_saved_query, get_schema, get_settings,

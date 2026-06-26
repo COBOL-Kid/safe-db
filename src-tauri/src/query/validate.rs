@@ -43,6 +43,7 @@ const BLOCKED_SCHEMAS: &[&str] = &[
     "LBACSYS",
 ];
 
+#[derive(Debug)]
 pub struct ValidationOutcome {
     pub warnings: Vec<String>,
     pub limit: u32,
@@ -262,4 +263,178 @@ fn is_blocked(schema: &str, custom: &[String]) -> bool {
         return true;
     }
     custom.iter().any(|s| s == schema)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::introspect::{ColumnInfo, Schema, TableInfo};
+    use crate::query::ir::{ColumnSel, FilterOp, FilterSpec, JoinSpec, QuerySpec, TableRef};
+
+    fn sample_schema() -> Schema {
+        Schema {
+            tables: vec![
+                TableInfo {
+                    schema: "public".into(),
+                    name: "products".into(),
+                    columns: vec![
+                        ColumnInfo {
+                            name: "id".into(),
+                            data_type: "int".into(),
+                            nullable: false,
+                            is_indexed: true,
+                        },
+                        ColumnInfo {
+                            name: "name".into(),
+                            data_type: "text".into(),
+                            nullable: true,
+                            is_indexed: false,
+                        },
+                    ],
+                    indexes: vec![],
+                },
+                TableInfo {
+                    schema: "public".into(),
+                    name: "categories".into(),
+                    columns: vec![ColumnInfo {
+                        name: "id".into(),
+                        data_type: "int".into(),
+                        nullable: false,
+                        is_indexed: true,
+                    }],
+                    indexes: vec![],
+                },
+            ],
+        }
+    }
+
+    fn base_spec() -> QuerySpec {
+        QuerySpec {
+            tables: vec![TableRef {
+                schema: "public".into(),
+                name: "products".into(),
+                alias: "t0".into(),
+            }],
+            columns: vec![ColumnSel {
+                table_alias: "t0".into(),
+                column: "id".into(),
+            }],
+            joins: vec![],
+            filters: vec![],
+            limit: 100,
+        }
+    }
+
+    #[test]
+    fn rejects_empty_tables() {
+        let mut spec = base_spec();
+        spec.tables.clear();
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("At least one table"));
+    }
+
+    #[test]
+    fn rejects_blocked_system_schema() {
+        let mut spec = base_spec();
+        spec.tables[0].schema = "pg_catalog".into();
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("blocked"));
+    }
+
+    #[test]
+    fn rejects_custom_blocked_schema() {
+        let mut spec = base_spec();
+        spec.tables[0].schema = "audit".into();
+        let err = validate(&mut spec, &sample_schema(), &["audit".into()]).unwrap_err();
+        assert!(err.contains("blocked"));
+    }
+
+    #[test]
+    fn rejects_join_on_non_indexed_column() {
+        let mut spec = base_spec();
+        spec.tables.push(TableRef {
+            schema: "public".into(),
+            name: "categories".into(),
+            alias: "t1".into(),
+        });
+        spec.joins.push(JoinSpec {
+            left_alias: "t0".into(),
+            left_column: "name".into(),
+            right_alias: "t1".into(),
+            right_column: "id".into(),
+        });
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("not indexed"));
+    }
+
+    #[test]
+    fn accepts_join_on_indexed_columns() {
+        let mut spec = base_spec();
+        spec.tables.push(TableRef {
+            schema: "public".into(),
+            name: "categories".into(),
+            alias: "t1".into(),
+        });
+        spec.joins.push(JoinSpec {
+            left_alias: "t0".into(),
+            left_column: "id".into(),
+            right_alias: "t1".into(),
+            right_column: "id".into(),
+        });
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn warns_on_disconnected_tables() {
+        let mut spec = base_spec();
+        spec.tables.push(TableRef {
+            schema: "public".into(),
+            name: "categories".into(),
+            alias: "t1".into(),
+        });
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert!(outcome
+            .warnings
+            .iter()
+            .any(|w| w.contains("Cartesian")));
+    }
+
+    #[test]
+    fn defaults_zero_limit_and_caps_excess() {
+        let mut spec = base_spec();
+        spec.limit = 0;
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert_eq!(spec.limit, DEFAULT_LIMIT);
+        assert!(outcome.warnings.iter().any(|w| w.contains("defaulted")));
+
+        spec.limit = 5000;
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert_eq!(spec.limit, MAX_LIMIT);
+        assert_eq!(outcome.limit, MAX_LIMIT);
+    }
+
+    #[test]
+    fn warns_when_no_columns_selected() {
+        let mut spec = base_spec();
+        spec.columns.clear();
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert!(outcome
+            .warnings
+            .iter()
+            .any(|w| w.contains("No columns selected")));
+    }
+
+    #[test]
+    fn rejects_filter_missing_value() {
+        let mut spec = base_spec();
+        spec.filters.push(FilterSpec {
+            table_alias: "t0".into(),
+            column: "name".into(),
+            op: FilterOp::Eq,
+            value: None,
+        });
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("requires a value"));
+    }
 }

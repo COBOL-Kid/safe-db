@@ -17,12 +17,6 @@ export interface CanvasTable {
 	y: number;
 }
 
-let aliasCounter = 0;
-
-function nextAlias(): string {
-	return `t${aliasCounter++}`;
-}
-
 class QueryStore {
 	tables = $state<CanvasTable[]>([]);
 	selectedColumns = $state<Set<string>>(new Set());
@@ -60,7 +54,7 @@ class QueryStore {
 	});
 
 	addTable(tableInfo: TableInfo) {
-		const alias = nextAlias();
+		const alias = `t${QueryStore.aliasCounter++}`;
 		const offset = this.tables.length * 30;
 		this.tables = [
 			...this.tables,
@@ -165,8 +159,16 @@ class QueryStore {
 		this.results = null;
 		this.error = null;
 		this.running = false;
-		aliasCounter = 0;
+		QueryStore.aliasCounter = 0;
 	}
+
+	/** Reset module-level alias counter for isolated tests. */
+	static resetAliasCounterForTests() {
+		QueryStore.aliasCounter = 0;
+	}
+
+	private static aliasCounter = 0;
 }
 
+export { QueryStore };
 export const query = new QueryStore();

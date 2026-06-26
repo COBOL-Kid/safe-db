@@ -3,7 +3,7 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
-	"packageManager": "pnpm@10.14.0",
+	"packageManager": "pnpm@11.9.0",
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
@@ -11,9 +11,11 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"test": "pnpm check && pnpm test:rust",
+		"test": "pnpm check && pnpm test:unit && pnpm test:rust",
+		"test:unit": "vitest run",
+		"test:unit:watch": "vitest",
 		"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-		"test:smoke": "cargo test --manifest-path src-tauri/Cargo.toml --test secrets_smoke --test pg_smoke",
+		"test:smoke": "cargo test --manifest-path src-tauri/Cargo.toml --test secrets_smoke --test pg_smoke --test mysql_smoke",
 		"db:seed:mysql": "bash scripts/seed_mysql.sh",
 		"db:seed:mysql:reset": "bash scripts/seed_mysql.sh --reset",
 		"tauri": "tauri"
@@ -24,11 +26,17 @@
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.1",
 		"@tauri-apps/cli": "^2.11.3",
+		"@testing-library/jest-dom": "^6.9.1",
+		"@testing-library/svelte": "^5.4.2",
+		"@testing-library/user-event": "^14.6.1",
+		"@vitest/coverage-v8": "^4.1.9",
+		"jsdom": "^29.1.1",
 		"svelte": "^5.56.3",
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.3.1",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.16"
+		"vite": "^8.0.16",
+		"vitest": "^4.1.9"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2.11.1"
