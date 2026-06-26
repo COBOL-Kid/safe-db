@@ -3,6 +3,14 @@ use uuid::Uuid;
 
 #[test]
 fn secrets_round_trip() {
+    // The smoke test should pass on any environment, including unsandboxed dev hosts that
+    // can't use the macOS protected store. Opt into the in-memory disabled backend so the
+    // round-trip can be exercised without entitlements.
+    // SAFETY: env mutation in tests is serialized by test runner per-process; the test
+    // sets and immediately overrides the value before init_store reads it.
+    unsafe {
+        std::env::set_var("SAFEDB_KEYCHAIN_BACKEND", "disabled");
+    }
     secrets::init_store().expect("keyring store should initialize");
 
     let connection_id = format!("smoke-test-{}", Uuid::new_v4());

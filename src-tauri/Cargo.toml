@@ -31,9 +31,10 @@ tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "net"] }
 tiberius = { version = "0.12.3", default-features = false, features = ["tds73", "tokio"] }
 tokio-util = { version = "0.7.18", features = ["compat"] }
 oracle = { version = "0.6.3", optional = true }
+zeroize = { version = "1.8", features = ["derive"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store = { version = "1.0.0", features = ["keychain"] }
+apple-native-keyring-store = { version = "1.0.0", features = ["protected"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"
@@ -44,3 +45,7 @@ linux-keyutils-keyring-store = "1.0.0"
 [features]
 default = []
 oracle = ["dep:oracle"]
+test-helpers = []
+
+[dev-dependencies]
+safe-db = { path = ".", features = ["test-helpers"] }
