@@ -1,5 +1,5 @@
 use anyhow::Result;
-use sqlx::{Column, MySqlPool, Row, TypeInfo};
+use sqlx::{Column, Connection, MySqlPool, Row, TypeInfo};
 
 use crate::adapters::ExplainResult;
 use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
@@ -128,21 +128,20 @@ pub async fn execute_query(
     compiled: &CompiledQuery,
     timeout_ms: u32,
 ) -> Result<QueryResult> {
+    let mut conn = pool.acquire().await?;
+
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "SET SESSION MAX_EXECUTION_TIME = {}",
         timeout_ms
     )))
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
 
-    sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
-        .execute(pool)
+    sqlx::query("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
+        .execute(&mut *conn)
         .await?;
 
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = conn.begin().await?;
 
     let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
     for param in &compiled.params {
@@ -173,6 +172,10 @@ pub async fn execute_query(
     }
 
     tx.commit().await?;
+
+    sqlx::query(sqlx::AssertSqlSafe("SET SESSION MAX_EXECUTION_TIME = 0"))
+        .execute(&mut *conn)
+        .await?;
 
     Ok(QueryResult {
         columns,
