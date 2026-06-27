@@ -14,6 +14,7 @@
 	let database = $state('');
 	let username = $state('');
 	let password = $state('');
+	let showPassword = $state(false);
 
 	let testing = $state(false);
 	let saving = $state(false);
@@ -149,13 +150,28 @@
 			</div>
 			<div>
 				<label class="mb-1.5 block text-sm font-medium text-slate-700" for="cf-pw">Password</label>
-				<input
-					id="cf-pw"
-					type="password"
-					placeholder="••••••••"
-					bind:value={password}
-					class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
-				/>
+				<div class="relative">
+					<input
+						id="cf-pw"
+						type={showPassword ? 'text' : 'password'}
+						placeholder="••••••••"
+						bind:value={password}
+						class="w-full rounded-lg border border-slate-200 px-3 py-2 pr-10 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
+					/>
+					<button
+						type="button"
+						onclick={() => (showPassword = !showPassword)}
+						class="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-600"
+						aria-label={showPassword ? 'Hide password' : 'Show password'}
+						aria-pressed={showPassword}
+					>
+						{#if showPassword}
+							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-10-8-10-8a19.81 19.81 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 10 8 10 8a19.69 19.69 0 0 1-3.17 4.19M14.12 14.12A3 3 0 1 1 9.88 9.88" /><path d="M1 1l22 22" /></svg>
+						{:else}
+							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-8 10-8 10 8 10 8-3 8-10 8-10-8-10-8z" /><circle cx="12" cy="12" r="3" /></svg>
+						{/if}
+					</button>
+				</div>
 			</div>
 		</div>
 

@@ -12,6 +12,7 @@
 	let { children } = $props();
 
 	let paletteOpen = $state(false);
+	let isMac = $derived(browser && /Mac/i.test(navigator.userAgent));
 
 	const navItems = [
 		{ href: '/', label: 'Home', icon: 'home' },
@@ -51,18 +52,18 @@
 
 <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 	<aside class="flex w-56 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-		<div class="flex items-center gap-2.5 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-			<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white dark:bg-slate-100 dark:text-slate-900">
+		<div class="tauri-drag flex items-center gap-2.5 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
+			<div class="tauri-no-drag flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white dark:bg-slate-100 dark:text-slate-900">
 				sd
 			</div>
-			<span class="text-sm font-semibold tracking-tight">safe-db</span>
+			<span class="tauri-no-drag text-sm font-semibold tracking-tight">safe-db</span>
 		</div>
 
 		<nav class="flex flex-1 flex-col gap-1 p-3">
 			{#each navItems as item (item.href)}
 				<a
 					href={item.href}
-					class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+					class="tauri-no-drag flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
 					{isActive(item.href)
 						? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
 						: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100'}"
@@ -88,7 +89,7 @@
 			<button
 				type="button"
 				onclick={() => (paletteOpen = true)}
-				class="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+				class="tauri-no-drag flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
 			>
 				<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d={iconPaths.command} /></svg>
 				<span>Command</span>
@@ -103,7 +104,7 @@
 				<button
 					type="button"
 					onclick={() => settings.toggleTheme()}
-					class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+					class="tauri-no-drag flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
 					aria-label="Toggle theme"
 				>
 					<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -119,6 +120,11 @@
 	</aside>
 
 	<main class="flex flex-1 flex-col overflow-hidden">
-		{@render children()}
+		{#if isMac}
+			<div class="tauri-drag h-7 shrink-0" aria-hidden="true"></div>
+		{/if}
+		<div class="flex flex-1 flex-col overflow-hidden">
+			{@render children()}
+		</div>
 	</main>
 </div>

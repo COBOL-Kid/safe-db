@@ -1,11 +1,12 @@
 import { browser } from '$app/environment';
-import type { ConnectionDef, Schema } from '$lib/ir';
+import type { ConnectionDef } from '$lib/ir';
 import * as api from '$lib/api';
 
 class ConnectionStore {
 	connections = $state<ConnectionDef[]>([]);
 	loading = $state(false);
 	error = $state<string | null>(null);
+	deleteError = $state<string | null>(null);
 
 	activeId = $state<string | null>(null);
 
@@ -25,13 +26,18 @@ class ConnectionStore {
 	}
 
 	async remove(id: string) {
+		this.deleteError = null;
 		try {
 			await api.deleteConnection(id);
 			this.connections = this.connections.filter((c) => c.id !== id);
 			if (this.activeId === id) this.activeId = null;
 		} catch (e) {
-			this.error = String(e);
+			this.deleteError = String(e);
 		}
+	}
+
+	clearDeleteError() {
+		this.deleteError = null;
 	}
 
 	setActive(id: string | null) {
@@ -44,4 +50,5 @@ class ConnectionStore {
 	}
 }
 
+export { ConnectionStore };
 export const connections = new ConnectionStore();

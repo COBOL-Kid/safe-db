@@ -12,15 +12,28 @@
 
 	let {
 		canvasTable,
-		onStartJoin
+		onStartJoin,
+		highlightJoinTargets = null
 	}: {
 		canvasTable: CanvasTable;
 		onStartJoin: (e: MouseEvent, alias: string, column: string) => void;
+		highlightJoinTargets?: { sourceAlias: string; sourceColumn: string } | null;
 	} = $props();
 
 	let table = $derived(canvasTable.tableInfo);
 	let alias = $derived(canvasTable.alias);
 	let menuColumn = $state<string | null>(null);
+
+	function isJoinTarget(colName: string, isIndexed: boolean): boolean {
+		if (!highlightJoinTargets || !isIndexed) return false;
+		if (
+			highlightJoinTargets.sourceAlias === alias &&
+			highlightJoinTargets.sourceColumn === colName
+		) {
+			return false;
+		}
+		return true;
+	}
 
 	function removeTable(e: MouseEvent) {
 		e.stopPropagation();
@@ -90,8 +103,9 @@
 	<div class="max-h-64 overflow-y-auto py-1">
 		{#each table.columns as col, i (col.name)}
 			{@const selected = query.isColumnSelected(alias, col.name)}
+			{@const joinTarget = isJoinTarget(col.name, col.is_indexed)}
 			<div
-				class="relative flex items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-slate-50 {selected ? 'bg-sky-50' : ''}"
+				class="relative flex items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-slate-50 {selected ? 'bg-sky-50' : ''} {joinTarget ? 'bg-sky-50/70 ring-2 ring-sky-400 ring-inset' : ''}"
 				data-column-index={i}
 				data-alias={alias}
 				data-column={col.name}

@@ -7,7 +7,10 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { hydrateQueryFromSpec } from '$lib/hydrate-query';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import type { HistoryEntry } from '$lib/ir';
+
+	let showClearConfirm = $state(false);
 
 	$effect(() => {
 		if (browser) history.load();
@@ -62,10 +65,23 @@
 	}
 
 	async function handleClear() {
-		if (!confirm('Clear all query history?')) return;
+		showClearConfirm = true;
+	}
+
+	async function confirmClear() {
+		showClearConfirm = false;
 		await history.clear();
 	}
 </script>
+
+<ConfirmDialog
+	open={showClearConfirm}
+	title="Clear history?"
+	message="Clear all query history? This cannot be undone."
+	destructive
+	onConfirm={confirmClear}
+	onCancel={() => (showClearConfirm = false)}
+/>
 
 <div class="flex flex-1 flex-col overflow-hidden">
 	<div class="flex items-center justify-between border-b border-slate-200 px-8 py-5 dark:border-slate-800">

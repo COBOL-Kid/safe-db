@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import type { Settings } from '$lib/ir';
 import * as api from '$lib/api';
+import { syncWindowBackgroundColor } from '$lib/window';
 
 const defaultSettings: Settings = {
 	blocked_schemas: [],
@@ -58,6 +59,7 @@ class SettingsStore {
 	applyTheme() {
 		if (!browser) return;
 		document.documentElement.classList.toggle('dark', this.isDark);
+		void syncWindowBackgroundColor(this.settings.theme);
 	}
 }
 

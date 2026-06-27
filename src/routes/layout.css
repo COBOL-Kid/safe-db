@@ -23,3 +23,11 @@
 ::-webkit-scrollbar-thumb:hover {
 	background: rgb(148 163 184 / 0.7);
 }
+
+.tauri-drag {
+	-webkit-app-region: drag;
+}
+
+.tauri-no-drag {
+	-webkit-app-region: no-drag;
+}
