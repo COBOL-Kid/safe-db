@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { hydrateQueryFromSpec } from '$lib/hydrate-query';
+import { columnKey } from '$lib/column-keys';
+import { hydrateQueryFromSpec, formatHydrationWarning } from '$lib/hydrate-query';
 import { QueryStore } from '$lib/stores/query.svelte';
 import type { QuerySpec, TableInfo } from '$lib/ir';
 
@@ -71,8 +72,8 @@ describe('hydrateQueryFromSpec', () => {
 		expect(store.tables).toHaveLength(2);
 		expect(store.tables[0].alias).toBe('t0');
 		expect(store.tables[1].alias).toBe('t1');
-		expect(store.selectedColumns.has('t0.name')).toBe(true);
-		expect(store.selectedColumns.has('t1.name')).toBe(true);
+		expect(store.selectedColumns.has(columnKey('t0', 'name'))).toBe(true);
+		expect(store.selectedColumns.has(columnKey('t1', 'name'))).toBe(true);
 		expect(store.joins[0]).toEqual({
 			left_alias: 't0',
 			left_column: 'id',
@@ -122,13 +123,17 @@ describe('hydrateQueryFromSpec', () => {
 			connector_overrides: {}
 		};
 
-		hydrateQueryFromSpec(spec, [products], store);
+		const warnings = hydrateQueryFromSpec(spec, [products], store);
 
 		expect(store.tables).toHaveLength(1);
 		expect(store.tables[0].tableInfo.name).toBe('products');
-		expect(store.selectedColumns.has('t0.name')).toBe(true);
+		expect(store.selectedColumns.has(columnKey('t0', 'name'))).toBe(true);
 		expect(store.joins).toHaveLength(0);
 		expect(store.filters.children).toHaveLength(0);
+		expect(warnings.droppedTables).toEqual(['safedb_test.missing_a', 'safedb_test.missing_b']);
+		expect(warnings.droppedJoins).toBe(1);
+		expect(warnings.droppedFilters).toBe(true);
+		expect(formatHydrationWarning(warnings)).toContain('missing tables');
 	});
 
 	it('remaps aliases inside nested filter groups', () => {

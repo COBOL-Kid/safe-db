@@ -1,7 +1,9 @@
 use anyhow::Result;
 use oracle::sql_type::{InnerValue, ToSql};
 use oracle::{Connection, Row as OracleRow};
+use std::time::Duration;
 
+use crate::adapters::ExplainResult;
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
 
@@ -40,6 +42,19 @@ const BLOCKED_OWNERS: &[&str] = &[
     "APEX_040200",
 ];
 
+fn validate_connect_field(field: &str, label: &str) -> Result<()> {
+    if field.is_empty() {
+        anyhow::bail!("{label} must not be empty");
+    }
+    if field
+        .chars()
+        .any(|c| !(c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_'))
+    {
+        anyhow::bail!("{label} contains invalid characters");
+    }
+    Ok(())
+}
+
 pub fn connect(
     host: &str,
     port: u16,
@@ -47,7 +62,13 @@ pub fn connect(
     username: &str,
     password: &str,
 ) -> Result<Connection> {
-    let conn_str = format!("//{}:{}/{}", host, port, database);
+    validate_connect_field(host, "Host")?;
+    validate_connect_field(database, "Database")?;
+    if port == 0 {
+        anyhow::bail!("Port must be between 1 and 65535");
+    }
+
+    let conn_str = format!("//{host}:{port}/{database}");
     let conn = Connection::connect(username, password, conn_str)?;
     Ok(conn)
 }
@@ -160,13 +181,10 @@ fn introspect_indexes(conn: &Connection, schema: &str, table: &str) -> Result<Ve
     Ok(index_map.into_values().collect())
 }
 
-pub fn execute_query(
+fn bind_statement(
     conn: &Connection,
     compiled: &CompiledQuery,
-    _timeout_ms: u32,
-) -> Result<QueryResult> {
-    conn.execute("SET TRANSACTION READ ONLY", &[])?;
-
+) -> Result<oracle::Statement<'_>> {
     let mut stmt = conn.statement(&compiled.sql).build()?;
     for (i, param) in compiled.params.iter().enumerate() {
         match param {
@@ -180,35 +198,87 @@ pub fn execute_query(
             }
         }
     }
+    Ok(stmt)
+}
 
-    let rows = stmt.query(&[])?;
+pub fn execute_query(
+    conn: &Connection,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
+    let prev_timeout = conn.call_timeout()?;
+    conn.set_call_timeout(Some(Duration::from_millis(timeout_ms as u64)))?;
 
-    let mut column_names: Vec<String> = Vec::new();
-    let mut result_rows = Vec::new();
+    let result = (|| {
+        conn.execute("SET TRANSACTION READ ONLY", &[])?;
 
-    let mut first = true;
-    for row_result in rows {
-        let row = row_result?;
-        if first {
-            first = false;
-            column_names = row
-                .column_info()
-                .iter()
-                .map(|c| c.name().to_string())
-                .collect();
+        let stmt = bind_statement(conn, compiled)?;
+        let rows = stmt.query(&[])?;
+
+        let mut column_names: Vec<String> = Vec::new();
+        let mut result_rows = Vec::new();
+
+        let mut first = true;
+        for row_result in rows {
+            let row = row_result?;
+            if first {
+                first = false;
+                column_names = row
+                    .column_info()
+                    .iter()
+                    .map(|c| c.name().to_string())
+                    .collect();
+            }
+            let row_data = decode_oracle_row(&row, &column_names);
+            result_rows.push(row_data);
         }
-        let row_data = decode_oracle_row(&row, &column_names);
-        result_rows.push(row_data);
+
+        let row_count = result_rows.len();
+
+        Ok(QueryResult {
+            columns: column_names,
+            rows: result_rows,
+            row_count,
+            truncated: false,
+            warnings: Vec::new(),
+        })
+    })();
+
+    conn.set_call_timeout(prev_timeout)?;
+    result
+}
+
+pub fn explain(conn: &Connection, compiled: &CompiledQuery) -> Result<ExplainResult> {
+    let explain_sql = format!("EXPLAIN PLAN FOR {}", compiled.sql);
+    let mut stmt = conn.statement(&explain_sql).build()?;
+    for (i, param) in compiled.params.iter().enumerate() {
+        match param {
+            BindValue::Text(s) => stmt.bind(i + 1, &s.as_str())?,
+            BindValue::Int(n) => stmt.bind(i + 1, n)?,
+            BindValue::Float(f) => stmt.bind(i + 1, f)?,
+            BindValue::Bool(b) => stmt.bind(i + 1, b)?,
+            BindValue::Null => {
+                let null_val: Option<i64> = None;
+                stmt.bind(i + 1, &null_val)?;
+            }
+        }
     }
+    stmt.execute(&[])?;
 
-    let row_count = result_rows.len();
+    let cost_row = conn.query_row(
+        "SELECT MAX(cost) FROM plan_table WHERE id = 0",
+        &[],
+    )?;
+    let cost: Option<i64> = cost_row.get(0)?;
+    let cost = cost.map(|c| c as f64);
 
-    Ok(QueryResult {
-        columns: column_names,
-        rows: result_rows,
-        row_count,
-        truncated: false,
-        warnings: Vec::new(),
+    Ok(ExplainResult {
+        cost,
+        warning: if cost.is_none() {
+            Some("Could not parse EXPLAIN cost from PLAN_TABLE".to_string())
+        } else {
+            None
+        },
     })
 }
 
@@ -244,5 +314,25 @@ fn sql_value_to_json(val: &oracle::SqlValue) -> serde_json::Value {
         }
         Ok(InnerValue::Char(bytes)) => Value::String(String::from_utf8_lossy(bytes).into_owned()),
         _ => Value::Null,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_connect_field_rejects_empty_host() {
+        assert!(validate_connect_field("", "Host").is_err());
+    }
+
+    #[test]
+    fn validate_connect_field_rejects_special_chars() {
+        assert!(validate_connect_field("host;drop", "Host").is_err());
+    }
+
+    #[test]
+    fn validate_connect_field_accepts_valid_host() {
+        assert!(validate_connect_field("db.example.com", "Host").is_ok());
     }
 }

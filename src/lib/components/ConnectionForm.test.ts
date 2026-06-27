@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import ConnectionForm from '$lib/components/ConnectionForm.svelte';
 import * as api from '$lib/api';
@@ -20,6 +20,9 @@ describe('ConnectionForm', () => {
 		vi.mocked(api.saveConnection).mockResolvedValue();
 
 		render(ConnectionForm, { props: { onSaved, onCancel } });
+
+		await user.type(screen.getByLabelText('Database'), 'app');
+		await user.type(screen.getByLabelText('Username'), 'app');
 
 		await user.click(screen.getByRole('button', { name: 'Test Connection' }));
 		expect(api.testConnection).toHaveBeenCalledWith(
@@ -52,6 +55,9 @@ describe('ConnectionForm', () => {
 		vi.mocked(api.saveConnection).mockResolvedValue();
 
 		render(ConnectionForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+
+		await user.type(screen.getByLabelText('Database'), 'app');
+		await user.type(screen.getByLabelText('Username'), 'app');
 
 		const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
 		expect(passwordInput.type).toBe('password');

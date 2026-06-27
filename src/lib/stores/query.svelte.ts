@@ -10,7 +10,9 @@ import type {
 	TableInfo,
 	TableRef
 } from '$lib/ir';
-import { DEFAULT_LIMIT, MAX_LIMIT, defaultFilterGroup, newNodeId } from '$lib/ir';
+import { DEFAULT_LIMIT, defaultFilterGroup, newNodeId } from '$lib/ir';
+import { columnKey, columnKeyPrefix, parseColumnKey } from '$lib/column-keys';
+import { COST_GUARD_PREFIX, parseLimit } from '$lib/limits';
 import * as api from '$lib/api';
 
 export interface CanvasTable {
@@ -61,7 +63,7 @@ class QueryStore {
 
 		const columns: ColumnSel[] = [];
 		for (const key of this.selectedColumns) {
-			const [alias, column] = key.split('.');
+			const { alias, column } = parseColumnKey(key);
 			columns.push({ table_alias: alias, column });
 		}
 
@@ -93,7 +95,7 @@ class QueryStore {
 	removeTable(alias: string) {
 		this.tables = this.tables.filter((t) => t.alias !== alias);
 		this.selectedColumns = new Set(
-			[...this.selectedColumns].filter((k) => !k.startsWith(`${alias}.`))
+			[...this.selectedColumns].filter((k) => !k.startsWith(columnKeyPrefix(alias)))
 		);
 		this.joins = this.joins.filter(
 			(j) => j.left_alias !== alias && j.right_alias !== alias
@@ -109,7 +111,7 @@ class QueryStore {
 	}
 
 	toggleColumn(alias: string, column: string) {
-		const key = `${alias}.${column}`;
+		const key = columnKey(alias, column);
 		const next = new Set(this.selectedColumns);
 		if (next.has(key)) {
 			next.delete(key);
@@ -120,7 +122,7 @@ class QueryStore {
 	}
 
 	isColumnSelected(alias: string, column: string): boolean {
-		return this.selectedColumns.has(`${alias}.${column}`);
+		return this.selectedColumns.has(columnKey(alias, column));
 	}
 
 	addJoin(join: JoinSpec) {
@@ -244,21 +246,35 @@ class QueryStore {
 	}
 
 	setLimit(limit: number) {
-		this.limit = Math.min(Math.max(1, limit), MAX_LIMIT);
+		this.limit = parseLimit(limit);
 	}
 
-	async run(connectionId: string) {
+	pendingCostGuard = $state(false);
+	hydrationWarning = $state<string | null>(null);
+
+	async run(connectionId: string, force = false) {
 		if (!this.canRun) return;
 		this.running = true;
 		this.error = null;
 		this.results = null;
+		this.pendingCostGuard = false;
 		try {
-			this.results = await api.runQuery(connectionId, this.spec);
+			this.results = await api.runQuery(connectionId, this.spec, force);
 		} catch (e) {
-			this.error = String(e);
+			const message = String(e);
+			if (!force && message.startsWith(COST_GUARD_PREFIX)) {
+				this.pendingCostGuard = true;
+				this.error = message.slice(COST_GUARD_PREFIX.length);
+			} else {
+				this.error = message;
+			}
 		} finally {
 			this.running = false;
 		}
+	}
+
+	async runForced(connectionId: string) {
+		await this.run(connectionId, true);
 	}
 
 	clear() {
@@ -270,6 +286,8 @@ class QueryStore {
 		this.results = null;
 		this.error = null;
 		this.running = false;
+		this.pendingCostGuard = false;
+		this.hydrationWarning = null;
 		this.aliasCounter = 0;
 		this.connectorOverrides = {};
 	}

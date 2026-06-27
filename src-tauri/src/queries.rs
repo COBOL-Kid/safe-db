@@ -1,11 +1,12 @@
 use anyhow::Result;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::query::ir::{FilterOp, QuerySpec, CURRENT_SCHEMA_VERSION};
+use crate::persist::atomic_write;
+use crate::query::ir::{CURRENT_SCHEMA_VERSION, FilterOp, QuerySpec};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedQuery {
@@ -113,9 +114,7 @@ impl QueryStore {
                 continue;
             }
             // Not valid v2 — attempt a v1→v2 migration.
-            match migrate_v1_entry(v)
-                .and_then(|m| serde_json::from_value::<T>(m).ok())
-            {
+            match migrate_v1_entry(v).and_then(|m| serde_json::from_value::<T>(m).ok()) {
                 Some(item) => {
                     valid.push(item);
                     migrated_count += 1;
@@ -153,9 +152,9 @@ impl QueryStore {
         Ok(valid)
     }
 
-    fn write_json<T: Serialize>(&self, path: &PathBuf, data: &T) -> Result<()> {
+    fn write_json<T: Serialize>(&self, path: &std::path::Path, data: &T) -> Result<()> {
         let json = serde_json::to_string_pretty(data)?;
-        fs::write(path, json)?;
+        atomic_write(path, &json)?;
         Ok(())
     }
 }
@@ -187,9 +186,9 @@ fn migrate_v1_entry(v: Value) -> Option<Value> {
     let mut children: Vec<Value> = Vec::with_capacity(filters_arr.len());
     for f in filters_arr {
         let v1: FilterSpecV1 = serde_json::from_value(f).ok()?;
-        let value = v1.value.map(|text| {
-            serde_json::json!({ "Single": { "kind": "Text", "text": text } })
-        });
+        let value = v1
+            .value
+            .map(|text| serde_json::json!({ "Single": { "kind": "Text", "text": text } }));
         let op = serde_json::to_value(v1.op).ok()?;
         children.push(serde_json::json!({
             "Leaf": {
@@ -213,4 +212,163 @@ fn migrate_v1_entry(v: Value) -> Option<Value> {
 
     obj.insert("spec".to_string(), Value::Object(new_spec));
     Some(Value::Object(obj))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::ir::{FilterNode, FilterValue, GroupConnector, LiteralKind};
+    use serde_json::json;
+    use tempfile::TempDir;
+
+    fn empty_spec() -> QuerySpec {
+        QuerySpec {
+            tables: vec![],
+            columns: vec![],
+            joins: vec![],
+            filters: Default::default(),
+            limit: 100,
+            schema_version: CURRENT_SCHEMA_VERSION,
+            connector_overrides: Default::default(),
+        }
+    }
+
+    fn saved(id: &str) -> SavedQuery {
+        SavedQuery {
+            id: id.to_string(),
+            name: format!("Saved {id}"),
+            connection_id: "c1".to_string(),
+            spec: empty_spec(),
+            created_at: "1700000000".to_string(),
+        }
+    }
+
+    #[test]
+    fn saved_helper_is_consistent() {
+        // The helper is the single source of truth for SavedQuery shape in
+        // the inline tests; pin it so any future change to the struct trips
+        // here first.
+        let s = saved("q1");
+        assert_eq!(s.id, "q1");
+        assert_eq!(s.name, "Saved q1");
+        assert_eq!(s.connection_id, "c1");
+        assert_eq!(s.created_at, "1700000000");
+    }
+
+    fn history(id: &str) -> HistoryEntry {
+        HistoryEntry {
+            id: id.to_string(),
+            connection_id: "c1".to_string(),
+            connection_name: "Test DB".to_string(),
+            spec: empty_spec(),
+            row_count: 0,
+            warnings: vec![],
+            error: None,
+            timestamp: "1700000000".to_string(),
+        }
+    }
+
+    #[test]
+    fn add_history_creates_file_and_prepends_entries() {
+        let dir = TempDir::new().unwrap();
+        let store = QueryStore::new(dir.path().to_path_buf());
+
+        // First add on a fresh directory should create the file.
+        assert!(!dir.path().join("query_history.json").exists());
+        store.add_history(history("h1")).unwrap();
+        assert!(dir.path().join("query_history.json").exists());
+
+        store.add_history(history("h2")).unwrap();
+
+        let listed = store.list_history().unwrap();
+        // Newer entries come first.
+        assert_eq!(listed.first().unwrap().id, "h2");
+        assert_eq!(listed.last().unwrap().id, "h1");
+    }
+
+    #[test]
+    fn add_history_caps_at_max_history_with_newest_first() {
+        let dir = TempDir::new().unwrap();
+        let store = QueryStore::new(dir.path().to_path_buf());
+
+        for i in 0..105 {
+            store.add_history(history(&format!("h{i}"))).unwrap();
+        }
+
+        let listed = store.list_history().unwrap();
+        assert_eq!(listed.len(), 100);
+        // h104 is the most recent.
+        assert_eq!(listed.first().unwrap().id, "h104");
+        // h0 was dropped.
+        assert!(listed.iter().all(|e| e.id != "h0"));
+    }
+
+    #[test]
+    fn clear_history_empties_the_list_and_writes_empty_array() {
+        let dir = TempDir::new().unwrap();
+        let store = QueryStore::new(dir.path().to_path_buf());
+        store.add_history(history("h1")).unwrap();
+        store.add_history(history("h2")).unwrap();
+
+        store.clear_history().unwrap();
+
+        assert!(store.list_history().unwrap().is_empty());
+        let content = fs::read_to_string(dir.path().join("query_history.json")).unwrap();
+        let parsed: Vec<HistoryEntry> = serde_json::from_str(&content).unwrap();
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn migrate_v1_entry_returns_none_for_non_v1_shaped_input() {
+        // Empty object, non-object, and objects without a `spec.filters` array
+        // should all return None so the caller preserves them on disk.
+        assert!(migrate_v1_entry(json!({})).is_none());
+        assert!(migrate_v1_entry(json!([])).is_none());
+        assert!(migrate_v1_entry(json!({ "spec": {} })).is_none());
+        assert!(
+            migrate_v1_entry(
+                json!({ "spec": { "filters": { "connector": "And", "children": [] } } })
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn migrate_v1_entry_converts_filters_array_into_group() {
+        let v1 = json!({
+            "id": "q1",
+            "name": "old",
+            "connection_id": "c1",
+            "spec": {
+                "tables": [],
+                "columns": [],
+                "joins": [],
+                "filters": [
+                    { "table_alias": "t0", "column": "age", "op": "Gt", "value": "21" }
+                ],
+                "limit": 100
+            },
+            "created_at": "1700000000"
+        });
+
+        let migrated = migrate_v1_entry(v1).expect("looks like v1");
+        let parsed: SavedQuery = serde_json::from_value(migrated).expect("parses as v2");
+
+        assert_eq!(parsed.spec.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(parsed.spec.filters.connector, GroupConnector::And);
+        assert_eq!(parsed.spec.filters.children.len(), 1);
+
+        // The single leaf should be a Gt on age with a Text literal "21".
+        let leaf = &parsed.spec.filters.children[0];
+        let FilterNode::Leaf(spec) = leaf else {
+            panic!("expected Leaf")
+        };
+        assert_eq!(spec.column, "age");
+        assert_eq!(spec.op, FilterOp::Gt);
+        let FilterValue::Single(lit) = spec.value.as_ref().expect("value present") else {
+            panic!("expected Single")
+        };
+        assert_eq!(lit.kind, LiteralKind::Text);
+        assert_eq!(lit.text, "21");
+    }
 }

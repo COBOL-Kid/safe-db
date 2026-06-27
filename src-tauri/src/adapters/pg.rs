@@ -159,14 +159,7 @@ pub async fn execute_query(
     let row_count = rows.len();
 
     let columns: Vec<String> = if rows.is_empty() {
-        let describe = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()))
-            .fetch_optional(&mut *tx)
-            .await?;
-        if let Some(row) = describe {
-            row.columns().iter().map(|c| c.name().to_string()).collect()
-        } else {
-            Vec::new()
-        }
+        columns_from_compiled_sql(&compiled.sql)
     } else {
         rows[0]
             .columns()
@@ -198,36 +191,89 @@ pub async fn execute_query(
 
 fn decode_pg_value(row: &sqlx::postgres::PgRow, i: usize, type_name: &str) -> serde_json::Value {
     use serde_json::Value;
-    match type_name {
-        "BOOL" | "BOOLEAN" => row
+    match classify_pg_type(type_name) {
+        PgTypeKind::Bool => row
             .try_get::<Option<bool>, _>(i)
             .map(|v| v.map(Value::Bool).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "INT2" | "SMALLSERIAL" | "SMALLINT" => row
+        PgTypeKind::SmallInt => row
             .try_get::<Option<i16>, _>(i)
             .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "INT4" | "SERIAL" | "INTEGER" | "INT" => row
+        PgTypeKind::Int => row
             .try_get::<Option<i32>, _>(i)
             .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "INT8" | "BIGSERIAL" | "BIGINT" => row
+        PgTypeKind::BigInt => row
             .try_get::<Option<i64>, _>(i)
             .map(|v| v.map(Value::from).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "FLOAT4" | "REAL" => row
+        PgTypeKind::Float => row
             .try_get::<Option<f32>, _>(i)
             .map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "FLOAT8" | "DOUBLE PRECISION" => row
+        PgTypeKind::Double => row
             .try_get::<Option<f64>, _>(i)
             .map(|v| v.map(Value::from).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        _ => row
+        PgTypeKind::Text => row
             .try_get::<Option<String>, _>(i)
             .map(|v| v.map(Value::String).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PgTypeKind {
+    Bool,
+    SmallInt,
+    Int,
+    BigInt,
+    Float,
+    Double,
+    Text,
+}
+
+fn classify_pg_type(type_name: &str) -> PgTypeKind {
+    match type_name {
+        "BOOL" | "BOOLEAN" => PgTypeKind::Bool,
+        "INT2" | "SMALLSERIAL" | "SMALLINT" => PgTypeKind::SmallInt,
+        "INT4" | "SERIAL" | "INTEGER" | "INT" => PgTypeKind::Int,
+        "INT8" | "BIGSERIAL" | "BIGINT" => PgTypeKind::BigInt,
+        "FLOAT4" | "REAL" => PgTypeKind::Float,
+        "FLOAT8" | "DOUBLE PRECISION" => PgTypeKind::Double,
+        _ => PgTypeKind::Text,
+    }
+}
+
+/// Infer result column labels from a compiled SELECT without re-executing the query.
+fn columns_from_compiled_sql(sql: &str) -> Vec<String> {
+    let upper = sql.to_uppercase();
+    let Some(from_idx) = upper.find(" FROM ") else {
+        return Vec::new();
+    };
+    let Some(select_idx) = upper.find("SELECT") else {
+        return Vec::new();
+    };
+    let select_list = sql[select_idx + "SELECT".len()..from_idx].trim();
+    if select_list == "*" {
+        return Vec::new();
+    }
+
+    select_list
+        .split(',')
+        .map(|part| {
+            let part = part.trim();
+            let upper_part = part.to_uppercase();
+            if let Some(as_idx) = upper_part.rfind(" AS ") {
+                part[as_idx + 4..].trim().trim_matches('"').to_string()
+            } else if let Some(dot) = part.rfind('.') {
+                part[dot + 1..].trim().trim_matches('"').to_string()
+            } else {
+                part.trim_matches('"').to_string()
+            }
+        })
+        .collect()
 }
 
 pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainResult> {
@@ -258,4 +304,45 @@ pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainR
         cost,
         warning: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_pg_type_bool_aliases() {
+        assert_eq!(classify_pg_type("BOOL"), PgTypeKind::Bool);
+        assert_eq!(classify_pg_type("BOOLEAN"), PgTypeKind::Bool);
+    }
+
+    #[test]
+    fn classify_pg_type_integer_aliases() {
+        assert_eq!(classify_pg_type("INT2"), PgTypeKind::SmallInt);
+        assert_eq!(classify_pg_type("SMALLSERIAL"), PgTypeKind::SmallInt);
+        assert_eq!(classify_pg_type("SMALLINT"), PgTypeKind::SmallInt);
+        assert_eq!(classify_pg_type("INT4"), PgTypeKind::Int);
+        assert_eq!(classify_pg_type("SERIAL"), PgTypeKind::Int);
+        assert_eq!(classify_pg_type("INTEGER"), PgTypeKind::Int);
+        assert_eq!(classify_pg_type("INT"), PgTypeKind::Int);
+        assert_eq!(classify_pg_type("INT8"), PgTypeKind::BigInt);
+        assert_eq!(classify_pg_type("BIGSERIAL"), PgTypeKind::BigInt);
+        assert_eq!(classify_pg_type("BIGINT"), PgTypeKind::BigInt);
+    }
+
+    #[test]
+    fn classify_pg_type_float_aliases() {
+        assert_eq!(classify_pg_type("FLOAT4"), PgTypeKind::Float);
+        assert_eq!(classify_pg_type("REAL"), PgTypeKind::Float);
+        assert_eq!(classify_pg_type("FLOAT8"), PgTypeKind::Double);
+        assert_eq!(classify_pg_type("DOUBLE PRECISION"), PgTypeKind::Double);
+    }
+
+    #[test]
+    fn classify_pg_type_unknown_falls_back_to_text() {
+        assert_eq!(classify_pg_type("UUID"), PgTypeKind::Text);
+        assert_eq!(classify_pg_type("JSONB"), PgTypeKind::Text);
+        assert_eq!(classify_pg_type(""), PgTypeKind::Text);
+        assert_eq!(classify_pg_type("VARCHAR"), PgTypeKind::Text);
+    }
 }

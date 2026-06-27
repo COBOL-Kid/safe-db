@@ -9,6 +9,19 @@
 	import FilterBuilder from '$lib/components/FilterBuilder.svelte';
 	import { browser } from '$app/environment';
 	import { MAX_LIMIT, type TableInfo } from '$lib/ir';
+	import { parseLimit } from '$lib/limits';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import PromptDialog from '$lib/components/PromptDialog.svelte';
+
+	let showCostGuardConfirm = $state(false);
+	let showSavePrompt = $state(false);
+	let saveQueryName = $state('');
+
+	$effect(() => {
+		if (query.pendingCostGuard) {
+			showCostGuardConfirm = true;
+		}
+	});
 
 	$effect(() => {
 		if (browser && connections.activeId && !schema.schema && !schema.loading) {
@@ -43,15 +56,28 @@
 
 	async function handleSaveQuery() {
 		if (!connections.activeId) return;
-		const name = prompt('Name this query:', `Query on ${query.tables.map((t) => t.tableInfo.name).join(', ')}`);
-		if (!name) return;
+		saveQueryName = `Query on ${query.tables.map((t) => t.tableInfo.name).join(', ')}`;
+		showSavePrompt = true;
+	}
+
+	async function confirmSaveQuery() {
+		if (!connections.activeId || !saveQueryName.trim()) return;
 		await savedQueries.save({
 			id: crypto.randomUUID(),
-			name,
+			name: saveQueryName.trim(),
 			connection_id: connections.activeId,
 			spec: query.spec,
 			created_at: Date.now().toString()
 		});
+		showSavePrompt = false;
+	}
+
+	async function confirmCostGuardRun() {
+		showCostGuardConfirm = false;
+		query.pendingCostGuard = false;
+		if (connections.activeId) {
+			await query.runForced(connections.activeId);
+		}
 	}
 
 	let resultsHeight = $state(240);
@@ -77,6 +103,29 @@
 </script>
 
 <svelte:window onmousemove={handleResize} onmouseup={stopResize} />
+
+<ConfirmDialog
+	open={showCostGuardConfirm}
+	title="Query blocked by safety guard"
+	message={query.error ?? 'This query may be expensive or could not be estimated. Run anyway?'}
+	confirmLabel="Run anyway"
+	onConfirm={confirmCostGuardRun}
+	onCancel={() => {
+		showCostGuardConfirm = false;
+		query.pendingCostGuard = false;
+	}}
+/>
+
+<PromptDialog
+	bind:open={showSavePrompt}
+	bind:value={saveQueryName}
+	title="Save query"
+	message="Choose a name for this query."
+	placeholder="Query name"
+	confirmLabel="Save"
+	onConfirm={confirmSaveQuery}
+	onCancel={() => (showSavePrompt = false)}
+/>
 
 <div class="flex flex-1 flex-col overflow-hidden">
 	<div class="flex items-center justify-between border-b border-slate-200 px-6 py-3 dark:border-slate-800">
@@ -104,7 +153,7 @@
 						min="1"
 						max={MAX_LIMIT}
 						value={query.limit}
-						oninput={(e) => query.setLimit(parseInt(e.currentTarget.value) || 1)}
+						oninput={(e) => query.setLimit(parseLimit(e.currentTarget.value))}
 						class="w-16 rounded border border-slate-200 px-2 py-0.5 text-sm outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800"
 					/>
 				</div>
@@ -161,6 +210,19 @@
 				</aside>
 
 				<div class="flex flex-1 flex-col overflow-hidden">
+				{#if query.hydrationWarning}
+					<div class="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+						{query.hydrationWarning}
+						<button
+							type="button"
+							onclick={() => (query.hydrationWarning = null)}
+							class="ml-2 text-amber-600 underline hover:text-amber-800 dark:text-amber-300"
+						>
+							Dismiss
+						</button>
+					</div>
+				{/if}
+
 				{#if query.joins.length > 0}
 					<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
 						{#each query.joins as join, i (i)}

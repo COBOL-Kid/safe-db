@@ -21,8 +21,12 @@ export async function getSchema(connectionId: string): Promise<Schema> {
 	return invoke<Schema>('get_schema', { connectionId });
 }
 
-export async function runQuery(connectionId: string, spec: QuerySpec): Promise<QueryResult> {
-	return invoke<QueryResult>('run_query', { connectionId, spec });
+export async function runQuery(
+	connectionId: string,
+	spec: QuerySpec,
+	force = false
+): Promise<QueryResult> {
+	return invoke<QueryResult>('run_query', { connectionId, spec, force });
 }
 
 export async function listSavedQueries(): Promise<SavedQuery[]> {

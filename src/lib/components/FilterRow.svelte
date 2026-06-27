@@ -8,6 +8,7 @@
 		literalKindForColumn,
 		opLabel
 	} from '$lib/ir';
+	import { MAX_IN_LIST_SIZE } from '$lib/limits';
 
 	let {
 		filter,
@@ -134,6 +135,7 @@
 
 	function addListItem() {
 		if (!filter.value || !('List' in filter.value)) return;
+		if (filter.value.List.length >= MAX_IN_LIST_SIZE) return;
 		const kind = filter.value.List[0]?.kind ?? 'Text';
 		update({ ...filter, value: { List: [...filter.value.List, { kind, text: '' }] } });
 	}

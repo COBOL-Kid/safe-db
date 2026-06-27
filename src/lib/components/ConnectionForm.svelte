@@ -40,7 +40,22 @@
 		};
 	}
 
+	function validateForm(): string | null {
+		if (!host.trim()) return 'Host is required';
+		if (!database.trim()) return 'Database is required';
+		if (!username.trim()) return 'Username is required';
+		if (!Number.isFinite(port) || port < 1 || port > 65535) {
+			return 'Port must be between 1 and 65535';
+		}
+		return null;
+	}
+
 	async function handleTest() {
+		const validationError = validateForm();
+		if (validationError) {
+			testError = validationError;
+			return;
+		}
 		testing = true;
 		testResult = null;
 		testError = null;
@@ -56,11 +71,18 @@
 	}
 
 	async function handleSave() {
+		const validationError = validateForm();
+		if (validationError) {
+			formError = validationError;
+			return;
+		}
 		saving = true;
 		formError = null;
 		try {
 			const def = buildDef();
 			await api.saveConnection(def, password);
+			password = '';
+			showPassword = false;
 			onSaved();
 		} catch (e) {
 			formError = String(e);

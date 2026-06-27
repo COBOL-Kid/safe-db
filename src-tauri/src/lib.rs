@@ -1,6 +1,7 @@
 pub mod adapters;
 mod commands;
 pub mod config;
+mod persist;
 pub mod introspect;
 pub mod queries;
 pub mod query;

@@ -46,6 +46,36 @@ PASSWORD="${SAFEDB_TEST_MYSQL_PASSWORD:-}"
 DATABASE="${SAFEDB_TEST_MYSQL_DATABASE:-safedb_test}"
 DOCKER_PIN="${SAFEDB_TEST_MYSQL_DOCKER:-}"
 
+sanitize_identifier() {
+  local val="$1"
+  local label="$2"
+  if [[ ! "$val" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "error: invalid $label (allowed: letters, digits, ., _, -)" >&2
+    exit 1
+  fi
+}
+
+sanitize_config_value() {
+  local val="$1"
+  local label="$2"
+  if [[ "$val" == *$'\n'* || "$val" == *$'\r'* ]]; then
+    echo "error: invalid $label (must not contain newlines)" >&2
+    exit 1
+  fi
+}
+
+sanitize_identifier "$DATABASE" "SAFEDB_TEST_MYSQL_DATABASE"
+sanitize_identifier "$HOST" "SAFEDB_TEST_MYSQL_HOST"
+sanitize_identifier "$USER_NAME" "SAFEDB_TEST_MYSQL_USER"
+sanitize_config_value "$PASSWORD" "SAFEDB_TEST_MYSQL_PASSWORD"
+if [[ -n "$DOCKER_PIN" ]]; then
+  sanitize_identifier "$DOCKER_PIN" "SAFEDB_TEST_MYSQL_DOCKER"
+fi
+if [[ ! "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
+  echo "error: invalid SAFEDB_TEST_MYSQL_PORT (must be 1-65535)" >&2
+  exit 1
+fi
+
 usage() {
   sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"

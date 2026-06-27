@@ -5,8 +5,11 @@
 	import { query } from '$lib/stores/query.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { hydrateQueryFromSpec } from '$lib/hydrate-query';
+	import { hydrateQueryFromSpec, formatHydrationWarning } from '$lib/hydrate-query';
 	import type { SavedQuery } from '$lib/ir';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+
+	let deleteTargetId = $state<string | null>(null);
 
 	const actions = [
 		{ href: '/connections', title: 'New Connection', desc: 'Connect to a database', icon: 'M12 5v14M5 12h14' },
@@ -30,14 +33,31 @@
 		schema.clear();
 		await schema.load(sq.connection_id);
 
-		hydrateQueryFromSpec(sq.spec, schema.tables, query);
+		const hydration = hydrateQueryFromSpec(sq.spec, schema.tables, query);
+		query.hydrationWarning = formatHydrationWarning(hydration);
 		goto('/builder');
 	}
 
-	async function deleteSaved(id: string) {
-		await savedQueries.remove(id);
+	function requestDeleteSaved(id: string) {
+		deleteTargetId = id;
+	}
+
+	async function confirmDeleteSaved() {
+		if (deleteTargetId) {
+			await savedQueries.remove(deleteTargetId);
+			deleteTargetId = null;
+		}
 	}
 </script>
+
+<ConfirmDialog
+	open={deleteTargetId !== null}
+	title="Delete saved query?"
+	message="This saved query will be permanently removed."
+	destructive
+	onConfirm={confirmDeleteSaved}
+	onCancel={() => (deleteTargetId = null)}
+/>
 
 <div class="flex flex-1 flex-col overflow-y-auto">
 	<div class="mx-auto w-full max-w-4xl px-8 py-12">
@@ -75,7 +95,7 @@
 							</button>
 							<button
 								type="button"
-								onclick={() => deleteSaved(sq.id)}
+								onclick={() => requestDeleteSaved(sq.id)}
 								class="ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-300 opacity-0 transition-all hover:text-red-500 group-hover:opacity-100"
 								aria-label="Delete saved query"
 							>

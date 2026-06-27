@@ -5,6 +5,7 @@
 	import { opsForColumn, literalKindForColumn, valueKindForOp } from '$lib/ir';
 	import FilterRow from './FilterRow.svelte';
 	import FilterGroupCard from './FilterGroupCard.svelte';
+	import { MAX_FILTER_DEPTH } from '$lib/limits';
 
 	let {
 		group,
@@ -71,6 +72,8 @@
 	let borderClass = $derived(
 		depth === 0 ? '' : 'border border-slate-200 rounded-lg dark:border-slate-700'
 	);
+
+	let atMaxDepth = $derived(depth >= MAX_FILTER_DEPTH - 1);
 </script>
 
 <div class="flex flex-col gap-1.5 {bgClass} {borderClass} p-1.5">
@@ -116,7 +119,9 @@
 		<button
 			type="button"
 			onclick={addGroup}
-			class="flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2.5 py-0.5 text-xs text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-600 dark:border-slate-600 dark:text-slate-500 dark:hover:border-slate-500 dark:hover:text-slate-300"
+			disabled={atMaxDepth}
+			title={atMaxDepth ? `Maximum nesting depth is ${MAX_FILTER_DEPTH}` : undefined}
+			class="flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2.5 py-0.5 text-xs text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:text-slate-500 dark:hover:border-slate-500 dark:hover:text-slate-300"
 		>
 			<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></svg>
 			Group

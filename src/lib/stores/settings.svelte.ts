@@ -45,10 +45,10 @@ class SettingsStore {
 	}
 
 	async addBlockedSchema(schema: string) {
-		if (!this.settings.blocked_schemas.includes(schema)) {
-			this.settings.blocked_schemas = [...this.settings.blocked_schemas, schema];
-			await this.save();
-		}
+		const normalized = schema.trim().toLowerCase();
+		if (!normalized || this.settings.blocked_schemas.includes(normalized)) return;
+		this.settings.blocked_schemas = [...this.settings.blocked_schemas, normalized];
+		await this.save();
 	}
 
 	async removeBlockedSchema(schema: string) {

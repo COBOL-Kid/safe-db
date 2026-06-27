@@ -6,62 +6,48 @@
 	import { savedQueries } from '$lib/stores/saved-queries.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { hydrateQueryFromSpec } from '$lib/hydrate-query';
+	import { hydrateQueryFromSpec, formatHydrationWarning } from '$lib/hydrate-query';
+	import { formatTime, summarizeSpec } from '$lib/format';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import PromptDialog from '$lib/components/PromptDialog.svelte';
 	import type { HistoryEntry } from '$lib/ir';
 
 	let showClearConfirm = $state(false);
+	let showSavePrompt = $state(false);
+	let saveQueryName = $state('');
+	let saveEntry = $state<HistoryEntry | null>(null);
 
 	$effect(() => {
 		if (browser) history.load();
 	});
-
-	function formatTime(ts: string): string {
-		const sec = parseInt(ts);
-		if (isNaN(sec)) return '';
-		const d = new Date(sec * 1000);
-		const now = new Date();
-		const diff = now.getTime() - d.getTime();
-		const mins = Math.floor(diff / 60000);
-		const hours = Math.floor(diff / 3600000);
-		const days = Math.floor(diff / 86400000);
-		if (mins < 1) return 'just now';
-		if (mins < 60) return `${mins}m ago`;
-		if (hours < 24) return `${hours}h ago`;
-		if (days < 7) return `${days}d ago`;
-		return d.toLocaleDateString();
-	}
-
-	function summarizeSpec(entry: HistoryEntry): string {
-		const tables = entry.spec.tables.map((t) => t.name).join(', ');
-		const cols = entry.spec.columns.length;
-		const joins = entry.spec.joins.length;
-		const parts = [tables];
-		if (cols > 0) parts.push(`${cols} col${cols !== 1 ? 's' : ''}`);
-		if (joins > 0) parts.push(`${joins} join${joins !== 1 ? 's' : ''}`);
-		parts.push(`limit ${entry.spec.limit}`);
-		return parts.join(' · ');
-	}
 
 	async function rerun(entry: HistoryEntry) {
 		connections.setActive(entry.connection_id);
 		schema.clear();
 		await schema.load(entry.connection_id);
 
-		hydrateQueryFromSpec(entry.spec, schema.tables, query);
+		const hydration = hydrateQueryFromSpec(entry.spec, schema.tables, query);
+		query.hydrationWarning = formatHydrationWarning(hydration);
 		goto('/builder');
 	}
 
-	async function saveAsQuery(entry: HistoryEntry) {
-		const name = prompt('Name this query:', `${entry.connection_name} query`);
-		if (!name) return;
+	function openSavePrompt(entry: HistoryEntry) {
+		saveEntry = entry;
+		saveQueryName = `${entry.connection_name} query`;
+		showSavePrompt = true;
+	}
+
+	async function confirmSaveQuery() {
+		if (!saveEntry || !saveQueryName.trim()) return;
 		await savedQueries.save({
 			id: crypto.randomUUID(),
-			name,
-			connection_id: entry.connection_id,
-			spec: entry.spec,
+			name: saveQueryName.trim(),
+			connection_id: saveEntry.connection_id,
+			spec: saveEntry.spec,
 			created_at: Date.now().toString()
 		});
+		showSavePrompt = false;
+		saveEntry = null;
 	}
 
 	async function handleClear() {
@@ -81,6 +67,20 @@
 	destructive
 	onConfirm={confirmClear}
 	onCancel={() => (showClearConfirm = false)}
+/>
+
+<PromptDialog
+	bind:open={showSavePrompt}
+	bind:value={saveQueryName}
+	title="Save query"
+	message="Choose a name for this query."
+	placeholder="Query name"
+	confirmLabel="Save"
+	onConfirm={confirmSaveQuery}
+	onCancel={() => {
+		showSavePrompt = false;
+		saveEntry = null;
+	}}
 />
 
 <div class="flex flex-1 flex-col overflow-hidden">
@@ -153,7 +153,7 @@
 								{#if !entry.error}
 									<button
 										type="button"
-										onclick={() => saveAsQuery(entry)}
+										onclick={() => openSavePrompt(entry)}
 										class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
 										aria-label="Save as query"
 										title="Save as query"

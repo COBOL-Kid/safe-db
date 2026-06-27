@@ -1,8 +1,11 @@
 use anyhow::Result;
+use std::time::Duration;
 use tiberius::{AuthMethod, Client, ColumnData, Config};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
+use crate::adapters::ExplainResult;
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
 
@@ -20,6 +23,7 @@ pub async fn connect(
     config.port(port);
     config.database(database);
     config.authentication(AuthMethod::sql_server(username, password));
+    config.readonly(true);
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
@@ -171,28 +175,19 @@ async fn introspect_indexes(
     Ok(index_map.into_values().collect())
 }
 
-pub async fn execute_query(
+enum OwnedParam {
+    Str(String),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Null,
+}
+
+async fn query_with_params(
     client: &mut MssqlClient,
     compiled: &CompiledQuery,
-    timeout_ms: u32,
-) -> Result<QueryResult> {
-    client
-        .execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", &[])
-        .await?;
-
-    client
-        .execute(&format!("SET LOCK_TIMEOUT {}", timeout_ms), &[])
-        .await?;
-
+) -> Result<Vec<tiberius::Row>> {
     use tiberius::ToSql;
-
-    enum OwnedParam {
-        Str(String),
-        Int(i64),
-        Float(f64),
-        Bool(bool),
-        Null,
-    }
 
     let null_val: Option<i64> = None;
     let owned: Vec<OwnedParam> = compiled
@@ -223,32 +218,111 @@ pub async fn execute_query(
         .await?
         .into_first_result()
         .await?;
+    Ok(rows)
+}
 
-    let row_count = rows.len();
+pub async fn execute_query(
+    client: &mut MssqlClient,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
+    let duration = Duration::from_millis(timeout_ms as u64);
+    timeout(duration, execute_query_inner(client, compiled, timeout_ms))
+        .await
+        .map_err(|_| anyhow::anyhow!("Query timed out after {timeout_ms}ms"))?
+}
 
-    let columns: Vec<String> = if rows.is_empty() {
-        Vec::new()
-    } else {
-        rows[0]
-            .columns()
-            .iter()
-            .map(|c| c.name().to_string())
-            .collect()
-    };
+async fn execute_query_inner(
+    client: &mut MssqlClient,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
+    client.execute("BEGIN TRANSACTION", &[]).await?;
 
-    let mut result_rows = Vec::new();
-    for row in rows {
-        let row_data: Vec<serde_json::Value> = row.into_iter().map(decode_mssql_value).collect();
-        result_rows.push(row_data);
+    let inner = async {
+        client.execute("SET TRANSACTION READ ONLY", &[]).await?;
+        client
+            .execute(&format!("SET LOCK_TIMEOUT {timeout_ms}"), &[])
+            .await?;
+
+        let rows = query_with_params(client, compiled).await?;
+        let row_count = rows.len();
+
+        let columns: Vec<String> = if rows.is_empty() {
+            Vec::new()
+        } else {
+            rows[0]
+                .columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect()
+        };
+
+        let mut result_rows = Vec::new();
+        for row in rows {
+            let row_data: Vec<serde_json::Value> =
+                row.into_iter().map(decode_mssql_value).collect();
+            result_rows.push(row_data);
+        }
+
+        client.execute("COMMIT TRANSACTION", &[]).await?;
+
+        Ok(QueryResult {
+            columns,
+            rows: result_rows,
+            row_count,
+            truncated: false,
+            warnings: Vec::new(),
+        })
     }
+    .await;
 
-    Ok(QueryResult {
-        columns,
-        rows: result_rows,
-        row_count,
-        truncated: false,
-        warnings: Vec::new(),
+    match inner {
+        Err(e) => {
+            let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+            Err(e)
+        }
+        Ok(result) => Ok(result),
+    }
+}
+
+pub async fn explain(client: &mut MssqlClient, compiled: &CompiledQuery) -> Result<ExplainResult> {
+    client.execute("SET SHOWPLAN_XML ON", &[]).await?;
+
+    let plan_result = query_with_params(client, compiled).await;
+    client.execute("SET SHOWPLAN_XML OFF", &[]).await?;
+
+    let rows = plan_result?;
+    let xml: String = rows
+        .into_iter()
+        .filter_map(|row| {
+            row.into_iter().find_map(|cell| match cell {
+                ColumnData::String(Some(s)) => Some(s.into_owned()),
+                _ => None,
+            })
+        })
+        .collect();
+
+    let cost = parse_showplan_cost(&xml);
+    Ok(ExplainResult {
+        cost,
+        warning: if cost.is_none() {
+            Some("Could not parse EXPLAIN cost from SHOWPLAN_XML".to_string())
+        } else {
+            None
+        },
     })
+}
+
+fn parse_showplan_cost(xml: &str) -> Option<f64> {
+    for marker in ["StatementSubTreeCost=\"", "StatementSubTree Cost=\""] {
+        if let Some(start) = xml.find(marker) {
+            let rest = &xml[start + marker.len()..];
+            let end = rest.find('"')?;
+            return rest[..end].parse().ok();
+        }
+    }
+    None
 }
 
 fn decode_mssql_value(cell: ColumnData<'static>) -> serde_json::Value {
@@ -262,5 +336,21 @@ fn decode_mssql_value(cell: ColumnData<'static>) -> serde_json::Value {
         ColumnData::F64(Some(v)) => Value::from(v),
         ColumnData::String(Some(s)) => Value::String(s.into_owned()),
         _ => Value::Null,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_showplan_cost_extracts_subtree_cost() {
+        let xml = r#"<StmtSimple StatementSubTreeCost="12.5" />"#;
+        assert_eq!(parse_showplan_cost(xml), Some(12.5));
+    }
+
+    #[test]
+    fn parse_showplan_cost_returns_none_for_missing_marker() {
+        assert_eq!(parse_showplan_cost("<Plan />"), None);
     }
 }

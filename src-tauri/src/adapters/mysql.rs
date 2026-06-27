@@ -202,35 +202,58 @@ pub async fn execute_query(
 
 fn decode_mysql_value(row: &sqlx::mysql::MySqlRow, i: usize, type_name: &str) -> serde_json::Value {
     use serde_json::Value;
-    match type_name {
-        "BOOLEAN" | "BOOL" | "TINYINT" => row
+    match classify_mysql_type(type_name) {
+        MysqlTypeKind::Bool => row
             .try_get::<Option<bool>, _>(i)
             .map(|v| v.map(Value::Bool).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "SMALLINT" | "MEDIUMINT" => row
+        MysqlTypeKind::SmallInt => row
             .try_get::<Option<i16>, _>(i)
             .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "INT" | "INTEGER" => row
+        MysqlTypeKind::Int => row
             .try_get::<Option<i32>, _>(i)
             .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "BIGINT" => row
+        MysqlTypeKind::BigInt => row
             .try_get::<Option<i64>, _>(i)
             .map(|v| v.map(Value::from).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "FLOAT" => row
+        MysqlTypeKind::Float => row
             .try_get::<Option<f32>, _>(i)
             .map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        "DOUBLE" => row
+        MysqlTypeKind::Double => row
             .try_get::<Option<f64>, _>(i)
             .map(|v| v.map(Value::from).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
-        _ => row
+        MysqlTypeKind::Text => row
             .try_get::<Option<String>, _>(i)
             .map(|v| v.map(Value::String).unwrap_or(Value::Null))
             .unwrap_or(Value::Null),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MysqlTypeKind {
+    Bool,
+    SmallInt,
+    Int,
+    BigInt,
+    Float,
+    Double,
+    Text,
+}
+
+fn classify_mysql_type(type_name: &str) -> MysqlTypeKind {
+    match type_name {
+        "BOOLEAN" | "BOOL" | "TINYINT" => MysqlTypeKind::Bool,
+        "SMALLINT" | "MEDIUMINT" => MysqlTypeKind::SmallInt,
+        "INT" | "INTEGER" => MysqlTypeKind::Int,
+        "BIGINT" => MysqlTypeKind::BigInt,
+        "FLOAT" => MysqlTypeKind::Float,
+        "DOUBLE" => MysqlTypeKind::Double,
+        _ => MysqlTypeKind::Text,
     }
 }
 
@@ -263,4 +286,39 @@ pub async fn explain(pool: &MySqlPool, compiled: &CompiledQuery) -> Result<Expla
         cost,
         warning: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_mysql_type_bool_aliases() {
+        assert_eq!(classify_mysql_type("BOOLEAN"), MysqlTypeKind::Bool);
+        assert_eq!(classify_mysql_type("BOOL"), MysqlTypeKind::Bool);
+        assert_eq!(classify_mysql_type("TINYINT"), MysqlTypeKind::Bool);
+    }
+
+    #[test]
+    fn classify_mysql_type_integer_aliases() {
+        assert_eq!(classify_mysql_type("SMALLINT"), MysqlTypeKind::SmallInt);
+        assert_eq!(classify_mysql_type("MEDIUMINT"), MysqlTypeKind::SmallInt);
+        assert_eq!(classify_mysql_type("INT"), MysqlTypeKind::Int);
+        assert_eq!(classify_mysql_type("INTEGER"), MysqlTypeKind::Int);
+        assert_eq!(classify_mysql_type("BIGINT"), MysqlTypeKind::BigInt);
+    }
+
+    #[test]
+    fn classify_mysql_type_float_aliases() {
+        assert_eq!(classify_mysql_type("FLOAT"), MysqlTypeKind::Float);
+        assert_eq!(classify_mysql_type("DOUBLE"), MysqlTypeKind::Double);
+    }
+
+    #[test]
+    fn classify_mysql_type_unknown_falls_back_to_text() {
+        assert_eq!(classify_mysql_type("VARCHAR"), MysqlTypeKind::Text);
+        assert_eq!(classify_mysql_type("DATETIME"), MysqlTypeKind::Text);
+        assert_eq!(classify_mysql_type(""), MysqlTypeKind::Text);
+        assert_eq!(classify_mysql_type("JSON"), MysqlTypeKind::Text);
+    }
 }

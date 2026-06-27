@@ -10,6 +10,7 @@ pub const MAX_LIMIT: u32 = 1000;
 pub const DEFAULT_LIMIT: u32 = 100;
 pub const MAX_FILTER_DEPTH: usize = 5;
 pub const MAX_IN_LIST_SIZE: usize = 1000;
+pub const MAX_TEXT_LITERAL_LEN: usize = 10_000;
 
 const BLOCKED_SCHEMAS: &[&str] = &[
     "pg_catalog",
@@ -315,13 +316,10 @@ pub fn validate(
         &mut warnings,
     )?;
 
-    if spec.tables.len() > 1 {
-        let connected = check_join_connectivity(spec);
-        if !connected {
-            warnings.push(
-                "Multiple tables are present but not all are connected by joins — this may produce a Cartesian product".to_string()
-            );
-        }
+    if spec.tables.len() > 1 && !check_join_connectivity(spec) {
+        return Err(
+            "Not all tables are connected by joins — add joins linking every table".to_string(),
+        );
     }
 
     if spec.limit == 0 {
@@ -497,7 +495,15 @@ fn validate_literal(
     column: &str,
 ) -> Result<(), String> {
     match lit.kind {
-        LiteralKind::Text => Ok(()),
+        LiteralKind::Text => {
+            if lit.text.len() > MAX_TEXT_LITERAL_LEN {
+                return Err(format!(
+                    "Text value for '{}.{}' exceeds maximum length of {} characters",
+                    alias, column, MAX_TEXT_LITERAL_LEN
+                ));
+            }
+            Ok(())
+        }
         LiteralKind::Int => {
             lit.text.parse::<i64>().map_err(|_| {
                 format!(
@@ -653,10 +659,12 @@ fn check_join_connectivity(spec: &QuerySpec) -> bool {
 }
 
 fn is_blocked(schema: &str, custom: &[String]) -> bool {
-    if BLOCKED_SCHEMAS.contains(&schema) {
-        return true;
-    }
-    custom.iter().any(|s| s == schema)
+    BLOCKED_SCHEMAS
+        .iter()
+        .any(|blocked| blocked.eq_ignore_ascii_case(schema))
+        || custom
+            .iter()
+            .any(|s| s.eq_ignore_ascii_case(schema))
 }
 
 #[cfg(test)]
@@ -794,6 +802,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_custom_blocked_schema_case_insensitive() {
+        let mut spec = base_spec();
+        spec.tables[0].schema = "Audit".into();
+        let err = validate(&mut spec, &sample_schema(), &["audit".into()]).unwrap_err();
+        assert!(err.contains("blocked"));
+    }
+
+    #[test]
     fn rejects_custom_blocked_schema() {
         let mut spec = base_spec();
         spec.tables[0].schema = "audit".into();
@@ -838,15 +854,15 @@ mod tests {
     }
 
     #[test]
-    fn warns_on_disconnected_tables() {
+    fn errors_on_disconnected_tables() {
         let mut spec = base_spec();
         spec.tables.push(TableRef {
             schema: "public".into(),
             name: "categories".into(),
             alias: "t1".into(),
         });
-        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
-        assert!(outcome.warnings.iter().any(|w| w.contains("Cartesian")));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("connected by joins"));
     }
 
     #[test]

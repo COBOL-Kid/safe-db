@@ -2,10 +2,12 @@
 	import TableCard from './TableCard.svelte';
 	import { query } from '$lib/stores/query.svelte';
 	import type { JoinSpec } from '$lib/ir';
-
-	const CARD_WIDTH = 224;
-	const HEADER_HEIGHT = 41;
-	const ROW_HEIGHT = 28;
+	import {
+		columnY,
+		joinEdgePath as buildJoinEdgePath,
+		tableLeftX,
+		tableRightX
+	} from '$lib/canvas-geometry';
 
 	let canvasEl: HTMLDivElement;
 
@@ -22,27 +24,24 @@
 	function getColumnY(alias: string, columnName: string): number {
 		const ct = query.tables.find((t) => t.alias === alias);
 		if (!ct) return 0;
-		const idx = ct.tableInfo.columns.findIndex((c) => c.name === columnName);
-		return ct.y + HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2;
+		return columnY(ct, columnName);
 	}
 
 	function joinEdgePath(join: JoinSpec): string {
-		const sourceX = getTableRightX(join.left_alias);
-		const targetX = getTableLeftX(join.right_alias);
-		const sourceY = getColumnY(join.left_alias, join.left_column);
-		const targetY = getColumnY(join.right_alias, join.right_column);
-		const midX = (sourceX + targetX) / 2;
-		return `M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX} ${targetY}`;
+		const left = query.tables.find((t) => t.alias === join.left_alias);
+		const right = query.tables.find((t) => t.alias === join.right_alias);
+		if (!left || !right) return '';
+		return buildJoinEdgePath(left, join.left_column, right, join.right_column);
 	}
 
 	function getTableRightX(alias: string): number {
 		const t = query.tables.find((t) => t.alias === alias);
-		return t ? t.x + CARD_WIDTH : 0;
+		return t ? tableRightX(t) : 0;
 	}
 
 	function getTableLeftX(alias: string): number {
 		const t = query.tables.find((t) => t.alias === alias);
-		return t ? t.x : 0;
+		return t ? tableLeftX(t) : 0;
 	}
 
 	function getCanvasCoords(e: MouseEvent): { x: number; y: number } {

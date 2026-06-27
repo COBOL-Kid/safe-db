@@ -64,7 +64,14 @@ enum RequestedBackend {
 }
 
 fn parse_requested_backend() -> RequestedBackend {
-    let Ok(raw) = std::env::var(ENV_BACKEND) else {
+    let raw = std::env::var(ENV_BACKEND).ok();
+    parse_requested_backend_from(raw.as_deref())
+}
+
+/// Pure mapping from an env-var value to a `RequestedBackend`. Module-private
+/// helper; tests in this module call it directly.
+fn parse_requested_backend_from(raw: Option<&str>) -> RequestedBackend {
+    let Some(raw) = raw else {
         return RequestedBackend::Auto;
     };
     match raw.to_ascii_lowercase().as_str() {
@@ -491,5 +498,86 @@ mod tests {
             &"Platform Failure: A Required Entitlement isn't present."
         ));
         assert!(!is_missing_entitlement_error(&"connection refused"));
+    }
+
+    #[test]
+    fn parse_requested_backend_none_is_auto() {
+        assert!(matches!(
+            parse_requested_backend_from(None),
+            RequestedBackend::Auto
+        ));
+    }
+
+    #[test]
+    fn parse_requested_backend_disabled() {
+        assert!(matches!(
+            parse_requested_backend_from(Some("disabled")),
+            RequestedBackend::Disabled
+        ));
+        // Case-insensitive
+        assert!(matches!(
+            parse_requested_backend_from(Some("DISABLED")),
+            RequestedBackend::Disabled
+        ));
+    }
+
+    #[test]
+    fn parse_requested_backend_empty_string_is_auto() {
+        assert!(matches!(
+            parse_requested_backend_from(Some("")),
+            RequestedBackend::Auto
+        ));
+    }
+
+    #[test]
+    fn parse_requested_backend_auto_is_auto() {
+        assert!(matches!(
+            parse_requested_backend_from(Some("auto")),
+            RequestedBackend::Auto
+        ));
+    }
+
+    #[test]
+    fn parse_requested_backend_legacy_aliases_fall_back_to_auto() {
+        for raw in ["keychain", "legacy", "KEYCHAIN", "Legacy"] {
+            assert!(
+                matches!(
+                    parse_requested_backend_from(Some(raw)),
+                    RequestedBackend::Auto
+                ),
+                "expected Auto for {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_requested_backend_unknown_value_falls_back_to_auto() {
+        for raw in ["nope", "autoextra", "  "] {
+            assert!(
+                matches!(
+                    parse_requested_backend_from(Some(raw)),
+                    RequestedBackend::Auto
+                ),
+                "expected Auto for {raw}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn parse_requested_backend_protected_on_macos() {
+        assert!(matches!(
+            parse_requested_backend_from(Some("protected")),
+            RequestedBackend::Protected
+        ));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn parse_requested_backend_protected_off_macos_falls_back_to_auto() {
+        assert!(matches!(
+            parse_requested_backend_from(Some("protected")),
+            RequestedBackend::Auto
+        ));
     }
 }

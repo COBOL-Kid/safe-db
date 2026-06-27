@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryStore } from '$lib/stores/query.svelte';
-import type { TableInfo } from '$lib/ir';
+import * as api from '$lib/api';
+import { DEFAULT_LIMIT, MAX_LIMIT, type TableInfo } from '$lib/ir';
+import { columnKey } from '$lib/column-keys';
+import { COST_GUARD_PREFIX } from '$lib/limits';
+
+vi.mock('$lib/api');
 
 function makeTable(name: string, schema = 'public'): TableInfo {
 	return {
@@ -52,7 +57,7 @@ describe('QueryStore', () => {
 
 		expect(store.tables).toHaveLength(1);
 		expect(store.selectedColumns.size).toBe(1);
-		expect([...store.selectedColumns][0]).toBe(`${aliasB}.name`);
+		expect([...store.selectedColumns][0]).toBe(columnKey(aliasB, 'name'));
 		expect(store.joins).toHaveLength(0);
 		expect(store.filters.children).toHaveLength(0);
 	});
@@ -75,6 +80,21 @@ describe('QueryStore', () => {
 			right_column: 'id'
 		});
 		expect(store.joins).toHaveLength(1);
+	});
+
+	it('spec encodes columns with dots in the name', () => {
+		const table: TableInfo = {
+			schema: 'public',
+			name: 'meta',
+			columns: [
+				{ name: 'foo.bar', data_type: 'text', nullable: true, is_indexed: false }
+			],
+			indexes: []
+		};
+		store.addTable(table);
+		const alias = store.tables[0].alias;
+		store.toggleColumn(alias, 'foo.bar');
+		expect(store.spec.columns).toEqual([{ table_alias: alias, column: 'foo.bar' }]);
 	});
 
 	it('clamps limit between 1 and MAX_LIMIT', () => {
@@ -702,6 +722,166 @@ describe('QueryStore', () => {
 			});
 			store.setConnectorOverrides({ '': 'Or' });
 			expect(store.connectorOverrides).toEqual({});
+		});
+	});
+
+	describe('run()', () => {
+		beforeEach(() => {
+			vi.mocked(api.runQuery).mockReset();
+		});
+
+		it('is a no-op when canRun is false (no tables)', async () => {
+			await store.run('c1');
+			expect(api.runQuery).not.toHaveBeenCalled();
+			expect(store.running).toBe(false);
+			expect(store.error).toBeNull();
+		});
+
+		it('is a no-op when canRun is false (running)', async () => {
+			store.addTable(makeTable('a'));
+			store.running = true;
+			await store.run('c1');
+			expect(api.runQuery).not.toHaveBeenCalled();
+			store.running = false;
+		});
+
+		it('calls api.runQuery and clears running on success', async () => {
+			store.addTable(makeTable('a'));
+			vi.mocked(api.runQuery).mockResolvedValue({
+				columns: [],
+				rows: [],
+				row_count: 0,
+				truncated: false,
+				warnings: []
+			});
+
+			await store.run('c1');
+
+			expect(api.runQuery).toHaveBeenCalledOnce();
+			expect(store.running).toBe(false);
+			expect(store.error).toBeNull();
+			expect(store.results?.row_count).toBe(0);
+		});
+
+		it('captures the error and clears running on failure', async () => {
+			store.addTable(makeTable('a'));
+			vi.mocked(api.runQuery).mockRejectedValue(new Error('boom'));
+
+			await store.run('c1');
+
+			expect(store.running).toBe(false);
+			expect(store.error).toBe('Error: boom');
+			expect(store.results).toBeNull();
+		});
+
+		it('sets pendingCostGuard when backend blocks with cost guard prefix', async () => {
+			store.addTable(makeTable('a'));
+			vi.mocked(api.runQuery).mockRejectedValue(
+				`${COST_GUARD_PREFIX}EXPLAIN failed. Confirm to run this query anyway.`
+			);
+
+			await store.run('c1');
+
+			expect(store.pendingCostGuard).toBe(true);
+			expect(store.error).toContain('EXPLAIN failed');
+		});
+	});
+
+	describe('spec deep-clone', () => {
+		it('mutating the returned spec does not affect the store state', () => {
+			store.addTable(makeTable('a'));
+			store.setLimit(25);
+			store.addFilter({
+				table_alias: store.tables[0].alias,
+				column: 'name',
+				op: 'Eq',
+				value: { Single: { kind: 'Text', text: 'x' } }
+			});
+
+			const spec = store.spec;
+			// Mutate the returned spec — both primitive fields and deep fields.
+			spec.limit = 999;
+			if ('Leaf' in spec.filters.children[0]) {
+				spec.filters.children[0].Leaf.value = { Single: { kind: 'Text', text: 'MUTATED' } };
+			}
+			(spec.tables[0] as { name: string }).name = 'tampered';
+
+			// The store's internal state is unchanged.
+			expect(store.limit).toBe(25);
+			const leaf = store.filters.children[0];
+			if ('Leaf' in leaf) {
+				expect(leaf.Leaf.value).toEqual({ Single: { kind: 'Text', text: 'x' } });
+			}
+			expect(store.tables[0].tableInfo.name).toBe('a');
+		});
+	});
+
+	describe('setLimit clamping', () => {
+		it('starts at DEFAULT_LIMIT', () => {
+			expect(store.limit).toBe(DEFAULT_LIMIT);
+		});
+
+		it('passes through values in the valid range', () => {
+			store.setLimit(50);
+			expect(store.limit).toBe(50);
+			store.setLimit(1);
+			expect(store.limit).toBe(1);
+			store.setLimit(MAX_LIMIT);
+			expect(store.limit).toBe(MAX_LIMIT);
+		});
+
+		it('clamps values above MAX_LIMIT to MAX_LIMIT', () => {
+			store.setLimit(MAX_LIMIT + 1);
+			expect(store.limit).toBe(MAX_LIMIT);
+		});
+
+		it('coerces zero / negative to 1', () => {
+			store.setLimit(0);
+			expect(store.limit).toBe(1);
+			store.setLimit(-10);
+			expect(store.limit).toBe(1);
+		});
+
+		it('coerces NaN to 1 (regression: Math.max/min(1, NaN) is NaN)', () => {
+			store.setLimit(NaN);
+			expect(store.limit).toBe(1);
+		});
+	});
+
+	describe('moveTable', () => {
+		it('updates the table x/y', () => {
+			store.addTable(makeTable('a'));
+			const alias = store.tables[0].alias;
+			store.moveTable(alias, 200, 150);
+			expect(store.tables[0].x).toBe(200);
+			expect(store.tables[0].y).toBe(150);
+		});
+
+		it('is a no-op for an unknown alias', () => {
+			store.addTable(makeTable('a'));
+			const before = [...store.tables];
+			store.moveTable('missing', 999, 999);
+			expect(store.tables).toEqual(before);
+		});
+	});
+
+	describe('setGroupConnector at nested paths', () => {
+		it('changes the connector on the targeted nested group only', () => {
+			store.addTable(makeTable('a'));
+			store.addGroupToGroup([], 'And');
+			store.addGroupToGroup([0], 'And');
+
+			// Set the outer group to Or, leave the inner group as And.
+			store.setGroupConnector([0], 'Or');
+
+			const outer = store.filters.children[0];
+			if ('Group' in outer) {
+				expect(outer.Group.connector).toBe('Or');
+				const inner = outer.Group.children[0];
+				if ('Group' in inner) {
+					expect(inner.Group.connector).toBe('And');
+				}
+			}
 		});
 	});
 });

@@ -118,15 +118,15 @@ impl Adapter {
         match self {
             Adapter::Postgres(pool) => pg::explain(pool, compiled).await,
             Adapter::MySql(pool) => mysql::explain(pool, compiled).await,
-            Adapter::Mssql(_) => Ok(ExplainResult {
-                cost: None,
-                warning: Some("EXPLAIN cost guard not yet implemented for MSSQL".to_string()),
-            }),
+            Adapter::Mssql(client) => {
+                let mut client = client.lock().await;
+                mssql::explain(&mut client, compiled).await
+            }
             #[cfg(feature = "oracle")]
-            Adapter::Oracle(_) => Ok(ExplainResult {
-                cost: None,
-                warning: Some("EXPLAIN cost guard not yet implemented for Oracle".to_string()),
-            }),
+            Adapter::Oracle(conn) => {
+                let conn = conn.lock().map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                oracle::explain(&conn, compiled)
+            }
         }
     }
 }
