@@ -5,12 +5,13 @@ Tauri 2 + SvelteKit desktop app for safely exploring production databases.
 See the git history (early commits `P0`–`P4`) for the original implementation plan; it has been fully implemented.
 
 ## Features (for context)
-- **Connections** — CRUD via Tauri commands; passwords in OS keyring, metadata in app data dir
+- **Connections** — CRUD via Tauri commands; passwords in OS keyring, metadata in app data dir; form has show/hide password toggle
 - **Schema introspection** — per-dialect adapters in `src-tauri/src/adapters/`; system schemas blocked in `query/validate.rs`
-- **Visual query builder** — frontend IR (`src/lib/ir.ts`) compiled to dialect-specific SQL in `src-tauri/src/query/compile.rs`
+- **Visual query builder** — frontend IR (`src/lib/ir.ts`) compiled to dialect-specific SQL in `src-tauri/src/query/compile.rs`; recursive filter groups with per-child AND/OR connector overrides
 - **Safety** — read-only selects, row limit (max 1 000, default 100), 10 s query timeout, EXPLAIN cost warnings, custom blocked schemas in settings
-- **Saved queries & history** — persisted in app data dir via `QueryStore`
-- **Settings** — theme, `explain_cost_threshold`, `blocked_schemas` (`src-tauri/src/settings.rs`)
+- **Saved queries & history** — separate persisted stores in the app data dir (`saved-queries.svelte.ts` and `history.svelte.ts`)
+- **In-app confirmations** — destructive actions use the `ConfirmDialog` component (not `window.confirm()`, which is unreliable in Tauri’s macOS WebView)
+- **Settings** — theme, `explain_cost_threshold`, `blocked_schemas` (`src-tauri/src/settings.rs`); `syncWindowBackgroundColor` updates the Tauri window background to match light/dark
 - **Command palette** — `Cmd+K` / `Ctrl+K` (`CommandPalette.svelte`)
 
 ## Tech stack
@@ -41,7 +42,7 @@ Run `pnpm check` after editing Svelte/TS files. Run `cargo check` in `src-tauri/
 
 ## Testing
 - **Fast gate (CI/local default):** `pnpm test` — typecheck, Vitest (`src/**/*.test.ts`), and all Rust tests including `secrets_cache` and `stores` (no live DB required).
-- **Frontend only:** `pnpm test:unit` — query store, hydration, schema/settings stores, `ConnectionForm`, `ResultsTable`; mocks Tauri invoke and SvelteKit `$app/*` in `src/lib/test/setup.ts`.
+- **Frontend only:** `pnpm test:unit` — query store + hydration, schema/settings/connections stores, `ConnectionForm`, `ConfirmDialog`, `FilterBuilder`, `ResultsTable`, plus page-level tests for connections; mocks Tauri invoke and SvelteKit `$app/*` in `src/lib/test/setup.ts`.
 - **Backend unit tests:** inline `#[cfg(test)]` in `query/validate.rs`, `query/compile.rs`, `introspect.rs`.
 - **Smoke gate (optional, needs DB):** `pnpm test:smoke` after seeding/configuring databases:
   - `secrets_smoke` — always runs (disabled keyring backend).
@@ -52,31 +53,41 @@ Run `pnpm check` after editing Svelte/TS files. Run `cargo check` in `src-tauri/
 ## Project structure
 ```
 safe-db/
-├── src/                          # SvelteKit frontend
-│   ├── routes/                   # home, connections, builder, history
+├── src/                              # SvelteKit frontend (SPA)
+│   ├── routes/                       # home, connections, builder, history
 │   ├── lib/
-│   │   ├── components/           # ConnectionForm, SchemaBrowser, Canvas, etc.
-│   │   ├── stores/               # connections, schema, query, settings, history
-│   │   ├── ir.ts                 # shared types (mirrors Rust query IR)
-│   │   └── api.ts                # Tauri invoke wrappers
+│   │   ├── components/               # Canvas, TableCard, FilterBuilder, FilterGroupCard,
+│   │   │                             #   FilterRow, SchemaBrowser, ResultsTable,
+│   │   │                             #   ConnectionForm, ConfirmDialog, CommandPalette
+│   │   ├── stores/                   # connections, schema, query, settings,
+│   │   │                             #   history, saved-queries
+│   │   ├── ir.ts                     # shared types (mirrors Rust query IR)
+│   │   ├── hydrate-query.ts          # legacy QuerySpec → current IR migration
+│   │   ├── api.ts                    # Tauri invoke wrappers
+│   │   ├── window.ts                 # syncWindowBackgroundColor (Tauri only)
+│   │   └── test/setup.ts             # Vitest mocks (Tauri invoke, $app/*)
 │   └── app.html
-├── src-tauri/                    # Rust backend
+├── src-tauri/                        # Rust backend
 │   ├── src/
-│   │   ├── adapters/             # pg, mysql, mssql, oracle (feature-gated)
-│   │   ├── query/                # ir, validate, compile
-│   │   ├── commands.rs           # Tauri command handlers
-│   │   ├── secrets.rs            # keyring + in-process session cache
-│   │   ├── introspect.rs         # shared schema types
-│   │   ├── config.rs             # connection profiles (no passwords)
-│   │   ├── queries.rs            # saved queries + history store
-│   │   └── settings.rs
+│   │   ├── adapters/                 # pg, mysql, mssql, oracle (feature-gated)
+│   │   ├── query/                    # ir, validate, compile
+│   │   ├── commands.rs               # Tauri command handlers
+│   │   ├── secrets.rs                # keyring + in-process session cache
+│   │   ├── introspect.rs             # shared schema types
+│   │   ├── config.rs                 # connection profiles (no passwords)
+│   │   ├── queries.rs                # saved queries + history store
+│   │   ├── settings.rs
+│   │   ├── types.rs
+│   │   ├── lib.rs / main.rs
 │   ├── tests/
-│   │   ├── secrets_smoke.rs      # keyring round-trip (disabled backend)
-│   │   ├── secrets_cache.rs      # session cache avoids repeat OS reads
-│   │   ├── secrets_macos.rs      # manual macOS Protected Data smoke (#[ignore])
-│   │   └── pg_smoke.rs           # env-gated Postgres connect + introspect
-│   ├── capabilities/             # Tauri 2 permissions
-│   ├── Entitlements.plist        # macOS sandbox + keychain-access-groups
+│   │   ├── secrets_smoke.rs          # keyring round-trip (disabled backend)
+│   │   ├── secrets_cache.rs          # session cache avoids repeat OS reads
+│   │   ├── secrets_macos.rs          # manual macOS Protected Data smoke (#[ignore])
+│   │   ├── pg_smoke.rs               # env-gated Postgres connect + introspect
+│   │   ├── mysql_smoke.rs            # env-gated MySQL connect + introspect
+│   │   └── stores.rs                 # saved queries + history store round-trip
+│   ├── capabilities/                 # Tauri 2 permissions
+│   ├── Entitlements.plist            # macOS sandbox + keychain-access-groups
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── vite.config.ts
