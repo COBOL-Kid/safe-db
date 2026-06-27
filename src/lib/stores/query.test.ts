@@ -202,4 +202,68 @@ describe('QueryStore', () => {
 			expect(remaining.Leaf.table_alias).toBe(aliasB);
 		}
 	});
+
+	it('drops nested groups that become empty after pruning', () => {
+		store.addTable(makeTable('a'));
+		store.addTable(makeTable('b'));
+		const aliasA = store.tables[0].alias;
+		const aliasB = store.tables[1].alias;
+
+		// Root: [group(Or: [leaf on A, leaf on A]), leaf on B]
+		store.addGroupToGroup([], 'Or');
+		store.addFilterToGroup([0], {
+			table_alias: aliasA,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'a1' } }
+		});
+		store.addFilterToGroup([0], {
+			table_alias: aliasA,
+			column: 'id',
+			op: 'Eq',
+			value: { Single: { kind: 'Int', text: '1' } }
+		});
+		store.addFilter({
+			table_alias: aliasB,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'b1' } }
+		});
+
+		store.removeTable(aliasA);
+
+		// The nested group only referenced table A, so it is pruned entirely;
+		// only the leaf on B remains at the root.
+		expect(store.filters.children).toHaveLength(1);
+		const remaining = store.filters.children[0];
+		expect('Leaf' in remaining).toBe(true);
+		if ('Leaf' in remaining) {
+			expect(remaining.Leaf.table_alias).toBe(aliasB);
+		}
+	});
+
+	it('ignores filter updates at a stale out-of-bounds path', () => {
+		store.addTable(makeTable('a'));
+		const alias = store.tables[0].alias;
+		store.addFilter({
+			table_alias: alias,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'x' } }
+		});
+
+		store.updateFilter([99], {
+			table_alias: alias,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'y' } }
+		});
+
+		// No sparse-array holes are created; the existing filter is unchanged.
+		expect(store.filters.children).toHaveLength(1);
+		const leaf = store.filters.children[0];
+		if ('Leaf' in leaf) {
+			expect(leaf.Leaf.value).toEqual({ Single: { kind: 'Text', text: 'x' } });
+		}
+	});
 });

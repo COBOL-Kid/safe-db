@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::query::ir::QuerySpec;
+use crate::query::ir::{FilterOp, QuerySpec, CURRENT_SCHEMA_VERSION};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedQuery {
@@ -104,25 +104,50 @@ impl QueryStore {
             return Ok(Vec::new());
         }
         let arr: Vec<Value> = serde_json::from_str(&content)?;
-        let (valid, dropped): (Vec<T>, usize) = arr
-            .into_iter()
-            .fold((Vec::new(), 0usize), |(mut acc, mut dropped), v| {
-                match serde_json::from_value::<T>(v) {
-                    Ok(item) => {
-                        acc.push(item);
-                    }
-                    Err(_) => {
-                        dropped += 1;
-                    }
+        let mut valid: Vec<T> = Vec::new();
+        let mut migrated_count = 0usize;
+        let mut dropped = 0usize;
+        for v in arr {
+            if let Ok(item) = serde_json::from_value::<T>(v.clone()) {
+                valid.push(item);
+                continue;
+            }
+            // Not valid v2 — attempt a v1→v2 migration.
+            match migrate_v1_entry(v)
+                .and_then(|m| serde_json::from_value::<T>(m).ok())
+            {
+                Some(item) => {
+                    valid.push(item);
+                    migrated_count += 1;
                 }
-                (acc, dropped)
-            });
-        if dropped > 0 {
+                None => dropped += 1,
+            }
+        }
+        if migrated_count > 0 {
             log::info!(
-                "Dropped {} outdated entries from {} (schema version mismatch)",
-                dropped,
-                path.display()
+                "Migrated {} v1 entr{} from {} to schema v{}",
+                migrated_count,
+                if migrated_count == 1 { "y" } else { "ies" },
+                path.display(),
+                CURRENT_SCHEMA_VERSION,
             );
+        }
+        if dropped > 0 {
+            log::warn!(
+                "Skipped {} unreadable entr{} in {} (preserved on disk)",
+                dropped,
+                if dropped == 1 { "y" } else { "ies" },
+                path.display(),
+            );
+        }
+        // Persist migrations only when nothing was dropped, so corrupt or
+        // unreadable entries are never silently overwritten and lost. A backup
+        // of the original file is kept the first time a migration is written.
+        if migrated_count > 0 && dropped == 0 {
+            let backup = path.with_extension("v1.bak");
+            if !backup.exists() {
+                let _ = fs::write(&backup, &content);
+            }
             let _ = self.write_json(path, &valid);
         }
         Ok(valid)
@@ -133,4 +158,59 @@ impl QueryStore {
         fs::write(path, json)?;
         Ok(())
     }
+}
+
+/// Legacy v1 filter spec: `value` was a plain `Option<String>` instead of the
+/// typed `FilterValue` enum used by the current IR.
+#[derive(Debug, Deserialize)]
+struct FilterSpecV1 {
+    table_alias: String,
+    column: String,
+    op: FilterOp,
+    #[serde(default)]
+    value: Option<String>,
+}
+
+/// Attempt to migrate a legacy v1 entry (where `spec.filters` is a JSON array
+/// of `FilterSpec` with string values) into the current v2 shape (where
+/// `spec.filters` is a `FilterGroup` object with typed `FilterValue`s).
+///
+/// Returns `Some(migrated Value)` when the input looks like a v1 entry, or
+/// `None` when it doesn't (so the caller can treat it as a plain unreadable
+/// entry rather than silently discarding it).
+fn migrate_v1_entry(v: Value) -> Option<Value> {
+    let mut obj = v.as_object()?.clone();
+    let spec = obj.get("spec")?.as_object()?.clone();
+    // v1 stores `filters` as an array; v2 stores it as an object (FilterGroup).
+    let filters_arr = spec.get("filters")?.as_array()?.clone();
+
+    let mut children: Vec<Value> = Vec::with_capacity(filters_arr.len());
+    for f in filters_arr {
+        let v1: FilterSpecV1 = serde_json::from_value(f).ok()?;
+        let value = v1.value.map(|text| {
+            serde_json::json!({ "Single": { "kind": "Text", "text": text } })
+        });
+        let op = serde_json::to_value(v1.op).ok()?;
+        children.push(serde_json::json!({
+            "Leaf": {
+                "table_alias": v1.table_alias,
+                "column": v1.column,
+                "op": op,
+                "value": value,
+            }
+        }));
+    }
+
+    let mut new_spec = spec.clone();
+    new_spec.insert(
+        "filters".to_string(),
+        serde_json::json!({ "connector": "And", "children": children }),
+    );
+    new_spec.insert(
+        "schema_version".to_string(),
+        serde_json::json!(CURRENT_SCHEMA_VERSION),
+    );
+
+    obj.insert("spec".to_string(), Value::Object(new_spec));
+    Some(Value::Object(obj))
 }

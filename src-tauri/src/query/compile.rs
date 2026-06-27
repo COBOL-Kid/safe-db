@@ -304,7 +304,13 @@ fn build_leaf(
                     _ => return Err("IN expects a list of values".to_string()),
                 };
                 if list.is_empty() {
-                    return Ok("1=0".to_string());
+                    // An empty IN matches no rows; an empty NOT IN matches all
+                    // rows (nothing is excluded).
+                    return Ok(if filter.op == FilterOp::In {
+                        "1=0".to_string()
+                    } else {
+                        "1=1".to_string()
+                    });
                 }
                 let mut phs = Vec::with_capacity(list.len());
                 for lit in list {
@@ -345,7 +351,7 @@ fn build_leaf(
 fn build_ilike(column_ref: &str, ph: &str, dialect: Dialect) -> String {
     match dialect {
         Dialect::Postgres => format!("{} ILIKE {}", column_ref, ph),
-        Dialect::Mssql => format!("{} LIKE {}", column_ref, ph),
+        Dialect::Mssql => format!("LOWER({}) LIKE LOWER({})", column_ref, ph),
         Dialect::MySql => format!("LOWER({}) LIKE LOWER({})", column_ref, ph),
         Dialect::Oracle => format!("UPPER({}) LIKE UPPER({})", column_ref, ph),
     }
@@ -356,7 +362,7 @@ mod tests {
     use super::*;
     use crate::query::ir::{
         ColumnSel, FilterGroup, FilterLiteral, FilterNode, FilterOp, FilterSpec, FilterValue,
-        GroupConnector, JoinSpec, LiteralKind, QuerySpec, TableRef,
+        GroupConnector, JoinSpec, LiteralKind, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION,
     };
     use crate::types::Dialect;
 
@@ -409,7 +415,7 @@ mod tests {
                 ],
             },
             limit: 50,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         }
     }
 
@@ -506,7 +512,7 @@ mod tests {
                 })],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(compiled.sql.contains("WHERE (\"t0\".\"id\" = $1 OR \"t0\".\"id\" = $2)"));
@@ -540,7 +546,7 @@ mod tests {
                 })],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(compiled.sql.contains("\"t0\".\"id\" IN ($1, $2, $3)"));
@@ -573,7 +579,7 @@ mod tests {
                 })],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(compiled.sql.contains("\"t0\".\"id\" NOT IN ($1, $2)"));
@@ -605,7 +611,7 @@ mod tests {
                 })],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(compiled.sql.contains("\"t0\".\"price\" BETWEEN $1 AND $2"));
@@ -635,7 +641,7 @@ mod tests {
                 })],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let pg = compile(&spec, Dialect::Postgres).unwrap();
         assert!(pg.sql.contains("ILIKE"));
@@ -644,7 +650,7 @@ mod tests {
         assert!(mysql.sql.contains("LOWER("));
 
         let mssql = compile(&spec, Dialect::Mssql).unwrap();
-        assert!(mssql.sql.contains("LIKE"));
+        assert!(mssql.sql.contains("LOWER("));
 
         let oracle = compile(&spec, Dialect::Oracle).unwrap();
         assert!(oracle.sql.contains("UPPER("));
@@ -681,7 +687,7 @@ mod tests {
                 ],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(compiled.sql.contains("\"t0\".\"name\" = ''"));
@@ -712,7 +718,7 @@ mod tests {
                 })],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(compiled.sql.contains("NOT LIKE"));
@@ -760,7 +766,7 @@ mod tests {
                 ],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(
@@ -808,11 +814,108 @@ mod tests {
                 ],
             },
             limit: 100,
-            schema_version: 2,
+            schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
         assert!(matches!(compiled.params[0], BindValue::Int(42)));
         assert!(matches!(compiled.params[1], BindValue::Float(_)));
         assert!(matches!(compiled.params[2], BindValue::Bool(true)));
+    }
+
+    fn single_leaf_spec(op: FilterOp, value: Option<FilterValue>, column: &str) -> QuerySpec {
+        QuerySpec {
+            tables: vec![TableRef {
+                schema: "public".into(),
+                name: "products".into(),
+                alias: "t0".into(),
+            }],
+            columns: vec![ColumnSel {
+                table_alias: "t0".into(),
+                column: column.into(),
+            }],
+            joins: vec![],
+            filters: FilterGroup {
+                connector: GroupConnector::And,
+                children: vec![FilterNode::Leaf(FilterSpec {
+                    table_alias: "t0".into(),
+                    column: column.into(),
+                    op,
+                    value,
+                })],
+            },
+            limit: 100,
+            schema_version: CURRENT_SCHEMA_VERSION,
+        }
+    }
+
+    #[test]
+    fn in_not_in_between_compile_across_dialects() {
+        let in_spec = single_leaf_spec(
+            FilterOp::In,
+            Some(FilterValue::List(vec![
+                lit(LiteralKind::Int, "1"),
+                lit(LiteralKind::Int, "2"),
+            ])),
+            "id",
+        );
+        let not_in_spec = single_leaf_spec(
+            FilterOp::NotIn,
+            Some(FilterValue::List(vec![lit(LiteralKind::Int, "3")])),
+            "id",
+        );
+        let between_spec = single_leaf_spec(
+            FilterOp::Between,
+            Some(FilterValue::Pair(
+                lit(LiteralKind::Int, "10"),
+                lit(LiteralKind::Int, "100"),
+            )),
+            "price",
+        );
+
+        // MySQL: ? placeholders, backtick quoting.
+        let mysql_in = compile(&in_spec, Dialect::MySql).unwrap();
+        assert!(mysql_in.sql.contains("`t0`.`id` IN (?, ?)"));
+        assert_eq!(mysql_in.params.len(), 2);
+        let mysql_not_in = compile(&not_in_spec, Dialect::MySql).unwrap();
+        assert!(mysql_not_in.sql.contains("`t0`.`id` NOT IN (?)"));
+        let mysql_between = compile(&between_spec, Dialect::MySql).unwrap();
+        assert!(mysql_between.sql.contains("`t0`.`price` BETWEEN ? AND ?"));
+
+        // MSSQL: @Pn placeholders, bracket quoting.
+        let mssql_in = compile(&in_spec, Dialect::Mssql).unwrap();
+        assert!(mssql_in.sql.contains("[t0].[id] IN (@P1, @P2)"));
+        assert_eq!(mssql_in.params.len(), 2);
+        let mssql_not_in = compile(&not_in_spec, Dialect::Mssql).unwrap();
+        assert!(mssql_not_in.sql.contains("[t0].[id] NOT IN (@P1)"));
+        let mssql_between = compile(&between_spec, Dialect::Mssql).unwrap();
+        assert!(mssql_between
+            .sql
+            .contains("[t0].[price] BETWEEN @P1 AND @P2"));
+
+        // Oracle: :n placeholders, double-quote quoting.
+        let oracle_in = compile(&in_spec, Dialect::Oracle).unwrap();
+        assert!(oracle_in.sql.contains("\"t0\".\"id\" IN (:1, :2)"));
+        assert_eq!(oracle_in.params.len(), 2);
+        let oracle_not_in = compile(&not_in_spec, Dialect::Oracle).unwrap();
+        assert!(oracle_not_in.sql.contains("\"t0\".\"id\" NOT IN (:1)"));
+        let oracle_between = compile(&between_spec, Dialect::Oracle).unwrap();
+        assert!(oracle_between
+            .sql
+            .contains("\"t0\".\"price\" BETWEEN :1 AND :2"));
+    }
+
+    #[test]
+    fn empty_in_matches_nothing_empty_not_in_matches_all() {
+        let empty_in = single_leaf_spec(FilterOp::In, Some(FilterValue::List(vec![])), "id");
+        let empty_not_in =
+            single_leaf_spec(FilterOp::NotIn, Some(FilterValue::List(vec![])), "id");
+
+        let compiled_in = compile(&empty_in, Dialect::Postgres).unwrap();
+        assert!(compiled_in.sql.contains("1=0"));
+        assert!(compiled_in.params.is_empty());
+
+        let compiled_not_in = compile(&empty_not_in, Dialect::Postgres).unwrap();
+        assert!(compiled_not_in.sql.contains("1=1"));
+        assert!(compiled_not_in.params.is_empty());
     }
 }

@@ -37,6 +37,10 @@
 		query.clear();
 	}
 
+	function tableNameForAlias(alias: string): string {
+		return query.tables.find((t) => t.alias === alias)?.tableInfo.name ?? alias;
+	}
+
 	async function handleSaveQuery() {
 		if (!connections.activeId) return;
 		const name = prompt('Name this query:', `Query on ${query.tables.map((t) => t.tableInfo.name).join(', ')}`);
@@ -161,7 +165,7 @@
 					<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
 						{#each query.joins as join, i (i)}
 							<span class="flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
-								join: {join.left_alias}.{join.left_column} = {join.right_alias}.{join.right_column}
+								join: {tableNameForAlias(join.left_alias)}.{join.left_column} = {tableNameForAlias(join.right_alias)}.{join.right_column}
 								<button type="button" onclick={() => query.removeJoin(i)} class="text-sky-400 hover:text-sky-600" aria-label="Remove join">
 									<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
 								</button>

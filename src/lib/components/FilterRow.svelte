@@ -165,6 +165,7 @@
 	<select
 		value={filter.table_alias}
 		onchange={(e) => changeTable((e.currentTarget as HTMLSelectElement).value)}
+		aria-label="Filter table"
 		class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
 	>
 		{#each tables as t (t.alias)}
@@ -175,6 +176,7 @@
 	<select
 		value={filter.column}
 		onchange={(e) => changeColumn((e.currentTarget as HTMLSelectElement).value)}
+		aria-label="Filter column"
 		class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
 	>
 		{#each columns as col (col.name)}
@@ -185,6 +187,7 @@
 	<select
 		value={filter.op}
 		onchange={(e) => changeOp((e.currentTarget as HTMLSelectElement).value as FilterOp)}
+		aria-label="Filter operator"
 		class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
 	>
 		{#each availableOps as op (op)}

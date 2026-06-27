@@ -267,8 +267,10 @@ function updateNodeAtPath(
 ): FilterGroup {
 	if (path.length === 0) return group;
 	if (path.length === 1) {
+		const idx = path[0];
+		if (idx < 0 || idx >= group.children.length) return group;
 		const newChildren = [...group.children];
-		newChildren[path[0]] = newNode;
+		newChildren[idx] = newNode;
 		return { ...group, children: newChildren };
 	}
 	const [head, ...rest] = path;

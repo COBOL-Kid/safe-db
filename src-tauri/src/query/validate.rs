@@ -92,6 +92,7 @@ pub fn classify_column(data_type: &str) -> ColumnCategory {
             | "bigserial"
             | "decimal"
             | "numeric"
+            | "number"
             | "real"
             | "double"
             | "float"
@@ -1038,6 +1039,8 @@ mod tests {
     fn classify_column_covers_common_types() {
         assert_eq!(classify_column("int"), ColumnCategory::Numeric);
         assert_eq!(classify_column("INTEGER"), ColumnCategory::Numeric);
+        assert_eq!(classify_column("number"), ColumnCategory::Numeric);
+        assert_eq!(classify_column("NUMBER"), ColumnCategory::Numeric);
         assert_eq!(classify_column("varchar"), ColumnCategory::Text);
         assert_eq!(classify_column("VARCHAR2"), ColumnCategory::Text);
         assert_eq!(classify_column("boolean"), ColumnCategory::Bool);
@@ -1047,5 +1050,64 @@ mod tests {
             ColumnCategory::DateTime
         );
         assert_eq!(classify_column("datetime"), ColumnCategory::DateTime);
+    }
+
+    #[test]
+    fn in_list_at_max_size_is_accepted() {
+        let mut spec = base_spec();
+        let values: Vec<FilterLiteral> = (0..MAX_IN_LIST_SIZE)
+            .map(|i| lit(LiteralKind::Int, &i.to_string()))
+            .collect();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::In,
+            Some(FilterValue::List(values)),
+        )));
+        validate(&mut spec, &sample_schema(), &[]).unwrap();
+    }
+
+    #[test]
+    fn in_list_over_max_size_is_rejected() {
+        let mut spec = base_spec();
+        let values: Vec<FilterLiteral> = (0..=MAX_IN_LIST_SIZE)
+            .map(|i| lit(LiteralKind::Int, &i.to_string()))
+            .collect();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::In,
+            Some(FilterValue::List(values)),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("too many values"));
+    }
+
+    fn nested_chain(levels: usize) -> FilterNode {
+        let leaf = FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::Eq,
+            Some(FilterValue::Single(lit(LiteralKind::Int, "1"))),
+        ));
+        let mut node = leaf;
+        for _ in 0..levels {
+            node = FilterNode::Group(group(GroupConnector::And, vec![node]));
+        }
+        node
+    }
+
+    #[test]
+    fn filter_depth_at_max_is_accepted() {
+        // Root group is depth 0; 4 nested groups put the leaf at depth 5 (== MAX_FILTER_DEPTH).
+        let mut spec = base_spec();
+        spec.filters.children.push(nested_chain(MAX_FILTER_DEPTH - 1));
+        validate(&mut spec, &sample_schema(), &[]).unwrap();
+    }
+
+    #[test]
+    fn filter_depth_over_max_is_rejected() {
+        // 5 nested groups put the leaf at depth 6 (> MAX_FILTER_DEPTH).
+        let mut spec = base_spec();
+        spec.filters.children.push(nested_chain(MAX_FILTER_DEPTH));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("maximum depth"));
     }
 }
