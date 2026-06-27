@@ -3,7 +3,7 @@ use sqlx::{Column, Connection, MySqlPool, Row, TypeInfo};
 
 use crate::adapters::ExplainResult;
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
-use crate::query::ir::{CompiledQuery, QueryResult};
+use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
 
 pub async fn connect(
     host: &str,
@@ -146,7 +146,13 @@ pub async fn execute_query(
 
         let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
         for param in &compiled.params {
-            query = query.bind(param);
+            query = match param {
+                BindValue::Text(s) => query.bind(s.as_str()),
+                BindValue::Int(n) => query.bind(*n),
+                BindValue::Float(f) => query.bind(*f),
+                BindValue::Bool(b) => query.bind(*b),
+                BindValue::Null => query.bind(None::<i64>),
+            };
         }
 
         let rows = query.fetch_all(&mut *tx).await?;
@@ -233,7 +239,13 @@ pub async fn explain(pool: &MySqlPool, compiled: &CompiledQuery) -> Result<Expla
 
     let mut query = sqlx::query(sqlx::AssertSqlSafe(explain_sql.as_str()));
     for param in &compiled.params {
-        query = query.bind(param);
+        query = match param {
+            BindValue::Text(s) => query.bind(s.as_str()),
+            BindValue::Int(n) => query.bind(*n),
+            BindValue::Float(f) => query.bind(*f),
+            BindValue::Bool(b) => query.bind(*b),
+            BindValue::Null => query.bind(None::<i64>),
+        };
     }
 
     let row = query.fetch_one(pool).await?;

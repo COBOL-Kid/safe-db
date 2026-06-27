@@ -1,6 +1,6 @@
 use safe_db_lib::adapters::pg;
 use safe_db_lib::query::compile::compile;
-use safe_db_lib::query::ir::{ColumnSel, QuerySpec, TableRef};
+use safe_db_lib::query::ir::{ColumnSel, FilterGroup, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION};
 use safe_db_lib::query::validate::validate;
 use safe_db_lib::types::Dialect;
 
@@ -101,12 +101,13 @@ async fn pg_introspect_validate_compile_execute() {
             column: column.name.clone(),
         }],
         joins: vec![],
-        filters: vec![],
+        filters: FilterGroup::default(),
         limit: 5,
+        schema_version: CURRENT_SCHEMA_VERSION,
     };
 
     let _outcome = validate(&mut spec, &schema, &[]).expect("validate should succeed");
-    let compiled = compile(&spec, Dialect::Postgres);
+    let compiled = compile(&spec, Dialect::Postgres).expect("compile should succeed");
     let result = pg::execute_query(&pool, &compiled, 10_000)
         .await
         .expect("execute should succeed");

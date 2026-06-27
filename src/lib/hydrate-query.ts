@@ -1,4 +1,4 @@
-import type { FilterSpec, JoinSpec, QuerySpec, TableInfo } from '$lib/ir';
+import type { FilterGroup, FilterNode, FilterSpec, JoinSpec, QuerySpec, TableInfo } from '$lib/ir';
 
 export interface QueryHydrationTarget {
 	clear(): void;
@@ -6,12 +6,30 @@ export interface QueryHydrationTarget {
 	readonly tables: ReadonlyArray<{ alias: string }>;
 	toggleColumn(alias: string, column: string): void;
 	addJoin(join: JoinSpec): void;
-	addFilter(filter: FilterSpec): void;
+	setFilters(group: FilterGroup): void;
 	setLimit(limit: number): void;
 }
 
 function schemaKey(schema: string, name: string): string {
 	return `${schema}\0${name}`;
+}
+
+function remapFilterGroup(group: FilterGroup, aliasMap: Map<string, string>): FilterGroup {
+	const children: FilterNode[] = [];
+	for (const child of group.children) {
+		if ('Leaf' in child) {
+			const tableAlias = aliasMap.get(child.Leaf.table_alias);
+			if (tableAlias) {
+				children.push({ Leaf: { ...child.Leaf, table_alias: tableAlias } });
+			}
+		} else {
+			const remapped = remapFilterGroup(child.Group, aliasMap);
+			if (remapped.children.length > 0) {
+				children.push({ Group: remapped });
+			}
+		}
+	}
+	return { ...group, children };
 }
 
 /** Restore a saved or history query spec into the query store, remapping table aliases. */
@@ -58,15 +76,8 @@ export function hydrateQueryFromSpec(
 		});
 	}
 
-	for (const filter of spec.filters) {
-		const tableAlias = aliasMap.get(filter.table_alias);
-		if (!tableAlias) continue;
-
-		target.addFilter({
-			...filter,
-			table_alias: tableAlias
-		});
-	}
+	const remappedFilters = remapFilterGroup(spec.filters, aliasMap);
+	target.setFilters(remappedFilters);
 
 	target.setLimit(spec.limit);
 }

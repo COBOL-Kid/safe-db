@@ -4,7 +4,7 @@ use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
-use crate::query::ir::{CompiledQuery, QueryResult};
+use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
 
 pub type MssqlClient = Client<tokio_util::compat::Compat<TcpStream>>;
 
@@ -184,10 +184,38 @@ pub async fn execute_query(
         .execute(&format!("SET LOCK_TIMEOUT {}", timeout_ms), &[])
         .await?;
 
-    let param_refs: Vec<&dyn tiberius::ToSql> = compiled
+    use tiberius::ToSql;
+
+    enum OwnedParam {
+        Str(String),
+        Int(i64),
+        Float(f64),
+        Bool(bool),
+        Null,
+    }
+
+    let null_val: Option<i64> = None;
+    let owned: Vec<OwnedParam> = compiled
         .params
         .iter()
-        .map(|p| p as &dyn tiberius::ToSql)
+        .map(|p| match p {
+            BindValue::Text(s) => OwnedParam::Str(s.clone()),
+            BindValue::Int(n) => OwnedParam::Int(*n),
+            BindValue::Float(f) => OwnedParam::Float(*f),
+            BindValue::Bool(b) => OwnedParam::Bool(*b),
+            BindValue::Null => OwnedParam::Null,
+        })
+        .collect();
+
+    let param_refs: Vec<&dyn ToSql> = owned
+        .iter()
+        .map(|p| match p {
+            OwnedParam::Str(s) => s as &dyn ToSql,
+            OwnedParam::Int(n) => n as &dyn ToSql,
+            OwnedParam::Float(f) => f as &dyn ToSql,
+            OwnedParam::Bool(b) => b as &dyn ToSql,
+            OwnedParam::Null => &null_val as &dyn ToSql,
+        })
         .collect();
 
     let rows = client

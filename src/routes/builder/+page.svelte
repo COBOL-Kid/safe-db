@@ -6,8 +6,9 @@
 	import SchemaBrowser from '$lib/components/SchemaBrowser.svelte';
 	import Canvas from '$lib/components/Canvas.svelte';
 	import ResultsTable from '$lib/components/ResultsTable.svelte';
+	import FilterBuilder from '$lib/components/FilterBuilder.svelte';
 	import { browser } from '$app/environment';
-	import { FILTER_OPS, MAX_LIMIT, type FilterOp, type TableInfo } from '$lib/ir';
+	import { MAX_LIMIT, type TableInfo } from '$lib/ir';
 
 	$effect(() => {
 		if (browser && connections.activeId && !schema.schema && !schema.loading) {
@@ -47,43 +48,6 @@
 			spec: query.spec,
 			created_at: Date.now().toString()
 		});
-	}
-
-	let showAddFilter = $state(false);
-	let filterAlias = $state('');
-	let filterColumn = $state('');
-	let filterOp = $state<FilterOp>('Eq');
-	let filterValue = $state('');
-
-	function startAddFilter() {
-		showAddFilter = true;
-		filterAlias = query.tables[0]?.alias ?? '';
-		filterColumn = '';
-		filterOp = 'Eq';
-		filterValue = '';
-	}
-
-	function confirmAddFilter() {
-		if (!filterAlias || !filterColumn) return;
-		const op = filterOp;
-		const needsValue = op !== 'IsNull' && op !== 'IsNotNull';
-		query.addFilter({
-			table_alias: filterAlias,
-			column: filterColumn,
-			op,
-			value: needsValue ? filterValue || null : null
-		});
-		showAddFilter = false;
-	}
-
-	function getColumnName(alias: string, column: string): string {
-		const t = query.tables.find((t) => t.alias === alias);
-		return t ? `${t.tableInfo.name}.${column}` : column;
-	}
-
-	function getTableColumns(alias: string) {
-		const t = query.tables.find((t) => t.alias === alias);
-		return t?.tableInfo.columns ?? [];
 	}
 
 	let resultsHeight = $state(240);
@@ -193,58 +157,24 @@
 				</aside>
 
 				<div class="flex flex-1 flex-col overflow-hidden">
-					{#if query.joins.length > 0 || query.filters.length > 0 || showAddFilter}
-						<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
-							{#each query.joins as join, i (i)}
-								<span class="flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
-									join: {getColumnName(join.left_alias, join.left_column)} = {getColumnName(join.right_alias, join.right_column)}
-									<button type="button" onclick={() => query.removeJoin(i)} class="text-sky-400 hover:text-sky-600" aria-label="Remove join">
-										<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-									</button>
-								</span>
-							{/each}
-							{#each query.filters as filter, i (i)}
-								<span class="flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">
-									{getColumnName(filter.table_alias, filter.column)}
-									{FILTER_OPS.find((f) => f.value === filter.op)?.label}
-									{#if filter.value !== null}{filter.value}{/if}
-									<button type="button" onclick={() => query.removeFilter(i)} class="text-violet-400 hover:text-violet-600" aria-label="Remove filter">
-										<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-									</button>
-								</span>
-							{/each}
-							{#if showAddFilter}
-								<div class="flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1">
-									<select bind:value={filterAlias} class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none">
-										{#each query.tables as t (t.alias)}
-											<option value={t.alias}>{t.tableInfo.name}</option>
-										{/each}
-									</select>
-									<select bind:value={filterColumn} class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none">
-										<option value="">col</option>
-										{#each getTableColumns(filterAlias) as col (col.name)}
-											<option value={col.name}>{col.name}</option>
-										{/each}
-									</select>
-									<select bind:value={filterOp} class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none">
-										{#each FILTER_OPS as op (op.value)}
-											<option value={op.value}>{op.label}</option>
-										{/each}
-									</select>
-									{#if filterOp !== 'IsNull' && filterOp !== 'IsNotNull'}
-										<input bind:value={filterValue} placeholder="value" class="w-20 rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none" />
-									{/if}
-									<button type="button" onclick={confirmAddFilter} class="rounded bg-slate-900 px-2 py-0.5 text-xs text-white hover:bg-slate-700">Add</button>
-									<button type="button" onclick={() => (showAddFilter = false)} class="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
-								</div>
-							{:else}
-								<button type="button" onclick={startAddFilter} class="flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-600">
-									<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-									Add filter
+				{#if query.joins.length > 0}
+					<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
+						{#each query.joins as join, i (i)}
+							<span class="flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+								join: {join.left_alias}.{join.left_column} = {join.right_alias}.{join.right_column}
+								<button type="button" onclick={() => query.removeJoin(i)} class="text-sky-400 hover:text-sky-600" aria-label="Remove join">
+									<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
 								</button>
-							{/if}
-						</div>
-					{/if}
+							</span>
+						{/each}
+					</div>
+				{/if}
+
+				{#if query.tables.length > 0}
+					<div class="border-b border-slate-200 bg-white px-4 py-2">
+						<FilterBuilder />
+					</div>
+				{/if}
 
 					<div class="relative flex-1 overflow-hidden bg-slate-50">
 						{#if query.tables.length === 0}

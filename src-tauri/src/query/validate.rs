@@ -1,10 +1,15 @@
 use std::collections::HashSet;
 
 use crate::introspect::{Schema, TableInfo};
-use crate::query::ir::QuerySpec;
+use crate::query::ir::{
+    FilterGroup, FilterLiteral, FilterNode, FilterOp, FilterSpec, FilterValue, LiteralKind,
+    QuerySpec, ValueKind,
+};
 
 pub const MAX_LIMIT: u32 = 1000;
 pub const DEFAULT_LIMIT: u32 = 100;
+pub const MAX_FILTER_DEPTH: usize = 5;
+pub const MAX_IN_LIST_SIZE: usize = 1000;
 
 const BLOCKED_SCHEMAS: &[&str] = &[
     "pg_catalog",
@@ -49,6 +54,149 @@ pub struct ValidationOutcome {
     pub limit: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnCategory {
+    Text,
+    Numeric,
+    Bool,
+    Date,
+    DateTime,
+    Other,
+}
+
+pub fn classify_column(data_type: &str) -> ColumnCategory {
+    let dt = data_type.to_ascii_lowercase();
+
+    if matches!(dt.as_str(), "bool" | "boolean" | "bit") {
+        return ColumnCategory::Bool;
+    }
+    if dt == "date" {
+        return ColumnCategory::Date;
+    }
+    if dt.starts_with("timestamp")
+        || dt.starts_with("datetime")
+        || dt == "datetime2"
+        || dt == "smalldatetime"
+    {
+        return ColumnCategory::DateTime;
+    }
+    if matches!(
+        dt.as_str(),
+        "int"
+            | "integer"
+            | "smallint"
+            | "bigint"
+            | "mediumint"
+            | "tinyint"
+            | "serial"
+            | "bigserial"
+            | "decimal"
+            | "numeric"
+            | "real"
+            | "double"
+            | "float"
+            | "float4"
+            | "float8"
+            | "money"
+            | "smallmoney"
+            | "double precision"
+    ) || dt.starts_with("decimal")
+        || dt.starts_with("numeric")
+    {
+        return ColumnCategory::Numeric;
+    }
+    if matches!(
+        dt.as_str(),
+        "text"
+            | "varchar"
+            | "char"
+            | "character"
+            | "character varying"
+            | "string"
+            | "tinytext"
+            | "mediumtext"
+            | "longtext"
+            | "nvarchar"
+            | "nchar"
+            | "varchar2"
+            | "nvarchar2"
+            | "clob"
+            | "nclob"
+            | "xml"
+    ) || dt.starts_with("varchar")
+        || dt.starts_with("char")
+        || dt.starts_with("nchar")
+        || dt.starts_with("nvarchar")
+    {
+        return ColumnCategory::Text;
+    }
+    ColumnCategory::Other
+}
+
+pub fn literal_kind_for_column(data_type: &str) -> LiteralKind {
+    match classify_column(data_type) {
+        ColumnCategory::Numeric => LiteralKind::Int,
+        ColumnCategory::Bool => LiteralKind::Bool,
+        ColumnCategory::Date => LiteralKind::Date,
+        ColumnCategory::DateTime => LiteralKind::DateTime,
+        ColumnCategory::Text | ColumnCategory::Other => LiteralKind::Text,
+    }
+}
+
+pub fn ops_for_column(data_type: &str) -> &'static [FilterOp] {
+    match classify_column(data_type) {
+        ColumnCategory::Text => &[
+            FilterOp::Eq,
+            FilterOp::Ne,
+            FilterOp::Like,
+            FilterOp::NotLike,
+            FilterOp::Ilike,
+            FilterOp::In,
+            FilterOp::NotIn,
+            FilterOp::IsNull,
+            FilterOp::IsNotNull,
+            FilterOp::IsEmpty,
+            FilterOp::IsNotEmpty,
+        ],
+        ColumnCategory::Numeric => &[
+            FilterOp::Eq,
+            FilterOp::Ne,
+            FilterOp::Gt,
+            FilterOp::Gte,
+            FilterOp::Lt,
+            FilterOp::Lte,
+            FilterOp::In,
+            FilterOp::NotIn,
+            FilterOp::Between,
+            FilterOp::IsNull,
+            FilterOp::IsNotNull,
+        ],
+        ColumnCategory::Bool => &[
+            FilterOp::Eq,
+            FilterOp::Ne,
+            FilterOp::IsNull,
+            FilterOp::IsNotNull,
+        ],
+        ColumnCategory::Date | ColumnCategory::DateTime => &[
+            FilterOp::Eq,
+            FilterOp::Ne,
+            FilterOp::Gt,
+            FilterOp::Gte,
+            FilterOp::Lt,
+            FilterOp::Lte,
+            FilterOp::Between,
+            FilterOp::IsNull,
+            FilterOp::IsNotNull,
+        ],
+        ColumnCategory::Other => &[
+            FilterOp::Eq,
+            FilterOp::Ne,
+            FilterOp::IsNull,
+            FilterOp::IsNotNull,
+        ],
+    }
+}
+
 pub fn validate(
     spec: &mut QuerySpec,
     schema: &Schema,
@@ -69,7 +217,7 @@ pub fn validate(
             ));
         }
 
-        let table_info = find_table(schema, &table.schema, &table.name).ok_or_else(|| {
+        let _table_info = find_table(schema, &table.schema, &table.name).ok_or_else(|| {
             format!(
                 "Table '{}.{}' not found in schema",
                 table.schema, table.name
@@ -82,7 +230,9 @@ pub fn validate(
 
         for col in &spec.columns {
             if col.table_alias == table.alias
-                && !table_info.columns.iter().any(|c| c.name == col.column)
+                && !find_table(schema, &table.schema, &table.name)
+                    .map(|t| t.columns.iter().any(|c| c.name == col.column))
+                    .unwrap_or(false)
             {
                 return Err(format!(
                     "Column '{}.{}' does not exist",
@@ -155,30 +305,14 @@ pub fn validate(
         }
     }
 
-    for filter in &spec.filters {
-        if !table_aliases.contains(filter.table_alias.as_str()) {
-            return Err(format!(
-                "Filter references unknown table alias '{}'",
-                filter.table_alias
-            ));
-        }
-
-        let table = find_table_by_alias(schema, spec, &filter.table_alias)
-            .ok_or_else(|| format!("Cannot resolve table for alias '{}'", filter.table_alias))?;
-        if !table.columns.iter().any(|c| c.name == filter.column) {
-            return Err(format!(
-                "Filter column '{}.{}' does not exist",
-                filter.table_alias, filter.column
-            ));
-        }
-
-        if filter.op.needs_value() && filter.value.is_none() {
-            return Err(format!(
-                "Filter on '{}.{}' requires a value",
-                filter.table_alias, filter.column
-            ));
-        }
-    }
+    validate_node(
+        &FilterNode::Group(spec.filters.clone()),
+        schema,
+        spec,
+        &table_aliases,
+        0,
+        &mut warnings,
+    )?;
 
     if spec.tables.len() > 1 {
         let connected = check_join_connectivity(spec);
@@ -209,6 +343,269 @@ pub fn validate(
         warnings,
         limit: spec.limit,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_node(
+    node: &FilterNode,
+    schema: &Schema,
+    spec: &QuerySpec,
+    table_aliases: &HashSet<&str>,
+    depth: usize,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    if depth > MAX_FILTER_DEPTH {
+        return Err(format!(
+            "Filter nesting exceeds maximum depth of {}",
+            MAX_FILTER_DEPTH
+        ));
+    }
+
+    match node {
+        FilterNode::Leaf(filter) => {
+            validate_leaf(filter, schema, spec, table_aliases)
+        }
+        FilterNode::Group(group) => {
+            validate_group(group, schema, spec, table_aliases, depth, warnings)
+        }
+    }
+}
+
+fn validate_leaf(
+    filter: &FilterSpec,
+    schema: &Schema,
+    spec: &QuerySpec,
+    table_aliases: &HashSet<&str>,
+) -> Result<(), String> {
+    if !table_aliases.contains(filter.table_alias.as_str()) {
+        return Err(format!(
+            "Filter references unknown table alias '{}'",
+            filter.table_alias
+        ));
+    }
+
+    let table = find_table_by_alias(schema, spec, &filter.table_alias)
+        .ok_or_else(|| format!("Cannot resolve table for alias '{}'", filter.table_alias))?;
+
+    let col = table.columns.iter().find(|c| c.name == filter.column).ok_or_else(|| {
+        format!(
+            "Filter column '{}.{}' does not exist",
+            filter.table_alias, filter.column
+        )
+    })?;
+
+    let allowed = ops_for_column(&col.data_type);
+    if !allowed.contains(&filter.op) {
+        return Err(format!(
+            "Operator '{}' is not applicable to column '{}.{}' (type: {})",
+            op_label(&filter.op),
+            filter.table_alias,
+            filter.column,
+            col.data_type
+        ));
+    }
+
+    let value_kind = filter.op.value_kind();
+    match value_kind {
+        ValueKind::None => {
+            if filter.value.is_some() {
+                return Err(format!(
+                    "Operator '{}' on '{}.{}' should not have a value",
+                    op_label(&filter.op),
+                    filter.table_alias,
+                    filter.column
+                ));
+            }
+        }
+        ValueKind::Single => {
+            let val = filter.value.as_ref().ok_or_else(|| {
+                format!(
+                    "Filter on '{}.{}' requires a value",
+                    filter.table_alias, filter.column
+                )
+            })?;
+            let lit = expect_single(val, &filter.table_alias, &filter.column)?;
+            validate_literal(lit, &col.data_type, &filter.table_alias, &filter.column)?;
+        }
+        ValueKind::List => {
+            let val = filter.value.as_ref().ok_or_else(|| {
+                format!(
+                    "Filter on '{}.{}' requires a value list",
+                    filter.table_alias, filter.column
+                )
+            })?;
+            let list = expect_list(val, &filter.table_alias, &filter.column)?;
+            if list.is_empty() {
+                return Err(format!(
+                    "Filter on '{}.{}' has an empty value list",
+                    filter.table_alias, filter.column
+                ));
+            }
+            if list.len() > MAX_IN_LIST_SIZE {
+                return Err(format!(
+                    "Filter on '{}.{}' has too many values (max {})",
+                    filter.table_alias, filter.column, MAX_IN_LIST_SIZE
+                ));
+            }
+            for lit in list {
+                validate_literal(lit, &col.data_type, &filter.table_alias, &filter.column)?;
+            }
+        }
+        ValueKind::Pair => {
+            let val = filter.value.as_ref().ok_or_else(|| {
+                format!(
+                    "Filter on '{}.{}' requires a range (from/to)",
+                    filter.table_alias, filter.column
+                )
+            })?;
+            let (from, to) = expect_pair(val, &filter.table_alias, &filter.column)?;
+            validate_literal(from, &col.data_type, &filter.table_alias, &filter.column)?;
+            validate_literal(to, &col.data_type, &filter.table_alias, &filter.column)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_group(
+    group: &FilterGroup,
+    schema: &Schema,
+    spec: &QuerySpec,
+    table_aliases: &HashSet<&str>,
+    depth: usize,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    if depth > 0 && group.children.is_empty() {
+        warnings.push("Filter group has no conditions".to_string());
+    }
+    if depth > 0
+        && group.children.len() == 1
+        && matches!(group.children[0], FilterNode::Leaf(_))
+    {
+        warnings.push("Filter group has only one condition — a group is unnecessary".to_string());
+    }
+    for child in &group.children {
+        validate_node(child, schema, spec, table_aliases, depth + 1, warnings)?;
+    }
+    Ok(())
+}
+
+fn validate_literal(
+    lit: &FilterLiteral,
+    _data_type: &str,
+    alias: &str,
+    column: &str,
+) -> Result<(), String> {
+    match lit.kind {
+        LiteralKind::Text => Ok(()),
+        LiteralKind::Int => {
+            lit.text.parse::<i64>().map_err(|_| {
+                format!(
+                    "'{}' is not a valid integer for '{}.{}'",
+                    lit.text, alias, column
+                )
+            })?;
+            Ok(())
+        }
+        LiteralKind::Float => {
+            lit.text.parse::<f64>().map_err(|_| {
+                format!(
+                    "'{}' is not a valid number for '{}.{}'",
+                    lit.text, alias, column
+                )
+            })?;
+            Ok(())
+        }
+        LiteralKind::Bool => {
+            if lit.text.eq_ignore_ascii_case("true")
+                || lit.text.eq_ignore_ascii_case("false")
+                || lit.text.eq_ignore_ascii_case("1")
+                || lit.text.eq_ignore_ascii_case("0")
+                || lit.text.eq_ignore_ascii_case("yes")
+                || lit.text.eq_ignore_ascii_case("no")
+                || lit.text.is_empty()
+            {
+                Ok(())
+            } else {
+                Err(format!(
+                    "'{}' is not a valid boolean for '{}.{}'",
+                    lit.text, alias, column
+                ))
+            }
+        }
+        LiteralKind::Date | LiteralKind::DateTime => {
+            if lit.text.trim().is_empty() {
+                return Err(format!(
+                    "Date value for '{}.{}' is empty",
+                    alias, column
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
+fn expect_single<'a>(
+    val: &'a FilterValue,
+    alias: &str,
+    column: &str,
+) -> Result<&'a FilterLiteral, String> {
+    match val {
+        FilterValue::Single(lit) => Ok(lit),
+        _ => Err(format!(
+            "Filter on '{}.{}' expects a single value",
+            alias, column
+        )),
+    }
+}
+
+fn expect_list<'a>(
+    val: &'a FilterValue,
+    alias: &str,
+    column: &str,
+) -> Result<&'a Vec<FilterLiteral>, String> {
+    match val {
+        FilterValue::List(list) => Ok(list),
+        _ => Err(format!(
+            "Filter on '{}.{}' expects a list of values",
+            alias, column
+        )),
+    }
+}
+
+fn expect_pair<'a>(
+    val: &'a FilterValue,
+    alias: &str,
+    column: &str,
+) -> Result<(&'a FilterLiteral, &'a FilterLiteral), String> {
+    match val {
+        FilterValue::Pair(from, to) => Ok((from, to)),
+        _ => Err(format!(
+            "Filter on '{}.{}' expects a range (from/to)",
+            alias, column
+        )),
+    }
+}
+
+fn op_label(op: &FilterOp) -> &'static str {
+    match op {
+        FilterOp::Eq => "=",
+        FilterOp::Ne => "<>",
+        FilterOp::Gt => ">",
+        FilterOp::Gte => ">=",
+        FilterOp::Lt => "<",
+        FilterOp::Lte => "<=",
+        FilterOp::Like => "LIKE",
+        FilterOp::NotLike => "NOT LIKE",
+        FilterOp::Ilike => "ILIKE",
+        FilterOp::In => "IN",
+        FilterOp::NotIn => "NOT IN",
+        FilterOp::Between => "BETWEEN",
+        FilterOp::IsNull => "IS NULL",
+        FilterOp::IsNotNull => "IS NOT NULL",
+        FilterOp::IsEmpty => "IS EMPTY",
+        FilterOp::IsNotEmpty => "IS NOT EMPTY",
+    }
 }
 
 fn find_table<'a>(
@@ -269,7 +666,10 @@ fn is_blocked(schema: &str, custom: &[String]) -> bool {
 mod tests {
     use super::*;
     use crate::introspect::{ColumnInfo, Schema, TableInfo};
-    use crate::query::ir::{ColumnSel, FilterOp, FilterSpec, JoinSpec, QuerySpec, TableRef};
+    use crate::query::ir::{
+        ColumnSel, FilterGroup, FilterLiteral, FilterNode, FilterOp, FilterSpec, FilterValue,
+        GroupConnector, JoinSpec, LiteralKind, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION,
+    };
 
     fn sample_schema() -> Schema {
         Schema {
@@ -287,6 +687,24 @@ mod tests {
                         ColumnInfo {
                             name: "name".into(),
                             data_type: "text".into(),
+                            nullable: true,
+                            is_indexed: false,
+                        },
+                        ColumnInfo {
+                            name: "price".into(),
+                            data_type: "numeric".into(),
+                            nullable: true,
+                            is_indexed: false,
+                        },
+                        ColumnInfo {
+                            name: "active".into(),
+                            data_type: "boolean".into(),
+                            nullable: true,
+                            is_indexed: false,
+                        },
+                        ColumnInfo {
+                            name: "created_at".into(),
+                            data_type: "timestamp".into(),
                             nullable: true,
                             is_indexed: false,
                         },
@@ -320,8 +738,41 @@ mod tests {
                 column: "id".into(),
             }],
             joins: vec![],
-            filters: vec![],
+            filters: FilterGroup::default(),
             limit: 100,
+            schema_version: CURRENT_SCHEMA_VERSION,
+        }
+    }
+
+    fn lit(kind: LiteralKind, text: &str) -> FilterLiteral {
+        FilterLiteral {
+            kind,
+            text: text.into(),
+        }
+    }
+
+    fn leaf(op: FilterOp, value: Option<FilterValue>) -> FilterSpec {
+        FilterSpec {
+            table_alias: "t0".into(),
+            column: "name".into(),
+            op,
+            value,
+        }
+    }
+
+    fn leaf_on(col: &str, op: FilterOp, value: Option<FilterValue>) -> FilterSpec {
+        FilterSpec {
+            table_alias: "t0".into(),
+            column: col.into(),
+            op,
+            value,
+        }
+    }
+
+    fn group(connector: GroupConnector, children: Vec<FilterNode>) -> FilterGroup {
+        FilterGroup {
+            connector,
+            children,
         }
     }
 
@@ -427,13 +878,174 @@ mod tests {
     #[test]
     fn rejects_filter_missing_value() {
         let mut spec = base_spec();
-        spec.filters.push(FilterSpec {
-            table_alias: "t0".into(),
-            column: "name".into(),
-            op: FilterOp::Eq,
-            value: None,
-        });
+        spec.filters.children.push(FilterNode::Leaf(leaf(
+            FilterOp::Eq,
+            None,
+        )));
         let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
         assert!(err.contains("requires a value"));
+    }
+
+    #[test]
+    fn rejects_ilike_on_numeric_column() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::Ilike,
+            Some(FilterValue::Single(lit(LiteralKind::Text, "foo"))),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("not applicable"));
+    }
+
+    #[test]
+    fn rejects_is_empty_on_numeric_column() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::IsEmpty,
+            None,
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("not applicable"));
+    }
+
+    #[test]
+    fn accepts_is_empty_on_text_column() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf(
+            FilterOp::IsEmpty,
+            None,
+        )));
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert!(outcome.warnings.iter().all(|w| !w.contains("not applicable")));
+    }
+
+    #[test]
+    fn rejects_in_with_empty_list() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::In,
+            Some(FilterValue::List(vec![])),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("empty value list"));
+    }
+
+    #[test]
+    fn accepts_in_with_values() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::In,
+            Some(FilterValue::List(vec![
+                lit(LiteralKind::Int, "1"),
+                lit(LiteralKind::Int, "2"),
+            ])),
+        )));
+        validate(&mut spec, &sample_schema(), &[]).unwrap();
+    }
+
+    #[test]
+    fn rejects_between_missing_pair() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::Between,
+            Some(FilterValue::Single(lit(LiteralKind::Int, "5"))),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("range"));
+    }
+
+    #[test]
+    fn accepts_between_with_pair() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::Between,
+            Some(FilterValue::Pair(
+                lit(LiteralKind::Int, "1"),
+                lit(LiteralKind::Int, "100"),
+            )),
+        )));
+        validate(&mut spec, &sample_schema(), &[]).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_integer_value_for_int_column() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::Eq,
+            Some(FilterValue::Single(lit(LiteralKind::Int, "abc"))),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("not a valid integer"));
+    }
+
+    #[test]
+    fn accepts_nested_groups() {
+        let mut spec = base_spec();
+        spec.filters.connector = GroupConnector::And;
+        spec.filters.children.push(FilterNode::Group(group(
+            GroupConnector::Or,
+            vec![
+                FilterNode::Leaf(leaf_on(
+                    "id",
+                    FilterOp::Eq,
+                    Some(FilterValue::Single(lit(LiteralKind::Int, "1"))),
+                )),
+                FilterNode::Leaf(leaf_on(
+                    "id",
+                    FilterOp::Eq,
+                    Some(FilterValue::Single(lit(LiteralKind::Int, "2"))),
+                )),
+            ],
+        )));
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn warns_on_empty_group() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Group(group(
+            GroupConnector::Or,
+            vec![],
+        )));
+        let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
+        assert!(outcome.warnings.iter().any(|w| w.contains("no conditions")));
+    }
+
+    #[test]
+    fn rejects_excessive_nesting() {
+        let mut spec = base_spec();
+        let mut deepest: &mut FilterGroup = &mut spec.filters;
+        for _ in 0..(MAX_FILTER_DEPTH + 2) {
+            deepest.children.push(FilterNode::Group(group(GroupConnector::And, vec![])));
+            match deepest.children.last_mut().unwrap() {
+                FilterNode::Group(g) => deepest = g,
+                _ => break,
+            }
+        }
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("maximum depth"));
+    }
+
+    #[test]
+    fn classify_column_covers_common_types() {
+        assert_eq!(classify_column("int"), ColumnCategory::Numeric);
+        assert_eq!(classify_column("INTEGER"), ColumnCategory::Numeric);
+        assert_eq!(classify_column("varchar"), ColumnCategory::Text);
+        assert_eq!(classify_column("VARCHAR2"), ColumnCategory::Text);
+        assert_eq!(classify_column("boolean"), ColumnCategory::Bool);
+        assert_eq!(classify_column("date"), ColumnCategory::Date);
+        assert_eq!(
+            classify_column("timestamp without time zone"),
+            ColumnCategory::DateTime
+        );
+        assert_eq!(classify_column("datetime"), ColumnCategory::DateTime);
     }
 }

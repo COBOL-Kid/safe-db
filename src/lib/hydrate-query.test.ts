@@ -48,15 +48,21 @@ describe('hydrateQueryFromSpec', () => {
 					right_column: 'id'
 				}
 			],
-			filters: [
-				{
-					table_alias: 'saved_t0',
-					column: 'name',
-					op: 'Like',
-					value: '%widget%'
-				}
-			],
-			limit: 25
+			filters: {
+				connector: 'And',
+				children: [
+					{
+						Leaf: {
+							table_alias: 'saved_t0',
+							column: 'name',
+							op: 'Like',
+							value: { Single: { kind: 'Text', text: '%widget%' } }
+						}
+					}
+				]
+			},
+			limit: 25,
+			schema_version: 2
 		};
 
 		hydrateQueryFromSpec(spec, [products, categories], store);
@@ -72,7 +78,12 @@ describe('hydrateQueryFromSpec', () => {
 			right_alias: 't1',
 			right_column: 'id'
 		});
-		expect(store.filters[0].table_alias).toBe('t0');
+		expect(store.filters.children).toHaveLength(1);
+		const leaf = store.filters.children[0];
+		expect('Leaf' in leaf).toBe(true);
+		if ('Leaf' in leaf) {
+			expect(leaf.Leaf.table_alias).toBe('t0');
+		}
 		expect(store.limit).toBe(25);
 	});
 
@@ -92,15 +103,21 @@ describe('hydrateQueryFromSpec', () => {
 					right_column: 'id'
 				}
 			],
-			filters: [
-				{
-					table_alias: 'saved_t0',
-					column: 'name',
-					op: 'Like',
-					value: '%widget%'
-				}
-			],
-			limit: 100
+			filters: {
+				connector: 'And',
+				children: [
+					{
+						Leaf: {
+							table_alias: 'saved_t0',
+							column: 'name',
+							op: 'Like',
+							value: { Single: { kind: 'Text', text: '%widget%' } }
+						}
+					}
+				]
+			},
+			limit: 100,
+			schema_version: 2
 		};
 
 		hydrateQueryFromSpec(spec, [products], store);
@@ -109,6 +126,6 @@ describe('hydrateQueryFromSpec', () => {
 		expect(store.tables[0].tableInfo.name).toBe('products');
 		expect(store.selectedColumns.has('t0.name')).toBe(true);
 		expect(store.joins).toHaveLength(0);
-		expect(store.filters).toHaveLength(0);
+		expect(store.filters.children).toHaveLength(0);
 	});
 });

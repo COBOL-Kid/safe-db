@@ -1,6 +1,14 @@
 <script lang="ts">
 	import type { CanvasTable } from '$lib/stores/query.svelte';
 	import { query } from '$lib/stores/query.svelte';
+	import {
+		opsForColumn,
+		literalKindForColumn,
+		valueKindForOp,
+		opLabel,
+		type FilterSpec,
+		type FilterLiteral
+	} from '$lib/ir';
 
 	let {
 		canvasTable,
@@ -12,12 +20,52 @@
 
 	let table = $derived(canvasTable.tableInfo);
 	let alias = $derived(canvasTable.alias);
+	let menuColumn = $state<string | null>(null);
 
 	function removeTable(e: MouseEvent) {
 		e.stopPropagation();
 		query.removeTable(alias);
 	}
+
+	function toggleMenu(colName: string, e: MouseEvent) {
+		e.stopPropagation();
+		menuColumn = menuColumn === colName ? null : colName;
+	}
+
+	function closeMenu() {
+		menuColumn = null;
+	}
+
+	function quickFilter(colName: string, op: string) {
+		const col = table.columns.find((c) => c.name === colName);
+		if (!col) return;
+		const kind = literalKindForColumn(col.data_type);
+		const vk = valueKindForOp(op as any);
+		let value = null;
+		if (vk === 'Single') {
+			value = { Single: { kind, text: '' } };
+		} else if (vk === 'List') {
+			value = { List: [{ kind, text: '' }] };
+		} else if (vk === 'Pair') {
+			const pair: [FilterLiteral, FilterLiteral] = [
+				{ kind, text: '' },
+				{ kind, text: '' }
+			];
+			value = { Pair: pair };
+		}
+		const spec: FilterSpec = { table_alias: alias, column: colName, op: op as any, value };
+		query.addFilter(spec);
+		closeMenu();
+	}
+
+	function getMenuOps(colName: string) {
+		const col = table.columns.find((c) => c.name === colName);
+		if (!col) return [];
+		return opsForColumn(col.data_type);
+	}
 </script>
+
+<svelte:window onclick={closeMenu} />
 
 <div
 	class="absolute w-56 rounded-xl border border-slate-200 bg-white shadow-lg select-none"
@@ -43,7 +91,7 @@
 		{#each table.columns as col, i (col.name)}
 			{@const selected = query.isColumnSelected(alias, col.name)}
 			<div
-				class="flex items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-slate-50 {selected ? 'bg-sky-50' : ''}"
+				class="relative flex items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-slate-50 {selected ? 'bg-sky-50' : ''}"
 				data-column-index={i}
 				data-alias={alias}
 				data-column={col.name}
@@ -63,6 +111,15 @@
 					<span class="shrink-0 text-slate-300">{col.data_type}</span>
 				</button>
 
+				<button
+					type="button"
+					class="flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-300 transition-colors hover:bg-slate-200 hover:text-slate-600"
+					title="Filter options"
+					onclick={(e) => toggleMenu(col.name, e)}
+				>
+					<svg class="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+				</button>
+
 				{#if col.is_indexed}
 					<button
 						type="button"
@@ -76,6 +133,27 @@
 					</button>
 				{:else}
 					<div class="h-4 w-4 shrink-0"></div>
+				{/if}
+
+				{#if menuColumn === col.name}
+					<!-- svelte-ignore a11y_interactive_supports_focus -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<div
+						class="absolute right-0 top-full z-50 mt-0.5 min-w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+						role="menu"
+						onclick={(e) => e.stopPropagation()}
+					>
+						<div class="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Filter where</div>
+						{#each getMenuOps(col.name) as op (op)}
+							<button
+								type="button"
+								class="block w-full px-3 py-1 text-left text-xs text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700"
+								onclick={() => quickFilter(col.name, op)}
+							>
+								{col.name} {opLabel(op)}
+							</button>
+						{/each}
+					</div>
 				{/if}
 			</div>
 		{/each}

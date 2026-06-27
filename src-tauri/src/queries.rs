@@ -1,5 +1,6 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -47,15 +48,13 @@ impl QueryStore {
 
     pub fn list_saved(&self) -> Result<Vec<SavedQuery>> {
         let _guard = self.lock.lock().unwrap();
-        self.read_json::<Vec<SavedQuery>>(&self.saved_path)
-            .map(|v| v.unwrap_or_default())
+        let valid = self.read_valid::<SavedQuery>(&self.saved_path)?;
+        Ok(valid)
     }
 
     pub fn save_query(&self, query: SavedQuery) -> Result<()> {
         let _guard = self.lock.lock().unwrap();
-        let mut queries = self
-            .read_json::<Vec<SavedQuery>>(&self.saved_path)?
-            .unwrap_or_default();
+        let mut queries = self.read_valid::<SavedQuery>(&self.saved_path)?;
         if let Some(existing) = queries.iter_mut().find(|q| q.id == query.id) {
             *existing = query;
         } else {
@@ -67,9 +66,7 @@ impl QueryStore {
 
     pub fn delete_saved(&self, id: &str) -> Result<()> {
         let _guard = self.lock.lock().unwrap();
-        let mut queries = self
-            .read_json::<Vec<SavedQuery>>(&self.saved_path)?
-            .unwrap_or_default();
+        let mut queries = self.read_valid::<SavedQuery>(&self.saved_path)?;
         queries.retain(|q| q.id != id);
         self.write_json(&self.saved_path, &queries)?;
         Ok(())
@@ -77,15 +74,13 @@ impl QueryStore {
 
     pub fn list_history(&self) -> Result<Vec<HistoryEntry>> {
         let _guard = self.lock.lock().unwrap();
-        self.read_json::<Vec<HistoryEntry>>(&self.history_path)
-            .map(|v| v.unwrap_or_default())
+        let valid = self.read_valid::<HistoryEntry>(&self.history_path)?;
+        Ok(valid)
     }
 
     pub fn add_history(&self, entry: HistoryEntry) -> Result<()> {
         let _guard = self.lock.lock().unwrap();
-        let mut history = self
-            .read_json::<Vec<HistoryEntry>>(&self.history_path)?
-            .unwrap_or_default();
+        let mut history = self.read_valid::<HistoryEntry>(&self.history_path)?;
         history.insert(0, entry);
         if history.len() > self.max_history {
             history.truncate(self.max_history);
@@ -100,16 +95,37 @@ impl QueryStore {
         Ok(())
     }
 
-    fn read_json<T: for<'de> Deserialize<'de>>(&self, path: &PathBuf) -> Result<Option<T>> {
+    fn read_valid<T: DeserializeOwned + Serialize>(&self, path: &PathBuf) -> Result<Vec<T>> {
         if !path.exists() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let content = fs::read_to_string(path)?;
         if content.trim().is_empty() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
-        let data: T = serde_json::from_str(&content)?;
-        Ok(Some(data))
+        let arr: Vec<Value> = serde_json::from_str(&content)?;
+        let (valid, dropped): (Vec<T>, usize) = arr
+            .into_iter()
+            .fold((Vec::new(), 0usize), |(mut acc, mut dropped), v| {
+                match serde_json::from_value::<T>(v) {
+                    Ok(item) => {
+                        acc.push(item);
+                    }
+                    Err(_) => {
+                        dropped += 1;
+                    }
+                }
+                (acc, dropped)
+            });
+        if dropped > 0 {
+            log::info!(
+                "Dropped {} outdated entries from {} (schema version mismatch)",
+                dropped,
+                path.display()
+            );
+            let _ = self.write_json(path, &valid);
+        }
+        Ok(valid)
     }
 
     fn write_json<T: Serialize>(&self, path: &PathBuf, data: &T) -> Result<()> {

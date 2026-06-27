@@ -1,6 +1,6 @@
 use safe_db_lib::config::ConfigStore;
 use safe_db_lib::queries::{HistoryEntry, QueryStore, SavedQuery};
-use safe_db_lib::query::ir::{QuerySpec, TableRef};
+use safe_db_lib::query::ir::{FilterGroup, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION};
 use safe_db_lib::settings::SettingsStore;
 use safe_db_lib::types::{ConnectionDef, Dialect};
 use tempfile::TempDir;
@@ -26,8 +26,9 @@ fn sample_spec() -> QuerySpec {
         }],
         columns: vec![],
         joins: vec![],
-        filters: vec![],
+        filters: FilterGroup::default(),
         limit: 100,
+        schema_version: CURRENT_SCHEMA_VERSION,
     }
 }
 

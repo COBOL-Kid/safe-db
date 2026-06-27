@@ -1,6 +1,6 @@
 use safe_db_lib::adapters::mysql;
 use safe_db_lib::query::compile::compile;
-use safe_db_lib::query::ir::{ColumnSel, QuerySpec, TableRef};
+use safe_db_lib::query::ir::{ColumnSel, FilterGroup, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION};
 use safe_db_lib::query::validate::validate;
 use safe_db_lib::types::Dialect;
 
@@ -91,14 +91,15 @@ async fn mysql_connect_introspect_validate_compile_execute() {
             column: "id".into(),
         }],
         joins: vec![],
-        filters: vec![],
+        filters: FilterGroup::default(),
         limit: 5,
+        schema_version: CURRENT_SCHEMA_VERSION,
     };
 
     let outcome = validate(&mut spec, &schema, &[]).expect("validate should succeed");
     assert!(outcome.limit <= 5);
 
-    let compiled = compile(&spec, Dialect::MySql);
+    let compiled = compile(&spec, Dialect::MySql).expect("compile should succeed");
     let result = mysql::execute_query(&pool, &compiled, 10_000)
         .await
         .expect("execute should succeed");

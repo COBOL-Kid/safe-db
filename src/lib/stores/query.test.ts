@@ -45,7 +45,7 @@ describe('QueryStore', () => {
 			table_alias: aliasA,
 			column: 'name',
 			op: 'Eq',
-			value: 'x'
+			value: { Single: { kind: 'Text', text: 'x' } }
 		});
 
 		store.removeTable(aliasA);
@@ -54,7 +54,7 @@ describe('QueryStore', () => {
 		expect(store.selectedColumns.size).toBe(1);
 		expect([...store.selectedColumns][0]).toBe(`${aliasB}.name`);
 		expect(store.joins).toHaveLength(0);
-		expect(store.filters).toHaveLength(0);
+		expect(store.filters.children).toHaveLength(0);
 	});
 
 	it('deduplicates joins in both directions', () => {
@@ -94,8 +94,9 @@ describe('QueryStore', () => {
 			tables: [{ schema: 'public', name: 'products', alias }],
 			columns: [{ table_alias: alias, column: 'id' }],
 			joins: [],
-			filters: [],
-			limit: 50
+			filters: { connector: 'And', children: [] },
+			limit: 50,
+			schema_version: 2
 		});
 	});
 
@@ -106,5 +107,99 @@ describe('QueryStore', () => {
 		expect(store.tables).toHaveLength(0);
 		expect(store.selectedColumns.size).toBe(0);
 		expect(store.limit).toBe(100);
+	});
+
+	it('adds a leaf filter to the root group', () => {
+		store.addTable(makeTable('a'));
+		const alias = store.tables[0].alias;
+		store.addFilter({
+			table_alias: alias,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'widget' } }
+		});
+		expect(store.filters.children).toHaveLength(1);
+	});
+
+	it('adds a nested group to the root group', () => {
+		store.addTable(makeTable('a'));
+		store.addGroupToGroup([], 'Or');
+		expect(store.filters.children).toHaveLength(1);
+		const child = store.filters.children[0];
+		expect('Group' in child).toBe(true);
+		if ('Group' in child) {
+			expect(child.Group.connector).toBe('Or');
+			expect(child.Group.children).toHaveLength(0);
+		}
+	});
+
+	it('adds a leaf to a nested group via path', () => {
+		store.addTable(makeTable('a'));
+		const alias = store.tables[0].alias;
+		store.addGroupToGroup([], 'Or');
+		store.addFilterToGroup([0], {
+			table_alias: alias,
+			column: 'id',
+			op: 'Eq',
+			value: { Single: { kind: 'Int', text: '42' } }
+		});
+		const child = store.filters.children[0];
+		if ('Group' in child) {
+			expect(child.Group.children).toHaveLength(1);
+		}
+	});
+
+	it('removes a node by path', () => {
+		store.addTable(makeTable('a'));
+		const alias = store.tables[0].alias;
+		store.addFilter({
+			table_alias: alias,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'x' } }
+		});
+		store.addFilter({
+			table_alias: alias,
+			column: 'id',
+			op: 'Eq',
+			value: { Single: { kind: 'Int', text: '1' } }
+		});
+		expect(store.filters.children).toHaveLength(2);
+		store.removeFilterNode([0]);
+		expect(store.filters.children).toHaveLength(1);
+	});
+
+	it('toggles group connector', () => {
+		store.setGroupConnector([], 'Or');
+		expect(store.filters.connector).toBe('Or');
+		store.setGroupConnector([], 'And');
+		expect(store.filters.connector).toBe('And');
+	});
+
+	it('prunes filters referencing a removed table', () => {
+		store.addTable(makeTable('a'));
+		store.addTable(makeTable('b'));
+		const aliasA = store.tables[0].alias;
+		const aliasB = store.tables[1].alias;
+
+		store.addFilter({
+			table_alias: aliasA,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'x' } }
+		});
+		store.addFilter({
+			table_alias: aliasB,
+			column: 'name',
+			op: 'Eq',
+			value: { Single: { kind: 'Text', text: 'y' } }
+		});
+
+		store.removeTable(aliasA);
+		expect(store.filters.children).toHaveLength(1);
+		const remaining = store.filters.children[0];
+		if ('Leaf' in remaining) {
+			expect(remaining.Leaf.table_alias).toBe(aliasB);
+		}
 	});
 });

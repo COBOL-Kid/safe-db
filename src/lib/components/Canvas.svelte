@@ -178,6 +178,9 @@
 			{#if query.selectedColumns.size > 0}
 				· {query.selectedColumns.size} column{query.selectedColumns.size !== 1 ? 's' : ''}
 			{/if}
+			{#if query.filterCount > 0}
+				· {query.filterCount} filter{query.filterCount !== 1 ? 's' : ''}
+			{/if}
 		</div>
 	{/if}
 </div>

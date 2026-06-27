@@ -3,7 +3,7 @@ use oracle::sql_type::{InnerValue, ToSql};
 use oracle::{Connection, Row as OracleRow};
 
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
-use crate::query::ir::{CompiledQuery, QueryResult};
+use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
 
 const BLOCKED_OWNERS: &[&str] = &[
     "SYS",
@@ -169,8 +169,16 @@ pub fn execute_query(
 
     let mut stmt = conn.statement(&compiled.sql).build()?;
     for (i, param) in compiled.params.iter().enumerate() {
-        let param_ref: &str = param;
-        stmt.bind(i + 1, &param_ref)?;
+        match param {
+            BindValue::Text(s) => stmt.bind(i + 1, &s.as_str())?,
+            BindValue::Int(n) => stmt.bind(i + 1, n)?,
+            BindValue::Float(f) => stmt.bind(i + 1, f)?,
+            BindValue::Bool(b) => stmt.bind(i + 1, b)?,
+            BindValue::Null => {
+                let null_val: Option<i64> = None;
+                stmt.bind(i + 1, &null_val)?;
+            }
+        }
     }
 
     let rows = stmt.query(&[])?;

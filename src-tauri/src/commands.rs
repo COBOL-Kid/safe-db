@@ -103,7 +103,7 @@ pub async fn run_query(
     let outcome =
         validate(&mut spec, &schema, &settings.blocked_schemas).map_err(|e| e.to_string())?;
 
-    let compiled = compile(&spec, def.dialect);
+    let compiled = compile(&spec, def.dialect).map_err(|e| e.to_string())?;
 
     let mut warnings = outcome.warnings;
 
