@@ -363,9 +363,7 @@ fn validate_node(
     }
 
     match node {
-        FilterNode::Leaf(filter) => {
-            validate_leaf(filter, schema, spec, table_aliases)
-        }
+        FilterNode::Leaf(filter) => validate_leaf(filter, schema, spec, table_aliases),
         FilterNode::Group(group) => {
             validate_group(group, schema, spec, table_aliases, depth, warnings)
         }
@@ -388,12 +386,16 @@ fn validate_leaf(
     let table = find_table_by_alias(schema, spec, &filter.table_alias)
         .ok_or_else(|| format!("Cannot resolve table for alias '{}'", filter.table_alias))?;
 
-    let col = table.columns.iter().find(|c| c.name == filter.column).ok_or_else(|| {
-        format!(
-            "Filter column '{}.{}' does not exist",
-            filter.table_alias, filter.column
-        )
-    })?;
+    let col = table
+        .columns
+        .iter()
+        .find(|c| c.name == filter.column)
+        .ok_or_else(|| {
+            format!(
+                "Filter column '{}.{}' does not exist",
+                filter.table_alias, filter.column
+            )
+        })?;
 
     let allowed = ops_for_column(&col.data_type);
     if !allowed.contains(&filter.op) {
@@ -479,10 +481,7 @@ fn validate_group(
     if depth > 0 && group.children.is_empty() {
         warnings.push("Filter group has no conditions".to_string());
     }
-    if depth > 0
-        && group.children.len() == 1
-        && matches!(group.children[0], FilterNode::Leaf(_))
-    {
+    if depth > 0 && group.children.len() == 1 && matches!(group.children[0], FilterNode::Leaf(_)) {
         warnings.push("Filter group has only one condition — a group is unnecessary".to_string());
     }
     for child in &group.children {
@@ -536,10 +535,7 @@ fn validate_literal(
         }
         LiteralKind::Date | LiteralKind::DateTime => {
             if lit.text.trim().is_empty() {
-                return Err(format!(
-                    "Date value for '{}.{}' is empty",
-                    alias, column
-                ));
+                return Err(format!("Date value for '{}.{}' is empty", alias, column));
             }
             Ok(())
         }
@@ -668,8 +664,8 @@ mod tests {
     use super::*;
     use crate::introspect::{ColumnInfo, Schema, TableInfo};
     use crate::query::ir::{
-        ColumnSel, FilterGroup, FilterLiteral, FilterNode, FilterOp, FilterSpec, FilterValue,
-        GroupConnector, JoinSpec, LiteralKind, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION,
+        CURRENT_SCHEMA_VERSION, ColumnSel, FilterGroup, FilterLiteral, FilterNode, FilterOp,
+        FilterSpec, FilterValue, GroupConnector, JoinSpec, LiteralKind, QuerySpec, TableRef,
     };
 
     fn sample_schema() -> Schema {
@@ -741,6 +737,7 @@ mod tests {
             joins: vec![],
             filters: FilterGroup::default(),
             limit: 100,
+            connector_overrides: std::collections::BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         }
     }
@@ -754,6 +751,7 @@ mod tests {
 
     fn leaf(op: FilterOp, value: Option<FilterValue>) -> FilterSpec {
         FilterSpec {
+            id: String::new(),
             table_alias: "t0".into(),
             column: "name".into(),
             op,
@@ -763,6 +761,7 @@ mod tests {
 
     fn leaf_on(col: &str, op: FilterOp, value: Option<FilterValue>) -> FilterSpec {
         FilterSpec {
+            id: String::new(),
             table_alias: "t0".into(),
             column: col.into(),
             op,
@@ -772,6 +771,7 @@ mod tests {
 
     fn group(connector: GroupConnector, children: Vec<FilterNode>) -> FilterGroup {
         FilterGroup {
+            id: String::new(),
             connector,
             children,
         }
@@ -879,10 +879,9 @@ mod tests {
     #[test]
     fn rejects_filter_missing_value() {
         let mut spec = base_spec();
-        spec.filters.children.push(FilterNode::Leaf(leaf(
-            FilterOp::Eq,
-            None,
-        )));
+        spec.filters
+            .children
+            .push(FilterNode::Leaf(leaf(FilterOp::Eq, None)));
         let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
         assert!(err.contains("requires a value"));
     }
@@ -902,11 +901,9 @@ mod tests {
     #[test]
     fn rejects_is_empty_on_numeric_column() {
         let mut spec = base_spec();
-        spec.filters.children.push(FilterNode::Leaf(leaf_on(
-            "id",
-            FilterOp::IsEmpty,
-            None,
-        )));
+        spec.filters
+            .children
+            .push(FilterNode::Leaf(leaf_on("id", FilterOp::IsEmpty, None)));
         let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
         assert!(err.contains("not applicable"));
     }
@@ -914,12 +911,16 @@ mod tests {
     #[test]
     fn accepts_is_empty_on_text_column() {
         let mut spec = base_spec();
-        spec.filters.children.push(FilterNode::Leaf(leaf(
-            FilterOp::IsEmpty,
-            None,
-        )));
+        spec.filters
+            .children
+            .push(FilterNode::Leaf(leaf(FilterOp::IsEmpty, None)));
         let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
-        assert!(outcome.warnings.iter().all(|w| !w.contains("not applicable")));
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .all(|w| !w.contains("not applicable"))
+        );
     }
 
     #[test]
@@ -1012,10 +1013,9 @@ mod tests {
     #[test]
     fn warns_on_empty_group() {
         let mut spec = base_spec();
-        spec.filters.children.push(FilterNode::Group(group(
-            GroupConnector::Or,
-            vec![],
-        )));
+        spec.filters
+            .children
+            .push(FilterNode::Group(group(GroupConnector::Or, vec![])));
         let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
         assert!(outcome.warnings.iter().any(|w| w.contains("no conditions")));
     }
@@ -1025,7 +1025,9 @@ mod tests {
         let mut spec = base_spec();
         let mut deepest: &mut FilterGroup = &mut spec.filters;
         for _ in 0..(MAX_FILTER_DEPTH + 2) {
-            deepest.children.push(FilterNode::Group(group(GroupConnector::And, vec![])));
+            deepest
+                .children
+                .push(FilterNode::Group(group(GroupConnector::And, vec![])));
             match deepest.children.last_mut().unwrap() {
                 FilterNode::Group(g) => deepest = g,
                 _ => break,
@@ -1098,7 +1100,9 @@ mod tests {
     fn filter_depth_at_max_is_accepted() {
         // Root group is depth 0; 4 nested groups put the leaf at depth 5 (== MAX_FILTER_DEPTH).
         let mut spec = base_spec();
-        spec.filters.children.push(nested_chain(MAX_FILTER_DEPTH - 1));
+        spec.filters
+            .children
+            .push(nested_chain(MAX_FILTER_DEPTH - 1));
         validate(&mut spec, &sample_schema(), &[]).unwrap();
     }
 

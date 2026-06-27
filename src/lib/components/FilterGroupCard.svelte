@@ -23,6 +23,10 @@
 		query.setGroupConnector(path, newConnector);
 	}
 
+	function toggleChildConnector(childPath: number[]) {
+		query.toggleChildConnector(childPath);
+	}
+
 	function remove() {
 		if (path.length > 0) {
 			query.removeFilterNode(path);
@@ -55,6 +59,10 @@
 
 	function addGroup() {
 		query.addGroupToGroup(path, 'And');
+	}
+
+	function childConnectorFor(childPath: number[]): GroupConnector {
+		return query.getConnectorForChild(childPath);
 	}
 
 	let bgClass = $derived(
@@ -94,6 +102,21 @@
 	<div class="flex flex-col gap-1.5 {depth > 0 ? 'pl-4' : ''}">
 		{#each group.children as child, i (i)}
 			{@const childPath = [...path, i]}
+			{#if i > 0}
+				{@const connector = childConnectorFor(childPath)}
+				<div class="flex items-center pl-1">
+					<button
+						type="button"
+						onclick={() => toggleChildConnector(childPath)}
+						class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors {connector === 'And'
+							? 'bg-sky-100 text-sky-700 hover:bg-sky-200'
+							: 'bg-amber-100 text-amber-700 hover:bg-amber-200'}"
+						aria-label={`Toggle connector to ${connector === 'And' ? 'OR' : 'AND'}`}
+					>
+						{connector.toUpperCase()}
+					</button>
+				</div>
+			{/if}
 			{#if 'Leaf' in child}
 				<FilterRow filter={child.Leaf} path={childPath} {tables} />
 			{:else}

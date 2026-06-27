@@ -1,5 +1,8 @@
+use std::collections::BTreeMap;
+
 use crate::query::ir::{
-    BindValue, CompiledQuery, FilterGroup, FilterNode, FilterOp, FilterSpec, FilterValue, QuerySpec,
+    BindValue, CompiledQuery, FilterGroup, FilterNode, FilterOp, FilterSpec, FilterValue,
+    GroupConnector, QuerySpec,
 };
 use crate::types::Dialect;
 
@@ -10,7 +13,13 @@ pub fn compile(spec: &QuerySpec, dialect: Dialect) -> Result<CompiledQuery, Stri
     let select_clause = build_select_clause(spec, dialect);
     let from_clause = build_from_clause(spec, dialect);
     let join_clause = build_join_clause(spec, dialect);
-    let where_clause = build_where_root(&spec.filters, dialect, &mut params, &mut param_idx)?;
+    let where_clause = build_where_root(
+        &spec.filters,
+        &spec.connector_overrides,
+        dialect,
+        &mut params,
+        &mut param_idx,
+    )?;
 
     let mut sql = String::new();
     sql.push_str("SELECT ");
@@ -176,81 +185,95 @@ fn build_join_clause(spec: &QuerySpec, dialect: Dialect) -> String {
 
 fn build_where_root(
     group: &FilterGroup,
+    overrides: &BTreeMap<String, GroupConnector>,
     dialect: Dialect,
     params: &mut Vec<BindValue>,
     param_idx: &mut u32,
+) -> Result<String, String> {
+    join_children(
+        group, overrides, dialect, params, param_idx, /* wrap = */ false,
+    )
+}
+
+fn join_children(
+    group: &FilterGroup,
+    overrides: &BTreeMap<String, GroupConnector>,
+    dialect: Dialect,
+    params: &mut Vec<BindValue>,
+    param_idx: &mut u32,
+    wrap: bool,
 ) -> Result<String, String> {
     if group.children.is_empty() {
         return Ok(String::new());
     }
 
-    let parts: Vec<String> = group
-        .children
-        .iter()
-        .map(|child| build_where_node(child, dialect, params, param_idx))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut parts: Vec<(usize, String)> = Vec::with_capacity(group.children.len());
+    for (i, child) in group.children.iter().enumerate() {
+        let rendered = build_where_node(child, overrides, dialect, params, param_idx)?;
+        if !rendered.is_empty() {
+            parts.push((i, rendered));
+        }
+    }
 
     if parts.is_empty() {
         return Ok(String::new());
     }
 
-    let connector = match group.connector {
-        crate::query::ir::GroupConnector::And => " AND ",
-        crate::query::ir::GroupConnector::Or => " OR ",
-    };
+    let mut joined = parts[0].1.clone();
+    for (orig_i, part) in parts.iter().skip(1) {
+        let child = &group.children[*orig_i];
+        let connector = overrides
+            .get(child_id(child))
+            .copied()
+            .unwrap_or(group.connector);
+        joined.push_str(connector_sql(connector));
+        joined.push_str(part);
+    }
 
-    Ok(parts.join(connector))
+    if wrap && parts.len() > 1 {
+        Ok(format!("({})", joined))
+    } else {
+        Ok(joined)
+    }
+}
+
+fn child_id(node: &FilterNode) -> &str {
+    match node {
+        FilterNode::Leaf(spec) => &spec.id,
+        FilterNode::Group(group) => &group.id,
+    }
+}
+
+fn connector_sql(connector: GroupConnector) -> &'static str {
+    match connector {
+        GroupConnector::And => " AND ",
+        GroupConnector::Or => " OR ",
+    }
 }
 
 fn build_where_node(
     node: &FilterNode,
+    overrides: &BTreeMap<String, GroupConnector>,
     dialect: Dialect,
     params: &mut Vec<BindValue>,
     param_idx: &mut u32,
 ) -> Result<String, String> {
     match node {
         FilterNode::Leaf(filter) => build_leaf(filter, dialect, params, param_idx),
-        FilterNode::Group(group) => build_group(group, dialect, params, param_idx),
+        FilterNode::Group(group) => build_group(group, overrides, dialect, params, param_idx),
     }
 }
 
 fn build_group(
     group: &FilterGroup,
+    overrides: &BTreeMap<String, GroupConnector>,
     dialect: Dialect,
     params: &mut Vec<BindValue>,
     param_idx: &mut u32,
 ) -> Result<String, String> {
-    if group.children.is_empty() {
-        return Ok(String::new());
-    }
-
-    let parts: Vec<String> = group
-        .children
-        .iter()
-        .map(|child| build_where_node(child, dialect, params, param_idx))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    if parts.is_empty() {
-        return Ok(String::new());
-    }
-
-    let connector = match group.connector {
-        crate::query::ir::GroupConnector::And => " AND ",
-        crate::query::ir::GroupConnector::Or => " OR ",
-    };
-
-    let joined = parts.join(connector);
-    if parts.len() > 1 {
-        Ok(format!("({})", joined))
-    } else {
-        Ok(joined)
-    }
+    join_children(
+        group, overrides, dialect, params, param_idx, /* wrap = */ true,
+    )
 }
 
 fn build_leaf(
@@ -266,10 +289,12 @@ fn build_leaf(
     );
 
     if let Some(op_str) = filter.op.sql_operator() {
-        let val = filter
-            .value
-            .as_ref()
-            .ok_or_else(|| format!("Filter on {}.{} is missing its value", filter.table_alias, filter.column))?;
+        let val = filter.value.as_ref().ok_or_else(|| {
+            format!(
+                "Filter on {}.{} is missing its value",
+                filter.table_alias, filter.column
+            )
+        })?;
         let lit = match val {
             FilterValue::Single(l) => l,
             _ => return Err(format!("Operator '{}' expects a single value", op_str)),
@@ -281,10 +306,12 @@ fn build_leaf(
     } else {
         match filter.op {
             FilterOp::Ilike => {
-                let val = filter
-                    .value
-                    .as_ref()
-                    .ok_or_else(|| format!("Filter on {}.{} is missing its value", filter.table_alias, filter.column))?;
+                let val = filter.value.as_ref().ok_or_else(|| {
+                    format!(
+                        "Filter on {}.{} is missing its value",
+                        filter.table_alias, filter.column
+                    )
+                })?;
                 let lit = match val {
                     FilterValue::Single(l) => l,
                     _ => return Err("ILIKE expects a single value".to_string()),
@@ -295,10 +322,12 @@ fn build_leaf(
                 Ok(build_ilike(&column_ref, &ph, dialect))
             }
             FilterOp::In | FilterOp::NotIn => {
-                let val = filter
-                    .value
-                    .as_ref()
-                    .ok_or_else(|| format!("Filter on {}.{} is missing its value", filter.table_alias, filter.column))?;
+                let val = filter.value.as_ref().ok_or_else(|| {
+                    format!(
+                        "Filter on {}.{} is missing its value",
+                        filter.table_alias, filter.column
+                    )
+                })?;
                 let list = match val {
                     FilterValue::List(l) => l,
                     _ => return Err("IN expects a list of values".to_string()),
@@ -319,14 +348,20 @@ fn build_leaf(
                     params.push(BindValue::from_literal(lit)?);
                     phs.push(ph);
                 }
-                let kw = if filter.op == FilterOp::In { "IN" } else { "NOT IN" };
+                let kw = if filter.op == FilterOp::In {
+                    "IN"
+                } else {
+                    "NOT IN"
+                };
                 Ok(format!("{} {} ({})", column_ref, kw, phs.join(", ")))
             }
             FilterOp::Between => {
-                let val = filter
-                    .value
-                    .as_ref()
-                    .ok_or_else(|| format!("Filter on {}.{} is missing its value", filter.table_alias, filter.column))?;
+                let val = filter.value.as_ref().ok_or_else(|| {
+                    format!(
+                        "Filter on {}.{} is missing its value",
+                        filter.table_alias, filter.column
+                    )
+                })?;
                 let (from, to) = match val {
                     FilterValue::Pair(f, t) => (f, t),
                     _ => return Err("BETWEEN expects a pair of values".to_string()),
@@ -361,8 +396,8 @@ fn build_ilike(column_ref: &str, ph: &str, dialect: Dialect) -> String {
 mod tests {
     use super::*;
     use crate::query::ir::{
-        ColumnSel, FilterGroup, FilterLiteral, FilterNode, FilterOp, FilterSpec, FilterValue,
-        GroupConnector, JoinSpec, LiteralKind, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION,
+        CURRENT_SCHEMA_VERSION, ColumnSel, FilterGroup, FilterLiteral, FilterNode, FilterOp,
+        FilterSpec, FilterValue, GroupConnector, JoinSpec, LiteralKind, QuerySpec, TableRef,
     };
     use crate::types::Dialect;
 
@@ -398,15 +433,18 @@ mod tests {
                 right_column: "id".into(),
             }],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![
                     FilterNode::Leaf(FilterSpec {
+                        id: "l0".into(),
                         table_alias: "t0".into(),
                         column: "name".into(),
                         op: FilterOp::Eq,
                         value: Some(FilterValue::Single(lit(LiteralKind::Text, "widget"))),
                     }),
                     FilterNode::Leaf(FilterSpec {
+                        id: "l1".into(),
                         table_alias: "t0".into(),
                         column: "deleted_at".into(),
                         op: FilterOp::IsNull,
@@ -415,6 +453,7 @@ mod tests {
                 ],
             },
             limit: 50,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         }
     }
@@ -492,17 +531,21 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![FilterNode::Group(FilterGroup {
+                    id: "g1".into(),
                     connector: GroupConnector::Or,
                     children: vec![
                         FilterNode::Leaf(FilterSpec {
+                            id: "l0".into(),
                             table_alias: "t0".into(),
                             column: "id".into(),
                             op: FilterOp::Eq,
                             value: Some(FilterValue::Single(lit(LiteralKind::Int, "1"))),
                         }),
                         FilterNode::Leaf(FilterSpec {
+                            id: "l1".into(),
                             table_alias: "t0".into(),
                             column: "id".into(),
                             op: FilterOp::Eq,
@@ -512,10 +555,15 @@ mod tests {
                 })],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
-        assert!(compiled.sql.contains("WHERE (\"t0\".\"id\" = $1 OR \"t0\".\"id\" = $2)"));
+        assert!(
+            compiled
+                .sql
+                .contains("WHERE (\"t0\".\"id\" = $1 OR \"t0\".\"id\" = $2)")
+        );
         assert_eq!(compiled.params.len(), 2);
     }
 
@@ -533,8 +581,10 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![FilterNode::Leaf(FilterSpec {
+                    id: "l0".into(),
                     table_alias: "t0".into(),
                     column: "id".into(),
                     op: FilterOp::In,
@@ -546,6 +596,7 @@ mod tests {
                 })],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
@@ -567,8 +618,10 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![FilterNode::Leaf(FilterSpec {
+                    id: "l0".into(),
                     table_alias: "t0".into(),
                     column: "id".into(),
                     op: FilterOp::NotIn,
@@ -579,6 +632,7 @@ mod tests {
                 })],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
@@ -599,8 +653,10 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![FilterNode::Leaf(FilterSpec {
+                    id: "l0".into(),
                     table_alias: "t0".into(),
                     column: "price".into(),
                     op: FilterOp::Between,
@@ -611,6 +667,7 @@ mod tests {
                 })],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
@@ -632,8 +689,10 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![FilterNode::Leaf(FilterSpec {
+                    id: "l0".into(),
                     table_alias: "t0".into(),
                     column: "name".into(),
                     op: FilterOp::Ilike,
@@ -641,6 +700,7 @@ mod tests {
                 })],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let pg = compile(&spec, Dialect::Postgres).unwrap();
@@ -670,15 +730,18 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![
                     FilterNode::Leaf(FilterSpec {
+                        id: "l0".into(),
                         table_alias: "t0".into(),
                         column: "name".into(),
                         op: FilterOp::IsEmpty,
                         value: None,
                     }),
                     FilterNode::Leaf(FilterSpec {
+                        id: "l1".into(),
                         table_alias: "t0".into(),
                         column: "description".into(),
                         op: FilterOp::IsNotEmpty,
@@ -687,6 +750,7 @@ mod tests {
                 ],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
@@ -709,8 +773,10 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![FilterNode::Leaf(FilterSpec {
+                    id: "l0".into(),
                     table_alias: "t0".into(),
                     column: "name".into(),
                     op: FilterOp::NotLike,
@@ -718,6 +784,7 @@ mod tests {
                 })],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
@@ -738,24 +805,29 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![
                     FilterNode::Leaf(FilterSpec {
+                        id: "l0".into(),
                         table_alias: "t0".into(),
                         column: "active".into(),
                         op: FilterOp::Eq,
                         value: Some(FilterValue::Single(lit(LiteralKind::Bool, "true"))),
                     }),
                     FilterNode::Group(FilterGroup {
+                        id: "g1".into(),
                         connector: GroupConnector::Or,
                         children: vec![
                             FilterNode::Leaf(FilterSpec {
+                                id: "l1".into(),
                                 table_alias: "t0".into(),
                                 column: "id".into(),
                                 op: FilterOp::Gt,
                                 value: Some(FilterValue::Single(lit(LiteralKind::Int, "100"))),
                             }),
                             FilterNode::Leaf(FilterSpec {
+                                id: "l2".into(),
                                 table_alias: "t0".into(),
                                 column: "id".into(),
                                 op: FilterOp::Lt,
@@ -766,14 +838,13 @@ mod tests {
                 ],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
-        assert!(
-            compiled
-                .sql
-                .contains("WHERE \"t0\".\"active\" = $1 AND (\"t0\".\"id\" > $2 OR \"t0\".\"id\" < $3)")
-        );
+        assert!(compiled.sql.contains(
+            "WHERE \"t0\".\"active\" = $1 AND (\"t0\".\"id\" > $2 OR \"t0\".\"id\" < $3)"
+        ));
         assert_eq!(compiled.params.len(), 3);
     }
 
@@ -791,21 +862,25 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![
                     FilterNode::Leaf(FilterSpec {
+                        id: "l0".into(),
                         table_alias: "t0".into(),
                         column: "id".into(),
                         op: FilterOp::Eq,
                         value: Some(FilterValue::Single(lit(LiteralKind::Int, "42"))),
                     }),
                     FilterNode::Leaf(FilterSpec {
+                        id: "l1".into(),
                         table_alias: "t0".into(),
                         column: "price".into(),
                         op: FilterOp::Gt,
                         value: Some(FilterValue::Single(lit(LiteralKind::Float, "9.99"))),
                     }),
                     FilterNode::Leaf(FilterSpec {
+                        id: "l2".into(),
                         table_alias: "t0".into(),
                         column: "active".into(),
                         op: FilterOp::Eq,
@@ -814,6 +889,7 @@ mod tests {
                 ],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         };
         let compiled = compile(&spec, Dialect::Postgres).unwrap();
@@ -835,8 +911,10 @@ mod tests {
             }],
             joins: vec![],
             filters: FilterGroup {
+                id: "g0".into(),
                 connector: GroupConnector::And,
                 children: vec![FilterNode::Leaf(FilterSpec {
+                    id: "l0".into(),
                     table_alias: "t0".into(),
                     column: column.into(),
                     op,
@@ -844,6 +922,7 @@ mod tests {
                 })],
             },
             limit: 100,
+            connector_overrides: BTreeMap::new(),
             schema_version: CURRENT_SCHEMA_VERSION,
         }
     }
@@ -888,9 +967,11 @@ mod tests {
         let mssql_not_in = compile(&not_in_spec, Dialect::Mssql).unwrap();
         assert!(mssql_not_in.sql.contains("[t0].[id] NOT IN (@P1)"));
         let mssql_between = compile(&between_spec, Dialect::Mssql).unwrap();
-        assert!(mssql_between
-            .sql
-            .contains("[t0].[price] BETWEEN @P1 AND @P2"));
+        assert!(
+            mssql_between
+                .sql
+                .contains("[t0].[price] BETWEEN @P1 AND @P2")
+        );
 
         // Oracle: :n placeholders, double-quote quoting.
         let oracle_in = compile(&in_spec, Dialect::Oracle).unwrap();
@@ -899,16 +980,17 @@ mod tests {
         let oracle_not_in = compile(&not_in_spec, Dialect::Oracle).unwrap();
         assert!(oracle_not_in.sql.contains("\"t0\".\"id\" NOT IN (:1)"));
         let oracle_between = compile(&between_spec, Dialect::Oracle).unwrap();
-        assert!(oracle_between
-            .sql
-            .contains("\"t0\".\"price\" BETWEEN :1 AND :2"));
+        assert!(
+            oracle_between
+                .sql
+                .contains("\"t0\".\"price\" BETWEEN :1 AND :2")
+        );
     }
 
     #[test]
     fn empty_in_matches_nothing_empty_not_in_matches_all() {
         let empty_in = single_leaf_spec(FilterOp::In, Some(FilterValue::List(vec![])), "id");
-        let empty_not_in =
-            single_leaf_spec(FilterOp::NotIn, Some(FilterValue::List(vec![])), "id");
+        let empty_not_in = single_leaf_spec(FilterOp::NotIn, Some(FilterValue::List(vec![])), "id");
 
         let compiled_in = compile(&empty_in, Dialect::Postgres).unwrap();
         assert!(compiled_in.sql.contains("1=0"));
@@ -917,5 +999,218 @@ mod tests {
         let compiled_not_in = compile(&empty_not_in, Dialect::Postgres).unwrap();
         assert!(compiled_not_in.sql.contains("1=1"));
         assert!(compiled_not_in.params.is_empty());
+    }
+
+    fn two_root_leafs_spec() -> QuerySpec {
+        QuerySpec {
+            tables: vec![TableRef {
+                schema: "public".into(),
+                name: "products".into(),
+                alias: "t0".into(),
+            }],
+            columns: vec![ColumnSel {
+                table_alias: "t0".into(),
+                column: "id".into(),
+            }],
+            joins: vec![],
+            filters: FilterGroup {
+                id: "g0".into(),
+                connector: GroupConnector::And,
+                children: vec![
+                    FilterNode::Leaf(FilterSpec {
+                        id: "l0".into(),
+                        table_alias: "t0".into(),
+                        column: "id".into(),
+                        op: FilterOp::Eq,
+                        value: Some(FilterValue::Single(lit(LiteralKind::Int, "1"))),
+                    }),
+                    FilterNode::Leaf(FilterSpec {
+                        id: "l1".into(),
+                        table_alias: "t0".into(),
+                        column: "name".into(),
+                        op: FilterOp::Eq,
+                        value: Some(FilterValue::Single(lit(LiteralKind::Text, "widget"))),
+                    }),
+                ],
+            },
+            limit: 100,
+            connector_overrides: BTreeMap::new(),
+            schema_version: CURRENT_SCHEMA_VERSION,
+        }
+    }
+
+    #[test]
+    fn per_child_override_or_among_root_and_joins_with_or() {
+        let mut spec = two_root_leafs_spec();
+        spec.connector_overrides
+            .insert("l1".to_string(), GroupConnector::Or);
+        let compiled = compile(&spec, Dialect::Postgres).unwrap();
+        assert!(
+            compiled
+                .sql
+                .contains("WHERE \"t0\".\"id\" = $1 OR \"t0\".\"name\" = $2"),
+            "expected per-child OR override in SQL, got: {}",
+            compiled.sql
+        );
+    }
+
+    #[test]
+    fn per_child_override_falls_back_to_group_connector() {
+        // No override set: group.connector = And, so siblings joined with AND.
+        let spec = two_root_leafs_spec();
+        let compiled = compile(&spec, Dialect::Postgres).unwrap();
+        assert!(
+            compiled
+                .sql
+                .contains("WHERE \"t0\".\"id\" = $1 AND \"t0\".\"name\" = $2"),
+            "expected default AND in SQL, got: {}",
+            compiled.sql
+        );
+    }
+
+    #[test]
+    fn per_child_override_and_inside_or_group() {
+        // Outer group is Or, inner override is And: the second child joins with AND.
+        let mut spec = two_root_leafs_spec();
+        spec.filters.connector = GroupConnector::Or;
+        spec.connector_overrides
+            .insert("l1".to_string(), GroupConnector::And);
+        let compiled = compile(&spec, Dialect::Postgres).unwrap();
+        assert!(
+            compiled
+                .sql
+                .contains("WHERE \"t0\".\"id\" = $1 AND \"t0\".\"name\" = $2"),
+            "expected per-child AND override to win over Or group, got: {}",
+            compiled.sql
+        );
+    }
+
+    #[test]
+    fn per_child_override_inside_nested_group() {
+        // Root group (And) contains one nested group (And) with two leaves; the
+        // override key `"0.1"` points to the second leaf of the nested group.
+        let mut spec = QuerySpec {
+            tables: vec![TableRef {
+                schema: "public".into(),
+                name: "products".into(),
+                alias: "t0".into(),
+            }],
+            columns: vec![ColumnSel {
+                table_alias: "t0".into(),
+                column: "id".into(),
+            }],
+            joins: vec![],
+            filters: FilterGroup {
+                id: "g0".into(),
+                connector: GroupConnector::And,
+                children: vec![FilterNode::Group(FilterGroup {
+                    id: "g1".into(),
+                    connector: GroupConnector::And,
+                    children: vec![
+                        FilterNode::Leaf(FilterSpec {
+                            id: "l0".into(),
+                            table_alias: "t0".into(),
+                            column: "id".into(),
+                            op: FilterOp::Eq,
+                            value: Some(FilterValue::Single(lit(LiteralKind::Int, "1"))),
+                        }),
+                        FilterNode::Leaf(FilterSpec {
+                            id: "l1".into(),
+                            table_alias: "t0".into(),
+                            column: "name".into(),
+                            op: FilterOp::Eq,
+                            value: Some(FilterValue::Single(lit(LiteralKind::Text, "w"))),
+                        }),
+                    ],
+                })],
+            },
+            limit: 100,
+            connector_overrides: BTreeMap::new(),
+            schema_version: CURRENT_SCHEMA_VERSION,
+        };
+        spec.connector_overrides
+            .insert("l1".to_string(), GroupConnector::Or);
+        let compiled = compile(&spec, Dialect::Postgres).unwrap();
+        assert!(
+            compiled
+                .sql
+                .contains("WHERE (\"t0\".\"id\" = $1 OR \"t0\".\"name\" = $2)"),
+            "expected per-child OR override inside nested group, got: {}",
+            compiled.sql
+        );
+    }
+
+    #[test]
+    fn unknown_override_path_is_ignored() {
+        // Override keyed at a path that does not exist in the tree must not crash
+        // and must not affect the generated SQL.
+        let mut spec = two_root_leafs_spec();
+        spec.connector_overrides
+            .insert("9.9".to_string(), GroupConnector::Or);
+        let compiled = compile(&spec, Dialect::Postgres).unwrap();
+        assert!(
+            compiled
+                .sql
+                .contains("WHERE \"t0\".\"id\" = $1 AND \"t0\".\"name\" = $2")
+        );
+    }
+
+    #[test]
+    fn per_child_override_survives_emptied_middle_sibling() {
+        // Group children are [leaf, empty_group, leaf]. The empty middle
+        // sibling renders to "" and is filtered out before the join loop. The
+        // override at the third child (l2) must still be applied to the
+        // second surviving leaf, not silently rewritten to the filtered
+        // position 1.
+        let mut spec = QuerySpec {
+            tables: vec![TableRef {
+                schema: "public".into(),
+                name: "products".into(),
+                alias: "t0".into(),
+            }],
+            columns: vec![ColumnSel {
+                table_alias: "t0".into(),
+                column: "id".into(),
+            }],
+            joins: vec![],
+            filters: FilterGroup {
+                id: "g0".into(),
+                connector: GroupConnector::And,
+                children: vec![
+                    FilterNode::Leaf(FilterSpec {
+                        id: "l0".into(),
+                        table_alias: "t0".into(),
+                        column: "id".into(),
+                        op: FilterOp::Eq,
+                        value: Some(FilterValue::Single(lit(LiteralKind::Int, "1"))),
+                    }),
+                    FilterNode::Group(FilterGroup {
+                        id: "g1".into(),
+                        connector: GroupConnector::And,
+                        children: vec![],
+                    }),
+                    FilterNode::Leaf(FilterSpec {
+                        id: "l2".into(),
+                        table_alias: "t0".into(),
+                        column: "name".into(),
+                        op: FilterOp::Eq,
+                        value: Some(FilterValue::Single(lit(LiteralKind::Text, "w"))),
+                    }),
+                ],
+            },
+            limit: 100,
+            connector_overrides: BTreeMap::new(),
+            schema_version: CURRENT_SCHEMA_VERSION,
+        };
+        spec.connector_overrides
+            .insert("l2".to_string(), GroupConnector::Or);
+        let compiled = compile(&spec, Dialect::Postgres).unwrap();
+        assert!(
+            compiled
+                .sql
+                .contains("WHERE \"t0\".\"id\" = $1 OR \"t0\".\"name\" = $2"),
+            "expected OR override on third child to survive empty middle sibling, got: {}",
+            compiled.sql
+        );
     }
 }

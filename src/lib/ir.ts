@@ -104,6 +104,12 @@ export type FilterValue =
 	| { Pair: [FilterLiteral, FilterLiteral] };
 
 export interface FilterSpec {
+	/** Stable identifier used to key `connector_overrides`. Optional at the
+	 *  type level so specs built outside the store (tests, hydration of older
+	 *  saves, deserialization from external sources) don't need to fabricate
+	 *  an ID. The store's `setFilters` and the hydrate path assign IDs to
+	 *  any node missing one before the spec is used. */
+	id?: string;
 	table_alias: string;
 	column: string;
 	op: FilterOp;
@@ -111,6 +117,8 @@ export interface FilterSpec {
 }
 
 export interface FilterGroup {
+	/** See `FilterSpec.id`. */
+	id?: string;
 	connector: GroupConnector;
 	children: FilterNode[];
 }
@@ -126,6 +134,14 @@ export interface QuerySpec {
 	filters: FilterGroup;
 	limit: number;
 	schema_version: number;
+	/** Per-child connector overrides keyed by the child's `id`. Present when
+	 *  the user has flipped a per-line connector pill in the builder. The
+	 *  backend compiler honors these instead of the parent group's
+	 *  `connector` when joining that child with its previous sibling. IDs
+	 *  are stable across sibling mutations, so removing or inserting
+	 *  siblings does not silently rebind an override to a different child.
+	 *  Entries whose IDs no longer exist in the tree are pruned. */
+	connector_overrides: Record<string, GroupConnector>;
 }
 
 export interface QueryResult {
@@ -249,7 +265,7 @@ export function opLabel(op: FilterOp): string {
 }
 
 export function defaultFilterGroup(): FilterGroup {
-	return { connector: 'And', children: [] };
+	return { id: newNodeId(), connector: 'And', children: [] };
 }
 
 export function makeLiteral(dataType: string, text: string): FilterLiteral {
@@ -273,7 +289,11 @@ export function makeFilter(
 	} else if (vk === 'Pair') {
 		value = { Pair: [{ kind, text: '' }, { kind, text: '' }] };
 	}
-	return { table_alias: tableAlias, column, op, value };
+	return { id: newNodeId(), table_alias: tableAlias, column, op, value };
+}
+
+export function newNodeId(): string {
+	return crypto.randomUUID();
 }
 
 export const MAX_LIMIT = 1000;

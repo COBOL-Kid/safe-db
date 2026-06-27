@@ -1,6 +1,6 @@
 use safe_db_lib::adapters::pg;
 use safe_db_lib::query::compile::compile;
-use safe_db_lib::query::ir::{ColumnSel, FilterGroup, QuerySpec, TableRef, CURRENT_SCHEMA_VERSION};
+use safe_db_lib::query::ir::{CURRENT_SCHEMA_VERSION, ColumnSel, FilterGroup, QuerySpec, TableRef};
 use safe_db_lib::query::validate::validate;
 use safe_db_lib::types::Dialect;
 
@@ -103,6 +103,7 @@ async fn pg_introspect_validate_compile_execute() {
         joins: vec![],
         filters: FilterGroup::default(),
         limit: 5,
+        connector_overrides: std::collections::BTreeMap::new(),
         schema_version: CURRENT_SCHEMA_VERSION,
     };
 

@@ -10,7 +10,7 @@ import type {
 	TableInfo,
 	TableRef
 } from '$lib/ir';
-import { DEFAULT_LIMIT, MAX_LIMIT, defaultFilterGroup } from '$lib/ir';
+import { DEFAULT_LIMIT, MAX_LIMIT, defaultFilterGroup, newNodeId } from '$lib/ir';
 import * as api from '$lib/api';
 
 export interface CanvasTable {
@@ -20,6 +20,11 @@ export interface CanvasTable {
 	y: number;
 }
 
+/** Filter spec as supplied to the store's mutators. `id` is optional at this
+ *  layer because the store assigns a stable UUID on insertion; persisted
+ *  specs (and round-trips through `setFilters`) carry the ID explicitly. */
+export type NewFilterSpec = Omit<FilterSpec, 'id'> & { id?: string };
+
 class QueryStore {
 	private aliasCounter = 0;
 
@@ -28,6 +33,8 @@ class QueryStore {
 	joins = $state<JoinSpec[]>([]);
 	filters = $state<FilterGroup>(defaultFilterGroup());
 	limit = $state(DEFAULT_LIMIT);
+
+	connectorOverrides = $state<Record<string, GroupConnector>>({});
 
 	results = $state<QueryResult | null>(null);
 	running = $state(false);
@@ -64,7 +71,8 @@ class QueryStore {
 			joins: [...this.joins],
 			filters: JSON.parse(JSON.stringify(this.filters)),
 			limit: this.limit,
-			schema_version: 2
+			schema_version: 2,
+			connector_overrides: { ...this.connectorOverrides }
 		};
 	});
 
@@ -91,6 +99,7 @@ class QueryStore {
 			(j) => j.left_alias !== alias && j.right_alias !== alias
 		);
 		this.filters = pruneFiltersReferencingAlias(this.filters, alias);
+		this.connectorOverrides = rebuildOverrides(this.filters, this.connectorOverrides);
 	}
 
 	moveTable(alias: string, x: number, y: number) {
@@ -135,24 +144,31 @@ class QueryStore {
 		this.joins = this.joins.filter((_, i) => i !== index);
 	}
 
-	addFilter(spec: FilterSpec) {
+	addFilter(spec: NewFilterSpec) {
 		this.filters = addLeafToGroup(this.filters, [], spec);
+		this.connectorOverrides = rebuildOverrides(this.filters, this.connectorOverrides);
 	}
 
 	setFilters(group: FilterGroup) {
-		this.filters = group;
+		this.filters = ensureGroupIds(group);
+		this.connectorOverrides = rebuildOverrides(this.filters, this.connectorOverrides);
 	}
 
-	addFilterToGroup(groupPath: number[], spec: FilterSpec) {
+	addFilterToGroup(groupPath: number[], spec: NewFilterSpec) {
 		this.filters = addLeafToGroup(this.filters, groupPath, spec);
+		this.connectorOverrides = rebuildOverrides(this.filters, this.connectorOverrides);
 	}
 
 	addGroupToGroup(groupPath: number[], connector: GroupConnector) {
 		this.filters = addGroupToGroup(this.filters, groupPath, connector);
+		this.connectorOverrides = rebuildOverrides(this.filters, this.connectorOverrides);
 	}
 
-	updateFilter(path: number[], spec: FilterSpec) {
-		this.filters = updateNodeAtPath(this.filters, path, { Leaf: spec });
+	updateFilter(path: number[], spec: NewFilterSpec) {
+		const existingId = getLeafIdAtPath(this.filters, path);
+		const specWithId: FilterSpec = { ...spec, id: existingId || spec.id || newNodeId() };
+		this.filters = updateNodeAtPath(this.filters, path, { Leaf: specWithId });
+		this.connectorOverrides = rebuildOverrides(this.filters, this.connectorOverrides);
 	}
 
 	setGroupConnector(path: number[], connector: GroupConnector) {
@@ -166,11 +182,65 @@ class QueryStore {
 				});
 			}
 		}
+		this.connectorOverrides = rebuildOverrides(
+			this.filters,
+			this.connectorOverrides,
+			path
+		);
+	}
+
+	setConnectorOverrides(map: Record<string, GroupConnector>) {
+		this.connectorOverrides = rebuildOverrides(this.filters, map);
+	}
+
+	/** Look up the override key for a child at the given number path. Returns
+	 *  the child's stable `id` if the path resolves, or `null` if it doesn't
+	 *  (out of range, path points to a leaf where a group was expected, etc.).
+	 *  The backend compiler uses the same keying scheme: `connector_overrides`
+	 *  is `Record<childId, GroupConnector>`. */
+	pathKey(path: number[]): string | null {
+		return childIdAtPath(this.filters, path);
+	}
+
+	getConnectorForChild(path: number[]): GroupConnector {
+		if (path.length === 0) return this.filters.connector;
+		const key = this.pathKey(path);
+		if (key && this.connectorOverrides[key]) return this.connectorOverrides[key];
+		const parentPath = path.slice(0, -1);
+		const parent = getGroupAtPath(this.filters, parentPath);
+		return parent ? parent.connector : 'And';
+	}
+
+	setChildConnector(path: number[], connector: GroupConnector) {
+		// The first child of any group has no preceding sibling to join with,
+		// so any override would never be honored by the compiler — drop it
+		// rather than store dead state.
+		if (path.length === 0 || path[path.length - 1] === 0) return;
+		const key = this.pathKey(path);
+		if (!key) return;
+		const parent = getGroupAtPath(this.filters, path.slice(0, -1));
+		const groupDefault = parent ? parent.connector : this.filters.connector;
+		const next = { ...this.connectorOverrides };
+		// Drop the override when it would match the parent group connector —
+		// the override is then a redundant shadow that masks later group
+		// connector changes from this child.
+		if (connector === groupDefault) {
+			delete next[key];
+		} else {
+			next[key] = connector;
+		}
+		this.connectorOverrides = next;
+	}
+
+	toggleChildConnector(path: number[]) {
+		const current = this.getConnectorForChild(path);
+		this.setChildConnector(path, current === 'And' ? 'Or' : 'And');
 	}
 
 	removeFilterNode(path: number[]) {
 		if (path.length === 0) return;
 		this.filters = removeNodeAtPath(this.filters, path);
+		this.connectorOverrides = rebuildOverrides(this.filters, this.connectorOverrides);
 	}
 
 	setLimit(limit: number) {
@@ -201,6 +271,7 @@ class QueryStore {
 		this.error = null;
 		this.running = false;
 		this.aliasCounter = 0;
+		this.connectorOverrides = {};
 	}
 }
 
@@ -218,19 +289,20 @@ function getGroupAtPath(group: FilterGroup, path: number[]): FilterGroup | null 
 function addLeafToGroup(
 	group: FilterGroup,
 	path: number[],
-	spec: FilterSpec
+	spec: NewFilterSpec
 ): FilterGroup {
+	const specWithId: FilterSpec = { ...spec, id: spec.id ?? newNodeId() };
 	if (path.length === 0) {
 		return {
 			...group,
-			children: [...group.children, { Leaf: spec }]
+			children: [...group.children, { Leaf: specWithId }]
 		};
 	}
 	const [head, ...rest] = path;
 	const child = group.children[head];
 	if (child && 'Group' in child) {
 		const newChildren = [...group.children];
-		newChildren[head] = { Group: addLeafToGroup(child.Group, rest, spec) };
+		newChildren[head] = { Group: addLeafToGroup(child.Group, rest, specWithId) };
 		return { ...group, children: newChildren };
 	}
 	return group;
@@ -246,7 +318,7 @@ function addGroupToGroup(
 			...group,
 			children: [
 				...group.children,
-				{ Group: { connector, children: [] } }
+				{ Group: { id: newNodeId(), connector, children: [] } }
 			]
 		};
 	}
@@ -312,6 +384,108 @@ function pruneFiltersReferencingAlias(group: FilterGroup, alias: string): Filter
 		})
 		.filter((c): c is FilterNode => c !== null);
 	return { ...group, children };
+}
+
+/** Return the `id` of the node at the given number path, or `null` if the
+ *  path doesn't resolve. The root group is the implicit parent of all paths
+ *  (`childIdAtPath(group, [])` would error; callers should treat an empty
+ *  path as a request for the root group itself, which is rarely needed). */
+function childIdAtPath(group: FilterGroup, path: number[]): string | null {
+	if (path.length === 0) return group.id || null;
+	const [head, ...rest] = path;
+	const child = group.children[head];
+	if (!child) return null;
+	if ('Leaf' in child) {
+		return rest.length === 0 ? (child.Leaf.id || null) : null;
+	}
+	return childIdAtPath(child.Group, rest);
+}
+
+/** Return the `id` of a leaf at the given path, or `null` if the path
+ *  doesn't resolve to a leaf. Used by `updateFilter` to preserve the leaf's
+ *  identity when its value is edited. */
+function getLeafIdAtPath(group: FilterGroup, path: number[]): string | null {
+	if (path.length === 0) return null;
+	const [head, ...rest] = path;
+	const child = group.children[head];
+	if (!child) return null;
+	if ('Leaf' in child) {
+		return rest.length === 0 ? (child.Leaf.id || null) : null;
+	}
+	return getLeafIdAtPath(child.Group, rest);
+}
+
+/** Recursively assign an `id` to any filter node that lacks one. Used by
+ *  `setFilters` to upgrade specs from older builds (or external sources)
+ *  that didn't carry IDs. */
+function ensureGroupIds(group: FilterGroup): FilterGroup {
+	const out: FilterGroup = {
+		...group,
+		id: group.id || newNodeId(),
+		children: group.children.map((child) => {
+			if ('Leaf' in child) {
+				return { Leaf: child.Leaf.id ? child.Leaf : { ...child.Leaf, id: newNodeId() } };
+			}
+			return { Group: ensureGroupIds(child.Group) };
+		})
+	};
+	return out;
+}
+
+/** Walk the filter tree and return only the override entries whose `id`
+ *  still resolves to an existing child. Called after every tree mutation so
+ *  that orphan overrides (e.g. after removing the bound child) are dropped
+ *  from this map. Because keys are stable child IDs, sibling insertions
+ *  and removals cannot silently rebind an override to a different child.
+ *
+ *  If `modifiedGroupPath` is provided, also drop entries whose parent group
+ *  is the modified group and whose value matches the group's new connector —
+ *  those overrides just became redundant shadows that would mask later
+ *  group flips. The prune and rebuild happen in a single tree walk. */
+function rebuildOverrides(
+	group: FilterGroup,
+	overrides: Record<string, GroupConnector>,
+	modifiedGroupPath: number[] | null = null
+): Record<string, GroupConnector> {
+	const ids = new Set<string>();
+	const parentMap = new Map<string, FilterGroup>();
+
+	function walk(g: FilterGroup) {
+		if (g.id) ids.add(g.id);
+		for (const child of g.children) {
+			if ('Leaf' in child) {
+				if (child.Leaf.id) {
+					ids.add(child.Leaf.id);
+					parentMap.set(child.Leaf.id, g);
+				}
+			} else {
+				if (child.Group.id) {
+					ids.add(child.Group.id);
+					parentMap.set(child.Group.id, g);
+				}
+				walk(child.Group);
+			}
+		}
+	}
+	walk(group);
+
+	const modifiedGroup = modifiedGroupPath
+		? getGroupAtPath(group, modifiedGroupPath)
+		: null;
+	const pruneByParent = modifiedGroup !== null;
+
+	const next: Record<string, GroupConnector> = {};
+	for (const [key, value] of Object.entries(overrides)) {
+		if (!ids.has(key)) continue;
+		if (pruneByParent) {
+			const parent = parentMap.get(key);
+			if (parent && parent.id === modifiedGroup.id && parent.connector === value) {
+				continue;
+			}
+		}
+		next[key] = value;
+	}
+	return next;
 }
 
 export { QueryStore };

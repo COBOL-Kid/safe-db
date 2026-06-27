@@ -1,4 +1,12 @@
-import type { FilterGroup, FilterNode, FilterSpec, JoinSpec, QuerySpec, TableInfo } from '$lib/ir';
+import type {
+	FilterGroup,
+	FilterNode,
+	FilterSpec,
+	GroupConnector,
+	JoinSpec,
+	QuerySpec,
+	TableInfo
+} from '$lib/ir';
 
 export interface QueryHydrationTarget {
 	clear(): void;
@@ -7,6 +15,7 @@ export interface QueryHydrationTarget {
 	toggleColumn(alias: string, column: string): void;
 	addJoin(join: JoinSpec): void;
 	setFilters(group: FilterGroup): void;
+	setConnectorOverrides(map: Record<string, GroupConnector>): void;
 	setLimit(limit: number): void;
 }
 
@@ -78,6 +87,8 @@ export function hydrateQueryFromSpec(
 
 	const remappedFilters = remapFilterGroup(spec.filters, aliasMap);
 	target.setFilters(remappedFilters);
+
+	target.setConnectorOverrides(spec.connector_overrides ?? {});
 
 	target.setLimit(spec.limit);
 }

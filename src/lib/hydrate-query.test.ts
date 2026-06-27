@@ -62,7 +62,8 @@ describe('hydrateQueryFromSpec', () => {
 				]
 			},
 			limit: 25,
-			schema_version: 2
+			schema_version: 2,
+			connector_overrides: {}
 		};
 
 		hydrateQueryFromSpec(spec, [products, categories], store);
@@ -117,7 +118,8 @@ describe('hydrateQueryFromSpec', () => {
 				]
 			},
 			limit: 100,
-			schema_version: 2
+			schema_version: 2,
+			connector_overrides: {}
 		};
 
 		hydrateQueryFromSpec(spec, [products], store);
@@ -174,7 +176,8 @@ describe('hydrateQueryFromSpec', () => {
 				]
 			},
 			limit: 100,
-			schema_version: 2
+			schema_version: 2,
+			connector_overrides: {}
 		};
 
 		hydrateQueryFromSpec(spec, [products, categories], store);
@@ -237,7 +240,8 @@ describe('hydrateQueryFromSpec', () => {
 				]
 			},
 			limit: 100,
-			schema_version: 2
+			schema_version: 2,
+			connector_overrides: {}
 		};
 
 		hydrateQueryFromSpec(spec, [products], store);
@@ -250,5 +254,92 @@ describe('hydrateQueryFromSpec', () => {
 		if ('Leaf' in leaf) {
 			expect(leaf.Leaf.table_alias).toBe('t0');
 		}
+	});
+
+	it('restores connector_overrides whose child IDs still resolve after remap', () => {
+		const spec: QuerySpec = {
+			tables: [{ schema: 'safedb_test', name: 'products', alias: 'saved_t0' }],
+			columns: [{ table_alias: 'saved_t0', column: 'name' }],
+			joins: [],
+			filters: {
+				connector: 'And',
+				children: [
+					{
+						Leaf: {
+							id: 'leaf-id',
+							table_alias: 'saved_t0',
+							column: 'id',
+							op: 'Eq',
+							value: { Single: { kind: 'Int', text: '1' } }
+						}
+					},
+					{
+						Leaf: {
+							id: 'leaf-name',
+							table_alias: 'saved_t0',
+							column: 'name',
+							op: 'Eq',
+							value: { Single: { kind: 'Text', text: 'x' } }
+						}
+					}
+				]
+			},
+			limit: 100,
+			schema_version: 2,
+			connector_overrides: { 'leaf-name': 'Or' }
+		};
+
+		hydrateQueryFromSpec(spec, [products], store);
+
+		expect(store.connectorOverrides).toEqual({ 'leaf-name': 'Or' });
+		expect(store.getConnectorForChild([1])).toBe('Or');
+	});
+
+	it('prunes connector_overrides whose IDs no longer resolve after remap drops a group', () => {
+		// The nested group only contains a leaf on a missing table, so
+		// remapFilterGroup will drop it entirely. An override keyed on the
+		// dropped leaf's id must be pruned during restore.
+		const spec: QuerySpec = {
+			tables: [{ schema: 'safedb_test', name: 'products', alias: 'saved_t0' }],
+			columns: [{ table_alias: 'saved_t0', column: 'name' }],
+			joins: [],
+			filters: {
+				connector: 'And',
+				children: [
+					{
+						Leaf: {
+							id: 'leaf-id',
+							table_alias: 'saved_t0',
+							column: 'id',
+							op: 'Eq',
+							value: { Single: { kind: 'Int', text: '1' } }
+						}
+					},
+					{
+						Group: {
+							connector: 'Or',
+							children: [
+								{
+									Leaf: {
+										id: 'leaf-missing',
+										table_alias: 'saved_missing',
+										column: 'name',
+										op: 'Eq',
+										value: { Single: { kind: 'Text', text: 'y' } }
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			limit: 100,
+			schema_version: 2,
+			connector_overrides: { 'leaf-missing': 'Or' }
+		};
+
+		hydrateQueryFromSpec(spec, [products], store);
+
+		expect(store.connectorOverrides).toEqual({});
 	});
 });

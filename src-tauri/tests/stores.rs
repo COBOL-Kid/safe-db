@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
+
 use safe_db_lib::config::ConfigStore;
 use safe_db_lib::queries::{HistoryEntry, QueryStore, SavedQuery};
 use safe_db_lib::query::ir::{
-    FilterGroup, FilterNode, FilterOp, FilterValue, GroupConnector, LiteralKind, QuerySpec,
-    TableRef, CURRENT_SCHEMA_VERSION,
+    CURRENT_SCHEMA_VERSION, FilterGroup, FilterNode, FilterOp, FilterValue, GroupConnector,
+    LiteralKind, QuerySpec, TableRef,
 };
 use safe_db_lib::settings::SettingsStore;
 use safe_db_lib::types::{ConnectionDef, Dialect};
@@ -31,6 +33,7 @@ fn sample_spec() -> QuerySpec {
         joins: vec![],
         filters: FilterGroup::default(),
         limit: 100,
+        connector_overrides: BTreeMap::new(),
         schema_version: CURRENT_SCHEMA_VERSION,
     }
 }
@@ -176,11 +179,7 @@ const V1_SAVED_QUERIES: &str = r#"[
 #[test]
 fn query_store_migrates_v1_saved_queries() {
     let dir = TempDir::new().unwrap();
-    std::fs::write(
-        dir.path().join("saved_queries.json"),
-        V1_SAVED_QUERIES,
-    )
-    .unwrap();
+    std::fs::write(dir.path().join("saved_queries.json"), V1_SAVED_QUERIES).unwrap();
 
     let store = QueryStore::new(dir.path().to_path_buf());
     let saved = store.list_saved().unwrap();
