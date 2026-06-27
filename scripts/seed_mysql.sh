@@ -11,6 +11,8 @@
 # Usage:
 #   scripts/seed_mysql.sh                       # seed safedb_test
 #   scripts/seed_mysql.sh --reset               # drop + recreate the database first
+#   scripts/seed_mysql.sh --reset-state         # also wipe safe-db connections + history
+#   scripts/seed_mysql.sh --reset --reset-state # drop DB and wipe safe-db state
 #   scripts/seed_mysql.sh --help
 #
 # Env vars (all optional; defaults shown):
@@ -20,6 +22,12 @@
 #   SAFEDB_TEST_MYSQL_PASSWORD  (empty)
 #   SAFEDB_TEST_MYSQL_DATABASE  safedb_test
 #   SAFEDB_TEST_MYSQL_DOCKER    (empty)         pin a container name (forces docker exec)
+#
+# By default the script does NOT touch the local safe-db app state. Pass
+# --reset-state to wipe connections.json and query_history.json in the app
+# data dir (stale query_history.v1.bak is also removed). Saved queries and
+# settings are always left untouched. This is opt-in to avoid surprising
+# developers who have configured local connections for manual testing.
 #
 # Docker: when SAFEDB_TEST_MYSQL_PASSWORD is unset and USER is root, the script
 # reads MYSQL_ROOT_PASSWORD from the container env (standard mysql image). This
@@ -43,10 +51,37 @@ usage() {
   exit "${1:-0}"
 }
 
+safedb_app_data_dir() {
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' "$HOME/Library/Application Support/com.safedb.app" ;;
+    Linux) printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/com.safedb.app" ;;
+    MINGW* | MSYS* | CYGWIN*) printf '%s\n' "${APPDATA:-$HOME/AppData/Roaming}/com.safedb.app" ;;
+    *) return 1 ;;
+  esac
+}
+
+reset_safedb_local_state() {
+  local data_dir
+  if ! data_dir="$(safedb_app_data_dir)"; then
+    echo "→ skipping safe-db app state reset (unknown platform)"
+    return 0
+  fi
+  if [[ ! -d "$data_dir" ]]; then
+    echo "→ no safe-db app data at $data_dir; skipping connection/history reset"
+    return 0
+  fi
+  echo "→ resetting safe-db connections and query history ($data_dir)"
+  printf '[]\n' > "$data_dir/connections.json"
+  printf '[]\n' > "$data_dir/query_history.json"
+  rm -f "$data_dir/query_history.v1.bak"
+}
+
 RESET=0
+RESET_STATE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --reset) RESET=1; shift ;;
+    --reset-state) RESET_STATE=1; shift ;;
     -h | --help) usage 0 ;;
     --) shift; break ;;
     -*) echo "unknown argument: $1" >&2; usage 1 ;;
@@ -170,6 +205,12 @@ if ! mysql_run -e "SELECT VERSION()" >/dev/null 2>&1; then
   exit 1
 fi
 mysql_run -N -e "SELECT VERSION()" | awk '{print "  server version: " $0}'
+
+if [[ "$RESET_STATE" -eq 1 ]]; then
+  reset_safedb_local_state
+else
+  echo "→ keeping safe-db connections and query history (pass --reset-state to wipe)"
+fi
 
 if [[ "$RESET" -eq 1 ]]; then
   echo "→ dropping database '$DATABASE' (--reset)"
