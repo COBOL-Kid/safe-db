@@ -7,6 +7,8 @@ use zeroize::Zeroizing;
 
 const SERVICE_NAME: &str = "safe-db";
 const ENV_BACKEND: &str = "SAFEDB_KEYCHAIN_BACKEND";
+#[cfg(target_os = "macos")]
+const PROTECTED_PROBE_KEY: &str = "__safedb_entitlement_probe__";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BackendMode {
@@ -246,7 +248,7 @@ fn init_disabled() -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn init_macos_protected() -> Result<()> {
+fn setup_macos_protected_store() -> Result<()> {
     let store = apple_native_keyring_store::protected::Store::new().map_err(|e| {
         anyhow::anyhow!(
             "failed to init macOS Protected Data store ({e}). Build a signed app bundle with \
@@ -255,15 +257,52 @@ fn init_macos_protected() -> Result<()> {
         )
     })?;
     keyring_core::set_default_store(store);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn finish_macos_protected_init() {
     set_active_backend(BackendMode::Protected);
     log::info!("credential backend: macOS Protected Data");
+}
+
+/// Verifies the default store can write credentials (requires keychain entitlements when signed).
+#[cfg(target_os = "macos")]
+fn probe_protected_store() -> Result<()> {
+    write_to_default_store(PROTECTED_PROBE_KEY, "probe")?;
+    delete_from_default_store(PROTECTED_PROBE_KEY)?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn init_macos_protected() -> Result<()> {
+    setup_macos_protected_store()?;
+    probe_protected_store()?;
+    finish_macos_protected_init();
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
 fn init_macos_auto() -> Result<()> {
-    match init_macos_protected() {
-        Ok(()) => Ok(()),
+    match setup_macos_protected_store() {
+        Ok(()) => match probe_protected_store() {
+            Ok(()) => {
+                finish_macos_protected_init();
+                Ok(())
+            }
+            Err(probe_err) => {
+                if cfg!(debug_assertions) {
+                    log::warn!(
+                        "Protected Data write probe failed in debug build ({probe_err}); \
+                         unsigned pnpm tauri dev builds lack keychain entitlements — using \
+                         in-memory disabled backend for this session"
+                    );
+                    init_disabled()
+                } else {
+                    Err(probe_err)
+                }
+            }
+        },
         Err(protected_err) => {
             if cfg!(debug_assertions) {
                 log::warn!(
@@ -353,11 +392,28 @@ fn fetch_from_store(connection_id: &str) -> Result<Option<String>> {
     read_from_default_store(connection_id)
 }
 
+fn is_missing_entitlement_error(err: &impl std::fmt::Display) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("entitlement") || msg.contains("platform failure")
+}
+
 fn format_credential_error(err: impl std::fmt::Display) -> String {
     format!(
         "Could not unlock stored credentials ({err}). Open Connections, re-enter the password, \
          and save the connection again."
     )
+}
+
+fn format_save_credential_error(err: impl std::fmt::Display) -> String {
+    if is_missing_entitlement_error(&err) {
+        format!(
+            "Could not store credentials: the app is not signed with keychain entitlements. \
+             For local development, set {ENV_BACKEND}=disabled or run a signed release bundle \
+             from pnpm tauri build."
+        )
+    } else {
+        format!("Could not store credentials ({err}).")
+    }
 }
 
 /// Builder/query hot path: use in-process session first; touch the OS store only on miss.
@@ -383,7 +439,8 @@ pub fn password_for_connection(connection_id: &str) -> Result<String, String> {
 }
 
 pub fn save_password(connection_id: &str, password: &str) -> Result<()> {
-    write_to_default_store(connection_id, password)?;
+    write_to_default_store(connection_id, password)
+        .map_err(|e| anyhow::anyhow!(format_save_credential_error(e)))?;
     session_put(connection_id, Zeroizing::new(password.to_string()));
     Ok(())
 }
@@ -408,4 +465,31 @@ pub fn get_password(connection_id: &str) -> Result<Option<String>> {
 pub fn delete_password(connection_id: &str) -> Result<()> {
     session_invalidate(connection_id);
     delete_from_default_store(connection_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_credential_error_mentions_entitlements() {
+        let err =
+            format_save_credential_error("Platform failure: A required entitlement isn't present.");
+        assert!(err.contains("entitlements"));
+        assert!(err.contains(ENV_BACKEND));
+    }
+
+    #[test]
+    fn save_credential_error_passes_through_other_failures() {
+        let err = format_save_credential_error("disk full");
+        assert!(err.contains("disk full"));
+    }
+
+    #[test]
+    fn missing_entitlement_error_detection_is_case_insensitive() {
+        assert!(is_missing_entitlement_error(
+            &"Platform Failure: A Required Entitlement isn't present."
+        ));
+        assert!(!is_missing_entitlement_error(&"connection refused"));
+    }
 }

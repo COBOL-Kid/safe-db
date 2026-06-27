@@ -394,10 +394,7 @@ mod tests {
             alias: "t1".into(),
         });
         let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
-        assert!(outcome
-            .warnings
-            .iter()
-            .any(|w| w.contains("Cartesian")));
+        assert!(outcome.warnings.iter().any(|w| w.contains("Cartesian")));
     }
 
     #[test]
@@ -419,10 +416,12 @@ mod tests {
         let mut spec = base_spec();
         spec.columns.clear();
         let outcome = validate(&mut spec, &sample_schema(), &[]).unwrap();
-        assert!(outcome
-            .warnings
-            .iter()
-            .any(|w| w.contains("No columns selected")));
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .any(|w| w.contains("No columns selected"))
+        );
     }
 
     #[test]

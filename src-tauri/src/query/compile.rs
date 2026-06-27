@@ -257,8 +257,16 @@ mod tests {
     fn postgres_compiles_quoting_placeholders_and_limit() {
         let compiled = compile(&two_table_spec(), Dialect::Postgres);
         assert!(compiled.sql.contains("SELECT \"t0\".\"id\""));
-        assert!(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""));
-        assert!(compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""));
+        assert!(
+            compiled
+                .sql
+                .contains("FROM \"public\".\"products\" AS \"t0\"")
+        );
+        assert!(
+            compiled
+                .sql
+                .contains("INNER JOIN \"public\".\"categories\" AS \"t1\"")
+        );
         assert!(compiled.sql.contains("\"t0\".\"name\" = $1"));
         assert!(compiled.sql.contains("\"t0\".\"deleted_at\" IS NULL"));
         assert!(compiled.sql.ends_with("LIMIT 50"));

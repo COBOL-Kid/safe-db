@@ -101,11 +101,13 @@ Connection passwords are stored via `keyring-core` with platform-native backends
 
 Override with `SAFEDB_KEYCHAIN_BACKEND`:
 
-- `auto` (default) — Protected Data on macOS when available; in **debug** builds falls back to in-memory `disabled` if Protected Data is unavailable (unsigned `pnpm tauri dev`)
-- `protected` — force Protected Data (macOS only)
-- `disabled` — in-memory only (tests, CI)
+- `auto` (default) — Protected Data on macOS when a startup write probe succeeds; in **debug** builds (`pnpm tauri dev`) falls back to in-memory `disabled` when the unsigned binary lacks keychain entitlements (common for local dev)
+- `protected` — force Protected Data (macOS only); requires a signed app with entitlements
+- `disabled` — in-memory only (tests, CI); passwords do not survive app restart
 
-In **release** builds on macOS, Protected Data must initialize or startup fails. Release bundles need sandbox entitlements — see `src-tauri/Entitlements.plist` and `bundle.macOS.entitlements` in `src-tauri/tauri.conf.json`.
+**Test Connection** uses the password from the form only and does not touch the keyring. **Save Connection** stores the password in the OS credential store (or the in-memory fallback above).
+
+In **release** builds on macOS, Protected Data must pass the write probe or startup fails. Release bundles need sandbox entitlements — see `src-tauri/Entitlements.plist` and `bundle.macOS.entitlements` in `src-tauri/tauri.conf.json`. Use `pnpm tauri build` and run the signed `.app` to verify credentials persist across restarts.
 
 After the first unlock, builder and query paths reuse an in-process credential session so repeated schema loads and queries do not re-hit the OS store.
 

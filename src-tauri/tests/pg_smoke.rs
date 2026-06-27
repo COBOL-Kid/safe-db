@@ -62,9 +62,7 @@ async fn pg_connect_and_test() {
 #[tokio::test]
 async fn pg_introspect_validate_compile_execute() {
     let Some(config) = pg_config_from_env() else {
-        eprintln!(
-            "skipping pg_introspect_validate_compile_execute: set SAFEDB_TEST_PG_* env vars"
-        );
+        eprintln!("skipping pg_introspect_validate_compile_execute: set SAFEDB_TEST_PG_* env vars");
         return;
     };
 
@@ -81,7 +79,10 @@ async fn pg_introspect_validate_compile_execute() {
     let schema = pg::introspect(&pool)
         .await
         .expect("introspect should succeed");
-    assert!(!schema.tables.is_empty(), "expected at least one user table");
+    assert!(
+        !schema.tables.is_empty(),
+        "expected at least one user table"
+    );
 
     let table = &schema.tables[0];
     let column = table

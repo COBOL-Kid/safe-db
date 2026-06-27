@@ -3,6 +3,9 @@
 //! Run on a Mac with:
 //!   SAFEDB_KEYCHAIN_BACKEND=auto cargo test --test secrets_macos -- --ignored --nocapture
 //!
+//! On unsigned `cargo run` / `pnpm tauri dev` builds, `auto` should fall back to the
+//! in-memory disabled backend after the Protected Data write probe fails.
+//!
 //! After saving a connection once, repeated `password_for_connection` calls should not
 //! present additional Protected Data prompts during the same app session.
 
@@ -39,6 +42,20 @@ mod macos {
         );
 
         secrets::delete_password(&id).expect("cleanup");
+    }
+
+    #[test]
+    #[ignore = "manual macOS: unsigned debug builds should fall back after entitlement probe"]
+    fn auto_backend_reports_disabled_on_unsigned_debug_build() {
+        unsafe {
+            std::env::set_var("SAFEDB_KEYCHAIN_BACKEND", "auto");
+        }
+        secrets::init_store().expect("auto backend should initialize");
+        let label = secrets::active_backend_label();
+        assert!(
+            label == "disabled" || label == "protected",
+            "expected disabled (unsigned) or protected (signed), got {label}"
+        );
     }
 }
 
