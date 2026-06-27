@@ -16,6 +16,8 @@
 		mouseX: number;
 		mouseY: number;
 	} | null = $state(null);
+	let hoveredJoinIndex = $state<number | null>(null);
+	let focusedJoinIndex = $state<number | null>(null);
 
 	function getColumnY(alias: string, columnName: string): number {
 		const ct = query.tables.find((t) => t.alias === alias);
@@ -115,6 +117,13 @@
 	function handleJoinClick(index: number) {
 		query.removeJoin(index);
 	}
+
+	function handleJoinKey(e: KeyboardEvent, index: number) {
+		if (e.key === 'Enter' || e.key === ' ' || e.key === 'Delete' || e.key === 'Backspace') {
+			e.preventDefault();
+			query.removeJoin(index);
+		}
+	}
 </script>
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
@@ -130,24 +139,61 @@
 	<div class="relative" style="min-width: 2400px; min-height: 1800px;">
 		<svg class="pointer-events-none absolute inset-0" style="width: 100%; height: 100%;">
 			{#each query.joins as join, i (i)}
+				{@const isHovered = hoveredJoinIndex === i}
+				<!-- Wide invisible hit area for click + keyboard focus -->
+				<path
+					d={joinEdgePath(join)}
+					stroke="transparent"
+					stroke-width="12"
+					fill="none"
+					class="pointer-events-auto cursor-pointer focus:outline-none"
+					role="button"
+					tabindex="0"
+					aria-label={`Remove join: ${join.left_alias}.${join.left_column} to ${join.right_alias}.${join.right_column}`}
+					onclick={() => handleJoinClick(i)}
+					onkeydown={(e) => handleJoinKey(e, i)}
+					onfocus={() => {
+						focusedJoinIndex = i;
+						hoveredJoinIndex = i;
+					}}
+					onblur={() => {
+						if (focusedJoinIndex === i) focusedJoinIndex = null;
+						if (hoveredJoinIndex === i) hoveredJoinIndex = null;
+					}}
+					onmouseenter={() => (hoveredJoinIndex = i)}
+					onmouseleave={() => {
+						if (hoveredJoinIndex === i) hoveredJoinIndex = null;
+					}}
+				/>
+				<path
+					d={joinEdgePath(join)}
+					stroke={isHovered ? '#dc2626' : '#0ea5e9'}
+					stroke-width={isHovered ? '3' : '2'}
+					fill="none"
+					stroke-dasharray="0"
+					pointer-events="none"
+				/>
 				<path
 					d={joinEdgePath(join)}
 					stroke="#0ea5e9"
-					stroke-width="2"
+					stroke-width="6"
 					fill="none"
-					stroke-dasharray="0"
+					pointer-events="none"
+					class:opacity-0={focusedJoinIndex !== i}
 				/>
 				<circle
 					cx={getTableRightX(join.left_alias)}
 					cy={getColumnY(join.left_alias, join.left_column)}
 					r="4"
-					fill="#0ea5e9"
+					fill={isHovered ? '#dc2626' : '#0ea5e9'}
+					pointer-events="none"
 				/>
 				<circle
 					cx={getTableLeftX(join.right_alias)}
 					cy={getColumnY(join.right_alias, join.right_column)}
 					r="4"
-					fill="#0ea5e9"
+					fill={isHovered ? '#dc2626' : '#0ea5e9'}
+					pointer-events="none"
 				/>
 			{/each}
 			{#if dragJoin}
@@ -160,12 +206,19 @@
 					stroke-dasharray="5,3"
 					fill="none"
 					opacity="0.6"
+					pointer-events="none"
 				/>
 			{/if}
 		</svg>
 
 		{#each query.tables as canvasTable (canvasTable.alias)}
-			<TableCard {canvasTable} onStartJoin={handleStartJoin} />
+			<TableCard
+				{canvasTable}
+				onStartJoin={handleStartJoin}
+				highlightJoinTargets={dragJoin
+					? { sourceAlias: dragJoin.sourceAlias, sourceColumn: dragJoin.sourceColumn }
+					: null}
+			/>
 		{/each}
 	</div>
 

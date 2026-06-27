@@ -30,7 +30,7 @@ See the git history (early commits `P0`–`P4`) for the original implementation 
 - `pnpm test:unit:watch` — Vitest in watch mode
 - `pnpm test:rust` — Rust unit and integration tests (`cargo test` in `src-tauri/`)
 - `pnpm test:smoke` — `secrets_smoke`, env-gated `pg_smoke`, and env-gated `mysql_smoke`
-- `pnpm db:seed:mysql` — load `testdata_mysql.sql` into the local MySQL test DB (`--reset` via `db:seed:mysql:reset`); auto-connects to `localhost:3306` as `root` into `safedb_test`, overridable via `SAFEDB_TEST_MYSQL_*` env vars. If no `mysql` client is on PATH, auto-detects a running mysql/mariadb Docker container and runs the client inside it via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`). When password is unset, reads `MYSQL_ROOT_PASSWORD` from the container env (docker-exec and host-client modes against localhost).
+- `pnpm db:seed:mysql` — load `testdata_mysql.sql` into the local MySQL test DB; leaves `connections.json` and `query_history.json` alone. `db:seed:mysql:reset-state` additionally wipes connections + history (saved queries and settings are always left untouched). `db:seed:mysql:reset` is a shorthand for `--reset --reset-state` (drop + recreate DB, then wipe app state) — destructive, use deliberately. Auto-connects to `localhost:3306` as `root` into `safedb_test`, overridable via `SAFEDB_TEST_MYSQL_*` env vars. If no `mysql` client is on PATH, auto-detects a running mysql/mariadb Docker container and runs the client inside it via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`). When password is unset, reads `MYSQL_ROOT_PASSWORD` from the container env (docker-exec and host-client modes against localhost).
 - `pnpm tauri build` — production build
 - `cargo check` — verify Rust backend compiles (run in `src-tauri/`)
 - `cargo clippy -- -D warnings` — Rust lint gate (run in `src-tauri/`)
@@ -109,3 +109,7 @@ Standard commands live in `## Commands` above. Notes below are cloud-environment
 
 ## Learned Workspace Facts
 - Empty database passwords are valid connection credentials, especially for local MySQL; preserve `""` through form submission, credential storage, and builder/query paths.
+- `pnpm db:seed:mysql` no longer wipes the app data dir by default; it leaves `connections.json` and `query_history.json` alone. Use `pnpm db:seed:mysql:reset-state` to wipe connections and history (saved queries and settings are always left untouched). `pnpm db:seed:mysql:reset` is now `--reset --reset-state` (drop DB + wipe app state).
+- `window.confirm()` is unreliable in Tauri’s macOS WebView (dialog can hide behind the app window); use in-app or Tauri-native confirmation for delete and other destructive actions.
+- Local MySQL for dev/smoke tests uses sibling `mysql-test-container` (`safedb-mysql`): `root` with empty password on `safedb_test`, or read-only `testuser` on `safedb_test` / `honestcar`.
+- There is no in-app connection edit flow; delete and add a new connection is the supported path.
