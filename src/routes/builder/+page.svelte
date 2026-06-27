@@ -82,15 +82,15 @@
 	<div class="flex items-center justify-between border-b border-slate-200 px-6 py-3 dark:border-slate-800">
 		<div class="flex items-center gap-3">
 			{#if connections.active}
-				<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+				<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
 					{dialectLabels[connections.active.dialect]?.slice(0, 2) ?? 'DB'}
 				</div>
 				<div>
-					<h1 class="text-base font-semibold tracking-tight text-slate-900">{connections.active.name}</h1>
-					<p class="text-xs text-slate-400">{dialectLabels[connections.active.dialect]} · {connections.active.database}</p>
+					<h1 class="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-100">{connections.active.name}</h1>
+					<p class="text-xs text-slate-400 dark:text-slate-500">{dialectLabels[connections.active.dialect]} · {connections.active.database}</p>
 				</div>
 			{:else}
-				<h1 class="text-xl font-semibold tracking-tight text-slate-900">Query Builder</h1>
+				<h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Query Builder</h1>
 			{/if}
 		</div>
 
@@ -143,12 +143,12 @@
 	{#if !connections.activeId}
 		<div class="flex flex-1 items-center justify-center p-8">
 			<div class="text-center">
-				<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+				<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
 					<svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
 				</div>
-				<p class="mt-4 text-sm font-medium text-slate-600">No connection selected</p>
-				<p class="mt-1 text-sm text-slate-400">Connect to a database to start building queries.</p>
-				<a href="/connections" class="mt-5 inline-block rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+				<p class="mt-4 text-sm font-medium text-slate-600 dark:text-slate-300">No connection selected</p>
+				<p class="mt-1 text-sm text-slate-400 dark:text-slate-500">Connect to a database to start building queries.</p>
+				<a href="/connections" class="mt-5 inline-block rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
 					Go to Connections
 				</a>
 			</div>
@@ -156,17 +156,17 @@
 	{:else}
 		<div id="builder-main" class="flex flex-1 flex-col overflow-hidden">
 			<div class="flex flex-1 overflow-hidden">
-				<aside class="w-72 shrink-0 border-r border-slate-200 bg-white">
+				<aside class="w-72 shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
 					<SchemaBrowser onAddTable={addTable} />
 				</aside>
 
 				<div class="flex flex-1 flex-col overflow-hidden">
 				{#if query.joins.length > 0}
-					<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
+					<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
 						{#each query.joins as join, i (i)}
-							<span class="flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+							<span class="flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
 								join: {tableNameForAlias(join.left_alias)}.{join.left_column} = {tableNameForAlias(join.right_alias)}.{join.right_column}
-								<button type="button" onclick={() => query.removeJoin(i)} class="text-sky-400 hover:text-sky-600" aria-label="Remove join">
+								<button type="button" onclick={() => query.removeJoin(i)} class="text-sky-400 hover:text-sky-600 dark:text-sky-300 dark:hover:text-sky-100" aria-label="Remove join">
 									<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
 								</button>
 							</span>
@@ -175,20 +175,20 @@
 				{/if}
 
 				{#if query.tables.length > 0}
-					<div class="border-b border-slate-200 bg-white px-4 py-2">
+					<div class="border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
 						<FilterBuilder />
 					</div>
 				{/if}
 
-					<div class="relative flex-1 overflow-hidden bg-slate-50">
+					<div class="relative flex-1 overflow-hidden bg-slate-50 dark:bg-slate-950">
 						{#if query.tables.length === 0}
 							<div class="flex h-full items-center justify-center">
 								<div class="text-center">
-									<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-300 shadow-sm">
+									<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-300 shadow-sm dark:bg-slate-800 dark:text-slate-500">
 										<svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></svg>
 									</div>
-									<p class="mt-4 text-sm font-medium text-slate-500">Empty canvas</p>
-									<p class="mt-1 text-sm text-slate-400">Click + next to a table in the sidebar to add it.</p>
+									<p class="mt-4 text-sm font-medium text-slate-500 dark:text-slate-300">Empty canvas</p>
+									<p class="mt-1 text-sm text-slate-400 dark:text-slate-500">Click + next to a table in the sidebar to add it.</p>
 								</div>
 							</div>
 						{:else}
@@ -197,14 +197,14 @@
 					</div>
 
 					{#if query.error}
-						<div class="border-t border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+						<div class="border-t border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
 							{query.error}
 						</div>
 					{/if}
 
 					{#if query.results}
-						<div class="border-t border-slate-200 bg-white" style="height: {resultsHeight}px;">
-							<button type="button" class="h-1.5 w-full cursor-row-resize bg-slate-200 hover:bg-slate-300" aria-label="Resize results panel" onmousedown={startResize}></button>
+						<div class="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" style="height: {resultsHeight}px;">
+							<button type="button" class="h-1.5 w-full cursor-row-resize bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600" aria-label="Resize results panel" onmousedown={startResize}></button>
 							<ResultsTable result={query.results} />
 						</div>
 					{/if}

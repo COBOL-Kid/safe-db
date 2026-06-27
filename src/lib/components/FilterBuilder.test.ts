@@ -54,14 +54,16 @@ describe('FilterBuilder group controls', () => {
 		expect(screen.getByRole('button', { name: 'Remove group' })).toBeInTheDocument();
 	});
 
-	it('toggles the root connector between AND and OR', async () => {
-		const user = userEvent.setup();
+	it('does not render a group-default connector pill', () => {
 		render(FilterBuilder);
 
-		expect(screen.getByText('AND')).toBeInTheDocument();
-		await user.click(screen.getByText('AND'));
+		expect(screen.queryByRole('button', { name: /^AND$/ })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /^OR$/ })).not.toBeInTheDocument();
+	});
 
-		expect(screen.getByText('OR')).toBeInTheDocument();
+	it('setGroupConnector still updates the store (used by future group-default controls)', () => {
+		expect(query.filters.connector).toBe('And');
+		query.setGroupConnector([], 'Or');
 		expect(query.filters.connector).toBe('Or');
 	});
 });

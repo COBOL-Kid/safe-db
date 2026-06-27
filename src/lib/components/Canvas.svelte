@@ -131,7 +131,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
 	bind:this={canvasEl}
-	class="relative h-full w-full overflow-auto bg-slate-50"
+	class="relative h-full w-full overflow-auto bg-slate-50 dark:bg-slate-950"
 	role="application"
 	aria-label="Query canvas"
 	onmousedown={handleMouseDown}
@@ -223,7 +223,7 @@
 	</div>
 
 	{#if query.tables.length > 0}
-		<div class="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/90 px-3 py-1.5 text-xs text-slate-500 shadow-sm backdrop-blur">
+		<div class="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/90 px-3 py-1.5 text-xs text-slate-500 shadow-sm backdrop-blur dark:bg-slate-900/90 dark:text-slate-400">
 			{query.tables.length} table{query.tables.length !== 1 ? 's' : ''}
 			{#if query.joins.length > 0}
 				· {query.joins.length} join{query.joins.length !== 1 ? 's' : ''}

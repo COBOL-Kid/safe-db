@@ -70,24 +70,24 @@
 	}
 </script>
 
-<div class="mx-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white p-6">
-	<h2 class="text-lg font-semibold text-slate-900">New Connection</h2>
-	<p class="mt-1 text-sm text-slate-500">Connect to a production database. Credentials are stored in your OS keychain.</p>
+<div class="mx-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-900">
+	<h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">New Connection</h2>
+	<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Connect to a production database. Credentials are stored in your OS keychain.</p>
 
 	<div class="mt-6 space-y-4">
 		<div>
-			<label class="mb-1.5 block text-sm font-medium text-slate-700" for="cf-name">Name</label>
+			<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-name">Name</label>
 			<input
 				id="cf-name"
 				type="text"
 				placeholder="My Production DB"
 				bind:value={name}
-				class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
+				class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 			/>
 		</div>
 
 		<div>
-			<span class="mb-1.5 block text-sm font-medium text-slate-700" id="cf-dialect-label">Database type</span>
+			<span class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" id="cf-dialect-label">Database type</span>
 			<div class="grid grid-cols-2 gap-2" role="group" aria-labelledby="cf-dialect-label">
 				{#each DIALECTS as d (d.value)}
 					<button
@@ -95,8 +95,8 @@
 						onclick={() => selectDialect(d.value)}
 						class="rounded-lg border px-3 py-2 text-sm font-medium transition-colors
 							{dialect === d.value
-							? 'border-slate-900 bg-slate-900 text-white'
-							: 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}"
+							? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+							: 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}"
 					>
 						{d.label}
 					</button>
@@ -106,62 +106,62 @@
 
 		<div class="grid grid-cols-3 gap-3">
 			<div class="col-span-2">
-				<label class="mb-1.5 block text-sm font-medium text-slate-700" for="cf-host">Host</label>
+				<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-host">Host</label>
 				<input
 					id="cf-host"
 					type="text"
 					placeholder="localhost"
 					bind:value={host}
-					class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
+					class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 				/>
 			</div>
 			<div>
-				<label class="mb-1.5 block text-sm font-medium text-slate-700" for="cf-port">Port</label>
+				<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-port">Port</label>
 				<input
 					id="cf-port"
 					type="number"
 					bind:value={port}
-					class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
+					class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-500"
 				/>
 			</div>
 		</div>
 
 		<div>
-			<label class="mb-1.5 block text-sm font-medium text-slate-700" for="cf-db">Database</label>
+			<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-db">Database</label>
 			<input
 				id="cf-db"
 				type="text"
 				placeholder="mydb"
 				bind:value={database}
-				class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
+				class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 			/>
 		</div>
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label class="mb-1.5 block text-sm font-medium text-slate-700" for="cf-user">Username</label>
+				<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-user">Username</label>
 				<input
 					id="cf-user"
 					type="text"
 					placeholder="readonly"
 					bind:value={username}
-					class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
+					class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 				/>
 			</div>
 			<div>
-				<label class="mb-1.5 block text-sm font-medium text-slate-700" for="cf-pw">Password</label>
+				<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-pw">Password</label>
 				<div class="relative">
 					<input
 						id="cf-pw"
 						type={showPassword ? 'text' : 'password'}
 						placeholder="••••••••"
 						bind:value={password}
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 pr-10 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400"
+						class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 					/>
 					<button
 						type="button"
 						onclick={() => (showPassword = !showPassword)}
-						class="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-600"
+						class="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
 						aria-label={showPassword ? 'Hide password' : 'Show password'}
 						aria-pressed={showPassword}
 					>
@@ -175,25 +175,25 @@
 			</div>
 		</div>
 
-		<div class="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
+		<div class="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
 			<svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
 			<span>For best safety, connect as a dedicated <strong>read-only</strong> database role.</span>
 		</div>
 
 		{#if testResult}
-			<div class="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
+			<div class="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
 				<svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
 				<span class="truncate">Connected — {testResult}</span>
 			</div>
 		{/if}
 		{#if testError}
-			<div class="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
+			<div class="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">
 				<svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
 				<span class="break-all">{testError}</span>
 			</div>
 		{/if}
 		{#if formError}
-			<div class="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{formError}</div>
+			<div class="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">{formError}</div>
 		{/if}
 	</div>
 
@@ -202,7 +202,7 @@
 			type="button"
 			onclick={handleTest}
 			disabled={testing || saving}
-			class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+			class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
 		>
 			{testing ? 'Testing…' : 'Test Connection'}
 		</button>
@@ -210,7 +210,7 @@
 			<button
 				type="button"
 				onclick={onCancel}
-				class="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700"
+				class="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
 			>
 				Cancel
 			</button>
@@ -218,7 +218,7 @@
 				type="button"
 				onclick={handleSave}
 				disabled={saving || testing}
-				class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-50"
+				class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
 			>
 				{saving ? 'Saving…' : 'Save Connection'}
 			</button>

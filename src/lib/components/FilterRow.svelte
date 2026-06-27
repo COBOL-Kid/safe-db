@@ -161,12 +161,12 @@
 	);
 </script>
 
-<div class="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs">
+<div class="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900">
 	<select
 		value={filter.table_alias}
 		onchange={(e) => changeTable((e.currentTarget as HTMLSelectElement).value)}
 		aria-label="Filter table"
-		class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+		class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-slate-500"
 	>
 		{#each tables as t (t.alias)}
 			<option value={t.alias}>{t.tableInfo.name}</option>
@@ -177,7 +177,7 @@
 		value={filter.column}
 		onchange={(e) => changeColumn((e.currentTarget as HTMLSelectElement).value)}
 		aria-label="Filter column"
-		class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+		class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-slate-500"
 	>
 		{#each columns as col (col.name)}
 			<option value={col.name}>{col.name}</option>
@@ -188,7 +188,7 @@
 		value={filter.op}
 		onchange={(e) => changeOp((e.currentTarget as HTMLSelectElement).value as FilterOp)}
 		aria-label="Filter operator"
-		class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+		class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-slate-500"
 	>
 		{#each availableOps as op (op)}
 			<option value={op}>{opLabel(op)}</option>
@@ -202,7 +202,7 @@
 			<select
 				value={filter.value.Single.text}
 				onchange={(e) => updateSingleText((e.currentTarget as HTMLSelectElement).value)}
-				class="w-20 rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+				class="w-20 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-slate-500"
 			>
 				<option value="true">true</option>
 				<option value="false">false</option>
@@ -214,7 +214,7 @@
 				value={filter.value.Single.text}
 				oninput={(e) => updateSingleText((e.currentTarget as HTMLInputElement).value)}
 				placeholder="value"
-				class="w-24 rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+				class="w-24 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 			/>
 		{/if}
 	{:else if valueKind === 'Pair' && filter.value && 'Pair' in filter.value}
@@ -224,16 +224,16 @@
 			value={filter.value.Pair[0].text}
 			oninput={(e) => updatePairFrom((e.currentTarget as HTMLInputElement).value)}
 			placeholder="from"
-			class="w-20 rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+			class="w-20 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 		/>
-		<span class="text-slate-400">and</span>
+		<span class="text-slate-400 dark:text-slate-500">and</span>
 		<input
 			type={inputType}
 			step={inputStep}
 			value={filter.value.Pair[1].text}
 			oninput={(e) => updatePairTo((e.currentTarget as HTMLInputElement).value)}
 			placeholder="to"
-			class="w-20 rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+			class="w-20 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 		/>
 	{:else if valueKind === 'List' && filter.value && 'List' in filter.value}
 		<div class="flex flex-wrap items-center gap-1">
@@ -244,13 +244,13 @@
 					value={lit.text}
 					oninput={(e) => updateListItem(i, (e.currentTarget as HTMLInputElement).value)}
 					placeholder="value"
-					class="w-16 rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400"
+					class="w-16 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
 				/>
 				{#if filter.value.List.length > 1}
 					<button
 						type="button"
 						onclick={() => removeListItem(i)}
-						class="text-slate-300 hover:text-red-500"
+						class="text-slate-300 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
 						aria-label="Remove value"
 					>
 						<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -260,7 +260,7 @@
 			<button
 				type="button"
 				onclick={addListItem}
-				class="flex h-5 w-5 items-center justify-center rounded border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+				class="flex h-5 w-5 items-center justify-center rounded border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600 dark:border-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
 				aria-label="Add value"
 			>
 				<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -271,7 +271,7 @@
 	<button
 		type="button"
 		onclick={() => query.removeFilterNode(path)}
-		class="text-slate-300 transition-colors hover:text-red-500"
+		class="text-slate-300 transition-colors hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
 		aria-label="Remove filter"
 	>
 		<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
