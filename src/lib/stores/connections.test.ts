@@ -14,8 +14,7 @@ const sampleConnection = {
 	database: 'demo',
 	username: 'user',
 	transport_security: {
-		mode: 'VerifyIdentity' as const,
-		insecure_acknowledged: false
+		mode: 'VerifyIdentity' as const
 	}
 };
 

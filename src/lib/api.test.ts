@@ -33,8 +33,7 @@ const def: ConnectionDef = {
 	database: 'app',
 	username: 'app',
 	transport_security: {
-		mode: 'VerifyIdentity',
-		insecure_acknowledged: false
+		mode: 'VerifyIdentity'
 	}
 };
 

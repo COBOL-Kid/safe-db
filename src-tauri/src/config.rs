@@ -120,7 +120,6 @@ fn migrate_legacy_connection(mut value: Value) -> (Value, bool) {
         "transport_security".to_string(),
         json!({
             "mode": TransportSecurityMode::Disabled,
-            "insecure_acknowledged": false,
             "legacy_implicit": true,
         }),
     );
@@ -223,7 +222,6 @@ mod tests {
         let def: ConnectionDef = serde_json::from_value(migrated).unwrap();
         assert_eq!(def.version, CURRENT_CONNECTION_VERSION);
         assert_eq!(def.transport_security.mode, TransportSecurityMode::Disabled);
-        assert!(!def.transport_security.insecure_acknowledged);
         assert!(def.transport_security.legacy_implicit);
     }
 
@@ -238,8 +236,7 @@ mod tests {
             "database": "app",
             "username": "reader",
             "transport_security": {
-                "mode": "VerifyIdentity",
-                "insecure_acknowledged": false
+                "mode": "VerifyIdentity"
             }
         });
         let (value, upgraded) = migrate_legacy_connection(modern.clone());

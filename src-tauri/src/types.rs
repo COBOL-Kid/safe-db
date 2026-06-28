@@ -19,8 +19,6 @@ pub struct TransportSecurity {
     pub ca_pem: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oracle_wallet_location: Option<String>,
-    #[serde(default)]
-    pub insecure_acknowledged: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub legacy_implicit: bool,
 }
@@ -39,7 +37,6 @@ impl Default for TransportSecurity {
             mode: default_transport_security_mode(),
             ca_pem: None,
             oracle_wallet_location: None,
-            insecure_acknowledged: false,
             legacy_implicit: false,
         }
     }
@@ -102,17 +99,6 @@ impl ConnectionDef {
         if self.port == 0 {
             return Err("Port must be between 1 and 65535".to_string());
         }
-        if matches!(
-            self.transport_security.mode,
-            TransportSecurityMode::EncryptOnly | TransportSecurityMode::Disabled
-        ) && !self.transport_security.insecure_acknowledged
-            && !self.transport_security.legacy_implicit
-        {
-            return Err(
-                "Insecure transport must be explicitly acknowledged before saving or testing"
-                    .to_string(),
-            );
-        }
         if self.dialect == Dialect::Oracle
             && self.transport_security.mode != TransportSecurityMode::Disabled
             && self
@@ -145,7 +131,6 @@ mod tests {
                 mode,
                 ca_pem: None,
                 oracle_wallet_location: None,
-                insecure_acknowledged: false,
                 legacy_implicit,
             },
         }
@@ -158,14 +143,14 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_disabled_without_acknowledgement() {
+    fn validate_allows_disabled_without_acknowledgement() {
         let def = sample_connection(TransportSecurityMode::Disabled, false);
-        assert!(def.validate().is_err());
+        assert!(def.validate().is_ok());
     }
 
     #[test]
-    fn validate_rejects_encrypt_only_without_acknowledgement() {
+    fn validate_allows_encrypt_only_without_acknowledgement() {
         let def = sample_connection(TransportSecurityMode::EncryptOnly, false);
-        assert!(def.validate().is_err());
+        assert!(def.validate().is_ok());
     }
 }

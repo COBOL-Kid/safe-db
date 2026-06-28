@@ -3320,7 +3320,6 @@ dependencies = [
  "linux-keyutils-keyring-store",
  "log",
  "oracle",
- "rustls-native-certs",
  "safe-db",
  "serde",
  "serde_json",
