@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
-use crate::adapters::ExplainResult;
+use crate::adapters::{ExplainResult, columns_from_compiled_sql};
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
 use crate::types::{ConnectionDef, TransportSecurityMode};
@@ -278,7 +278,10 @@ async fn execute_query_inner(
         let row_count = rows.len();
 
         let columns: Vec<ResultColumn> = if rows.is_empty() {
-            Vec::new()
+            columns_from_compiled_sql(&compiled.sql, crate::types::Dialect::Mssql)
+                .into_iter()
+                .map(|name| ResultColumn::new(name, "unknown"))
+                .collect()
         } else {
             rows[0]
                 .columns()

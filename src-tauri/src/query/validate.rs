@@ -537,10 +537,17 @@ fn validate_group(
 
 fn validate_literal(
     lit: &FilterLiteral,
-    _data_type: &str,
+    data_type: &str,
     alias: &str,
     column: &str,
 ) -> Result<(), String> {
+    let expected = literal_kind_for_column(data_type);
+    if lit.kind != expected {
+        return Err(format!(
+            "Value for '{}.{}' has type {:?}; expected {:?} for column type {}",
+            alias, column, lit.kind, expected, data_type
+        ));
+    }
     match lit.kind {
         LiteralKind::Text => {
             if lit.text.len() > MAX_TEXT_LITERAL_LEN {
@@ -1063,6 +1070,48 @@ mod tests {
         )));
         let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
         assert!(err.contains("not a valid integer"));
+    }
+
+    #[test]
+    fn rejects_text_literal_kind_for_int_column() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::Eq,
+            Some(FilterValue::Single(lit(LiteralKind::Text, "123"))),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("expected Int"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_mismatched_literal_kind_inside_list() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "id",
+            FilterOp::In,
+            Some(FilterValue::List(vec![
+                lit(LiteralKind::Int, "1"),
+                lit(LiteralKind::Text, "2"),
+            ])),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("expected Int"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_mismatched_literal_kind_inside_pair() {
+        let mut spec = base_spec();
+        spec.filters.children.push(FilterNode::Leaf(leaf_on(
+            "created_at",
+            FilterOp::Between,
+            Some(FilterValue::Pair(
+                lit(LiteralKind::DateTime, "2025-01-01T00:00"),
+                lit(LiteralKind::Text, "2025-01-02T00:00"),
+            )),
+        )));
+        let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
+        assert!(err.contains("expected DateTime"), "got: {err}");
     }
 
     #[test]

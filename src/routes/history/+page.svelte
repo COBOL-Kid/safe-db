@@ -42,7 +42,7 @@
 			name: saveQueryName.trim(),
 			connection_id: saveEntry.connection_id,
 			spec: saveEntry.spec,
-			created_at: Date.now().toString()
+			created_at: Math.floor(Date.now() / 1000).toString()
 		});
 		showSavePrompt = false;
 		saveEntry = null;

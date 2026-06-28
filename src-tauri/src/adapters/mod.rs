@@ -31,6 +31,55 @@ pub enum Adapter {
     Oracle(OracleConn),
 }
 
+/// Infer result column labels from a compiled SELECT without re-executing the query.
+pub fn columns_from_compiled_sql(sql: &str, dialect: Dialect) -> Vec<String> {
+    let upper = sql.to_uppercase();
+    let Some(from_idx) = upper.find("\nFROM ").or_else(|| upper.find(" FROM ")) else {
+        return Vec::new();
+    };
+    let Some(select_idx) = upper.find("SELECT") else {
+        return Vec::new();
+    };
+    let mut select_list = sql[select_idx + "SELECT".len()..from_idx].trim();
+    if dialect == Dialect::Mssql
+        && select_list.to_uppercase().starts_with("TOP ")
+        && let Some((_, rest)) = select_list.split_once(' ')
+        && let Some((_, after_top_count)) = rest.trim_start().split_once(' ')
+    {
+        select_list = after_top_count.trim_start();
+    }
+    if select_list == "*" {
+        return Vec::new();
+    }
+
+    select_list
+        .split(',')
+        .map(|part| {
+            let part = part.trim();
+            let upper_part = part.to_uppercase();
+            if let Some(as_idx) = upper_part.rfind(" AS ") {
+                unquote_identifier(part[as_idx + 4..].trim(), dialect)
+            } else if let Some(dot) = part.rfind('.') {
+                unquote_identifier(part[dot + 1..].trim(), dialect)
+            } else {
+                unquote_identifier(part, dialect)
+            }
+        })
+        .collect()
+}
+
+fn unquote_identifier(identifier: &str, dialect: Dialect) -> String {
+    match dialect {
+        Dialect::Postgres | Dialect::Oracle => identifier.trim_matches('"').to_string(),
+        Dialect::MySql => identifier.trim_matches('`').to_string(),
+        Dialect::Mssql => identifier
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+            .unwrap_or(identifier)
+            .to_string(),
+    }
+}
+
 impl Adapter {
     pub async fn connect(def: &ConnectionDef, password: &str) -> Result<Self> {
         def.validate().map_err(anyhow::Error::msg)?;
@@ -150,5 +199,33 @@ impl Adapter {
         )
         .await
         .map_err(|_| anyhow::anyhow!("EXPLAIN timed out after {DEFAULT_TIMEOUT_MS}ms"))?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn columns_from_compiled_sql_handles_dialect_quotes_and_mssql_top() {
+        let pg = r#"SELECT "t0"."id" AS "t0__id", "t0"."name" AS "t0__name"
+FROM "public"."users" AS "t0"
+LIMIT 101"#;
+        assert_eq!(
+            columns_from_compiled_sql(pg, Dialect::Postgres),
+            vec!["t0__id".to_string(), "t0__name".to_string()]
+        );
+
+        let mysql = "SELECT `t0`.`id` AS `t0__id`\nFROM `app`.`users` AS `t0`\nLIMIT 101";
+        assert_eq!(
+            columns_from_compiled_sql(mysql, Dialect::MySql),
+            vec!["t0__id".to_string()]
+        );
+
+        let mssql = "SELECT TOP 101 [t0].[id] AS [t0__id]\nFROM [dbo].[users] AS [t0]";
+        assert_eq!(
+            columns_from_compiled_sql(mssql, Dialect::Mssql),
+            vec!["t0__id".to_string()]
+        );
     }
 }

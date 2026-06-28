@@ -9,9 +9,9 @@ Built with **Tauri 2** (Rust) and **SvelteKit 2** (Svelte 5).
 - **Connections** — save named profiles; passwords stored in the OS credential store (not on disk); show/hide toggle on the password field
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, set a row limit; **recursive filter groups** with per-child AND/OR connector overrides
-- **Safety rails** — read-only `SELECT` queries, max 1 000 rows (default 100), 10 s timeout, custom blocked schemas, optional EXPLAIN cost threshold (warning surfaced in the UI)
-- **Saved queries & history** — separate stores; reopen past work from the home screen or history page
-- **In-app confirmations** — destructive actions (delete connection, clear history) use a Tauri-native dialog instead of `window.confirm()` (which hides behind the WebView on macOS)
+- **Safety rails** — read-only `SELECT` queries, max 1 000 rows (default 100), 10 s timeout, custom blocked schemas, and an EXPLAIN cost guard that asks for confirmation before running when the estimate is unavailable or above threshold
+- **Saved queries & history** — separate persisted stores; reopen past work from the home screen or history page. Timestamps are stored as Unix-seconds strings.
+- **In-app confirmations** — destructive actions and safety overrides use the `ConfirmDialog` component instead of `window.confirm()` (which hides behind the WebView on macOS)
 - **Command palette** — `Cmd+K` / `Ctrl+K` for quick navigation
 - **Light / dark theme** — Tauri window background color is synced to the active theme
 
@@ -27,7 +27,7 @@ Built with **Tauri 2** (Rust) and **SvelteKit 2** (Svelte 5).
 ## Prerequisites
 
 - **Node.js** `24.17.0` (see `.nvmrc` / `package.json` `devEngines`)
-- **pnpm** `10.14.0` (`corepack enable` or install from `packageManager` in `package.json`)
+- **pnpm** `11.9.0` (`corepack enable` or install from `packageManager` in `package.json`)
 - **Rust** `1.96.0+` (pinned in `src-tauri/rust-toolchain.toml`)
 - Platform deps for Tauri 2 ([Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
 
@@ -114,6 +114,10 @@ In **release** builds on macOS, Protected Data must pass the write probe or star
 
 After the first unlock, builder and query paths reuse an in-process credential session so repeated schema loads and queries do not re-hit the OS store.
 
+## Query safety behavior
+
+The builder sends a structured query IR to Rust; the backend validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit "Run anyway" confirmation; forced retries still run with the same row limit and timeout.
+
 ## Project layout
 
 ```
@@ -148,7 +152,7 @@ safe-db/
 │   │   ├── settings.rs
 │   │   ├── types.rs
 │   │   ├── lib.rs / main.rs
-│   ├── tests/                        # secrets_smoke, secrets_cache, secrets_macos,
+│   ├── tests/                        # secrets_smoke, secrets_cache, secrets_native,
 │   │                                 #   pg_smoke, mysql_smoke, stores
 │   ├── capabilities/                 # Tauri 2 permissions
 │   ├── Entitlements.plist            # macOS sandbox + keychain-access-groups

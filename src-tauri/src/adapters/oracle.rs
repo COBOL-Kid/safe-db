@@ -3,7 +3,7 @@ use oracle::sql_type::{InnerValue, ToSql};
 use oracle::{Connection, Row as OracleRow};
 use std::time::Duration;
 
-use crate::adapters::ExplainResult;
+use crate::adapters::{ExplainResult, columns_from_compiled_sql};
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
 use crate::types::{ConnectionDef, TransportSecurityMode};
@@ -245,6 +245,12 @@ pub fn execute_query(
             }
             let row_data = decode_oracle_row(&row, columns.len());
             result_rows.push(row_data);
+        }
+        if first {
+            columns = columns_from_compiled_sql(&compiled.sql, crate::types::Dialect::Oracle)
+                .into_iter()
+                .map(|name| ResultColumn::new(name, "unknown"))
+                .collect();
         }
 
         let row_count = result_rows.len();

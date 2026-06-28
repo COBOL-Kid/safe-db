@@ -1,7 +1,7 @@
 use anyhow::Result;
 use sqlx::{Column, Connection, MySqlPool, Row, TypeInfo};
 
-use crate::adapters::ExplainResult;
+use crate::adapters::{ExplainResult, columns_from_compiled_sql};
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
 use crate::types::{ConnectionDef, TransportSecurityMode};
@@ -173,7 +173,10 @@ pub async fn execute_query(
         let row_count = rows.len();
 
         let columns: Vec<ResultColumn> = if rows.is_empty() {
-            Vec::new()
+            columns_from_compiled_sql(&compiled.sql, crate::types::Dialect::MySql)
+                .into_iter()
+                .map(|name| ResultColumn::new(name, "unknown"))
+                .collect()
         } else {
             rows[0]
                 .columns()

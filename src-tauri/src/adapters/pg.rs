@@ -1,7 +1,7 @@
 use anyhow::Result;
 use sqlx::{Column, PgPool, Row, TypeInfo};
 
-use crate::adapters::ExplainResult;
+use crate::adapters::{ExplainResult, columns_from_compiled_sql};
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
 use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
 use crate::types::{ConnectionDef, TransportSecurityMode};
@@ -177,7 +177,7 @@ pub async fn execute_query(
     let row_count = rows.len();
 
     let columns: Vec<ResultColumn> = if rows.is_empty() {
-        columns_from_compiled_sql(&compiled.sql)
+        columns_from_compiled_sql(&compiled.sql, crate::types::Dialect::Postgres)
             .into_iter()
             .map(|name| ResultColumn::new(name, "unknown"))
             .collect()
@@ -305,36 +305,6 @@ fn classify_pg_type(type_name: &str) -> PgTypeKind {
         "BYTEA" => PgTypeKind::Binary,
         _ => PgTypeKind::Text,
     }
-}
-
-/// Infer result column labels from a compiled SELECT without re-executing the query.
-fn columns_from_compiled_sql(sql: &str) -> Vec<String> {
-    let upper = sql.to_uppercase();
-    let Some(from_idx) = upper.find(" FROM ") else {
-        return Vec::new();
-    };
-    let Some(select_idx) = upper.find("SELECT") else {
-        return Vec::new();
-    };
-    let select_list = sql[select_idx + "SELECT".len()..from_idx].trim();
-    if select_list == "*" {
-        return Vec::new();
-    }
-
-    select_list
-        .split(',')
-        .map(|part| {
-            let part = part.trim();
-            let upper_part = part.to_uppercase();
-            if let Some(as_idx) = upper_part.rfind(" AS ") {
-                part[as_idx + 4..].trim().trim_matches('"').to_string()
-            } else if let Some(dot) = part.rfind('.') {
-                part[dot + 1..].trim().trim_matches('"').to_string()
-            } else {
-                part.trim_matches('"').to_string()
-            }
-        })
-        .collect()
 }
 
 pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainResult> {

@@ -9,7 +9,8 @@ const products: TableInfo = {
 	name: 'products',
 	columns: [
 		{ name: 'id', data_type: 'int', nullable: false, is_indexed: true },
-		{ name: 'name', data_type: 'varchar', nullable: false, is_indexed: false }
+		{ name: 'name', data_type: 'varchar', nullable: false, is_indexed: false },
+		{ name: 'created_at', data_type: 'timestamp', nullable: false, is_indexed: false }
 	],
 	indexes: []
 };
@@ -298,6 +299,67 @@ describe('hydrateQueryFromSpec', () => {
 
 		expect(store.connectorOverrides).toEqual({ 'leaf-name': 'Or' });
 		expect(store.getConnectorForChild([1])).toBe('Or');
+	});
+
+	it('normalizes legacy text literal kinds using the restored column type', () => {
+		const spec: QuerySpec = {
+			tables: [{ schema: 'safedb_test', name: 'products', alias: 'saved_t0' }],
+			columns: [{ table_alias: 'saved_t0', column: 'id' }],
+			joins: [],
+			filters: {
+				connector: 'And',
+				children: [
+					{
+						Leaf: {
+							id: 'leaf-id',
+							table_alias: 'saved_t0',
+							column: 'id',
+							op: 'In',
+							value: {
+								List: [
+									{ kind: 'Text', text: '1' },
+									{ kind: 'Text', text: '2' }
+								]
+							}
+						}
+					},
+					{
+						Leaf: {
+							id: 'leaf-created',
+							table_alias: 'saved_t0',
+							column: 'created_at',
+							op: 'Between',
+							value: {
+								Pair: [
+									{ kind: 'Text', text: '2025-01-01T00:00' },
+									{ kind: 'Text', text: '2025-01-02T00:00' }
+								]
+							}
+						}
+					}
+				]
+			},
+			limit: 100,
+			schema_version: 2,
+			connector_overrides: {}
+		};
+
+		hydrateQueryFromSpec(spec, [products], store);
+
+		const idLeaf = store.filters.children[0];
+		expect('Leaf' in idLeaf).toBe(true);
+		if ('Leaf' in idLeaf && idLeaf.Leaf.value && 'List' in idLeaf.Leaf.value) {
+			expect(idLeaf.Leaf.value.List.map((literal) => literal.kind)).toEqual(['Int', 'Int']);
+		}
+
+		const createdLeaf = store.filters.children[1];
+		expect('Leaf' in createdLeaf).toBe(true);
+		if ('Leaf' in createdLeaf && createdLeaf.Leaf.value && 'Pair' in createdLeaf.Leaf.value) {
+			expect(createdLeaf.Leaf.value.Pair.map((literal) => literal.kind)).toEqual([
+				'DateTime',
+				'DateTime'
+			]);
+		}
 	});
 
 	it('prunes connector_overrides whose IDs no longer resolve after remap drops a group', () => {

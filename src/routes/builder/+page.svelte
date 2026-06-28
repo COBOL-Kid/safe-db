@@ -72,7 +72,7 @@
 			name: saveQueryName.trim(),
 			connection_id: connections.activeId,
 			spec: query.spec,
-			created_at: Date.now().toString()
+			created_at: Math.floor(Date.now() / 1000).toString()
 		});
 		showSavePrompt = false;
 	}

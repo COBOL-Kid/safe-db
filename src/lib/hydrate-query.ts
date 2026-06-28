@@ -2,11 +2,13 @@ import type {
 	FilterGroup,
 	FilterNode,
 	FilterSpec,
+	FilterValue,
 	GroupConnector,
 	JoinSpec,
 	QuerySpec,
 	TableInfo
 } from '$lib/ir';
+import { literalKindForColumn } from '$lib/ir';
 
 export interface QueryHydrationTarget {
 	clear(): void;
@@ -36,16 +38,45 @@ function countFilterLeaves(group: FilterGroup): number {
 	}, 0);
 }
 
-function remapFilterGroup(group: FilterGroup, aliasMap: Map<string, string>): FilterGroup {
+function normalizeFilterValue(value: FilterValue | null, dataType: string): FilterValue | null {
+	if (!value) return null;
+	const kind = literalKindForColumn(dataType);
+	if ('Single' in value) {
+		return { Single: { ...value.Single, kind } };
+	}
+	if ('List' in value) {
+		return { List: value.List.map((literal) => ({ ...literal, kind })) };
+	}
+	return {
+		Pair: [
+			{ ...value.Pair[0], kind },
+			{ ...value.Pair[1], kind }
+		]
+	};
+}
+
+function remapFilterGroup(
+	group: FilterGroup,
+	aliasMap: Map<string, string>,
+	tableByNewAlias: Map<string, TableInfo>
+): FilterGroup {
 	const children: FilterNode[] = [];
 	for (const child of group.children) {
 		if ('Leaf' in child) {
 			const tableAlias = aliasMap.get(child.Leaf.table_alias);
-			if (tableAlias) {
-				children.push({ Leaf: { ...child.Leaf, table_alias: tableAlias } });
+			const tableInfo = tableAlias ? tableByNewAlias.get(tableAlias) : null;
+			const columnInfo = tableInfo?.columns.find((column) => column.name === child.Leaf.column);
+			if (tableAlias && columnInfo) {
+				children.push({
+					Leaf: {
+						...child.Leaf,
+						table_alias: tableAlias,
+						value: normalizeFilterValue(child.Leaf.value, columnInfo.data_type)
+					}
+				});
 			}
 		} else {
-			const remapped = remapFilterGroup(child.Group, aliasMap);
+			const remapped = remapFilterGroup(child.Group, aliasMap, tableByNewAlias);
 			if (remapped.children.length > 0) {
 				children.push({ Group: remapped });
 			}
@@ -66,6 +97,7 @@ export function hydrateQueryFromSpec(
 		schemaTables.map((table) => [schemaKey(table.schema, table.name), table])
 	);
 	const aliasMap = new Map<string, string>();
+	const tableByNewAlias = new Map<string, TableInfo>();
 	const droppedTables: string[] = [];
 
 	for (const t of spec.tables) {
@@ -79,6 +111,7 @@ export function hydrateQueryFromSpec(
 		const newAlias = target.tables[target.tables.length - 1]?.alias;
 		if (newAlias) {
 			aliasMap.set(t.alias, newAlias);
+			tableByNewAlias.set(newAlias, tableInfo);
 		}
 	}
 
@@ -107,7 +140,7 @@ export function hydrateQueryFromSpec(
 	}
 
 	const originalFilterLeaves = countFilterLeaves(spec.filters);
-	const remappedFilters = remapFilterGroup(spec.filters, aliasMap);
+	const remappedFilters = remapFilterGroup(spec.filters, aliasMap, tableByNewAlias);
 	const droppedFilters = countFilterLeaves(remappedFilters) < originalFilterLeaves;
 	target.setFilters(remappedFilters);
 
