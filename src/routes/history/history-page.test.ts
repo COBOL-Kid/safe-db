@@ -30,8 +30,7 @@ const sampleConn: ConnectionDef = {
 	database: 'demo',
 	username: 'user',
 	transport_security: {
-		mode: 'VerifyIdentity',
-		insecure_acknowledged: false
+		mode: 'VerifyIdentity'
 	}
 };
 

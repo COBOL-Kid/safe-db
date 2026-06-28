@@ -47,7 +47,7 @@ export function parseConnectionString(input: string): ParsedConnection {
 	if (/^jdbc:mysql:\/\//i.test(raw)) return parseMysqlJdbc(raw);
 	if (/^mysql:\/\//i.test(raw)) return parseMysqlUri(raw);
 	if (/^jdbc:sqlserver:\/\//i.test(raw)) return parseSqlServerJdbc(raw);
-	if (/^jdbc:oracle:thin:/i.test(raw) || /^@?tcps?:/i.test(raw) || /^@?\/\//.test(raw)) {
+	if (/^jdbc:oracle:thin:/i.test(raw) || /^@?tcps?:/i.test(raw) || /^@\/\//.test(raw)) {
 		return parseOracle(raw);
 	}
 	if (looksLikeSqlServerKeyValue(raw)) return parseSqlServerKeyValue(raw);
@@ -90,7 +90,6 @@ function baseResult(args: {
 			mode: args.transport.mode,
 			ca_pem: args.transport.ca_pem ?? null,
 			oracle_wallet_location: args.transport.oracle_wallet_location ?? null,
-			insecure_acknowledged: false,
 			legacy_implicit: false
 		},
 		inferredLocation: inferLocation(host),
@@ -265,7 +264,7 @@ function postgresTransport(sslmode: string | null, host: string): MutableTranspo
 		case 'verify-full':
 			return { mode: 'VerifyIdentity' };
 		default:
-			return { mode: isLocalHost(host) && sslmode === 'disable' ? 'Disabled' : 'VerifyIdentity' };
+			return { mode: isLocalHost(host) ? 'Disabled' : 'VerifyIdentity' };
 	}
 }
 

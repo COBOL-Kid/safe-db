@@ -28,8 +28,7 @@ const connA: ConnectionDef = {
 	database: 'app',
 	username: 'app',
 	transport_security: {
-		mode: 'VerifyIdentity',
-		insecure_acknowledged: false
+		mode: 'VerifyIdentity'
 	}
 };
 
@@ -43,8 +42,7 @@ const connB: ConnectionDef = {
 	database: 'app_staging',
 	username: 'root',
 	transport_security: {
-		mode: 'VerifyIdentity',
-		insecure_acknowledged: false
+		mode: 'VerifyIdentity'
 	}
 };
 

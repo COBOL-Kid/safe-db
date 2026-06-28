@@ -6,29 +6,24 @@
 		transportMode = $bindable(),
 		caPem = $bindable(),
 		oracleWalletLocation = $bindable(),
-		insecureAcknowledged = $bindable(),
 		onManualChange
 	}: {
 		dialect: Dialect;
 		transportMode: TransportSecurityMode;
 		caPem: string;
 		oracleWalletLocation: string;
-		insecureAcknowledged: boolean;
 		onManualChange: () => void;
 	} = $props();
 
 	const transportOptions: { value: TransportSecurityMode; label: string }[] = [
-		{ value: 'VerifyIdentity', label: 'Verify identity' },
+		{ value: 'VerifyIdentity', label: 'SSL with hostname verification' },
 		{ value: 'VerifyCa', label: 'Verify CA' },
-		{ value: 'EncryptOnly', label: 'Encrypt only' },
+		{ value: 'EncryptOnly', label: 'SSL encrypt only (no cert check)' },
 		{ value: 'Disabled', label: 'Disabled' }
 	];
 
 	function selectTransportMode(mode: TransportSecurityMode) {
 		transportMode = mode;
-		if (transportMode === 'VerifyIdentity' || transportMode === 'VerifyCa') {
-			insecureAcknowledged = false;
-		}
 		onManualChange();
 	}
 </script>
@@ -80,18 +75,6 @@
 					class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
 				/>
 			</div>
-		{/if}
-
-		{#if transportMode === 'EncryptOnly' || transportMode === 'Disabled'}
-			<label class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
-				<input
-					type="checkbox"
-					bind:checked={insecureAcknowledged}
-					onchange={onManualChange}
-					class="mt-0.5"
-				/>
-				<span>I understand this setting weakens protection against interception and server impersonation.</span>
-			</label>
 		{/if}
 	</div>
 </details>

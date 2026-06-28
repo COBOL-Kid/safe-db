@@ -13,7 +13,6 @@ export function transportPresetForLocation(location: DatabaseLocation): Transpor
 			mode: 'Disabled',
 			ca_pem: null,
 			oracle_wallet_location: null,
-			insecure_acknowledged: false,
 			legacy_implicit: false
 		};
 	}
@@ -22,7 +21,6 @@ export function transportPresetForLocation(location: DatabaseLocation): Transpor
 		mode: 'VerifyIdentity',
 		ca_pem: null,
 		oracle_wallet_location: null,
-		insecure_acknowledged: false,
 		legacy_implicit: false
 	};
 }

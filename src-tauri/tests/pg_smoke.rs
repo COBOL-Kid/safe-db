@@ -26,7 +26,6 @@ fn connection_def(config: &PgConfig) -> ConnectionDef {
         username: config.username.clone(),
         transport_security: TransportSecurity {
             mode: TransportSecurityMode::Disabled,
-            insecure_acknowledged: true,
             ..TransportSecurity::default()
         },
     }

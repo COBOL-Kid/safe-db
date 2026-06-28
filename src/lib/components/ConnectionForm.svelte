@@ -47,7 +47,6 @@
 	let transportMode = $state<TransportSecurityMode>('VerifyIdentity');
 	let caPem = $state('');
 	let oracleWalletLocation = $state('');
-	let insecureAcknowledged = $state(false);
 
 	let testing = $state(false);
 	let saving = $state(false);
@@ -82,6 +81,15 @@
 		formError = null;
 	}
 
+	function resetToChoose() {
+		entryPath = 'unset';
+		formStep = 'choose';
+		password = '';
+		showPassword = false;
+		parsedFromString = false;
+		resetResultState();
+	}
+
 	function choosePath(path: Exclude<EntryPath, 'unset'>) {
 		entryPath = path;
 		formStep = path === 'string' ? 'string_input' : 'location';
@@ -104,7 +112,6 @@
 		transportMode = security.mode;
 		caPem = security.ca_pem ?? '';
 		oracleWalletLocation = security.oracle_wallet_location ?? '';
-		insecureAcknowledged = security.insecure_acknowledged;
 	}
 
 	function applyLocationPreset(nextLocation: DatabaseLocation) {
@@ -145,11 +152,15 @@
 
 	function handleHostInput(nextHost: string) {
 		if (!transportOverridden) {
+			const nextLocation = inferLocation(nextHost);
 			if (location === 'local' && !isLocalHost(nextHost)) {
 				location = 'cloud';
 				applyTransportSecurity(transportPresetForLocation('cloud'));
-			} else if (entryPath === 'string') {
-				location = inferLocation(nextHost);
+			} else if (nextLocation !== location) {
+				location = nextLocation;
+				if (entryPath === 'string') {
+					applyTransportSecurity(transportPresetForLocation(nextLocation));
+				}
 			}
 		}
 		resetResultState();
@@ -198,7 +209,6 @@
 				mode: transportMode,
 				ca_pem: caPem.trim() || null,
 				oracle_wallet_location: oracleWalletLocation.trim() || null,
-				insecure_acknowledged: insecureAcknowledged,
 				legacy_implicit: false
 			}
 		};
@@ -210,12 +220,6 @@
 		if (!username.trim()) return 'Username is required';
 		if (!Number.isFinite(port) || port < 1 || port > 65535) {
 			return 'Port must be between 1 and 65535';
-		}
-		if (
-			(transportMode === 'EncryptOnly' || transportMode === 'Disabled') &&
-			!insecureAcknowledged
-		) {
-			return 'Acknowledge the insecure transport setting before continuing';
 		}
 		if (dialect === 'Oracle' && transportMode !== 'Disabled' && !oracleWalletLocation.trim()) {
 			return 'Oracle TCPS requires a wallet location';
@@ -274,10 +278,7 @@
 		{#if formStep !== 'choose'}
 			<button
 				type="button"
-				onclick={() => {
-					entryPath = 'unset';
-					formStep = 'choose';
-				}}
+				onclick={resetToChoose}
 				class="text-sm font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
 			>
 				Change path
@@ -514,13 +515,6 @@
 					</div>
 				{/if}
 
-				{#if transportMode === 'EncryptOnly' || transportMode === 'Disabled'}
-					<label class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
-						<input type="checkbox" bind:checked={insecureAcknowledged} class="mt-0.5" />
-						<span>I understand this setting weakens protection against interception and server impersonation.</span>
-					</label>
-				{/if}
-
 				<div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
 					<span class="h-2 w-2 rounded-full {securityLabel.tone === 'success' ? 'bg-emerald-500' : securityLabel.tone === 'warning' ? 'bg-amber-500' : 'bg-red-500'}"></span>
 					<span>{securityLabel.text}</span>
@@ -534,7 +528,6 @@
 					bind:transportMode
 					bind:caPem
 					bind:oracleWalletLocation
-					bind:insecureAcknowledged
 					onManualChange={markTransportManual}
 				/>
 
@@ -555,7 +548,37 @@
 							<svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
 							<span class="break-all">{testError}</span>
 						</div>
-						{#if errorClassification?.showTroubleshooting}
+						{#if errorClassification?.kind === 'untrusted_ca'}
+							<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+								<p class="font-medium">Your organization may require a security file.</p>
+								<p class="mt-1">Paste the CA certificate PEM below, then test again. This will use certificate verification.</p>
+								<textarea
+									aria-label="CA certificate PEM"
+									bind:value={caPem}
+									oninput={() => {
+										transportMode = 'VerifyCa';
+									}}
+									rows="4"
+									class="mt-3 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 dark:border-amber-900/60 dark:bg-slate-900 dark:text-slate-100"
+								></textarea>
+							</div>
+						{:else if errorClassification?.kind === 'hostname_mismatch'}
+							<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+								<p class="font-medium">Certificate hostname does not match this host.</p>
+								<p class="mt-1">Verify the host value is correct, or use a certificate issued for this hostname.</p>
+							</div>
+						{:else if errorClassification?.kind === 'certificate_required'}
+							<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+								<p class="font-medium">This server requires encrypted transport.</p>
+								<p class="mt-1">
+									{#if dialect === 'Oracle'}
+										Provide an Oracle wallet location in Advanced connection settings, then test again.
+									{:else}
+										Enable SSL/TLS transport or provide the required certificate, then test again.
+									{/if}
+								</p>
+							</div>
+						{:else if errorClassification?.showTroubleshooting}
 							<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
 								<p class="font-medium">Your organization may require a security file.</p>
 								<p class="mt-1">Paste the CA certificate PEM below, then test again. This will use certificate verification.</p>

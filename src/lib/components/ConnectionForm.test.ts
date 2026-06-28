@@ -58,16 +58,23 @@ describe('ConnectionForm', () => {
 		expect(onSaved).toHaveBeenCalled();
 	});
 
-	it('requires insecure acknowledgement for guided local setup', async () => {
+	it('allows test connection for guided local setup without acknowledgment', async () => {
 		const user = userEvent.setup();
+		vi.mocked(api.testConnection).mockResolvedValue('PostgreSQL 16');
 		await openGuidedCredentials(user, 'On this computer Local development or testing');
 
 		await user.type(screen.getByLabelText('Database'), 'app');
 		await user.type(screen.getByLabelText('Username'), 'app');
 		await user.click(screen.getByRole('button', { name: 'Test Connection' }));
 
-		expect(await screen.findByText('Acknowledge the insecure transport setting before continuing')).toBeInTheDocument();
-		expect(api.testConnection).not.toHaveBeenCalled();
+		await waitFor(() => {
+			expect(api.testConnection).toHaveBeenCalledWith(
+				expect.objectContaining({
+					transport_security: expect.objectContaining({ mode: 'Disabled' })
+				}),
+				''
+			);
+		});
 	});
 
 	it('switches guided local defaults to cloud defaults when host becomes remote', async () => {
@@ -154,6 +161,63 @@ describe('ConnectionForm', () => {
 		});
 	});
 
+	it('clears parsed password when switching to guided setup after parsing', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.testConnection).mockResolvedValue('PostgreSQL 16');
+
+		render(ConnectionForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+		await user.click(screen.getByRole('button', { name: 'I have a connection string Paste from your host or dashboard' }));
+		await user.type(
+			screen.getByLabelText('Connection string'),
+			'postgresql://readonly:secret@db.example.com:5432/app?sslmode=verify-full'
+		);
+		await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+		await user.click(screen.getByRole('button', { name: 'Change path' }));
+		await user.click(screen.getByRole('button', { name: 'Help me set it up Local, cloud, or work database' }));
+		await user.click(screen.getByRole('button', { name: 'Online or in the cloud AWS, Google, Supabase, etc.' }));
+
+		await user.clear(screen.getByLabelText('Host'));
+		await user.type(screen.getByLabelText('Host'), 'other.example.com');
+		await user.type(screen.getByLabelText('Database'), 'app');
+		await user.type(screen.getByLabelText('Username'), 'readonly');
+		await user.click(screen.getByRole('button', { name: 'Test Connection' }));
+
+		await waitFor(() => {
+			expect(api.testConnection).toHaveBeenLastCalledWith(
+				expect.objectContaining({ host: 'other.example.com' }),
+				''
+			);
+		});
+	});
+
+	it('resyncs transport when a parsed remote host becomes local', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.testConnection).mockResolvedValue('PostgreSQL 16');
+
+		render(ConnectionForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+		await user.click(screen.getByRole('button', { name: 'I have a connection string Paste from your host or dashboard' }));
+		await user.type(
+			screen.getByLabelText('Connection string'),
+			'postgresql://readonly@db.example.com:5432/app?sslmode=verify-full'
+		);
+		await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+		await user.clear(screen.getByLabelText('Host'));
+		await user.type(screen.getByLabelText('Host'), 'localhost');
+		await user.click(screen.getByRole('button', { name: 'Test Connection' }));
+
+		await waitFor(() => {
+			expect(api.testConnection).toHaveBeenLastCalledWith(
+				expect.objectContaining({
+					host: 'localhost',
+					transport_security: expect.objectContaining({ mode: 'Disabled' })
+				}),
+				''
+			);
+		});
+	});
+
 	it('clears a previous parsed password when the next parsed string has none', async () => {
 		const user = userEvent.setup();
 		vi.mocked(api.testConnection).mockResolvedValue('PostgreSQL 16');
@@ -230,15 +294,32 @@ describe('ConnectionForm', () => {
 		});
 	});
 
+	it('shows hostname guidance without CA troubleshooting for hostname mismatch errors', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.testConnection).mockRejectedValueOnce('certificate is not valid for db.internal');
+
+		render(ConnectionForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+		await user.click(screen.getByRole('button', { name: 'Help me set it up Local, cloud, or work database' }));
+		await user.click(screen.getByRole('button', { name: 'Online or in the cloud AWS, Google, Supabase, etc.' }));
+		await user.clear(screen.getByLabelText('Host'));
+		await user.type(screen.getByLabelText('Host'), 'db.internal');
+		await user.type(screen.getByLabelText('Database'), 'app');
+		await user.type(screen.getByLabelText('Username'), 'readonly');
+		await user.click(screen.getByRole('button', { name: 'Test Connection' }));
+
+		expect(await screen.findByText('Certificate hostname does not match this host.')).toBeInTheDocument();
+		expect(screen.queryByLabelText('CA certificate PEM')).not.toBeInTheDocument();
+	});
+
 	it('exposes the legacy transport controls in Advanced connection settings', async () => {
 		const user = userEvent.setup();
 		await openGuidedCredentials(user, 'Online or in the cloud AWS, Google, Supabase, etc.');
 
 		await user.click(screen.getByText('Advanced connection settings'));
 		const transportGroup = screen.getByRole('group', { name: 'Transport security' });
-		expect(within(transportGroup).getByRole('button', { name: 'Verify identity' })).toBeInTheDocument();
+		expect(within(transportGroup).getByRole('button', { name: 'SSL with hostname verification' })).toBeInTheDocument();
 		expect(within(transportGroup).getByRole('button', { name: 'Verify CA' })).toBeInTheDocument();
-		expect(within(transportGroup).getByRole('button', { name: 'Encrypt only' })).toBeInTheDocument();
+		expect(within(transportGroup).getByRole('button', { name: 'SSL encrypt only (no cert check)' })).toBeInTheDocument();
 		expect(within(transportGroup).getByRole('button', { name: 'Disabled' })).toBeInTheDocument();
 	});
 });

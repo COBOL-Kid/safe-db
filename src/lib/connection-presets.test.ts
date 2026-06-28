@@ -7,10 +7,9 @@ import {
 } from '$lib/connection-presets';
 
 describe('connection presets', () => {
-	it('maps local databases to disabled transport that still requires acknowledgement', () => {
+	it('maps local databases to disabled transport', () => {
 		expect(transportPresetForLocation('local')).toMatchObject({
 			mode: 'Disabled',
-			insecure_acknowledged: false,
 			legacy_implicit: false
 		});
 	});

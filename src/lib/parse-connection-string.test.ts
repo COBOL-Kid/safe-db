@@ -32,6 +32,20 @@ describe('parseConnectionString', () => {
 		expect(parsed.inferredLocation).toBe('local');
 	});
 
+	it('defaults PostgreSQL local connections without SSL params to disabled transport', () => {
+		const parsed = parseConnectionString('postgres://u@localhost/db');
+
+		expect(parsed.transport_security.mode).toBe('Disabled');
+		expect(parsed.inferredLocation).toBe('local');
+	});
+
+	it('defaults PostgreSQL remote connections without SSL params to verify identity', () => {
+		const parsed = parseConnectionString('postgres://u@db.example.com/db');
+
+		expect(parsed.transport_security.mode).toBe('VerifyIdentity');
+		expect(parsed.inferredLocation).toBe('cloud');
+	});
+
 	it('parses MySQL URI and preserves an empty password', () => {
 		const parsed = parseConnectionString('mysql://u:@localhost:3306/db?ssl-mode=VERIFY_IDENTITY');
 
@@ -180,6 +194,12 @@ describe('parseConnectionString', () => {
 	it('fails on malformed input with a structured error', () => {
 		expect(() => parseConnectionString('not a connection string')).toThrow(
 			ConnectionStringParseError
+		);
+	});
+
+	it('rejects ambiguous scheme-less URLs', () => {
+		expect(() => parseConnectionString('//db.example.com:5432/app')).toThrow(
+			'This connection string format is not recognized. Try the guided setup instead.'
 		);
 	});
 

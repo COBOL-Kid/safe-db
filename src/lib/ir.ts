@@ -5,7 +5,6 @@ export interface TransportSecurity {
 	mode: TransportSecurityMode;
 	ca_pem?: string | null;
 	oracle_wallet_location?: string | null;
-	insecure_acknowledged: boolean;
 	legacy_implicit?: boolean;
 }
 
