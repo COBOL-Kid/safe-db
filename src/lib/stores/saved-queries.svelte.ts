@@ -33,4 +33,5 @@ class SavedQueriesStore {
 	}
 }
 
+export { SavedQueriesStore };
 export const savedQueries = new SavedQueriesStore();

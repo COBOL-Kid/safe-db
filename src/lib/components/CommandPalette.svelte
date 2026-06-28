@@ -3,6 +3,7 @@
 	import { connections } from '$lib/stores/connections.svelte';
 	import { savedQueries } from '$lib/stores/saved-queries.svelte';
 	import { query } from '$lib/stores/query.svelte';
+	import { lockCredentials } from '$lib/api';
 
 	let {
 		open = $bindable(false)
@@ -27,7 +28,8 @@
 		save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8',
 		history: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z',
 		home: 'M3 12l9-9 9 9M5 10v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V10',
-		clear: 'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'
+		clear: 'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6',
+		lock: 'M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z'
 	};
 
 	const commands = $derived.by<Command[]>(() => {
@@ -59,6 +61,13 @@
 				hint: 'Recent queries',
 				icon: 'history',
 				action: () => goto('/history')
+			},
+			{
+				id: 'lock-credentials',
+				label: 'Lock credentials',
+				hint: 'Clear unlocked database passwords',
+				icon: 'lock',
+				action: () => void lockCredentials()
 			}
 		];
 
@@ -89,8 +98,9 @@
 				hint: `${conn.dialect} · ${conn.database}`,
 				icon: 'conn',
 				action: () => {
-					connections.setActive(conn.id);
-					goto('/builder');
+					void connections.activate(conn.id).then((activated) => {
+						if (activated) goto('/builder');
+					});
 				}
 			});
 		}
@@ -152,21 +162,21 @@
 	>
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_static_element_interactions -->
 		<div
-			class="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+			class="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden dark:border-slate-700 dark:bg-slate-900"
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={handleKeydown}
 			tabindex="-1"
 			role="dialog"
 			aria-label="Command palette"
 		>
-			<div class="border-b border-slate-200 p-3">
+			<div class="border-b border-slate-200 p-3 dark:border-slate-700">
 				<div class="relative">
-					<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+					<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
 					<input
 						type="text"
 						placeholder="Type a command…"
 						bind:value={search}
-						class="w-full rounded-lg bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none"
+						class="w-full rounded-lg bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
 						aria-label="Command search"
 					/>
 				</div>
@@ -174,7 +184,7 @@
 
 			<div class="max-h-80 overflow-y-auto p-2">
 				{#if filtered.length === 0}
-					<div class="px-3 py-8 text-center text-sm text-slate-400">No commands found</div>
+					<div class="px-3 py-8 text-center text-sm text-slate-400 dark:text-slate-500">No commands found</div>
 				{:else}
 					{#each filtered as cmd, i (cmd.id)}
 						<button
@@ -182,25 +192,25 @@
 							onclick={() => executeCommand(cmd)}
 							onmouseenter={() => (selectedIndex = i)}
 							class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors
-								{i === selectedIndex ? 'bg-slate-100' : 'hover:bg-slate-50'}"
+								{i === selectedIndex ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'}"
 						>
-							<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+							<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
 								<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d={iconPaths[cmd.icon]} /></svg>
 							</div>
 							<div class="flex-1 min-w-0">
-								<p class="text-sm font-medium text-slate-800">{cmd.label}</p>
-								<p class="text-xs text-slate-400">{cmd.hint}</p>
+								<p class="text-sm font-medium text-slate-800 dark:text-slate-100">{cmd.label}</p>
+								<p class="text-xs text-slate-400 dark:text-slate-500">{cmd.hint}</p>
 							</div>
 						</button>
 					{/each}
 				{/if}
 			</div>
 
-			<div class="border-t border-slate-200 px-3 py-2 text-xs text-slate-400">
+			<div class="border-t border-slate-200 px-3 py-2 text-xs text-slate-400 dark:border-slate-700 dark:text-slate-500">
 				<span class="flex items-center gap-3">
-					<span><kbd class="rounded border border-slate-200 px-1">↑↓</kbd> navigate</span>
-					<span><kbd class="rounded border border-slate-200 px-1">↵</kbd> select</span>
-					<span><kbd class="rounded border border-slate-200 px-1">esc</kbd> close</span>
+					<span><kbd class="rounded border border-slate-200 px-1 dark:border-slate-700">↑↓</kbd> navigate</span>
+					<span><kbd class="rounded border border-slate-200 px-1 dark:border-slate-700">↵</kbd> select</span>
+					<span><kbd class="rounded border border-slate-200 px-1 dark:border-slate-700">esc</kbd> close</span>
 				</span>
 			</div>
 		</div>

@@ -5,7 +5,11 @@
 	import { query } from '$lib/stores/query.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { hydrateQueryFromSpec, formatHydrationWarning } from '$lib/hydrate-query';
 	import type { SavedQuery } from '$lib/ir';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+
+	let deleteTargetId = $state<string | null>(null);
 
 	const actions = [
 		{ href: '/connections', title: 'New Connection', desc: 'Connect to a database', icon: 'M12 5v14M5 12h14' },
@@ -25,52 +29,33 @@
 	}
 
 	async function loadSaved(sq: SavedQuery) {
-		connections.setActive(sq.connection_id);
-		schema.clear();
-		await schema.load(sq.connection_id);
+		if (!(await connections.activate(sq.connection_id))) return;
 
-		query.clear();
-		const aliasMap = new Map<string, string>();
-		for (const t of sq.spec.tables) {
-			const tableInfo = schema.tables.find(
-				(st) => st.schema === t.schema && st.name === t.name
-			);
-			if (tableInfo) {
-				query.addTable(tableInfo);
-				const newAlias = query.tables[query.tables.length - 1].alias;
-				aliasMap.set(t.alias, newAlias);
-			}
-		}
-
-		for (const col of sq.spec.columns) {
-			const newAlias = aliasMap.get(col.table_alias);
-			if (newAlias) query.toggleColumn(newAlias, col.column);
-		}
-
-		for (const join of sq.spec.joins) {
-			query.addJoin({
-				left_alias: aliasMap.get(join.left_alias) ?? join.left_alias,
-				left_column: join.left_column,
-				right_alias: aliasMap.get(join.right_alias) ?? join.right_alias,
-				right_column: join.right_column
-			});
-		}
-
-		for (const filter of sq.spec.filters) {
-			query.addFilter({
-				...filter,
-				table_alias: aliasMap.get(filter.table_alias) ?? filter.table_alias
-			});
-		}
-
-		query.setLimit(sq.spec.limit);
+		const hydration = hydrateQueryFromSpec(sq.spec, schema.tables, query);
+		query.hydrationWarning = formatHydrationWarning(hydration);
 		goto('/builder');
 	}
 
-	async function deleteSaved(id: string) {
-		await savedQueries.remove(id);
+	function requestDeleteSaved(id: string) {
+		deleteTargetId = id;
+	}
+
+	async function confirmDeleteSaved() {
+		if (deleteTargetId) {
+			await savedQueries.remove(deleteTargetId);
+			deleteTargetId = null;
+		}
 	}
 </script>
+
+<ConfirmDialog
+	open={deleteTargetId !== null}
+	title="Delete saved query?"
+	message="This saved query will be permanently removed."
+	destructive
+	onConfirm={confirmDeleteSaved}
+	onCancel={() => (deleteTargetId = null)}
+/>
 
 <div class="flex flex-1 flex-col overflow-y-auto">
 	<div class="mx-auto w-full max-w-4xl px-8 py-12">
@@ -108,7 +93,7 @@
 							</button>
 							<button
 								type="button"
-								onclick={() => deleteSaved(sq.id)}
+								onclick={() => requestDeleteSaved(sq.id)}
 								class="ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-300 opacity-0 transition-all hover:text-red-500 group-hover:opacity-100"
 								aria-label="Delete saved query"
 							>

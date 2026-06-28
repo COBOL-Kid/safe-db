@@ -1,22 +1,23 @@
 pub mod adapters;
 mod commands;
-mod config;
-mod introspect;
-mod queries;
-mod query;
+pub mod config;
+pub mod introspect;
+mod persist;
+pub mod queries;
+pub mod query;
 pub mod secrets;
-mod settings;
-mod types;
+pub mod settings;
+pub mod types;
 
 use commands::{
-    clear_history, delete_connection, delete_saved_query, get_schema, get_settings,
-    list_connections, list_history, list_saved_queries, run_query, save_connection,
-    save_saved_query, save_settings, test_connection,
+    clear_history, create_connection, delete_connection, delete_saved_query, get_schema,
+    get_settings, list_connections, list_history, list_saved_queries, lock_credentials, run_query,
+    save_connection, save_saved_query, save_settings, test_connection, update_connection,
 };
 use config::ConfigStore;
 use queries::QueryStore;
 use settings::SettingsStore;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,17 +34,20 @@ pub fn run() {
             secrets::init_store()?;
 
             let data_dir = app.path().app_data_dir()?;
-            app.manage(ConfigStore::new(data_dir.clone()));
-            app.manage(QueryStore::new(data_dir.clone()));
-            app.manage(SettingsStore::new(data_dir));
+            app.manage(ConfigStore::new(data_dir.clone())?);
+            app.manage(QueryStore::new(data_dir.clone())?);
+            app.manage(SettingsStore::new(data_dir)?);
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             test_connection,
             save_connection,
+            create_connection,
+            update_connection,
             list_connections,
             delete_connection,
+            lock_credentials,
             get_schema,
             run_query,
             list_saved_queries,
@@ -54,6 +58,11 @@ pub fn run() {
             get_settings,
             save_settings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if matches!(event, RunEvent::Exit) {
+                secrets::lock_credentials();
+            }
+        });
 }

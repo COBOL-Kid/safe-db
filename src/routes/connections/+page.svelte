@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { connections } from '$lib/stores/connections.svelte';
-	import { schema } from '$lib/stores/schema.svelte';
 	import { browser } from '$app/environment';
 	import ConnectionForm from '$lib/components/ConnectionForm.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { goto } from '$app/navigation';
 
 	let showForm = $state(false);
+	let pendingDelete = $state<{ id: string; name: string } | null>(null);
 
 	const dialectLabels: Record<string, string> = {
 		Postgres: 'PostgreSQL',
@@ -19,22 +20,38 @@
 		await connections.load();
 	}
 
-	async function handleDelete(id: string, name: string) {
-		if (!confirm(`Delete connection "${name}"?`)) return;
+	function requestDelete(id: string, name: string) {
+		pendingDelete = { id, name };
+	}
+
+	function cancelDelete() {
+		pendingDelete = null;
+	}
+
+	async function confirmDelete() {
+		if (!pendingDelete) return;
+		const { id } = pendingDelete;
+		pendingDelete = null;
 		await connections.remove(id);
 	}
 
-	async function handleExplore(id: string) {
-		connections.setActive(id);
-		schema.clear();
-		await schema.load(id);
-		goto('/builder');
+	async function handleOpen(id: string) {
+		if (await connections.activate(id)) goto('/builder');
 	}
 
 	$effect(() => {
 		if (browser) connections.load();
 	});
 </script>
+
+<ConfirmDialog
+	open={pendingDelete !== null}
+	title="Delete connection?"
+	message={pendingDelete ? `Delete connection "${pendingDelete.name}"? This cannot be undone.` : ''}
+	destructive
+	onConfirm={confirmDelete}
+	onCancel={cancelDelete}
+/>
 
 <div class="flex flex-1 flex-col overflow-hidden">
 	<div class="flex items-center justify-between border-b border-slate-200 px-8 py-5 dark:border-slate-800">
@@ -81,6 +98,19 @@
 				</div>
 			</div>
 		{:else}
+			{#if connections.deleteError}
+				<div class="mb-4 flex items-start justify-between gap-3 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
+					<span>{connections.deleteError}</span>
+					<button
+						type="button"
+						onclick={() => connections.clearDeleteError()}
+						class="shrink-0 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+						aria-label="Dismiss error"
+					>
+						<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+					</button>
+				</div>
+			{/if}
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				{#each connections.connections as conn (conn.id)}
 					<div class="group flex flex-col rounded-xl border border-slate-200 bg-white p-5 transition-all hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
@@ -96,8 +126,8 @@
 							</div>
 							<button
 								type="button"
-								onclick={() => handleDelete(conn.id, conn.name)}
-								class="text-slate-300 opacity-0 transition-all hover:text-red-500 group-hover:opacity-100"
+								onclick={() => requestDelete(conn.id, conn.name)}
+								class="text-slate-400 transition-colors hover:text-red-500"
 								aria-label="Delete connection"
 							>
 								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
@@ -110,14 +140,14 @@
 							<p><span class="text-slate-400">User</span> &nbsp;{conn.username}</p>
 						</div>
 
-						<button
-							type="button"
-							onclick={() => handleExplore(conn.id)}
-							class="mt-5 flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
-						>
-							Explore
-							<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-						</button>
+					<button
+						type="button"
+						onclick={() => handleOpen(conn.id)}
+						class="mt-5 flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+					>
+						Open
+						<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+					</button>
 					</div>
 				{/each}
 			</div>

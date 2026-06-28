@@ -1,30 +1,68 @@
 use anyhow::Result;
-use tiberius::{AuthMethod, Client, ColumnData, Config};
+use std::fmt;
+use std::time::Duration;
+use tiberius::{AuthMethod, Client, ColumnData, Config, EncryptionLevel};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
-use crate::introspect::{mark_indexed_columns, ColumnInfo, IndexInfo, Schema, TableInfo};
-use crate::query::ir::{CompiledQuery, QueryResult};
+use crate::adapters::{ExplainResult, columns_from_compiled_sql};
+use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
+use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
+use crate::types::{ConnectionDef, TransportSecurityMode};
 
 pub type MssqlClient = Client<tokio_util::compat::Compat<TcpStream>>;
 
-pub async fn connect(
-    host: &str,
-    port: u16,
-    database: &str,
-    username: &str,
-    password: &str,
-) -> Result<MssqlClient> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueryTimedOut {
+    pub timeout_ms: u32,
+}
+
+impl fmt::Display for QueryTimedOut {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Query timed out after {}ms", self.timeout_ms)
+    }
+}
+
+impl std::error::Error for QueryTimedOut {}
+
+pub async fn connect(def: &ConnectionDef, password: &str) -> Result<MssqlClient> {
     let mut config = Config::new();
-    config.host(host);
-    config.port(port);
-    config.database(database);
-    config.authentication(AuthMethod::sql_server(username, password));
+    config.host(&def.host);
+    config.port(def.port);
+    config.database(&def.database);
+    config.authentication(AuthMethod::sql_server(&def.username, password));
+    config.readonly(true);
+    let mut ca_file = None;
+    match def.transport_security.mode {
+        TransportSecurityMode::VerifyIdentity => {
+            config.encryption(EncryptionLevel::Required);
+        }
+        TransportSecurityMode::VerifyCa => {
+            config.encryption(EncryptionLevel::Required);
+            if let Some(ca) = &def.transport_security.ca_pem {
+                use std::io::Write;
+                let mut file = tempfile::NamedTempFile::new()?;
+                file.write_all(ca.as_bytes())?;
+                config.trust_cert_ca(file.path().to_string_lossy());
+                ca_file = Some(file);
+            }
+        }
+        TransportSecurityMode::EncryptOnly => {
+            config.encryption(EncryptionLevel::Required);
+            config.trust_cert();
+        }
+        TransportSecurityMode::Disabled => {
+            config.encryption(EncryptionLevel::Off);
+            config.trust_cert();
+        }
+    }
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
 
     let client = Client::connect(config, tcp.compat_write()).await?;
+    drop(ca_file);
     Ok(client)
 }
 
@@ -116,6 +154,7 @@ async fn introspect_columns(
             data_type,
             nullable: is_nullable == "YES",
             is_indexed: false,
+            ..ColumnInfo::default()
         });
     }
     Ok(columns)
@@ -137,7 +176,7 @@ async fn introspect_indexes(
              JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
              JOIN sys.tables t ON i.object_id = t.object_id
              JOIN sys.schemas s ON t.schema_id = s.schema_id
-             WHERE s.name = @P1 AND t.name = @P2
+             WHERE s.name = @P1 AND t.name = @P2 AND ic.is_included_column = 0
              ORDER BY i.is_primary_key DESC, i.name, ic.key_ordinal",
             &[&schema, &table],
         )
@@ -162,8 +201,11 @@ async fn introspect_indexes(
         let entry = index_map.entry(index_name.clone()).or_insert(IndexInfo {
             name: index_name,
             columns: Vec::new(),
+            kind: "BTREE".to_string(),
+            supports_equality: true,
             is_unique,
             is_primary,
+            ..IndexInfo::default()
         });
         entry.columns.push(column_name);
     }
@@ -171,23 +213,45 @@ async fn introspect_indexes(
     Ok(index_map.into_values().collect())
 }
 
-pub async fn execute_query(
+enum OwnedParam {
+    Str(String),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Null,
+}
+
+async fn query_with_params(
     client: &mut MssqlClient,
     compiled: &CompiledQuery,
-    timeout_ms: u32,
-) -> Result<QueryResult> {
-    client
-        .execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", &[])
-        .await?;
+) -> Result<Vec<tiberius::Row>> {
+    use tiberius::ToSql;
 
-    client
-        .execute(&format!("SET LOCK_TIMEOUT {}", timeout_ms), &[])
-        .await?;
-
-    let param_refs: Vec<&dyn tiberius::ToSql> = compiled
+    let null_val: Option<i64> = None;
+    let owned: Vec<OwnedParam> = compiled
         .params
         .iter()
-        .map(|p| p as &dyn tiberius::ToSql)
+        .map(|p| match p {
+            BindValue::Text(s) => OwnedParam::Str(s.clone()),
+            BindValue::Int(n) => OwnedParam::Int(*n),
+            BindValue::Decimal(n) => OwnedParam::Str(n.to_string()),
+            BindValue::Float(f) => OwnedParam::Float(*f),
+            BindValue::Bool(b) => OwnedParam::Bool(*b),
+            BindValue::Date(d) => OwnedParam::Str(d.to_string()),
+            BindValue::DateTime(dt) => OwnedParam::Str(dt.to_string()),
+            BindValue::Null => OwnedParam::Null,
+        })
+        .collect();
+
+    let param_refs: Vec<&dyn ToSql> = owned
+        .iter()
+        .map(|p| match p {
+            OwnedParam::Str(s) => s as &dyn ToSql,
+            OwnedParam::Int(n) => n as &dyn ToSql,
+            OwnedParam::Float(f) => f as &dyn ToSql,
+            OwnedParam::Bool(b) => b as &dyn ToSql,
+            OwnedParam::Null => &null_val as &dyn ToSql,
+        })
         .collect();
 
     let rows = client
@@ -195,44 +259,206 @@ pub async fn execute_query(
         .await?
         .into_first_result()
         .await?;
+    Ok(rows)
+}
 
-    let row_count = rows.len();
+pub async fn execute_query(
+    client: &mut MssqlClient,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
+    let duration = Duration::from_millis(timeout_ms as u64);
+    timeout(duration, execute_query_inner(client, compiled, timeout_ms))
+        .await
+        .map_err(|_| anyhow::anyhow!(QueryTimedOut { timeout_ms }))?
+}
 
-    let columns: Vec<String> = if rows.is_empty() {
-        Vec::new()
-    } else {
-        rows[0]
-            .columns()
-            .iter()
-            .map(|c| c.name().to_string())
-            .collect()
+async fn execute_query_inner(
+    client: &mut MssqlClient,
+    compiled: &CompiledQuery,
+    timeout_ms: u32,
+) -> Result<QueryResult> {
+    client.execute("BEGIN TRANSACTION", &[]).await?;
+
+    let inner = async {
+        client
+            .execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", &[])
+            .await?;
+        client
+            .execute(&format!("SET LOCK_TIMEOUT {timeout_ms}"), &[])
+            .await?;
+
+        let rows = query_with_params(client, compiled).await?;
+        let row_count = rows.len();
+
+        let columns: Vec<ResultColumn> = if rows.is_empty() {
+            columns_from_compiled_sql(&compiled.sql, crate::types::Dialect::Mssql)
+                .into_iter()
+                .map(|name| ResultColumn::new(name, "unknown"))
+                .collect()
+        } else {
+            rows[0]
+                .columns()
+                .iter()
+                .map(|c| ResultColumn::new(c.name(), format!("{:?}", c.column_type())))
+                .collect()
+        };
+
+        let mut result_rows = Vec::new();
+        for row in rows {
+            let row_data: Vec<ResultCell> = row.into_iter().map(decode_mssql_value).collect();
+            result_rows.push(row_data);
+        }
+
+        client.execute("COMMIT TRANSACTION", &[]).await?;
+
+        let _ = row_count;
+        Ok(QueryResult::from_rows(columns, result_rows))
+    }
+    .await;
+
+    match inner {
+        Err(e) => {
+            let _ = client.execute("ROLLBACK TRANSACTION", &[]).await;
+            Err(e)
+        }
+        Ok(result) => Ok(result),
+    }
+}
+
+pub async fn explain(client: &mut MssqlClient, compiled: &CompiledQuery) -> Result<ExplainResult> {
+    client.execute("SET SHOWPLAN_XML ON", &[]).await?;
+
+    let plan_result = query_with_params(client, compiled).await;
+    let disable_result = disable_showplan_xml(client).await;
+
+    let rows = match (plan_result, disable_result) {
+        (Err(e), _) => return Err(e),
+        (Ok(_), Err(e)) => return Err(e),
+        (Ok(rows), Ok(())) => rows,
     };
 
-    let mut result_rows = Vec::new();
-    for row in rows {
-        let row_data: Vec<serde_json::Value> = row.into_iter().map(decode_mssql_value).collect();
-        result_rows.push(row_data);
-    }
+    explain_result_from_showplan_rows(rows)
+}
 
-    Ok(QueryResult {
-        columns,
-        rows: result_rows,
-        row_count,
-        truncated: false,
-        warnings: Vec::new(),
+async fn disable_showplan_xml(client: &mut MssqlClient) -> Result<()> {
+    let mut result = client.execute("SET SHOWPLAN_XML OFF", &[]).await;
+    if result.is_err() {
+        result = client.execute("SET SHOWPLAN_XML OFF", &[]).await;
+    }
+    if result.is_err() {
+        result = client.execute("SET SHOWPLAN_XML OFF", &[]).await;
+    }
+    result.map(|_| ()).map_err(Into::into)
+}
+
+fn explain_result_from_showplan_rows(rows: Vec<tiberius::Row>) -> Result<ExplainResult> {
+    let xml: String = rows
+        .into_iter()
+        .filter_map(|row| {
+            row.into_iter().find_map(|cell| match cell {
+                ColumnData::String(Some(s)) => Some(s.into_owned()),
+                _ => None,
+            })
+        })
+        .collect();
+
+    let cost = parse_showplan_cost(&xml);
+    Ok(match cost {
+        Some(cost) => ExplainResult::Estimated(cost),
+        None => {
+            ExplainResult::Unavailable("Could not parse EXPLAIN cost from SHOWPLAN_XML".to_string())
+        }
     })
 }
 
-fn decode_mssql_value(cell: ColumnData<'static>) -> serde_json::Value {
-    use serde_json::Value;
+fn parse_showplan_cost(xml: &str) -> Option<f64> {
+    for marker in ["StatementSubTreeCost=\"", "StatementSubTree Cost=\""] {
+        if let Some(start) = xml.find(marker) {
+            let rest = &xml[start + marker.len()..];
+            let end = rest.find('"')?;
+            return rest[..end].parse().ok();
+        }
+    }
+    None
+}
+
+fn decode_mssql_value(cell: ColumnData<'static>) -> ResultCell {
     match cell {
-        ColumnData::U8(Some(v)) => Value::from(v as i64),
-        ColumnData::I16(Some(v)) => Value::from(v as i64),
-        ColumnData::I32(Some(v)) => Value::from(v as i64),
-        ColumnData::I64(Some(v)) => Value::from(v),
-        ColumnData::F32(Some(v)) => Value::from(v as f64),
-        ColumnData::F64(Some(v)) => Value::from(v),
-        ColumnData::String(Some(s)) => Value::String(s.into_owned()),
-        _ => Value::Null,
+        ColumnData::U8(Some(v)) => ResultCell::Integer(v as i64),
+        ColumnData::I16(Some(v)) => ResultCell::Integer(v as i64),
+        ColumnData::I32(Some(v)) => ResultCell::Integer(v as i64),
+        ColumnData::I64(Some(v)) => ResultCell::Integer(v),
+        ColumnData::F32(Some(v)) => ResultCell::Float(v as f64),
+        ColumnData::F64(Some(v)) => ResultCell::Float(v),
+        ColumnData::Bit(Some(v)) => ResultCell::Bool(v),
+        ColumnData::String(Some(s)) => ResultCell::text(s.into_owned()),
+        ColumnData::Guid(Some(v)) => ResultCell::text(v.to_string()),
+        ColumnData::Binary(Some(v)) => ResultCell::binary(v.as_ref()),
+        ColumnData::Numeric(Some(v)) => ResultCell::text(v.to_string()),
+        ColumnData::Xml(Some(v)) => ResultCell::text(v.to_string()),
+        ColumnData::DateTime(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::SmallDateTime(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::Time(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::Date(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::DateTime2(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::DateTimeOffset(Some(v)) => ResultCell::text(format!("{v:?}")),
+        _ => ResultCell::Null,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_showplan_cost_extracts_subtree_cost() {
+        let xml = r#"<StmtSimple StatementSubTreeCost="12.5" />"#;
+        assert_eq!(parse_showplan_cost(xml), Some(12.5));
+    }
+
+    #[test]
+    fn parse_showplan_cost_returns_none_for_missing_marker() {
+        assert_eq!(parse_showplan_cost("<Plan />"), None);
+    }
+
+    mod merge_showplan {
+        fn merge_showplan_outcomes<T, E: PartialEq + std::fmt::Debug>(
+            plan_result: Result<T, E>,
+            disable_result: Result<(), E>,
+        ) -> Result<T, E> {
+            match (plan_result, disable_result) {
+                (Err(e), _) => Err(e),
+                (Ok(_value), Err(e)) => Err(e),
+                (Ok(value), Ok(())) => Ok(value),
+            }
+        }
+
+        #[test]
+        fn prefers_plan_error() {
+            let merged =
+                merge_showplan_outcomes::<&str, &str>(Err("plan failed"), Err("disable failed"));
+            assert_eq!(merged, Err("plan failed"));
+        }
+
+        #[test]
+        fn surfaces_disable_error_when_plan_succeeds() {
+            let merged = merge_showplan_outcomes::<&str, &str>(Ok("rows"), Err("disable failed"));
+            assert_eq!(merged, Err("disable failed"));
+        }
+
+        #[test]
+        fn returns_rows_when_both_succeed() {
+            let merged = merge_showplan_outcomes::<&str, &str>(Ok("rows"), Ok(()));
+            assert_eq!(merged, Ok("rows"));
+        }
+    }
+
+    #[test]
+    fn query_timeout_error_can_be_downcast() {
+        let error = anyhow::anyhow!(QueryTimedOut { timeout_ms: 250 });
+        let timeout = error.downcast_ref::<QueryTimedOut>().unwrap();
+        assert_eq!(timeout.timeout_ms, 250);
+        assert_eq!(timeout.to_string(), "Query timed out after 250ms");
     }
 }

@@ -3,6 +3,7 @@ import type { Schema } from '$lib/ir';
 import * as api from '$lib/api';
 
 class SchemaStore {
+	private requestGeneration = 0;
 	schema = $state<Schema | null>(null);
 	loading = $state(false);
 	error = $state<string | null>(null);
@@ -18,24 +19,32 @@ class SchemaStore {
 		return this.tables.filter((t) => t.name.toLowerCase().includes(q));
 	});
 
-	async load(connectionId: string) {
-		if (!browser) return;
-		if (this.loadedConnectionId === connectionId && this.schema) return;
+	async load(connectionId: string): Promise<boolean> {
+		if (!browser) return false;
+		if (this.loadedConnectionId === connectionId && this.schema) return true;
+		const generation = ++this.requestGeneration;
 		this.loading = true;
 		this.error = null;
 		this.schema = null;
 		try {
-			this.schema = await api.getSchema(connectionId);
+			const loaded = await api.getSchema(connectionId);
+			if (generation !== this.requestGeneration) return false;
+			this.schema = loaded;
 			this.loadedConnectionId = connectionId;
+			return true;
 		} catch (e) {
+			if (generation !== this.requestGeneration) return false;
 			this.error = String(e);
 			this.loadedConnectionId = null;
+			return false;
 		} finally {
-			this.loading = false;
+			if (generation === this.requestGeneration) this.loading = false;
 		}
 	}
 
 	clear() {
+		this.requestGeneration += 1;
+		this.loading = false;
 		this.schema = null;
 		this.loadedConnectionId = null;
 		this.error = null;
@@ -43,4 +52,5 @@ class SchemaStore {
 	}
 }
 
+export { SchemaStore };
 export const schema = new SchemaStore();

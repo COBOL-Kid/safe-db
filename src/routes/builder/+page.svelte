@@ -6,11 +6,30 @@
 	import SchemaBrowser from '$lib/components/SchemaBrowser.svelte';
 	import Canvas from '$lib/components/Canvas.svelte';
 	import ResultsTable from '$lib/components/ResultsTable.svelte';
+	import FilterBuilder from '$lib/components/FilterBuilder.svelte';
 	import { browser } from '$app/environment';
-	import { FILTER_OPS, MAX_LIMIT, type FilterOp, type TableInfo } from '$lib/ir';
+	import { MAX_LIMIT, type TableInfo } from '$lib/ir';
+	import { parseLimit } from '$lib/limits';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import PromptDialog from '$lib/components/PromptDialog.svelte';
+
+	let showCostGuardConfirm = $state(false);
+	let showSavePrompt = $state(false);
+	let saveQueryName = $state('');
 
 	$effect(() => {
-		if (browser && connections.activeId && !schema.schema && !schema.loading) {
+		if (query.pendingCostGuard) {
+			showCostGuardConfirm = true;
+		}
+	});
+
+	$effect(() => {
+		if (
+			browser &&
+			connections.activeId &&
+			schema.loadedConnectionId !== connections.activeId &&
+			!schema.loading
+		) {
 			schema.load(connections.activeId);
 		}
 	});
@@ -36,54 +55,34 @@
 		query.clear();
 	}
 
+	function tableNameForAlias(alias: string): string {
+		return query.tables.find((t) => t.alias === alias)?.tableInfo.name ?? alias;
+	}
+
 	async function handleSaveQuery() {
 		if (!connections.activeId) return;
-		const name = prompt('Name this query:', `Query on ${query.tables.map((t) => t.tableInfo.name).join(', ')}`);
-		if (!name) return;
+		saveQueryName = `Query on ${query.tables.map((t) => t.tableInfo.name).join(', ')}`;
+		showSavePrompt = true;
+	}
+
+	async function confirmSaveQuery() {
+		if (!connections.activeId || !saveQueryName.trim()) return;
 		await savedQueries.save({
 			id: crypto.randomUUID(),
-			name,
+			name: saveQueryName.trim(),
 			connection_id: connections.activeId,
 			spec: query.spec,
-			created_at: Date.now().toString()
+			created_at: Math.floor(Date.now() / 1000).toString()
 		});
+		showSavePrompt = false;
 	}
 
-	let showAddFilter = $state(false);
-	let filterAlias = $state('');
-	let filterColumn = $state('');
-	let filterOp = $state<FilterOp>('Eq');
-	let filterValue = $state('');
-
-	function startAddFilter() {
-		showAddFilter = true;
-		filterAlias = query.tables[0]?.alias ?? '';
-		filterColumn = '';
-		filterOp = 'Eq';
-		filterValue = '';
-	}
-
-	function confirmAddFilter() {
-		if (!filterAlias || !filterColumn) return;
-		const op = filterOp;
-		const needsValue = op !== 'IsNull' && op !== 'IsNotNull';
-		query.addFilter({
-			table_alias: filterAlias,
-			column: filterColumn,
-			op,
-			value: needsValue ? filterValue || null : null
-		});
-		showAddFilter = false;
-	}
-
-	function getColumnName(alias: string, column: string): string {
-		const t = query.tables.find((t) => t.alias === alias);
-		return t ? `${t.tableInfo.name}.${column}` : column;
-	}
-
-	function getTableColumns(alias: string) {
-		const t = query.tables.find((t) => t.alias === alias);
-		return t?.tableInfo.columns ?? [];
+	async function confirmCostGuardRun() {
+		showCostGuardConfirm = false;
+		query.pendingCostGuard = false;
+		if (connections.activeId) {
+			await query.runForced(connections.activeId);
+		}
 	}
 
 	let resultsHeight = $state(240);
@@ -110,19 +109,42 @@
 
 <svelte:window onmousemove={handleResize} onmouseup={stopResize} />
 
+<ConfirmDialog
+	open={showCostGuardConfirm}
+	title="Query blocked by safety guard"
+	message={query.error ?? 'This query may be expensive or could not be estimated. Run anyway?'}
+	confirmLabel="Run anyway"
+	onConfirm={confirmCostGuardRun}
+	onCancel={() => {
+		showCostGuardConfirm = false;
+		query.pendingCostGuard = false;
+	}}
+/>
+
+<PromptDialog
+	bind:open={showSavePrompt}
+	bind:value={saveQueryName}
+	title="Save query"
+	message="Choose a name for this query."
+	placeholder="Query name"
+	confirmLabel="Save"
+	onConfirm={confirmSaveQuery}
+	onCancel={() => (showSavePrompt = false)}
+/>
+
 <div class="flex flex-1 flex-col overflow-hidden">
 	<div class="flex items-center justify-between border-b border-slate-200 px-6 py-3 dark:border-slate-800">
 		<div class="flex items-center gap-3">
 			{#if connections.active}
-				<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+				<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
 					{dialectLabels[connections.active.dialect]?.slice(0, 2) ?? 'DB'}
 				</div>
 				<div>
-					<h1 class="text-base font-semibold tracking-tight text-slate-900">{connections.active.name}</h1>
-					<p class="text-xs text-slate-400">{dialectLabels[connections.active.dialect]} · {connections.active.database}</p>
+					<h1 class="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-100">{connections.active.name}</h1>
+					<p class="text-xs text-slate-400 dark:text-slate-500">{dialectLabels[connections.active.dialect]} · {connections.active.database}</p>
 				</div>
 			{:else}
-				<h1 class="text-xl font-semibold tracking-tight text-slate-900">Query Builder</h1>
+				<h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Query Builder</h1>
 			{/if}
 		</div>
 
@@ -136,7 +158,7 @@
 						min="1"
 						max={MAX_LIMIT}
 						value={query.limit}
-						oninput={(e) => query.setLimit(parseInt(e.currentTarget.value) || 1)}
+						oninput={(e) => query.setLimit(parseLimit(e.currentTarget.value))}
 						class="w-16 rounded border border-slate-200 px-2 py-0.5 text-sm outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800"
 					/>
 				</div>
@@ -175,12 +197,12 @@
 	{#if !connections.activeId}
 		<div class="flex flex-1 items-center justify-center p-8">
 			<div class="text-center">
-				<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+				<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
 					<svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
 				</div>
-				<p class="mt-4 text-sm font-medium text-slate-600">No connection selected</p>
-				<p class="mt-1 text-sm text-slate-400">Connect to a database to start building queries.</p>
-				<a href="/connections" class="mt-5 inline-block rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+				<p class="mt-4 text-sm font-medium text-slate-600 dark:text-slate-300">No connection selected</p>
+				<p class="mt-1 text-sm text-slate-400 dark:text-slate-500">Connect to a database to start building queries.</p>
+				<a href="/connections" class="mt-5 inline-block rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
 					Go to Connections
 				</a>
 			</div>
@@ -188,73 +210,52 @@
 	{:else}
 		<div id="builder-main" class="flex flex-1 flex-col overflow-hidden">
 			<div class="flex flex-1 overflow-hidden">
-				<aside class="w-72 shrink-0 border-r border-slate-200 bg-white">
+				<aside class="w-72 shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
 					<SchemaBrowser onAddTable={addTable} />
 				</aside>
 
 				<div class="flex flex-1 flex-col overflow-hidden">
-					{#if query.joins.length > 0 || query.filters.length > 0 || showAddFilter}
-						<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
-							{#each query.joins as join, i (i)}
-								<span class="flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
-									join: {getColumnName(join.left_alias, join.left_column)} = {getColumnName(join.right_alias, join.right_column)}
-									<button type="button" onclick={() => query.removeJoin(i)} class="text-sky-400 hover:text-sky-600" aria-label="Remove join">
-										<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-									</button>
-								</span>
-							{/each}
-							{#each query.filters as filter, i (i)}
-								<span class="flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">
-									{getColumnName(filter.table_alias, filter.column)}
-									{FILTER_OPS.find((f) => f.value === filter.op)?.label}
-									{#if filter.value !== null}{filter.value}{/if}
-									<button type="button" onclick={() => query.removeFilter(i)} class="text-violet-400 hover:text-violet-600" aria-label="Remove filter">
-										<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-									</button>
-								</span>
-							{/each}
-							{#if showAddFilter}
-								<div class="flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1">
-									<select bind:value={filterAlias} class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none">
-										{#each query.tables as t (t.alias)}
-											<option value={t.alias}>{t.tableInfo.name}</option>
-										{/each}
-									</select>
-									<select bind:value={filterColumn} class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none">
-										<option value="">col</option>
-										{#each getTableColumns(filterAlias) as col (col.name)}
-											<option value={col.name}>{col.name}</option>
-										{/each}
-									</select>
-									<select bind:value={filterOp} class="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none">
-										{#each FILTER_OPS as op (op.value)}
-											<option value={op.value}>{op.label}</option>
-										{/each}
-									</select>
-									{#if filterOp !== 'IsNull' && filterOp !== 'IsNotNull'}
-										<input bind:value={filterValue} placeholder="value" class="w-20 rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 outline-none" />
-									{/if}
-									<button type="button" onclick={confirmAddFilter} class="rounded bg-slate-900 px-2 py-0.5 text-xs text-white hover:bg-slate-700">Add</button>
-									<button type="button" onclick={() => (showAddFilter = false)} class="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
-								</div>
-							{:else}
-								<button type="button" onclick={startAddFilter} class="flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-600">
-									<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-									Add filter
-								</button>
-							{/if}
-						</div>
-					{/if}
+				{#if query.hydrationWarning}
+					<div class="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+						{query.hydrationWarning}
+						<button
+							type="button"
+							onclick={() => (query.hydrationWarning = null)}
+							class="ml-2 text-amber-600 underline hover:text-amber-800 dark:text-amber-300"
+						>
+							Dismiss
+						</button>
+					</div>
+				{/if}
 
-					<div class="relative flex-1 overflow-hidden bg-slate-50">
+				{#if query.joins.length > 0}
+					<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+						{#each query.joins as join, i (i)}
+							<span class="flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+								join: {tableNameForAlias(join.left_alias)}.{join.left_column} = {tableNameForAlias(join.right_alias)}.{join.right_column}
+								<button type="button" onclick={() => query.removeJoin(i)} class="text-sky-400 hover:text-sky-600 dark:text-sky-300 dark:hover:text-sky-100" aria-label="Remove join">
+									<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+								</button>
+							</span>
+						{/each}
+					</div>
+				{/if}
+
+				{#if query.tables.length > 0}
+					<div class="border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+						<FilterBuilder />
+					</div>
+				{/if}
+
+					<div class="relative flex-1 overflow-hidden bg-slate-50 dark:bg-slate-950">
 						{#if query.tables.length === 0}
 							<div class="flex h-full items-center justify-center">
 								<div class="text-center">
-									<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-300 shadow-sm">
+									<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-300 shadow-sm dark:bg-slate-800 dark:text-slate-500">
 										<svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></svg>
 									</div>
-									<p class="mt-4 text-sm font-medium text-slate-500">Empty canvas</p>
-									<p class="mt-1 text-sm text-slate-400">Click + next to a table in the sidebar to add it.</p>
+									<p class="mt-4 text-sm font-medium text-slate-500 dark:text-slate-300">Empty canvas</p>
+									<p class="mt-1 text-sm text-slate-400 dark:text-slate-500">Click + next to a table in the sidebar to add it.</p>
 								</div>
 							</div>
 						{:else}
@@ -263,14 +264,14 @@
 					</div>
 
 					{#if query.error}
-						<div class="border-t border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+						<div class="border-t border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
 							{query.error}
 						</div>
 					{/if}
 
 					{#if query.results}
-						<div class="border-t border-slate-200 bg-white" style="height: {resultsHeight}px;">
-							<button type="button" class="h-1.5 w-full cursor-row-resize bg-slate-200 hover:bg-slate-300" aria-label="Resize results panel" onmousedown={startResize}></button>
+						<div class="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" style="height: {resultsHeight}px;">
+							<button type="button" class="h-1.5 w-full cursor-row-resize bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600" aria-label="Resize results panel" onmousedown={startResize}></button>
 							<ResultsTable result={query.results} />
 						</div>
 					{/if}

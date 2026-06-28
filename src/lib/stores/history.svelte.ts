@@ -24,4 +24,5 @@ class HistoryStore {
 	}
 }
 
+export { HistoryStore };
 export const history = new HistoryStore();

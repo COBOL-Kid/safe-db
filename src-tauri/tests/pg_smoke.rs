@@ -1,4 +1,10 @@
 use safe_db_lib::adapters::pg;
+use safe_db_lib::query::compile::compile;
+use safe_db_lib::query::ir::{CURRENT_SCHEMA_VERSION, ColumnSel, FilterGroup, QuerySpec, TableRef};
+use safe_db_lib::query::validate::validate;
+use safe_db_lib::types::{
+    CURRENT_CONNECTION_VERSION, ConnectionDef, Dialect, TransportSecurity, TransportSecurityMode,
+};
 
 struct PgConfig {
     host: String,
@@ -6,6 +12,24 @@ struct PgConfig {
     database: String,
     username: String,
     password: String,
+}
+
+fn connection_def(config: &PgConfig) -> ConnectionDef {
+    ConnectionDef {
+        version: CURRENT_CONNECTION_VERSION,
+        id: "pg-smoke".into(),
+        name: "PostgreSQL smoke".into(),
+        dialect: Dialect::Postgres,
+        host: config.host.clone(),
+        port: config.port,
+        database: config.database.clone(),
+        username: config.username.clone(),
+        transport_security: TransportSecurity {
+            mode: TransportSecurityMode::Disabled,
+            insecure_acknowledged: true,
+            ..TransportSecurity::default()
+        },
+    }
 }
 
 fn pg_config_from_env() -> Option<PgConfig> {
@@ -38,19 +62,63 @@ async fn pg_connect_and_test() {
         return;
     };
 
-    let pool = pg::connect(
-        &config.host,
-        config.port,
-        &config.database,
-        &config.username,
-        &config.password,
-    )
-    .await
-    .expect("connect should succeed");
+    let pool = pg::connect(&connection_def(&config), &config.password)
+        .await
+        .expect("connect should succeed");
 
     let version = pg::test(&pool).await.expect("test query should succeed");
     assert!(
         version.to_ascii_lowercase().contains("postgresql"),
         "expected PostgreSQL version string, got: {version}"
     );
+}
+
+#[tokio::test]
+async fn pg_introspect_validate_compile_execute() {
+    let Some(config) = pg_config_from_env() else {
+        eprintln!("skipping pg_introspect_validate_compile_execute: set SAFEDB_TEST_PG_* env vars");
+        return;
+    };
+
+    let pool = pg::connect(&connection_def(&config), &config.password)
+        .await
+        .expect("connect should succeed");
+
+    let schema = pg::introspect(&pool)
+        .await
+        .expect("introspect should succeed");
+    assert!(
+        !schema.tables.is_empty(),
+        "expected at least one user table"
+    );
+
+    let table = &schema.tables[0];
+    let column = table
+        .columns
+        .first()
+        .expect("first table should have columns");
+
+    let mut spec = QuerySpec {
+        tables: vec![TableRef {
+            schema: table.schema.clone(),
+            name: table.name.clone(),
+            alias: "t0".into(),
+        }],
+        columns: vec![ColumnSel {
+            table_alias: "t0".into(),
+            column: column.name.clone(),
+        }],
+        joins: vec![],
+        filters: FilterGroup::default(),
+        limit: 5,
+        connector_overrides: std::collections::BTreeMap::new(),
+        schema_version: CURRENT_SCHEMA_VERSION,
+    };
+
+    let _outcome = validate(&mut spec, &schema, &[]).expect("validate should succeed");
+    let compiled = compile(&spec, Dialect::Postgres).expect("compile should succeed");
+    let result = pg::execute_query(&pool, &compiled, 10_000)
+        .await
+        .expect("execute should succeed");
+    assert!(result.row_count <= 6);
 }
