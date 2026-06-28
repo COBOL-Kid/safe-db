@@ -271,7 +271,7 @@ fn decode_pg_value(row: &sqlx::postgres::PgRow, i: usize, type_name: &str) -> Re
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PgTypeKind {
+pub(crate) enum PgTypeKind {
     Bool,
     SmallInt,
     Int,
@@ -288,7 +288,7 @@ enum PgTypeKind {
     Text,
 }
 
-fn classify_pg_type(type_name: &str) -> PgTypeKind {
+pub(crate) fn classify_pg_type(type_name: &str) -> PgTypeKind {
     match type_name {
         "BOOL" | "BOOLEAN" => PgTypeKind::Bool,
         "INT2" | "SMALLSERIAL" | "SMALLINT" => PgTypeKind::SmallInt,
@@ -338,45 +338,4 @@ pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainR
             "Could not parse EXPLAIN cost from PostgreSQL JSON plan".to_string(),
         ),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn classify_pg_type_bool_aliases() {
-        assert_eq!(classify_pg_type("BOOL"), PgTypeKind::Bool);
-        assert_eq!(classify_pg_type("BOOLEAN"), PgTypeKind::Bool);
-    }
-
-    #[test]
-    fn classify_pg_type_integer_aliases() {
-        assert_eq!(classify_pg_type("INT2"), PgTypeKind::SmallInt);
-        assert_eq!(classify_pg_type("SMALLSERIAL"), PgTypeKind::SmallInt);
-        assert_eq!(classify_pg_type("SMALLINT"), PgTypeKind::SmallInt);
-        assert_eq!(classify_pg_type("INT4"), PgTypeKind::Int);
-        assert_eq!(classify_pg_type("SERIAL"), PgTypeKind::Int);
-        assert_eq!(classify_pg_type("INTEGER"), PgTypeKind::Int);
-        assert_eq!(classify_pg_type("INT"), PgTypeKind::Int);
-        assert_eq!(classify_pg_type("INT8"), PgTypeKind::BigInt);
-        assert_eq!(classify_pg_type("BIGSERIAL"), PgTypeKind::BigInt);
-        assert_eq!(classify_pg_type("BIGINT"), PgTypeKind::BigInt);
-    }
-
-    #[test]
-    fn classify_pg_type_float_aliases() {
-        assert_eq!(classify_pg_type("FLOAT4"), PgTypeKind::Float);
-        assert_eq!(classify_pg_type("REAL"), PgTypeKind::Float);
-        assert_eq!(classify_pg_type("FLOAT8"), PgTypeKind::Double);
-        assert_eq!(classify_pg_type("DOUBLE PRECISION"), PgTypeKind::Double);
-    }
-
-    #[test]
-    fn classify_pg_type_unknown_falls_back_to_text() {
-        assert_eq!(classify_pg_type("UUID"), PgTypeKind::Uuid);
-        assert_eq!(classify_pg_type("JSONB"), PgTypeKind::Json);
-        assert_eq!(classify_pg_type(""), PgTypeKind::Text);
-        assert_eq!(classify_pg_type("VARCHAR"), PgTypeKind::Text);
-    }
 }

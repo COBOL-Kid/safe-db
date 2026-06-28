@@ -372,7 +372,7 @@ fn explain_result_from_showplan_rows(rows: Vec<tiberius::Row>) -> Result<Explain
     })
 }
 
-fn parse_showplan_cost(xml: &str) -> Option<f64> {
+pub(crate) fn parse_showplan_cost(xml: &str) -> Option<f64> {
     for marker in ["StatementSubTreeCost=\"", "StatementSubTree Cost=\""] {
         if let Some(start) = xml.find(marker) {
             let rest = &xml[start + marker.len()..];
@@ -404,61 +404,5 @@ fn decode_mssql_value(cell: ColumnData<'static>) -> ResultCell {
         ColumnData::DateTime2(Some(v)) => ResultCell::text(format!("{v:?}")),
         ColumnData::DateTimeOffset(Some(v)) => ResultCell::text(format!("{v:?}")),
         _ => ResultCell::Null,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_showplan_cost_extracts_subtree_cost() {
-        let xml = r#"<StmtSimple StatementSubTreeCost="12.5" />"#;
-        assert_eq!(parse_showplan_cost(xml), Some(12.5));
-    }
-
-    #[test]
-    fn parse_showplan_cost_returns_none_for_missing_marker() {
-        assert_eq!(parse_showplan_cost("<Plan />"), None);
-    }
-
-    mod merge_showplan {
-        fn merge_showplan_outcomes<T, E: PartialEq + std::fmt::Debug>(
-            plan_result: Result<T, E>,
-            disable_result: Result<(), E>,
-        ) -> Result<T, E> {
-            match (plan_result, disable_result) {
-                (Err(e), _) => Err(e),
-                (Ok(_value), Err(e)) => Err(e),
-                (Ok(value), Ok(())) => Ok(value),
-            }
-        }
-
-        #[test]
-        fn prefers_plan_error() {
-            let merged =
-                merge_showplan_outcomes::<&str, &str>(Err("plan failed"), Err("disable failed"));
-            assert_eq!(merged, Err("plan failed"));
-        }
-
-        #[test]
-        fn surfaces_disable_error_when_plan_succeeds() {
-            let merged = merge_showplan_outcomes::<&str, &str>(Ok("rows"), Err("disable failed"));
-            assert_eq!(merged, Err("disable failed"));
-        }
-
-        #[test]
-        fn returns_rows_when_both_succeed() {
-            let merged = merge_showplan_outcomes::<&str, &str>(Ok("rows"), Ok(()));
-            assert_eq!(merged, Ok("rows"));
-        }
-    }
-
-    #[test]
-    fn query_timeout_error_can_be_downcast() {
-        let error = anyhow::anyhow!(QueryTimedOut { timeout_ms: 250 });
-        let timeout = error.downcast_ref::<QueryTimedOut>().unwrap();
-        assert_eq!(timeout.timeout_ms, 250);
-        assert_eq!(timeout.to_string(), "Query timed out after 250ms");
     }
 }

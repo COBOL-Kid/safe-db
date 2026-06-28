@@ -43,7 +43,7 @@ const BLOCKED_OWNERS: &[&str] = &[
     "APEX_040200",
 ];
 
-fn encode_connect_query_value(value: &str) -> String {
+pub(crate) fn encode_connect_query_value(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
         let ch = byte as char;
@@ -57,7 +57,7 @@ fn encode_connect_query_value(value: &str) -> String {
     encoded
 }
 
-fn validate_connect_field(field: &str, label: &str) -> Result<()> {
+pub(crate) fn validate_connect_field(field: &str, label: &str) -> Result<()> {
     if field.is_empty() {
         anyhow::bail!("{label} must not be empty");
     }
@@ -379,47 +379,5 @@ fn sql_value_to_json(val: &oracle::SqlValue) -> ResultCell {
         }
         Ok(InnerValue::Raw(bytes)) => ResultCell::binary(bytes),
         _ => ResultCell::text(val.to_string()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn validate_connect_field_rejects_empty_host() {
-        assert!(validate_connect_field("", "Host").is_err());
-    }
-
-    #[test]
-    fn validate_connect_field_rejects_special_chars() {
-        assert!(validate_connect_field("host;drop", "Host").is_err());
-    }
-
-    #[test]
-    fn validate_connect_field_accepts_valid_host() {
-        assert!(validate_connect_field("db.example.com", "Host").is_ok());
-    }
-
-    #[test]
-    fn encode_connect_query_value_encodes_spaces_and_backslashes() {
-        let encoded = encode_connect_query_value(r"C:\Users\me\my wallet");
-        assert!(encoded.contains("%20"));
-        assert!(encoded.contains("%5C"));
-        assert!(!encoded.contains(' '));
-    }
-
-    #[test]
-    fn encode_connect_query_value_encodes_leading_trailing_spaces() {
-        let encoded = encode_connect_query_value(" /opt/oracle/wallet ");
-        assert_eq!(encoded, "%20/opt/oracle/wallet%20");
-    }
-
-    #[test]
-    fn encode_connect_query_value_leaves_simple_paths_unchanged() {
-        assert_eq!(
-            encode_connect_query_value("/opt/oracle/wallet"),
-            "/opt/oracle/wallet"
-        );
     }
 }

@@ -19,6 +19,61 @@ use queries::QueryStore;
 use settings::SettingsStore;
 use tauri::{Manager, RunEvent};
 
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod test_support {
+    pub use crate::commands::{COST_GUARD_PREFIX, QueryCoreError, QueryRunner, run_query_core};
+    pub use crate::persist::atomic_write;
+
+    pub fn classify_mysql_type(type_name: &str) -> &'static str {
+        match crate::adapters::mysql::classify_mysql_type(type_name) {
+            crate::adapters::mysql::MysqlTypeKind::SmallInt => "SmallInt",
+            crate::adapters::mysql::MysqlTypeKind::Int => "Int",
+            crate::adapters::mysql::MysqlTypeKind::BigInt => "BigInt",
+            crate::adapters::mysql::MysqlTypeKind::Float => "Float",
+            crate::adapters::mysql::MysqlTypeKind::Double => "Double",
+            crate::adapters::mysql::MysqlTypeKind::Decimal => "Decimal",
+            crate::adapters::mysql::MysqlTypeKind::Date => "Date",
+            crate::adapters::mysql::MysqlTypeKind::DateTime => "DateTime",
+            crate::adapters::mysql::MysqlTypeKind::Json => "Json",
+            crate::adapters::mysql::MysqlTypeKind::Binary => "Binary",
+            crate::adapters::mysql::MysqlTypeKind::Text => "Text",
+        }
+    }
+
+    pub fn classify_pg_type(type_name: &str) -> &'static str {
+        match crate::adapters::pg::classify_pg_type(type_name) {
+            crate::adapters::pg::PgTypeKind::Bool => "Bool",
+            crate::adapters::pg::PgTypeKind::SmallInt => "SmallInt",
+            crate::adapters::pg::PgTypeKind::Int => "Int",
+            crate::adapters::pg::PgTypeKind::BigInt => "BigInt",
+            crate::adapters::pg::PgTypeKind::Float => "Float",
+            crate::adapters::pg::PgTypeKind::Double => "Double",
+            crate::adapters::pg::PgTypeKind::Decimal => "Decimal",
+            crate::adapters::pg::PgTypeKind::Date => "Date",
+            crate::adapters::pg::PgTypeKind::DateTime => "DateTime",
+            crate::adapters::pg::PgTypeKind::DateTimeTz => "DateTimeTz",
+            crate::adapters::pg::PgTypeKind::Uuid => "Uuid",
+            crate::adapters::pg::PgTypeKind::Json => "Json",
+            crate::adapters::pg::PgTypeKind::Binary => "Binary",
+            crate::adapters::pg::PgTypeKind::Text => "Text",
+        }
+    }
+
+    pub fn parse_showplan_cost(xml: &str) -> Option<f64> {
+        crate::adapters::mssql::parse_showplan_cost(xml)
+    }
+
+    #[cfg(feature = "oracle")]
+    pub fn encode_oracle_connect_query_value(value: &str) -> String {
+        crate::adapters::oracle::encode_connect_query_value(value)
+    }
+
+    #[cfg(feature = "oracle")]
+    pub fn validate_oracle_connect_field(field: &str, label: &str) -> anyhow::Result<()> {
+        crate::adapters::oracle::validate_connect_field(field, label)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

@@ -244,31 +244,3 @@ async fn mssql_client<'a>(
         .as_mut()
         .ok_or_else(|| anyhow::anyhow!("SQL Server connection is unavailable"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn columns_from_compiled_sql_handles_dialect_quotes_and_mssql_top() {
-        let pg = r#"SELECT "t0"."id" AS "t0__id", "t0"."name" AS "t0__name"
-FROM "public"."users" AS "t0"
-LIMIT 101"#;
-        assert_eq!(
-            columns_from_compiled_sql(pg, Dialect::Postgres),
-            vec!["t0__id".to_string(), "t0__name".to_string()]
-        );
-
-        let mysql = "SELECT `t0`.`id` AS `t0__id`\nFROM `app`.`users` AS `t0`\nLIMIT 101";
-        assert_eq!(
-            columns_from_compiled_sql(mysql, Dialect::MySql),
-            vec!["t0__id".to_string()]
-        );
-
-        let mssql = "SELECT TOP 101 [t0].[id] AS [t0__id]\nFROM [dbo].[users] AS [t0]";
-        assert_eq!(
-            columns_from_compiled_sql(mssql, Dialect::Mssql),
-            vec!["t0__id".to_string()]
-        );
-    }
-}

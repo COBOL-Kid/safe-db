@@ -85,18 +85,3 @@ pub fn atomic_write(path: &Path, content: &str) -> Result<()> {
     }
     write_result
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn atomic_write_creates_file_with_content() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("data.json");
-        atomic_write(&path, r#"{"ok":true}"#).unwrap();
-        let content = fs::read_to_string(&path).unwrap();
-        assert_eq!(content, r#"{"ok":true}"#);
-    }
-}
