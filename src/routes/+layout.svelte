@@ -9,6 +9,7 @@
 	import { history } from '$lib/stores/history.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	let { children } = $props();
 
@@ -53,6 +54,17 @@
 
 <CommandPalette bind:open={paletteOpen} />
 <SettingsPanel bind:open={settingsOpen} />
+<ConfirmDialog
+	open={connections.pendingActivation !== null}
+	title="Switch connection?"
+	message={connections.pendingActivation
+		? `Switch to "${connections.pendingActivation.name}" and discard the current query canvas?`
+		: ''}
+	confirmLabel="Switch connection"
+	destructive
+	onConfirm={() => connections.confirmActivation()}
+	onCancel={() => connections.cancelActivation()}
+/>
 
 <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 	<aside class="flex w-56 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">

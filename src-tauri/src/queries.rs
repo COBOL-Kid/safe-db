@@ -37,14 +37,14 @@ pub struct QueryStore {
 }
 
 impl QueryStore {
-    pub fn new(data_dir: PathBuf) -> Self {
-        fs::create_dir_all(&data_dir).ok();
-        Self {
+    pub fn new(data_dir: PathBuf) -> Result<Self> {
+        crate::persist::ensure_private_dir(&data_dir)?;
+        Ok(Self {
             saved_path: data_dir.join("saved_queries.json"),
             history_path: data_dir.join("query_history.json"),
             lock: Mutex::new(()),
             max_history: 100,
-        }
+        })
     }
 
     pub fn list_saved(&self) -> Result<Vec<SavedQuery>> {
@@ -104,17 +104,34 @@ impl QueryStore {
         if content.trim().is_empty() {
             return Ok(Vec::new());
         }
-        let arr: Vec<Value> = serde_json::from_str(&content)?;
+        let arr: Vec<Value> = match serde_json::from_str(&content) {
+            Ok(arr) => arr,
+            Err(error) => {
+                let quarantine =
+                    path.with_extension(format!("corrupt-{}.json", uuid::Uuid::new_v4()));
+                fs::rename(path, &quarantine)?;
+                return Err(anyhow::anyhow!(
+                    "{} was corrupt and was moved to {}: {error}",
+                    path.display(),
+                    quarantine.display()
+                ));
+            }
+        };
         let mut valid: Vec<T> = Vec::new();
         let mut migrated_count = 0usize;
         let mut dropped = 0usize;
         for v in arr {
+            let (v, upgraded) = upgrade_entry_to_v3(v);
             if let Ok(item) = serde_json::from_value::<T>(v.clone()) {
                 valid.push(item);
+                migrated_count += usize::from(upgraded);
                 continue;
             }
             // Not valid v2 — attempt a v1→v2 migration.
-            match migrate_v1_entry(v).and_then(|m| serde_json::from_value::<T>(m).ok()) {
+            match migrate_v1_entry(v)
+                .map(|m| upgrade_entry_to_v3(m).0)
+                .and_then(|m| serde_json::from_value::<T>(m).ok())
+            {
                 Some(item) => {
                     valid.push(item);
                     migrated_count += 1;
@@ -143,11 +160,11 @@ impl QueryStore {
         // unreadable entries are never silently overwritten and lost. A backup
         // of the original file is kept the first time a migration is written.
         if migrated_count > 0 && dropped == 0 {
-            let backup = path.with_extension("v1.bak");
+            let backup = path.with_extension("migration.bak");
             if !backup.exists() {
-                let _ = fs::write(&backup, &content);
+                atomic_write(&backup, &content)?;
             }
-            let _ = self.write_json(path, &valid);
+            self.write_json(path, &valid)?;
         }
         Ok(valid)
     }
@@ -156,6 +173,65 @@ impl QueryStore {
         let json = serde_json::to_string_pretty(data)?;
         atomic_write(path, &json)?;
         Ok(())
+    }
+}
+
+fn upgrade_entry_to_v3(mut value: Value) -> (Value, bool) {
+    let Some(spec) = value.get_mut("spec").and_then(Value::as_object_mut) else {
+        return (value, false);
+    };
+    let version = spec
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .unwrap_or(1);
+    if version >= CURRENT_SCHEMA_VERSION as u64 {
+        return (value, false);
+    }
+    if let Some(filters) = spec.get_mut("filters") {
+        ensure_group_ids(filters);
+    }
+    spec.insert(
+        "schema_version".to_string(),
+        serde_json::json!(CURRENT_SCHEMA_VERSION),
+    );
+    (value, true)
+}
+
+fn ensure_group_ids(group: &mut Value) {
+    let Some(object) = group.as_object_mut() else {
+        return;
+    };
+    if object
+        .get("id")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        object.insert(
+            "id".to_string(),
+            Value::String(uuid::Uuid::new_v4().to_string()),
+        );
+    }
+    let Some(children) = object.get_mut("children").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for child in children {
+        let Some(child_object) = child.as_object_mut() else {
+            continue;
+        };
+        if let Some(leaf) = child_object.get_mut("Leaf").and_then(Value::as_object_mut) {
+            if leaf
+                .get("id")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+            {
+                leaf.insert(
+                    "id".to_string(),
+                    Value::String(uuid::Uuid::new_v4().to_string()),
+                );
+            }
+        } else if let Some(nested) = child_object.get_mut("Group") {
+            ensure_group_ids(nested);
+        }
     }
 }
 
@@ -271,7 +347,7 @@ mod tests {
     #[test]
     fn add_history_creates_file_and_prepends_entries() {
         let dir = TempDir::new().unwrap();
-        let store = QueryStore::new(dir.path().to_path_buf());
+        let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
 
         // First add on a fresh directory should create the file.
         assert!(!dir.path().join("query_history.json").exists());
@@ -289,7 +365,7 @@ mod tests {
     #[test]
     fn add_history_caps_at_max_history_with_newest_first() {
         let dir = TempDir::new().unwrap();
-        let store = QueryStore::new(dir.path().to_path_buf());
+        let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
 
         for i in 0..105 {
             store.add_history(history(&format!("h{i}"))).unwrap();
@@ -306,7 +382,7 @@ mod tests {
     #[test]
     fn clear_history_empties_the_list_and_writes_empty_array() {
         let dir = TempDir::new().unwrap();
-        let store = QueryStore::new(dir.path().to_path_buf());
+        let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
         store.add_history(history("h1")).unwrap();
         store.add_history(history("h2")).unwrap();
 

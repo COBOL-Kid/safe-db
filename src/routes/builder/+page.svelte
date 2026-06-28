@@ -24,7 +24,12 @@
 	});
 
 	$effect(() => {
-		if (browser && connections.activeId && !schema.schema && !schema.loading) {
+		if (
+			browser &&
+			connections.activeId &&
+			schema.loadedConnectionId !== connections.activeId &&
+			!schema.loading
+		) {
 			schema.load(connections.activeId);
 		}
 	});

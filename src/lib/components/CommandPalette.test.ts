@@ -19,23 +19,33 @@ vi.mock('$app/navigation', () => ({
 const gotoMock = vi.mocked(goto);
 
 const connA: ConnectionDef = {
+	version: 2,
 	id: 'c1',
 	name: 'Production',
 	dialect: 'Postgres',
 	host: 'localhost',
 	port: 5432,
 	database: 'app',
-	username: 'app'
+	username: 'app',
+	transport_security: {
+		mode: 'VerifyIdentity',
+		insecure_acknowledged: false
+	}
 };
 
 const connB: ConnectionDef = {
+	version: 2,
 	id: 'c2',
 	name: 'Staging MySQL',
 	dialect: 'MySql',
 	host: 'localhost',
 	port: 3306,
 	database: 'app_staging',
-	username: 'root'
+	username: 'root',
+	transport_security: {
+		mode: 'VerifyIdentity',
+		insecure_acknowledged: false
+	}
 };
 
 const sampleTable: TableInfo = {

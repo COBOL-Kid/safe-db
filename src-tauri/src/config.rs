@@ -12,12 +12,12 @@ pub struct ConfigStore {
 }
 
 impl ConfigStore {
-    pub fn new(data_dir: PathBuf) -> Self {
-        fs::create_dir_all(&data_dir).ok();
-        Self {
+    pub fn new(data_dir: PathBuf) -> Result<Self> {
+        crate::persist::ensure_private_dir(&data_dir)?;
+        Ok(Self {
             path: data_dir.join("connections.json"),
             lock: Mutex::new(()),
-        }
+        })
     }
 
     pub fn list(&self) -> Result<Vec<ConnectionDef>> {
@@ -85,6 +85,7 @@ mod tests {
 
     fn sample(id: &str) -> ConnectionDef {
         ConnectionDef {
+            version: crate::types::CURRENT_CONNECTION_VERSION,
             id: id.to_string(),
             name: format!("Test {id}"),
             dialect: Dialect::Postgres,
@@ -92,13 +93,14 @@ mod tests {
             port: 5432,
             database: "demo".to_string(),
             username: "user".to_string(),
+            transport_security: crate::types::TransportSecurity::default(),
         }
     }
 
     #[test]
     fn save_upserts_by_id() {
         let dir = TempDir::new().unwrap();
-        let store = ConfigStore::new(dir.path().to_path_buf());
+        let store = ConfigStore::new(dir.path().to_path_buf()).unwrap();
 
         store.save(sample("c1")).unwrap();
         store.save(sample("c2")).unwrap();
@@ -117,7 +119,7 @@ mod tests {
     #[test]
     fn delete_removes_the_matching_connection() {
         let dir = TempDir::new().unwrap();
-        let store = ConfigStore::new(dir.path().to_path_buf());
+        let store = ConfigStore::new(dir.path().to_path_buf()).unwrap();
         store.save(sample("c1")).unwrap();
         store.save(sample("c2")).unwrap();
 
@@ -130,7 +132,7 @@ mod tests {
     #[test]
     fn get_returns_none_for_unknown_id() {
         let dir = TempDir::new().unwrap();
-        let store = ConfigStore::new(dir.path().to_path_buf());
+        let store = ConfigStore::new(dir.path().to_path_buf()).unwrap();
         store.save(sample("c1")).unwrap();
         assert!(store.get("missing").unwrap().is_none());
     }
@@ -138,7 +140,7 @@ mod tests {
     #[test]
     fn list_returns_empty_for_missing_or_blank_file() {
         let dir = TempDir::new().unwrap();
-        let store = ConfigStore::new(dir.path().to_path_buf());
+        let store = ConfigStore::new(dir.path().to_path_buf()).unwrap();
 
         assert!(store.list().unwrap().is_empty());
 
@@ -149,7 +151,7 @@ mod tests {
     #[test]
     fn list_propagates_error_for_corrupt_json() {
         let dir = TempDir::new().unwrap();
-        let store = ConfigStore::new(dir.path().to_path_buf());
+        let store = ConfigStore::new(dir.path().to_path_buf()).unwrap();
 
         fs::write(dir.path().join("connections.json"), "{ this is not json").unwrap();
         assert!(store.list().is_err());

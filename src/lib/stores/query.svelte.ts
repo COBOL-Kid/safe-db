@@ -73,7 +73,7 @@ class QueryStore {
 			joins: [...this.joins],
 			filters: JSON.parse(JSON.stringify(this.filters)),
 			limit: this.limit,
-			schema_version: 2,
+			schema_version: 3,
 			connector_overrides: { ...this.connectorOverrides }
 		};
 	});

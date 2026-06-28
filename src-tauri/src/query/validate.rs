@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::introspect::{Schema, TableInfo};
+use crate::introspect::{ColumnCategory, Schema, TableInfo, classify_column};
 use crate::query::ir::{
     FilterGroup, FilterLiteral, FilterNode, FilterOp, FilterSpec, FilterValue, LiteralKind,
     QuerySpec, ValueKind,
@@ -55,93 +55,93 @@ pub struct ValidationOutcome {
     pub limit: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColumnCategory {
-    Text,
-    Numeric,
-    Bool,
-    Date,
-    DateTime,
-    Other,
+#[derive(Debug, Clone)]
+pub struct ValidatedColumn {
+    pub table_alias: String,
+    pub column: String,
+    pub result_alias: String,
 }
 
-pub fn classify_column(data_type: &str) -> ColumnCategory {
-    let dt = data_type.to_ascii_lowercase();
+#[derive(Debug, Clone)]
+pub struct ValidatedQuery {
+    spec: QuerySpec,
+    columns: Vec<ValidatedColumn>,
+}
 
-    if matches!(dt.as_str(), "bool" | "boolean" | "bit") {
-        return ColumnCategory::Bool;
+impl ValidatedQuery {
+    pub(crate) fn spec(&self) -> &QuerySpec {
+        &self.spec
     }
-    if dt == "date" {
-        return ColumnCategory::Date;
+
+    pub(crate) fn columns(&self) -> &[ValidatedColumn] {
+        &self.columns
     }
-    if dt.starts_with("timestamp")
-        || dt.starts_with("datetime")
-        || dt == "datetime2"
-        || dt == "smalldatetime"
-    {
-        return ColumnCategory::DateTime;
-    }
-    if matches!(
-        dt.as_str(),
-        "int"
-            | "integer"
-            | "smallint"
-            | "bigint"
-            | "mediumint"
-            | "tinyint"
-            | "serial"
-            | "bigserial"
-            | "decimal"
-            | "numeric"
-            | "number"
-            | "real"
-            | "double"
-            | "float"
-            | "float4"
-            | "float8"
-            | "money"
-            | "smallmoney"
-            | "double precision"
-    ) || dt.starts_with("decimal")
-        || dt.starts_with("numeric")
-    {
-        return ColumnCategory::Numeric;
-    }
-    if matches!(
-        dt.as_str(),
-        "text"
-            | "varchar"
-            | "char"
-            | "character"
-            | "character varying"
-            | "string"
-            | "tinytext"
-            | "mediumtext"
-            | "longtext"
-            | "nvarchar"
-            | "nchar"
-            | "varchar2"
-            | "nvarchar2"
-            | "clob"
-            | "nclob"
-            | "xml"
-    ) || dt.starts_with("varchar")
-        || dt.starts_with("char")
-        || dt.starts_with("nchar")
-        || dt.starts_with("nvarchar")
-    {
-        return ColumnCategory::Text;
-    }
-    ColumnCategory::Other
+}
+
+pub fn validate_query(
+    spec: &mut QuerySpec,
+    schema: &Schema,
+    custom_blocked: &[String],
+) -> Result<(ValidatedQuery, ValidationOutcome), String> {
+    let outcome = validate(spec, schema, custom_blocked)?;
+    let selections = if spec.columns.is_empty() {
+        spec.tables
+            .iter()
+            .flat_map(|table_ref| {
+                find_table(schema, &table_ref.schema, &table_ref.name)
+                    .into_iter()
+                    .flat_map(move |table| {
+                        table
+                            .columns
+                            .iter()
+                            .map(move |column| crate::query::ir::ColumnSel {
+                                table_alias: table_ref.alias.clone(),
+                                column: column.name.clone(),
+                            })
+                    })
+            })
+            .collect::<Vec<_>>()
+    } else {
+        spec.columns.clone()
+    };
+    let mut aliases = HashSet::new();
+    let columns = selections
+        .into_iter()
+        .map(|selection| {
+            let base = format!("{}__{}", selection.table_alias, selection.column);
+            let mut result_alias = base.clone();
+            let mut suffix = 2usize;
+            while !aliases.insert(result_alias.clone()) {
+                result_alias = format!("{base}__{suffix}");
+                suffix += 1;
+            }
+            ValidatedColumn {
+                table_alias: selection.table_alias,
+                column: selection.column,
+                result_alias,
+            }
+        })
+        .collect();
+    Ok((
+        ValidatedQuery {
+            spec: spec.clone(),
+            columns,
+        },
+        outcome,
+    ))
 }
 
 pub fn literal_kind_for_column(data_type: &str) -> LiteralKind {
     match classify_column(data_type) {
-        ColumnCategory::Numeric => LiteralKind::Int,
+        ColumnCategory::Integer => LiteralKind::Int,
+        ColumnCategory::Decimal => LiteralKind::Decimal,
         ColumnCategory::Bool => LiteralKind::Bool,
         ColumnCategory::Date => LiteralKind::Date,
         ColumnCategory::DateTime => LiteralKind::DateTime,
-        ColumnCategory::Text | ColumnCategory::Other => LiteralKind::Text,
+        ColumnCategory::Text
+        | ColumnCategory::Binary
+        | ColumnCategory::Json
+        | ColumnCategory::Other => LiteralKind::Text,
     }
 }
 
@@ -160,7 +160,7 @@ pub fn ops_for_column(data_type: &str) -> &'static [FilterOp] {
             FilterOp::IsEmpty,
             FilterOp::IsNotEmpty,
         ],
-        ColumnCategory::Numeric => &[
+        ColumnCategory::Integer | ColumnCategory::Decimal => &[
             FilterOp::Eq,
             FilterOp::Ne,
             FilterOp::Gt,
@@ -190,7 +190,7 @@ pub fn ops_for_column(data_type: &str) -> &'static [FilterOp] {
             FilterOp::IsNull,
             FilterOp::IsNotNull,
         ],
-        ColumnCategory::Other => &[
+        ColumnCategory::Binary | ColumnCategory::Json | ColumnCategory::Other => &[
             FilterOp::Eq,
             FilterOp::Ne,
             FilterOp::IsNull,
@@ -205,6 +205,23 @@ pub fn validate(
     custom_blocked: &[String],
 ) -> Result<ValidationOutcome, String> {
     let mut warnings = Vec::new();
+
+    if spec.schema_version != crate::query::ir::CURRENT_SCHEMA_VERSION {
+        return Err(format!(
+            "Query schema version {} is unsupported; expected {}",
+            spec.schema_version,
+            crate::query::ir::CURRENT_SCHEMA_VERSION
+        ));
+    }
+    let mut node_ids = HashSet::new();
+    collect_node_ids(&spec.filters, &mut node_ids)?;
+    for override_id in spec.connector_overrides.keys() {
+        if !node_ids.contains(override_id.as_str()) {
+            return Err(format!(
+                "Connector override references unknown filter node id '{override_id}'"
+            ));
+        }
+    }
 
     if spec.tables.is_empty() {
         return Err("At least one table is required".to_string());
@@ -293,16 +310,22 @@ pub fn validate(
                 )
             })?;
 
-        if !left_col.is_indexed {
+        if !left_col.join_eligible {
             return Err(format!(
-                "Join column '{}.{}' is not indexed — only indexed columns may be used for joins",
+                "Join column '{}.{}' is not the leading key of an equality-capable index",
                 join.left_alias, join.left_column
             ));
         }
-        if !right_col.is_indexed {
+        if !right_col.join_eligible {
             return Err(format!(
-                "Join column '{}.{}' is not indexed — only indexed columns may be used for joins",
+                "Join column '{}.{}' is not the leading key of an equality-capable index",
                 join.right_alias, join.right_column
+            ));
+        }
+        if left_col.category != right_col.category {
+            return Err(format!(
+                "Join columns '{}.{}' and '{}.{}' have incompatible types",
+                join.left_alias, join.left_column, join.right_alias, join.right_column
             ));
         }
     }
@@ -342,6 +365,30 @@ pub fn validate(
         warnings,
         limit: spec.limit,
     })
+}
+
+fn insert_node_id<'a>(id: &'a str, node_ids: &mut HashSet<&'a str>) -> Result<(), String> {
+    if id.trim().is_empty() {
+        return Err("Every filter node must have a non-empty stable id".to_string());
+    }
+    if !node_ids.insert(id) {
+        return Err(format!("Duplicate filter node id '{id}'"));
+    }
+    Ok(())
+}
+
+fn collect_node_ids<'a>(
+    group: &'a FilterGroup,
+    node_ids: &mut HashSet<&'a str>,
+) -> Result<(), String> {
+    insert_node_id(&group.id, node_ids)?;
+    for child in &group.children {
+        match child {
+            FilterNode::Leaf(leaf) => insert_node_id(&leaf.id, node_ids)?,
+            FilterNode::Group(nested) => collect_node_ids(nested, node_ids)?,
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -513,6 +560,15 @@ fn validate_literal(
             })?;
             Ok(())
         }
+        LiteralKind::Decimal => {
+            lit.text.parse::<bigdecimal::BigDecimal>().map_err(|_| {
+                format!(
+                    "'{}' is not a valid decimal for '{}.{}'",
+                    lit.text, alias, column
+                )
+            })?;
+            Ok(())
+        }
         LiteralKind::Float => {
             lit.text.parse::<f64>().map_err(|_| {
                 format!(
@@ -539,12 +595,12 @@ fn validate_literal(
                 ))
             }
         }
-        LiteralKind::Date | LiteralKind::DateTime => {
-            if lit.text.trim().is_empty() {
-                return Err(format!("Date value for '{}.{}' is empty", alias, column));
-            }
-            Ok(())
-        }
+        LiteralKind::Date => crate::query::ir::parse_date_literal(&lit.text)
+            .map(|_| ())
+            .map_err(|e| format!("{e} for '{}.{}'", alias, column)),
+        LiteralKind::DateTime => crate::query::ir::parse_datetime_literal(&lit.text)
+            .map(|_| ())
+            .map_err(|e| format!("{e} for '{}.{}'", alias, column)),
     }
 }
 
@@ -662,9 +718,7 @@ fn is_blocked(schema: &str, custom: &[String]) -> bool {
     BLOCKED_SCHEMAS
         .iter()
         .any(|blocked| blocked.eq_ignore_ascii_case(schema))
-        || custom
-            .iter()
-            .any(|s| s.eq_ignore_ascii_case(schema))
+        || custom.iter().any(|s| s.eq_ignore_ascii_case(schema))
 }
 
 #[cfg(test)]
@@ -688,30 +742,36 @@ mod tests {
                             data_type: "int".into(),
                             nullable: false,
                             is_indexed: true,
+                            join_eligible: true,
+                            category: ColumnCategory::Integer,
                         },
                         ColumnInfo {
                             name: "name".into(),
                             data_type: "text".into(),
                             nullable: true,
                             is_indexed: false,
+                            ..ColumnInfo::default()
                         },
                         ColumnInfo {
                             name: "price".into(),
                             data_type: "numeric".into(),
                             nullable: true,
                             is_indexed: false,
+                            ..ColumnInfo::default()
                         },
                         ColumnInfo {
                             name: "active".into(),
                             data_type: "boolean".into(),
                             nullable: true,
                             is_indexed: false,
+                            ..ColumnInfo::default()
                         },
                         ColumnInfo {
                             name: "created_at".into(),
                             data_type: "timestamp".into(),
                             nullable: true,
                             is_indexed: false,
+                            ..ColumnInfo::default()
                         },
                     ],
                     indexes: vec![],
@@ -724,6 +784,8 @@ mod tests {
                         data_type: "int".into(),
                         nullable: false,
                         is_indexed: true,
+                        join_eligible: true,
+                        category: ColumnCategory::Integer,
                     }],
                     indexes: vec![],
                 },
@@ -759,7 +821,7 @@ mod tests {
 
     fn leaf(op: FilterOp, value: Option<FilterValue>) -> FilterSpec {
         FilterSpec {
-            id: String::new(),
+            id: uuid::Uuid::new_v4().to_string(),
             table_alias: "t0".into(),
             column: "name".into(),
             op,
@@ -769,7 +831,7 @@ mod tests {
 
     fn leaf_on(col: &str, op: FilterOp, value: Option<FilterValue>) -> FilterSpec {
         FilterSpec {
-            id: String::new(),
+            id: uuid::Uuid::new_v4().to_string(),
             table_alias: "t0".into(),
             column: col.into(),
             op,
@@ -779,7 +841,7 @@ mod tests {
 
     fn group(connector: GroupConnector, children: Vec<FilterNode>) -> FilterGroup {
         FilterGroup {
-            id: String::new(),
+            id: uuid::Uuid::new_v4().to_string(),
             connector,
             children,
         }
@@ -832,7 +894,7 @@ mod tests {
             right_column: "id".into(),
         });
         let err = validate(&mut spec, &sample_schema(), &[]).unwrap_err();
-        assert!(err.contains("not indexed"));
+        assert!(err.contains("leading key"));
     }
 
     #[test]
@@ -1055,10 +1117,10 @@ mod tests {
 
     #[test]
     fn classify_column_covers_common_types() {
-        assert_eq!(classify_column("int"), ColumnCategory::Numeric);
-        assert_eq!(classify_column("INTEGER"), ColumnCategory::Numeric);
-        assert_eq!(classify_column("number"), ColumnCategory::Numeric);
-        assert_eq!(classify_column("NUMBER"), ColumnCategory::Numeric);
+        assert_eq!(classify_column("int"), ColumnCategory::Integer);
+        assert_eq!(classify_column("INTEGER"), ColumnCategory::Integer);
+        assert_eq!(classify_column("number"), ColumnCategory::Decimal);
+        assert_eq!(classify_column("NUMBER"), ColumnCategory::Decimal);
         assert_eq!(classify_column("varchar"), ColumnCategory::Text);
         assert_eq!(classify_column("VARCHAR2"), ColumnCategory::Text);
         assert_eq!(classify_column("boolean"), ColumnCategory::Bool);

@@ -1,34 +1,54 @@
 use anyhow::Result;
 use std::time::Duration;
-use tiberius::{AuthMethod, Client, ColumnData, Config};
+use tiberius::{AuthMethod, Client, ColumnData, Config, EncryptionLevel};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 use crate::adapters::ExplainResult;
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
-use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
+use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
+use crate::types::{ConnectionDef, TransportSecurityMode};
 
 pub type MssqlClient = Client<tokio_util::compat::Compat<TcpStream>>;
 
-pub async fn connect(
-    host: &str,
-    port: u16,
-    database: &str,
-    username: &str,
-    password: &str,
-) -> Result<MssqlClient> {
+pub async fn connect(def: &ConnectionDef, password: &str) -> Result<MssqlClient> {
     let mut config = Config::new();
-    config.host(host);
-    config.port(port);
-    config.database(database);
-    config.authentication(AuthMethod::sql_server(username, password));
+    config.host(&def.host);
+    config.port(def.port);
+    config.database(&def.database);
+    config.authentication(AuthMethod::sql_server(&def.username, password));
     config.readonly(true);
+    let mut ca_file = None;
+    match def.transport_security.mode {
+        TransportSecurityMode::VerifyIdentity => {
+            config.encryption(EncryptionLevel::Required);
+        }
+        TransportSecurityMode::VerifyCa => {
+            config.encryption(EncryptionLevel::Required);
+            if let Some(ca) = &def.transport_security.ca_pem {
+                use std::io::Write;
+                let mut file = tempfile::NamedTempFile::new()?;
+                file.write_all(ca.as_bytes())?;
+                config.trust_cert_ca(file.path().to_string_lossy());
+                ca_file = Some(file);
+            }
+        }
+        TransportSecurityMode::EncryptOnly => {
+            config.encryption(EncryptionLevel::Required);
+            config.trust_cert();
+        }
+        TransportSecurityMode::Disabled => {
+            config.encryption(EncryptionLevel::Off);
+            config.trust_cert();
+        }
+    }
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
 
     let client = Client::connect(config, tcp.compat_write()).await?;
+    drop(ca_file);
     Ok(client)
 }
 
@@ -120,6 +140,7 @@ async fn introspect_columns(
             data_type,
             nullable: is_nullable == "YES",
             is_indexed: false,
+            ..ColumnInfo::default()
         });
     }
     Ok(columns)
@@ -141,7 +162,7 @@ async fn introspect_indexes(
              JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
              JOIN sys.tables t ON i.object_id = t.object_id
              JOIN sys.schemas s ON t.schema_id = s.schema_id
-             WHERE s.name = @P1 AND t.name = @P2
+             WHERE s.name = @P1 AND t.name = @P2 AND ic.is_included_column = 0
              ORDER BY i.is_primary_key DESC, i.name, ic.key_ordinal",
             &[&schema, &table],
         )
@@ -166,8 +187,11 @@ async fn introspect_indexes(
         let entry = index_map.entry(index_name.clone()).or_insert(IndexInfo {
             name: index_name,
             columns: Vec::new(),
+            kind: "BTREE".to_string(),
+            supports_equality: true,
             is_unique,
             is_primary,
+            ..IndexInfo::default()
         });
         entry.columns.push(column_name);
     }
@@ -196,8 +220,11 @@ async fn query_with_params(
         .map(|p| match p {
             BindValue::Text(s) => OwnedParam::Str(s.clone()),
             BindValue::Int(n) => OwnedParam::Int(*n),
+            BindValue::Decimal(n) => OwnedParam::Str(n.to_string()),
             BindValue::Float(f) => OwnedParam::Float(*f),
             BindValue::Bool(b) => OwnedParam::Bool(*b),
+            BindValue::Date(d) => OwnedParam::Str(d.to_string()),
+            BindValue::DateTime(dt) => OwnedParam::Str(dt.to_string()),
             BindValue::Null => OwnedParam::Null,
         })
         .collect();
@@ -240,7 +267,9 @@ async fn execute_query_inner(
     client.execute("BEGIN TRANSACTION", &[]).await?;
 
     let inner = async {
-        client.execute("SET TRANSACTION READ ONLY", &[]).await?;
+        client
+            .execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", &[])
+            .await?;
         client
             .execute(&format!("SET LOCK_TIMEOUT {timeout_ms}"), &[])
             .await?;
@@ -248,32 +277,26 @@ async fn execute_query_inner(
         let rows = query_with_params(client, compiled).await?;
         let row_count = rows.len();
 
-        let columns: Vec<String> = if rows.is_empty() {
+        let columns: Vec<ResultColumn> = if rows.is_empty() {
             Vec::new()
         } else {
             rows[0]
                 .columns()
                 .iter()
-                .map(|c| c.name().to_string())
+                .map(|c| ResultColumn::new(c.name(), format!("{:?}", c.column_type())))
                 .collect()
         };
 
         let mut result_rows = Vec::new();
         for row in rows {
-            let row_data: Vec<serde_json::Value> =
-                row.into_iter().map(decode_mssql_value).collect();
+            let row_data: Vec<ResultCell> = row.into_iter().map(decode_mssql_value).collect();
             result_rows.push(row_data);
         }
 
         client.execute("COMMIT TRANSACTION", &[]).await?;
 
-        Ok(QueryResult {
-            columns,
-            rows: result_rows,
-            row_count,
-            truncated: false,
-            warnings: Vec::new(),
-        })
+        let _ = row_count;
+        Ok(QueryResult::from_rows(columns, result_rows))
     }
     .await;
 
@@ -304,13 +327,11 @@ pub async fn explain(client: &mut MssqlClient, compiled: &CompiledQuery) -> Resu
         .collect();
 
     let cost = parse_showplan_cost(&xml);
-    Ok(ExplainResult {
-        cost,
-        warning: if cost.is_none() {
-            Some("Could not parse EXPLAIN cost from SHOWPLAN_XML".to_string())
-        } else {
-            None
-        },
+    Ok(match cost {
+        Some(cost) => ExplainResult::Estimated(cost),
+        None => {
+            ExplainResult::Unavailable("Could not parse EXPLAIN cost from SHOWPLAN_XML".to_string())
+        }
     })
 }
 
@@ -325,17 +346,27 @@ fn parse_showplan_cost(xml: &str) -> Option<f64> {
     None
 }
 
-fn decode_mssql_value(cell: ColumnData<'static>) -> serde_json::Value {
-    use serde_json::Value;
+fn decode_mssql_value(cell: ColumnData<'static>) -> ResultCell {
     match cell {
-        ColumnData::U8(Some(v)) => Value::from(v as i64),
-        ColumnData::I16(Some(v)) => Value::from(v as i64),
-        ColumnData::I32(Some(v)) => Value::from(v as i64),
-        ColumnData::I64(Some(v)) => Value::from(v),
-        ColumnData::F32(Some(v)) => Value::from(v as f64),
-        ColumnData::F64(Some(v)) => Value::from(v),
-        ColumnData::String(Some(s)) => Value::String(s.into_owned()),
-        _ => Value::Null,
+        ColumnData::U8(Some(v)) => ResultCell::Integer(v as i64),
+        ColumnData::I16(Some(v)) => ResultCell::Integer(v as i64),
+        ColumnData::I32(Some(v)) => ResultCell::Integer(v as i64),
+        ColumnData::I64(Some(v)) => ResultCell::Integer(v),
+        ColumnData::F32(Some(v)) => ResultCell::Float(v as f64),
+        ColumnData::F64(Some(v)) => ResultCell::Float(v),
+        ColumnData::Bit(Some(v)) => ResultCell::Bool(v),
+        ColumnData::String(Some(s)) => ResultCell::text(s.into_owned()),
+        ColumnData::Guid(Some(v)) => ResultCell::text(v.to_string()),
+        ColumnData::Binary(Some(v)) => ResultCell::binary(v.as_ref()),
+        ColumnData::Numeric(Some(v)) => ResultCell::text(v.to_string()),
+        ColumnData::Xml(Some(v)) => ResultCell::text(v.to_string()),
+        ColumnData::DateTime(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::SmallDateTime(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::Time(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::Date(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::DateTime2(Some(v)) => ResultCell::text(format!("{v:?}")),
+        ColumnData::DateTimeOffset(Some(v)) => ResultCell::text(format!("{v:?}")),
+        _ => ResultCell::Null,
     }
 }
 

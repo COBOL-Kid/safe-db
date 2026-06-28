@@ -3,6 +3,7 @@
 	import { connections } from '$lib/stores/connections.svelte';
 	import { savedQueries } from '$lib/stores/saved-queries.svelte';
 	import { query } from '$lib/stores/query.svelte';
+	import { lockCredentials } from '$lib/api';
 
 	let {
 		open = $bindable(false)
@@ -27,7 +28,8 @@
 		save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8',
 		history: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z',
 		home: 'M3 12l9-9 9 9M5 10v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V10',
-		clear: 'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'
+		clear: 'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6',
+		lock: 'M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z'
 	};
 
 	const commands = $derived.by<Command[]>(() => {
@@ -59,6 +61,13 @@
 				hint: 'Recent queries',
 				icon: 'history',
 				action: () => goto('/history')
+			},
+			{
+				id: 'lock-credentials',
+				label: 'Lock credentials',
+				hint: 'Clear unlocked database passwords',
+				icon: 'lock',
+				action: () => void lockCredentials()
 			}
 		];
 
@@ -89,8 +98,9 @@
 				hint: `${conn.dialect} · ${conn.database}`,
 				icon: 'conn',
 				action: () => {
-					connections.setActive(conn.id);
-					goto('/builder');
+					void connections.activate(conn.id).then((activated) => {
+						if (activated) goto('/builder');
+					});
 				}
 			});
 		}

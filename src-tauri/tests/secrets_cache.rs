@@ -1,5 +1,5 @@
 use safe_db_lib::secrets;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use uuid::Uuid;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -8,19 +8,20 @@ fn unique_id() -> String {
     format!("cache-test-{}", Uuid::new_v4())
 }
 
-fn init_disabled_backend() {
-    let _guard = ENV_LOCK.lock().unwrap();
+fn init_disabled_backend() -> MutexGuard<'static, ()> {
+    let guard = ENV_LOCK.lock().unwrap();
     // SAFETY: env mutation in tests is serialized by ENV_LOCK. Edition 2024 makes set_var unsafe.
     unsafe {
         std::env::set_var("SAFEDB_KEYCHAIN_BACKEND", "disabled");
     }
     secrets::init_store().expect("disabled backend should initialize");
     secrets::reset_store_read_count_for_test();
+    guard
 }
 
 #[test]
 fn save_then_get_returns_session_value_without_rehitting_store() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     secrets::save_password(&id, "first-secret").expect("save");
@@ -45,7 +46,7 @@ fn save_then_get_returns_session_value_without_rehitting_store() {
 
 #[test]
 fn password_for_connection_reuses_session_without_store_reads() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     secrets::save_password(&id, "builder-secret").expect("save");
@@ -62,7 +63,7 @@ fn password_for_connection_reuses_session_without_store_reads() {
 
 #[test]
 fn delete_invalidates_session() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     secrets::save_password(&id, "to-be-deleted").expect("save");
@@ -84,7 +85,7 @@ fn delete_invalidates_session() {
 
 #[test]
 fn save_overwrites_session_value() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     secrets::save_password(&id, "first").expect("save first");
@@ -98,7 +99,7 @@ fn save_overwrites_session_value() {
 
 #[test]
 fn delete_then_save_yields_new_value() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     secrets::save_password(&id, "v1").expect("save v1");
@@ -111,7 +112,7 @@ fn delete_then_save_yields_new_value() {
 
 #[test]
 fn missing_entry_returns_none_without_populating_session() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     let result = secrets::get_password(&id).expect("get on missing");
@@ -124,7 +125,7 @@ fn missing_entry_returns_none_without_populating_session() {
 
 #[test]
 fn password_for_connection_reports_actionable_error_when_missing() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     let err = secrets::password_for_connection(&id).expect_err("missing password");
@@ -136,7 +137,7 @@ fn password_for_connection_reports_actionable_error_when_missing() {
 
 #[test]
 fn empty_password_round_trips_and_populates_session() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     secrets::save_password(&id, "").expect("save empty password");
@@ -151,7 +152,7 @@ fn empty_password_round_trips_and_populates_session() {
 
 #[test]
 fn lock_credentials_clears_session() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     let id = unique_id();
 
     secrets::save_password(&id, "locked-away").expect("save");
@@ -180,6 +181,6 @@ fn lock_credentials_clears_session() {
 
 #[test]
 fn disabled_backend_label_is_reported() {
-    init_disabled_backend();
+    let _guard = init_disabled_backend();
     assert_eq!(secrets::active_backend_label(), "disabled");
 }

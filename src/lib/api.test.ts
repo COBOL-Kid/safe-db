@@ -24,13 +24,18 @@ vi.mock('@tauri-apps/api/core', () => ({
 const invokeMock = vi.mocked(invoke);
 
 const def: ConnectionDef = {
+	version: 2,
 	id: 'c1',
 	name: 'Local PG',
 	dialect: 'Postgres',
 	host: 'localhost',
 	port: 5432,
 	database: 'app',
-	username: 'app'
+	username: 'app',
+	transport_security: {
+		mode: 'VerifyIdentity',
+		insecure_acknowledged: false
+	}
 };
 
 describe('api wrappers', () => {

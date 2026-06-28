@@ -151,6 +151,7 @@
 		const cat = literalKindForColumn(columnInfo.data_type);
 		switch (cat) {
 			case 'Int': return 'number';
+			case 'Decimal': return 'number';
 			case 'Float': return 'number';
 			case 'Date': return 'date';
 			case 'DateTime': return 'datetime-local';
@@ -159,7 +160,7 @@
 	});
 
 	let inputStep = $derived(
-		columnInfo && literalKindForColumn(columnInfo.data_type) === 'Float' ? 'any' : undefined
+		columnInfo && ['Decimal', 'Float'].includes(literalKindForColumn(columnInfo.data_type)) ? 'any' : undefined
 	);
 </script>
 

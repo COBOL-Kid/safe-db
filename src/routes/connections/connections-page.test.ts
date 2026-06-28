@@ -17,13 +17,18 @@ vi.mock('$app/navigation', () => ({
 const gotoMock = vi.mocked(goto);
 
 const sampleConnection = {
+	version: 2,
 	id: 'c1',
 	name: 'Test DB',
 	dialect: 'Postgres' as const,
 	host: 'localhost',
 	port: 5432,
 	database: 'demo',
-	username: 'user'
+	username: 'user',
+	transport_security: {
+		mode: 'VerifyIdentity' as const,
+		insecure_acknowledged: false
+	}
 };
 
 const origSetActive = connections.setActive.bind(connections);
@@ -39,7 +44,10 @@ describe('Connections page', () => {
 		// Restore any store-method overrides installed by individual tests so
 		// an earlier assertion failure can't poison the next test.
 		connections.setActive = origSetActive;
+		connections.connections = [];
+		connections.activeId = null;
 		schema.clear = origClear;
+		schema.clear();
 	});
 
 	it('loads connections on mount', async () => {
@@ -131,15 +139,11 @@ describe('Connections page', () => {
 			expect(gotoMock).toHaveBeenCalledWith('/builder');
 		});
 
-		expect(order).toEqual([
-			'setActive:c1',
-			'schema.clear',
-			'schema.load',
-			'goto:/builder'
-		]);
+		expect(order).toEqual(['schema.clear', 'schema.load', 'goto:/builder']);
+		expect(connections.activeId).toBe('c1');
 	});
 
-	it('still navigates to /builder when schema.load fails (current behavior: load catches its own errors)', async () => {
+	it('does not navigate to /builder when schema.load fails', async () => {
 		const user = userEvent.setup();
 		vi.mocked(api.listConnections).mockResolvedValue([sampleConnection]);
 		vi.mocked(api.getSchema).mockRejectedValue(new Error('no schema'));
@@ -155,9 +159,7 @@ describe('Connections page', () => {
 		await waitFor(() => {
 			expect(api.getSchema).toHaveBeenCalledWith('c1');
 		});
-		// schema.load swallows errors, so handleOpen continues and calls goto.
-		await waitFor(() => {
-			expect(gotoMock).toHaveBeenCalledWith('/builder');
-		});
+		expect(gotoMock).not.toHaveBeenCalledWith('/builder');
+		expect(connections.activeId).toBeNull();
 	});
 });

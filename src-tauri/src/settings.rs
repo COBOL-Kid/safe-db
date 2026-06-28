@@ -1,11 +1,12 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::persist::atomic_write;
+use crate::types::Dialect;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -13,6 +14,8 @@ pub struct Settings {
     pub blocked_schemas: Vec<String>,
     #[serde(default = "default_cost_threshold")]
     pub explain_cost_threshold: f64,
+    #[serde(default)]
+    pub explain_cost_thresholds: BTreeMap<Dialect, f64>,
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -25,11 +28,33 @@ fn default_theme() -> String {
     "light".to_string()
 }
 
+fn default_dialect_thresholds() -> BTreeMap<Dialect, f64> {
+    [
+        Dialect::Postgres,
+        Dialect::MySql,
+        Dialect::Mssql,
+        Dialect::Oracle,
+    ]
+    .into_iter()
+    .map(|dialect| (dialect, default_cost_threshold()))
+    .collect()
+}
+
+impl Settings {
+    pub fn cost_threshold(&self, dialect: Dialect) -> f64 {
+        self.explain_cost_thresholds
+            .get(&dialect)
+            .copied()
+            .unwrap_or(self.explain_cost_threshold)
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             blocked_schemas: Vec::new(),
             explain_cost_threshold: default_cost_threshold(),
+            explain_cost_thresholds: default_dialect_thresholds(),
             theme: default_theme(),
         }
     }
@@ -47,6 +72,20 @@ pub fn normalize_settings(settings: &mut Settings) {
         .collect();
 
     settings.explain_cost_threshold = settings.explain_cost_threshold.clamp(1.0, 10_000_000.0);
+    if settings.explain_cost_thresholds.is_empty() {
+        settings.explain_cost_thresholds = [
+            Dialect::Postgres,
+            Dialect::MySql,
+            Dialect::Mssql,
+            Dialect::Oracle,
+        ]
+        .into_iter()
+        .map(|dialect| (dialect, settings.explain_cost_threshold))
+        .collect();
+    }
+    for threshold in settings.explain_cost_thresholds.values_mut() {
+        *threshold = threshold.clamp(1.0, 10_000_000.0);
+    }
 
     if settings.theme != "dark" {
         settings.theme = "light".to_string();
@@ -59,12 +98,12 @@ pub struct SettingsStore {
 }
 
 impl SettingsStore {
-    pub fn new(data_dir: PathBuf) -> Self {
-        fs::create_dir_all(&data_dir).ok();
-        Self {
+    pub fn new(data_dir: PathBuf) -> Result<Self> {
+        crate::persist::ensure_private_dir(&data_dir)?;
+        Ok(Self {
             path: data_dir.join("settings.json"),
             lock: Mutex::new(()),
-        }
+        })
     }
 
     pub fn load(&self) -> Result<Settings> {
@@ -106,11 +145,12 @@ mod tests {
     #[test]
     fn save_then_load_round_trips() {
         let dir = TempDir::new().unwrap();
-        let store = SettingsStore::new(dir.path().to_path_buf());
+        let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
 
         let saved = Settings {
             blocked_schemas: vec!["pg_catalog".to_string(), "information_schema".to_string()],
             explain_cost_threshold: 42.5,
+            explain_cost_thresholds: Default::default(),
             theme: "dark".to_string(),
         };
         store.save(&saved).unwrap();
@@ -124,7 +164,7 @@ mod tests {
     #[test]
     fn load_returns_defaults_when_file_is_missing_or_empty() {
         let dir = TempDir::new().unwrap();
-        let store = SettingsStore::new(dir.path().to_path_buf());
+        let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
 
         // No file on disk yet.
         let loaded = store.load().unwrap();
@@ -142,7 +182,7 @@ mod tests {
     #[test]
     fn load_propagates_error_for_corrupt_json() {
         let dir = TempDir::new().unwrap();
-        let store = SettingsStore::new(dir.path().to_path_buf());
+        let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
 
         fs::write(store_path(dir.path()), "{ this is not json").unwrap();
         assert!(store.load().is_err());
@@ -151,7 +191,7 @@ mod tests {
     #[test]
     fn save_with_defaults_round_trips() {
         let dir = TempDir::new().unwrap();
-        let store = SettingsStore::new(dir.path().to_path_buf());
+        let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
 
         store.save(&Settings::default()).unwrap();
         let loaded = store.load().unwrap();
@@ -165,6 +205,7 @@ mod tests {
         let mut s = Settings {
             blocked_schemas: vec!["Audit".to_string(), "audit".to_string()],
             explain_cost_threshold: 0.5,
+            explain_cost_thresholds: Default::default(),
             theme: "dark".to_string(),
         };
         normalize_settings(&mut s);

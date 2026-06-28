@@ -22,9 +22,7 @@
 	});
 
 	async function rerun(entry: HistoryEntry) {
-		connections.setActive(entry.connection_id);
-		schema.clear();
-		await schema.load(entry.connection_id);
+		if (!(await connections.activate(entry.connection_id))) return;
 
 		const hydration = hydrateQueryFromSpec(entry.spec, schema.tables, query);
 		query.hydrationWarning = formatHydrationWarning(hydration);

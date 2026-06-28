@@ -1,12 +1,38 @@
 <script lang="ts">
-	import type { QueryResult } from '$lib/ir';
+	import type { QueryResult, ResultCell, ResultColumn } from '$lib/ir';
 
 	let { result }: { result: QueryResult } = $props();
 
+	function isResultCell(value: unknown): value is ResultCell {
+		return typeof value === 'object' && value !== null && 'kind' in value;
+	}
+
 	function formatCell(value: any): string {
+		if (isResultCell(value)) {
+			switch (value.kind) {
+				case 'Null':
+					return '';
+				case 'Bool':
+				case 'Integer':
+				case 'Float':
+					return String(value.value);
+				case 'Text':
+					return value.value.text + (value.value.truncated ? '…' : '');
+				case 'Binary':
+					return value.value.base64 + (value.value.truncated ? '…' : '');
+			}
+		}
 		if (value === null || value === undefined) return '';
 		if (typeof value === 'boolean') return value ? 'true' : 'false';
 		return String(value);
+	}
+
+	function isNullCell(value: unknown): boolean {
+		return value === null || (isResultCell(value) && value.kind === 'Null');
+	}
+
+	function columnName(column: string | ResultColumn): string {
+		return typeof column === 'string' ? column : column.name;
 	}
 </script>
 
@@ -44,9 +70,9 @@
 			<table class="w-full border-collapse text-sm">
 				<thead class="sticky top-0 bg-slate-50 dark:bg-slate-800/80">
 					<tr>
-						{#each result.columns as col (col)}
+							{#each result.columns as col, colIdx (colIdx)}
 							<th class="border-b border-slate-200 px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap dark:border-slate-700 dark:text-slate-300">
-								{col}
+									{columnName(col)}
 							</th>
 						{/each}
 					</tr>
@@ -56,7 +82,7 @@
 						<tr class="hover:bg-sky-50/40 dark:hover:bg-sky-900/20 {rowIdx % 2 === 1 ? 'bg-slate-50/40 dark:bg-slate-800/30' : ''}">
 							{#each row as cell, colIdx (colIdx)}
 								<td class="border-b border-slate-100 px-3 py-1.5 text-slate-700 whitespace-nowrap max-w-xs truncate dark:border-slate-800 dark:text-slate-200" title={formatCell(cell)}>
-									{#if cell === null}
+								{#if isNullCell(cell)}
 										<span class="text-slate-300 italic dark:text-slate-500">null</span>
 									{:else}
 										{formatCell(cell)}

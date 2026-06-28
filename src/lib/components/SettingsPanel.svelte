@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { settings } from '$lib/stores/settings.svelte';
+	import { DIALECTS, type Dialect } from '$lib/ir';
 
 	let {
 		open = $bindable(false)
@@ -8,12 +9,22 @@
 	} = $props();
 
 	let newSchema = $state('');
-	let thresholdInput = $state('100000');
+	let thresholdInputs = $state<Record<Dialect, string>>({
+		Postgres: '100000',
+		MySql: '100000',
+		Mssql: '100000',
+		Oracle: '100000'
+	});
 	let saveError = $state<string | null>(null);
 
 	$effect(() => {
 		if (open) {
-			thresholdInput = String(settings.settings.explain_cost_threshold);
+			thresholdInputs = {
+				Postgres: String(settings.settings.explain_cost_thresholds?.Postgres ?? settings.settings.explain_cost_threshold),
+				MySql: String(settings.settings.explain_cost_thresholds?.MySql ?? settings.settings.explain_cost_threshold),
+				Mssql: String(settings.settings.explain_cost_thresholds?.Mssql ?? settings.settings.explain_cost_threshold),
+				Oracle: String(settings.settings.explain_cost_thresholds?.Oracle ?? settings.settings.explain_cost_threshold)
+			};
 			newSchema = '';
 			saveError = null;
 		}
@@ -46,12 +57,17 @@
 
 	async function saveThreshold() {
 		saveError = null;
-		const n = parseFloat(thresholdInput);
-		if (isNaN(n) || n < 1 || n > 10_000_000) {
-			saveError = 'Threshold must be between 1 and 10,000,000';
-			return;
+		const thresholds = {} as Record<Dialect, number>;
+		for (const dialect of DIALECTS) {
+			const n = parseFloat(thresholdInputs[dialect.value]);
+			if (isNaN(n) || n < 1 || n > 10_000_000) {
+				saveError = `${dialect.label} threshold must be between 1 and 10,000,000`;
+				return;
+			}
+			thresholds[dialect.value] = n;
 		}
-		settings.settings.explain_cost_threshold = n;
+		settings.settings.explain_cost_thresholds = thresholds;
+		settings.settings.explain_cost_threshold = thresholds.Postgres;
 		await settings.save();
 	}
 </script>
@@ -76,24 +92,29 @@
 
 			<div class="mt-5 space-y-5">
 				<div>
-					<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cost-threshold">
-						EXPLAIN cost threshold
-					</label>
-					<div class="flex gap-2">
-						<input
-							id="cost-threshold"
-							type="number"
-							min="1"
-							max="10000000"
-							bind:value={thresholdInput}
-							class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800"
-						/>
+					<p class="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+						EXPLAIN cost thresholds
+					</p>
+					<div class="space-y-2">
+						{#each DIALECTS as dialect (dialect.value)}
+							<label class="grid grid-cols-[7rem_1fr] items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+								<span>{dialect.label}</span>
+								<input
+									type="number"
+									min="1"
+									max="10000000"
+									bind:value={thresholdInputs[dialect.value]}
+									aria-label={`${dialect.label} EXPLAIN cost threshold`}
+									class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+								/>
+							</label>
+						{/each}
 						<button
 							type="button"
 							onclick={saveThreshold}
 							class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900"
 						>
-							Save
+							Save thresholds
 						</button>
 					</div>
 					{#if saveError}

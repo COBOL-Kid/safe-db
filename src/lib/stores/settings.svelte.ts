@@ -1,11 +1,19 @@
 import { browser } from '$app/environment';
-import type { Settings } from '$lib/ir';
+import type { Dialect, Settings } from '$lib/ir';
 import * as api from '$lib/api';
 import { syncWindowBackgroundColor } from '$lib/window';
+
+export const DEFAULT_EXPLAIN_COST_THRESHOLDS: Record<Dialect, number> = {
+	Postgres: 100_000,
+	MySql: 100_000,
+	Mssql: 100_000,
+	Oracle: 100_000
+};
 
 const defaultSettings: Settings = {
 	blocked_schemas: [],
 	explain_cost_threshold: 100_000,
+	explain_cost_thresholds: { ...DEFAULT_EXPLAIN_COST_THRESHOLDS },
 	theme: 'light'
 };
 
@@ -25,7 +33,7 @@ class SettingsStore {
 		if (!browser) return;
 		this.loading = true;
 		try {
-			this.settings = await api.getSettings();
+			this.settings = normalizeSettings(await api.getSettings());
 		} catch {
 			this.settings = { ...defaultSettings };
 		} finally {
@@ -65,3 +73,16 @@ class SettingsStore {
 
 export { SettingsStore };
 export const settings = new SettingsStore();
+
+function normalizeSettings(value: Settings): Settings {
+	const scalar = value.explain_cost_threshold;
+	return {
+		...value,
+		explain_cost_thresholds: {
+			Postgres: value.explain_cost_thresholds?.Postgres ?? scalar,
+			MySql: value.explain_cost_thresholds?.MySql ?? scalar,
+			Mssql: value.explain_cost_thresholds?.Mssql ?? scalar,
+			Oracle: value.explain_cost_thresholds?.Oracle ?? scalar
+		}
+	};
+}

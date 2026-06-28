@@ -129,7 +129,7 @@ describe('QueryStore', () => {
 			joins: [],
 			filters: { connector: 'And', children: [] },
 			limit: 50,
-			schema_version: 2,
+			schema_version: 3,
 			connector_overrides: {}
 		});
 	});

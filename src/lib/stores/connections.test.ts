@@ -5,13 +5,18 @@ import * as api from '$lib/api';
 vi.mock('$lib/api');
 
 const sampleConnection = {
+	version: 2,
 	id: 'c1',
 	name: 'Test DB',
 	dialect: 'Postgres' as const,
 	host: 'localhost',
 	port: 5432,
 	database: 'demo',
-	username: 'user'
+	username: 'user',
+	transport_security: {
+		mode: 'VerifyIdentity' as const,
+		insecure_acknowledged: false
+	}
 };
 
 describe('ConnectionStore', () => {

@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { DIALECTS, type ConnectionDef, type Dialect } from '$lib/ir';
+	import {
+		DIALECTS,
+		type ConnectionDef,
+		type Dialect,
+		type TransportSecurityMode
+	} from '$lib/ir';
 	import * as api from '$lib/api';
 
 	let {
@@ -15,6 +20,10 @@
 	let username = $state('');
 	let password = $state('');
 	let showPassword = $state(false);
+	let transportMode = $state<TransportSecurityMode>('VerifyIdentity');
+	let caPem = $state('');
+	let oracleWalletLocation = $state('');
+	let insecureAcknowledged = $state(false);
 
 	let testing = $state(false);
 	let saving = $state(false);
@@ -30,13 +39,20 @@
 
 	function buildDef(): ConnectionDef {
 		return {
+			version: 2,
 			id: crypto.randomUUID(),
 			name: name.trim() || `${dialect} ${host}:${port}`,
 			dialect,
 			host: host.trim(),
 			port,
 			database: database.trim(),
-			username: username.trim()
+			username: username.trim(),
+			transport_security: {
+				mode: transportMode,
+				ca_pem: caPem.trim() || null,
+				oracle_wallet_location: oracleWalletLocation.trim() || null,
+				insecure_acknowledged: insecureAcknowledged
+			}
 		};
 	}
 
@@ -46,6 +62,15 @@
 		if (!username.trim()) return 'Username is required';
 		if (!Number.isFinite(port) || port < 1 || port > 65535) {
 			return 'Port must be between 1 and 65535';
+		}
+		if (
+			(transportMode === 'EncryptOnly' || transportMode === 'Disabled') &&
+			!insecureAcknowledged
+		) {
+			return 'Acknowledge the insecure transport setting before continuing';
+		}
+		if (dialect === 'Oracle' && transportMode !== 'Disabled' && !oracleWalletLocation.trim()) {
+			return 'Oracle TCPS requires a wallet location';
 		}
 		return null;
 	}
@@ -196,6 +221,54 @@
 				</div>
 			</div>
 		</div>
+
+		<div>
+			<span class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Transport security</span>
+			<div class="grid grid-cols-2 gap-2" role="group" aria-label="Transport security">
+				{#each [
+					['VerifyIdentity', 'Verify identity'],
+					['VerifyCa', 'Verify CA'],
+					['EncryptOnly', 'Encrypt only'],
+					['Disabled', 'Disabled']
+				] as option (option[0])}
+					<button
+						type="button"
+						onclick={() => {
+							transportMode = option[0] as TransportSecurityMode;
+							if (transportMode === 'VerifyIdentity' || transportMode === 'VerifyCa') {
+								insecureAcknowledged = false;
+							}
+						}}
+						class="rounded-lg border px-3 py-2 text-sm font-medium {transportMode === option[0]
+							? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+							: 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300'}"
+					>
+						{option[1]}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		{#if transportMode === 'VerifyCa'}
+			<div>
+				<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-ca">CA certificate (PEM)</label>
+				<textarea id="cf-ca" bind:value={caPem} rows="4" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs dark:border-slate-700 dark:bg-slate-800"></textarea>
+			</div>
+		{/if}
+
+		{#if dialect === 'Oracle' && transportMode !== 'Disabled'}
+			<div>
+				<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-wallet">Oracle wallet location</label>
+				<input id="cf-wallet" type="text" bind:value={oracleWalletLocation} class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+			</div>
+		{/if}
+
+		{#if transportMode === 'EncryptOnly' || transportMode === 'Disabled'}
+			<label class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+				<input type="checkbox" bind:checked={insecureAcknowledged} class="mt-0.5" />
+				<span>I understand this setting weakens protection against interception and server impersonation.</span>
+			</label>
+		{/if}
 
 		<div class="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
 			<svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>

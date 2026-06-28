@@ -20,13 +20,18 @@ vi.mock('$app/navigation', () => ({
 const gotoMock = vi.mocked(goto);
 
 const sampleConn: ConnectionDef = {
+	version: 2,
 	id: 'c1',
 	name: 'Test DB',
 	dialect: 'Postgres',
 	host: 'localhost',
 	port: 5432,
 	database: 'demo',
-	username: 'user'
+	username: 'user',
+	transport_security: {
+		mode: 'VerifyIdentity',
+		insecure_acknowledged: false
+	}
 };
 
 function makeSaved(id: string, name: string, connectionId = 'c1'): SavedQuery {
@@ -40,7 +45,7 @@ function makeSaved(id: string, name: string, connectionId = 'c1'): SavedQuery {
 			joins: [],
 			filters: { id: 'g', connector: 'And', children: [] },
 			limit: 100,
-			schema_version: 2,
+			schema_version: 3,
 			connector_overrides: {}
 		},
 		created_at: '1700000000'
@@ -159,12 +164,8 @@ describe('Home page', () => {
 			expect(gotoMock).toHaveBeenCalledWith('/builder');
 		});
 
-		expect(order).toEqual([
-			'setActive:c1',
-			'schema.clear',
-			'schema.load:c1',
-			'goto:/builder'
-		]);
+		expect(order).toEqual(['schema.clear', 'schema.load:c1', 'goto:/builder']);
+		expect(connections.activeId).toBe('c1');
 
 		connections.setActive = origSetActive;
 	});

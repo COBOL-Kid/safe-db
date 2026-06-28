@@ -7,11 +7,12 @@ use safe_db_lib::query::ir::{
     LiteralKind, QuerySpec, TableRef,
 };
 use safe_db_lib::settings::SettingsStore;
-use safe_db_lib::types::{ConnectionDef, Dialect};
+use safe_db_lib::types::{CURRENT_CONNECTION_VERSION, ConnectionDef, Dialect, TransportSecurity};
 use tempfile::TempDir;
 
 fn sample_connection(id: &str) -> ConnectionDef {
     ConnectionDef {
+        version: CURRENT_CONNECTION_VERSION,
         id: id.into(),
         name: format!("Conn {id}"),
         dialect: Dialect::Postgres,
@@ -19,6 +20,7 @@ fn sample_connection(id: &str) -> ConnectionDef {
         port: 5432,
         database: "demo".into(),
         username: "readonly".into(),
+        transport_security: TransportSecurity::default(),
     }
 }
 
@@ -41,7 +43,7 @@ fn sample_spec() -> QuerySpec {
 #[test]
 fn config_store_round_trips_connections() {
     let dir = TempDir::new().unwrap();
-    let store = ConfigStore::new(dir.path().to_path_buf());
+    let store = ConfigStore::new(dir.path().to_path_buf()).unwrap();
 
     assert!(store.list().unwrap().is_empty());
 
@@ -62,7 +64,7 @@ fn config_store_round_trips_connections() {
 #[test]
 fn config_store_handles_missing_and_empty_files() {
     let dir = TempDir::new().unwrap();
-    let store = ConfigStore::new(dir.path().to_path_buf());
+    let store = ConfigStore::new(dir.path().to_path_buf()).unwrap();
     assert!(store.list().unwrap().is_empty());
 
     std::fs::write(dir.path().join("connections.json"), "   ").unwrap();
@@ -72,7 +74,7 @@ fn config_store_handles_missing_and_empty_files() {
 #[test]
 fn query_store_saved_queries_upsert_and_delete() {
     let dir = TempDir::new().unwrap();
-    let store = QueryStore::new(dir.path().to_path_buf());
+    let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
 
     let saved = SavedQuery {
         id: "q1".into(),
@@ -95,7 +97,7 @@ fn query_store_saved_queries_upsert_and_delete() {
 #[test]
 fn query_store_history_prepends_and_caps_at_100() {
     let dir = TempDir::new().unwrap();
-    let store = QueryStore::new(dir.path().to_path_buf());
+    let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
 
     for i in 0..105 {
         store
@@ -121,7 +123,7 @@ fn query_store_history_prepends_and_caps_at_100() {
 #[test]
 fn query_store_clear_history() {
     let dir = TempDir::new().unwrap();
-    let store = QueryStore::new(dir.path().to_path_buf());
+    let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
     store
         .add_history(HistoryEntry {
             id: "h1".into(),
@@ -142,7 +144,7 @@ fn query_store_clear_history() {
 #[test]
 fn settings_store_defaults_and_round_trip() {
     let dir = TempDir::new().unwrap();
-    let store = SettingsStore::new(dir.path().to_path_buf());
+    let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
 
     let defaults = store.load().unwrap();
     assert_eq!(defaults.theme, "light");
@@ -181,7 +183,7 @@ fn query_store_migrates_v1_saved_queries() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("saved_queries.json"), V1_SAVED_QUERIES).unwrap();
 
-    let store = QueryStore::new(dir.path().to_path_buf());
+    let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
     let saved = store.list_saved().unwrap();
     assert_eq!(saved.len(), 1);
 
@@ -215,20 +217,20 @@ fn query_store_migrates_v1_saved_queries() {
     assert_eq!(leaf1.op, FilterOp::IsNull);
     assert!(leaf1.value.is_none());
 
-    // The file should have been rewritten to the v2 shape (filters is now an
-    // object, not an array) and a v1 backup retained.
+    // The file should have been rewritten to the current shape (filters is now
+    // an object, not an array) and a migration backup retained.
     let rewritten = std::fs::read_to_string(dir.path().join("saved_queries.json")).unwrap();
     assert!(
         rewritten.contains("\"connector\""),
-        "expected rewritten v2 filters, got: {rewritten}"
+        "expected rewritten filters, got: {rewritten}"
     );
     assert!(
         !rewritten.contains("\"filters\":["),
         "v1 filters array should be gone after migration: {rewritten}"
     );
     assert!(
-        dir.path().join("saved_queries.v1.bak").exists(),
-        "v1 backup should be retained"
+        dir.path().join("saved_queries.migration.bak").exists(),
+        "migration backup should be retained"
     );
 
     // Re-reading yields the same data without re-migrating.
@@ -254,7 +256,7 @@ fn query_store_preserves_unreadable_entries_on_disk() {
     let raw = serde_json::to_string_pretty(&valid).unwrap();
     std::fs::write(dir.path().join("saved_queries.json"), raw).unwrap();
 
-    let store = QueryStore::new(dir.path().to_path_buf());
+    let store = QueryStore::new(dir.path().to_path_buf()).unwrap();
     let saved = store.list_saved().unwrap();
     // Only the valid entry is returned...
     assert_eq!(saved.len(), 1);
@@ -267,7 +269,7 @@ fn query_store_preserves_unreadable_entries_on_disk() {
         "unreadable entry should be preserved on disk, got: {on_disk}"
     );
     assert!(
-        !dir.path().join("saved_queries.v1.bak").exists(),
+        !dir.path().join("saved_queries.migration.bak").exists(),
         "no backup should be written when nothing was migrated"
     );
 }

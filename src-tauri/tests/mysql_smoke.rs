@@ -2,7 +2,9 @@ use safe_db_lib::adapters::mysql;
 use safe_db_lib::query::compile::compile;
 use safe_db_lib::query::ir::{CURRENT_SCHEMA_VERSION, ColumnSel, FilterGroup, QuerySpec, TableRef};
 use safe_db_lib::query::validate::validate;
-use safe_db_lib::types::Dialect;
+use safe_db_lib::types::{
+    CURRENT_CONNECTION_VERSION, ConnectionDef, Dialect, TransportSecurity, TransportSecurityMode,
+};
 
 struct MySqlConfig {
     host: String,
@@ -10,6 +12,24 @@ struct MySqlConfig {
     database: String,
     username: String,
     password: String,
+}
+
+fn connection_def(config: &MySqlConfig) -> ConnectionDef {
+    ConnectionDef {
+        version: CURRENT_CONNECTION_VERSION,
+        id: "mysql-smoke".into(),
+        name: "MySQL smoke".into(),
+        dialect: Dialect::MySql,
+        host: config.host.clone(),
+        port: config.port,
+        database: config.database.clone(),
+        username: config.username.clone(),
+        transport_security: TransportSecurity {
+            mode: TransportSecurityMode::Disabled,
+            insecure_acknowledged: true,
+            ..TransportSecurity::default()
+        },
+    }
 }
 
 fn mysql_config_from_env() -> Option<MySqlConfig> {
@@ -42,15 +62,9 @@ async fn mysql_connect_introspect_validate_compile_execute() {
         return;
     };
 
-    let pool = mysql::connect(
-        &config.host,
-        config.port,
-        &config.database,
-        &config.username,
-        &config.password,
-    )
-    .await
-    .expect("connect should succeed");
+    let pool = mysql::connect(&connection_def(&config), &config.password)
+        .await
+        .expect("connect should succeed");
 
     let version = mysql::test(&pool).await.expect("test query should succeed");
     assert!(

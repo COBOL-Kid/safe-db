@@ -7,7 +7,7 @@ use crate::queries::{HistoryEntry, QueryStore, SavedQuery};
 use crate::query::{
     QueryResult, QuerySpec,
     ir::CompiledQuery,
-    {compile, validate},
+    {compile_validated, validate_query},
 };
 use crate::secrets;
 use crate::settings::{Settings, SettingsStore};
@@ -23,6 +23,7 @@ fn now_iso() -> String {
 
 #[tauri::command]
 pub async fn test_connection(def: ConnectionDef, password: String) -> Result<String, String> {
+    def.validate()?;
     let adapter = Adapter::connect(&def, &password)
         .await
         .map_err(|e| e.to_string())?;
@@ -36,15 +37,71 @@ pub async fn save_connection(
     def: ConnectionDef,
     password: Option<String>,
 ) -> Result<(), String> {
+    def.validate()?;
     let config_store = app.state::<ConfigStore>();
+    persist_connection(&config_store, def, password)
+}
 
-    if let Some(pw) = password {
-        secrets::save_password(&def.id, &pw).map_err(|e| e.to_string())?;
+fn persist_connection(
+    config_store: &ConfigStore,
+    def: ConnectionDef,
+    password: Option<String>,
+) -> Result<(), String> {
+    def.validate()?;
+    let previous = config_store.get(&def.id).map_err(|e| e.to_string())?;
+    if let Some(existing) = &previous
+        && existing.credential_fingerprint() != def.credential_fingerprint()
+        && password.is_none()
+    {
+        return Err(
+            "Endpoint or transport changes require the password to be re-entered".to_string(),
+        );
+    }
+    if previous.is_none() && password.is_none() {
+        return Err("A password is required when creating a connection".to_string());
     }
 
     config_store.save(def.clone()).map_err(|e| e.to_string())?;
-
+    if let Some(password) = password
+        && let Err(error) = secrets::save_password_for_definition(&def, &password)
+    {
+        if let Some(previous) = previous {
+            let _ = config_store.save(previous);
+        } else {
+            let _ = config_store.delete(&def.id);
+        }
+        return Err(error.to_string());
+    }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn create_connection(
+    app: AppHandle,
+    mut def: ConnectionDef,
+    password: String,
+) -> Result<ConnectionDef, String> {
+    def.id = uuid::Uuid::new_v4().to_string();
+    let config_store = app.state::<ConfigStore>();
+    persist_connection(&config_store, def.clone(), Some(password))?;
+    Ok(def)
+}
+
+#[tauri::command]
+pub async fn update_connection(
+    app: AppHandle,
+    def: ConnectionDef,
+    password: Option<String>,
+) -> Result<(), String> {
+    let config_store = app.state::<ConfigStore>();
+    if config_store
+        .get(&def.id)
+        .map_err(|e| e.to_string())?
+        .is_none()
+    {
+        return Err("Connection not found".to_string());
+    }
+    persist_connection(&config_store, def, password)
 }
 
 #[tauri::command]
@@ -56,9 +113,20 @@ pub async fn list_connections(app: AppHandle) -> Result<Vec<ConnectionDef>, Stri
 #[tauri::command]
 pub async fn delete_connection(app: AppHandle, id: String) -> Result<(), String> {
     let config_store = app.state::<ConfigStore>();
+    let previous = config_store.get(&id).map_err(|e| e.to_string())?;
     config_store.delete(&id).map_err(|e| e.to_string())?;
-    secrets::delete_password(&id).map_err(|e| e.to_string())?;
+    if let Err(error) = secrets::delete_password(&id) {
+        if let Some(previous) = previous {
+            let _ = config_store.save(previous);
+        }
+        return Err(error.to_string());
+    }
     Ok(())
+}
+
+#[tauri::command]
+pub fn lock_credentials() {
+    secrets::lock_credentials();
 }
 
 #[tauri::command]
@@ -69,7 +137,7 @@ pub async fn get_schema(app: AppHandle, connection_id: String) -> Result<Schema,
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Connection not found".to_string())?;
 
-    let password = secrets::password_for_connection(&connection_id)?;
+    let password = secrets::password_for_definition(&def)?;
 
     let adapter = Adapter::connect(&def, &password)
         .await
@@ -140,13 +208,13 @@ pub async fn run_query_core<R: QueryRunner>(
     settings: &Settings,
     force: bool,
 ) -> Result<QueryResult, QueryCoreError> {
-    let outcome =
-        validate(spec, schema, &settings.blocked_schemas).map_err(|e| QueryCoreError {
+    let (validated, outcome) =
+        validate_query(spec, schema, &settings.blocked_schemas).map_err(|e| QueryCoreError {
             message: e.to_string(),
             warnings: vec![],
         })?;
 
-    let compiled = compile(spec, def.dialect).map_err(|e| QueryCoreError {
+    let compiled = compile_validated(&validated, def.dialect).map_err(|e| QueryCoreError {
         message: e.to_string(),
         warnings: outcome.warnings.clone(),
     })?;
@@ -155,28 +223,26 @@ pub async fn run_query_core<R: QueryRunner>(
 
     let explain_result = match runner.explain(&compiled).await {
         Ok(r) => r,
-        Err(_) => ExplainResult {
-            cost: None,
-            warning: Some("EXPLAIN failed".to_string()),
-        },
+        Err(error) => ExplainResult::Unavailable(format!("EXPLAIN failed: {error}")),
     };
 
-    let explain_failed = explain_result.warning.is_some();
-    let over_cost = explain_result
-        .cost
-        .is_some_and(|cost| cost > settings.explain_cost_threshold);
-
-    if let Some(cost) = explain_result.cost
-        && cost > settings.explain_cost_threshold
-    {
-        warnings.push(format!(
-            "Estimated query cost ({cost:.0}) exceeds threshold ({:.0}) — this may be slow",
-            settings.explain_cost_threshold
-        ));
-    }
-    if let Some(w) = explain_result.warning {
-        warnings.push(w);
-    }
+    let (explain_failed, over_cost) = match explain_result {
+        ExplainResult::Estimated(cost) => {
+            let threshold = settings.cost_threshold(def.dialect);
+            let over_cost = cost > threshold;
+            if over_cost {
+                warnings.push(format!(
+                    "Estimated query cost ({cost:.0}) exceeds threshold ({:.0}) — this may be slow",
+                    threshold
+                ));
+            }
+            (false, over_cost)
+        }
+        ExplainResult::Unavailable(reason) => {
+            warnings.push(reason);
+            (true, false)
+        }
+    };
 
     if (explain_failed || over_cost) && !force {
         let reason = if explain_failed && over_cost {
@@ -187,9 +253,7 @@ pub async fn run_query_core<R: QueryRunner>(
             "Estimated query cost exceeds threshold"
         };
         return Err(QueryCoreError {
-            message: format!(
-                "{COST_GUARD_PREFIX}{reason}. Confirm to run this query anyway."
-            ),
+            message: format!("{COST_GUARD_PREFIX}{reason}. Confirm to run this query anyway."),
             warnings,
         });
     }
@@ -202,7 +266,13 @@ pub async fn run_query_core<R: QueryRunner>(
             warnings: warnings.clone(),
         })?;
     let mut result = result;
-    result.truncated = result.row_count >= outcome.limit as usize;
+    let limit_truncated = result.rows.len() > outcome.limit as usize;
+    if limit_truncated {
+        result.rows.truncate(outcome.limit as usize);
+    }
+    result.row_count = result.rows.len();
+    result.truncated |= limit_truncated;
+    warnings.extend(result.warnings);
     result.warnings = warnings;
     Ok(result)
 }
@@ -223,7 +293,7 @@ pub async fn run_query(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Connection not found".to_string())?;
 
-    let password = secrets::password_for_connection(&connection_id)?;
+    let password = secrets::password_for_definition(&def)?;
 
     let settings = settings_store.load().map_err(|e| e.to_string())?;
 
@@ -235,16 +305,7 @@ pub async fn run_query(
 
     let force = force.unwrap_or(false);
 
-    let result = match run_query_core(
-        &adapter,
-        &def,
-        &mut spec,
-        &schema,
-        &settings,
-        force,
-    )
-    .await
-    {
+    let result = match run_query_core(&adapter, &def, &mut spec, &schema, &settings, force).await {
         Ok(r) => r,
         Err(core_err) => {
             let entry = HistoryEntry {
@@ -334,6 +395,7 @@ mod tests {
 
     fn sample_def() -> ConnectionDef {
         ConnectionDef {
+            version: crate::types::CURRENT_CONNECTION_VERSION,
             id: "c1".to_string(),
             name: "Test DB".to_string(),
             dialect: Dialect::Postgres,
@@ -341,6 +403,7 @@ mod tests {
             port: 5432,
             database: "demo".to_string(),
             username: "user".to_string(),
+            transport_security: crate::types::TransportSecurity::default(),
         }
     }
 
@@ -348,6 +411,7 @@ mod tests {
         Settings {
             blocked_schemas: vec![],
             explain_cost_threshold: 100_000.0,
+            explain_cost_thresholds: Default::default(),
             theme: "light".to_string(),
         }
     }
@@ -362,6 +426,8 @@ mod tests {
                     data_type: "int".to_string(),
                     nullable: false,
                     is_indexed: true,
+                    join_eligible: true,
+                    category: crate::introspect::ColumnCategory::Integer,
                 }],
                 indexes: vec![],
             }],
@@ -386,7 +452,7 @@ mod tests {
                 children: vec![],
             },
             limit: 50,
-            schema_version: 2,
+            schema_version: crate::query::ir::CURRENT_SCHEMA_VERSION,
             connector_overrides: BTreeMap::new(),
         }
     }
@@ -404,10 +470,7 @@ mod tests {
     impl MockRunner {
         fn new() -> Self {
             Self {
-                explain: Mutex::new(Some(ExplainResult {
-                    cost: None,
-                    warning: None,
-                })),
+                explain: Mutex::new(Some(ExplainResult::Estimated(0.0))),
                 execute: Mutex::new(Some(Ok(QueryResult {
                     columns: vec![],
                     rows: vec![],
@@ -435,10 +498,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .take()
-                .unwrap_or(ExplainResult {
-                    cost: None,
-                    warning: None,
-                }))
+                .unwrap_or(ExplainResult::Estimated(0.0)))
         }
 
         async fn execute_query(
@@ -465,8 +525,8 @@ mod tests {
     async fn successful_run_returns_result_with_row_count() {
         let runner = MockRunner::new();
         *runner.execute.lock().unwrap() = Some(Ok(QueryResult {
-            columns: vec!["id".to_string()],
-            rows: vec![vec![serde_json::json!(1)]],
+            columns: vec![crate::query::ir::ResultColumn::new("id", "int")],
+            rows: vec![vec![crate::query::ir::ResultCell::Integer(1)]],
             row_count: 1,
             truncated: false,
             warnings: vec![],
@@ -489,12 +549,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn truncated_is_set_when_row_count_meets_limit() {
+    async fn truncated_is_set_only_when_an_extra_row_is_returned() {
         let runner = MockRunner::new();
         *runner.execute.lock().unwrap() = Some(Ok(QueryResult {
-            columns: vec!["id".to_string()],
-            rows: vec![],
-            row_count: 50,
+            columns: vec![crate::query::ir::ResultColumn::new("id", "int")],
+            rows: (0..51)
+                .map(|value| vec![crate::query::ir::ResultCell::Integer(value)])
+                .collect(),
+            row_count: 51,
             truncated: false,
             warnings: vec![],
         }));
@@ -508,16 +570,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.truncated, "row_count >= limit should set truncated");
+        assert!(result.truncated, "the extra row should set truncated");
+        assert_eq!(result.row_count, 50);
     }
 
     #[tokio::test]
     async fn cost_above_threshold_blocks_without_force() {
         let runner = MockRunner::new();
-        runner.set_explain(ExplainResult {
-            cost: Some(250_000.0),
-            warning: None,
-        });
+        runner.set_explain(ExplainResult::Estimated(250_000.0));
         let mut spec = sample_spec();
         let def = sample_def();
         let schema = sample_schema();
@@ -534,10 +594,7 @@ mod tests {
     #[tokio::test]
     async fn cost_above_threshold_runs_with_force() {
         let runner = MockRunner::new();
-        runner.set_explain(ExplainResult {
-            cost: Some(250_000.0),
-            warning: None,
-        });
+        runner.set_explain(ExplainResult::Estimated(250_000.0));
         let mut spec = sample_spec();
         let def = sample_def();
         let schema = sample_schema();
@@ -559,10 +616,7 @@ mod tests {
     #[tokio::test]
     async fn cost_below_threshold_does_not_warn() {
         let runner = MockRunner::new();
-        runner.set_explain(ExplainResult {
-            cost: Some(50_000.0),
-            warning: None,
-        });
+        runner.set_explain(ExplainResult::Estimated(50_000.0));
         let mut spec = sample_spec();
         let def = sample_def();
         let schema = sample_schema();
@@ -583,10 +637,7 @@ mod tests {
     #[tokio::test]
     async fn explain_warning_blocks_without_force() {
         let runner = MockRunner::new();
-        runner.set_explain(ExplainResult {
-            cost: None,
-            warning: Some("EXPLAIN failed".to_string()),
-        });
+        runner.set_explain(ExplainResult::Unavailable("EXPLAIN failed".to_string()));
         let mut spec = sample_spec();
         let def = sample_def();
         let schema = sample_schema();
@@ -604,10 +655,7 @@ mod tests {
     #[tokio::test]
     async fn explain_warning_runs_with_force() {
         let runner = MockRunner::new();
-        runner.set_explain(ExplainResult {
-            cost: None,
-            warning: Some("EXPLAIN failed".to_string()),
-        });
+        runner.set_explain(ExplainResult::Unavailable("EXPLAIN failed".to_string()));
         let mut spec = sample_spec();
         let def = sample_def();
         let schema = sample_schema();
@@ -645,10 +693,7 @@ mod tests {
         // query was risky when it failed.
         let runner = MockRunner::new();
         *runner.execute.lock().unwrap() = Some(Err(anyhow::anyhow!("connection lost")));
-        runner.set_explain(ExplainResult {
-            cost: Some(250_000.0),
-            warning: Some("EXPLAIN failed".to_string()),
-        });
+        runner.set_explain(ExplainResult::Unavailable("EXPLAIN failed".to_string()));
 
         let mut spec = sample_spec();
         let def = sample_def();
@@ -660,13 +705,6 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.message, "connection lost");
-        assert!(
-            err.warnings
-                .iter()
-                .any(|w| w.contains("Estimated query cost")),
-            "cost-threshold warning should be preserved on execute failure, got {:?}",
-            err.warnings
-        );
         assert!(
             err.warnings.contains(&"EXPLAIN failed".to_string()),
             "EXPLAIN warning should be preserved on execute failure, got {:?}",
@@ -733,7 +771,8 @@ mod tests {
     /// the cost estimate reflect the raw user SQL (e.g. `LIMIT 0` or
     /// `LIMIT 9999`) instead of the SQL that actually executes. EXPLAIN now
     /// runs inside `run_query_core`, after validate, so the compiled SQL
-    /// handed to `explain` must carry the clamped limit.
+    /// handed to `explain` must carry the clamped limit plus the one-row
+    /// sentinel used for exact truncation detection.
     #[tokio::test]
     async fn explain_runs_against_post_validate_compiled_query() {
         let runner = MockRunner::new();
@@ -754,8 +793,8 @@ mod tests {
             .clone()
             .expect("EXPLAIN was not called");
         assert!(
-            explain_sql.ends_with("LIMIT 100"),
-            "EXPLAIN should run against the validate-clamped query (LIMIT 100), got: {explain_sql}"
+            explain_sql.ends_with("LIMIT 101"),
+            "EXPLAIN should run against the validate-clamped query plus sentinel (LIMIT 101), got: {explain_sql}"
         );
         // The mutated spec carries the clamped limit too.
         assert_eq!(spec.limit, 100);
@@ -774,8 +813,8 @@ mod tests {
             .clone()
             .expect("EXPLAIN was not called");
         assert!(
-            explain_sql2.ends_with("LIMIT 1000"),
-            "EXPLAIN should run against the validate-capped query (LIMIT 1000), got: {explain_sql2}"
+            explain_sql2.ends_with("LIMIT 1001"),
+            "EXPLAIN should run against the validate-capped query plus sentinel (LIMIT 1001), got: {explain_sql2}"
         );
     }
 

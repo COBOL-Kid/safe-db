@@ -49,7 +49,7 @@ describe('ir', () => {
 	it('exports limit constants used by query store', () => {
 		expect(DEFAULT_LIMIT).toBe(100);
 		expect(MAX_LIMIT).toBe(1000);
-		expect(CURRENT_SCHEMA_VERSION).toBe(2);
+			expect(CURRENT_SCHEMA_VERSION).toBe(3);
 	});
 
 	describe('valueKindForOp', () => {
@@ -106,14 +106,14 @@ describe('ir', () => {
 		});
 
 		it.each([
-			['int', 'Numeric'],
-			['INTEGER', 'Numeric'],
-			['bigint', 'Numeric'],
-			['numeric(10,2)', 'Numeric'],
-			['decimal(18,4)', 'Numeric'],
-			['real', 'Numeric'],
-			['double precision', 'Numeric'],
-			['money', 'Numeric']
+			['int', 'Integer'],
+			['INTEGER', 'Integer'],
+			['bigint', 'Integer'],
+			['numeric(10,2)', 'Decimal'],
+			['decimal(18,4)', 'Decimal'],
+			['real', 'Decimal'],
+			['double precision', 'Decimal'],
+			['money', 'Decimal']
 		])('classifies %s as %s', (dt, expected) => {
 			expect(classifyColumn(dt)).toBe(expected);
 		});
@@ -131,13 +131,14 @@ describe('ir', () => {
 
 		it('returns Other for unknown types', () => {
 			expect(classifyColumn('uuid')).toBe('Other');
-			expect(classifyColumn('jsonb')).toBe('Other');
+			expect(classifyColumn('jsonb')).toBe('Json');
 		});
 	});
 
 	describe('literalKindForColumn', () => {
-		it('maps to Int for numeric, Bool, Date, DateTime, Text for everything else', () => {
+		it('maps integer and decimal columns to distinct literal kinds', () => {
 			expect(literalKindForColumn('int')).toBe('Int');
+			expect(literalKindForColumn('numeric(10,2)')).toBe('Decimal');
 			expect(literalKindForColumn('bool')).toBe('Bool');
 			expect(literalKindForColumn('date')).toBe('Date');
 			expect(literalKindForColumn('timestamp')).toBe('DateTime');
@@ -173,6 +174,7 @@ describe('ir', () => {
 	describe('factory helpers', () => {
 		it('makeLiteral uses the column data type', () => {
 			expect(makeLiteral('int', '42')).toEqual({ kind: 'Int', text: '42' });
+			expect(makeLiteral('numeric(10,2)', '42.25')).toEqual({ kind: 'Decimal', text: '42.25' });
 			expect(makeLiteral('bool', 'true')).toEqual({ kind: 'Bool', text: 'true' });
 			expect(makeLiteral('varchar', 'hi')).toEqual({ kind: 'Text', text: 'hi' });
 		});

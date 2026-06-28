@@ -1,6 +1,15 @@
 export type Dialect = 'Postgres' | 'MySql' | 'Mssql' | 'Oracle';
+export type TransportSecurityMode = 'VerifyIdentity' | 'VerifyCa' | 'EncryptOnly' | 'Disabled';
+
+export interface TransportSecurity {
+	mode: TransportSecurityMode;
+	ca_pem?: string | null;
+	oracle_wallet_location?: string | null;
+	insecure_acknowledged: boolean;
+}
 
 export interface ConnectionDef {
+	version: number;
 	id: string;
 	name: string;
 	dialect: Dialect;
@@ -8,6 +17,7 @@ export interface ConnectionDef {
 	port: number;
 	database: string;
 	username: string;
+	transport_security: TransportSecurity;
 }
 
 export interface ColumnInfo {
@@ -15,11 +25,16 @@ export interface ColumnInfo {
 	data_type: string;
 	nullable: boolean;
 	is_indexed: boolean;
+	join_eligible?: boolean;
+	category?: ColumnCategory;
 }
 
 export interface IndexInfo {
 	name: string;
 	columns: string[];
+	included_columns?: string[];
+	kind?: string;
+	supports_equality?: boolean;
 	is_unique: boolean;
 	is_primary: boolean;
 }
@@ -51,7 +66,7 @@ export function qualifiedName(table: TableInfo): string {
 	return table.schema ? `${table.schema}.${table.name}` : table.name;
 }
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export type FilterOp =
 	| 'Eq'
@@ -73,7 +88,7 @@ export type FilterOp =
 
 export type GroupConnector = 'And' | 'Or';
 
-export type LiteralKind = 'Text' | 'Int' | 'Float' | 'Bool' | 'Date' | 'DateTime';
+export type LiteralKind = 'Text' | 'Int' | 'Decimal' | 'Float' | 'Bool' | 'Date' | 'DateTime';
 
 export interface TableRef {
 	schema: string;
@@ -145,12 +160,25 @@ export interface QuerySpec {
 }
 
 export interface QueryResult {
-	columns: string[];
-	rows: JsonValue[][];
+	columns: (string | ResultColumn)[];
+	rows: (JsonValue | ResultCell)[][];
 	row_count: number;
 	truncated: boolean;
 	warnings: string[];
 }
+
+export interface ResultColumn {
+	name: string;
+	data_type: string;
+}
+
+export type ResultCell =
+	| { kind: 'Null' }
+	| { kind: 'Bool'; value: boolean }
+	| { kind: 'Integer'; value: number }
+	| { kind: 'Float'; value: number }
+	| { kind: 'Text'; value: { text: string; truncated: boolean } }
+	| { kind: 'Binary'; value: { base64: string; truncated: boolean } };
 
 export type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
 
@@ -196,24 +224,42 @@ export const FILTER_OPS: { value: FilterOp; label: string }[] = [
 	{ value: 'IsNotEmpty', label: 'is not empty' }
 ];
 
-export type ColumnCategory = 'Text' | 'Numeric' | 'Bool' | 'Date' | 'DateTime' | 'Other';
+export type ColumnCategory =
+	| 'Text'
+	| 'Integer'
+	| 'Decimal'
+	| 'Bool'
+	| 'Date'
+	| 'DateTime'
+	| 'Binary'
+	| 'Json'
+	| 'Other';
 
 export function classifyColumn(dataType: string): ColumnCategory {
 	const dt = dataType.toLowerCase();
 	if (dt === 'bool' || dt === 'boolean' || dt === 'bit') return 'Bool';
 	if (dt === 'date') return 'Date';
-	if (dt.startsWith('timestamp') || dt.startsWith('datetime') || dt === 'datetime2' || dt === 'smalldatetime')
+	if (dt.startsWith('timestamp') || dt.startsWith('datetime') || dt === 'datetime2' || dt === 'smalldatetime' || dt === 'time')
 		return 'DateTime';
 	if (
 		[
 			'int', 'integer', 'smallint', 'bigint', 'mediumint', 'tinyint',
-			'serial', 'bigserial', 'decimal', 'numeric', 'real', 'double',
+			'serial', 'bigserial'
+		].includes(dt)
+	)
+		return 'Integer';
+	if (
+		[
+			'decimal', 'numeric', 'number', 'real', 'double',
 			'float', 'float4', 'float8', 'money', 'smallmoney', 'double precision'
 		].includes(dt) ||
 		dt.startsWith('decimal') ||
-		dt.startsWith('numeric')
+		dt.startsWith('numeric') ||
+		dt.startsWith('number')
 	)
-		return 'Numeric';
+		return 'Decimal';
+	if (dt.includes('binary') || dt.includes('blob') || dt === 'bytea' || dt === 'raw') return 'Binary';
+	if (dt === 'json' || dt === 'jsonb') return 'Json';
 	if (
 		[
 			'text', 'varchar', 'char', 'character', 'character varying', 'string',
@@ -231,8 +277,10 @@ export function classifyColumn(dataType: string): ColumnCategory {
 
 export function literalKindForColumn(dataType: string): LiteralKind {
 	switch (classifyColumn(dataType)) {
-		case 'Numeric':
+		case 'Integer':
 			return 'Int';
+		case 'Decimal':
+			return 'Decimal';
 		case 'Bool':
 			return 'Bool';
 		case 'Date':
@@ -248,7 +296,8 @@ export function opsForColumn(dataType: string): FilterOp[] {
 	switch (classifyColumn(dataType)) {
 		case 'Text':
 			return ['Eq', 'Ne', 'Like', 'NotLike', 'Ilike', 'In', 'NotIn', 'IsNull', 'IsNotNull', 'IsEmpty', 'IsNotEmpty'];
-		case 'Numeric':
+		case 'Integer':
+		case 'Decimal':
 			return ['Eq', 'Ne', 'Gt', 'Gte', 'Lt', 'Lte', 'In', 'NotIn', 'Between', 'IsNull', 'IsNotNull'];
 		case 'Bool':
 			return ['Eq', 'Ne', 'IsNull', 'IsNotNull'];
@@ -323,5 +372,6 @@ type Option<T> = T | null;
 export interface Settings {
 	blocked_schemas: string[];
 	explain_cost_threshold: number;
+	explain_cost_thresholds?: Partial<Record<Dialect, number>>;
 	theme: string;
 }

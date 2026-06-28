@@ -29,9 +29,7 @@
 	}
 
 	async function loadSaved(sq: SavedQuery) {
-		connections.setActive(sq.connection_id);
-		schema.clear();
-		await schema.load(sq.connection_id);
+		if (!(await connections.activate(sq.connection_id))) return;
 
 		const hydration = hydrateQueryFromSpec(sq.spec, schema.tables, query);
 		query.hydrationWarning = formatHydrationWarning(hydration);

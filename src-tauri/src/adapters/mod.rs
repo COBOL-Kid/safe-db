@@ -11,10 +11,13 @@ use crate::query::ir::{CompiledQuery, QueryResult};
 use crate::types::{ConnectionDef, Dialect};
 
 pub const DEFAULT_TIMEOUT_MS: u32 = 10_000;
+pub const CONNECT_TIMEOUT_MS: u64 = 10_000;
+pub const INTROSPECTION_TIMEOUT_MS: u64 = 30_000;
 
-pub struct ExplainResult {
-    pub cost: Option<f64>,
-    pub warning: Option<String>,
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExplainResult {
+    Estimated(f64),
+    Unavailable(String),
 }
 
 #[cfg(feature = "oracle")]
@@ -30,36 +33,39 @@ pub enum Adapter {
 
 impl Adapter {
     pub async fn connect(def: &ConnectionDef, password: &str) -> Result<Self> {
-        match def.dialect {
-            Dialect::Postgres => {
-                let pool = pg::connect(&def.host, def.port, &def.database, &def.username, password)
-                    .await?;
-                Ok(Adapter::Postgres(pool))
-            }
-            Dialect::MySql => {
-                let pool =
-                    mysql::connect(&def.host, def.port, &def.database, &def.username, password)
-                        .await?;
-                Ok(Adapter::MySql(pool))
-            }
-            Dialect::Mssql => {
-                let client =
-                    mssql::connect(&def.host, def.port, &def.database, &def.username, password)
-                        .await?;
-                Ok(Adapter::Mssql(Box::new(tokio::sync::Mutex::new(client))))
-            }
-            #[cfg(feature = "oracle")]
-            Dialect::Oracle => {
-                let conn =
-                    oracle::connect(&def.host, def.port, &def.database, &def.username, password)?;
-                Ok(Adapter::Oracle(std::sync::Mutex::new(conn)))
-            }
-            #[cfg(not(feature = "oracle"))]
-            Dialect::Oracle => Err(anyhow::anyhow!(
-                "Oracle support is not enabled. Build with: cargo build --features oracle \
+        def.validate().map_err(anyhow::Error::msg)?;
+        let connect = async {
+            match def.dialect {
+                Dialect::Postgres => {
+                    let pool = pg::connect(def, password).await?;
+                    Ok(Adapter::Postgres(pool))
+                }
+                Dialect::MySql => {
+                    let pool = mysql::connect(def, password).await?;
+                    Ok(Adapter::MySql(pool))
+                }
+                Dialect::Mssql => {
+                    let client = mssql::connect(def, password).await?;
+                    Ok(Adapter::Mssql(Box::new(tokio::sync::Mutex::new(client))))
+                }
+                #[cfg(feature = "oracle")]
+                Dialect::Oracle => {
+                    let conn = oracle::connect(def, password)?;
+                    Ok(Adapter::Oracle(std::sync::Mutex::new(conn)))
+                }
+                #[cfg(not(feature = "oracle"))]
+                Dialect::Oracle => Err(anyhow::anyhow!(
+                    "Oracle support is not enabled. Build with: cargo build --features oracle \
                      (requires Oracle Instant Client SDK installed)"
-            )),
-        }
+                )),
+            }
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_millis(CONNECT_TIMEOUT_MS),
+            connect,
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("Connection timed out after {CONNECT_TIMEOUT_MS}ms"))?
     }
 
     pub async fn test(&self) -> Result<String> {
@@ -79,19 +85,27 @@ impl Adapter {
     }
 
     pub async fn introspect(&self) -> Result<Schema> {
-        match self {
-            Adapter::Postgres(pool) => pg::introspect(pool).await,
-            Adapter::MySql(pool) => mysql::introspect(pool).await,
-            Adapter::Mssql(client) => {
-                let mut client = client.lock().await;
-                mssql::introspect(&mut client).await
+        let introspect = async {
+            match self {
+                Adapter::Postgres(pool) => pg::introspect(pool).await,
+                Adapter::MySql(pool) => mysql::introspect(pool).await,
+                Adapter::Mssql(client) => {
+                    let mut client = client.lock().await;
+                    mssql::introspect(&mut client).await
+                }
+                #[cfg(feature = "oracle")]
+                Adapter::Oracle(conn) => {
+                    let conn = conn.lock().map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    oracle::introspect(&conn)
+                }
             }
-            #[cfg(feature = "oracle")]
-            Adapter::Oracle(conn) => {
-                let conn = conn.lock().map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                oracle::introspect(&conn)
-            }
-        }
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_millis(INTROSPECTION_TIMEOUT_MS),
+            introspect,
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("Schema introspection timed out"))?
     }
 
     pub async fn execute_query(
@@ -115,18 +129,26 @@ impl Adapter {
     }
 
     pub async fn explain(&self, compiled: &CompiledQuery) -> Result<ExplainResult> {
-        match self {
-            Adapter::Postgres(pool) => pg::explain(pool, compiled).await,
-            Adapter::MySql(pool) => mysql::explain(pool, compiled).await,
-            Adapter::Mssql(client) => {
-                let mut client = client.lock().await;
-                mssql::explain(&mut client, compiled).await
+        let explain = async {
+            match self {
+                Adapter::Postgres(pool) => pg::explain(pool, compiled).await,
+                Adapter::MySql(pool) => mysql::explain(pool, compiled).await,
+                Adapter::Mssql(client) => {
+                    let mut client = client.lock().await;
+                    mssql::explain(&mut client, compiled).await
+                }
+                #[cfg(feature = "oracle")]
+                Adapter::Oracle(conn) => {
+                    let conn = conn.lock().map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    oracle::explain(&conn, compiled)
+                }
             }
-            #[cfg(feature = "oracle")]
-            Adapter::Oracle(conn) => {
-                let conn = conn.lock().map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                oracle::explain(&conn, compiled)
-            }
-        }
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS as u64),
+            explain,
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("EXPLAIN timed out after {DEFAULT_TIMEOUT_MS}ms"))?
     }
 }

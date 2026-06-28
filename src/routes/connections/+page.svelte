@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { connections } from '$lib/stores/connections.svelte';
-	import { schema } from '$lib/stores/schema.svelte';
 	import { browser } from '$app/environment';
 	import ConnectionForm from '$lib/components/ConnectionForm.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -37,10 +36,7 @@
 	}
 
 	async function handleOpen(id: string) {
-		connections.setActive(id);
-		schema.clear();
-		await schema.load(id);
-		goto('/builder');
+		if (await connections.activate(id)) goto('/builder');
 	}
 
 	$effect(() => {

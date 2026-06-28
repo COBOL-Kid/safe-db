@@ -3,6 +3,7 @@ use keyring_core::api::{CredentialApi, CredentialStoreApi};
 use keyring_core::{Entry, Error};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 const SERVICE_NAME: &str = "safe-db";
@@ -24,7 +25,14 @@ enum BackendMode {
 }
 
 static ACTIVE_BACKEND: OnceLock<BackendMode> = OnceLock::new();
-static SESSION: OnceLock<Mutex<HashMap<String, Zeroizing<String>>>> = OnceLock::new();
+const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+struct SessionCredential {
+    password: Zeroizing<String>,
+    last_used: Instant,
+}
+
+static SESSION: OnceLock<Mutex<HashMap<String, SessionCredential>>> = OnceLock::new();
 
 #[cfg(any(test, feature = "test-helpers"))]
 static STORE_READ_COUNT: OnceLock<Mutex<usize>> = OnceLock::new();
@@ -103,26 +111,41 @@ fn parse_requested_backend_from(raw: Option<&str>) -> RequestedBackend {
     }
 }
 
-fn session() -> &'static Mutex<HashMap<String, Zeroizing<String>>> {
+fn session() -> &'static Mutex<HashMap<String, SessionCredential>> {
     SESSION.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn session_get(connection_id: &str) -> Option<String> {
-    session()
-        .lock()
-        .ok()
-        .and_then(|guard| guard.get(connection_id).map(|v| v.to_string()))
+    let mut guard = session().lock().ok()?;
+    let expired = guard
+        .get(connection_id)
+        .is_some_and(|value| value.last_used.elapsed() >= SESSION_IDLE_TIMEOUT);
+    if expired {
+        guard.remove(connection_id);
+        return None;
+    }
+    let value = guard.get_mut(connection_id)?;
+    value.last_used = Instant::now();
+    Some(value.password.to_string())
 }
 
 fn session_put(connection_id: &str, password: Zeroizing<String>) {
     if let Ok(mut guard) = session().lock() {
-        guard.insert(connection_id.to_string(), password);
+        guard.insert(
+            connection_id.to_string(),
+            SessionCredential {
+                password,
+                last_used: Instant::now(),
+            },
+        );
     }
 }
 
 fn session_invalidate(connection_id: &str) {
     if let Ok(mut guard) = session().lock() {
         guard.remove(connection_id);
+        let prefix = format!("{connection_id}:");
+        guard.retain(|key, _| !key.starts_with(&prefix));
     }
 }
 
@@ -443,6 +466,55 @@ pub fn password_for_connection(connection_id: &str) -> Result<String, String> {
         ),
         Err(e) => Err(format_credential_error(e)),
     }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct BoundCredential {
+    version: u32,
+    fingerprint: String,
+    password: String,
+}
+
+pub fn password_for_definition(def: &crate::types::ConnectionDef) -> Result<String, String> {
+    let cache_key = format!("{}:{}", def.id, def.credential_fingerprint());
+    if let Some(cached) = session_get(&cache_key) {
+        return Ok(cached);
+    }
+    let raw = fetch_from_store(&def.id).map_err(format_credential_error)?;
+    let raw = raw.ok_or_else(|| {
+        "Password not found for this connection. Open Connections, enter the password, and save the connection again."
+            .to_string()
+    })?;
+    let record: BoundCredential = serde_json::from_str(&raw).map_err(|_| {
+        "This credential predates endpoint binding. Re-enter the password and save the connection before use."
+            .to_string()
+    })?;
+    if record.version != 1 || record.fingerprint != def.credential_fingerprint() {
+        return Err(
+            "Stored credentials do not match this connection endpoint or transport configuration. Re-enter the password and save the connection."
+                .to_string(),
+        );
+    }
+    session_put(&cache_key, Zeroizing::new(record.password.clone()));
+    Ok(record.password)
+}
+
+pub fn save_password_for_definition(
+    def: &crate::types::ConnectionDef,
+    password: &str,
+) -> Result<()> {
+    let record = BoundCredential {
+        version: 1,
+        fingerprint: def.credential_fingerprint(),
+        password: password.to_string(),
+    };
+    let encoded = serde_json::to_string(&record)?;
+    write_to_default_store(&def.id, &encoded)
+        .map_err(|e| anyhow::anyhow!(format_save_credential_error(e)))?;
+    session_invalidate(&def.id);
+    let cache_key = format!("{}:{}", def.id, def.credential_fingerprint());
+    session_put(&cache_key, Zeroizing::new(password.to_string()));
+    Ok(())
 }
 
 pub fn save_password(connection_id: &str, password: &str) -> Result<()> {

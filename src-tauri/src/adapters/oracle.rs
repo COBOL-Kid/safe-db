@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use crate::adapters::ExplainResult;
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
-use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
+use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
+use crate::types::{ConnectionDef, TransportSecurityMode};
 
 const BLOCKED_OWNERS: &[&str] = &[
     "SYS",
@@ -55,21 +56,30 @@ fn validate_connect_field(field: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn connect(
-    host: &str,
-    port: u16,
-    database: &str,
-    username: &str,
-    password: &str,
-) -> Result<Connection> {
-    validate_connect_field(host, "Host")?;
-    validate_connect_field(database, "Database")?;
-    if port == 0 {
+pub fn connect(def: &ConnectionDef, password: &str) -> Result<Connection> {
+    validate_connect_field(&def.host, "Host")?;
+    validate_connect_field(&def.database, "Database")?;
+    if def.port == 0 {
         anyhow::bail!("Port must be between 1 and 65535");
     }
 
-    let conn_str = format!("//{host}:{port}/{database}");
-    let conn = Connection::connect(username, password, conn_str)?;
+    let conn_str = match def.transport_security.mode {
+        TransportSecurityMode::Disabled => {
+            format!("//{}:{}/{}", def.host, def.port, def.database)
+        }
+        _ => {
+            let wallet = def
+                .transport_security
+                .oracle_wallet_location
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("Oracle TCPS requires a wallet location"))?;
+            format!(
+                "tcps://{}:{}/{}?wallet_location={wallet}",
+                def.host, def.port, def.database
+            )
+        }
+    };
+    let conn = Connection::connect(&def.username, password, conn_str)?;
     Ok(conn)
 }
 
@@ -143,6 +153,7 @@ fn introspect_columns(conn: &Connection, schema: &str, table: &str) -> Result<Ve
             data_type,
             nullable: nullable_char == "Y",
             is_indexed: false,
+            ..ColumnInfo::default()
         });
     }
     Ok(columns)
@@ -172,8 +183,11 @@ fn introspect_indexes(conn: &Connection, schema: &str, table: &str) -> Result<Ve
         let entry = index_map.entry(index_name.clone()).or_insert(IndexInfo {
             name: index_name,
             columns: Vec::new(),
+            kind: "NORMAL".to_string(),
+            supports_equality: true,
             is_unique: is_unique == 1,
             is_primary: is_primary == 1,
+            ..IndexInfo::default()
         });
         entry.columns.push(column_name);
     }
@@ -181,17 +195,17 @@ fn introspect_indexes(conn: &Connection, schema: &str, table: &str) -> Result<Ve
     Ok(index_map.into_values().collect())
 }
 
-fn bind_statement(
-    conn: &Connection,
-    compiled: &CompiledQuery,
-) -> Result<oracle::Statement<'_>> {
+fn bind_statement(conn: &Connection, compiled: &CompiledQuery) -> Result<oracle::Statement> {
     let mut stmt = conn.statement(&compiled.sql).build()?;
     for (i, param) in compiled.params.iter().enumerate() {
         match param {
             BindValue::Text(s) => stmt.bind(i + 1, &s.as_str())?,
             BindValue::Int(n) => stmt.bind(i + 1, n)?,
+            BindValue::Decimal(n) => stmt.bind(i + 1, &n.to_string().as_str())?,
             BindValue::Float(f) => stmt.bind(i + 1, f)?,
             BindValue::Bool(b) => stmt.bind(i + 1, b)?,
+            BindValue::Date(d) => stmt.bind(i + 1, &d.to_string().as_str())?,
+            BindValue::DateTime(dt) => stmt.bind(i + 1, &dt.to_string().as_str())?,
             BindValue::Null => {
                 let null_val: Option<i64> = None;
                 stmt.bind(i + 1, &null_val)?;
@@ -212,10 +226,10 @@ pub fn execute_query(
     let result = (|| {
         conn.execute("SET TRANSACTION READ ONLY", &[])?;
 
-        let stmt = bind_statement(conn, compiled)?;
+        let mut stmt = bind_statement(conn, compiled)?;
         let rows = stmt.query(&[])?;
 
-        let mut column_names: Vec<String> = Vec::new();
+        let mut columns: Vec<ResultColumn> = Vec::new();
         let mut result_rows = Vec::new();
 
         let mut first = true;
@@ -223,25 +237,20 @@ pub fn execute_query(
             let row = row_result?;
             if first {
                 first = false;
-                column_names = row
+                columns = row
                     .column_info()
                     .iter()
-                    .map(|c| c.name().to_string())
+                    .map(|c| ResultColumn::new(c.name(), c.oracle_type().to_string()))
                     .collect();
             }
-            let row_data = decode_oracle_row(&row, &column_names);
+            let row_data = decode_oracle_row(&row, columns.len());
             result_rows.push(row_data);
         }
 
         let row_count = result_rows.len();
 
-        Ok(QueryResult {
-            columns: column_names,
-            rows: result_rows,
-            row_count,
-            truncated: false,
-            warnings: Vec::new(),
-        })
+        let _ = row_count;
+        Ok(QueryResult::from_rows(columns, result_rows))
     })();
 
     conn.set_call_timeout(prev_timeout)?;
@@ -249,14 +258,21 @@ pub fn execute_query(
 }
 
 pub fn explain(conn: &Connection, compiled: &CompiledQuery) -> Result<ExplainResult> {
-    let explain_sql = format!("EXPLAIN PLAN FOR {}", compiled.sql);
+    let statement_id = format!("safedb_{}", uuid::Uuid::new_v4().simple());
+    let explain_sql = format!(
+        "EXPLAIN PLAN SET STATEMENT_ID = '{}' FOR {}",
+        statement_id, compiled.sql
+    );
     let mut stmt = conn.statement(&explain_sql).build()?;
     for (i, param) in compiled.params.iter().enumerate() {
         match param {
             BindValue::Text(s) => stmt.bind(i + 1, &s.as_str())?,
             BindValue::Int(n) => stmt.bind(i + 1, n)?,
+            BindValue::Decimal(n) => stmt.bind(i + 1, &n.to_string().as_str())?,
             BindValue::Float(f) => stmt.bind(i + 1, f)?,
             BindValue::Bool(b) => stmt.bind(i + 1, b)?,
+            BindValue::Date(d) => stmt.bind(i + 1, &d.to_string().as_str())?,
+            BindValue::DateTime(dt) => stmt.bind(i + 1, &dt.to_string().as_str())?,
             BindValue::Null => {
                 let null_val: Option<i64> = None;
                 stmt.bind(i + 1, &null_val)?;
@@ -266,54 +282,60 @@ pub fn explain(conn: &Connection, compiled: &CompiledQuery) -> Result<ExplainRes
     stmt.execute(&[])?;
 
     let cost_row = conn.query_row(
-        "SELECT MAX(cost) FROM plan_table WHERE id = 0",
-        &[],
+        "SELECT MAX(cost) FROM plan_table WHERE statement_id = :1 AND id = 0",
+        &[&statement_id],
     )?;
     let cost: Option<i64> = cost_row.get(0)?;
     let cost = cost.map(|c| c as f64);
+    if let Err(error) = conn.execute(
+        "DELETE FROM plan_table WHERE statement_id = :1",
+        &[&statement_id],
+    ) {
+        log::warn!("failed to clean Oracle PLAN_TABLE rows: {error}");
+    }
 
-    Ok(ExplainResult {
-        cost,
-        warning: if cost.is_none() {
-            Some("Could not parse EXPLAIN cost from PLAN_TABLE".to_string())
-        } else {
-            None
-        },
+    Ok(match cost {
+        Some(cost) => ExplainResult::Estimated(cost),
+        None => {
+            ExplainResult::Unavailable("Could not parse EXPLAIN cost from PLAN_TABLE".to_string())
+        }
     })
 }
 
-fn decode_oracle_row(row: &OracleRow, column_names: &[String]) -> Vec<serde_json::Value> {
+fn decode_oracle_row(row: &OracleRow, column_count: usize) -> Vec<ResultCell> {
     row.sql_values()
         .iter()
-        .take(column_names.len())
+        .take(column_count)
         .map(sql_value_to_json)
         .collect()
 }
 
-fn sql_value_to_json(val: &oracle::SqlValue) -> serde_json::Value {
-    use serde_json::Value;
-
+fn sql_value_to_json(val: &oracle::SqlValue) -> ResultCell {
     if val.is_null().unwrap_or(true) {
-        return Value::Null;
+        return ResultCell::Null;
     }
 
     match val.as_inner_value() {
-        Ok(InnerValue::Int64(n)) => Value::from(n),
-        Ok(InnerValue::UInt64(n)) => Value::from(n),
-        Ok(InnerValue::Float(f)) => Value::from(f as f64),
-        Ok(InnerValue::Double(f)) => Value::from(f),
-        Ok(InnerValue::Boolean(b)) => Value::from(b),
+        Ok(InnerValue::Int64(n)) => ResultCell::Integer(n),
+        Ok(InnerValue::UInt64(n)) if n <= i64::MAX as u64 => ResultCell::Integer(n as i64),
+        Ok(InnerValue::UInt64(n)) => ResultCell::text(n.to_string()),
+        Ok(InnerValue::Float(f)) => ResultCell::Float(f as f64),
+        Ok(InnerValue::Double(f)) => ResultCell::Float(f),
+        Ok(InnerValue::Boolean(b)) => ResultCell::Bool(b),
         Ok(InnerValue::Number(s)) => {
             if let Ok(n) = s.parse::<i64>() {
-                Value::from(n)
+                ResultCell::Integer(n)
             } else if let Ok(f) = s.parse::<f64>() {
-                Value::from(f)
+                ResultCell::Float(f)
             } else {
-                Value::String(s.to_string())
+                ResultCell::text(s.to_string())
             }
         }
-        Ok(InnerValue::Char(bytes)) => Value::String(String::from_utf8_lossy(bytes).into_owned()),
-        _ => Value::Null,
+        Ok(InnerValue::Char(bytes)) => {
+            ResultCell::text(String::from_utf8_lossy(bytes).into_owned())
+        }
+        Ok(InnerValue::Raw(bytes)) => ResultCell::binary(bytes),
+        _ => ResultCell::text(val.to_string()),
     }
 }
 

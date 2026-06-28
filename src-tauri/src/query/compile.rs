@@ -1,16 +1,33 @@
 use std::collections::BTreeMap;
 
+use super::validate::ValidatedQuery;
 use crate::query::ir::{
     BindValue, CompiledQuery, FilterGroup, FilterNode, FilterOp, FilterSpec, FilterValue,
     GroupConnector, QuerySpec,
 };
 use crate::types::Dialect;
 
+#[cfg(any(test, feature = "test-helpers"))]
 pub fn compile(spec: &QuerySpec, dialect: Dialect) -> Result<CompiledQuery, String> {
+    compile_spec(spec, dialect, None)
+}
+
+pub fn compile_validated(
+    validated: &ValidatedQuery,
+    dialect: Dialect,
+) -> Result<CompiledQuery, String> {
+    compile_spec(validated.spec(), dialect, Some(validated.columns()))
+}
+
+fn compile_spec(
+    spec: &QuerySpec,
+    dialect: Dialect,
+    validated_columns: Option<&[super::validate::ValidatedColumn]>,
+) -> Result<CompiledQuery, String> {
     let mut params: Vec<BindValue> = Vec::new();
     let mut param_idx = 1u32;
 
-    let select_clause = build_select_clause(spec, dialect);
+    let select_clause = build_select_clause(spec, dialect, validated_columns);
     let from_clause = build_from_clause(spec, dialect);
     let join_clause = build_join_clause(spec, dialect);
     let where_clause = build_where_root(
@@ -24,8 +41,10 @@ pub fn compile(spec: &QuerySpec, dialect: Dialect) -> Result<CompiledQuery, Stri
     let mut sql = String::new();
     sql.push_str("SELECT ");
 
+    let fetch_limit = spec.limit.saturating_add(1);
+
     if dialect == Dialect::Mssql {
-        sql.push_str(&format!("TOP {} ", spec.limit));
+        sql.push_str(&format!("TOP {} ", fetch_limit));
     }
 
     sql.push_str(&select_clause);
@@ -46,12 +65,12 @@ pub fn compile(spec: &QuerySpec, dialect: Dialect) -> Result<CompiledQuery, Stri
         Dialect::Mssql => {}
         Dialect::Oracle => {
             sql.push_str("\nFETCH FIRST ");
-            sql.push_str(&spec.limit.to_string());
+            sql.push_str(&fetch_limit.to_string());
             sql.push_str(" ROWS ONLY");
         }
         _ => {
             sql.push_str("\nLIMIT ");
-            sql.push_str(&spec.limit.to_string());
+            sql.push_str(&fetch_limit.to_string());
         }
     }
 
@@ -76,7 +95,25 @@ fn placeholder(idx: u32, dialect: Dialect) -> String {
     }
 }
 
-fn build_select_clause(spec: &QuerySpec, dialect: Dialect) -> String {
+fn build_select_clause(
+    spec: &QuerySpec,
+    dialect: Dialect,
+    validated_columns: Option<&[super::validate::ValidatedColumn]>,
+) -> String {
+    if let Some(columns) = validated_columns {
+        return columns
+            .iter()
+            .map(|column| {
+                format!(
+                    "{}.{} AS {}",
+                    quote(&column.table_alias, dialect),
+                    quote(&column.column, dialect),
+                    quote(&column.result_alias, dialect)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
     if spec.columns.is_empty() {
         return "*".to_string();
     }
@@ -138,7 +175,7 @@ fn build_join_clause(spec: &QuerySpec, dialect: Dialect) -> String {
         }
 
         match found {
-            Some((idx, alias, join, alias_is_left)) => {
+            Some((idx, alias, _join, _alias_is_left)) => {
                 remaining.remove(idx);
                 included.insert(alias);
 
@@ -150,29 +187,24 @@ fn build_join_clause(spec: &QuerySpec, dialect: Dialect) -> String {
                     quote(&table_ref.alias, dialect)
                 );
 
-                let (left_alias, left_col, right_alias, right_col) = if alias_is_left {
-                    (
-                        join.right_alias.as_str(),
-                        join.right_column.as_str(),
-                        join.left_alias.as_str(),
-                        join.left_column.as_str(),
-                    )
-                } else {
-                    (
-                        join.left_alias.as_str(),
-                        join.left_column.as_str(),
-                        join.right_alias.as_str(),
-                        join.right_column.as_str(),
-                    )
-                };
-
-                let on_clause = format!(
-                    "{}.{} = {}.{}",
-                    quote(left_alias, dialect),
-                    quote(left_col, dialect),
-                    quote(right_alias, dialect),
-                    quote(right_col, dialect)
-                );
+                let connecting_joins = spec.joins.iter().filter(|candidate| {
+                    (candidate.left_alias == alias
+                        && included.contains(candidate.right_alias.as_str()))
+                        || (candidate.right_alias == alias
+                            && included.contains(candidate.left_alias.as_str()))
+                });
+                let on_clause = connecting_joins
+                    .map(|candidate| {
+                        format!(
+                            "{}.{} = {}.{}",
+                            quote(&candidate.left_alias, dialect),
+                            quote(&candidate.left_column, dialect),
+                            quote(&candidate.right_alias, dialect),
+                            quote(&candidate.right_column, dialect)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" AND ");
 
                 clauses.push(format!("{} ON {}", join_target, on_clause));
             }
@@ -474,7 +506,7 @@ mod tests {
         );
         assert!(compiled.sql.contains("\"t0\".\"name\" = $1"));
         assert!(compiled.sql.contains("\"t0\".\"deleted_at\" IS NULL"));
-        assert!(compiled.sql.ends_with("LIMIT 50"));
+        assert!(compiled.sql.ends_with("LIMIT 51"));
         assert_eq!(compiled.params.len(), 1);
         match &compiled.params[0] {
             BindValue::Text(s) => assert_eq!(s, "widget"),
@@ -487,14 +519,14 @@ mod tests {
         let compiled = compile(&two_table_spec(), Dialect::MySql).unwrap();
         assert!(compiled.sql.contains("SELECT `t0`.`id`"));
         assert!(compiled.sql.contains("`t0`.`name` = ?"));
-        assert!(compiled.sql.ends_with("LIMIT 50"));
+        assert!(compiled.sql.ends_with("LIMIT 51"));
         assert_eq!(compiled.params.len(), 1);
     }
 
     #[test]
     fn mssql_compiles_top_instead_of_limit() {
         let compiled = compile(&two_table_spec(), Dialect::Mssql).unwrap();
-        assert!(compiled.sql.contains("SELECT TOP 50 "));
+        assert!(compiled.sql.contains("SELECT TOP 51 "));
         assert!(compiled.sql.contains("[t0].[name] = @P1"));
         assert!(!compiled.sql.contains("LIMIT"));
     }
@@ -502,7 +534,7 @@ mod tests {
     #[test]
     fn oracle_compiles_fetch_first() {
         let compiled = compile(&two_table_spec(), Dialect::Oracle).unwrap();
-        assert!(compiled.sql.contains("FETCH FIRST 50 ROWS ONLY"));
+        assert!(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"));
         assert!(compiled.sql.contains(":1"));
     }
 

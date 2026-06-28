@@ -3,21 +3,27 @@ use sqlx::{Column, PgPool, Row, TypeInfo};
 
 use crate::adapters::ExplainResult;
 use crate::introspect::{ColumnInfo, IndexInfo, Schema, TableInfo, mark_indexed_columns};
-use crate::query::ir::{BindValue, CompiledQuery, QueryResult};
+use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, ResultColumn};
+use crate::types::{ConnectionDef, TransportSecurityMode};
 
-pub async fn connect(
-    host: &str,
-    port: u16,
-    database: &str,
-    username: &str,
-    password: &str,
-) -> Result<PgPool> {
+pub async fn connect(def: &ConnectionDef, password: &str) -> Result<PgPool> {
+    use sqlx::postgres::PgSslMode;
+
     let options = sqlx::postgres::PgConnectOptions::new()
-        .host(host)
-        .port(port)
-        .database(database)
-        .username(username)
+        .host(&def.host)
+        .port(def.port)
+        .database(&def.database)
+        .username(&def.username)
         .password(password);
+    let mut options = options.ssl_mode(match def.transport_security.mode {
+        TransportSecurityMode::VerifyIdentity => PgSslMode::VerifyFull,
+        TransportSecurityMode::VerifyCa => PgSslMode::VerifyCa,
+        TransportSecurityMode::EncryptOnly => PgSslMode::Require,
+        TransportSecurityMode::Disabled => PgSslMode::Disable,
+    });
+    if let Some(ca) = &def.transport_security.ca_pem {
+        options = options.ssl_root_cert_from_pem(ca.as_bytes().to_vec());
+    }
 
     let pool = PgPool::connect_with(options).await?;
     Ok(pool)
@@ -82,6 +88,7 @@ async fn introspect_columns(pool: &PgPool, schema: &str, table: &str) -> Result<
             data_type,
             nullable: is_nullable == "YES",
             is_indexed: false,
+            ..ColumnInfo::default()
         });
     }
     Ok(columns)
@@ -92,14 +99,18 @@ async fn introspect_indexes(pool: &PgPool, schema: &str, table: &str) -> Result<
         "SELECT i.relname AS index_name,
                 a.attname AS column_name,
                 idx.indisunique,
-                idx.indisprimary
+                idx.indisprimary,
+                am.amname AS index_type
          FROM pg_index idx
          JOIN pg_class t  ON t.oid = idx.indrelid
          JOIN pg_class i  ON i.oid = idx.indexrelid
+         JOIN pg_am am ON am.oid = i.relam
          JOIN pg_namespace n ON n.oid = t.relnamespace
-         JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(idx.indkey)
+         JOIN LATERAL unnest(idx.indkey) WITH ORDINALITY AS key(attnum, ordinality)
+           ON key.ordinality <= idx.indnkeyatts
+         JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = key.attnum
          WHERE n.nspname = $1 AND t.relname = $2
-         ORDER BY idx.indisprimary DESC, i.relname, a.attnum",
+         ORDER BY idx.indisprimary DESC, i.relname, key.ordinality",
     )
     .bind(schema)
     .bind(table)
@@ -113,12 +124,16 @@ async fn introspect_indexes(pool: &PgPool, schema: &str, table: &str) -> Result<
         let column_name: String = row.try_get("column_name")?;
         let is_unique: bool = row.try_get("indisunique")?;
         let is_primary: bool = row.try_get("indisprimary")?;
+        let index_type: String = row.try_get("index_type")?;
 
         let entry = index_map.entry(index_name.clone()).or_insert(IndexInfo {
             name: index_name,
             columns: Vec::new(),
+            kind: index_type.clone(),
+            supports_equality: matches!(index_type.as_str(), "btree" | "hash"),
             is_unique,
             is_primary,
+            ..IndexInfo::default()
         });
         entry.columns.push(column_name);
     }
@@ -149,8 +164,11 @@ pub async fn execute_query(
         query = match param {
             BindValue::Text(s) => query.bind(s.as_str()),
             BindValue::Int(n) => query.bind(*n),
+            BindValue::Decimal(n) => query.bind(n.clone()),
             BindValue::Float(f) => query.bind(*f),
             BindValue::Bool(b) => query.bind(*b),
+            BindValue::Date(d) => query.bind(*d),
+            BindValue::DateTime(dt) => query.bind(*dt),
             BindValue::Null => query.bind(None::<i64>),
         };
     }
@@ -158,13 +176,16 @@ pub async fn execute_query(
     let rows = query.fetch_all(&mut *tx).await?;
     let row_count = rows.len();
 
-    let columns: Vec<String> = if rows.is_empty() {
+    let columns: Vec<ResultColumn> = if rows.is_empty() {
         columns_from_compiled_sql(&compiled.sql)
+            .into_iter()
+            .map(|name| ResultColumn::new(name, "unknown"))
+            .collect()
     } else {
         rows[0]
             .columns()
             .iter()
-            .map(|c| c.name().to_string())
+            .map(|c| ResultColumn::new(c.name(), c.type_info().name()))
             .collect()
     };
 
@@ -172,7 +193,7 @@ pub async fn execute_query(
     for row in &rows {
         let mut row_values = Vec::new();
         for (i, col) in row.columns().iter().enumerate() {
-            let value = decode_pg_value(row, i, col.type_info().name());
+            let value = decode_pg_value(row, i, col.type_info().name())?;
             row_values.push(value);
         }
         result_rows.push(row_values);
@@ -180,46 +201,72 @@ pub async fn execute_query(
 
     tx.commit().await?;
 
-    Ok(QueryResult {
-        columns,
-        rows: result_rows,
-        row_count,
-        truncated: false,
-        warnings: Vec::new(),
-    })
+    let _ = row_count;
+    Ok(QueryResult::from_rows(columns, result_rows))
 }
 
-fn decode_pg_value(row: &sqlx::postgres::PgRow, i: usize, type_name: &str) -> serde_json::Value {
-    use serde_json::Value;
+fn decode_pg_value(row: &sqlx::postgres::PgRow, i: usize, type_name: &str) -> Result<ResultCell> {
+    fn cell<T>(value: Option<T>, map: impl FnOnce(T) -> ResultCell) -> ResultCell {
+        value.map(map).unwrap_or(ResultCell::Null)
+    }
+
     match classify_pg_type(type_name) {
         PgTypeKind::Bool => row
             .try_get::<Option<bool>, _>(i)
-            .map(|v| v.map(Value::Bool).unwrap_or(Value::Null))
-            .unwrap_or(Value::Null),
+            .map(|v| cell(v, ResultCell::Bool))
+            .map_err(Into::into),
         PgTypeKind::SmallInt => row
             .try_get::<Option<i16>, _>(i)
-            .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
-            .unwrap_or(Value::Null),
+            .map(|v| cell(v, |x| ResultCell::Integer(x as i64)))
+            .map_err(Into::into),
         PgTypeKind::Int => row
             .try_get::<Option<i32>, _>(i)
-            .map(|v| v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null))
-            .unwrap_or(Value::Null),
+            .map(|v| cell(v, |x| ResultCell::Integer(x as i64)))
+            .map_err(Into::into),
         PgTypeKind::BigInt => row
             .try_get::<Option<i64>, _>(i)
-            .map(|v| v.map(Value::from).unwrap_or(Value::Null))
-            .unwrap_or(Value::Null),
+            .map(|v| cell(v, ResultCell::Integer))
+            .map_err(Into::into),
         PgTypeKind::Float => row
             .try_get::<Option<f32>, _>(i)
-            .map(|v| v.map(|x| Value::from(x as f64)).unwrap_or(Value::Null))
-            .unwrap_or(Value::Null),
+            .map(|v| cell(v, |x| ResultCell::Float(x as f64)))
+            .map_err(Into::into),
         PgTypeKind::Double => row
             .try_get::<Option<f64>, _>(i)
-            .map(|v| v.map(Value::from).unwrap_or(Value::Null))
-            .unwrap_or(Value::Null),
+            .map(|v| cell(v, ResultCell::Float))
+            .map_err(Into::into),
+        PgTypeKind::Decimal => row
+            .try_get::<Option<bigdecimal::BigDecimal>, _>(i)
+            .map(|v| cell(v, |x| ResultCell::text(x.to_string())))
+            .map_err(Into::into),
+        PgTypeKind::Date => row
+            .try_get::<Option<chrono::NaiveDate>, _>(i)
+            .map(|v| cell(v, |x| ResultCell::text(x.to_string())))
+            .map_err(Into::into),
+        PgTypeKind::DateTime => row
+            .try_get::<Option<chrono::NaiveDateTime>, _>(i)
+            .map(|v| cell(v, |x| ResultCell::text(x.to_string())))
+            .map_err(Into::into),
+        PgTypeKind::DateTimeTz => row
+            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(i)
+            .map(|v| cell(v, |x| ResultCell::text(x.to_rfc3339())))
+            .map_err(Into::into),
+        PgTypeKind::Uuid => row
+            .try_get::<Option<uuid::Uuid>, _>(i)
+            .map(|v| cell(v, |x| ResultCell::text(x.to_string())))
+            .map_err(Into::into),
+        PgTypeKind::Json => row
+            .try_get::<Option<serde_json::Value>, _>(i)
+            .map(|v| cell(v, |x| ResultCell::text(x.to_string())))
+            .map_err(Into::into),
+        PgTypeKind::Binary => row
+            .try_get::<Option<Vec<u8>>, _>(i)
+            .map(|v| cell(v, |x| ResultCell::binary(&x)))
+            .map_err(Into::into),
         PgTypeKind::Text => row
             .try_get::<Option<String>, _>(i)
-            .map(|v| v.map(Value::String).unwrap_or(Value::Null))
-            .unwrap_or(Value::Null),
+            .map(|v| cell(v, ResultCell::text))
+            .map_err(Into::into),
     }
 }
 
@@ -231,6 +278,13 @@ enum PgTypeKind {
     BigInt,
     Float,
     Double,
+    Decimal,
+    Date,
+    DateTime,
+    DateTimeTz,
+    Uuid,
+    Json,
+    Binary,
     Text,
 }
 
@@ -242,6 +296,13 @@ fn classify_pg_type(type_name: &str) -> PgTypeKind {
         "INT8" | "BIGSERIAL" | "BIGINT" => PgTypeKind::BigInt,
         "FLOAT4" | "REAL" => PgTypeKind::Float,
         "FLOAT8" | "DOUBLE PRECISION" => PgTypeKind::Double,
+        "NUMERIC" | "DECIMAL" => PgTypeKind::Decimal,
+        "DATE" => PgTypeKind::Date,
+        "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" => PgTypeKind::DateTime,
+        "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => PgTypeKind::DateTimeTz,
+        "UUID" => PgTypeKind::Uuid,
+        "JSON" | "JSONB" => PgTypeKind::Json,
+        "BYTEA" => PgTypeKind::Binary,
         _ => PgTypeKind::Text,
     }
 }
@@ -284,25 +345,28 @@ pub async fn explain(pool: &PgPool, compiled: &CompiledQuery) -> Result<ExplainR
         query = match param {
             BindValue::Text(s) => query.bind(s.as_str()),
             BindValue::Int(n) => query.bind(*n),
+            BindValue::Decimal(n) => query.bind(n.clone()),
             BindValue::Float(f) => query.bind(*f),
             BindValue::Bool(b) => query.bind(*b),
+            BindValue::Date(d) => query.bind(*d),
+            BindValue::DateTime(dt) => query.bind(*dt),
             BindValue::Null => query.bind(None::<i64>),
         };
     }
 
     let row = query.fetch_one(pool).await?;
-    let json_str: String = row.try_get(0)?;
-
-    let plan: serde_json::Value = serde_json::from_str(&json_str)?;
+    let plan: serde_json::Value = row.try_get(0)?;
     let cost = plan
         .get(0)
         .and_then(|v| v.get("Plan"))
         .and_then(|v| v.get("Total Cost"))
         .and_then(|v| v.as_f64());
 
-    Ok(ExplainResult {
-        cost,
-        warning: None,
+    Ok(match cost {
+        Some(cost) => ExplainResult::Estimated(cost),
+        None => ExplainResult::Unavailable(
+            "Could not parse EXPLAIN cost from PostgreSQL JSON plan".to_string(),
+        ),
     })
 }
 
@@ -340,8 +404,8 @@ mod tests {
 
     #[test]
     fn classify_pg_type_unknown_falls_back_to_text() {
-        assert_eq!(classify_pg_type("UUID"), PgTypeKind::Text);
-        assert_eq!(classify_pg_type("JSONB"), PgTypeKind::Text);
+        assert_eq!(classify_pg_type("UUID"), PgTypeKind::Uuid);
+        assert_eq!(classify_pg_type("JSONB"), PgTypeKind::Json);
         assert_eq!(classify_pg_type(""), PgTypeKind::Text);
         assert_eq!(classify_pg_type("VARCHAR"), PgTypeKind::Text);
     }

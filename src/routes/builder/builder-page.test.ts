@@ -12,13 +12,18 @@ import type { ConnectionDef, TableInfo } from '$lib/ir';
 vi.mock('$lib/api');
 
 const activeConnection: ConnectionDef = {
+	version: 2,
 	id: 'c1',
 	name: 'Test DB',
 	dialect: 'Postgres',
 	host: 'localhost',
 	port: 5432,
 	database: 'demo',
-	username: 'user'
+	username: 'user',
+	transport_security: {
+		mode: 'VerifyIdentity',
+		insecure_acknowledged: false
+	}
 };
 
 const sampleTable: TableInfo = {

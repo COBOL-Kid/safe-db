@@ -9,7 +9,7 @@ import { connections } from '$lib/stores/connections.svelte';
 import { query } from '$lib/stores/query.svelte';
 import { schema } from '$lib/stores/schema.svelte';
 import { savedQueries } from '$lib/stores/saved-queries.svelte';
-import type { HistoryEntry } from '$lib/ir';
+import type { ConnectionDef, HistoryEntry } from '$lib/ir';
 
 vi.mock('$lib/api');
 vi.mock('$app/navigation', () => ({
@@ -19,6 +19,21 @@ vi.mock('$app/navigation', () => ({
 }));
 
 const gotoMock = vi.mocked(goto);
+
+const sampleConn: ConnectionDef = {
+	version: 2,
+	id: 'c1',
+	name: 'Test DB',
+	dialect: 'Postgres',
+	host: 'localhost',
+	port: 5432,
+	database: 'demo',
+	username: 'user',
+	transport_security: {
+		mode: 'VerifyIdentity',
+		insecure_acknowledged: false
+	}
+};
 
 function makeEntry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
 	return {
@@ -37,7 +52,7 @@ function makeEntry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
 			joins: [{ left_alias: 't0', left_column: 'id', right_alias: 't1', right_column: 'user_id' }],
 			filters: { id: 'g', connector: 'And', children: [] },
 			limit: 50,
-			schema_version: 2,
+			schema_version: 3,
 			connector_overrides: {}
 		},
 		row_count: 12,
@@ -145,6 +160,7 @@ describe('History page', () => {
 
 	it('Rerun invokes setActive, schema.clear, schema.load, hydrate, and goto /builder in order', async () => {
 		await renderWith([makeEntry()]);
+		connections.connections = [sampleConn];
 		vi.mocked(api.getSchema).mockResolvedValue({ tables: [] });
 
 		const order: string[] = [];
@@ -175,12 +191,8 @@ describe('History page', () => {
 			expect(gotoMock).toHaveBeenCalledWith('/builder');
 		});
 
-		expect(order).toEqual([
-			'setActive:c1',
-			'schema.clear',
-			'schema.load:c1',
-			'goto:/builder'
-		]);
+		expect(order).toEqual(['schema.clear', 'schema.load:c1', 'goto:/builder']);
+		expect(connections.activeId).toBe('c1');
 
 		connections.setActive = origSetActive;
 	});

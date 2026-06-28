@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const MAX_CELL_BYTES: usize = 1024 * 1024;
+pub const MAX_RESULT_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuerySpec {
@@ -68,7 +70,7 @@ pub struct FilterGroup {
 impl Default for FilterGroup {
     fn default() -> Self {
         FilterGroup {
-            id: String::new(),
+            id: uuid::Uuid::new_v4().to_string(),
             connector: GroupConnector::And,
             children: Vec::new(),
         }
@@ -111,6 +113,7 @@ pub struct FilterLiteral {
 pub enum LiteralKind {
     Text,
     Int,
+    Decimal,
     Float,
     Bool,
     Date,
@@ -180,8 +183,11 @@ impl FilterOp {
 pub enum BindValue {
     Text(String),
     Int(i64),
+    Decimal(bigdecimal::BigDecimal),
     Float(f64),
     Bool(bool),
+    Date(chrono::NaiveDate),
+    DateTime(chrono::NaiveDateTime),
     Null,
 }
 
@@ -194,6 +200,11 @@ impl BindValue {
                 .parse::<i64>()
                 .map(BindValue::Int)
                 .map_err(|_| format!("'{}' is not a valid integer", lit.text)),
+            LiteralKind::Decimal => lit
+                .text
+                .parse::<bigdecimal::BigDecimal>()
+                .map(BindValue::Decimal)
+                .map_err(|_| format!("'{}' is not a valid decimal", lit.text)),
             LiteralKind::Float => lit
                 .text
                 .parse::<f64>()
@@ -220,18 +231,141 @@ impl BindValue {
                 })
                 .map(BindValue::Bool)
                 .map_err(|_| format!("'{}' is not a valid boolean", lit.text)),
-            LiteralKind::Date | LiteralKind::DateTime => Ok(BindValue::Text(lit.text.clone())),
+            LiteralKind::Date => parse_date_literal(&lit.text).map(BindValue::Date),
+            LiteralKind::DateTime => parse_datetime_literal(&lit.text).map(BindValue::DateTime),
         }
     }
 }
 
+pub fn parse_date_literal(text: &str) -> Result<chrono::NaiveDate, String> {
+    chrono::NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d")
+        .map_err(|_| format!("'{text}' is not a valid date; expected YYYY-MM-DD"))
+}
+
+pub fn parse_datetime_literal(text: &str) -> Result<chrono::NaiveDateTime, String> {
+    let trimmed = text.trim();
+    chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S%.f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M"))
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f"))
+        .or_else(|_| chrono::DateTime::parse_from_rfc3339(trimmed).map(|dt| dt.naive_utc()))
+        .map_err(|_| {
+            format!("'{text}' is not a valid datetime; expected YYYY-MM-DDTHH:MM[:SS] or RFC3339")
+        })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResult {
-    pub columns: Vec<String>,
-    pub rows: Vec<Vec<serde_json::Value>>,
+    pub columns: Vec<ResultColumn>,
+    pub rows: Vec<Vec<ResultCell>>,
     pub row_count: usize,
     pub truncated: bool,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResultColumn {
+    pub name: String,
+    pub data_type: String,
+}
+
+impl ResultColumn {
+    pub fn new(name: impl Into<String>, data_type: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            data_type: data_type.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", content = "value")]
+pub enum ResultCell {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    Text { text: String, truncated: bool },
+    Binary { base64: String, truncated: bool },
+}
+
+impl ResultCell {
+    pub fn text(value: impl Into<String>) -> Self {
+        let mut text = value.into();
+        let truncated = text.len() > MAX_CELL_BYTES;
+        if truncated {
+            let mut boundary = MAX_CELL_BYTES;
+            while !text.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            text.truncate(boundary);
+        }
+        Self::Text { text, truncated }
+    }
+
+    pub fn binary(value: &[u8]) -> Self {
+        use base64::Engine;
+        let truncated = value.len() > MAX_CELL_BYTES;
+        let value = &value[..value.len().min(MAX_CELL_BYTES)];
+        Self::Binary {
+            base64: base64::engine::general_purpose::STANDARD.encode(value),
+            truncated,
+        }
+    }
+
+    fn was_truncated(&self) -> bool {
+        matches!(
+            self,
+            ResultCell::Text {
+                truncated: true,
+                ..
+            } | ResultCell::Binary {
+                truncated: true,
+                ..
+            }
+        )
+    }
+}
+
+impl QueryResult {
+    pub fn from_rows(columns: Vec<ResultColumn>, rows: Vec<Vec<ResultCell>>) -> Self {
+        let mut kept = Vec::with_capacity(rows.len());
+        let mut encoded_bytes = 0usize;
+        let mut result_truncated = false;
+        let mut cell_truncated = false;
+
+        for row in rows {
+            cell_truncated |= row.iter().any(ResultCell::was_truncated);
+            let row_bytes = serde_json::to_vec(&row).map_or(MAX_RESULT_BYTES + 1, |v| v.len());
+            if encoded_bytes.saturating_add(row_bytes) > MAX_RESULT_BYTES {
+                result_truncated = true;
+                break;
+            }
+            encoded_bytes += row_bytes;
+            kept.push(row);
+        }
+
+        let mut warnings = Vec::new();
+        if cell_truncated {
+            warnings.push(format!(
+                "One or more cells exceeded {} bytes and were truncated",
+                MAX_CELL_BYTES
+            ));
+        }
+        if result_truncated {
+            warnings.push(format!(
+                "Result exceeded {} encoded bytes and was truncated",
+                MAX_RESULT_BYTES
+            ));
+        }
+
+        Self {
+            row_count: kept.len(),
+            columns,
+            rows: kept,
+            truncated: result_truncated,
+            warnings,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -341,6 +475,24 @@ mod tests {
     }
 
     #[test]
+    fn bind_value_from_literal_decimal_ok_and_err() {
+        let ok = FilterLiteral {
+            kind: LiteralKind::Decimal,
+            text: "12345678901234567890.1234".to_string(),
+        };
+        match BindValue::from_literal(&ok).unwrap() {
+            BindValue::Decimal(n) => assert_eq!(n.to_string(), "12345678901234567890.1234"),
+            other => panic!("expected Decimal, got {other:?}"),
+        }
+        let bad = FilterLiteral {
+            kind: LiteralKind::Decimal,
+            text: "abc".to_string(),
+        };
+        let err = BindValue::from_literal(&bad).unwrap_err();
+        assert!(err.contains("not a valid decimal"), "got: {err}");
+    }
+
+    #[test]
     fn bind_value_from_literal_bool_accepts_canonical_and_aliases() {
         for text in ["true", "TRUE", "True", "1", "yes", "YES"] {
             let lit = FilterLiteral {
@@ -371,29 +523,31 @@ mod tests {
     }
 
     #[test]
-    fn bind_value_from_literal_date_and_datetime_become_text() {
+    fn bind_value_from_literal_date_and_datetime_are_typed() {
         let d = FilterLiteral {
             kind: LiteralKind::Date,
             text: "2025-01-02".to_string(),
         };
         match BindValue::from_literal(&d).unwrap() {
-            BindValue::Text(s) => assert_eq!(s, "2025-01-02"),
-            other => panic!("expected Text, got {other:?}"),
+            BindValue::Date(date) => assert_eq!(date.to_string(), "2025-01-02"),
+            other => panic!("expected Date, got {other:?}"),
         }
         let dt = FilterLiteral {
             kind: LiteralKind::DateTime,
             text: "2025-01-02T03:04:05Z".to_string(),
         };
         match BindValue::from_literal(&dt).unwrap() {
-            BindValue::Text(s) => assert_eq!(s, "2025-01-02T03:04:05Z"),
-            other => panic!("expected Text, got {other:?}"),
+            BindValue::DateTime(datetime) => {
+                assert_eq!(datetime.to_string(), "2025-01-02 03:04:05")
+            }
+            other => panic!("expected DateTime, got {other:?}"),
         }
     }
 
     #[test]
     fn filter_group_default_is_empty_and_group_with_id() {
         let g = FilterGroup::default();
-        assert_eq!(g.id, "");
+        assert!(!g.id.trim().is_empty());
         assert_eq!(g.connector, GroupConnector::And);
         assert!(g.children.is_empty());
     }
