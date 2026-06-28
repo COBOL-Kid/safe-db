@@ -91,10 +91,9 @@ pub(super) fn build_join_clause(spec: &QuerySpec, dialect: Dialect) -> String {
             for join in &spec.joins {
                 let left = join.left_alias.as_str();
                 let right = join.right_alias.as_str();
-                if left == alias && included.contains(right) {
-                    found = Some((i, alias));
-                    break;
-                } else if right == alias && included.contains(left) {
+                if (left == alias && included.contains(right))
+                    || (right == alias && included.contains(left))
+                {
                     found = Some((i, alias));
                     break;
                 }
