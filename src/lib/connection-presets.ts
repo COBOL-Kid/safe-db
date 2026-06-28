@@ -25,7 +25,10 @@ export function transportPresetForLocation(location: DatabaseLocation): Transpor
 	};
 }
 
-export function securityLabelForMode(mode: TransportSecurityMode): SecurityLabel {
+export function securityLabelForMode(
+	mode: TransportSecurityMode,
+	host = ''
+): SecurityLabel {
 	switch (mode) {
 		case 'VerifyIdentity':
 		case 'VerifyCa':
@@ -33,7 +36,9 @@ export function securityLabelForMode(mode: TransportSecurityMode): SecurityLabel
 		case 'EncryptOnly':
 			return { tone: 'warning', text: 'Encrypted (certificate not verified)' };
 		case 'Disabled':
-			return { tone: 'danger', text: 'Not encrypted - local only' };
+			return isLocalHost(host)
+				? { tone: 'danger', text: 'Not encrypted - local only' }
+				: { tone: 'danger', text: 'Not encrypted' };
 	}
 }
 

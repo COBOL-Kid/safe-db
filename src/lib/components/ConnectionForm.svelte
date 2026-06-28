@@ -55,7 +55,7 @@
 	let formError = $state<string | null>(null);
 
 	let selectedDialect = $derived(DIALECTS.find((x) => x.value === dialect));
-	let securityLabel = $derived(securityLabelForMode(transportMode));
+	let securityLabel = $derived(securityLabelForMode(transportMode, host));
 	let errorClassification = $derived(
 		testError
 			? classifyConnectionError(testError, {
@@ -81,12 +81,19 @@
 		formError = null;
 	}
 
+	function clearConnectionStringState() {
+		connectionString = '';
+		parseError = null;
+		parseWarnings = [];
+		parsedFromString = false;
+	}
+
 	function resetToChoose() {
 		entryPath = 'unset';
 		formStep = 'choose';
 		password = '';
 		showPassword = false;
-		parsedFromString = false;
+		clearConnectionStringState();
 		resetResultState();
 	}
 
@@ -99,7 +106,7 @@
 	function switchToGuided() {
 		entryPath = 'guided';
 		formStep = 'location';
-		parseError = null;
+		clearConnectionStringState();
 	}
 
 	function switchToString() {
@@ -114,22 +121,47 @@
 		oracleWalletLocation = security.oracle_wallet_location ?? '';
 	}
 
+	function isRemoteHost(value: string): boolean {
+		return value.trim().length > 0 && !isLocalHost(value);
+	}
+
+	function recommendedLocationForCurrentHost(): Exclude<DatabaseLocation, 'organization'> {
+		return isRemoteHost(host) ? 'cloud' : 'local';
+	}
+
 	function applyLocationPreset(nextLocation: DatabaseLocation) {
-		location = nextLocation;
+		const presetLocation =
+			nextLocation === 'local' && isRemoteHost(host)
+				? recommendedLocationForCurrentHost()
+				: nextLocation;
+		location = presetLocation;
 		transportOverridden = false;
-		applyTransportSecurity(transportPresetForLocation(nextLocation));
+		applyTransportSecurity(transportPresetForLocation(presetLocation));
 		formStep = 'credentials';
 		resetResultState();
 	}
 
 	function reapplyRecommendedSettings() {
 		if (!location) return;
+		const presetLocation =
+			location === 'organization' ? location : recommendedLocationForCurrentHost();
+		location = presetLocation;
 		transportOverridden = false;
-		applyTransportSecurity(transportPresetForLocation(location));
+		applyTransportSecurity(transportPresetForLocation(presetLocation));
 		resetResultState();
 	}
 
 	function markTransportManual() {
+		transportOverridden = true;
+		resetResultState();
+	}
+
+	function applyTroubleshootingCa() {
+		transportMode = 'VerifyCa';
+		transportOverridden = true;
+	}
+
+	function handleOracleWalletInput() {
 		transportOverridden = true;
 		resetResultState();
 	}
@@ -151,16 +183,11 @@
 	}
 
 	function handleHostInput(nextHost: string) {
-		if (!transportOverridden) {
+		if (!transportOverridden && location && location !== 'organization') {
 			const nextLocation = inferLocation(nextHost);
-			if (location === 'local' && !isLocalHost(nextHost)) {
-				location = 'cloud';
-				applyTransportSecurity(transportPresetForLocation('cloud'));
-			} else if (nextLocation !== location) {
+			if (nextLocation !== location) {
 				location = nextLocation;
-				if (entryPath === 'string') {
-					applyTransportSecurity(transportPresetForLocation(nextLocation));
-				}
+				applyTransportSecurity(transportPresetForLocation(nextLocation));
 			}
 		}
 		resetResultState();
@@ -390,9 +417,9 @@
 				</div>
 			{/if}
 
-			{#if location === 'local' && !isLocalHost(host)}
+			{#if location === 'local' && isRemoteHost(host)}
 				<div class="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-					This host is not local, so recommended security has been switched to cloud defaults.
+					This host is not local. Apply cloud security defaults before testing or saving.
 					<button type="button" onclick={() => applyLocationPreset('cloud')} class="ml-1 font-medium underline">Apply cloud defaults</button>
 				</div>
 			{/if}
@@ -509,25 +536,22 @@
 							id="cf-wallet"
 							type="text"
 							bind:value={oracleWalletLocation}
-							oninput={resetResultState}
+							oninput={handleOracleWalletInput}
 							class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
 						/>
 					</div>
 				{/if}
 
-				<div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-					<span class="h-2 w-2 rounded-full {securityLabel.tone === 'success' ? 'bg-emerald-500' : securityLabel.tone === 'warning' ? 'bg-amber-500' : 'bg-red-500'}"></span>
-					<span>{securityLabel.text}</span>
-					{#if transportOverridden && location}
+				{#if transportOverridden && location}
+					<p class="text-sm text-slate-600 dark:text-slate-300">
+						Transport settings differ from the recommended preset.
 						<button type="button" onclick={reapplyRecommendedSettings} class="font-medium underline">Reapply recommended settings</button>
-					{/if}
-				</div>
+					</p>
+				{/if}
 
 				<ConnectionAdvancedPanel
-					{dialect}
 					bind:transportMode
 					bind:caPem
-					bind:oracleWalletLocation
 					onManualChange={markTransportManual}
 				/>
 
@@ -552,17 +576,15 @@
 							<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
 								<p class="font-medium">Your organization may require a security file.</p>
 								<p class="mt-1">Paste the CA certificate PEM below, then test again. This will use certificate verification.</p>
-								<textarea
-									aria-label="CA certificate PEM"
-									bind:value={caPem}
-									oninput={() => {
-										transportMode = 'VerifyCa';
-									}}
-									rows="4"
-									class="mt-3 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 dark:border-amber-900/60 dark:bg-slate-900 dark:text-slate-100"
-								></textarea>
-							</div>
-						{:else if errorClassification?.kind === 'hostname_mismatch'}
+							<textarea
+								aria-label="CA certificate PEM"
+								bind:value={caPem}
+								oninput={applyTroubleshootingCa}
+								rows="4"
+								class="mt-3 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 dark:border-amber-900/60 dark:bg-slate-900 dark:text-slate-100"
+							></textarea>
+						</div>
+					{:else if errorClassification?.kind === 'hostname_mismatch'}
 							<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
 								<p class="font-medium">Certificate hostname does not match this host.</p>
 								<p class="mt-1">Verify the host value is correct, or use a certificate issued for this hostname.</p>
@@ -572,7 +594,7 @@
 								<p class="font-medium">This server requires encrypted transport.</p>
 								<p class="mt-1">
 									{#if dialect === 'Oracle'}
-										Provide an Oracle wallet location in Advanced connection settings, then test again.
+										Provide an Oracle wallet location in the field above, then test again.
 									{:else}
 										Enable SSL/TLS transport or provide the required certificate, then test again.
 									{/if}
@@ -582,17 +604,15 @@
 							<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
 								<p class="font-medium">Your organization may require a security file.</p>
 								<p class="mt-1">Paste the CA certificate PEM below, then test again. This will use certificate verification.</p>
-								<textarea
-									aria-label="CA certificate PEM"
-									bind:value={caPem}
-									oninput={() => {
-										transportMode = 'VerifyCa';
-									}}
-									rows="4"
-									class="mt-3 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 dark:border-amber-900/60 dark:bg-slate-900 dark:text-slate-100"
-								></textarea>
-							</div>
-						{/if}
+							<textarea
+								aria-label="CA certificate PEM"
+								bind:value={caPem}
+								oninput={applyTroubleshootingCa}
+								rows="4"
+								class="mt-3 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 dark:border-amber-900/60 dark:bg-slate-900 dark:text-slate-100"
+							></textarea>
+						</div>
+					{/if}
 					</div>
 				{/if}
 				{#if formError}

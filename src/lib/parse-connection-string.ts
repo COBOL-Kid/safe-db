@@ -156,7 +156,7 @@ function parseSqlServerJdbc(raw: string): ParsedConnection {
 		database,
 		username,
 		password: password ?? null,
-		transport: sqlServerTransport(encrypt, trustServerCertificate),
+		transport: sqlServerTransport(encrypt, trustServerCertificate, host),
 		sanitizedInput: sanitizeSqlServerKeyValue(raw)
 	});
 }
@@ -178,7 +178,7 @@ function parseSqlServerKeyValue(raw: string): ParsedConnection {
 		database,
 		username,
 		password: password ?? null,
-		transport: sqlServerTransport(encrypt, trustServerCertificate),
+		transport: sqlServerTransport(encrypt, trustServerCertificate, host),
 		sanitizedInput: sanitizeSqlServerKeyValue(raw)
 	});
 }
@@ -189,7 +189,7 @@ function parseOracle(raw: string): ParsedConnection {
 	let password: string | null = null;
 
 	if (!rest.startsWith('@')) {
-		const atIndex = rest.indexOf('@');
+		const atIndex = findOracleAuthSeparator(rest);
 		if (atIndex > -1) {
 			const auth = rest.slice(0, atIndex);
 			rest = rest.slice(atIndex);
@@ -285,11 +285,13 @@ function mysqlTransport(sslMode: string | null, host: string): MutableTransport 
 
 function sqlServerTransport(
 	encrypt: string | undefined,
-	trustServerCertificate: string | undefined
+	trustServerCertificate: string | undefined,
+	host: string
 ): MutableTransport {
 	if (isFalse(encrypt)) return { mode: 'Disabled' };
 	if (isTrue(trustServerCertificate)) return { mode: 'EncryptOnly' };
-	return { mode: 'VerifyIdentity' };
+	if (isTrue(encrypt)) return { mode: 'VerifyIdentity' };
+	return { mode: isLocalHost(host) ? 'Disabled' : 'VerifyIdentity' };
 }
 
 function isTrue(value: string | undefined): boolean {
@@ -443,9 +445,25 @@ function sanitizeSqlServerKeyValue(raw: string): string {
 }
 
 function sanitizeOracleInput(raw: string): string {
-	return raw.replace(/^(jdbc:oracle:thin:)?([^@/\s]+)\/([^@\s]*)@/i, (_match, prefix = '', user) => {
-		return `${prefix}${user}/@`;
-	});
+	const prefixMatch = raw.match(/^jdbc:oracle:thin:/i);
+	const prefix = prefixMatch?.[0] ?? '';
+	const rest = raw.slice(prefix.length);
+	if (rest.startsWith('@')) return raw;
+
+	const atIndex = findOracleAuthSeparator(rest);
+	if (atIndex < 0) return raw;
+
+	const auth = rest.slice(0, atIndex);
+	const slashIndex = auth.indexOf('/');
+	if (slashIndex < 0) return raw;
+
+	return `${prefix}${auth.slice(0, slashIndex)}/${rest.slice(atIndex)}`;
+}
+
+function findOracleAuthSeparator(rest: string): number {
+	const queryStart = rest.search(/[?#]/);
+	const authAndConnect = queryStart < 0 ? rest : rest.slice(0, queryStart);
+	return authAndConnect.lastIndexOf('@');
 }
 
 function stripBrackets(host: string): string {

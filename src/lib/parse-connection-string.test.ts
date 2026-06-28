@@ -125,6 +125,58 @@ describe('parseConnectionString', () => {
 		});
 	});
 
+	it('defaults SQL Server JDBC localhost connections without Encrypt to disabled transport', () => {
+		const parsed = parseConnectionString(
+			'jdbc:sqlserver://localhost:1433;databaseName=db;user=u;password=p'
+		);
+
+		expect(parsed).toMatchObject({
+			dialect: 'Mssql',
+			host: 'localhost',
+			inferredLocation: 'local',
+			transport_security: { mode: 'Disabled' }
+		});
+	});
+
+	it('defaults SQL Server ADO.NET loopback connections without Encrypt to disabled transport', () => {
+		const parsed = parseConnectionString(
+			'Server=127.0.0.1,1433;Database=db;User ID=u;Password=p'
+		);
+
+		expect(parsed).toMatchObject({
+			dialect: 'Mssql',
+			host: '127.0.0.1',
+			inferredLocation: 'local',
+			transport_security: { mode: 'Disabled' }
+		});
+	});
+
+	it('defaults SQL Server remote connections without Encrypt to verify identity', () => {
+		const parsed = parseConnectionString(
+			'jdbc:sqlserver://db.example.com:1433;databaseName=db;user=u;password=p'
+		);
+
+		expect(parsed).toMatchObject({
+			dialect: 'Mssql',
+			host: 'db.example.com',
+			inferredLocation: 'cloud',
+			transport_security: { mode: 'VerifyIdentity' }
+		});
+	});
+
+	it('preserves explicit Encrypt=true on SQL Server localhost as verify identity', () => {
+		const parsed = parseConnectionString(
+			'Server=localhost,1433;Database=db;User ID=u;Password=p;Encrypt=True'
+		);
+
+		expect(parsed).toMatchObject({
+			dialect: 'Mssql',
+			host: 'localhost',
+			inferredLocation: 'local',
+			transport_security: { mode: 'VerifyIdentity' }
+		});
+	});
+
 	it('parses Oracle TCPS with wallet location', () => {
 		const parsed = parseConnectionString(
 			'jdbc:oracle:thin:@tcps:host:1521/svc?wallet_location=/path/to/wallet'
@@ -156,6 +208,43 @@ describe('parseConnectionString', () => {
 			transport_security: { mode: 'Disabled' }
 		});
 		expect(parsed.sanitizedInput).toBe('jdbc:oracle:thin:user/@//host:1521/svc');
+	});
+
+	it('parses Oracle Easy Connect passwords with a literal at sign', () => {
+		const parsed = parseConnectionString('jdbc:oracle:thin:user/p@ss@//host:1521/svc');
+
+		expect(parsed).toMatchObject({
+			dialect: 'Oracle',
+			host: 'host',
+			port: 1521,
+			database: 'svc',
+			username: 'user',
+			password: 'p@ss',
+			transport_security: { mode: 'Disabled' }
+		});
+		expect(parsed.sanitizedInput).toBe('jdbc:oracle:thin:user/@//host:1521/svc');
+	});
+
+	it('parses Oracle TCPS credentials when wallet location contains an at sign', () => {
+		const parsed = parseConnectionString(
+			'jdbc:oracle:thin:user/pass@tcps:host:1521/svc?wallet_location=/wallets/team@example'
+		);
+
+		expect(parsed).toMatchObject({
+			dialect: 'Oracle',
+			host: 'host',
+			port: 1521,
+			database: 'svc',
+			username: 'user',
+			password: 'pass',
+			transport_security: {
+				mode: 'VerifyIdentity',
+				oracle_wallet_location: '/wallets/team@example'
+			}
+		});
+		expect(parsed.sanitizedInput).toBe(
+			'jdbc:oracle:thin:user/@tcps:host:1521/svc?wallet_location=/wallets/team@example'
+		);
 	});
 
 	it('parses Oracle plain Easy Connect', () => {

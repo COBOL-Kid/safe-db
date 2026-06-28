@@ -117,6 +117,9 @@ Standard commands live in `## Commands` above. Notes below are cloud-environment
 - Running a query may surface an `EXPLAIN failed` guard. The first run is blocked and the UI asks for "Run anyway"; a confirmed forced retry executes with the same validation, row limit, and timeout.
 
 ## Learned User Preferences
+- Trust DB admin/infra teams for transport security configuration; do not surface secure-transport acknowledgment or notification checkboxes to end users (the app assumes users have not configured the database).
+- Avoid security status indicators that can be temporarily misleading (e.g., a "not secure" dot before the host autoresolver has run); prefer omitting such indicators over showing potentially-wrong state.
+- Advanced connection settings target technical users; use direct, explicit labels with "SSL" terminology (e.g., "SSL with hostname verification", "SSL encrypt only (no cert check)").
 
 ## Learned Workspace Facts
 - Empty database passwords are valid connection credentials, especially for local MySQL; preserve `""` through form submission, credential storage, and builder/query paths.
@@ -128,3 +131,6 @@ Standard commands live in `## Commands` above. Notes below are cloud-environment
 - Query filter values must use literal kinds matching the schema-derived column category; hydration should normalize old saved/history specs before rerun.
 - Empty result sets should still expose selected column metadata in results where the adapter can infer it from compiled SQL.
 - MSSQL `EXPLAIN` opens a short-lived separate `mssql::connect()` client; the main execution client is never put in `SHOWPLAN_XML` mode, so forced query retries stay on a clean session.
+- The insecure-transport acknowledgment was fully removed from the stack (`insecure_acknowledged` dropped from `ir.ts`, `connection-presets.ts`, `parse-connection-string.ts`, `types.rs`, and the `config.rs` legacy migration); the misleading colored-dot security status strip was also removed from `ConnectionForm.svelte`.
+- `handleHostInput` resyncs transport when the host crosses local/remote boundaries on both guided and string paths (skipping auto-resync when `location === 'organization'` or transport was manually overridden); `resetToChoose()` clears password and parsed-string state when switching between guided and string paths to prevent password leaks.
+- Connection-string parser defaults: Postgres localhost default mirrors MySQL (`isLocalHost(host) ? 'Disabled' : 'VerifyIdentity'`); Oracle requires an explicit `jdbc:oracle:thin:`, `tcps:`, or `@//` prefix (no bare `//`); TLS error classification maps `certificate required` to `certificate_required` (checked before `untrusted_ca`), and the SSL troubleshooting UI shows a CA PEM textarea only for `untrusted_ca` / org `unknown` with static guidance for `hostname_mismatch` / `certificate_required`.

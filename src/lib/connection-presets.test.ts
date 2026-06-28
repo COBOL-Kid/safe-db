@@ -34,7 +34,15 @@ describe('connection presets', () => {
 		});
 		expect(securityLabelForMode('Disabled')).toEqual({
 			tone: 'danger',
+			text: 'Not encrypted'
+		});
+		expect(securityLabelForMode('Disabled', 'localhost')).toEqual({
+			tone: 'danger',
 			text: 'Not encrypted - local only'
+		});
+		expect(securityLabelForMode('Disabled', 'db.example.com')).toEqual({
+			tone: 'danger',
+			text: 'Not encrypted'
 		});
 	});
 

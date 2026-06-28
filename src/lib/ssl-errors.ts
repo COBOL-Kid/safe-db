@@ -16,24 +16,15 @@ export function classifyConnectionError(
 	context: { location: DatabaseLocation | null; remoteHost: boolean }
 ): ConnectionErrorClassification {
 	const normalized = message.toLowerCase();
-
-	if (
-		normalized.includes('certificate verify failed') ||
-		normalized.includes('unknown issuer') ||
-		normalized.includes('unknown ca') ||
-		normalized.includes('self signed') ||
-		normalized.includes('self-signed') ||
-		normalized.includes('invalid certificate') ||
-		normalized.includes('certificate required')
-	) {
-		return { kind: 'untrusted_ca', showTroubleshooting: true };
-	}
+	const hasCertificateHostnameMismatch =
+		normalized.includes('certificate is not valid for') ||
+		normalized.includes('cert is not valid for') ||
+		(normalized.includes('x509') && normalized.includes('not valid for'));
 
 	if (
 		normalized.includes('hostname mismatch') ||
 		normalized.includes('name mismatch') ||
-		normalized.includes('not valid for') ||
-		normalized.includes('certificate is not valid for')
+		hasCertificateHostnameMismatch
 	) {
 		return { kind: 'hostname_mismatch', showTroubleshooting: true };
 	}
@@ -43,9 +34,21 @@ export function classifyConnectionError(
 		normalized.includes('tcps') ||
 		normalized.includes('ssl required') ||
 		normalized.includes('requires ssl') ||
-		normalized.includes('requires tls')
+		normalized.includes('requires tls') ||
+		normalized.includes('certificate required')
 	) {
 		return { kind: 'certificate_required', showTroubleshooting: true };
+	}
+
+	if (
+		normalized.includes('certificate verify failed') ||
+		normalized.includes('unknown issuer') ||
+		normalized.includes('unknown ca') ||
+		normalized.includes('self signed') ||
+		normalized.includes('self-signed') ||
+		normalized.includes('invalid certificate')
+	) {
+		return { kind: 'untrusted_ca', showTroubleshooting: true };
 	}
 
 	return {

@@ -20,6 +20,24 @@ describe('classifyConnectionError', () => {
 		).toEqual({ kind: 'hostname_mismatch', showTroubleshooting: true });
 	});
 
+	it('does not classify unrelated not-valid-for messages as hostname mismatch', () => {
+		expect(
+			classifyConnectionError("Login failed. The server principal 'app' is not valid for login.", {
+				location: 'cloud',
+				remoteHost: true
+			})
+		).toEqual({ kind: 'unknown', showTroubleshooting: false });
+	});
+
+	it('classifies certificate required errors as certificate-required', () => {
+		expect(
+			classifyConnectionError('certificate required', {
+				location: 'cloud',
+				remoteHost: true
+			})
+		).toEqual({ kind: 'certificate_required', showTroubleshooting: true });
+	});
+
 	it('classifies Oracle wallet and TLS-required errors as certificate-required', () => {
 		expect(
 			classifyConnectionError('Oracle TCPS requires a wallet location', {

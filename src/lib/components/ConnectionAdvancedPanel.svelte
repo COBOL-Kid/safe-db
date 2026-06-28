@@ -1,17 +1,13 @@
 <script lang="ts">
-	import type { Dialect, TransportSecurityMode } from '$lib/ir';
+	import type { TransportSecurityMode } from '$lib/ir';
 
 	let {
-		dialect,
 		transportMode = $bindable(),
 		caPem = $bindable(),
-		oracleWalletLocation = $bindable(),
 		onManualChange
 	}: {
-		dialect: Dialect;
 		transportMode: TransportSecurityMode;
 		caPem: string;
-		oracleWalletLocation: string;
 		onManualChange: () => void;
 	} = $props();
 
@@ -64,17 +60,5 @@
 			</div>
 		{/if}
 
-		{#if dialect === 'Oracle' && transportMode !== 'Disabled'}
-			<div>
-				<label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300" for="cf-wallet-advanced">Oracle wallet location</label>
-				<input
-					id="cf-wallet-advanced"
-					type="text"
-					bind:value={oracleWalletLocation}
-					oninput={onManualChange}
-					class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-				/>
-			</div>
-		{/if}
 	</div>
 </details>
