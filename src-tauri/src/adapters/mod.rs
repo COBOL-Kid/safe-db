@@ -23,10 +23,16 @@ pub enum ExplainResult {
 #[cfg(feature = "oracle")]
 type OracleConn = std::sync::Mutex<::oracle::Connection>;
 
+pub struct MssqlState {
+    pub client: tokio::sync::Mutex<Option<mssql::MssqlClient>>,
+    pub def: ConnectionDef,
+    pub password: String,
+}
+
 pub enum Adapter {
     Postgres(sqlx::PgPool),
     MySql(sqlx::MySqlPool),
-    Mssql(Box<tokio::sync::Mutex<mssql::MssqlClient>>),
+    Mssql(Box<MssqlState>),
     #[cfg(feature = "oracle")]
     Oracle(OracleConn),
 }
@@ -95,7 +101,11 @@ impl Adapter {
                 }
                 Dialect::Mssql => {
                     let client = mssql::connect(def, password).await?;
-                    Ok(Adapter::Mssql(Box::new(tokio::sync::Mutex::new(client))))
+                    Ok(Adapter::Mssql(Box::new(MssqlState {
+                        client: tokio::sync::Mutex::new(Some(client)),
+                        def: def.clone(),
+                        password: password.to_string(),
+                    })))
                 }
                 #[cfg(feature = "oracle")]
                 Dialect::Oracle => {
@@ -121,9 +131,10 @@ impl Adapter {
         match self {
             Adapter::Postgres(pool) => pg::test(pool).await,
             Adapter::MySql(pool) => mysql::test(pool).await,
-            Adapter::Mssql(client) => {
-                let mut client = client.lock().await;
-                mssql::test(&mut client).await
+            Adapter::Mssql(state) => {
+                let mut client = state.client.lock().await;
+                let client = mssql_client(&mut client, &state.def, &state.password).await?;
+                mssql::test(client).await
             }
             #[cfg(feature = "oracle")]
             Adapter::Oracle(conn) => {
@@ -138,9 +149,10 @@ impl Adapter {
             match self {
                 Adapter::Postgres(pool) => pg::introspect(pool).await,
                 Adapter::MySql(pool) => mysql::introspect(pool).await,
-                Adapter::Mssql(client) => {
-                    let mut client = client.lock().await;
-                    mssql::introspect(&mut client).await
+                Adapter::Mssql(state) => {
+                    let mut client = state.client.lock().await;
+                    let client = mssql_client(&mut client, &state.def, &state.password).await?;
+                    mssql::introspect(client).await
                 }
                 #[cfg(feature = "oracle")]
                 Adapter::Oracle(conn) => {
@@ -165,9 +177,27 @@ impl Adapter {
         match self {
             Adapter::Postgres(pool) => pg::execute_query(pool, compiled, timeout_ms).await,
             Adapter::MySql(pool) => mysql::execute_query(pool, compiled, timeout_ms).await,
-            Adapter::Mssql(client) => {
-                let mut client = client.lock().await;
-                mssql::execute_query(&mut client, compiled, timeout_ms).await
+            Adapter::Mssql(state) => {
+                let mut client = state.client.lock().await;
+                let result = {
+                    let client = mssql_client(&mut client, &state.def, &state.password).await?;
+                    mssql::execute_query(client, compiled, timeout_ms).await
+                };
+                if result
+                    .as_ref()
+                    .is_err_and(|error| error.downcast_ref::<mssql::QueryTimedOut>().is_some())
+                {
+                    *client = None;
+                    match mssql::connect(&state.def, &state.password).await {
+                        Ok(replacement) => *client = Some(replacement),
+                        Err(error) => {
+                            log::warn!(
+                                "failed to reconnect SQL Server session after timeout: {error}"
+                            );
+                        }
+                    }
+                }
+                result
             }
             #[cfg(feature = "oracle")]
             Adapter::Oracle(conn) => {
@@ -182,9 +212,9 @@ impl Adapter {
             match self {
                 Adapter::Postgres(pool) => pg::explain(pool, compiled).await,
                 Adapter::MySql(pool) => mysql::explain(pool, compiled).await,
-                Adapter::Mssql(client) => {
-                    let mut client = client.lock().await;
-                    mssql::explain(&mut client, compiled).await
+                Adapter::Mssql(state) => {
+                    let mut explain_client = mssql::connect(&state.def, &state.password).await?;
+                    mssql::explain(&mut explain_client, compiled).await
                 }
                 #[cfg(feature = "oracle")]
                 Adapter::Oracle(conn) => {
@@ -200,6 +230,19 @@ impl Adapter {
         .await
         .map_err(|_| anyhow::anyhow!("EXPLAIN timed out after {DEFAULT_TIMEOUT_MS}ms"))?
     }
+}
+
+async fn mssql_client<'a>(
+    client: &'a mut Option<mssql::MssqlClient>,
+    def: &ConnectionDef,
+    password: &str,
+) -> Result<&'a mut mssql::MssqlClient> {
+    if client.is_none() {
+        *client = Some(mssql::connect(def, password).await?);
+    }
+    client
+        .as_mut()
+        .ok_or_else(|| anyhow::anyhow!("SQL Server connection is unavailable"))
 }
 
 #[cfg(test)]

@@ -148,11 +148,11 @@ pub async fn execute_query(
     .execute(&mut *conn)
     .await?;
 
-    sqlx::query("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
-        .execute(&mut *conn)
-        .await?;
-
     let query_result: Result<(Vec<ResultColumn>, Vec<Vec<ResultCell>>)> = async {
+        sqlx::query("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
+            .execute(&mut *conn)
+            .await?;
+
         let mut tx = conn.begin().await?;
 
         let mut query = sqlx::query(sqlx::AssertSqlSafe(compiled.sql.as_str()));
@@ -206,10 +206,20 @@ pub async fn execute_query(
         .execute(&mut *conn)
         .await;
 
-    let (columns, rows) = query_result?;
-    reset_result?;
-
-    Ok(QueryResult::from_rows(columns, rows))
+    match query_result {
+        Err(e) => {
+            if let Err(reset_err) = reset_result {
+                log::warn!("failed to reset MySQL MAX_EXECUTION_TIME: {reset_err}");
+            }
+            Err(e)
+        }
+        Ok((columns, rows)) => {
+            if let Err(reset_err) = reset_result {
+                log::warn!("failed to reset MySQL MAX_EXECUTION_TIME: {reset_err}");
+            }
+            Ok(QueryResult::from_rows(columns, rows))
+        }
+    }
 }
 
 fn decode_mysql_value(

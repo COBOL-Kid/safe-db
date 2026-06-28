@@ -132,9 +132,79 @@ describe('hydrateQueryFromSpec', () => {
 		expect(store.joins).toHaveLength(0);
 		expect(store.filters.children).toHaveLength(0);
 		expect(warnings.droppedTables).toEqual(['safedb_test.missing_a', 'safedb_test.missing_b']);
+		expect(warnings.droppedColumns).toEqual([]);
 		expect(warnings.droppedJoins).toBe(1);
 		expect(warnings.droppedFilters).toBe(true);
 		expect(formatHydrationWarning(warnings)).toContain('missing tables');
+	});
+
+	it('drops selected columns that no longer exist on restored tables', () => {
+		const spec: QuerySpec = {
+			tables: [{ schema: 'safedb_test', name: 'products', alias: 'saved_t0' }],
+			columns: [
+				{ table_alias: 'saved_t0', column: 'name' },
+				{ table_alias: 'saved_t0', column: 'deleted_column' }
+			],
+			joins: [],
+			filters: {
+				connector: 'And',
+				children: []
+			},
+			limit: 100,
+			schema_version: 3,
+			connector_overrides: {}
+		};
+
+		const warnings = hydrateQueryFromSpec(spec, [products], store);
+
+		expect(store.selectedColumns.has(columnKey('t0', 'name'))).toBe(true);
+		expect(store.selectedColumns.has(columnKey('t0', 'deleted_column'))).toBe(false);
+		expect(warnings.droppedColumns).toEqual(['saved_t0.deleted_column']);
+		expect(formatHydrationWarning(warnings)).toContain('1 selected column could not be restored');
+	});
+
+	it('drops joins whose columns no longer exist on restored tables', () => {
+		const spec: QuerySpec = {
+			tables: [
+				{ schema: 'safedb_test', name: 'products', alias: 'saved_t0' },
+				{ schema: 'safedb_test', name: 'categories', alias: 'saved_t1' }
+			],
+			columns: [],
+			joins: [
+				{
+					left_alias: 'saved_t0',
+					left_column: 'id',
+					right_alias: 'saved_t1',
+					right_column: 'missing_id'
+				},
+				{
+					left_alias: 'saved_t0',
+					left_column: 'id',
+					right_alias: 'saved_t1',
+					right_column: 'id'
+				}
+			],
+			filters: {
+				connector: 'And',
+				children: []
+			},
+			limit: 100,
+			schema_version: 3,
+			connector_overrides: {}
+		};
+
+		const warnings = hydrateQueryFromSpec(spec, [products, categories], store);
+
+		expect(store.joins).toEqual([
+			{
+				left_alias: 't0',
+				left_column: 'id',
+				right_alias: 't1',
+				right_column: 'id'
+			}
+		]);
+		expect(warnings.droppedJoins).toBe(1);
+		expect(formatHydrationWarning(warnings)).toContain('1 join could not be restored');
 	});
 
 	it('remaps aliases inside nested filter groups', () => {

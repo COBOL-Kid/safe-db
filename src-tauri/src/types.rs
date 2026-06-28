@@ -21,6 +21,12 @@ pub struct TransportSecurity {
     pub oracle_wallet_location: Option<String>,
     #[serde(default)]
     pub insecure_acknowledged: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub legacy_implicit: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn default_transport_security_mode() -> TransportSecurityMode {
@@ -34,6 +40,7 @@ impl Default for TransportSecurity {
             ca_pem: None,
             oracle_wallet_location: None,
             insecure_acknowledged: false,
+            legacy_implicit: false,
         }
     }
 }
@@ -99,6 +106,7 @@ impl ConnectionDef {
             self.transport_security.mode,
             TransportSecurityMode::EncryptOnly | TransportSecurityMode::Disabled
         ) && !self.transport_security.insecure_acknowledged
+            && !self.transport_security.legacy_implicit
         {
             return Err(
                 "Insecure transport must be explicitly acknowledged before saving or testing"
@@ -116,5 +124,48 @@ impl ConnectionDef {
             return Err("Verified Oracle TCPS requires an Oracle wallet location".to_string());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_connection(mode: TransportSecurityMode, legacy_implicit: bool) -> ConnectionDef {
+        ConnectionDef {
+            version: CURRENT_CONNECTION_VERSION,
+            id: "c1".to_string(),
+            name: "Test".to_string(),
+            dialect: Dialect::Postgres,
+            host: "localhost".to_string(),
+            port: 5432,
+            database: "demo".to_string(),
+            username: "user".to_string(),
+            transport_security: TransportSecurity {
+                mode,
+                ca_pem: None,
+                oracle_wallet_location: None,
+                insecure_acknowledged: false,
+                legacy_implicit,
+            },
+        }
+    }
+
+    #[test]
+    fn validate_allows_disabled_when_legacy_implicit() {
+        let def = sample_connection(TransportSecurityMode::Disabled, true);
+        assert!(def.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_disabled_without_acknowledgement() {
+        let def = sample_connection(TransportSecurityMode::Disabled, false);
+        assert!(def.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_encrypt_only_without_acknowledgement() {
+        let def = sample_connection(TransportSecurityMode::EncryptOnly, false);
+        assert!(def.validate().is_err());
     }
 }

@@ -51,7 +51,8 @@
 				mode: transportMode,
 				ca_pem: caPem.trim() || null,
 				oracle_wallet_location: oracleWalletLocation.trim() || null,
-				insecure_acknowledged: insecureAcknowledged
+				insecure_acknowledged: insecureAcknowledged,
+				legacy_implicit: false
 			}
 		};
 	}

@@ -4,6 +4,16 @@
 CREATE DATABASE IF NOT EXISTS safedb_test;
 USE safedb_test;
 
+-- Drop fixture tables so reruns are idempotent (child tables first).
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS inventory_log;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS categories;
+SET FOREIGN_KEY_CHECKS = 1;
+
 -- ---------------------------------------------------------------------------
 -- Tables
 -- ---------------------------------------------------------------------------

@@ -43,6 +43,20 @@ const BLOCKED_OWNERS: &[&str] = &[
     "APEX_040200",
 ];
 
+fn encode_connect_query_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        let ch = byte as char;
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '/') {
+            encoded.push(ch);
+        } else {
+            encoded.push('%');
+            encoded.push_str(&format!("{byte:02X}"));
+        }
+    }
+    encoded
+}
+
 fn validate_connect_field(field: &str, label: &str) -> Result<()> {
     if field.is_empty() {
         anyhow::bail!("{label} must not be empty");
@@ -73,6 +87,7 @@ pub fn connect(def: &ConnectionDef, password: &str) -> Result<Connection> {
                 .oracle_wallet_location
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("Oracle TCPS requires a wallet location"))?;
+            let wallet = encode_connect_query_value(wallet);
             format!(
                 "tcps://{}:{}/{}?wallet_location={wallet}",
                 def.host, def.port, def.database
@@ -223,8 +238,10 @@ pub fn execute_query(
     let prev_timeout = conn.call_timeout()?;
     conn.set_call_timeout(Some(Duration::from_millis(timeout_ms as u64)))?;
 
+    let mut transaction_started = false;
     let result = (|| {
         conn.execute("SET TRANSACTION READ ONLY", &[])?;
+        transaction_started = true;
 
         let mut stmt = bind_statement(conn, compiled)?;
         let rows = stmt.query(&[])?;
@@ -259,8 +276,28 @@ pub fn execute_query(
         Ok(QueryResult::from_rows(columns, result_rows))
     })();
 
-    conn.set_call_timeout(prev_timeout)?;
-    result
+    let result = match result {
+        Ok(result) => match conn.execute("COMMIT", &[]) {
+            Ok(_) => Ok(result),
+            Err(error) => Err(anyhow::anyhow!(error)),
+        },
+        Err(error) => {
+            if transaction_started && let Err(rollback_error) = conn.execute("ROLLBACK", &[]) {
+                log::warn!("failed to rollback Oracle read-only transaction: {rollback_error}");
+            }
+            Err(error)
+        }
+    };
+
+    match (result, conn.set_call_timeout(prev_timeout)) {
+        (Ok(result), Ok(())) => Ok(result),
+        (Ok(_), Err(error)) => Err(error.into()),
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(timeout_error)) => {
+            log::warn!("failed to restore Oracle call timeout after query error: {timeout_error}");
+            Err(error)
+        }
+    }
 }
 
 pub fn explain(conn: &Connection, compiled: &CompiledQuery) -> Result<ExplainResult> {
@@ -362,5 +399,27 @@ mod tests {
     #[test]
     fn validate_connect_field_accepts_valid_host() {
         assert!(validate_connect_field("db.example.com", "Host").is_ok());
+    }
+
+    #[test]
+    fn encode_connect_query_value_encodes_spaces_and_backslashes() {
+        let encoded = encode_connect_query_value(r"C:\Users\me\my wallet");
+        assert!(encoded.contains("%20"));
+        assert!(encoded.contains("%5C"));
+        assert!(!encoded.contains(' '));
+    }
+
+    #[test]
+    fn encode_connect_query_value_encodes_leading_trailing_spaces() {
+        let encoded = encode_connect_query_value(" /opt/oracle/wallet ");
+        assert_eq!(encoded, "%20/opt/oracle/wallet%20");
+    }
+
+    #[test]
+    fn encode_connect_query_value_leaves_simple_paths_unchanged() {
+        assert_eq!(
+            encode_connect_query_value("/opt/oracle/wallet"),
+            "/opt/oracle/wallet"
+        );
     }
 }

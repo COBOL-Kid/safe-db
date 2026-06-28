@@ -62,7 +62,7 @@
 	{/if}
 
 	<div class="flex-1 overflow-auto">
-		{#if result.rows.length === 0}
+		{#if result.rows.length === 0 && result.columns.length === 0}
 			<div class="flex h-full items-center justify-center">
 				<p class="text-sm text-slate-400 dark:text-slate-500">No rows returned.</p>
 			</div>
@@ -77,22 +77,30 @@
 						{/each}
 					</tr>
 				</thead>
-				<tbody>
-					{#each result.rows as row, rowIdx (rowIdx)}
-						<tr class="hover:bg-sky-50/40 dark:hover:bg-sky-900/20 {rowIdx % 2 === 1 ? 'bg-slate-50/40 dark:bg-slate-800/30' : ''}">
-							{#each row as cell, colIdx (colIdx)}
-								<td class="border-b border-slate-100 px-3 py-1.5 text-slate-700 whitespace-nowrap max-w-xs truncate dark:border-slate-800 dark:text-slate-200" title={formatCell(cell)}>
-								{#if isNullCell(cell)}
-										<span class="text-slate-300 italic dark:text-slate-500">null</span>
-									{:else}
-										{formatCell(cell)}
-									{/if}
+					<tbody>
+						{#if result.rows.length === 0}
+							<tr>
+								<td colspan={result.columns.length} class="px-3 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+									No rows returned.
 								</td>
+							</tr>
+						{:else}
+							{#each result.rows as row, rowIdx (rowIdx)}
+								<tr class="hover:bg-sky-50/40 dark:hover:bg-sky-900/20 {rowIdx % 2 === 1 ? 'bg-slate-50/40 dark:bg-slate-800/30' : ''}">
+									{#each row as cell, colIdx (colIdx)}
+										<td class="border-b border-slate-100 px-3 py-1.5 text-slate-700 whitespace-nowrap max-w-xs truncate dark:border-slate-800 dark:text-slate-200" title={formatCell(cell)}>
+										{#if isNullCell(cell)}
+												<span class="text-slate-300 italic dark:text-slate-500">null</span>
+											{:else}
+												{formatCell(cell)}
+											{/if}
+										</td>
+									{/each}
+								</tr>
 							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+						{/if}
+					</tbody>
+				</table>
 		{/if}
 	</div>
 </div>

@@ -77,15 +77,30 @@ describe('ResultsTable', () => {
 		expect(Array.from(ths).map((th) => th.textContent)).toEqual(['a', 'b', 'c']);
 	});
 
-	it('renders the empty result (no rows) without crashing', () => {
+	it('renders column headers for an empty result with known columns', () => {
 		const result = makeResult([]);
 
 		render(ResultsTable, { result });
 
-		// No <tbody> rendered for empty results — the component shows
-		// "No rows returned." instead.
+		const ths = document.querySelectorAll('thead th');
+		expect(Array.from(ths).map((th) => th.textContent)).toEqual(['a', 'b', 'c']);
 		expect(screen.getByText('No rows returned.')).toBeInTheDocument();
-		expect(document.querySelectorAll('tbody tr').length).toBe(0);
+		expect(document.querySelector('tbody td')?.getAttribute('colspan')).toBe('3');
+	});
+
+	it('renders the centered empty state when no rows or columns are known', () => {
+		const result: QueryResult = {
+			columns: [],
+			rows: [],
+			row_count: 0,
+			truncated: false,
+			warnings: []
+		};
+
+		render(ResultsTable, { result });
+
+		expect(screen.getByText('No rows returned.')).toBeInTheDocument();
+		expect(document.querySelector('table')).toBeNull();
 	});
 
 	it('renders the truncated badge when result.truncated is true', () => {

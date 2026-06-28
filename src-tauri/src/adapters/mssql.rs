@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::fmt;
 use std::time::Duration;
 use tiberius::{AuthMethod, Client, ColumnData, Config, EncryptionLevel};
 use tokio::net::TcpStream;
@@ -11,6 +12,19 @@ use crate::query::ir::{BindValue, CompiledQuery, QueryResult, ResultCell, Result
 use crate::types::{ConnectionDef, TransportSecurityMode};
 
 pub type MssqlClient = Client<tokio_util::compat::Compat<TcpStream>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueryTimedOut {
+    pub timeout_ms: u32,
+}
+
+impl fmt::Display for QueryTimedOut {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Query timed out after {}ms", self.timeout_ms)
+    }
+}
+
+impl std::error::Error for QueryTimedOut {}
 
 pub async fn connect(def: &ConnectionDef, password: &str) -> Result<MssqlClient> {
     let mut config = Config::new();
@@ -256,7 +270,7 @@ pub async fn execute_query(
     let duration = Duration::from_millis(timeout_ms as u64);
     timeout(duration, execute_query_inner(client, compiled, timeout_ms))
         .await
-        .map_err(|_| anyhow::anyhow!("Query timed out after {timeout_ms}ms"))?
+        .map_err(|_| anyhow::anyhow!(QueryTimedOut { timeout_ms }))?
 }
 
 async fn execute_query_inner(
@@ -316,9 +330,29 @@ pub async fn explain(client: &mut MssqlClient, compiled: &CompiledQuery) -> Resu
     client.execute("SET SHOWPLAN_XML ON", &[]).await?;
 
     let plan_result = query_with_params(client, compiled).await;
-    client.execute("SET SHOWPLAN_XML OFF", &[]).await?;
+    let disable_result = disable_showplan_xml(client).await;
 
-    let rows = plan_result?;
+    let rows = match (plan_result, disable_result) {
+        (Err(e), _) => return Err(e),
+        (Ok(_), Err(e)) => return Err(e),
+        (Ok(rows), Ok(())) => rows,
+    };
+
+    explain_result_from_showplan_rows(rows)
+}
+
+async fn disable_showplan_xml(client: &mut MssqlClient) -> Result<()> {
+    let mut result = client.execute("SET SHOWPLAN_XML OFF", &[]).await;
+    if result.is_err() {
+        result = client.execute("SET SHOWPLAN_XML OFF", &[]).await;
+    }
+    if result.is_err() {
+        result = client.execute("SET SHOWPLAN_XML OFF", &[]).await;
+    }
+    result.map(|_| ()).map_err(Into::into)
+}
+
+fn explain_result_from_showplan_rows(rows: Vec<tiberius::Row>) -> Result<ExplainResult> {
     let xml: String = rows
         .into_iter()
         .filter_map(|row| {
@@ -386,5 +420,45 @@ mod tests {
     #[test]
     fn parse_showplan_cost_returns_none_for_missing_marker() {
         assert_eq!(parse_showplan_cost("<Plan />"), None);
+    }
+
+    mod merge_showplan {
+        fn merge_showplan_outcomes<T, E: PartialEq + std::fmt::Debug>(
+            plan_result: Result<T, E>,
+            disable_result: Result<(), E>,
+        ) -> Result<T, E> {
+            match (plan_result, disable_result) {
+                (Err(e), _) => Err(e),
+                (Ok(_value), Err(e)) => Err(e),
+                (Ok(value), Ok(())) => Ok(value),
+            }
+        }
+
+        #[test]
+        fn prefers_plan_error() {
+            let merged =
+                merge_showplan_outcomes::<&str, &str>(Err("plan failed"), Err("disable failed"));
+            assert_eq!(merged, Err("plan failed"));
+        }
+
+        #[test]
+        fn surfaces_disable_error_when_plan_succeeds() {
+            let merged = merge_showplan_outcomes::<&str, &str>(Ok("rows"), Err("disable failed"));
+            assert_eq!(merged, Err("disable failed"));
+        }
+
+        #[test]
+        fn returns_rows_when_both_succeed() {
+            let merged = merge_showplan_outcomes::<&str, &str>(Ok("rows"), Ok(()));
+            assert_eq!(merged, Ok("rows"));
+        }
+    }
+
+    #[test]
+    fn query_timeout_error_can_be_downcast() {
+        let error = anyhow::anyhow!(QueryTimedOut { timeout_ms: 250 });
+        let timeout = error.downcast_ref::<QueryTimedOut>().unwrap();
+        assert_eq!(timeout.timeout_ms, 250);
+        assert_eq!(timeout.to_string(), "Query timed out after 250ms");
     }
 }

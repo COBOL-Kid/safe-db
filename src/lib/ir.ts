@@ -6,6 +6,7 @@ export interface TransportSecurity {
 	ca_pem?: string | null;
 	oracle_wallet_location?: string | null;
 	insecure_acknowledged: boolean;
+	legacy_implicit?: boolean;
 }
 
 export interface ConnectionDef {

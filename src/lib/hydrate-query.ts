@@ -23,6 +23,7 @@ export interface QueryHydrationTarget {
 
 export interface HydrationWarnings {
 	droppedTables: string[];
+	droppedColumns: string[];
 	droppedJoins: number;
 	droppedFilters: boolean;
 }
@@ -99,6 +100,7 @@ export function hydrateQueryFromSpec(
 	const aliasMap = new Map<string, string>();
 	const tableByNewAlias = new Map<string, TableInfo>();
 	const droppedTables: string[] = [];
+	const droppedColumns: string[] = [];
 
 	for (const t of spec.tables) {
 		const tableInfo = schemaByKey.get(schemaKey(t.schema, t.name));
@@ -117,8 +119,11 @@ export function hydrateQueryFromSpec(
 
 	for (const col of spec.columns) {
 		const newAlias = aliasMap.get(col.table_alias);
-		if (newAlias) {
+		const tableInfo = newAlias ? tableByNewAlias.get(newAlias) : null;
+		if (newAlias && tableInfo?.columns.some((column) => column.name === col.column)) {
 			target.toggleColumn(newAlias, col.column);
+		} else {
+			droppedColumns.push(`${col.table_alias}.${col.column}`);
 		}
 	}
 
@@ -126,7 +131,11 @@ export function hydrateQueryFromSpec(
 	for (const join of spec.joins) {
 		const leftAlias = aliasMap.get(join.left_alias);
 		const rightAlias = aliasMap.get(join.right_alias);
-		if (!leftAlias || !rightAlias) {
+		const leftTable = leftAlias ? tableByNewAlias.get(leftAlias) : null;
+		const rightTable = rightAlias ? tableByNewAlias.get(rightAlias) : null;
+		const leftColumnExists = leftTable?.columns.some((column) => column.name === join.left_column);
+		const rightColumnExists = rightTable?.columns.some((column) => column.name === join.right_column);
+		if (!leftAlias || !rightAlias || !leftColumnExists || !rightColumnExists) {
 			droppedJoins += 1;
 			continue;
 		}
@@ -148,13 +157,18 @@ export function hydrateQueryFromSpec(
 
 	target.setLimit(spec.limit);
 
-	return { droppedTables, droppedJoins, droppedFilters };
+	return { droppedTables, droppedColumns, droppedJoins, droppedFilters };
 }
 
 export function formatHydrationWarning(warnings: HydrationWarnings): string | null {
 	const parts: string[] = [];
 	if (warnings.droppedTables.length > 0) {
 		parts.push(`missing tables: ${warnings.droppedTables.join(', ')}`);
+	}
+	if (warnings.droppedColumns.length > 0) {
+		parts.push(
+			`${warnings.droppedColumns.length} selected column${warnings.droppedColumns.length !== 1 ? 's' : ''} could not be restored`
+		);
 	}
 	if (warnings.droppedJoins > 0) {
 		parts.push(
