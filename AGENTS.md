@@ -120,10 +120,11 @@ Standard commands live in `## Commands` above. Notes below are cloud-environment
 
 ## Learned Workspace Facts
 - Empty database passwords are valid connection credentials, especially for local MySQL; preserve `""` through form submission, credential storage, and builder/query paths.
-- `pnpm db:seed:mysql` no longer wipes the app data dir by default; it leaves `connections.json` and `query_history.json` alone. Use `pnpm db:seed:mysql:reset-state` to wipe connections and history (saved queries and settings are always left untouched). `pnpm db:seed:mysql:reset` is now `--reset --reset-state` (drop DB + wipe app state).
+- `pnpm db:seed:mysql` no longer wipes the app data dir by default; it leaves `connections.json` and `query_history.json` alone. The fixture (`testdata_mysql.sql`) drops and recreates tables so repeat seeds work without `--reset`. Use `pnpm db:seed:mysql:reset-state` to wipe connections and history (saved queries and settings are always left untouched). `pnpm db:seed:mysql:reset` is `--reset --reset-state` (drop DB + wipe app state).
 - `window.confirm()` and `prompt()` are unreliable in Tauri’s macOS WebView (dialogs can hide behind the app window); use in-app `ConfirmDialog` / `PromptDialog` for delete, clear-history, and save-query flows.
 - Connection profiles (version 2) include `transport_security`; legacy entries missing the field migrate on load to `Disabled` with `legacy_implicit: true` (backup at `connections.migration.bak`), keeping local plaintext DBs working until re-saved with an explicit transport choice.
 - Local MySQL for dev/smoke tests uses sibling `mysql-test-container` (`safedb-mysql`): `root` with empty password on `safedb_test`, or read-only `testuser` on `safedb_test` / `honestcar`.
 - There is no in-app connection edit flow; delete and add a new connection is the supported path.
 - Query filter values must use literal kinds matching the schema-derived column category; hydration should normalize old saved/history specs before rerun.
 - Empty result sets should still expose selected column metadata in results where the adapter can infer it from compiled SQL.
+- MSSQL `EXPLAIN` opens a short-lived separate `mssql::connect()` client; the main execution client is never put in `SHOWPLAN_XML` mode, so forced query retries stay on a clean session.

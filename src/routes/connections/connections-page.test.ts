@@ -97,8 +97,11 @@ describe('Connections page', () => {
 		// Two "Add Connection" buttons (header + empty state) — pick the empty-state one.
 		const addButtons = screen.getAllByRole('button', { name: 'Add Connection' });
 		await user.click(addButtons[addButtons.length - 1]);
-		// ConnectionForm exposes a "Test Connection" button when shown.
-		expect(await screen.findByRole('button', { name: 'Test Connection' })).toBeInTheDocument();
+		expect(
+			await screen.findByRole('button', {
+				name: 'I have a connection string Paste from your host or dashboard'
+			})
+		).toBeInTheDocument();
 	});
 
 	it('Open invokes setActive, schema.clear, schema.load, then goto /builder in order', async () => {

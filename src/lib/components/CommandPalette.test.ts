@@ -250,6 +250,18 @@ describe('CommandPalette', () => {
 		});
 	});
 
+	it('Enter from the search input executes the selected command once', async () => {
+		render(CommandPalette, { open: true });
+		const search = await screen.findByLabelText('Command search');
+
+		fireEvent.keyDown(search, { key: 'Enter' });
+
+		await waitFor(() => {
+			expect(gotoMock).toHaveBeenCalledWith('/');
+		});
+		expect(gotoMock).toHaveBeenCalledTimes(1);
+	});
+
 	it('Run Query invokes query.run(activeId) and navigates to /builder', async () => {
 		connections.connections = [connA];
 		connections.activeId = 'c1';
