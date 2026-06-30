@@ -5,6 +5,7 @@ use safe_db_lib::query::validate::validate;
 use safe_db_lib::types::{
     CURRENT_CONNECTION_VERSION, ConnectionDef, Dialect, TransportSecurity, TransportSecurityMode,
 };
+use std::process::Command;
 
 struct MySqlConfig {
     host: String,
@@ -12,6 +13,14 @@ struct MySqlConfig {
     database: String,
     username: String,
     password: String,
+    password_source: PasswordSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PasswordSource {
+    Env,
+    Docker(String),
+    DefaultEmpty,
 }
 
 fn connection_def(config: &MySqlConfig) -> ConnectionDef {
@@ -31,39 +40,141 @@ fn connection_def(config: &MySqlConfig) -> ConnectionDef {
     }
 }
 
-fn mysql_config_from_env() -> Option<MySqlConfig> {
-    let host = std::env::var("SAFEDB_TEST_MYSQL_HOST").ok()?;
+fn mysql_config_from_env() -> Result<Option<MySqlConfig>, String> {
+    let Some(host) = std::env::var("SAFEDB_TEST_MYSQL_HOST").ok() else {
+        return Ok(None);
+    };
     let port = std::env::var("SAFEDB_TEST_MYSQL_PORT")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(3306);
-    let database = std::env::var("SAFEDB_TEST_MYSQL_DATABASE").ok()?;
-    let username = std::env::var("SAFEDB_TEST_MYSQL_USER").ok()?;
-    let password = std::env::var("SAFEDB_TEST_MYSQL_PASSWORD").unwrap_or_default();
+    let Some(database) = std::env::var("SAFEDB_TEST_MYSQL_DATABASE").ok() else {
+        return Ok(None);
+    };
+    let Some(username) = std::env::var("SAFEDB_TEST_MYSQL_USER").ok() else {
+        return Ok(None);
+    };
+    let (password, password_source) = match std::env::var("SAFEDB_TEST_MYSQL_PASSWORD").ok() {
+        Some(password) => (password, PasswordSource::Env),
+        None => match mysql_root_password_from_docker(&host, port, &username)? {
+            Some((container, password)) => (password, PasswordSource::Docker(container)),
+            None => (String::new(), PasswordSource::DefaultEmpty),
+        },
+    };
 
-    Some(MySqlConfig {
+    Ok(Some(MySqlConfig {
         host,
         port,
         database,
         username,
         password,
+        password_source,
+    }))
+}
+
+fn mysql_root_password_from_docker(
+    host: &str,
+    port: u16,
+    username: &str,
+) -> Result<Option<(String, String)>, String> {
+    if username != "root" || !matches!(host, "localhost" | "127.0.0.1") {
+        return Ok(None);
+    }
+
+    if let Some(container) = std::env::var("SAFEDB_TEST_MYSQL_DOCKER")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    {
+        let password = docker_env_var(&container, "MYSQL_ROOT_PASSWORD").map_err(|error| {
+            format!("failed to inspect pinned Docker container '{container}': {error}")
+        })?;
+        return Ok(password.map(|password| (container, password)));
+    }
+
+    let Some(container) = mysql_docker_container_publishing_port(port)? else {
+        return Ok(None);
+    };
+    Ok(docker_env_var(&container, "MYSQL_ROOT_PASSWORD")?.map(|password| (container, password)))
+}
+
+fn docker_env_var(container: &str, key: &str) -> Result<Option<String>, String> {
+    let output = Command::new("docker")
+        .args([
+            "inspect",
+            container,
+            "--format",
+            "{{range .Config.Env}}{{println .}}{{end}}",
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .find_map(|(name, value)| (name == key).then(|| value.to_string())))
+}
+
+fn mysql_docker_container_publishing_port(port: u16) -> Result<Option<String>, String> {
+    let publish_filter = format!("publish={port}");
+    let output = match Command::new("docker")
+        .args([
+            "ps",
+            "--filter",
+            "status=running",
+            "--filter",
+            &publish_filter,
+            "--format",
+            "{{.Names}}\t{{.Image}}",
+        ])
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    Ok(mysql_container_from_docker_ps(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+fn mysql_container_from_docker_ps(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let (name, image) = line.split_once('\t')?;
+        let image = image.to_ascii_lowercase();
+        (image.contains("mysql") || image.contains("mariadb")).then(|| name.to_string())
     })
 }
 
 #[tokio::test]
 async fn mysql_connect_introspect_validate_compile_execute() {
-    let Some(config) = mysql_config_from_env() else {
-        eprintln!(
-            "skipping mysql_connect_introspect_validate_compile_execute: set \
+    let config = match mysql_config_from_env() {
+        Ok(Some(config)) => config,
+        Ok(None) => {
+            eprintln!(
+                "skipping mysql_connect_introspect_validate_compile_execute: set \
              SAFEDB_TEST_MYSQL_HOST, SAFEDB_TEST_MYSQL_DATABASE, and \
              SAFEDB_TEST_MYSQL_USER to run this smoke test"
-        );
-        return;
+            );
+            return;
+        }
+        Err(error) => panic!("mysql smoke test configuration failed: {error}"),
     };
 
-    let pool = mysql::connect(&connection_def(&config), &config.password)
-        .await
-        .expect("connect should succeed");
+    let pool = match mysql::connect(&connection_def(&config), &config.password).await {
+        Ok(pool) => pool,
+        Err(error) => panic!(
+            "connect should succeed for {}@{}:{} using {:?} password: {error:?}",
+            config.username, config.host, config.port, config.password_source
+        ),
+    };
 
     let version = mysql::test(&pool).await.expect("test query should succeed");
     assert!(
@@ -119,4 +230,21 @@ async fn mysql_connect_introspect_validate_compile_execute() {
         .expect("execute should succeed");
     assert!(result.row_count <= 5);
     assert!(!result.columns.is_empty());
+}
+
+#[test]
+fn parses_first_mysql_or_mariadb_container_from_docker_ps() {
+    let output = "cache\tredis:8\ncustom-db\tghcr.io/example/mariadb:11\nother\tpostgres:18\n";
+
+    assert_eq!(
+        mysql_container_from_docker_ps(output),
+        Some("custom-db".to_string())
+    );
+}
+
+#[test]
+fn ignores_non_mysql_containers_from_docker_ps() {
+    let output = "cache\tredis:8\npg\tpostgres:18\n";
+
+    assert_eq!(mysql_container_from_docker_ps(output), None);
 }
