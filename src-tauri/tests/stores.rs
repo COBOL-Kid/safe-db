@@ -6,7 +6,7 @@ use safe_db_lib::query::ir::{
     CURRENT_SCHEMA_VERSION, FilterGroup, FilterNode, FilterOp, FilterValue, GroupConnector,
     LiteralKind, QuerySpec, TableRef,
 };
-use safe_db_lib::settings::SettingsStore;
+use safe_db_lib::settings::{Settings, SettingsStore, normalize_settings};
 use safe_db_lib::types::{CURRENT_CONNECTION_VERSION, ConnectionDef, Dialect, TransportSecurity};
 use tempfile::TempDir;
 
@@ -157,6 +157,78 @@ fn settings_store_defaults_and_round_trip() {
     assert_eq!(loaded.blocked_schemas, vec!["audit"]);
     assert_eq!(loaded.theme, "light");
     assert_eq!(loaded.explain_cost_threshold, 100_000.0);
+}
+
+#[test]
+fn settings_store_save_round_trips_non_default_values() {
+    let dir = TempDir::new().unwrap();
+    let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
+
+    let saved = Settings {
+        blocked_schemas: vec!["pg_catalog".to_string(), "information_schema".to_string()],
+        explain_cost_threshold: 42.5,
+        explain_cost_thresholds: Default::default(),
+        theme: "dark".to_string(),
+    };
+    store.save(&saved).unwrap();
+
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.blocked_schemas, saved.blocked_schemas);
+    assert_eq!(loaded.explain_cost_threshold, saved.explain_cost_threshold);
+    assert_eq!(loaded.theme, saved.theme);
+}
+
+#[test]
+fn settings_store_load_returns_defaults_for_missing_or_empty_file() {
+    let dir = TempDir::new().unwrap();
+    let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
+
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.explain_cost_threshold, 100_000.0);
+    assert_eq!(loaded.theme, "light");
+    assert!(loaded.blocked_schemas.is_empty());
+
+    std::fs::write(dir.path().join("settings.json"), "   \n").unwrap();
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.explain_cost_threshold, 100_000.0);
+    assert_eq!(loaded.theme, "light");
+}
+
+#[test]
+fn settings_store_load_propagates_corrupt_json_errors() {
+    let dir = TempDir::new().unwrap();
+    let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
+
+    std::fs::write(dir.path().join("settings.json"), "{ this is not json").unwrap();
+    assert!(store.load().is_err());
+}
+
+#[test]
+fn settings_store_save_defaults_round_trips() {
+    let dir = TempDir::new().unwrap();
+    let store = SettingsStore::new(dir.path().to_path_buf()).unwrap();
+
+    store.save(&Settings::default()).unwrap();
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.explain_cost_threshold, 100_000.0);
+    assert_eq!(loaded.theme, "light");
+    assert!(loaded.blocked_schemas.is_empty());
+}
+
+#[test]
+fn normalize_settings_lowercases_blocked_schemas_and_clamps_threshold() {
+    let mut settings = Settings {
+        blocked_schemas: vec!["Audit".to_string(), "audit".to_string()],
+        explain_cost_threshold: 0.5,
+        explain_cost_thresholds: Default::default(),
+        theme: "dark".to_string(),
+    };
+
+    normalize_settings(&mut settings);
+
+    assert_eq!(settings.blocked_schemas, vec!["audit".to_string()]);
+    assert_eq!(settings.explain_cost_threshold, 1.0);
+    assert_eq!(settings.theme, "dark");
 }
 
 const V1_SAVED_QUERIES: &str = r#"[

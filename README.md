@@ -2,7 +2,7 @@
 
 Desktop app for safely exploring production databases. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN cost warnings.
 
-Built with **Tauri 2** (Rust) and **SvelteKit 2** (Svelte 5).
+Built with **Tauri 2.11.3** (Rust) and **SvelteKit 2** (Svelte 5).
 
 ## Features
 
@@ -26,7 +26,7 @@ Built with **Tauri 2** (Rust) and **SvelteKit 2** (Svelte 5).
 
 ## Prerequisites
 
-- **Node.js** `24.17.0` (see `.nvmrc` / `package.json` `devEngines`)
+- **Node.js** `24.18.0` (see `.nvmrc` / `package.json` `devEngines`)
 - **pnpm** `11.9.0` (`corepack enable` or install from `packageManager` in `package.json`)
 - **Rust** `1.96.0+` (pinned in `src-tauri/rust-toolchain.toml`)
 - Platform deps for Tauri 2 ([Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
@@ -143,17 +143,19 @@ safe-db/
 ├── src-tauri/                        # Rust backend
 │   ├── src/
 │   │   ├── adapters/                 # pg, mysql, mssql, oracle (feature-gated)
-│   │   ├── query/                    # ir, validate, compile
-│   │   ├── commands.rs               # Tauri invoke handlers
-│   │   ├── secrets.rs                # keyring + in-process session cache
+│   │   ├── query/                    # ir, validate + helpers, compile + helpers
+│   │   ├── commands.rs               # command module root / re-exports
+│   │   ├── commands/                 # connections, query, query_core, saved_queries, settings
+│   │   ├── secrets.rs                # secrets module root / re-exports
+│   │   ├── secrets/                  # backend selection, store access, session cache
 │   │   ├── introspect.rs             # shared schema types
 │   │   ├── config.rs                 # connection profiles (no passwords)
 │   │   ├── queries.rs                # saved queries + history store
 │   │   ├── settings.rs
 │   │   ├── types.rs
 │   │   ├── lib.rs / main.rs
-│   ├── tests/                        # secrets_smoke, secrets_cache, secrets_native,
-│   │                                 #   pg_smoke, mysql_smoke, stores
+│   ├── tests/                        # adapters, commands, core, ir, query, stores,
+│   │                                 #   secrets*, pg_smoke, mysql_smoke
 │   ├── capabilities/                 # Tauri 2 permissions
 │   ├── Entitlements.plist            # macOS sandbox + keychain-access-groups
 │   ├── Cargo.toml

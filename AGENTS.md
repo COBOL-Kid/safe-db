@@ -15,7 +15,7 @@ See the git history (early commits `P0`–`P4`) for the original implementation 
 - **Command palette** — `Cmd+K` / `Ctrl+K` (`CommandPalette.svelte`)
 
 ## Tech stack
-- **Tauri 2.11** (Rust backend) + **SvelteKit 2** + **Svelte 5 runes** (frontend)
+- **Tauri 2.11.3** (Rust backend) + **SvelteKit 2** + **Svelte 5 runes** (frontend)
 - **TailwindCSS 4** (via `@tailwindcss/vite`, imported in `src/routes/layout.css`)
 - **@sveltejs/adapter-static** (SPA fallback mode, SSR disabled)
 - DB drivers: `sqlx` 0.9 (PG/MySQL), `tiberius` (MSSQL), `oracle` crate (Oracle, optional `oracle` Cargo feature)
@@ -43,7 +43,7 @@ Run `pnpm check` after editing Svelte/TS files. Run `cargo check` in `src-tauri/
 ## Testing
 - **Fast gate (CI/local default):** `pnpm test` — typecheck, Vitest (`src/**/*.test.ts`), and all Rust tests including `secrets_cache` and `stores` (no live DB required).
 - **Frontend only:** `pnpm test:unit` — query store + hydration, schema/settings/connections stores, `ConnectionForm`, `ConfirmDialog`, `FilterBuilder`, `ResultsTable`, plus page-level tests for connections; mocks Tauri invoke and SvelteKit `$app/*` in `src/lib/test/setup.ts`.
-- **Backend unit tests:** inline `#[cfg(test)]` in `query/validate.rs`, `query/compile.rs`, `introspect.rs`.
+- **Backend unit/integration tests:** Rust tests live under `src-tauri/tests/` and cover adapters, commands/query core, stores, query IR/validation/compilation, secrets, and DB smoke paths.
 - **Smoke gate (optional, needs DB):** `pnpm test:smoke` after seeding/configuring databases:
   - `secrets_smoke` — always runs (disabled keyring backend).
   - `pg_smoke` — set `SAFEDB_TEST_PG_HOST`, `SAFEDB_TEST_PG_DATABASE`, `SAFEDB_TEST_PG_USER`, `SAFEDB_TEST_PG_PASSWORD` (optional `SAFEDB_TEST_PG_PORT`).
@@ -70,9 +70,11 @@ safe-db/
 ├── src-tauri/                        # Rust backend
 │   ├── src/
 │   │   ├── adapters/                 # pg, mysql, mssql, oracle (feature-gated)
-│   │   ├── query/                    # ir, validate, compile
-│   │   ├── commands.rs               # Tauri command handlers
-│   │   ├── secrets.rs                # keyring + in-process session cache
+│   │   ├── query/                    # ir, validate + helpers, compile + helpers
+│   │   ├── commands.rs               # command module root / re-exports
+│   │   ├── commands/                 # connections, query, query_core, saved_queries, settings
+│   │   ├── secrets.rs                # secrets module root / re-exports
+│   │   ├── secrets/                  # backend selection, store access, session cache
 │   │   ├── introspect.rs             # shared schema types
 │   │   ├── config.rs                 # connection profiles (no passwords)
 │   │   ├── queries.rs                # saved queries + history store
@@ -80,12 +82,13 @@ safe-db/
 │   │   ├── types.rs
 │   │   ├── lib.rs / main.rs
 │   ├── tests/
-│   │   ├── secrets_smoke.rs          # keyring round-trip (disabled backend)
-│   │   ├── secrets_cache.rs          # session cache avoids repeat OS reads
-│   │   ├── secrets_native.rs          # manual macOS Protected Data + Linux keyutils smoke (#[ignore])
-│   │   ├── pg_smoke.rs               # env-gated Postgres connect + introspect
-│   │   ├── mysql_smoke.rs            # env-gated MySQL connect + introspect
-│   │   └── stores.rs                 # saved queries + history store round-trip
+│   │   ├── adapters.rs               # adapter helper behavior
+│   │   ├── commands.rs               # query core behavior and cost guard
+│   │   ├── core.rs                   # connection validation, indexes, atomic write
+│   │   ├── ir.rs / query.rs          # IR, validation, compilation
+│   │   ├── secrets*.rs               # secrets backend/cache/native/smoke coverage
+│   │   ├── pg_smoke.rs / mysql_smoke.rs
+│   │   └── stores.rs                 # config/settings/query store round-trips and migrations
 │   ├── capabilities/                 # Tauri 2 permissions
 │   ├── Entitlements.plist            # macOS sandbox + keychain-access-groups
 │   ├── Cargo.toml
@@ -108,11 +111,11 @@ safe-db/
 ## Cursor Cloud specific instructions
 Standard commands live in `## Commands` above. Notes below are cloud-environment specifics that are not obvious.
 
-- **Toolchain**: Node `24.17.0` (`.nvmrc` + `package.json` `devEngines`) and `pnpm@11.9.0` (`packageManager`). Use a login shell or `nvm use` so Node 24 is on `PATH` before running `pnpm`. Rust `1.96.0+` is pinned in `src-tauri/rust-toolchain.toml` and `Cargo.toml` (`rust-version = "1.96.0"`).
+- **Toolchain**: Node `24.18.0` (`.nvmrc` + `package.json` `devEngines`) and `pnpm@11.9.0` (`packageManager`). Use a login shell or `nvm use` so Node 24 is on `PATH` before running `pnpm`. Rust `1.96.0+` is pinned in `src-tauri/rust-toolchain.toml` and `Cargo.toml` (`rust-version = "1.96.0"`).
 - **System deps** (already baked into the VM snapshot): Tauri 2 GTK/WebKit libs (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`, `librsvg2-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`, `build-essential`, `pkg-config`) plus `postgresql`.
 - **Running the desktop app**: `pnpm tauri dev` needs an X display — use `DISPLAY=:1` (the virtual display). `libEGL ... DRI3` warnings on launch are harmless (software rendering). `pnpm tauri dev` runs its own `pnpm dev` (vite on port `1420`, `strictPort`), so do NOT also run a standalone `pnpm dev` at the same time or the port will conflict.
 - **Testing DB connectivity**: the app reads from a real PG/MySQL DB. For MySQL, `pnpm db:seed:mysql` loads `testdata_mysql.sql` (e-commerce schema: categories, products, customers, orders, order_items, inventory_log) into `safedb_test`; the script auto-connects to `localhost:3306` / `root` and reads `SAFEDB_TEST_MYSQL_*` env vars for overrides. PostgreSQL is installed but not auto-started; start it with `sudo pg_ctlcluster 16 main start`. A throwaway demo DB can be created (role `safedb` / db `demo`) and connected via the in-app connection form (host `localhost`, port `5432`).
-- **Credentials/keyring**: `keyring-core` with platform-native stores. On macOS the only OS-backed store is Apple **Protected Data** (`apple-native-keyring-store` feature `protected`); legacy Keychain is intentionally unsupported. The default (`SAFEDB_KEYCHAIN_BACKEND=auto`) probes Protected Data with a throwaway write at startup; in **debug** builds it falls back to in-memory `disabled` when the probe fails (unsigned `pnpm tauri dev` lacks keychain entitlements even though `Store::new()` succeeds). **Test Connection** does not use the keyring; **Save Connection** does. In **release** builds, the probe must pass or startup fails. Override with `protected` or `disabled`. Protected Data requires sandbox entitlements — see [src-tauri/Entitlements.plist](src-tauri/Entitlements.plist) and `bundle.macOS.entitlements` in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json). Use `pnpm tauri build` and the signed `.app` to test credential persistence across restarts. Windows uses the credential store; Linux uses kernel keyutils (`linux-keyutils-keyring-store`, headless). Builder/query paths use an in-process credential **session** in [src-tauri/src/secrets.rs](src-tauri/src/secrets.rs) so repeated `get_schema` / `run_query` calls do not hit the OS credential store after the first unlock.
+- **Credentials/keyring**: `keyring-core` with platform-native stores. On macOS the only OS-backed store is Apple **Protected Data** (`apple-native-keyring-store` feature `protected`); legacy Keychain is intentionally unsupported. The default (`SAFEDB_KEYCHAIN_BACKEND=auto`) probes Protected Data with a throwaway write at startup; in **debug** builds it falls back to in-memory `disabled` when the probe fails (unsigned `pnpm tauri dev` lacks keychain entitlements even though `Store::new()` succeeds). **Test Connection** does not use the keyring; **Save Connection** does. In **release** builds, the probe must pass or startup fails. Override with `protected` or `disabled`. Protected Data requires sandbox entitlements — see [src-tauri/Entitlements.plist](src-tauri/Entitlements.plist) and `bundle.macOS.entitlements` in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json). Use `pnpm tauri build` and the signed `.app` to test credential persistence across restarts. Windows uses the credential store; Linux uses kernel keyutils (`linux-keyutils-keyring-store`, headless). Builder/query paths use an in-process credential **session** in `src-tauri/src/secrets/session.rs` so repeated `get_schema` / `run_query` calls do not hit the OS credential store after the first unlock.
 - **Smoke tests**: `pnpm test:smoke` runs `secrets_smoke` (opts into `disabled` backend, passes on any host), env-gated `pg_smoke`, and env-gated `mysql_smoke` (seed with `pnpm db:seed:mysql` first). `secrets_cache` and `stores` run via `pnpm test:rust` / `pnpm test`. `secrets_native` is `#[ignore]` and meant for manual macOS / Linux verification: `SAFEDB_KEYCHAIN_BACKEND=auto cargo test --test secrets_native -- --ignored --nocapture`.
 - Running a query may surface an `EXPLAIN failed` guard. The first run is blocked and the UI asks for "Run anyway"; a confirmed forced retry executes with the same validation, row limit, and timeout.
 

@@ -280,7 +280,7 @@ fn decode_mysql_value(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MysqlTypeKind {
+pub(crate) enum MysqlTypeKind {
     SmallInt,
     Int,
     BigInt,
@@ -294,7 +294,7 @@ enum MysqlTypeKind {
     Text,
 }
 
-fn classify_mysql_type(type_name: &str) -> MysqlTypeKind {
+pub(crate) fn classify_mysql_type(type_name: &str) -> MysqlTypeKind {
     match type_name {
         "TINYINT" | "SMALLINT" | "MEDIUMINT" => MysqlTypeKind::SmallInt,
         "INT" | "INTEGER" => MysqlTypeKind::Int,
@@ -349,37 +349,4 @@ pub async fn explain(pool: &MySqlPool, compiled: &CompiledQuery) -> Result<Expla
             "Could not parse EXPLAIN cost from MySQL JSON plan".to_string(),
         ),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn classify_mysql_tinyint_as_lossless_integer() {
-        assert_eq!(classify_mysql_type("TINYINT"), MysqlTypeKind::SmallInt);
-    }
-
-    #[test]
-    fn classify_mysql_type_integer_aliases() {
-        assert_eq!(classify_mysql_type("SMALLINT"), MysqlTypeKind::SmallInt);
-        assert_eq!(classify_mysql_type("MEDIUMINT"), MysqlTypeKind::SmallInt);
-        assert_eq!(classify_mysql_type("INT"), MysqlTypeKind::Int);
-        assert_eq!(classify_mysql_type("INTEGER"), MysqlTypeKind::Int);
-        assert_eq!(classify_mysql_type("BIGINT"), MysqlTypeKind::BigInt);
-    }
-
-    #[test]
-    fn classify_mysql_type_float_aliases() {
-        assert_eq!(classify_mysql_type("FLOAT"), MysqlTypeKind::Float);
-        assert_eq!(classify_mysql_type("DOUBLE"), MysqlTypeKind::Double);
-    }
-
-    #[test]
-    fn classify_mysql_type_unknown_falls_back_to_text() {
-        assert_eq!(classify_mysql_type("VARCHAR"), MysqlTypeKind::Text);
-        assert_eq!(classify_mysql_type("DATETIME"), MysqlTypeKind::DateTime);
-        assert_eq!(classify_mysql_type(""), MysqlTypeKind::Text);
-        assert_eq!(classify_mysql_type("JSON"), MysqlTypeKind::Json);
-    }
 }
