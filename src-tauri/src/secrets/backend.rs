@@ -4,8 +4,13 @@ use std::sync::Mutex;
 
 #[cfg(any(test, feature = "test-helpers"))]
 use super::STORE_READ_COUNT;
-use super::{ENV_BACKEND, PROTECTED_PROBE_KEY};
+use super::ENV_BACKEND;
+
+#[cfg(target_os = "macos")]
 use crate::secrets::store::{delete_from_default_store, write_to_default_store};
+
+#[cfg(target_os = "macos")]
+const PROTECTED_PROBE_KEY: &str = "__safedb_entitlement_probe__";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BackendMode {

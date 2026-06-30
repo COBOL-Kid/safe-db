@@ -3,8 +3,6 @@ use std::time::Duration;
 
 const SERVICE_NAME: &str = "safe-db";
 const ENV_BACKEND: &str = "SAFEDB_KEYCHAIN_BACKEND";
-#[cfg(target_os = "macos")]
-const PROTECTED_PROBE_KEY: &str = "__safedb_entitlement_probe__";
 const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[cfg_attr(not(any(test, feature = "test-helpers")), allow(dead_code))]
