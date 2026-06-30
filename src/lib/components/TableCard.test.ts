@@ -33,12 +33,14 @@ describe('TableCard', () => {
 	function renderCard(props: Partial<{ canvasTable: CanvasTable; highlightJoinTargets: { sourceAlias: string; sourceColumn: string } | null }> = {}) {
 		const ct = props.canvasTable ?? canvas();
 		const onStartJoin = vi.fn();
+		const onStartResize = vi.fn();
 		const result = render(TableCard, {
 			canvasTable: ct,
 			onStartJoin,
+			onStartResize,
 			highlightJoinTargets: props.highlightJoinTargets ?? null
 		} as Record<string, unknown>);
-		return { ...result, onStartJoin };
+		return { ...result, onStartJoin, onStartResize };
 	}
 
 	it('renders the table name and remove button', () => {
@@ -85,6 +87,20 @@ describe('TableCard', () => {
 		expect(joinButtons).toHaveLength(1);
 		expect(joinButtons[0].getAttribute('data-join-source-alias')).toBe('t0');
 		expect(joinButtons[0].getAttribute('data-join-source-column')).toBe('id');
+	});
+
+	it('resize handle is rendered and delegates mousedown', () => {
+		const ct = canvas();
+		query.addTable(usersTable);
+		const { onStartResize } = renderCard({ canvasTable: ct });
+
+		const handle = screen.getByRole('button', { name: 'Resize table' });
+		fireEvent.mouseDown(handle);
+
+		expect(onStartResize).toHaveBeenCalledTimes(1);
+		const [event, alias] = onStartResize.mock.calls[0];
+		expect(event).toBeDefined();
+		expect(alias).toBe('t0');
 	});
 
 	it('onStartJoin is invoked with (event, alias, column) on mousedown of the join handle', () => {
@@ -188,6 +204,7 @@ describe('TableCard', () => {
 		const idRow = container.querySelector('[data-column="id"]')!;
 		const idClass = idRow.getAttribute('class') ?? '';
 		expect(idClass).not.toContain('shadow-[');
+		expect(idClass).not.toContain('ring-inset');
 
 		// No other indexed columns exist on this table, so there's no other
 		// highlighted row — but the assertion above is enough.
@@ -212,10 +229,11 @@ describe('TableCard', () => {
 		});
 
 		const orgRow = container.querySelector('[data-column="org_id"]')!;
-		expect(orgRow.getAttribute('class') ?? '').toContain('shadow-[');
+		expect(orgRow.getAttribute('class') ?? '').toContain('ring-inset');
+		expect(orgRow.getAttribute('class') ?? '').not.toContain('shadow-[');
 
 		const emailRow = container.querySelector('[data-column="email"]')!;
-		expect(emailRow.getAttribute('class') ?? '').not.toContain('shadow-[');
+		expect(emailRow.getAttribute('class') ?? '').not.toContain('ring-inset');
 	});
 
 	it('does not light up anything when highlightJoinTargets is null', () => {

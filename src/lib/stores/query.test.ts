@@ -4,6 +4,7 @@ import * as api from '$lib/api';
 import { DEFAULT_LIMIT, MAX_LIMIT, type TableInfo } from '$lib/ir';
 import { columnKey } from '$lib/column-keys';
 import { COST_GUARD_PREFIX } from '$lib/limits';
+import { CANVAS_CARD_HEIGHT, CANVAS_CARD_WIDTH } from '$lib/canvas-geometry';
 
 vi.mock('$lib/api');
 
@@ -30,6 +31,26 @@ describe('QueryStore', () => {
 		store.addTable(makeTable('a'));
 		store.addTable(makeTable('b'));
 		expect(store.tables.map((t) => t.alias)).toEqual(['t0', 't1']);
+	});
+
+	it('assigns default canvas dimensions when adding tables', () => {
+		store.addTable(makeTable('a'));
+		expect(store.tables[0].width).toBe(CANVAS_CARD_WIDTH);
+		expect(store.tables[0].height).toBe(CANVAS_CARD_HEIGHT);
+	});
+
+	it('does not include canvas dimensions in the query spec', () => {
+		store.addTable(makeTable('a'));
+		const alias = store.tables[0].alias;
+		store.resizeTable(alias, 360, 420);
+
+		expect(store.spec.tables[0]).toEqual({
+			schema: 'public',
+			name: 'a',
+			alias
+		});
+		expect(store.spec.tables[0]).not.toHaveProperty('width');
+		expect(store.spec.tables[0]).not.toHaveProperty('height');
 	});
 
 	it('removes table and cleans up columns, joins, and filters', () => {
@@ -861,6 +882,36 @@ describe('QueryStore', () => {
 			store.addTable(makeTable('a'));
 			const before = [...store.tables];
 			store.moveTable('missing', 999, 999);
+			expect(store.tables).toEqual(before);
+		});
+	});
+
+	describe('resizeTable', () => {
+		it('updates the table width/height', () => {
+			store.addTable(makeTable('a'));
+			const alias = store.tables[0].alias;
+			store.resizeTable(alias, 320, 360);
+			expect(store.tables[0].width).toBe(320);
+			expect(store.tables[0].height).toBe(360);
+		});
+
+		it('clamps table dimensions to the supported range', () => {
+			store.addTable(makeTable('a'));
+			const alias = store.tables[0].alias;
+
+			store.resizeTable(alias, 100, 100);
+			expect(store.tables[0].width).toBe(180);
+			expect(store.tables[0].height).toBe(140);
+
+			store.resizeTable(alias, 900, 900);
+			expect(store.tables[0].width).toBe(520);
+			expect(store.tables[0].height).toBe(640);
+		});
+
+		it('is a no-op for an unknown alias', () => {
+			store.addTable(makeTable('a'));
+			const before = [...store.tables];
+			store.resizeTable('missing', 320, 360);
 			expect(store.tables).toEqual(before);
 		});
 	});
