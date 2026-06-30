@@ -23,7 +23,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2.8.0"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "mysql", "json", "chrono", "bigdecimal", "uuid"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "mysql", "mysql-rsa", "json", "chrono", "bigdecimal", "uuid"] }
 keyring-core = "1.0.0"
 uuid = { version = "1.23.3", features = ["v4"] }
 anyhow = "1.0.102"
