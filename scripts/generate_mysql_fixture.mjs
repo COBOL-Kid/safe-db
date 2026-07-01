@@ -7,7 +7,8 @@ const DEFAULTS = {
 	customers: 10_000,
 	orders: 50_000,
 	seed: 42,
-	batchSize: 1000
+	batchSize: 1000,
+	validateOnly: false
 };
 
 function usage(exitCode = 0) {
@@ -26,6 +27,7 @@ Options:
   --orders <n>        Number of orders (default: ${DEFAULTS.orders})
   --seed <n>          Deterministic random seed (default: ${DEFAULTS.seed})
   --batch-size <n>    Rows per INSERT statement (default: ${DEFAULTS.batchSize})
+  --validate-only     Validate options without writing SQL
   -h, --help          Show this help
 `);
 	process.exit(exitCode);
@@ -77,6 +79,9 @@ function parseArgs(argv) {
 			case '--batch-size':
 				options.batchSize = parsePositiveInt(next, '--batch-size');
 				i += 1;
+				break;
+			case '--validate-only':
+				options.validateOnly = true;
 				break;
 			default:
 				throw new Error(`unknown argument: ${arg}`);
@@ -479,6 +484,9 @@ function generate(options) {
 
 try {
 	const options = parseArgs(process.argv.slice(2));
+	if (options.validateOnly) {
+		process.exit(0);
+	}
 	generate(options);
 } catch (error) {
 	process.stderr.write(`error: ${error.message}\n`);

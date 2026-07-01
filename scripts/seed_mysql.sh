@@ -158,12 +158,17 @@ if [[ "$GENERATED" -eq 0 && ! -f "$SQL_FILE" ]]; then
   exit 1
 fi
 if [[ "$GENERATED" -eq 1 ]]; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "error: --generated requires node on PATH" >&2
+    exit 1
+  fi
   for arg in "${GENERATOR_ARGS[@]}"; do
     if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
       node "$GENERATOR" --help
       exit 0
     fi
   done
+  node "$GENERATOR" --database "$DATABASE" "${GENERATOR_ARGS[@]}" --validate-only
 fi
 
 # Read a single env var from a Docker container's Config.Env (value may contain '=').
@@ -290,10 +295,6 @@ if [[ "$RESET" -eq 1 ]]; then
 fi
 
 if [[ "$GENERATED" -eq 1 ]]; then
-  if ! command -v node >/dev/null 2>&1; then
-    echo "error: --generated requires node on PATH" >&2
-    exit 1
-  fi
   echo "→ generating fixture SQL and loading it into '$DATABASE'"
   node "$GENERATOR" --database "$DATABASE" "${GENERATOR_ARGS[@]}" | mysql_run
 else
