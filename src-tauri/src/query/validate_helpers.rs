@@ -40,7 +40,7 @@ pub(super) fn validate_node(
     }
 
     match node {
-        FilterNode::Leaf(filter) => validate_leaf(filter, schema, spec, table_aliases),
+        FilterNode::Leaf(filter) => validate_leaf(filter, schema, spec, table_aliases, warnings),
         FilterNode::Group(group) => {
             validate_group(group, schema, spec, table_aliases, depth, warnings)
         }
@@ -52,6 +52,7 @@ pub(super) fn validate_leaf(
     schema: &Schema,
     spec: &QuerySpec,
     table_aliases: &HashSet<&str>,
+    warnings: &mut Vec<String>,
 ) -> Result<(), String> {
     if !table_aliases.contains(filter.table_alias.as_str()) {
         return Err(format!(
@@ -83,6 +84,16 @@ pub(super) fn validate_leaf(
             filter.column,
             col.data_type
         ));
+    }
+
+    if !col.is_indexed {
+        let warning = format!(
+            "This query may scan more data than expected because it searches the non-indexed field '{}.{}'. Safe DB will still use the row limit and timeout.",
+            table.name, col.name
+        );
+        if !warnings.contains(&warning) {
+            warnings.push(warning);
+        }
     }
 
     let value_kind = filter.op.value_kind();

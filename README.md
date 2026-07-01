@@ -9,7 +9,7 @@ Built with **Tauri 2.11.3** (Rust) and **SvelteKit 2** (Svelte 5).
 - **Connections** — save named profiles; passwords stored in the OS credential store (not on disk); show/hide toggle on the password field
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, set a row limit; **recursive filter groups** with per-child AND/OR connector overrides
-- **Safety rails** — read-only `SELECT` queries, max 1 000 rows (default 100), 10 s timeout, custom blocked schemas, and an EXPLAIN cost guard that asks for confirmation before running when the estimate is unavailable or above threshold
+- **Safety rails** — read-only `SELECT` queries, max 1 000 rows (default 100), 10 s timeout, custom blocked schemas, and a cost-preview guard that asks for confirmation before running when the estimate is unavailable or above threshold
 - **Saved queries & history** — separate persisted stores; reopen past work from the home screen or history page. Timestamps are stored as Unix-seconds strings.
 - **In-app confirmations** — destructive actions and safety overrides use the `ConfirmDialog` component instead of `window.confirm()` (which hides behind the WebView on macOS)
 - **Command palette** — `Cmd+K` / `Ctrl+K` for quick navigation

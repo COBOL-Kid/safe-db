@@ -158,6 +158,42 @@ fn validate_accepts_is_empty_on_text_column() {
 }
 
 #[test]
+fn validate_warns_when_filtering_non_indexed_column() {
+    let mut spec = support::sample_spec();
+    spec.filters
+        .children
+        .push(FilterNode::Leaf(support::leaf_on(
+            "name",
+            FilterOp::Eq,
+            Some(FilterValue::Single(support::lit(
+                LiteralKind::Text,
+                "Alice",
+            ))),
+        )));
+    spec.filters
+        .children
+        .push(FilterNode::Leaf(support::leaf_on(
+            "name",
+            FilterOp::Like,
+            Some(FilterValue::Single(support::lit(LiteralKind::Text, "A%"))),
+        )));
+
+    let outcome = validate(&mut spec, &support::sample_schema(), &[]).unwrap();
+    let warnings = outcome
+        .warnings
+        .iter()
+        .filter(|w| w.contains("non-indexed field 'users.name'"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(warnings.len(), 1);
+    assert!(
+        warnings[0].contains("row limit and timeout"),
+        "got: {}",
+        warnings[0]
+    );
+}
+
+#[test]
 fn validate_rejects_in_with_empty_list() {
     let mut spec = support::sample_spec();
     spec.filters

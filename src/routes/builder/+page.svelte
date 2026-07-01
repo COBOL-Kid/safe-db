@@ -10,6 +10,7 @@
 	import { browser } from '$app/environment';
 	import { MAX_LIMIT, type TableInfo } from '$lib/ir';
 	import { parseLimit } from '$lib/limits';
+	import { costGuardDialogCopy } from '$lib/cost-guard';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PromptDialog from '$lib/components/PromptDialog.svelte';
 
@@ -40,6 +41,8 @@
 		Mssql: 'SQL Server',
 		Oracle: 'Oracle'
 	};
+	let costGuardCopy = $derived(costGuardDialogCopy(query.error));
+	let visibleQueryError = $derived(query.pendingCostGuard ? null : query.error);
 
 	function addTable(table: TableInfo) {
 		query.addTable(table);
@@ -111,13 +114,14 @@
 
 <ConfirmDialog
 	open={showCostGuardConfirm}
-	title="Query blocked by safety guard"
-	message={query.error ?? 'This query may be expensive or could not be estimated. Run anyway?'}
-	confirmLabel="Run anyway"
+	title={costGuardCopy.title}
+	message={costGuardCopy.message}
+	confirmLabel={costGuardCopy.confirmLabel}
 	onConfirm={confirmCostGuardRun}
 	onCancel={() => {
 		showCostGuardConfirm = false;
 		query.pendingCostGuard = false;
+		query.error = null;
 	}}
 />
 
@@ -263,9 +267,9 @@
 						{/if}
 					</div>
 
-					{#if query.error}
+					{#if visibleQueryError}
 						<div class="border-t border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
-							{query.error}
+							{visibleQueryError}
 						</div>
 					{/if}
 

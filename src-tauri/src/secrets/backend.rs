@@ -2,9 +2,9 @@ use anyhow::Result;
 #[cfg(any(test, feature = "test-helpers"))]
 use std::sync::Mutex;
 
+use super::ENV_BACKEND;
 #[cfg(any(test, feature = "test-helpers"))]
 use super::STORE_READ_COUNT;
-use super::ENV_BACKEND;
 
 #[cfg(target_os = "macos")]
 use crate::secrets::store::{delete_from_default_store, write_to_default_store};

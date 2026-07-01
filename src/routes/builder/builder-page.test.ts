@@ -8,6 +8,7 @@ import { schema } from '$lib/stores/schema.svelte';
 import { query } from '$lib/stores/query.svelte';
 import { savedQueries } from '$lib/stores/saved-queries.svelte';
 import type { ConnectionDef, TableInfo } from '$lib/ir';
+import { COST_GUARD_PREFIX } from '$lib/limits';
 
 vi.mock('$lib/api');
 
@@ -125,6 +126,69 @@ describe('Builder page', () => {
 		const call = vi.mocked(api.runQuery).mock.calls[0];
 		expect(call[0]).toBe('c1');
 		expect(call[1].tables).toHaveLength(1);
+	});
+
+	it('shows friendly copy and retries with safeguards when cost estimate is unavailable', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+		vi.mocked(api.runQuery).mockReset();
+		vi.mocked(api.runQuery)
+			.mockRejectedValueOnce(
+				`${COST_GUARD_PREFIX}EXPLAIN failed. Confirm to run this query anyway.`
+			)
+			.mockResolvedValueOnce({
+				columns: [],
+				rows: [],
+				row_count: 0,
+				truncated: false,
+				warnings: []
+			});
+
+		render(BuilderPage);
+
+		query.addTable(sampleTable);
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: /Run Query/ }));
+
+		const dialog = await screen.findByRole('alertdialog');
+		expect(within(dialog).getByText('Safe DB could not preview this query')).toBeInTheDocument();
+		expect(within(dialog).getByText(/read-only access, a row limit, and a timeout/)).toBeInTheDocument();
+		expect(screen.queryByText(/EXPLAIN failed/)).not.toBeInTheDocument();
+
+		await user.click(within(dialog).getByRole('button', { name: 'Run with safeguards' }));
+
+		await waitFor(() => {
+			expect(api.runQuery).toHaveBeenCalledTimes(2);
+		});
+		expect(vi.mocked(api.runQuery).mock.calls[1][2]).toBe(true);
+	});
+
+	it('shows high-cost copy when the estimate exceeds the threshold', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+		vi.mocked(api.runQuery).mockReset();
+		vi.mocked(api.runQuery).mockRejectedValue(
+			`${COST_GUARD_PREFIX}Estimated query cost exceeds threshold. Confirm to run this query anyway.`
+		);
+
+		render(BuilderPage);
+
+		query.addTable(sampleTable);
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: /Run Query/ }));
+
+		const dialog = await screen.findByRole('alertdialog');
+		expect(
+			within(dialog).getByText('This query may scan more data than expected')
+		).toBeInTheDocument();
+		expect(within(dialog).getByText(/estimated this query may be expensive/)).toBeInTheDocument();
+		expect(screen.queryByText(/Estimated query cost exceeds threshold/)).not.toBeInTheDocument();
+
+		await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+		expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+		expect(screen.queryByText(/Estimated query cost exceeds threshold/)).not.toBeInTheDocument();
 	});
 
 	it('Clear calls query.clear', async () => {

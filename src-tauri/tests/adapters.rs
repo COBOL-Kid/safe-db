@@ -1,5 +1,7 @@
 use safe_db_lib::adapters::columns_from_compiled_sql;
-use safe_db_lib::test_support::{classify_mysql_type, classify_pg_type, parse_showplan_cost};
+use safe_db_lib::test_support::{
+    classify_mysql_type, classify_pg_type, parse_mysql_explain_cost, parse_showplan_cost,
+};
 #[cfg(feature = "oracle")]
 use safe_db_lib::test_support::{encode_oracle_connect_query_value, validate_oracle_connect_field};
 use safe_db_lib::types::Dialect;
@@ -51,6 +53,39 @@ fn parse_showplan_cost_extracts_subtree_cost() {
 #[test]
 fn parse_showplan_cost_returns_none_when_missing() {
     assert_eq!(parse_showplan_cost("<Plan />"), None);
+}
+
+#[test]
+fn parse_mysql_explain_cost_handles_legacy_query_block_shape() {
+    let plan = serde_json::json!({
+        "query_block": {
+            "cost_info": {
+                "query_cost": "12.50"
+            }
+        }
+    });
+
+    assert_eq!(parse_mysql_explain_cost(&plan), Some(12.5));
+}
+
+#[test]
+fn parse_mysql_explain_cost_handles_mysql_9_query_plan_shape() {
+    let plan = serde_json::json!({
+        "query_plan": {
+            "estimated_rows": 15.0,
+            "estimated_total_cost": 1.75
+        },
+        "json_schema_version": "2.0"
+    });
+
+    assert_eq!(parse_mysql_explain_cost(&plan), Some(1.75));
+}
+
+#[test]
+fn parse_mysql_explain_cost_returns_none_when_missing() {
+    let plan = serde_json::json!({ "query_plan": { "estimated_rows": 15.0 } });
+
+    assert_eq!(parse_mysql_explain_cost(&plan), None);
 }
 
 #[test]
