@@ -77,6 +77,32 @@ describe('ResultsTable', () => {
 		expect(Array.from(ths).map((th) => th.textContent)).toEqual(['a', 'b', 'c']);
 	});
 
+	it('renders friendly labels for builder result aliases', () => {
+		const result: QueryResult = {
+			columns: [
+				{ name: 't0__id', data_type: 'INT' },
+				{ name: 't0__first_name', data_type: 'VARCHAR' },
+				{ name: 'user__defined', data_type: 'VARCHAR' }
+			],
+			rows: [[1, 'Ada', 'kept']],
+			row_count: 1,
+			truncated: false,
+			warnings: []
+		};
+
+		render(ResultsTable, { result });
+
+		const ths = document.querySelectorAll('thead th');
+		expect(Array.from(ths).map((th) => th.textContent)).toEqual([
+			'id',
+			'first_name',
+			'user__defined'
+		]);
+		expect(ths[0]).toHaveAttribute('title', 't0__id');
+		expect(ths[1]).toHaveAttribute('title', 't0__first_name');
+		expect(ths[2]).not.toHaveAttribute('title');
+	});
+
 	it('renders column headers for an empty result with known columns', () => {
 		const result = makeResult([]);
 

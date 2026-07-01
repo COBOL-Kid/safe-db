@@ -34,6 +34,11 @@
 	function columnName(column: string | ResultColumn): string {
 		return typeof column === 'string' ? column : column.name;
 	}
+
+	function displayColumnName(column: string | ResultColumn): string {
+		const raw = columnName(column);
+		return raw.replace(/^t\d+__(.+)$/, '$1');
+	}
 </script>
 
 <div class="flex h-full flex-col overflow-hidden">
@@ -70,9 +75,12 @@
 			<table class="w-full border-collapse text-sm">
 				<thead class="sticky top-0 bg-slate-50 dark:bg-slate-800/80">
 					<tr>
-							{#each result.columns as col, colIdx (colIdx)}
-							<th class="border-b border-slate-200 px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap dark:border-slate-700 dark:text-slate-300">
-									{columnName(col)}
+						{#each result.columns as col, colIdx (colIdx)}
+							<th
+								class="border-b border-slate-200 px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap dark:border-slate-700 dark:text-slate-300"
+								title={columnName(col) === displayColumnName(col) ? undefined : columnName(col)}
+							>
+								{displayColumnName(col)}
 							</th>
 						{/each}
 					</tr>
