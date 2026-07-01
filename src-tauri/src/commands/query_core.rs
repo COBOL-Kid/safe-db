@@ -10,6 +10,7 @@ use crate::types::ConnectionDef;
 
 /// Abstraction over the subset of `Adapter` that `run_query` needs. The trait
 /// is intentionally minimal so tests can implement it with a mock.
+#[allow(async_fn_in_trait)]
 pub trait QueryRunner: Send + Sync {
     async fn explain(&self, compiled: &CompiledQuery) -> anyhow::Result<ExplainResult>;
     async fn execute_query(
