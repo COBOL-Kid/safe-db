@@ -13,6 +13,7 @@ import type {
 import { DEFAULT_LIMIT, defaultFilterGroup, newNodeId } from '$lib/ir';
 import { columnKey, columnKeyPrefix, parseColumnKey } from '$lib/column-keys';
 import { COST_GUARD_PREFIX, parseLimit } from '$lib/limits';
+import { CANVAS_CARD_HEIGHT, CANVAS_CARD_WIDTH } from '$lib/canvas-geometry';
 import * as api from '$lib/api';
 
 export interface CanvasTable {
@@ -20,7 +21,14 @@ export interface CanvasTable {
 	alias: string;
 	x: number;
 	y: number;
+	width?: number;
+	height?: number;
 }
+
+export const MIN_TABLE_WIDTH = 180;
+export const MAX_TABLE_WIDTH = 520;
+export const MIN_TABLE_HEIGHT = 140;
+export const MAX_TABLE_HEIGHT = 640;
 
 /** Filter spec as supplied to the store's mutators. `id` is optional at this
  *  layer because the store assigns a stable UUID on insertion; persisted
@@ -87,7 +95,9 @@ class QueryStore {
 				tableInfo,
 				alias,
 				x: 40 + offset,
-				y: 40 + offset
+				y: 40 + offset,
+				width: CANVAS_CARD_WIDTH,
+				height: CANVAS_CARD_HEIGHT
 			}
 		];
 	}
@@ -107,6 +117,18 @@ class QueryStore {
 	moveTable(alias: string, x: number, y: number) {
 		this.tables = this.tables.map((t) =>
 			t.alias === alias ? { ...t, x, y } : t
+		);
+	}
+
+	resizeTable(alias: string, width: number, height: number) {
+		this.tables = this.tables.map((t) =>
+			t.alias === alias
+				? {
+						...t,
+						width: clampDimension(width, MIN_TABLE_WIDTH, MAX_TABLE_WIDTH),
+						height: clampDimension(height, MIN_TABLE_HEIGHT, MAX_TABLE_HEIGHT)
+					}
+				: t
 		);
 	}
 
@@ -291,6 +313,11 @@ class QueryStore {
 		this.aliasCounter = 0;
 		this.connectorOverrides = {};
 	}
+}
+
+function clampDimension(value: number, min: number, max: number): number {
+	if (!Number.isFinite(value)) return min;
+	return Math.max(min, Math.min(max, Math.round(value)));
 }
 
 function getGroupAtPath(group: FilterGroup, path: number[]): FilterGroup | null {

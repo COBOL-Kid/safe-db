@@ -4,10 +4,13 @@ export interface CanvasTableLike {
 	alias: string;
 	x: number;
 	y: number;
+	width?: number;
+	height?: number;
 	tableInfo: TableInfo;
 }
 
 export const CANVAS_CARD_WIDTH = 224;
+export const CANVAS_CARD_HEIGHT = 297;
 export const CANVAS_HEADER_HEIGHT = 41;
 export const CANVAS_ROW_HEIGHT = 28;
 
@@ -25,7 +28,7 @@ export function columnY(
 
 /** Right edge of the card for the given table. */
 export function tableRightX(ct: CanvasTableLike, cardWidth = CANVAS_CARD_WIDTH): number {
-	return ct.x + cardWidth;
+	return ct.x + (ct.width ?? cardWidth);
 }
 
 /** Left edge of the card for the given table. */

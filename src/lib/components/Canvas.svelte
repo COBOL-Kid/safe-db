@@ -3,6 +3,8 @@
 	import { query } from '$lib/stores/query.svelte';
 	import type { JoinSpec } from '$lib/ir';
 	import {
+		CANVAS_CARD_HEIGHT,
+		CANVAS_CARD_WIDTH,
 		columnY,
 		joinEdgePath as buildJoinEdgePath,
 		tableLeftX,
@@ -12,6 +14,13 @@
 	let canvasEl: HTMLDivElement;
 
 	let dragTable: { alias: string; offsetX: number; offsetY: number } | null = $state(null);
+	let resizeTable: {
+		alias: string;
+		startX: number;
+		startY: number;
+		startWidth: number;
+		startHeight: number;
+	} | null = $state(null);
 	let dragJoin: {
 		sourceAlias: string;
 		sourceColumn: string;
@@ -82,10 +91,32 @@
 		e.stopPropagation();
 	}
 
+	function handleStartResize(e: MouseEvent, alias: string) {
+		const ct = query.tables.find((t) => t.alias === alias);
+		if (!ct) return;
+		const coords = getCanvasCoords(e);
+		resizeTable = {
+			alias,
+			startX: coords.x,
+			startY: coords.y,
+			startWidth: ct.width ?? CANVAS_CARD_WIDTH,
+			startHeight: ct.height ?? CANVAS_CARD_HEIGHT
+		};
+		e.preventDefault();
+		e.stopPropagation();
+	}
+
 	function handleMouseMove(e: MouseEvent) {
 		if (dragTable) {
 			const coords = getCanvasCoords(e);
 			query.moveTable(dragTable.alias, coords.x - dragTable.offsetX, coords.y - dragTable.offsetY);
+		} else if (resizeTable) {
+			const coords = getCanvasCoords(e);
+			query.resizeTable(
+				resizeTable.alias,
+				resizeTable.startWidth + coords.x - resizeTable.startX,
+				resizeTable.startHeight + coords.y - resizeTable.startY
+			);
 		} else if (dragJoin) {
 			const coords = getCanvasCoords(e);
 			dragJoin = { ...dragJoin, mouseX: coords.x, mouseY: coords.y };
@@ -110,6 +141,7 @@
 			}
 		}
 		dragTable = null;
+		resizeTable = null;
 		dragJoin = null;
 	}
 
@@ -214,6 +246,7 @@
 			<TableCard
 				{canvasTable}
 				onStartJoin={handleStartJoin}
+				onStartResize={handleStartResize}
 				highlightJoinTargets={dragJoin
 					? { sourceAlias: dragJoin.sourceAlias, sourceColumn: dragJoin.sourceColumn }
 					: null}

@@ -83,6 +83,73 @@ describe('Canvas', () => {
 		fireEvent.mouseUp(window);
 	});
 
+	it('table resize handle changes dimensions without moving the table', async () => {
+		seed();
+		render(Canvas);
+
+		const t0Before = query.tables.find((t) => t.alias === 't0')!;
+		const startX = t0Before.x;
+		const startY = t0Before.y;
+		const startWidth = t0Before.width!;
+		const startHeight = t0Before.height!;
+
+		const resizeHandle = screen.getAllByRole('button', { name: 'Resize table' })[0];
+		fireEvent.mouseDown(resizeHandle, { clientX: 100, clientY: 100 });
+		fireEvent.mouseMove(window, { clientX: 180, clientY: 160 });
+
+		const t0After = query.tables.find((t) => t.alias === 't0')!;
+		expect(t0After.x).toBe(startX);
+		expect(t0After.y).toBe(startY);
+		expect(t0After.width).toBe(startWidth + 80);
+		expect(t0After.height).toBe(startHeight + 60);
+
+		fireEvent.mouseUp(window);
+	});
+
+	it('table resize clamps dimensions at the store bounds', async () => {
+		seed();
+		render(Canvas);
+
+		const resizeHandle = screen.getAllByRole('button', { name: 'Resize table' })[0];
+		fireEvent.mouseDown(resizeHandle, { clientX: 100, clientY: 100 });
+		fireEvent.mouseMove(window, { clientX: -500, clientY: -500 });
+
+		let t0 = query.tables.find((t) => t.alias === 't0')!;
+		expect(t0.width).toBe(180);
+		expect(t0.height).toBe(140);
+
+		fireEvent.mouseMove(window, { clientX: 1000, clientY: 1000 });
+
+		t0 = query.tables.find((t) => t.alias === 't0')!;
+		expect(t0.width).toBe(520);
+		expect(t0.height).toBe(640);
+
+		fireEvent.mouseUp(window);
+	});
+
+	it('table resize mouseup over an indexed column does not create a join', () => {
+		seed();
+		const { container } = render(Canvas);
+
+		const resizeHandle = screen.getAllByRole('button', { name: 'Resize table' })[0];
+		fireEvent.mouseDown(resizeHandle, { clientX: 100, clientY: 100 });
+
+		const targetRow = container.querySelector(
+			'[data-alias="t1"][data-column="user_id"]'
+		) as HTMLElement;
+		expect(targetRow).toBeTruthy();
+
+		const origElementFromPoint = document.elementFromPoint;
+		document.elementFromPoint = (() => targetRow) as typeof document.elementFromPoint;
+
+		try {
+			fireEvent.mouseUp(window, { clientX: 200, clientY: 200 });
+			expect(query.joins).toHaveLength(0);
+		} finally {
+			document.elementFromPoint = origElementFromPoint;
+		}
+	});
+
 	it('join drop on a different indexed column calls addJoin with the right args', () => {
 		seed();
 		const { container } = render(Canvas);

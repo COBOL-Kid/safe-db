@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	CANVAS_CARD_HEIGHT,
 	CANVAS_CARD_WIDTH,
 	CANVAS_HEADER_HEIGHT,
 	CANVAS_ROW_HEIGHT,
@@ -31,6 +32,7 @@ function canvas(x = 0, y = 0): CanvasTableLike {
 describe('canvas-geometry constants', () => {
 	it('exports the same dimensions the Canvas component used to hard-code', () => {
 		expect(CANVAS_CARD_WIDTH).toBe(224);
+		expect(CANVAS_CARD_HEIGHT).toBe(297);
 		expect(CANVAS_HEADER_HEIGHT).toBe(41);
 		expect(CANVAS_ROW_HEIGHT).toBe(28);
 	});
@@ -66,6 +68,11 @@ describe('tableLeftX / tableRightX', () => {
 		const ct = canvas(50, 0);
 		expect(tableRightX(ct, 300)).toBe(350);
 	});
+
+	it('prefers the table width when present', () => {
+		const ct = { ...canvas(50, 0), width: 360 };
+		expect(tableRightX(ct)).toBe(410);
+	});
 });
 
 describe('joinEdgePath', () => {
@@ -80,5 +87,12 @@ describe('joinEdgePath', () => {
 		expect(d).toBe(
 			`M ${sourceX} ${columnY(left, 'id')} C ${midX} ${columnY(left, 'id')}, ${midX} ${columnY(right, 'user_id')}, ${targetX} ${columnY(right, 'user_id')}`
 		);
+	});
+
+	it('uses the left table width for the source endpoint', () => {
+		const left = { ...canvas(0, 0), width: 320 };
+		const right = canvas(500, 0);
+		const d = joinEdgePath(left, 'id', right, 'email');
+		expect(d.startsWith(`M 320 ${columnY(left, 'id')}`)).toBe(true);
 	});
 });
