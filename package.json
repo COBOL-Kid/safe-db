@@ -17,6 +17,8 @@
 		"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
 		"test:smoke": "cargo test --manifest-path src-tauri/Cargo.toml --test secrets_smoke --test pg_smoke --test mysql_smoke",
 		"db:seed:mysql": "bash scripts/seed_mysql.sh",
+		"db:seed:mysql:generated": "bash scripts/seed_mysql.sh --generated",
+		"db:seed:mysql:generated:reset": "bash scripts/seed_mysql.sh --generated --reset --reset-state",
 		"db:seed:mysql:reset": "bash scripts/seed_mysql.sh --reset --reset-state",
 		"db:seed:mysql:reset-state": "bash scripts/seed_mysql.sh --reset-state",
 		"tauri": "tauri"

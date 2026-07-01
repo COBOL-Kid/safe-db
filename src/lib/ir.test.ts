@@ -48,8 +48,8 @@ describe('ir', () => {
 
 	it('exports limit constants used by query store', () => {
 		expect(DEFAULT_LIMIT).toBe(100);
-		expect(MAX_LIMIT).toBe(1000);
-			expect(CURRENT_SCHEMA_VERSION).toBe(3);
+		expect(MAX_LIMIT).toBe(10000);
+		expect(CURRENT_SCHEMA_VERSION).toBe(3);
 	});
 
 	describe('valueKindForOp', () => {

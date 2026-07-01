@@ -122,7 +122,9 @@ describe('QueryStore', () => {
 		store.setLimit(0);
 		expect(store.limit).toBe(1);
 		store.setLimit(9999);
-		expect(store.limit).toBe(1000);
+		expect(store.limit).toBe(9999);
+		store.setLimit(10001);
+		expect(store.limit).toBe(MAX_LIMIT);
 	});
 
 	it('builds spec from current state', () => {
@@ -845,6 +847,8 @@ describe('QueryStore', () => {
 		it('passes through values in the valid range', () => {
 			store.setLimit(50);
 			expect(store.limit).toBe(50);
+			store.setLimit(5000);
+			expect(store.limit).toBe(5000);
 			store.setLimit(1);
 			expect(store.limit).toBe(1);
 			store.setLimit(MAX_LIMIT);

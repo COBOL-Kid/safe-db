@@ -8,19 +8,28 @@
 	import ResultsTable from '$lib/components/ResultsTable.svelte';
 	import FilterBuilder from '$lib/components/FilterBuilder.svelte';
 	import { browser } from '$app/environment';
-	import { MAX_LIMIT, type TableInfo } from '$lib/ir';
+	import { DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, MAX_LIMIT, type TableInfo } from '$lib/ir';
 	import { parseLimit } from '$lib/limits';
 	import { costGuardDialogCopy } from '$lib/cost-guard';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PromptDialog from '$lib/components/PromptDialog.svelte';
+	import { resolve } from '$app/paths';
 
 	let showCostGuardConfirm = $state(false);
 	let showSavePrompt = $state(false);
+	let showWarningMuteMenu = $state(false);
 	let saveQueryName = $state('');
 
 	$effect(() => {
 		if (query.pendingCostGuard) {
-			showCostGuardConfirm = true;
+			if (query.warningPopupsDisabled && connections.activeId) {
+				showCostGuardConfirm = false;
+				query.pendingCostGuard = false;
+				query.error = null;
+				void query.runForced(connections.activeId);
+			} else {
+				showCostGuardConfirm = true;
+			}
 		}
 	});
 
@@ -43,6 +52,8 @@
 	};
 	let costGuardCopy = $derived(costGuardDialogCopy(query.error));
 	let visibleQueryError = $derived(query.pendingCostGuard ? null : query.error);
+	let showLargeLimitGuidance = $derived(query.limit > LARGE_LIMIT_WARNING_THRESHOLD);
+	const limitChoices = [DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5000, MAX_LIMIT];
 
 	function addTable(table: TableInfo) {
 		query.addTable(table);
@@ -52,6 +63,24 @@
 		if (connections.activeId) {
 			query.run(connections.activeId);
 		}
+	}
+
+	function formatLimitChoice(limit: number): string {
+		return limit.toLocaleString('en-US');
+	}
+
+	function handleWarningToggle() {
+		if (query.warningPopupsDisabled) {
+			query.warningPopupsDisabled = false;
+			showWarningMuteMenu = false;
+		} else {
+			showWarningMuteMenu = true;
+		}
+	}
+
+	function confirmWarningMute() {
+		query.warningPopupsDisabled = true;
+		showWarningMuteMenu = false;
 	}
 
 	function handleClear() {
@@ -138,7 +167,7 @@
 
 <div class="flex flex-1 flex-col overflow-hidden">
 	<div class="flex items-center justify-between border-b border-slate-200 px-6 py-3 dark:border-slate-800">
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			{#if connections.active}
 				<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
 					{dialectLabels[connections.active.dialect]?.slice(0, 2) ?? 'DB'}
@@ -163,8 +192,24 @@
 						max={MAX_LIMIT}
 						value={query.limit}
 						oninput={(e) => query.setLimit(parseLimit(e.currentTarget.value))}
-						class="w-16 rounded border border-slate-200 px-2 py-0.5 text-sm outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800"
+						class="w-20 rounded border border-slate-200 px-2 py-0.5 text-sm outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800"
 					/>
+					<div class="flex items-center gap-1 border-l border-slate-200 pl-2 dark:border-slate-700">
+						{#each limitChoices as choice (choice)}
+							<button
+								type="button"
+								aria-label={`Set limit to ${formatLimitChoice(choice)} rows`}
+								aria-pressed={query.limit === choice}
+								onclick={() => query.setLimit(choice)}
+								class="rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors
+									{query.limit === choice
+									? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+									: 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'}"
+							>
+								{formatLimitChoice(choice)}
+							</button>
+						{/each}
+					</div>
 				</div>
 				<button
 					type="button"
@@ -181,22 +226,104 @@
 					Clear
 				</button>
 			{/if}
+			<div class="relative">
+				<button
+					type="button"
+					aria-label={query.warningPopupsDisabled ? 'Warning popups muted' : 'Warning popups on'}
+					aria-pressed={query.warningPopupsDisabled}
+					onclick={handleWarningToggle}
+					class="flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors
+						{query.warningPopupsDisabled
+						? 'border-amber-300 bg-white text-amber-800 hover:bg-amber-50 dark:border-amber-700/60 dark:bg-slate-900 dark:text-amber-200 dark:hover:bg-amber-900/20'
+						: 'border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800/60 dark:bg-slate-900 dark:text-emerald-200 dark:hover:bg-emerald-900/20'}"
+					title={query.warningPopupsDisabled ? 'Warning popups muted for this session' : 'Warning popups are on'}
+				>
+					<span
+						class="relative h-4 w-8 rounded-full transition-colors
+							{query.warningPopupsDisabled ? 'bg-amber-200 dark:bg-amber-900/60' : 'bg-emerald-200 dark:bg-emerald-900/60'}"
+						aria-hidden="true"
+					>
+						<span
+							class="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform
+								{query.warningPopupsDisabled ? 'translate-x-0' : 'translate-x-4'}"
+						></span>
+					</span>
+					<span>Warnings</span>
+					<span class="text-[10px] font-semibold uppercase tracking-wide opacity-70">
+						{query.warningPopupsDisabled ? 'Off' : 'On'}
+					</span>
+				</button>
+
+				{#if showWarningMuteMenu}
+					<div
+						role="dialog"
+						aria-labelledby="warning-mute-title"
+						class="absolute right-0 top-11 z-30 w-80 rounded-lg border border-slate-200 bg-white p-4 text-left shadow-xl dark:border-slate-700 dark:bg-slate-900"
+					>
+						<h2 id="warning-mute-title" class="text-sm font-semibold text-slate-900 dark:text-slate-100">
+							Mute the safety chorus?
+						</h2>
+						<p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
+							Safe DB can stop popping up cost warnings for this session. The seatbelts stay on: read-only checks, row limits, and timeouts still apply.
+						</p>
+						<div class="mt-4 flex justify-end gap-2">
+							<button
+								type="button"
+								onclick={() => (showWarningMuteMenu = false)}
+								class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+							>
+								Keep warning me
+							</button>
+							<button
+								type="button"
+								onclick={confirmWarningMute}
+								class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+							>
+								Mute warnings
+							</button>
+						</div>
+					</div>
+				{/if}
+			</div>
 			<button
 				type="button"
+				disabled
+				aria-label="Reporting mode"
+				title="Reporting mode is coming soon"
+				class="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-400 opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500"
+			>
+				<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="M4 19V5" />
+					<path d="M4 19h16" />
+					<path d="M8 16v-5" />
+					<path d="M12 16V8" />
+					<path d="M16 16v-3" />
+				</svg>
+				Reporting
+			</button>
+			<button
+				type="button"
+				aria-label="Run Query"
+				title="Run query"
 				onclick={handleRun}
 				disabled={!query.canRun}
-				class="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+				class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white transition-colors hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
 			>
 				{#if query.running}
 					<div class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
-					Running…
 				{:else}
-					<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 9-14 9V3z" /></svg>
-					Run Query
+					<svg class="h-4 w-4 translate-x-px" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5z" /></svg>
 				{/if}
 			</button>
 		</div>
 	</div>
+
+	{#if connections.activeId && query.tables.length > 0 && showLargeLimitGuidance}
+		<div class="border-b border-sky-200 bg-sky-50 px-6 py-2 text-sm text-sky-800 dark:border-sky-900/40 dark:bg-sky-900/20 dark:text-sky-200">
+			<span class="font-medium">Large result limit.</span>
+			Higher limits are useful for reporting, but filters, selected columns, and indexed predicates make queries faster and easier to reuse.
+		</div>
+	{/if}
 
 	{#if !connections.activeId}
 		<div class="flex flex-1 items-center justify-center p-8">
@@ -206,7 +333,7 @@
 				</div>
 				<p class="mt-4 text-sm font-medium text-slate-600 dark:text-slate-300">No connection selected</p>
 				<p class="mt-1 text-sm text-slate-400 dark:text-slate-500">Connect to a database to start building queries.</p>
-				<a href="/connections" class="mt-5 inline-block rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+				<a href={resolve('/connections')} class="mt-5 inline-block rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
 					Go to Connections
 				</a>
 			</div>

@@ -345,7 +345,8 @@ export function newNodeId(): string {
 	return crypto.randomUUID();
 }
 
-export const MAX_LIMIT = 1000;
+export const LARGE_LIMIT_WARNING_THRESHOLD = 1000;
+export const MAX_LIMIT = 10000;
 export const DEFAULT_LIMIT = 100;
 
 export interface SavedQuery {

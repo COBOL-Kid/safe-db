@@ -273,6 +273,7 @@ class QueryStore {
 
 	pendingCostGuard = $state(false);
 	hydrationWarning = $state<string | null>(null);
+	warningPopupsDisabled = $state(false);
 
 	async run(connectionId: string, force = false) {
 		if (!this.canRun) return;

@@ -6,7 +6,8 @@ use crate::query::ir::{FilterNode, FilterOp, LiteralKind, QuerySpec};
 #[path = "validate_helpers.rs"]
 mod validate_helpers;
 
-pub const MAX_LIMIT: u32 = 1000;
+pub const LARGE_LIMIT_WARNING_THRESHOLD: u32 = 1000;
+pub const MAX_LIMIT: u32 = 10_000;
 pub const DEFAULT_LIMIT: u32 = 100;
 pub const MAX_FILTER_DEPTH: usize = 5;
 pub const MAX_IN_LIST_SIZE: usize = 1000;
@@ -355,6 +356,12 @@ pub fn validate(
             spec.limit, MAX_LIMIT, MAX_LIMIT
         ));
         spec.limit = MAX_LIMIT;
+    }
+    if spec.limit > LARGE_LIMIT_WARNING_THRESHOLD {
+        warnings.push(
+            "Large result limits are useful for reporting, but filters, selected columns, and indexed predicates keep queries faster and easier to reuse."
+                .to_string(),
+        );
     }
 
     if spec.columns.is_empty() {

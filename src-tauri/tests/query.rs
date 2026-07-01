@@ -97,8 +97,31 @@ fn validate_defaults_zero_limit_and_caps_excess() {
 
     spec.limit = 5000;
     let outcome = validate(&mut spec, &support::sample_schema(), &[]).unwrap();
+    assert_eq!(spec.limit, 5000);
+    assert_eq!(outcome.limit, 5000);
+    assert!(
+        outcome
+            .warnings
+            .iter()
+            .any(|w| w.contains("useful for reporting"))
+    );
+
+    spec.limit = MAX_LIMIT;
+    let outcome = validate(&mut spec, &support::sample_schema(), &[]).unwrap();
     assert_eq!(spec.limit, MAX_LIMIT);
     assert_eq!(outcome.limit, MAX_LIMIT);
+    assert!(
+        outcome
+            .warnings
+            .iter()
+            .any(|w| w.contains("useful for reporting"))
+    );
+
+    spec.limit = MAX_LIMIT + 1;
+    let outcome = validate(&mut spec, &support::sample_schema(), &[]).unwrap();
+    assert_eq!(spec.limit, MAX_LIMIT);
+    assert_eq!(outcome.limit, MAX_LIMIT);
+    assert!(outcome.warnings.iter().any(|w| w.contains("capped")));
 }
 
 #[test]
@@ -371,6 +394,14 @@ fn postgres_compiles_quoting_placeholders_and_limit() {
     assert!(compiled.sql.contains("\"t0\".\"deleted_at\" IS NULL"));
     assert!(compiled.sql.ends_with("LIMIT 51"));
     assert_eq!(compiled.params.len(), 1);
+}
+
+#[test]
+fn postgres_compiles_large_limit_plus_one_for_truncation_detection() {
+    let mut spec = two_table_spec();
+    spec.limit = 10_000;
+    let compiled = compile(&spec, Dialect::Postgres).unwrap();
+    assert!(compiled.sql.ends_with("LIMIT 10001"));
 }
 
 #[test]

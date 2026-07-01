@@ -6,6 +6,8 @@ describe('parseLimit', () => {
 	it('passes through values in the valid range', () => {
 		expect(parseLimit(50)).toBe(50);
 		expect(parseLimit('75')).toBe(75);
+		expect(parseLimit(5000)).toBe(5000);
+		expect(parseLimit('10000')).toBe(10000);
 		expect(parseLimit(1)).toBe(1);
 		expect(parseLimit(MAX_LIMIT)).toBe(MAX_LIMIT);
 	});

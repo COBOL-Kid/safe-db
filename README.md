@@ -9,7 +9,7 @@ Built with **Tauri 2.11.3** (Rust) and **SvelteKit 2** (Svelte 5).
 - **Connections** — save named profiles; passwords stored in the OS credential store (not on disk); show/hide toggle on the password field
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, set a row limit; **recursive filter groups** with per-child AND/OR connector overrides
-- **Safety rails** — read-only `SELECT` queries, max 1 000 rows (default 100), 10 s timeout, custom blocked schemas, and a cost-preview guard that asks for confirmation before running when the estimate is unavailable or above threshold
+- **Safety rails** — read-only `SELECT` queries, default 100 rows with an interactive max of 10 000, guidance above 1 000 rows, 10 s timeout, custom blocked schemas, and a cost-preview guard that asks for confirmation before running when the estimate is unavailable or above threshold
 - **Saved queries & history** — separate persisted stores; reopen past work from the home screen or history page. Timestamps are stored as Unix-seconds strings.
 - **In-app confirmations** — destructive actions and safety overrides use the `ConfirmDialog` component instead of `window.confirm()` (which hides behind the WebView on macOS)
 - **Command palette** — `Cmd+K` / `Ctrl+K` for quick navigation
@@ -72,8 +72,16 @@ Load the bundled e-commerce fixture (`categories`, `products`, `customers`, `ord
 
 ```sh
 pnpm db:seed:mysql                  # seed (preserves local connections + history)
+pnpm db:seed:mysql:generated        # generate a larger reporting fixture (~50k orders)
 pnpm db:seed:mysql:reset-state     # also wipe safe-db connections + history
 pnpm db:seed:mysql:reset            # drop + recreate DB, then wipe safe-db state, then seed
+pnpm db:seed:mysql:generated:reset  # drop DB + wipe state, then load generated data
+```
+
+Generated data is streamed directly into MySQL and is not checked in as a large SQL file. Tune it with script args:
+
+```sh
+pnpm db:seed:mysql:generated -- --orders 20000 --customers 5000 --seed 7
 ```
 
 The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars (see `scripts/seed_mysql.sh`). If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).
@@ -116,7 +124,7 @@ After the first unlock, builder and query paths reuse an in-process credential s
 
 ## Query safety behavior
 
-The builder sends a structured query IR to Rust; the backend validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit "Run anyway" confirmation; forced retries still run with the same row limit and timeout.
+The builder sends a structured query IR to Rust; the backend validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the interactive max is 10 000, and limits above 1 000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work. EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit "Run anyway" confirmation; forced retries still run with the same row limit and timeout.
 
 ## Project layout
 
@@ -161,6 +169,7 @@ safe-db/
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── scripts/seed_mysql.sh             # local MySQL fixture loader
+├── scripts/generate_mysql_fixture.mjs # generated MySQL fixture streamer
 ├── testdata_mysql.sql                # MySQL DDL + seed data
 ├── vite.config.ts
 └── package.json
