@@ -68,20 +68,19 @@ cargo clippy -- -D warnings
 
 ### Local MySQL test database
 
-Load the bundled e-commerce fixture (`categories`, `products`, `customers`, `orders`, `order_items`, `inventory_log`) into `safedb_test`:
+Load a generated e-commerce fixture (`categories`, `products`, `customers`, `orders`, `order_items`, `inventory_log`) into `safedb_test`:
 
 ```sh
-pnpm db:seed:mysql                  # seed (preserves local connections + history)
-pnpm db:seed:mysql:generated        # generate a larger reporting fixture (~50k orders)
+pnpm db:seed:mysql                  # generate + seed a larger reporting fixture (~50k orders)
+pnpm db:seed:mysql:static           # load the bundled testdata_mysql.sql fixture
 pnpm db:seed:mysql:reset-state     # also wipe safe-db connections + history
-pnpm db:seed:mysql:reset            # drop + recreate DB, then wipe safe-db state, then seed
-pnpm db:seed:mysql:generated:reset  # drop DB + wipe state, then load generated data
+pnpm db:seed:mysql:reset            # drop DB + wipe state, then load generated data
 ```
 
 Generated data is streamed directly into MySQL and is not checked in as a large SQL file. Tune it with script args:
 
 ```sh
-pnpm db:seed:mysql:generated -- --orders 20000 --customers 5000 --seed 7
+pnpm db:seed:mysql -- --orders 20000 --customers 5000 --seed 7
 ```
 
 The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars (see `scripts/seed_mysql.sh`). If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).

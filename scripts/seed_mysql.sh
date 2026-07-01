@@ -122,6 +122,7 @@ RESET=0
 RESET_STATE=0
 GENERATED=0
 GENERATOR_ARGS=()
+GENERATOR_ARG_COUNT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --reset) RESET=1; shift ;;
@@ -133,13 +134,17 @@ while [[ $# -gt 0 ]]; do
         usage 1
       fi
       GENERATOR_ARGS+=("$1" "$2")
+      GENERATOR_ARG_COUNT=$((GENERATOR_ARG_COUNT + 2))
       shift 2
       ;;
     -h | --help) usage 0 ;;
     --)
       shift
       if [[ "$GENERATED" -eq 1 ]]; then
-        GENERATOR_ARGS+=("$@")
+        if [[ $# -gt 0 ]]; then
+          GENERATOR_ARGS+=("$@")
+          GENERATOR_ARG_COUNT=$((GENERATOR_ARG_COUNT + $#))
+        fi
         shift $#
       fi
       break
@@ -148,6 +153,14 @@ while [[ $# -gt 0 ]]; do
     *) echo "unexpected positional argument: $1" >&2; usage 1 ;;
   esac
 done
+
+run_generator() {
+  if (( GENERATOR_ARG_COUNT > 0 )); then
+    node "$GENERATOR" --database "$DATABASE" "${GENERATOR_ARGS[@]}" "$@"
+  else
+    node "$GENERATOR" --database "$DATABASE" "$@"
+  fi
+}
 
 if [[ "$GENERATED" -eq 1 && ! -f "$GENERATOR" ]]; then
   echo "error: generator not found: $GENERATOR" >&2
@@ -162,13 +175,15 @@ if [[ "$GENERATED" -eq 1 ]]; then
     echo "error: --generated requires node on PATH" >&2
     exit 1
   fi
-  for arg in "${GENERATOR_ARGS[@]}"; do
-    if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
-      node "$GENERATOR" --help
-      exit 0
-    fi
-  done
-  node "$GENERATOR" --database "$DATABASE" "${GENERATOR_ARGS[@]}" --validate-only
+  if (( GENERATOR_ARG_COUNT > 0 )); then
+    for arg in "${GENERATOR_ARGS[@]}"; do
+      if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+        node "$GENERATOR" --help
+        exit 0
+      fi
+    done
+  fi
+  run_generator --validate-only
 fi
 
 # Read a single env var from a Docker container's Config.Env (value may contain '=').
@@ -296,7 +311,7 @@ fi
 
 if [[ "$GENERATED" -eq 1 ]]; then
   echo "→ generating fixture SQL and loading it into '$DATABASE'"
-  node "$GENERATOR" --database "$DATABASE" "${GENERATOR_ARGS[@]}" | mysql_run
+  run_generator | mysql_run
 else
   echo "→ loading $SQL_FILE into '$DATABASE'"
   mysql_run < "$SQL_FILE"
