@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.gradle.api.tasks.SourceSetContainer
 
 plugins {
     kotlin("jvm") version "2.4.0"
@@ -39,4 +40,44 @@ compose.desktop {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.register<JavaExec>("seedMysql") {
+    group = "safe-db"
+    description = "Seed the local safe-db MySQL test database."
+    val shared = project(":shared")
+    val sourceSets = shared.extensions.getByType<SourceSetContainer>()
+    classpath = sourceSets.named("main").get().runtimeClasspath
+    mainClass.set("com.safedb.tools.SeedMysqlKt")
+    workingDir = projectDir
+    args(splitSeedMysqlArgs(providers.gradleProperty("seedMysqlArgs").orElse("").get()))
+}
+
+fun splitSeedMysqlArgs(raw: String): List<String> {
+    val args = mutableListOf<String>()
+    val current = StringBuilder()
+    var quote: Char? = null
+    var escaping = false
+    for (char in raw) {
+        when {
+            escaping -> {
+                current.append(char)
+                escaping = false
+            }
+            char == '\\' -> escaping = true
+            quote != null && char == quote -> quote = null
+            quote == null && (char == '\'' || char == '"') -> quote = char
+            quote == null && char.isWhitespace() -> {
+                if (current.isNotEmpty()) {
+                    args.add(current.toString())
+                    current.clear()
+                }
+            }
+            else -> current.append(char)
+        }
+    }
+    if (escaping) current.append('\\')
+    if (quote != null) throw GradleException("Unclosed quote in seedMysqlArgs")
+    if (current.isNotEmpty()) args.add(current.toString())
+    return args
 }

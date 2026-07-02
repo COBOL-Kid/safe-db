@@ -71,7 +71,11 @@ private fun buildMySqlUrl(def: ConnectionDef): String {
         TransportSecurityMode.EncryptOnly -> "REQUIRED"
         TransportSecurityMode.Disabled -> "DISABLED"
     }
-    return "jdbc:mysql://${def.host}:${def.port}/${def.database}?sslMode=$sslMode"
+    val params = mutableListOf("sslMode=$sslMode")
+    if (def.transportSecurity.mode == TransportSecurityMode.Disabled) {
+        params += "allowPublicKeyRetrieval=true"
+    }
+    return "jdbc:mysql://${def.host}:${def.port}/${def.database}?${params.joinToString("&")}"
 }
 
 private fun applyMySqlSsl(config: HikariConfig, def: ConnectionDef) {
