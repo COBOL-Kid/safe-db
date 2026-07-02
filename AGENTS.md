@@ -1,12 +1,24 @@
 # safe-db — Agent Notes
 
 ## Project
-Tauri 2 + SvelteKit desktop app for safely exploring production databases.
-See the git history (early commits `P0`–`P4`) for the original implementation plan; it has been fully implemented.
+**Primary:** Jetpack Compose Desktop + Kotlin/JDBC in [`compose-app/`](compose-app/) (`shared` module + Compose UI).
+
+**Legacy (deprecated):** Tauri 2 + SvelteKit desktop app in `src/` + `src-tauri/`.
+
+See the git history (early commits `P0`–`P4`) for the original implementation plan.
+
+### Compose / Kotlin commands
+- `cd compose-app && ./gradlew run` — boot the desktop app
+- `cd compose-app && ./gradlew check` — shared unit tests (query engine, stores, adapters, connection parser)
+- `cd compose-app && ./gradlew packageDistributionForCurrentOS` — native package (deb/AppImage/rpm on Linux)
+- App data: `~/.local/share/com.safedb.app/` (Linux), same JSON filenames as Tauri
+- Credentials: `SAFEDB_KEYCHAIN_BACKEND` (`auto`, `disabled`, `protected` on macOS)
+
+### Legacy Tauri commands (still in tree)
 
 ## Features (for context)
-- **Connections** — CRUD via Tauri commands; passwords in OS keyring, metadata in app data dir; form has show/hide password toggle
-- **Schema introspection** — per-dialect adapters in `src-tauri/src/adapters/`; system schemas blocked in `query/validate.rs`
+- **Connections** — CRUD via `SafeDbService`; passwords in OS keyring, metadata in app data dir; form has show/hide password toggle
+- **Schema introspection** — per-dialect JDBC adapters in `compose-app/shared/`; system schemas blocked in `query/validate`
 - **Visual query builder** — frontend IR (`src/lib/ir.ts`) compiled to dialect-specific SQL in `src-tauri/src/query/compile.rs`; recursive filter groups with per-child AND/OR connector overrides
 - **Safety** — read-only selects, row limit (default 100, interactive max 10 000, guidance above 1 000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
 - **Saved queries & history** — separate persisted stores in the app data dir (`saved-queries.svelte.ts` and `history.svelte.ts`); timestamps are Unix-seconds strings
@@ -111,6 +123,15 @@ safe-db/
 
 ## Cursor Cloud specific instructions
 Standard commands live in `## Commands` above. Notes below are cloud-environment specifics that are not obvious.
+
+### Kotlin + Jetpack Compose migration (`compose-app/`)
+The app is being migrated to Kotlin using Jetpack Compose (Compose Multiplatform for **Desktop/JVM**, the runnable analog of Android Jetpack Compose for this desktop app). The Rust/Svelte stack still exists in `src/` and `src-tauri/`, but Kotlin/Compose work happens under `compose-app/`.
+
+- **Toolchain (baked into the VM snapshot)**: Temurin **JDK 25** at `/opt/jdk-25` (`JAVA_HOME` is exported in `~/.bashrc`), Gradle **9.6.1** at `/opt/gradle`. Prefer the project wrapper `compose-app/gradlew` over the global `gradle`. Versions: Kotlin `2.4.0`, Compose Multiplatform `1.9.3`, `jvmToolchain(25)` (Gradle running on JDK 25 satisfies the toolchain).
+- **Commands** (run from `compose-app/`, ensure `JAVA_HOME=/opt/jdk-25`): `./gradlew build` (compile + test), `./gradlew test` (unit tests), `./gradlew run` (launch the desktop window). `./gradlew check` is the lint/test gate; there is no separate linter configured yet.
+- **Running the app**: `./gradlew run` needs an X display — use `DISPLAY=:1`. On launch Skiko logs `Cannot create Linux GL context` then `Fallback to next API`; this is expected (no GPU) and it renders via software rasterization. The window title is `safe-db (Compose)`.
+- **Do NOT run a Gradle daemon-less build (`--no-daemon`) and `./gradlew run` at the same time from two shells** if they would contend on `compose-app/build/`; stop the running app first or use separate tasks.
+
 
 - **Toolchain**: Node `24.18.0` (`.nvmrc` + `package.json` `devEngines`) and `pnpm@11.9.0` (`packageManager`). Use a login shell or `nvm use` so Node 24 is on `PATH` before running `pnpm`. Rust `1.96.0+` is pinned in `src-tauri/rust-toolchain.toml` and `Cargo.toml` (`rust-version = "1.96.0"`).
 - **System deps** (already baked into the VM snapshot): Tauri 2 GTK/WebKit libs (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`, `librsvg2-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`, `build-essential`, `pkg-config`) plus `postgresql`.
