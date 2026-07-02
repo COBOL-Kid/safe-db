@@ -59,7 +59,11 @@ object SecretsManager {
             is DisabledMemoryStore -> "disabled"
             is MacCredentialStore -> "protected"
             is WindowsCredentialStore -> "windows"
-            is LinuxCredentialStore -> if ((activeStore as LinuxCredentialStore).usesFileFallback) "linux-file" else "linux-keyutils"
+            is LinuxCredentialStore -> if ((activeStore as LinuxCredentialStore).usesMemoryFallback) {
+                "disabled"
+            } else {
+                "linux-keyutils"
+            }
             else -> "unknown"
         }
     }

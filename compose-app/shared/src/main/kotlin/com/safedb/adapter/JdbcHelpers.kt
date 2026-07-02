@@ -182,23 +182,24 @@ fun readString(rs: ResultSet, index: Int): String =
 
 fun decodeJdbcValue(rs: ResultSet, index: Int, typeName: String): com.safedb.model.ResultCell {
     if (rs.getObject(index) == null) return com.safedb.model.ResultCell.Null
-    return when (typeName.uppercase()) {
+    val normalizedType = typeName.uppercase().substringBefore('(')
+    return when (normalizedType) {
         "BOOL", "BOOLEAN", "BIT" -> com.safedb.model.ResultCell.BoolCell(rs.getBoolean(index))
         "INT2", "SMALLINT", "TINYINT", "MEDIUMINT", "INT", "INTEGER", "INT4", "BIGINT", "INT8" ->
             com.safedb.model.ResultCell.IntegerCell(rs.getLong(index))
         "FLOAT", "REAL", "FLOAT4", "DOUBLE", "FLOAT8", "DOUBLE PRECISION" ->
             com.safedb.model.ResultCell.FloatCell(rs.getDouble(index))
-        "BYTEA", "BINARY", "VARBINARY", "BLOB", "LONGBLOB" -> {
+        "BYTEA", "BINARY", "VARBINARY", "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB", "RAW" -> {
             val bytes = rs.getBytes(index) ?: return com.safedb.model.ResultCell.Null
             com.safedb.model.ResultCell.binary(bytes)
         }
+        "DECIMAL", "NEWDECIMAL", "NUMERIC", "NUMBER", "MONEY", "SMALLMONEY",
+        "DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE",
+        "TIMESTAMP WITHOUT TIME ZONE", "DATETIME", "SMALLDATETIME", "DATETIME2",
+        "DATETIMEOFFSET", "JSON", "JSONB", "UUID", "XML" ->
+            com.safedb.model.ResultCell.text(rs.getObject(index)?.toString().orEmpty())
         else -> {
             when (val value = rs.getObject(index)) {
-                is Number -> if (value.toString().contains('.')) {
-                    com.safedb.model.ResultCell.FloatCell(value.toDouble())
-                } else {
-                    com.safedb.model.ResultCell.IntegerCell(value.toLong())
-                }
                 is Boolean -> com.safedb.model.ResultCell.BoolCell(value)
                 is ByteArray -> com.safedb.model.ResultCell.binary(value)
                 else -> com.safedb.model.ResultCell.text(value?.toString() ?: "")

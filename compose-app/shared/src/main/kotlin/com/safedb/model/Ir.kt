@@ -252,7 +252,10 @@ fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
         }
     }
     try {
-        return@runCatching java.time.OffsetDateTime.parse(trimmed).toLocalDateTime()
+        return@runCatching java.time.OffsetDateTime.parse(trimmed)
+            .toInstant()
+            .atZone(java.time.ZoneOffset.UTC)
+            .toLocalDateTime()
     } catch (_: DateTimeParseException) {
         throw IllegalArgumentException(
             "'$text' is not a valid datetime; expected YYYY-MM-DDTHH:MM[:SS] or RFC3339",
@@ -357,11 +360,7 @@ sealed class ResultCell {
 
     companion object {
         fun text(value: String): ResultCell {
-            var text = value
-            val truncated = text.length > MAX_CELL_BYTES
-            if (truncated) {
-                text = text.take(MAX_CELL_BYTES)
-            }
+            val (text, truncated) = truncateUtf8(value, MAX_CELL_BYTES)
             return TextCell(TextValue(text = text, truncated = truncated))
         }
 
@@ -380,6 +379,23 @@ sealed class ResultCell {
         fun bool(value: Boolean): ResultCell = BoolCell(value)
         fun integer(value: Long): ResultCell = IntegerCell(value)
         fun float(value: Double): ResultCell = FloatCell(value)
+
+        private fun truncateUtf8(value: String, maxBytes: Int): Pair<String, Boolean> {
+            if (value.toByteArray(Charsets.UTF_8).size <= maxBytes) {
+                return value to false
+            }
+            var end = 0
+            var usedBytes = 0
+            while (end < value.length) {
+                val codePoint = value.codePointAt(end)
+                val chars = Character.charCount(codePoint)
+                val bytes = String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8).size
+                if (usedBytes + bytes > maxBytes) break
+                usedBytes += bytes
+                end += chars
+            }
+            return value.substring(0, end) to true
+        }
     }
 }
 
