@@ -21,7 +21,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -96,7 +95,7 @@ fun Canvas(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             .pointerInput(dragTable, resizeTable, dragJoin) {
                 detectDragGestures(
                     onDragEnd = {
@@ -145,6 +144,7 @@ fun Canvas(
                         canvasOrigin = coordinates.positionInRoot()
                     },
             ) {
+                val joinColor = MaterialTheme.colorScheme.primary
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     queryViewModel.joins.forEach { join ->
                         val left = queryViewModel.canvasTables.find { it.alias == join.leftAlias } ?: return@forEach
@@ -168,11 +168,11 @@ fun Canvas(
                         }
                         drawPath(
                             path = path,
-                            color = Color(0xFF0EA5E9),
+                            color = joinColor,
                             style = Stroke(width = 2f, cap = StrokeCap.Round),
                         )
-                        drawCircle(Color(0xFF0EA5E9), 4f, Offset(points.sourceX, points.sourceY))
-                        drawCircle(Color(0xFF0EA5E9), 4f, Offset(points.targetX, points.targetY))
+                        drawCircle(joinColor, 4f, Offset(points.sourceX, points.sourceY))
+                        drawCircle(joinColor, 4f, Offset(points.targetX, points.targetY))
                     }
 
                     dragJoin?.let { state ->
@@ -180,7 +180,7 @@ fun Canvas(
                         if (source != null) {
                             val like = canvasTableLike(source)
                             drawLine(
-                                color = Color(0xFF0EA5E9).copy(alpha = 0.6f),
+                                color = joinColor.copy(alpha = 0.6f),
                                 start = Offset(tableRightX(like), columnY(like, state.sourceColumn)),
                                 end = Offset(state.mouseX, state.mouseY),
                                 strokeWidth = 2f,

@@ -174,20 +174,32 @@ fun SchemaBrowser(
                                 }
                                 if (table.indexes.isNotEmpty()) {
                                     Text(
-                                        "Indexes",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        "INDEXES",
+                                        style = com.safedb.ui.theme.LabelMicro,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                                     )
                                     for (idx in table.indexes) {
-                                        val badge = when {
-                                            idx.isPrimary -> "PK"
-                                            idx.isUnique -> "UQ"
-                                            else -> "IDX"
+                                        val (badge, badgeColor) = when {
+                                            idx.isPrimary -> "PK" to MaterialTheme.colorScheme.tertiary
+                                            idx.isUnique -> "UQ" to com.safedb.ui.theme.SafeDbTheme.colors.uq
+                                            else -> "IDX" to MaterialTheme.colorScheme.onSurfaceVariant
                                         }
-                                        Text(
-                                            "$badge ${idx.name} (${idx.columns.joinToString(", ")})",
-                                            style = MaterialTheme.typography.labelSmall,
-                                        )
+                                        Row(
+                                            modifier = Modifier.padding(vertical = 2.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            Text(
+                                                badge,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = badgeColor,
+                                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                            )
+                                            Text(
+                                                "${idx.name} (${idx.columns.joinToString(", ")})",
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
                                     }
                                 }
                             }

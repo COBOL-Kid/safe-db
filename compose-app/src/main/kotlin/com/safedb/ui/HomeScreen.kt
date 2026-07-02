@@ -1,6 +1,11 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +25,6 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,10 +39,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
+import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 
 @Composable
@@ -75,9 +83,9 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 32.dp, vertical = 48.dp),
+            .padding(horizontal = 40.dp, vertical = 48.dp),
     ) {
-        Text("Welcome to safe-db", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Welcome to safe-db", style = MaterialTheme.typography.headlineLarge)
         Text(
             "Safely explore production databases with non-locking reads and enforced best practices.",
             style = MaterialTheme.typography.bodyLarge,
@@ -146,24 +154,40 @@ fun HomeScreen(
 private fun QuickLinkCard(
     title: String,
     description: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+
+    val border = if (hovered) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.9f))
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    }
+    val shadow = if (hovered) 2.dp else 0.dp
+    val tileColor = if (hovered) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.surfaceVariant
+    val tileIconColor = if (hovered) SafeDbTheme.colors.onActionPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Surface(
+        modifier = modifier
+            .hoverable(interactionSource)
+            .clickable(interactionSource = interactionSource, onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = border,
+        shadowElevation = shadow,
+        tonalElevation = 0.dp,
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Surface(
                 modifier = Modifier.size(40.dp),
                 shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = tileColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(icon, contentDescription = null, tint = tileIconColor)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -185,11 +209,7 @@ private fun SavedQueryCard(
     onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
+    AppCard {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -218,11 +238,7 @@ private fun SavedQueryCard(
 
 @Composable
 private fun ProtectionInfoCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
+    AppCard {
         Column(modifier = Modifier.padding(24.dp)) {
             Text("How safe-db protects your database", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(16.dp))

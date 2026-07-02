@@ -16,12 +16,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,6 +42,10 @@ import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.MAX_LIMIT
 import com.safedb.query.parseLimit
+import com.safedb.ui.components.BannerKind
+import com.safedb.ui.components.MessageBanner
+import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.PromptDialog
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.SavedQueriesViewModel
@@ -129,7 +131,7 @@ fun BuilderScreen(
             title = { Text(costGuardCopy.title) },
             text = { Text(costGuardCopy.message) },
             confirmButton = {
-                Button(
+                PrimaryButton(
                     onClick = {
                         showCostGuardConfirm = false
                         queryViewModel.clearPendingCostGuard()
@@ -187,7 +189,7 @@ fun BuilderScreen(
                 )
             },
             confirmButton = {
-                Button(
+                PrimaryButton(
                     onClick = {
                         queryViewModel.updateWarningPopupsDisabled(true)
                         showWarningMuteConfirm = false
@@ -197,7 +199,7 @@ fun BuilderScreen(
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showWarningMuteConfirm = false }) {
+                SecondaryButton(onClick = { showWarningMuteConfirm = false }) {
                     Text("Keep warning me")
                 }
             },
@@ -284,7 +286,7 @@ fun BuilderScreen(
                         Text("Clear")
                     }
                 }
-                OutlinedButton(
+                SecondaryButton(
                     onClick = {
                         if (queryViewModel.warningPopupsDisabled) {
                             queryViewModel.updateWarningPopupsDisabled(false)
@@ -309,13 +311,9 @@ fun BuilderScreen(
         }
 
         if (showLargeLimitGuidance) {
-            Text(
-                "Large result limit. Higher limits are useful for reporting, but filters, selected columns, and indexed predicates make queries faster and easier to reuse.",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.bodySmall,
+            MessageBanner(
+                text = "Large result limit. Higher limits are useful for reporting, but filters, selected columns, and indexed predicates make queries faster and easier to reuse.",
+                kind = BannerKind.INFO,
             )
         }
 
@@ -332,7 +330,8 @@ fun BuilderScreen(
                     modifier = Modifier
                         .width(288.dp)
                         .fillMaxHeight(),
-                    tonalElevation = 1.dp,
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
                 ) {
                     SchemaBrowser(
                         schemaViewModel = schemaViewModel,
@@ -342,14 +341,10 @@ fun BuilderScreen(
 
                 Column(modifier = Modifier.fillMaxSize()) {
                     queryViewModel.hydrationWarning?.let { warning ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f))
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        MessageBanner(
+                            text = warning,
+                            kind = BannerKind.WARNING,
                         ) {
-                            Text(warning, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             TextButton(onClick = { queryViewModel.dismissHydrationWarning() }) {
                                 Text("Dismiss")
                             }
@@ -416,14 +411,9 @@ fun BuilderScreen(
                     }
 
                     visibleQueryError?.let { error ->
-                        Text(
-                            error,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        MessageBanner(
+                            text = error,
+                            kind = BannerKind.ERROR,
                         )
                     }
 

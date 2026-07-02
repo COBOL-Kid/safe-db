@@ -16,14 +16,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +53,10 @@ import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.service.SafeDbService
+import com.safedb.ui.components.BannerKind
+import com.safedb.ui.components.MessageBanner
+import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SecondaryButton
 import java.util.UUID
 import kotlinx.coroutines.launch
 
@@ -362,7 +363,7 @@ fun ConnectionForm(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        tonalElevation = 1.dp,
+        tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
         Column(
@@ -495,7 +496,7 @@ private fun PathCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedButton(
+    SecondaryButton(
         onClick = onClick,
         modifier = modifier,
     ) {
@@ -533,7 +534,7 @@ private fun StringInputStep(
         )
 
         if (parseError != null) {
-            MessageCard(text = parseError, isError = true) {
+            MessageBanner(text = parseError, kind = BannerKind.ERROR) {
                 TextButton(onClick = onSwitchToGuided) {
                     Text("Use guided setup")
                 }
@@ -548,7 +549,7 @@ private fun StringInputStep(
             TextButton(onClick = onSwitchToGuided) {
                 Text("Use guided setup")
             }
-            Button(onClick = onContinue) {
+            PrimaryButton(onClick = onContinue) {
                 Text("Continue")
             }
         }
@@ -642,7 +643,12 @@ private fun CredentialsStep(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (parsedFromString) {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                tonalElevation = 0.dp,
+            ) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -665,9 +671,9 @@ private fun CredentialsStep(
         }
 
         if (location == DatabaseLocation.Local && isRemoteHost) {
-            MessageCard(
+            MessageBanner(
                 text = "This host is not local. Apply cloud security defaults before testing or saving.",
-                isError = false,
+                kind = BannerKind.WARNING,
             ) {
                 TextButton(onClick = onApplyCloudDefaults) {
                     Text("Apply cloud defaults")
@@ -787,36 +793,36 @@ private fun CredentialsStep(
             onManualChange = onTransportManualChange,
         )
 
-        MessageCard(
+        MessageBanner(
             text = "For best safety, connect as a dedicated read-only database role.",
-            isError = false,
+            kind = BannerKind.INFO,
         )
 
         if (testResult != null) {
-            MessageCard(text = "Connected - $testResult", isError = false)
+            MessageBanner(text = "Connected - $testResult", kind = BannerKind.SUCCESS)
         }
 
         if (testError != null) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MessageCard(text = testError, isError = true)
+                MessageBanner(text = testError, kind = BannerKind.ERROR)
                 when (errorClassification?.kind) {
                     ConnectionErrorKind.UntrustedCa -> SslTroubleshootingPanel(
                         caPem = caPem,
                         onCaPemChange = onTroubleshootingCaChange,
                     )
 
-                    ConnectionErrorKind.HostnameMismatch -> MessageCard(
+                    ConnectionErrorKind.HostnameMismatch -> MessageBanner(
                         text = "Certificate hostname does not match this host. Verify the host value is correct, or use a certificate issued for this hostname.",
-                        isError = false,
+                        kind = BannerKind.INFO,
                     )
 
-                    ConnectionErrorKind.CertificateRequired -> MessageCard(
+                    ConnectionErrorKind.CertificateRequired -> MessageBanner(
                         text = if (dialectIsOracle) {
                             "This server requires encrypted transport. Provide an Oracle wallet location in the field above, then test again."
                         } else {
                             "This server requires encrypted transport. Enable SSL/TLS transport or provide the required certificate, then test again."
                         },
-                        isError = false,
+                        kind = BannerKind.INFO,
                     )
 
                     ConnectionErrorKind.Unknown -> {
@@ -834,7 +840,7 @@ private fun CredentialsStep(
         }
 
         if (formError != null) {
-            MessageCard(text = formError, isError = true)
+            MessageBanner(text = formError, kind = BannerKind.ERROR)
         }
 
         Row(
@@ -842,7 +848,7 @@ private fun CredentialsStep(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(
+            SecondaryButton(
                 onClick = onTest,
                 enabled = !testing && !saving,
             ) {
@@ -857,7 +863,7 @@ private fun CredentialsStep(
                 TextButton(onClick = onCancel) {
                     Text("Cancel")
                 }
-                Button(
+                PrimaryButton(
                     onClick = onSave,
                     enabled = !saving && !testing,
                 ) {
@@ -876,50 +882,15 @@ private fun CredentialsStep(
 private fun SummaryChip(text: String) {
     Surface(
         shape = MaterialTheme.shapes.small,
-        tonalElevation = 1.dp,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        tonalElevation = 0.dp,
     ) {
         Text(
             text = text,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelSmall,
         )
-    }
-}
-
-@Composable
-private fun MessageCard(
-    text: String,
-    isError: Boolean,
-    action: (@Composable () -> Unit)? = null,
-) {
-    val containerColor = if (isError) {
-        MaterialTheme.colorScheme.errorContainer
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer
-    }
-    val contentColor = if (isError) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = containerColor,
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = text,
-                color = contentColor,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f),
-            )
-            action?.invoke()
-        }
     }
 }
 
@@ -928,7 +899,12 @@ private fun SslTroubleshootingPanel(
     caPem: String,
     onCaPemChange: (String) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        tonalElevation = 0.dp,
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 "Your organization may require a security file.",

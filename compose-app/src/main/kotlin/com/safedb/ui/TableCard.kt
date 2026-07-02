@@ -69,7 +69,9 @@ fun TableCard(
             .height(canvasTable.height.dp),
         shape = RoundedCornerShape(12.dp),
         shadowElevation = 4.dp,
-        tonalElevation = 2.dp,
+        tonalElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        color = MaterialTheme.colorScheme.surface,
     ) {
         Column {
             Row(

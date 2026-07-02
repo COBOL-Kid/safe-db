@@ -2,9 +2,7 @@ package com.safedb.ui.components
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,7 +39,7 @@ fun PromptDialog(
             }
         },
         confirmButton = {
-            Button(
+            PrimaryButton(
                 onClick = onConfirm,
                 enabled = value.isNotBlank(),
             ) {
@@ -49,7 +47,7 @@ fun PromptDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onCancel) {
+            SecondaryButton(onClick = onCancel) {
                 Text(cancelLabel)
             }
         },

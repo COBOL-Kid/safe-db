@@ -3,10 +3,12 @@ package com.safedb.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -183,7 +185,8 @@ fun CommandPalette(
                     }
                 },
             shape = RoundedCornerShape(12.dp),
-            tonalElevation = 6.dp,
+            shadowElevation = 16.dp,
+            tonalElevation = 0.dp,
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 OutlinedTextField(
@@ -217,7 +220,28 @@ fun CommandPalette(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Icon(cmd.icon, contentDescription = null)
+                            Surface(
+                                modifier = Modifier.size(28.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        cmd.icon,
+                                        contentDescription = null,
+                                        tint = if (selected) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
                             Column {
                                 Text(cmd.label, style = MaterialTheme.typography.bodyMedium)
                                 Text(

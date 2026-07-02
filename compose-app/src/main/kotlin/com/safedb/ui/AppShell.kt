@@ -2,6 +2,9 @@ package com.safedb.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,8 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
@@ -33,9 +36,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +48,8 @@ import com.safedb.AppRoute
 import com.safedb.AppState
 import com.safedb.model.QuerySpec
 import com.safedb.ui.components.CommandPalette
+import com.safedb.ui.components.Kbd
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 
 @Composable
@@ -154,7 +161,8 @@ private fun Sidebar(
             .width(224.dp)
             .fillMaxHeight(),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        tonalElevation = 0.dp,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
@@ -164,16 +172,18 @@ private fun Sidebar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                val action = SafeDbTheme.colors.actionPrimary
+                val onAction = SafeDbTheme.colors.onActionPrimary
                 Box(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(action),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         "sd",
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = onAction,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -185,7 +195,7 @@ private fun Sidebar(
                 )
             }
 
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             Column(
                 modifier = Modifier
@@ -202,7 +212,7 @@ private fun Sidebar(
                 }
             }
 
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             Column(modifier = Modifier.padding(12.dp)) {
                 Surface(
@@ -232,7 +242,7 @@ private fun Sidebar(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onOpenPalette) {
-                        Text("⌘K", style = MaterialTheme.typography.labelSmall)
+                        Kbd("\u2318K")
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -255,22 +265,24 @@ private fun NavButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val background = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surface
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+
+    val action = SafeDbTheme.colors.actionPrimary
+    val onAction = SafeDbTheme.colors.onActionPrimary
+    val background = when {
+        selected -> action
+        hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        else -> Color.Transparent
     }
-    val content = if (selected) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val content = if (selected) onAction else MaterialTheme.colorScheme.onSurfaceVariant
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(background)
+            .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

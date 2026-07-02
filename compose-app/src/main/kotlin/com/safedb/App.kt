@@ -4,16 +4,16 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -27,12 +27,13 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.safedb.secrets.SecretsManager
 import com.safedb.ui.AppShell
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import java.awt.Dimension
 import kotlinx.coroutines.runBlocking
 
 @Composable
-fun App(appState: AppState) {
+fun App(appState: AppState, window: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
     val settings by viewModel.settings.settings.collectAsState()
     val useDarkTheme = when (settings.theme) {
@@ -42,9 +43,13 @@ fun App(appState: AppState) {
     }
     var paletteOpen by remember { mutableStateOf(false) }
 
-    MaterialTheme(
-        colorScheme = if (useDarkTheme) darkColorScheme() else lightColorScheme(),
+    SafeDbTheme(
+        isDark = useDarkTheme,
     ) {
+        val bgColor = MaterialTheme.colorScheme.background
+        SideEffect {
+            window.background = java.awt.Color(bgColor.toArgb())
+        }
         Surface(
             modifier = Modifier
                 .fillMaxSize()
@@ -58,6 +63,7 @@ fun App(appState: AppState) {
                         false
                     }
                 },
+            color = MaterialTheme.colorScheme.background,
         ) {
             com.safedb.ui.AppShell(
                 appState = appState,
@@ -83,6 +89,6 @@ fun runApp(appState: AppState) = application {
         LaunchedEffect(window) {
             window.minimumSize = Dimension(960, 600)
         }
-        App(appState)
+        App(appState, window)
     }
 }

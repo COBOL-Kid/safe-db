@@ -41,8 +41,9 @@ fun ConnectionAdvancedPanel(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        tonalElevation = 1.dp,
+        tonalElevation = 0.dp,
         shadowElevation = 0.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

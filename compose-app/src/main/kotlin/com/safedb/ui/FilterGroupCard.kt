@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,8 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +33,7 @@ import com.safedb.model.valueKind
 import com.safedb.query.MAX_FILTER_DEPTH
 import com.safedb.query.literalKindForColumn
 import com.safedb.query.opsForColumn
+import com.safedb.ui.components.AndOrConnector
 import com.safedb.viewmodel.QueryViewModel
 
 @Composable
@@ -45,8 +45,18 @@ fun FilterGroupCard(
     modifier: Modifier = Modifier,
 ) {
     val atMaxDepth = depth >= MAX_FILTER_DEPTH - 1
+    val depthTint = if (depth > 0) {
+        if (depth % 2 == 1) {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+        }
+    } else {
+        null
+    }
     val backgroundModifier = if (depth > 0) {
         Modifier
+            .background(depthTint!!, RoundedCornerShape(8.dp))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
             .padding(6.dp)
     } else {
@@ -66,22 +76,10 @@ fun FilterGroupCard(
                 if (index > 0) {
                     val connector = queryViewModel.getConnectorForChild(childPath)
                     Row(modifier = Modifier.padding(start = 4.dp)) {
-                        Button(
+                        AndOrConnector(
+                            connector = connector,
                             onClick = { queryViewModel.toggleChildConnector(childPath) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (connector == GroupConnector.And) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.tertiaryContainer
-                                },
-                            ),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text(
-                                connector.name.uppercase(),
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
+                        )
                     }
                 }
                 when (child) {

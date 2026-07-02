@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,16 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,7 +33,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
+import com.safedb.ui.components.EmptyState
+import com.safedb.ui.components.MessageBanner
+import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.DeleteIconButton
 import com.safedb.viewmodel.ConnectionsViewModel
 
 @Composable
@@ -88,14 +86,14 @@ fun ConnectionsScreen(
                 )
             }
             if (!showFormPlaceholder) {
-                Button(onClick = { showFormPlaceholder = true }) {
+                PrimaryButton(onClick = { showFormPlaceholder = true }) {
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text("Add Connection", modifier = Modifier.padding(start = 8.dp))
                 }
             }
         }
 
-        HorizontalDivider()
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         when {
             showFormPlaceholder -> ConnectionForm(
@@ -107,31 +105,30 @@ fun ConnectionsScreen(
                 onCancel = { showFormPlaceholder = false },
             )
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                androidx.compose.material3.CircularProgressIndicator()
             }
             error != null -> Box(Modifier.padding(32.dp)) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
             }
-            connections.isEmpty() -> EmptyConnections(onAdd = { showFormPlaceholder = true })
+            connections.isEmpty() -> EmptyState(
+                icon = Icons.Filled.Add,
+                title = "No connections yet",
+                subtitle = "Add a connection to start exploring your data.",
+            ) {
+                PrimaryButton(onClick = { showFormPlaceholder = true }) {
+                    Text("Add Connection")
+                }
+            }
             else -> {
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (deleteError != null) {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 32.dp, vertical = 16.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.errorContainer,
+                        MessageBanner(
+                            text = deleteError!!,
+                            kind = com.safedb.ui.components.BannerKind.ERROR,
+                            modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp),
                         ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(deleteError!!, color = MaterialTheme.colorScheme.onErrorContainer)
-                                OutlinedButton(onClick = viewModel::clearDeleteError) {
-                                    Text("Dismiss")
-                                }
+                            SecondaryButton(onClick = viewModel::clearDeleteError) {
+                                Text("Dismiss")
                             }
                         }
                     }
@@ -159,47 +156,12 @@ fun ConnectionsScreen(
 }
 
 @Composable
-private fun EmptyConnections(onAdd: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(
-                modifier = Modifier.size(56.dp),
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                }
-            }
-            Text(
-                "No connections yet",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(top = 16.dp),
-            )
-            Text(
-                "Add a connection to start exploring your data.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = onAdd, modifier = Modifier.padding(top = 20.dp)) {
-                Text("Add Connection")
-            }
-        }
-    }
-}
-
-@Composable
 private fun ConnectionCard(
     connection: ConnectionDef,
     onDelete: () -> Unit,
     onOpen: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
+    AppCard {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -229,17 +191,15 @@ private fun ConnectionCard(
                         )
                     }
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete connection")
-                }
+                DeleteIconButton(onClick = onDelete)
             }
 
-            Spacer(Modifier.height(16.dp))
+            androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
             Text("Host  ${connection.host}:${connection.port}", style = MaterialTheme.typography.labelSmall)
             Text("DB    ${connection.database}", style = MaterialTheme.typography.labelSmall)
             Text("User  ${connection.username}", style = MaterialTheme.typography.labelSmall)
 
-            Button(
+            PrimaryButton(
                 onClick = onOpen,
                 modifier = Modifier
                     .fillMaxWidth()

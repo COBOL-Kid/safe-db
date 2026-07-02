@@ -13,7 +13,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +29,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.safedb.model.Dialect
 import com.safedb.model.Settings
+import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SecondaryButton
 import com.safedb.viewmodel.SettingsViewModel
 
 @Composable
@@ -91,7 +92,7 @@ fun SettingsPanel(
                             )
                         }
                     }
-                    Button(
+                    PrimaryButton(
                         onClick = {
                             val thresholds = Dialect.entries.associateWith { dialect ->
                                 thresholdInputs[dialect]?.toDoubleOrNull() ?: Settings.DEFAULT_COST_THRESHOLD
@@ -134,7 +135,7 @@ fun SettingsPanel(
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
-                        OutlinedButton(
+                        SecondaryButton(
                             onClick = {
                                 viewModel.addBlockedSchema(newSchema)
                                 newSchema = ""
@@ -172,7 +173,7 @@ fun SettingsPanel(
             }
         },
         confirmButton = {
-            OutlinedButton(onClick = onClose) {
+            SecondaryButton(onClick = onClose) {
                 Text("Close")
             }
         },
