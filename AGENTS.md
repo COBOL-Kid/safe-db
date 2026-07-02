@@ -9,29 +9,26 @@ See the git history (early commits `P0`–`P4`) for the original implementation 
 
 ### Compose / Kotlin commands
 - `cd compose-app && ./gradlew run` — boot the desktop app
-- `cd compose-app && ./gradlew check` — shared unit tests (query engine, stores, adapters, connection parser)
+- `cd compose-app && ./gradlew check` — Compose + shared unit tests (query engine, stores, adapters, connection parser, UI state)
 - `cd compose-app && ./gradlew packageDistributionForCurrentOS` — native package (deb/AppImage/rpm on Linux)
 - App data: `~/.local/share/com.safedb.app/` (Linux), same JSON filenames as Tauri
-- Credentials: `SAFEDB_KEYCHAIN_BACKEND` (`auto`, `disabled`, `protected` on macOS)
+- Credentials: `SAFEDB_KEYCHAIN_BACKEND` (`auto`, `disabled`, `protected` on macOS); Compose Linux uses keyutils when available and otherwise falls back to in-memory `disabled` credentials
 
 ### Legacy Tauri commands (still in tree)
 
 ## Features (for context)
 - **Connections** — CRUD via `SafeDbService`; passwords in OS keyring, metadata in app data dir; form has show/hide password toggle
 - **Schema introspection** — per-dialect JDBC adapters in `compose-app/shared/`; system schemas blocked in `query/validate`
-- **Visual query builder** — frontend IR (`src/lib/ir.ts`) compiled to dialect-specific SQL in `src-tauri/src/query/compile.rs`; recursive filter groups with per-child AND/OR connector overrides
+- **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `compose-app/shared/src/main/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
 - **Safety** — read-only selects, row limit (default 100, interactive max 10 000, guidance above 1 000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
-- **Saved queries & history** — separate persisted stores in the app data dir (`saved-queries.svelte.ts` and `history.svelte.ts`); timestamps are Unix-seconds strings
-- **In-app confirmations** — destructive actions use the `ConfirmDialog` component (not `window.confirm()`, which is unreliable in Tauri’s macOS WebView)
-- **Settings** — theme, `explain_cost_threshold`, `blocked_schemas` (`src-tauri/src/settings.rs`); `syncWindowBackgroundColor` updates the Tauri window background to match light/dark
-- **Command palette** — `Cmd+K` / `Ctrl+K` (`CommandPalette.svelte`)
+- **Saved queries & history** — persisted through `QueryStore` in the app data dir; timestamps are Unix-seconds strings
+- **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas` through the Compose/Kotlin settings store
 
 ## Tech stack
-- **Tauri 2.11.3** (Rust backend) + **SvelteKit 2** + **Svelte 5 runes** (frontend)
-- **TailwindCSS 4** (via `@tailwindcss/vite`, imported in `src/routes/layout.css`)
-- **@sveltejs/adapter-static** (SPA fallback mode, SSR disabled)
-- DB drivers: `sqlx` 0.9 (PG/MySQL), `tiberius` (MSSQL), `oracle` crate (Oracle, optional `oracle` Cargo feature)
-- Credentials: `keyring-core` 1.0 with platform stores (`apple-native-keyring-store`, `windows-native-keyring-store`, `linux-keyutils-keyring-store`)
+- **Primary:** Jetpack Compose Desktop + Kotlin `2.4.0`, Compose Multiplatform `1.9.3`, Gradle wrapper, and `jvmToolchain(25)`
+- DB drivers: JDBC via HikariCP and dialect adapters in `compose-app/shared/`
+- Credentials: Java keyring-backed platform stores where available; `disabled` is in-memory only
+- **Legacy:** Tauri 2.11.3 + SvelteKit 2 + Rust remain in `src/` and `src-tauri/` for parity reference and deprecated workflows
 
 ## Commands
 - `pnpm tauri dev` — boot the desktop app (Vite + Rust, opens a window)
@@ -50,7 +47,7 @@ See the git history (early commits `P0`–`P4`) for the original implementation 
 - `cargo build --features oracle` — enable Oracle adapter (requires Oracle Instant Client SDK)
 
 ## Lint / typecheck
-Run `pnpm check` after editing Svelte/TS files. Run `cargo check` in `src-tauri/` after editing Rust. Run `cargo clippy -- -D warnings` before merging backend changes.
+Run `cd compose-app && ./gradlew check` after editing Kotlin/Compose files. For legacy Svelte/Tauri changes, run `pnpm check` after editing Svelte/TS files, `cargo check` in `src-tauri/` after editing Rust, and `cargo clippy -- -D warnings` before merging backend changes.
 
 ## Testing
 - **Fast gate (CI/local default):** `pnpm test` — typecheck, Vitest (`src/**/*.test.ts`), and all Rust tests including `secrets_cache` and `stores` (no live DB required).
@@ -124,7 +121,7 @@ safe-db/
 Standard commands live in `## Commands` above. Notes below are cloud-environment specifics that are not obvious.
 
 ### Kotlin + Jetpack Compose migration (`compose-app/`)
-The app is being migrated to Kotlin using Jetpack Compose (Compose Multiplatform for **Desktop/JVM**, the runnable analog of Android Jetpack Compose for this desktop app). The Rust/Svelte stack still exists in `src/` and `src-tauri/`, but Kotlin/Compose work happens under `compose-app/`.
+The primary app is now Kotlin using Jetpack Compose (Compose Multiplatform for **Desktop/JVM**, the runnable analog of Android Jetpack Compose for this desktop app). The Rust/Svelte stack still exists in `src/` and `src-tauri/`, but new app work happens under `compose-app/`.
 
 - **Toolchain (baked into the VM snapshot)**: Temurin **JDK 25** at `/opt/jdk-25` (`JAVA_HOME` is exported in `~/.bashrc`), Gradle **9.6.1** at `/opt/gradle`. Prefer the project wrapper `compose-app/gradlew` over the global `gradle`. Versions: Kotlin `2.4.0`, Compose Multiplatform `1.9.3`, `jvmToolchain(25)` (Gradle running on JDK 25 satisfies the toolchain).
 - **Commands** (run from `compose-app/`, ensure `JAVA_HOME=/opt/jdk-25`): `./gradlew build` (compile + test), `./gradlew test` (unit tests), `./gradlew run` (launch the desktop window). `./gradlew check` is the lint/test gate; there is no separate linter configured yet.
@@ -136,7 +133,8 @@ The app is being migrated to Kotlin using Jetpack Compose (Compose Multiplatform
 - **System deps** (already baked into the VM snapshot): Tauri 2 GTK/WebKit libs (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`, `librsvg2-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`, `build-essential`, `pkg-config`) plus `postgresql`.
 - **Running the desktop app**: `pnpm tauri dev` needs an X display — use `DISPLAY=:1` (the virtual display). `libEGL ... DRI3` warnings on launch are harmless (software rendering). `pnpm tauri dev` runs its own `pnpm dev` (vite on port `1420`, `strictPort`), so do NOT also run a standalone `pnpm dev` at the same time or the port will conflict.
 - **Testing DB connectivity**: the app reads from a real PG/MySQL DB. For MySQL, `scripts/seed_mysql.sh` streams a deterministic generated version of the e-commerce schema (categories, products, customers, orders, order_items, inventory_log) for larger reporting-style datasets without checking in a giant SQL file. Use `scripts/seed_mysql.sh --static` to load the smaller bundled `testdata_mysql.sql` fixture instead. The script delegates to `compose-app/gradlew seedMysql`, auto-connects to `localhost:3306` / `root`, and reads `SAFEDB_TEST_MYSQL_*` env vars for overrides. PostgreSQL is installed but not auto-started; start it with `sudo pg_ctlcluster 16 main start`. A throwaway demo DB can be created (role `safedb` / db `demo`) and connected via the in-app connection form (host `localhost`, port `5432`).
-- **Credentials/keyring**: `keyring-core` with platform-native stores. On macOS the only OS-backed store is Apple **Protected Data** (`apple-native-keyring-store` feature `protected`); legacy Keychain is intentionally unsupported. The default (`SAFEDB_KEYCHAIN_BACKEND=auto`) probes Protected Data with a throwaway write at startup; in **debug** builds it falls back to in-memory `disabled` when the probe fails (unsigned `pnpm tauri dev` lacks keychain entitlements even though `Store::new()` succeeds). **Test Connection** does not use the keyring; **Save Connection** does. In **release** builds, the probe must pass or startup fails. Override with `protected` or `disabled`. Protected Data requires sandbox entitlements — see [src-tauri/Entitlements.plist](src-tauri/Entitlements.plist) and `bundle.macOS.entitlements` in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json). Use `pnpm tauri build` and the signed `.app` to test credential persistence across restarts. Windows uses the credential store; Linux uses kernel keyutils (`linux-keyutils-keyring-store`, headless). Builder/query paths use an in-process credential **session** in `src-tauri/src/secrets/session.rs` so repeated `get_schema` / `run_query` calls do not hit the OS credential store after the first unlock.
+- **Compose credentials/keyring**: `SAFEDB_KEYCHAIN_BACKEND=auto` uses the Java keyring-backed platform store when available; `disabled` is in-memory only and is appropriate for tests/CI. On Linux, Compose uses keyutils when the Java keyring delegate is available and otherwise falls back to in-memory `disabled` credentials, so connection profiles persist but passwords must be re-entered after restart. **Test Connection** does not use the keyring; **Save Connection** does. Query and schema paths use the in-process credential session in `compose-app/shared/src/main/kotlin/com/safedb/secrets/CredentialSession.kt` after the first unlock.
+- **Legacy Tauri credentials/keyring**: the Rust app uses `keyring-core` with platform-native stores. On macOS the only OS-backed store is Apple **Protected Data** (`apple-native-keyring-store` feature `protected`); legacy Keychain is intentionally unsupported. The default (`SAFEDB_KEYCHAIN_BACKEND=auto`) probes Protected Data with a throwaway write at startup; in **debug** builds it falls back to in-memory `disabled` when the probe fails (unsigned `pnpm tauri dev` lacks keychain entitlements even though `Store::new()` succeeds). In **release** builds, the probe must pass or startup fails. Protected Data requires sandbox entitlements — see [src-tauri/Entitlements.plist](src-tauri/Entitlements.plist) and `bundle.macOS.entitlements` in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json). Use `pnpm tauri build` and the signed `.app` to test credential persistence across restarts.
 - **Smoke tests**: `pnpm test:smoke` runs `secrets_smoke` (opts into `disabled` backend, passes on any host), env-gated `pg_smoke`, and env-gated `mysql_smoke` (seed with `scripts/seed_mysql.sh` first). `secrets_cache` and `stores` run via `pnpm test:rust` / `pnpm test`. `secrets_native` is `#[ignore]` and meant for manual macOS / Linux verification: `SAFEDB_KEYCHAIN_BACKEND=auto cargo test --test secrets_native -- --ignored --nocapture`.
 - Running a query may surface a cost-preview guard. The first run is blocked and the UI asks to "Run with safeguards"; a confirmed forced retry executes with the same validation, row limit, and timeout.
 

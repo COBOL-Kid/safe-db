@@ -57,10 +57,13 @@ class SafeDbServiceImpl(
     override suspend fun listConnections(): List<ConnectionDef> = configStore.list()
 
     override suspend fun deleteConnection(id: String) {
+        val previous = configStore.get(id)
         configStore.delete(id)
         SecretsManager.deletePassword(id).onFailure { error ->
-            val message = error.message?.takeIf { it.isNotBlank() } ?: error::class.qualifiedName ?: error.toString()
-            println("WARN: deleted connection profile but could not remove stored credential for $id: $message")
+            if (previous != null) {
+                configStore.save(previous)
+            }
+            throw IllegalStateException(error.message ?: error.toString())
         }
     }
 
@@ -86,11 +89,17 @@ class SafeDbServiceImpl(
             val schema = Adapter.introspectWithTimeout(adapter)
             when (val outcome = runQueryCore(AdapterQueryRunner(adapter), def, spec, schema, settings, force)) {
                 is QueryCoreOutcome.Success -> {
-                    recordHistory(connectionId, def.name, spec, outcome.result, null)
+                    recordHistory(connectionId, def.name, outcome.historySpec, outcome.result, null)
                     outcome.result
                 }
                 is QueryCoreOutcome.Failure -> {
-                    recordHistory(connectionId, def.name, spec, null, outcome.error)
+                    recordHistory(
+                        connectionId,
+                        def.name,
+                        outcome.error.historySpec ?: spec,
+                        null,
+                        outcome.error,
+                    )
                     throw IllegalArgumentException(outcome.error.message)
                 }
             }

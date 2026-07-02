@@ -13,9 +13,48 @@ const val COST_GUARD_PREFIX = "COST_GUARD_BLOCKED:"
 const val DEFAULT_TIMEOUT_MS = 10_000
 
 data class QueryCoreError(
-    val message: String,
+    val error: QueryError,
     val warnings: List<String> = emptyList(),
-)
+) {
+    constructor(
+        message: String,
+        warnings: List<String> = emptyList(),
+        historySpec: QuerySpec? = null,
+    ) : this(QueryError.Execution(message, historySpec), warnings)
+
+    val message: String
+        get() = error.message
+
+    val historySpec: QuerySpec?
+        get() = error.historySpec
+}
+
+sealed class QueryError {
+    abstract val message: String
+    abstract val historySpec: QuerySpec?
+
+    data class Validation(override val message: String) : QueryError() {
+        override val historySpec: QuerySpec? = null
+    }
+
+    data class Compilation(
+        override val message: String,
+        override val historySpec: QuerySpec,
+    ) : QueryError()
+
+    data class CostGuard(
+        val reason: String,
+        override val historySpec: QuerySpec,
+    ) : QueryError() {
+        override val message: String =
+            "$COST_GUARD_PREFIX$reason. Confirm to run this query anyway."
+    }
+
+    data class Execution(
+        override val message: String,
+        override val historySpec: QuerySpec? = null,
+    ) : QueryError()
+}
 
 interface QueryRunner {
     suspend fun explain(compiled: CompiledQuery): ExplainResult
@@ -23,7 +62,7 @@ interface QueryRunner {
 }
 
 sealed class QueryCoreOutcome {
-    data class Success(val result: QueryResult) : QueryCoreOutcome()
+    data class Success(val result: QueryResult, val historySpec: QuerySpec) : QueryCoreOutcome()
     data class Failure(val error: QueryCoreError) : QueryCoreOutcome()
 }
 
@@ -37,23 +76,30 @@ suspend fun runQueryCore(
 ): QueryCoreOutcome {
     val (validated, outcome) = when (val validation = validateQuery(spec, schema, settings.blockedSchemas)) {
         is Outcome.Ok -> validation.value
-        is Outcome.Err -> return QueryCoreOutcome.Failure(QueryCoreError(message = validation.message))
+        is Outcome.Err -> return QueryCoreOutcome.Failure(
+            QueryCoreError(QueryError.Validation(validation.message)),
+        )
     }
+    val normalizedSpec = validated.spec()
 
     val compiled = when (val result = compileValidated(validated, def.dialect)) {
         is Outcome.Ok -> result.value
         is Outcome.Err -> return QueryCoreOutcome.Failure(
-            QueryCoreError(message = result.message, warnings = outcome.warnings),
+            QueryCoreError(
+                error = QueryError.Compilation(result.message, normalizedSpec),
+                warnings = outcome.warnings,
+            ),
         )
     }
 
-    return executeCompiled(runner, compiled, outcome, def, settings, force)
+    return executeCompiled(runner, compiled, outcome, normalizedSpec, def, settings, force)
 }
 
 private suspend fun executeCompiled(
     runner: QueryRunner,
     compiled: CompiledQuery,
     outcome: ValidationOutcome,
+    normalizedSpec: QuerySpec,
     def: ConnectionDef,
     settings: Settings,
     force: Boolean,
@@ -91,7 +137,7 @@ private suspend fun executeCompiled(
         }
         return QueryCoreOutcome.Failure(
             QueryCoreError(
-                message = "$COST_GUARD_PREFIX$reason. Confirm to run this query anyway.",
+                error = QueryError.CostGuard(reason, normalizedSpec),
                 warnings = warnings.toList(),
             ),
         )
@@ -100,7 +146,10 @@ private suspend fun executeCompiled(
     val result = when (val execute = runner.executeQuery(compiled, DEFAULT_TIMEOUT_MS)) {
         is Outcome.Ok -> execute.value
         is Outcome.Err -> return QueryCoreOutcome.Failure(
-            QueryCoreError(message = execute.message, warnings = warnings.toList()),
+            QueryCoreError(
+                error = QueryError.Execution(execute.message, normalizedSpec),
+                warnings = warnings.toList(),
+            ),
         )
     }
 
@@ -115,11 +164,12 @@ private suspend fun executeCompiled(
     mergedWarnings.addAll(result.warnings)
 
     return QueryCoreOutcome.Success(
-        result.copy(
+        result = result.copy(
             rows = rows,
             rowCount = rows.size,
             truncated = result.truncated || limitTruncated,
             warnings = mergedWarnings,
         ),
+        historySpec = normalizedSpec,
     )
 }

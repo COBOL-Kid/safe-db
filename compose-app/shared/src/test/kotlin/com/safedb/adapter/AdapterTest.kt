@@ -2,10 +2,15 @@ package com.safedb.adapter
 
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.ResultCell
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import java.lang.reflect.Proxy
+import java.math.BigDecimal
+import java.sql.ResultSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class AdapterTest {
@@ -78,6 +83,22 @@ class AdapterTest {
         assertEquals("jdbc:mysql://localhost:3306/safedb_test?sslMode=VERIFY_IDENTITY", url)
     }
 
+    @Test
+    fun jdbcDecoderKeepsDecimalValuesAsText() {
+        val cell = decodeJdbcValue(fakeResultSet(BigDecimal("1234567890.123456789")), 1, "DECIMAL")
+
+        val text = assertIs<ResultCell.TextCell>(cell)
+        assertEquals("1234567890.123456789", text.value.text)
+    }
+
+    @Test
+    fun jdbcDecoderKeepsUnknownNumbersAsTextRatherThanLossyFloats() {
+        val cell = decodeJdbcValue(fakeResultSet(BigDecimal("1.000000000000000001")), 1, "OTHER")
+
+        val text = assertIs<ResultCell.TextCell>(cell)
+        assertEquals("1.000000000000000001", text.value.text)
+    }
+
     private fun mysqlConnection(mode: TransportSecurityMode) = ConnectionDef(
         id = "mysql-test",
         name = "MySQL test",
@@ -89,3 +110,20 @@ class AdapterTest {
         transportSecurity = TransportSecurity(mode = mode),
     )
 }
+
+private fun fakeResultSet(value: Any?): ResultSet =
+    Proxy.newProxyInstance(
+        ResultSet::class.java.classLoader,
+        arrayOf(ResultSet::class.java),
+    ) { _, method, _ ->
+        when (method.name) {
+            "getObject" -> value
+            "getBoolean" -> value as Boolean
+            "getLong" -> (value as Number).toLong()
+            "getDouble" -> (value as Number).toDouble()
+            "getBytes" -> value as ByteArray?
+            "wasNull" -> value == null
+            "toString" -> "FakeResultSet($value)"
+            else -> throw UnsupportedOperationException(method.name)
+        }
+    } as ResultSet

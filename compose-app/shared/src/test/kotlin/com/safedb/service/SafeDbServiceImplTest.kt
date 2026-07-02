@@ -3,7 +3,9 @@ package com.safedb.service
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurity
+import com.safedb.secrets.DisabledMemoryStore
 import com.safedb.secrets.CredentialStore
+import com.safedb.secrets.CredentialSession
 import com.safedb.secrets.SecretsManager
 import com.safedb.store.ConfigStore
 import com.safedb.store.QueryStore
@@ -12,16 +14,18 @@ import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class SafeDbServiceImplTest {
     @BeforeTest
     fun setup() {
-        SecretsManager.useStoreForTest(FailingDeleteStore())
+        CredentialSession.lockCredentials()
     }
 
     @Test
-    fun deleteConnectionRemovesProfileWhenCredentialDeleteFails() = runBlocking {
+    fun deleteConnectionRestoresProfileWhenCredentialDeleteFails() = runBlocking {
+        SecretsManager.useStoreForTest(FailingDeleteStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
         val service = SafeDbServiceImpl(
@@ -31,9 +35,29 @@ class SafeDbServiceImplTest {
         )
         configStore.save(sampleConnection())
 
-        service.deleteConnection("c1")
+        assertFailsWith<IllegalStateException> {
+            service.deleteConnection("c1")
+        }
 
-        assertTrue(configStore.list().isEmpty())
+        assertEquals("Delete me", configStore.get("c1")?.name)
+    }
+
+    @Test
+    fun saveConnectionAcceptsEmptyPassword() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val service = SafeDbServiceImpl(
+            configStore = ConfigStore.new(dir),
+            queryStore = QueryStore.new(dir),
+            settingsStore = SettingsStore.new(dir),
+        )
+
+        service.saveConnection(sampleConnection(), "")
+
+        assertEquals(
+            "",
+            SecretsManager.passwordForDefinition(sampleConnection()).getOrThrow(),
+        )
     }
 }
 

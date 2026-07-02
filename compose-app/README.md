@@ -43,7 +43,7 @@ On first launch, if Tauri data files (`connections.json`, etc.) are found, they 
 
 ## Credentials
 
-Set `SAFEDB_KEYCHAIN_BACKEND=disabled` for in-memory credentials (debug/CI). Default `auto` uses Java keyring-backed platform stores (macOS Keychain, Windows Credential Manager, Linux Secret Service when available). On headless Linux, the Compose app falls back to `~/.safe-db/credentials`; this is a Kotlin/JVM credential path, not the old Tauri Protected Data entitlement flow.
+Set `SAFEDB_KEYCHAIN_BACKEND=disabled` for in-memory credentials (debug/CI). Default `auto` uses Java keyring-backed platform stores (macOS Keychain, Windows Credential Manager, Linux keyutils when available). On Linux hosts where the Java keyring delegate is unavailable, the Compose app falls back to the same in-memory `disabled` backend rather than writing a credential file; saved connection profiles remain on disk, but passwords must be re-entered after restart.
 
 If stored credentials cannot be read after moving data from Tauri or changing credential backends, delete and add the connection again so the password is rebound to the current endpoint and transport settings.
 

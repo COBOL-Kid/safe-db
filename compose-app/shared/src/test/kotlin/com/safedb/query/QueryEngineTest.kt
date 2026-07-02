@@ -21,11 +21,13 @@ import com.safedb.model.LiteralKind
 import com.safedb.model.Outcome
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.ResultCell
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
+import com.safedb.model.parseDateTimeLiteral
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -548,6 +550,21 @@ class QueryEngineTest {
     }
 
     @Test
+    fun runQueryCoreSuccessCarriesNormalizedHistorySpec() = runBlocking {
+        val def = sampleConnection("c1")
+        val spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
+        val runner = MockRunner(explainResult = ExplainResult.Estimated(0.0))
+
+        val success = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings(), false)) {
+            is QueryCoreOutcome.Success -> outcome
+            is QueryCoreOutcome.Failure -> error(outcome.error.message)
+        }
+
+        assertEquals(MAX_LIMIT, success.historySpec.limit)
+        assertEquals(MAX_LIMIT + 1, spec.limit)
+    }
+
+    @Test
     fun runQueryCoreBlocksWhenCostExceedsThreshold() = runBlocking {
         val def = sampleConnection("c1")
         val spec = sampleSpec()
@@ -564,6 +581,25 @@ class QueryEngineTest {
 
         assertTrue(failure.message.startsWith(COST_GUARD_PREFIX))
         assertTrue(failure.warnings.any { it.contains("exceeds threshold") })
+        assertEquals(100, failure.historySpec?.limit)
+    }
+
+    @Test
+    fun runQueryCoreCostGuardCarriesNormalizedHistorySpec() = runBlocking {
+        val def = sampleConnection("c1")
+        val spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
+        val settings = sampleSettings().copy(
+            explainCostThreshold = 1.0,
+            explainCostThresholds = mapOf(Dialect.Postgres to 1.0),
+        )
+        val runner = MockRunner(explainResult = ExplainResult.Estimated(5.0))
+
+        val failure = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings, false)) {
+            is QueryCoreOutcome.Success -> error("expected failure")
+            is QueryCoreOutcome.Failure -> outcome.error
+        }
+
+        assertEquals(MAX_LIMIT, failure.historySpec?.limit)
     }
 
     @Test
@@ -583,6 +619,23 @@ class QueryEngineTest {
 
         assertEquals(0, result.rowCount)
         assertEquals(1, runner.executeCalls)
+    }
+
+    @Test
+    fun resultCellTextTruncatesOnUtf8ByteBoundary() {
+        val value = "a".repeat(com.safedb.model.MAX_CELL_BYTES - 1) + "é"
+        val cell = ResultCell.text(value) as ResultCell.TextCell
+
+        assertTrue(cell.value.truncated)
+        assertEquals(com.safedb.model.MAX_CELL_BYTES - 1, cell.value.text.toByteArray(Charsets.UTF_8).size)
+        assertTrue(cell.value.text.endsWith("a"))
+    }
+
+    @Test
+    fun offsetDateTimeLiteralNormalizesToUtcLikeRust() {
+        val parsed = parseDateTimeLiteral("2026-07-01T12:30:00-05:00").getOrThrow()
+
+        assertEquals("2026-07-01T17:30", parsed.toString())
     }
 
     private fun sampleConnection(id: String) = ConnectionDef(
