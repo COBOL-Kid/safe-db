@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -79,75 +83,91 @@ fun HomeScreen(
         return
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 40.dp, vertical = 48.dp),
+            .verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Text("Welcome to safe-db", style = MaterialTheme.typography.headlineLarge)
-        Text(
-            "Safely explore production databases with non-locking reads and enforced best practices.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-
-        Spacer(Modifier.height(40.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 896.dp)
+                .padding(horizontal = 32.dp, vertical = 48.dp),
         ) {
-            QuickLinkCard(
-                title = "New Connection",
-                description = "Connect to a database",
-                icon = Icons.Filled.Add,
-                onClick = { onNavigate(AppRoute.Connections) },
-                modifier = Modifier.weight(1f),
-            )
-            QuickLinkCard(
-                title = "Build a Query",
-                description = "Visually explore your data",
-                icon = Icons.Filled.Build,
-                onClick = { onNavigate(AppRoute.Builder) },
-                modifier = Modifier.weight(1f),
-            )
-            QuickLinkCard(
-                title = "Recent Queries",
-                description = "Revisit past explorations",
-                icon = Icons.Filled.History,
-                onClick = { onNavigate(AppRoute.History) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        if (savedQueries.isNotEmpty()) {
-            Spacer(Modifier.height(40.dp))
+            Text("Welcome to safe-db", style = MaterialTheme.typography.headlineLarge)
             Text(
-                "Saved Queries",
-                style = MaterialTheme.typography.titleSmall,
+                "Safely explore production databases with non-locking reads and enforced best practices.",
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 8.dp),
             )
-            Spacer(Modifier.height(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (query in savedQueries) {
-                    SavedQueryCard(
-                        name = query.name,
-                        subtitle = "${viewModel.connections.connectionName(query.connectionId)} · " +
-                            "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
-                        onOpen = { onOpenSavedQuery(query) },
-                        onDelete = { deleteTargetId = query.id },
-                    )
+
+            Spacer(Modifier.height(40.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                QuickLinkCard(
+                    title = "New Connection",
+                    description = "Connect to a database",
+                    icon = Icons.Filled.Add,
+                    onClick = { onNavigate(AppRoute.Connections) },
+                    modifier = Modifier.weight(1f),
+                )
+                QuickLinkCard(
+                    title = "Build a Query",
+                    description = "Visually explore your data",
+                    icon = Icons.Filled.Build,
+                    onClick = { onNavigate(AppRoute.Builder) },
+                    modifier = Modifier.weight(1f),
+                )
+                QuickLinkCard(
+                    title = "Recent Queries",
+                    description = "Revisit past explorations",
+                    icon = Icons.Filled.History,
+                    onClick = { onNavigate(AppRoute.History) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            if (savedQueries.isNotEmpty()) {
+                Spacer(Modifier.height(40.dp))
+                Text(
+                    "Saved Queries",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(12.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 320.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(((savedQueries.size + 1) / 2 * 92).dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    userScrollEnabled = false,
+                ) {
+                    items(savedQueries, key = { it.id }) { query ->
+                        SavedQueryCard(
+                            name = query.name,
+                            subtitle = "${viewModel.connections.connectionName(query.connectionId)} · " +
+                                "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
+                            onOpen = { onOpenSavedQuery(query) },
+                            onDelete = { deleteTargetId = query.id },
+                        )
+                    }
                 }
             }
+
+            Spacer(Modifier.height(48.dp))
+
+            ProtectionInfoCard()
         }
-
-        Spacer(Modifier.height(48.dp))
-
-        ProtectionInfoCard()
     }
+
 }
 
 @Composable

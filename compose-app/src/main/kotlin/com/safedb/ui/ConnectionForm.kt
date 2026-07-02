@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.connection.ConnectionErrorContext
 import com.safedb.connection.ConnectionErrorKind
@@ -380,9 +383,9 @@ fun ConnectionForm(
     ) {
         Column(
             modifier = Modifier
-                .padding(24.dp)
+                .padding(18.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -480,22 +483,41 @@ private fun ChoosePathStep(
     onChooseString: () -> Unit,
     onChooseGuided: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        PathCard(
-            modifier = Modifier.weight(1f),
-            title = "I have a connection string",
-            subtitle = "Paste from your host or dashboard",
-            onClick = onChooseString,
-        )
-        PathCard(
-            modifier = Modifier.weight(1f),
-            title = "Help me set it up",
-            subtitle = "Local, cloud, or work database",
-            onClick = onChooseGuided,
-        )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 500.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PathCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    title = "I have a connection string",
+                    subtitle = "Paste from your host or dashboard",
+                    onClick = onChooseString,
+                )
+                PathCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    title = "Help me set it up",
+                    subtitle = "Local, cloud, or work database",
+                    onClick = onChooseGuided,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                PathCard(
+                    modifier = Modifier.weight(1f),
+                    title = "I have a connection string",
+                    subtitle = "Paste from your host or dashboard",
+                    onClick = onChooseString,
+                )
+                PathCard(
+                    modifier = Modifier.weight(1f),
+                    title = "Help me set it up",
+                    subtitle = "Local, cloud, or work database",
+                    onClick = onChooseGuided,
+                )
+            }
+        }
     }
 }
 
@@ -561,7 +583,7 @@ private fun PanelButton(
                 .border(1.dp, borderColor, shape)
                 .hoverable(interactionSource)
                 .clickable(onClick = onClick)
-                .padding(16.dp),
+                .padding(12.dp),
         ) {
             content()
         }
@@ -598,7 +620,7 @@ private fun SegmentButton(
             .border(1.dp, borderColor, shape)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -646,7 +668,7 @@ private fun InlineIconButton(
 
     Box(
         modifier = modifier
-            .size(32.dp)
+            .size(28.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(if (hovered) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent)
             .hoverable(interactionSource)
@@ -657,7 +679,7 @@ private fun InlineIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = if (hovered) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -676,7 +698,7 @@ private fun StringInputStep(
             onValueChange = onConnectionStringChange,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Connection string") },
-            minLines = 5,
+            minLines = 4,
             textStyle = MaterialTheme.typography.bodySmall,
             placeholder = { Text("postgresql://readonly:password@host:5432/database") },
         )
@@ -706,31 +728,112 @@ private fun LocationStep(
     onSelectLocation: (DatabaseLocation) -> Unit,
     onSwitchToString: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Database location", style = MaterialTheme.typography.labelLarge)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            for (card in LOCATION_CARDS) {
-                val selected = selectedLocation == card.id
-                PanelButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = { onSelectLocation(card.id) },
-                    selected = selected,
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth < 620.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (card in LOCATION_CARDS) {
+                        LocationPanelButton(
+                            card = card,
+                            selected = selectedLocation == card.id,
+                            onClick = { onSelectLocation(card.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Column {
-                            Text(card.title, style = MaterialTheme.typography.labelLarge)
-                            Text(
-                                card.subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = androidx.compose.material3.LocalContentColor.current.copy(alpha = 0.75f),
-                            )
+                    for (card in LOCATION_CARDS) {
+                        LocationPanelButton(
+                            card = card,
+                            selected = selectedLocation == card.id,
+                            onClick = { onSelectLocation(card.id) },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }
         }
         PlainTextAction("I have a connection string", onClick = onSwitchToString)
+    }
+}
+
+@Composable
+private fun LocationPanelButton(
+    card: LocationCard,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PanelButton(
+        modifier = modifier,
+        onClick = onClick,
+        selected = selected,
+    ) {
+        Column {
+            Text(card.title, style = MaterialTheme.typography.labelLarge)
+            Text(
+                card.subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = androidx.compose.material3.LocalContentColor.current.copy(alpha = 0.75f),
+            )
+        }
+    }
+}
+
+private data class ResponsiveFormRowItem(
+    val weight: Float,
+    val minWidth: Dp,
+    val content: @Composable () -> Unit,
+)
+
+private class ResponsiveFormRowScope {
+    val items = mutableListOf<ResponsiveFormRowItem>()
+
+    fun item(
+        weight: Float = 1f,
+        minWidth: Dp = 0.dp,
+        content: @Composable () -> Unit,
+    ) {
+        items += ResponsiveFormRowItem(weight, minWidth, content)
+    }
+}
+
+@Composable
+private fun ResponsiveFormRow(
+    collapseBelow: Dp,
+    modifier: Modifier = Modifier,
+    content: ResponsiveFormRowScope.() -> Unit,
+) {
+    val scope = ResponsiveFormRowScope().apply(content)
+
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        if (maxWidth < collapseBelow) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (item in scope.items) {
+                    item.content()
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (item in scope.items) {
+                    Box(
+                        modifier = Modifier
+                            .weight(item.weight)
+                            .widthIn(min = item.minWidth),
+                    ) {
+                        item.content()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -784,7 +887,7 @@ private fun CredentialsStep(
     onCancel: () -> Unit,
     onSave: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (parsedFromString) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -844,24 +947,25 @@ private fun CredentialsStep(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = hostValue,
-                onValueChange = onHostChange,
-                modifier = Modifier.weight(2f),
-                label = { Text("Host") },
-                placeholder = { Text("localhost") },
-            )
-            OutlinedTextField(
-                value = portValue,
-                onValueChange = onPortChange,
-                modifier = Modifier.weight(1f),
-                label = { Text("Port") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            )
+        ResponsiveFormRow(collapseBelow = 520.dp) {
+            item(weight = 2f) {
+                OutlinedTextField(
+                    value = hostValue,
+                    onValueChange = onHostChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Host") },
+                    placeholder = { Text("localhost") },
+                )
+            }
+            item(weight = 1f, minWidth = 140.dp) {
+                OutlinedTextField(
+                    value = portValue,
+                    onValueChange = onPortChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Port") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            }
         }
 
         OutlinedTextField(
@@ -872,36 +976,37 @@ private fun CredentialsStep(
             placeholder = { Text("mydb") },
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = username,
-                onValueChange = onUsernameChange,
-                modifier = Modifier.weight(1f),
-                label = { Text("Username") },
-                placeholder = { Text("readonly") },
-            )
-            OutlinedTextField(
-                value = password,
-                onValueChange = onPasswordChange,
-                modifier = Modifier.weight(1f),
-                label = { Text("Password") },
-                placeholder = { Text("Password") },
-                visualTransformation = if (showPassword) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    InlineIconButton(
-                        icon = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (showPassword) "Hide password" else "Show password",
-                        onClick = onToggleShowPassword,
-                    )
-                },
-            )
+        ResponsiveFormRow(collapseBelow = 520.dp) {
+            item(weight = 1f) {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = onUsernameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Username") },
+                    placeholder = { Text("readonly") },
+                )
+            }
+            item(weight = 1f) {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = onPasswordChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Password") },
+                    placeholder = { Text("Password") },
+                    visualTransformation = if (showPassword) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        InlineIconButton(
+                            icon = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = if (showPassword) "Hide password" else "Show password",
+                            onClick = onToggleShowPassword,
+                        )
+                    },
+                )
+            }
         }
 
         if (dialectIsOracle && transportMode != TransportSecurityMode.Disabled) {
@@ -1031,7 +1136,7 @@ private fun SummaryChip(text: String) {
         Text(
             text = text,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             style = MaterialTheme.typography.labelSmall,
         )
     }

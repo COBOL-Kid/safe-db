@@ -73,7 +73,7 @@ fun ConnectionsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp, vertical = 20.dp),
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -110,7 +110,7 @@ fun ConnectionsScreen(
                         onSaved()
                     },
                     onCancel = { showFormPlaceholder = false },
-                    modifier = Modifier.widthIn(max = 672.dp),
+                    modifier = Modifier.widthIn(max = 720.dp),
                 )
             }
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -134,7 +134,7 @@ fun ConnectionsScreen(
                         MessageBanner(
                             text = deleteError!!,
                             kind = com.safedb.ui.components.BannerKind.ERROR,
-                            modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp),
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                         ) {
                             SecondaryButton(onClick = viewModel::clearDeleteError) {
                                 Text("Dismiss")
@@ -143,12 +143,12 @@ fun ConnectionsScreen(
                     }
 
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 280.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        columns = GridCells.Adaptive(minSize = 240.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(32.dp),
+                            .padding(24.dp),
                     ) {
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
@@ -171,15 +171,15 @@ private fun ConnectionCard(
     onOpen: () -> Unit,
 ) {
     AppCard {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(30.dp),
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                     ) {
@@ -203,7 +203,7 @@ private fun ConnectionCard(
                 DeleteIconButton(onClick = onDelete)
             }
 
-            androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
+            androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
             Text("Host  ${connection.host}:${connection.port}", style = MaterialTheme.typography.labelSmall)
             Text("DB    ${connection.database}", style = MaterialTheme.typography.labelSmall)
             Text("User  ${connection.username}", style = MaterialTheme.typography.labelSmall)
@@ -212,7 +212,7 @@ private fun ConnectionCard(
                 onClick = onOpen,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 20.dp),
+                    .padding(top = 14.dp),
             ) {
                 Text("Open")
                 Icon(Icons.Filled.ArrowForward, contentDescription = null, modifier = Modifier.padding(start = 8.dp).size(16.dp))
