@@ -1,12 +1,12 @@
 package com.safedb.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -21,11 +21,14 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,11 +39,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isCtrlPressed
-import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -171,13 +173,13 @@ fun CommandPalette(
                         }
                         Key.DirectionDown -> {
                             if (filtered.isNotEmpty()) {
-                                selectedIndex = (selectedIndex + 1) % filtered.size
+                                selectedIndex = (selectedIndex + 1).coerceAtMost(filtered.lastIndex)
                             }
                             true
                         }
                         Key.DirectionUp -> {
                             if (filtered.isNotEmpty()) {
-                                selectedIndex = if (selectedIndex == 0) filtered.lastIndex else selectedIndex - 1
+                                selectedIndex = (selectedIndex - 1).coerceAtLeast(0)
                             }
                             true
                         }
@@ -185,75 +187,137 @@ fun CommandPalette(
                     }
                 },
             shape = RoundedCornerShape(12.dp),
-            shadowElevation = 16.dp,
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 24.dp,
             tonalElevation = 0.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    value = search,
-                    onValueChange = { search = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search commands…") },
-                    singleLine = true,
-                )
+            Column {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                ) {
+                    TextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                "Type a command...",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                        ),
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                        .heightIn(max = 320.dp)
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    itemsIndexed(filtered, key = { _, cmd -> cmd.id }) { index, cmd ->
-                        val selected = index == selectedIndex
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (selected) {
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surface
-                                    },
-                                    RoundedCornerShape(8.dp),
-                                )
-                                .clickable { cmd.action() }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(28.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                },
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        cmd.icon,
-                                        contentDescription = null,
-                                        tint = if (selected) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.size(16.dp),
+                    if (filtered.isEmpty()) {
+                        item {
+                            Text(
+                                "No commands found",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 28.dp),
+                            )
+                        }
+                    } else {
+                        itemsIndexed(filtered, key = { _, cmd -> cmd.id }) { index, cmd ->
+                            MenuActionRow(
+                                text = cmd.label,
+                                supportingText = cmd.hint,
+                                selected = index == selectedIndex,
+                                onClick = { cmd.action() },
+                                leading = {
+                                    CommandIconBox(
+                                        icon = cmd.icon,
                                     )
-                                }
-                            }
-                            Column {
-                                Text(cmd.label, style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    cmd.hint,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                                },
+                            )
                         }
                     }
                 }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ShortcutHint("↑↓", "navigate")
+                    ShortcutHint("↵", "select")
+                    ShortcutHint("esc", "close")
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CommandIconBox(icon: ImageVector) {
+    Surface(
+        modifier = Modifier.size(28.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShortcutHint(
+    key: String,
+    label: String,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Kbd(key)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+        )
     }
 }

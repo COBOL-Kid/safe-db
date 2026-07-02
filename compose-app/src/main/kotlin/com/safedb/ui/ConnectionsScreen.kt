@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -96,14 +97,22 @@ fun ConnectionsScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         when {
-            showFormPlaceholder -> ConnectionForm(
-                service = service,
-                onSaved = {
-                    showFormPlaceholder = false
-                    onSaved()
-                },
-                onCancel = { showFormPlaceholder = false },
-            )
+            showFormPlaceholder -> Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                ConnectionForm(
+                    service = service,
+                    onSaved = {
+                        showFormPlaceholder = false
+                        onSaved()
+                    },
+                    onCancel = { showFormPlaceholder = false },
+                    modifier = Modifier.widthIn(max = 672.dp),
+                )
+            }
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 androidx.compose.material3.CircularProgressIndicator()
             }

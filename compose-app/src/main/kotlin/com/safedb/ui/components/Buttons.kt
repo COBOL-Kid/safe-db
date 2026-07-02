@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.SafeDbTheme
 
@@ -52,6 +53,7 @@ fun PrimaryButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
+        shape = RoundedCornerShape(8.dp),
         colors = colors,
         elevation = flatElevation(),
         contentPadding = contentPadding,
@@ -73,6 +75,7 @@ fun SecondaryButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
+        shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),

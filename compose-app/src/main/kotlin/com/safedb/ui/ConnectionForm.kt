@@ -1,6 +1,14 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -9,22 +17,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +40,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -363,6 +373,8 @@ fun ConnectionForm(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
@@ -386,9 +398,7 @@ fun ConnectionForm(
                     )
                 }
                 if (formStep != FormStep.Choose) {
-                    TextButton(onClick = { resetToChoose() }) {
-                        Text("Change path")
-                    }
+                    PlainTextAction("Change path", onClick = { resetToChoose() })
                 }
             }
 
@@ -496,12 +506,12 @@ private fun PathCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SecondaryButton(
+    PanelButton(
         onClick = onClick,
         modifier = modifier,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.Start,
         ) {
             Text(title, style = MaterialTheme.typography.titleSmall)
@@ -511,6 +521,144 @@ private fun PathCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun PanelButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(8.dp)
+    val action = com.safedb.ui.theme.SafeDbTheme.colors.actionPrimary
+    val onAction = com.safedb.ui.theme.SafeDbTheme.colors.onActionPrimary
+    val background = when {
+        selected -> action
+        hovered -> MaterialTheme.colorScheme.surfaceContainerLow
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val borderColor = when {
+        selected -> action
+        hovered -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+        else -> MaterialTheme.colorScheme.outline
+    }
+
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.material3.LocalContentColor provides if (selected) {
+            onAction
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+    ) {
+        Box(
+            modifier = modifier
+                .clip(shape)
+                .background(background)
+                .border(1.dp, borderColor, shape)
+                .hoverable(interactionSource)
+                .clickable(onClick = onClick)
+                .padding(16.dp),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SegmentButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(8.dp)
+    val action = com.safedb.ui.theme.SafeDbTheme.colors.actionPrimary
+    val onAction = com.safedb.ui.theme.SafeDbTheme.colors.onActionPrimary
+    val background = when {
+        selected -> action
+        hovered -> MaterialTheme.colorScheme.surfaceContainerLow
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val borderColor = when {
+        selected -> action
+        hovered -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+        else -> MaterialTheme.colorScheme.outline
+    }
+
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(background)
+            .border(1.dp, borderColor, shape)
+            .hoverable(interactionSource)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) onAction else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PlainTextAction(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = if (hovered) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .hoverable(interactionSource)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun InlineIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (hovered) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent)
+            .hoverable(interactionSource)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (hovered) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -535,9 +683,7 @@ private fun StringInputStep(
 
         if (parseError != null) {
             MessageBanner(text = parseError, kind = BannerKind.ERROR) {
-                TextButton(onClick = onSwitchToGuided) {
-                    Text("Use guided setup")
-                }
+                PlainTextAction("Use guided setup", onClick = onSwitchToGuided)
             }
         }
 
@@ -546,9 +692,7 @@ private fun StringInputStep(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onSwitchToGuided) {
-                Text("Use guided setup")
-            }
+            PlainTextAction("Use guided setup", onClick = onSwitchToGuided)
             PrimaryButton(onClick = onContinue) {
                 Text("Continue")
             }
@@ -569,25 +713,24 @@ private fun LocationStep(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             for (card in LOCATION_CARDS) {
-                FilterChip(
+                val selected = selectedLocation == card.id
+                PanelButton(
                     modifier = Modifier.weight(1f),
-                    selected = selectedLocation == card.id,
                     onClick = { onSelectLocation(card.id) },
-                    label = {
-                        Column {
+                    selected = selected,
+                ) {
+                    Column {
                             Text(card.title, style = MaterialTheme.typography.labelLarge)
                             Text(
                                 card.subtitle,
                                 style = MaterialTheme.typography.bodySmall,
+                                color = androidx.compose.material3.LocalContentColor.current.copy(alpha = 0.75f),
                             )
-                        }
-                    },
-                )
+                    }
+                }
             }
         }
-        TextButton(onClick = onSwitchToString) {
-            Text("I have a connection string")
-        }
+        PlainTextAction("I have a connection string", onClick = onSwitchToString)
     }
 }
 
@@ -675,9 +818,7 @@ private fun CredentialsStep(
                 text = "This host is not local. Apply cloud security defaults before testing or saving.",
                 kind = BannerKind.WARNING,
             ) {
-                TextButton(onClick = onApplyCloudDefaults) {
-                    Text("Apply cloud defaults")
-                }
+                PlainTextAction("Apply cloud defaults", onClick = onApplyCloudDefaults)
             }
         }
 
@@ -695,10 +836,10 @@ private fun CredentialsStep(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             for (entry in DIALECTS) {
-                FilterChip(
+                SegmentButton(
+                    text = entry.label,
                     selected = dialect == entry.value,
                     onClick = { onSelectDialect(entry.value) },
-                    label = { Text(entry.label) },
                 )
             }
         }
@@ -754,12 +895,11 @@ private fun CredentialsStep(
                     PasswordVisualTransformation()
                 },
                 trailingIcon = {
-                    IconButton(onClick = onToggleShowPassword) {
-                        Icon(
-                            imageVector = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            contentDescription = if (showPassword) "Hide password" else "Show password",
-                        )
-                    }
+                    InlineIconButton(
+                        icon = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = if (showPassword) "Hide password" else "Show password",
+                        onClick = onToggleShowPassword,
+                    )
                 },
             )
         }
@@ -779,9 +919,7 @@ private fun CredentialsStep(
                     "Transport settings differ from the recommended preset.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                TextButton(onClick = onReapplyRecommended) {
-                    Text("Reapply recommended settings")
-                }
+                PlainTextAction("Reapply recommended settings", onClick = onReapplyRecommended)
             }
         }
 
@@ -859,10 +997,15 @@ private fun CredentialsStep(
                 Text(if (testing) "Testing..." else "Test Connection")
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onCancel) {
-                    Text("Cancel")
-                }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlainTextAction(
+                    "Cancel",
+                    onClick = onCancel,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                )
                 PrimaryButton(
                     onClick = onSave,
                     enabled = !saving && !testing,

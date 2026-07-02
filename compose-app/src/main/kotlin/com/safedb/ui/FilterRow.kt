@@ -10,8 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -40,6 +38,8 @@ import com.safedb.query.MAX_IN_LIST_SIZE
 import com.safedb.query.literalKindForColumn
 import com.safedb.query.opLabel
 import com.safedb.query.opsForColumn
+import com.safedb.ui.components.MenuActionRow
+import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.viewmodel.QueryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -255,13 +255,14 @@ private fun <T> FilterDropdown(
             textStyle = MaterialTheme.typography.labelSmall,
             singleLine = true,
         )
-        DropdownMenu(
+        SafeDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
             for ((option, display) in options) {
-                DropdownMenuItem(
-                    text = { Text(display, style = MaterialTheme.typography.labelSmall) },
+                MenuActionRow(
+                    text = display,
+                    selected = display == value,
                     onClick = {
                         onSelected(option)
                         expanded = false

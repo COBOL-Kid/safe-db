@@ -22,8 +22,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +41,9 @@ import com.safedb.model.FilterOp
 import com.safedb.query.CANVAS_HEADER_HEIGHT
 import com.safedb.query.opLabel
 import com.safedb.query.opsForColumn
+import com.safedb.ui.components.MenuActionRow
+import com.safedb.ui.components.MenuSectionLabel
+import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 
@@ -185,18 +186,14 @@ fun TableCard(
                             IconButton(onClick = { menuColumn = if (menuColumn == column.name) null else column.name }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "Filter options")
                             }
-                            DropdownMenu(
+                            SafeDropdownMenu(
                                 expanded = menuColumn == column.name,
                                 onDismissRequest = { menuColumn = null },
                             ) {
-                                Text(
-                                    "Filter where",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                )
+                                MenuSectionLabel("Filter where")
                                 for (op in opsForColumn(column.dataType)) {
-                                    DropdownMenuItem(
-                                        text = { Text("${column.name} ${opLabel(op)}", style = MaterialTheme.typography.labelSmall) },
+                                    MenuActionRow(
+                                        text = "${column.name} ${opLabel(op)}",
                                         onClick = {
                                             queryViewModel.addFilter(
                                                 QueryViewModel.defaultFilterForColumn(alias, column.name, column.dataType)
