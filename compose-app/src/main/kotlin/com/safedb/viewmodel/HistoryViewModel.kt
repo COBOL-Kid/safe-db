@@ -1,0 +1,41 @@
+package com.safedb.viewmodel
+
+import com.safedb.model.HistoryEntry
+import com.safedb.service.SafeDbService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+class HistoryViewModel(
+    private val service: SafeDbService,
+    private val scope: CoroutineScope,
+) {
+    private val _entries = MutableStateFlow<List<HistoryEntry>>(emptyList())
+    val entries: StateFlow<List<HistoryEntry>> = _entries.asStateFlow()
+
+    private val _loading = MutableStateFlow(false)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    suspend fun load() {
+        _loading.value = true
+        try {
+            _entries.value = service.listHistory()
+        } finally {
+            _loading.value = false
+        }
+    }
+
+    fun refresh() {
+        scope.launch { load() }
+    }
+
+    fun clear(onComplete: () -> Unit = {}) {
+        scope.launch {
+            service.clearHistory()
+            _entries.value = emptyList()
+            onComplete()
+        }
+    }
+}

@@ -2,6 +2,23 @@
 
 Desktop app for safely exploring production databases. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN cost warnings.
 
+## Kotlin + Compose Desktop (primary)
+
+The app has been migrated to **Jetpack Compose Desktop** with a Kotlin/JDBC backend. See [compose-app/README.md](compose-app/README.md).
+
+```sh
+cd compose-app
+./gradlew run          # desktop app
+./gradlew check        # unit tests (query engine, stores, adapters, connection parser)
+./gradlew packageDistributionForCurrentOS
+```
+
+Reuses the same app data directory and JSON stores as the legacy Tauri build (`com.safedb.app`).
+
+## Legacy Tauri + Svelte (deprecated)
+
+The original stack remains in-tree for reference:
+
 Built with **Tauri 2.11.3** (Rust) and **SvelteKit 2** (Svelte 5).
 
 ## Features

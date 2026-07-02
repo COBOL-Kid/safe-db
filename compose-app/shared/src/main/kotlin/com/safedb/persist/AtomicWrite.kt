@@ -1,0 +1,64 @@
+package com.safedb.persist
+
+import java.nio.channels.FileChannel
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermission
+import java.util.EnumSet
+import java.util.UUID
+
+fun ensurePrivateDir(path: Path) {
+    Files.createDirectories(path)
+    if (isPosix()) {
+        Files.setPosixFilePermissions(
+            path,
+            EnumSet.of(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.OWNER_EXECUTE,
+            ),
+        )
+    }
+}
+
+/** Write through an exclusively-created private sibling and atomically replace [path]. */
+fun atomicWrite(path: Path, content: String) {
+    val parent = path.parent ?: error("path has no parent: $path")
+    ensurePrivateDir(parent)
+
+    val fileName = path.fileName?.toString() ?: error("invalid path: $path")
+    val tmpPath = parent.resolve(".${fileName}.${UUID.randomUUID()}.tmp")
+
+    try {
+        FileChannel.open(
+            tmpPath,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.CREATE_NEW,
+        ).use { channel ->
+            channel.write(java.nio.ByteBuffer.wrap(content.toByteArray(Charsets.UTF_8)))
+            channel.force(true)
+        }
+        replaceFile(tmpPath, path)
+        FileChannel.open(parent, StandardOpenOption.READ).use { parentChannel ->
+            parentChannel.force(true)
+        }
+    } catch (error: Exception) {
+        runCatching { Files.deleteIfExists(tmpPath) }
+        throw error
+    }
+}
+
+private fun replaceFile(source: Path, destination: Path) {
+    if (!Files.exists(destination)) {
+        Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE)
+        return
+    }
+    Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+}
+
+private fun isPosix(): Boolean = runCatching {
+    Files.getPosixFilePermissions(Path.of("."))
+    true
+}.getOrDefault(false)
