@@ -5,6 +5,7 @@
 	import { query } from '$lib/stores/query.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { hydrateQueryFromSpec, formatHydrationWarning } from '$lib/hydrate-query';
 	import type { SavedQuery } from '$lib/ir';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -15,7 +16,7 @@
 		{ href: '/connections', title: 'New Connection', desc: 'Connect to a database', icon: 'M12 5v14M5 12h14' },
 		{ href: '/builder', title: 'Build a Query', desc: 'Visually explore your data', icon: 'M4 6h16M4 12h16M4 18h10' },
 		{ href: '/history', title: 'Recent Queries', desc: 'Revisit past explorations', icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' }
-	];
+	] as const;
 
 	$effect(() => {
 		if (browser) {
@@ -33,7 +34,7 @@
 
 		const hydration = hydrateQueryFromSpec(sq.spec, schema.tables, query);
 		query.hydrationWarning = formatHydrationWarning(hydration);
-		goto('/builder');
+		goto(resolve('/builder'));
 	}
 
 	function requestDeleteSaved(id: string) {
@@ -67,7 +68,7 @@
 		<div class="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
 			{#each actions as action (action.href)}
 				<a
-					href={action.href}
+					href={resolve(action.href)}
 					class="group flex flex-col rounded-xl border border-slate-200 bg-white p-5 transition-all hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
 				>
 					<div
@@ -131,8 +132,8 @@
 						<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
 					</div>
 					<div>
-						<p class="text-sm font-medium">Capped row limits & timeouts</p>
-						<p class="text-sm text-slate-400">Every query is bounded — no runaway full-table scans.</p>
+						<p class="text-sm font-medium">Guided row limits & timeouts</p>
+						<p class="text-sm text-slate-400">Every query is bounded, with coaching when reporting needs more rows.</p>
 					</div>
 				</div>
 				<div class="flex gap-3">

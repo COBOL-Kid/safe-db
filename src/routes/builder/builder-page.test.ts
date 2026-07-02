@@ -8,6 +8,7 @@ import { schema } from '$lib/stores/schema.svelte';
 import { query } from '$lib/stores/query.svelte';
 import { savedQueries } from '$lib/stores/saved-queries.svelte';
 import type { ConnectionDef, TableInfo } from '$lib/ir';
+import { COST_GUARD_PREFIX } from '$lib/limits';
 
 vi.mock('$lib/api');
 
@@ -47,6 +48,7 @@ describe('Builder page', () => {
 		connections.activeId = null;
 		schema.clear();
 		query.clear();
+		query.warningPopupsDisabled = false;
 	});
 
 	afterEach(() => {
@@ -55,6 +57,7 @@ describe('Builder page', () => {
 		connections.activeId = null;
 		schema.clear();
 		query.clear();
+		query.warningPopupsDisabled = false;
 	});
 
 	it('shows the "No connection selected" empty state when no active connection', async () => {
@@ -125,6 +128,213 @@ describe('Builder page', () => {
 		const call = vi.mocked(api.runQuery).mock.calls[0];
 		expect(call[0]).toBe('c1');
 		expect(call[1].tables).toHaveLength(1);
+	});
+
+	it('shows the warning popup toggle in the builder controls', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+
+		render(BuilderPage);
+
+		expect(await screen.findByRole('button', { name: 'Warning popups on' })).toBeInTheDocument();
+	});
+
+	it('shows the future reporting mode button without wiring it to query execution', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+		vi.mocked(api.runQuery).mockReset();
+
+		render(BuilderPage);
+
+		const reportingMode = await screen.findByRole('button', { name: 'Reporting mode' });
+		expect(reportingMode).toBeDisabled();
+		expect(reportingMode).toHaveAttribute('title', 'Reporting mode is coming soon');
+
+		const user = userEvent.setup();
+		await user.click(reportingMode);
+		expect(api.runQuery).not.toHaveBeenCalled();
+	});
+
+	it('asks playfully before muting warning popups and leaves them on when canceled', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+
+		render(BuilderPage);
+
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: 'Warning popups on' }));
+
+		const menu = screen.getByRole('dialog', { name: 'Mute the safety chorus?' });
+		expect(within(menu).getByText(/The seatbelts stay on/)).toBeInTheDocument();
+		await user.click(within(menu).getByRole('button', { name: 'Keep warning me' }));
+
+		expect(screen.queryByRole('dialog', { name: 'Mute the safety chorus?' })).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Warning popups on' })).toHaveAttribute(
+			'aria-pressed',
+			'false'
+		);
+		expect(query.warningPopupsDisabled).toBe(false);
+	});
+
+	it('mutes warning popups for the session after confirmation', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+
+		render(BuilderPage);
+
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: 'Warning popups on' }));
+		await user.click(
+			within(screen.getByRole('dialog', { name: 'Mute the safety chorus?' })).getByRole(
+				'button',
+				{ name: 'Mute warnings' }
+			)
+		);
+
+		expect(screen.queryByRole('dialog', { name: 'Mute the safety chorus?' })).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Warning popups muted' })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		expect(query.warningPopupsDisabled).toBe(true);
+	});
+
+	it('shows friendly copy and retries with safeguards when cost estimate is unavailable', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+		vi.mocked(api.runQuery).mockReset();
+		vi.mocked(api.runQuery)
+			.mockRejectedValueOnce(
+				`${COST_GUARD_PREFIX}EXPLAIN failed. Confirm to run this query anyway.`
+			)
+			.mockResolvedValueOnce({
+				columns: [],
+				rows: [],
+				row_count: 0,
+				truncated: false,
+				warnings: []
+			});
+
+		render(BuilderPage);
+
+		query.addTable(sampleTable);
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: /Run Query/ }));
+
+		const dialog = await screen.findByRole('alertdialog');
+		expect(within(dialog).getByText('Safe DB could not preview this query')).toBeInTheDocument();
+		expect(within(dialog).getByText(/read-only access, a row limit, and a timeout/)).toBeInTheDocument();
+		expect(screen.queryByText(/EXPLAIN failed/)).not.toBeInTheDocument();
+
+		await user.click(within(dialog).getByRole('button', { name: 'Run with safeguards' }));
+
+		await waitFor(() => {
+			expect(api.runQuery).toHaveBeenCalledTimes(2);
+		});
+		expect(vi.mocked(api.runQuery).mock.calls[1][2]).toBe(true);
+	});
+
+	it('shows high-cost copy when the estimate exceeds the threshold', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+		vi.mocked(api.runQuery).mockReset();
+		vi.mocked(api.runQuery).mockRejectedValue(
+			`${COST_GUARD_PREFIX}Estimated query cost exceeds threshold. Confirm to run this query anyway.`
+		);
+
+		render(BuilderPage);
+
+		query.addTable(sampleTable);
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: /Run Query/ }));
+
+		const dialog = await screen.findByRole('alertdialog');
+		expect(
+			within(dialog).getByText('This query may scan more data than expected')
+		).toBeInTheDocument();
+		expect(within(dialog).getByText(/estimated this query may be expensive/)).toBeInTheDocument();
+		expect(screen.queryByText(/Estimated query cost exceeds threshold/)).not.toBeInTheDocument();
+
+		await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+		expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+		expect(screen.queryByText(/Estimated query cost exceeds threshold/)).not.toBeInTheDocument();
+	});
+
+	it('auto-runs with safeguards instead of showing the cost guard dialog when warnings are muted', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+		vi.mocked(api.runQuery).mockReset();
+		vi.mocked(api.runQuery)
+			.mockRejectedValueOnce(
+				`${COST_GUARD_PREFIX}EXPLAIN failed. Confirm to run this query anyway.`
+			)
+			.mockResolvedValueOnce({
+				columns: [],
+				rows: [],
+				row_count: 0,
+				truncated: false,
+				warnings: []
+			});
+
+		render(BuilderPage);
+
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: 'Warning popups on' }));
+		await user.click(
+			within(screen.getByRole('dialog', { name: 'Mute the safety chorus?' })).getByRole(
+				'button',
+				{ name: 'Mute warnings' }
+			)
+		);
+		query.addTable(sampleTable);
+		await user.click(screen.getByRole('button', { name: /Run Query/ }));
+
+		await waitFor(() => {
+			expect(api.runQuery).toHaveBeenCalledTimes(2);
+		});
+		expect(vi.mocked(api.runQuery).mock.calls[1][2]).toBe(true);
+		expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+	});
+
+	it('re-enables warning popups immediately when the muted toggle is clicked', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+		vi.mocked(api.runQuery).mockReset();
+		vi.mocked(api.runQuery).mockRejectedValue(
+			`${COST_GUARD_PREFIX}Estimated query cost exceeds threshold. Confirm to run this query anyway.`
+		);
+
+		render(BuilderPage);
+
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: 'Warning popups on' }));
+		await user.click(
+			within(screen.getByRole('dialog', { name: 'Mute the safety chorus?' })).getByRole(
+				'button',
+				{ name: 'Mute warnings' }
+			)
+		);
+		await user.click(screen.getByRole('button', { name: 'Warning popups muted' }));
+
+		expect(screen.getByRole('button', { name: 'Warning popups on' })).toHaveAttribute(
+			'aria-pressed',
+			'false'
+		);
+		expect(query.warningPopupsDisabled).toBe(false);
+
+		query.addTable(sampleTable);
+		await user.click(screen.getByRole('button', { name: /Run Query/ }));
+
+		expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+		expect(api.runQuery).toHaveBeenCalledTimes(1);
 	});
 
 	it('Clear calls query.clear', async () => {
@@ -245,12 +455,51 @@ describe('Builder page', () => {
 		expect(query.limit).toBe(25);
 
 		setLimitValue('9999');
-		expect(query.limit).toBe(1000);
+		expect(query.limit).toBe(9999);
+
+		setLimitValue('10001');
+		expect(query.limit).toBe(10000);
 
 		setLimitValue('0');
 		expect(query.limit).toBe(1);
 
 		setLimitValue('');
 		expect(query.limit).toBe(1);
+	});
+
+	it('quick limit choices set reporting-sized row limits', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+
+		render(BuilderPage);
+
+		query.addTable(sampleTable);
+		const user = userEvent.setup();
+
+		await user.click(await screen.findByRole('button', { name: 'Set limit to 5,000 rows' }));
+		expect(query.limit).toBe(5000);
+
+		await user.click(screen.getByRole('button', { name: 'Set limit to 10,000 rows' }));
+		expect(query.limit).toBe(10000);
+	});
+
+	it('shows large-limit guidance above 1,000 rows and hides it at 1,000 or below', async () => {
+		connections.connections = [activeConnection];
+		connections.activeId = 'c1';
+		vi.mocked(api.getSchema).mockResolvedValue({ tables: [sampleTable] });
+
+		render(BuilderPage);
+
+		query.addTable(sampleTable);
+		expect(screen.queryByText('Large result limit.')).not.toBeInTheDocument();
+
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole('button', { name: 'Set limit to 5,000 rows' }));
+		expect(screen.getByText('Large result limit.')).toBeInTheDocument();
+		expect(screen.getByText(/selected columns, and indexed predicates/)).toBeInTheDocument();
+
+		await user.click(screen.getByRole('button', { name: 'Set limit to 1,000 rows' }));
+		expect(screen.queryByText('Large result limit.')).not.toBeInTheDocument();
 	});
 });

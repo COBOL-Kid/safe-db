@@ -333,20 +333,29 @@ pub async fn explain(pool: &MySqlPool, compiled: &CompiledQuery) -> Result<Expla
     let json_str: String = row.try_get(0)?;
 
     let plan: serde_json::Value = serde_json::from_str(&json_str)?;
-    let cost_value = plan
-        .get("query_block")
-        .and_then(|v| v.get("cost_info"))
-        .and_then(|v| v.get("query_cost"));
-    let cost = cost_value.and_then(|value| {
-        value
-            .as_f64()
-            .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
-    });
+    let cost = parse_mysql_explain_cost(&plan);
 
     Ok(match cost {
         Some(cost) => ExplainResult::Estimated(cost),
         None => ExplainResult::Unavailable(
             "Could not parse EXPLAIN cost from MySQL JSON plan".to_string(),
         ),
+    })
+}
+
+pub(crate) fn parse_mysql_explain_cost(plan: &serde_json::Value) -> Option<f64> {
+    let cost_value = plan
+        .get("query_block")
+        .and_then(|v| v.get("cost_info"))
+        .and_then(|v| v.get("query_cost"))
+        .or_else(|| {
+            plan.get("query_plan")
+                .and_then(|v| v.get("estimated_total_cost"))
+        });
+
+    cost_value.and_then(|value| {
+        value
+            .as_f64()
+            .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
     })
 }

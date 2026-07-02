@@ -63,6 +63,10 @@ pub mod test_support {
         crate::adapters::mssql::parse_showplan_cost(xml)
     }
 
+    pub fn parse_mysql_explain_cost(plan: &serde_json::Value) -> Option<f64> {
+        crate::adapters::mysql::parse_mysql_explain_cost(plan)
+    }
+
     #[cfg(feature = "oracle")]
     pub fn encode_oracle_connect_query_value(value: &str) -> String {
         crate::adapters::oracle::encode_connect_query_value(value)

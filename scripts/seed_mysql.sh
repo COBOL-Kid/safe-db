@@ -6,10 +6,13 @@
 # running mysql/mariadb Docker container and runs the client inside it via
 # `docker exec` (the container's internal 127.0.0.1:3306 is the same server
 # the host sees on localhost:3306 when the port is published). Loads
-# testdata_mysql.sql into the 'safedb_test' database.
+# testdata_mysql.sql into the 'safedb_test' database by default, or streams
+# generated fixture SQL when --generated is passed.
 #
 # Usage:
 #   scripts/seed_mysql.sh                       # seed safedb_test
+#   scripts/seed_mysql.sh --generated           # generate + seed a larger fixture
+#   scripts/seed_mysql.sh --generated --orders 20000 --customers 5000
 #   scripts/seed_mysql.sh --reset               # drop + recreate the database first
 #   scripts/seed_mysql.sh --reset-state         # also wipe safe-db connections + history
 #   scripts/seed_mysql.sh --reset --reset-state # drop DB and wipe safe-db state
@@ -22,6 +25,14 @@
 #   SAFEDB_TEST_MYSQL_PASSWORD  (empty)
 #   SAFEDB_TEST_MYSQL_DATABASE  safedb_test
 #   SAFEDB_TEST_MYSQL_DOCKER    (empty)         pin a container name (forces docker exec)
+#
+# Generated fixture options:
+#   --orders <n>       default 50000
+#   --customers <n>    default 10000
+#   --products <n>     default 500
+#   --categories <n>   default 12
+#   --seed <n>         default 42
+#   --batch-size <n>   default 1000
 #
 # By default the script does NOT touch the local safe-db app state. Pass
 # --reset-state to wipe connections.json and query_history.json in the app
@@ -38,6 +49,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SQL_FILE="$REPO_ROOT/testdata_mysql.sql"
+GENERATOR="$REPO_ROOT/scripts/generate_mysql_fixture.mjs"
 
 HOST="${SAFEDB_TEST_MYSQL_HOST:-localhost}"
 PORT="${SAFEDB_TEST_MYSQL_PORT:-3306}"
@@ -108,20 +120,70 @@ reset_safedb_local_state() {
 
 RESET=0
 RESET_STATE=0
+GENERATED=0
+GENERATOR_ARGS=()
+GENERATOR_ARG_COUNT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --reset) RESET=1; shift ;;
     --reset-state) RESET_STATE=1; shift ;;
+    --generated) GENERATED=1; shift ;;
+    --orders | --customers | --products | --categories | --seed | --batch-size)
+      if [[ $# -lt 2 ]]; then
+        echo "missing value for $1" >&2
+        usage 1
+      fi
+      GENERATOR_ARGS+=("$1" "$2")
+      GENERATOR_ARG_COUNT=$((GENERATOR_ARG_COUNT + 2))
+      shift 2
+      ;;
     -h | --help) usage 0 ;;
-    --) shift; break ;;
+    --)
+      shift
+      if [[ "$GENERATED" -eq 1 ]]; then
+        if [[ $# -gt 0 ]]; then
+          GENERATOR_ARGS+=("$@")
+          GENERATOR_ARG_COUNT=$((GENERATOR_ARG_COUNT + $#))
+        fi
+        shift $#
+      fi
+      break
+      ;;
     -*) echo "unknown argument: $1" >&2; usage 1 ;;
     *) echo "unexpected positional argument: $1" >&2; usage 1 ;;
   esac
 done
 
-if [[ ! -f "$SQL_FILE" ]]; then
+run_generator() {
+  if (( GENERATOR_ARG_COUNT > 0 )); then
+    node "$GENERATOR" --database "$DATABASE" "${GENERATOR_ARGS[@]}" "$@"
+  else
+    node "$GENERATOR" --database "$DATABASE" "$@"
+  fi
+}
+
+if [[ "$GENERATED" -eq 1 && ! -f "$GENERATOR" ]]; then
+  echo "error: generator not found: $GENERATOR" >&2
+  exit 1
+fi
+if [[ "$GENERATED" -eq 0 && ! -f "$SQL_FILE" ]]; then
   echo "error: SQL file not found: $SQL_FILE" >&2
   exit 1
+fi
+if [[ "$GENERATED" -eq 1 ]]; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "error: --generated requires node on PATH" >&2
+    exit 1
+  fi
+  if (( GENERATOR_ARG_COUNT > 0 )); then
+    for arg in "${GENERATOR_ARGS[@]}"; do
+      if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+        node "$GENERATOR" --help
+        exit 0
+      fi
+    done
+  fi
+  run_generator --validate-only
 fi
 
 # Read a single env var from a Docker container's Config.Env (value may contain '=').
@@ -247,8 +309,13 @@ if [[ "$RESET" -eq 1 ]]; then
   mysql_run -e "DROP DATABASE IF EXISTS \`$DATABASE\`"
 fi
 
-echo "→ loading $SQL_FILE into '$DATABASE'"
-mysql_run < "$SQL_FILE"
+if [[ "$GENERATED" -eq 1 ]]; then
+  echo "→ generating fixture SQL and loading it into '$DATABASE'"
+  run_generator | mysql_run
+else
+  echo "→ loading $SQL_FILE into '$DATABASE'"
+  mysql_run < "$SQL_FILE"
+fi
 
 echo "→ verifying row counts"
 mysql_run "$DATABASE" --skip-column-names -e "
