@@ -10,6 +10,7 @@ The app has been migrated to **Jetpack Compose Desktop** with a Kotlin/JDBC back
 cd compose-app
 ./gradlew run          # desktop app
 ./gradlew check        # unit tests (query engine, stores, adapters, connection parser)
+./gradlew seedMysql    # generated local MySQL fixture (~50k orders)
 ./gradlew packageDistributionForCurrentOS
 ```
 
@@ -88,16 +89,17 @@ cargo clippy -- -D warnings
 Load a generated e-commerce fixture (`categories`, `products`, `customers`, `orders`, `order_items`, `inventory_log`) into `safedb_test`:
 
 ```sh
-pnpm db:seed:mysql                  # generate + seed a larger reporting fixture (~50k orders)
-pnpm db:seed:mysql:static           # load the bundled testdata_mysql.sql fixture
-pnpm db:seed:mysql:reset-state     # also wipe safe-db connections + history
-pnpm db:seed:mysql:reset            # drop DB + wipe state, then load generated data
+scripts/seed_mysql.sh                # generate + seed a larger reporting fixture (~50k orders)
+scripts/seed_mysql.sh --static       # load the bundled testdata_mysql.sql fixture
+scripts/seed_mysql.sh --reset-state  # also wipe safe-db connections + history
+scripts/seed_mysql.sh --reset        # drop DB, then load generated data
 ```
 
 Generated data is streamed directly into MySQL and is not checked in as a large SQL file. Tune it with script args:
 
 ```sh
-pnpm db:seed:mysql -- --orders 20000 --customers 5000 --seed 7
+scripts/seed_mysql.sh --orders 20000 --customers 5000 --seed 7
+cd compose-app && ./gradlew seedMysql -PseedMysqlArgs="--orders 20000 --customers 5000 --seed 7"
 ```
 
 The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars (see `scripts/seed_mysql.sh`). If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).
@@ -184,8 +186,7 @@ safe-db/
 │   ├── Entitlements.plist            # macOS sandbox + keychain-access-groups
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── scripts/seed_mysql.sh             # local MySQL fixture loader
-├── scripts/generate_mysql_fixture.mjs # generated MySQL fixture streamer
+├── scripts/seed_mysql.sh             # local MySQL fixture wrapper
 ├── testdata_mysql.sql                # MySQL DDL + seed data
 ├── vite.config.ts
 └── package.json

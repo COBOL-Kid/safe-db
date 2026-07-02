@@ -1,6 +1,9 @@
 package com.safedb.adapter
 
+import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.TransportSecurity
+import com.safedb.model.TransportSecurityMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -51,4 +54,38 @@ class AdapterTest {
         val mssql = "SELECT TOP 101 [t0].[id] AS [t0__id]\nFROM [dbo].[users] AS [t0]"
         assertEquals(listOf("t0__id"), columnsFromCompiledSql(mssql, Dialect.Mssql))
     }
+
+    @Test
+    fun mysqlDisabledTransportAllowsPublicKeyRetrievalForLocalAuth() {
+        val url = buildJdbcUrl(
+            mysqlConnection(TransportSecurityMode.Disabled),
+            password = "pw",
+        )
+
+        assertEquals(
+            "jdbc:mysql://localhost:3306/safedb_test?sslMode=DISABLED&allowPublicKeyRetrieval=true",
+            url,
+        )
+    }
+
+    @Test
+    fun mysqlVerifiedTransportDoesNotAllowPublicKeyRetrieval() {
+        val url = buildJdbcUrl(
+            mysqlConnection(TransportSecurityMode.VerifyIdentity),
+            password = "pw",
+        )
+
+        assertEquals("jdbc:mysql://localhost:3306/safedb_test?sslMode=VERIFY_IDENTITY", url)
+    }
+
+    private fun mysqlConnection(mode: TransportSecurityMode) = ConnectionDef(
+        id = "mysql-test",
+        name = "MySQL test",
+        dialect = Dialect.MySql,
+        host = "localhost",
+        port = 3306,
+        database = "safedb_test",
+        username = "testuser",
+        transportSecurity = TransportSecurity(mode = mode),
+    )
 }
