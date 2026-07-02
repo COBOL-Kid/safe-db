@@ -53,7 +53,7 @@ import java.util.UUID
 @Composable
 fun HistoryScreen(
     viewModel: AppViewModel,
-    onRerun: (String) -> Unit,
+    onRerun: (HistoryEntry) -> Unit,
     onNavigate: (com.safedb.AppRoute) -> Unit,
 ) {
     val entries by viewModel.history.entries.collectAsState()
@@ -144,7 +144,7 @@ fun HistoryScreen(
                 items(entries, key = { it.id }) { entry ->
                     HistoryEntryCard(
                         entry = entry,
-                        onRerun = { onRerun(entry.connectionId) },
+                        onRerun = { onRerun(entry) },
                         onSave = {
                             saveEntry = entry
                             saveQueryName = "${entry.connectionName} query"

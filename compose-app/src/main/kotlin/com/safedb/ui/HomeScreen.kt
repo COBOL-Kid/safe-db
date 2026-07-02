@@ -46,7 +46,7 @@ import com.safedb.viewmodel.AppViewModel
 fun HomeScreen(
     viewModel: AppViewModel,
     onNavigate: (AppRoute) -> Unit,
-    onOpenSavedQuery: (String) -> Unit,
+    onOpenSavedQuery: (com.safedb.model.SavedQuery) -> Unit,
 ) {
     val initialLoading by viewModel.initialLoading.collectAsState()
     val savedQueries by viewModel.savedQueries.queries.collectAsState()
@@ -129,7 +129,7 @@ fun HomeScreen(
                         name = query.name,
                         subtitle = "${viewModel.connections.connectionName(query.connectionId)} · " +
                             "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
-                        onOpen = { onOpenSavedQuery(query.connectionId) },
+                        onOpen = { onOpenSavedQuery(query) },
                         onDelete = { deleteTargetId = query.id },
                     )
                 }

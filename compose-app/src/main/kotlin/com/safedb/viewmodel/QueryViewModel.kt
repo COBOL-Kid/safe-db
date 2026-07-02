@@ -32,6 +32,8 @@ import com.safedb.query.QueryHydrationTarget
 import com.safedb.query.clampDimension
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
+import com.safedb.query.formatHydrationWarning
+import com.safedb.query.hydrateQueryFromSpec
 import com.safedb.query.literalKindForColumn
 import com.safedb.query.parseColumnKey
 import com.safedb.query.parseLimit
@@ -296,8 +298,16 @@ class QueryViewModel(
             } catch (e: Exception) {
                 val message = e.message ?: e.toString()
                 if (!force && message.startsWith(COST_GUARD_PREFIX)) {
-                    pendingCostGuard = true
-                    error = message.removePrefix(COST_GUARD_PREFIX)
+                    if (warningPopupsDisabled) {
+                        try {
+                            results = service.runQuery(connectionId, spec, force = true)
+                        } catch (forced: Exception) {
+                            error = forced.message ?: forced.toString()
+                        }
+                    } else {
+                        pendingCostGuard = true
+                        error = message.removePrefix(COST_GUARD_PREFIX)
+                    }
                 } else {
                     error = message
                 }
@@ -322,6 +332,15 @@ class QueryViewModel(
 
     fun dismissError() {
         clearPendingCostGuard()
+    }
+
+    fun updateWarningPopupsDisabled(disabled: Boolean) {
+        warningPopupsDisabled = disabled
+    }
+
+    fun restoreFromSpec(spec: QuerySpec, schemaTables: List<TableInfo>) {
+        val warnings = hydrateQueryFromSpec(spec, schemaTables, this)
+        hydrationWarning = formatHydrationWarning(warnings)
     }
 
     companion object {

@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.model.QuerySpec
 import com.safedb.ui.components.CommandPalette
 import com.safedb.viewmodel.AppViewModel
 
@@ -58,6 +59,15 @@ fun AppShell(
     val settings by viewModel.settings.settings.collectAsState()
     val isDark = settings.theme == "dark"
     val activeConnection = activeConnectionId?.let(viewModel.connections::connectionById)
+
+    fun restoreQuery(connectionId: String, spec: QuerySpec) {
+        appState.setActiveConnection(connectionId)
+        viewModel.restoreQueryForConnection(connectionId, spec) { restored ->
+            if (restored) {
+                appState.navigate(AppRoute.Builder)
+            }
+        }
+    }
 
     CommandPalette(
         open = paletteOpen,
@@ -92,9 +102,8 @@ fun AppShell(
                 AppRoute.Home -> HomeScreen(
                     viewModel = viewModel,
                     onNavigate = appState::navigate,
-                    onOpenSavedQuery = { connectionId ->
-                        appState.setActiveConnection(connectionId)
-                        appState.navigate(AppRoute.Builder)
+                    onOpenSavedQuery = { savedQuery ->
+                        restoreQuery(savedQuery.connectionId, savedQuery.spec)
                     },
                 )
                 AppRoute.Connections -> ConnectionsScreen(
@@ -109,13 +118,13 @@ fun AppShell(
                 AppRoute.Builder -> BuilderScreen(
                     connection = activeConnection,
                     queryViewModel = viewModel.query,
+                    savedQueriesViewModel = viewModel.savedQueries,
                     schemaViewModel = viewModel.schema,
                 )
                 AppRoute.History -> HistoryScreen(
                     viewModel = viewModel,
-                    onRerun = { connectionId ->
-                        appState.setActiveConnection(connectionId)
-                        appState.navigate(AppRoute.Builder)
+                    onRerun = { entry ->
+                        restoreQuery(entry.connectionId, entry.spec)
                     },
                     onNavigate = appState::navigate,
                 )

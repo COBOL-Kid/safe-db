@@ -7,7 +7,7 @@ group = "com.safedb"
 version = "0.0.1"
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 dependencies {

@@ -4,7 +4,7 @@ Jetpack Compose Desktop migration of safe-db. Replaces the Tauri/Svelte/Rust sta
 
 ## Prerequisites
 
-- **JDK 21+**
+- **JDK 25**. The Gradle projects use `jvmToolchain(25)`, matching the repo agent notes and the current development VM.
 - Network access to your databases (same as the Tauri app)
 
 ## Run
@@ -43,7 +43,9 @@ On first launch, if Tauri data files (`connections.json`, etc.) are found, they 
 
 ## Credentials
 
-Set `SAFEDB_KEYCHAIN_BACKEND=disabled` for in-memory credentials (debug/CI). Default `auto` uses platform stores (Keychain, Credential Manager, Secret Service) with a file fallback on headless Linux.
+Set `SAFEDB_KEYCHAIN_BACKEND=disabled` for in-memory credentials (debug/CI). Default `auto` uses Java keyring-backed platform stores (macOS Keychain, Windows Credential Manager, Linux Secret Service when available). On headless Linux, the Compose app falls back to `~/.safe-db/credentials`; this is a Kotlin/JVM credential path, not the old Tauri Protected Data entitlement flow.
+
+If stored credentials cannot be read after moving data from Tauri or changing credential backends, delete and add the connection again so the password is rebound to the current endpoint and transport settings.
 
 ## Module layout
 

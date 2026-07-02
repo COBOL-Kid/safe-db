@@ -57,11 +57,10 @@ class SafeDbServiceImpl(
     override suspend fun listConnections(): List<ConnectionDef> = configStore.list()
 
     override suspend fun deleteConnection(id: String) {
-        val previous = configStore.get(id)
         configStore.delete(id)
-        SecretsManager.deletePassword(id).getOrElse { error ->
-            previous?.let { configStore.save(it) }
-            throw IllegalStateException(error.message)
+        SecretsManager.deletePassword(id).onFailure { error ->
+            val message = error.message?.takeIf { it.isNotBlank() } ?: error::class.qualifiedName ?: error.toString()
+            println("WARN: deleted connection profile but could not remove stored credential for $id: $message")
         }
     }
 

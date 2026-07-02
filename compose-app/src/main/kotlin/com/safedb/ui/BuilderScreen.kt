@@ -39,12 +39,17 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.SavedQuery
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.MAX_LIMIT
 import com.safedb.query.parseLimit
+import com.safedb.ui.components.PromptDialog
 import com.safedb.viewmodel.QueryViewModel
+import com.safedb.viewmodel.SavedQueriesViewModel
 import com.safedb.viewmodel.SchemaViewModel
+import java.time.Instant
+import java.util.UUID
 
 private fun dialectLabel(dialect: Dialect): String = when (dialect) {
     Dialect.Postgres -> "PostgreSQL"
@@ -81,10 +86,14 @@ private fun costGuardDialogCopy(reason: String?): CostGuardDialogCopy {
 fun BuilderScreen(
     connection: ConnectionDef?,
     queryViewModel: QueryViewModel,
+    savedQueriesViewModel: SavedQueriesViewModel,
     schemaViewModel: SchemaViewModel,
     modifier: Modifier = Modifier,
 ) {
     var showCostGuardConfirm by remember { mutableStateOf(false) }
+    var showSavePrompt by remember { mutableStateOf(false) }
+    var showWarningMuteConfirm by remember { mutableStateOf(false) }
+    var saveQueryName by remember { mutableStateOf("") }
     var resultsHeight by remember { mutableFloatStateOf(240f) }
     var resizing by remember { mutableStateOf(false) }
     val limitChoices = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5000, MAX_LIMIT)
@@ -138,6 +147,58 @@ fun BuilderScreen(
                     },
                 ) {
                     Text("Cancel")
+                }
+            },
+        )
+    }
+
+    PromptDialog(
+        open = showSavePrompt,
+        title = "Save query",
+        message = "Choose a name for this query.",
+        value = saveQueryName,
+        onValueChange = { saveQueryName = it },
+        placeholder = "Query name",
+        onConfirm = {
+            val activeConnection = connection ?: return@PromptDialog
+            if (saveQueryName.isBlank()) return@PromptDialog
+            savedQueriesViewModel.save(
+                SavedQuery(
+                    id = UUID.randomUUID().toString(),
+                    name = saveQueryName.trim(),
+                    connectionId = activeConnection.id,
+                    spec = queryViewModel.spec,
+                    createdAt = Instant.now().epochSecond.toString(),
+                ),
+            ) {
+                showSavePrompt = false
+            }
+        },
+        onCancel = { showSavePrompt = false },
+    )
+
+    if (showWarningMuteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWarningMuteConfirm = false },
+            title = { Text("Mute cost warnings?") },
+            text = {
+                Text(
+                    "Safe DB can stop popping up cost warnings for this session. The safeguards stay on: read-only checks, row limits, and timeouts still apply.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        queryViewModel.updateWarningPopupsDisabled(true)
+                        showWarningMuteConfirm = false
+                    },
+                ) {
+                    Text("Mute warnings")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showWarningMuteConfirm = false }) {
+                    Text("Keep warning me")
                 }
             },
         )
@@ -210,9 +271,29 @@ fun BuilderScreen(
                             }
                         }
                     }
+                    TextButton(
+                        onClick = {
+                            saveQueryName = "Query on " +
+                                queryViewModel.canvasTables.joinToString(", ") { it.tableInfo.name }
+                            showSavePrompt = true
+                        },
+                    ) {
+                        Text("Save")
+                    }
                     TextButton(onClick = { queryViewModel.clear() }) {
                         Text("Clear")
                     }
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (queryViewModel.warningPopupsDisabled) {
+                            queryViewModel.updateWarningPopupsDisabled(false)
+                        } else {
+                            showWarningMuteConfirm = true
+                        }
+                    },
+                ) {
+                    Text(if (queryViewModel.warningPopupsDisabled) "Warnings Off" else "Warnings On")
                 }
                 IconButton(
                     onClick = { connection?.id?.let { queryViewModel.run(it) } },

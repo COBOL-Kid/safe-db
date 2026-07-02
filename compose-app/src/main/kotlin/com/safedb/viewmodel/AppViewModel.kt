@@ -2,6 +2,7 @@ package com.safedb.viewmodel
 
 import com.safedb.model.ConnectionDef
 import com.safedb.model.HistoryEntry
+import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
 import com.safedb.service.SafeDbService
@@ -42,6 +43,26 @@ class AppViewModel(
             } finally {
                 _initialLoading.value = false
             }
+        }
+    }
+
+    fun restoreQueryForConnection(
+        connectionId: String,
+        spec: QuerySpec,
+        onComplete: (Boolean) -> Unit = {},
+    ) {
+        schema.clear()
+        schema.load(connectionId) { loaded ->
+            if (loaded) {
+                query.restoreFromSpec(spec, schema.tables)
+            }
+            onComplete(loaded)
+        }
+    }
+
+    fun lockCredentials() {
+        scope.launch {
+            service.lockCredentials()
         }
     }
 }

@@ -79,7 +79,7 @@ object SecretsManager {
         return when (val password = readFromStore(connectionId)) {
             null -> Result.failure(
                 IllegalStateException(
-                    "Password not found for this connection. Open Connections, enter the password, and save the connection again.",
+                    "Password not found for this connection. Delete and add the connection again to store the password.",
                 ),
             )
             else -> {
@@ -94,20 +94,20 @@ object SecretsManager {
         CredentialSession.get(cacheKey)?.let { return Result.success(it) }
         val raw = readFromStore(def.id) ?: return Result.failure(
             IllegalStateException(
-                "Password not found for this connection. Open Connections, enter the password, and save the connection again.",
+                "Password not found for this connection. Delete and add the connection again to store the password.",
             ),
         )
         val record = runCatching { json.decodeFromString<BoundCredential>(raw) }.getOrElse {
             return Result.failure(
                 IllegalStateException(
-                    "This credential predates endpoint binding. Re-enter the password and save the connection before use.",
+                    "This credential predates endpoint binding. Delete and add the connection again before use.",
                 ),
             )
         }
         if (record.version != 1 || record.fingerprint != def.credentialFingerprint()) {
             return Result.failure(
                 IllegalStateException(
-                    "Stored credentials do not match this connection endpoint or transport configuration. Re-enter the password and save the connection.",
+                    "Stored credentials do not match this connection endpoint or transport configuration. Delete and add the connection again.",
                 ),
             )
         }
@@ -142,7 +142,7 @@ object SecretsManager {
     fun formatSaveCredentialError(err: Throwable): String {
         val message = err.message ?: err.toString()
         return if (isMissingEntitlementError(message)) {
-            "Could not store credentials: the app is not signed with keychain entitlements. For local development, set $ENV_BACKEND=disabled or run a signed release bundle."
+            "Could not store credentials in the platform credential store. For local development, set $ENV_BACKEND=disabled; otherwise check that the OS credential service is available."
         } else {
             "Could not store credentials ($message)."
         }

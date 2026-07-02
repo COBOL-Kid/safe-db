@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Link
@@ -25,11 +26,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,9 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.safedb.AppRoute
 import com.safedb.AppState
-import com.safedb.secrets.SecretsManager
 import com.safedb.viewmodel.AppViewModel
-import kotlinx.coroutines.launch
 
 private data class PaletteCommand(
     val id: String,
@@ -68,10 +67,10 @@ fun CommandPalette(
 
     var search by remember { mutableStateOf("") }
     var selectedIndex by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
+    val activeConnectionId by appState.activeConnectionId.collectAsState()
+    val connections by viewModel.connections.connections.collectAsState()
 
-    val commands = remember(viewModel, appState) {
-        val activeConnectionId = appState.activeConnectionId.value
+    val commands =
         buildList {
             add(
                 PaletteCommand("nav-home", "Go to Home", "Home page", Icons.Filled.Home) {
@@ -99,20 +98,43 @@ fun CommandPalette(
             )
             add(
                 PaletteCommand("lock-credentials", "Lock credentials", "Clear unlocked passwords", Icons.Filled.Lock) {
-                    scope.launch { SecretsManager.lockCredentials() }
+                    viewModel.lockCredentials()
                     onDismiss()
                 },
             )
-            if (activeConnectionId != null && viewModel.query.canRun) {
+            val runConnectionId = activeConnectionId
+            if (runConnectionId != null && viewModel.query.canRun) {
                 add(
                     PaletteCommand("run-query", "Run Query", "Execute current query", Icons.Filled.PlayArrow) {
-                        viewModel.query.run(activeConnectionId)
+                        viewModel.query.run(runConnectionId)
+                        appState.navigate(AppRoute.Builder)
+                        onDismiss()
+                    },
+                )
+            }
+            if (viewModel.query.canvasTables.isNotEmpty()) {
+                add(
+                    PaletteCommand("clear-canvas", "Clear Canvas", "Remove all tables", Icons.Filled.Delete) {
+                        viewModel.query.clear()
+                        onDismiss()
+                    },
+                )
+            }
+            for (connection in connections) {
+                add(
+                    PaletteCommand(
+                        id = "conn-${connection.id}",
+                        label = "Explore: ${connection.name}",
+                        hint = "${connection.dialect} · ${connection.database}",
+                        icon = Icons.Filled.Link,
+                    ) {
+                        appState.setActiveConnection(connection.id)
+                        appState.navigate(AppRoute.Builder)
                         onDismiss()
                     },
                 )
             }
         }
-    }
 
     val filtered = remember(search, commands) {
         val query = search.trim().lowercase()

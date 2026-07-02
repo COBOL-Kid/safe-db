@@ -15,6 +15,7 @@ import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
 import com.safedb.model.TransportSecurity
+import com.safedb.model.TransportSecurityMode
 import com.safedb.model.normalizeSettings
 import java.nio.file.Files
 import kotlin.test.Test
@@ -158,6 +159,98 @@ class StoreTest {
         assertEquals(100_000.0, store.load().explainCostThreshold)
         Files.writeString(dir.resolve("settings.json"), "   \n")
         assertEquals(100_000.0, store.load().explainCostThreshold)
+    }
+
+    @Test
+    fun storesReadTauriJsonLayoutTogether() {
+        val dir = tempDir()
+        Files.writeString(
+            dir.resolve("connections.json"),
+            """
+            [
+              {
+                "version": 2,
+                "id": "c1",
+                "name": "Tauri PG",
+                "dialect": "Postgres",
+                "host": "localhost",
+                "port": 5432,
+                "database": "demo",
+                "username": "readonly",
+                "transport_security": {
+                  "mode": "Disabled",
+                  "legacy_implicit": true
+                }
+              }
+            ]
+            """.trimIndent(),
+        )
+        val specJson = """
+            {
+              "tables": [{"schema": "public", "name": "users", "alias": "t0"}],
+              "columns": [{"table_alias": "t0", "column": "name"}],
+              "joins": [],
+              "filters": {"id": "root", "connector": "And", "children": []},
+              "limit": 100,
+              "schema_version": 3,
+              "connector_overrides": {}
+            }
+        """.trimIndent()
+        Files.writeString(
+            dir.resolve("saved_queries.json"),
+            """
+            [
+              {
+                "id": "q1",
+                "name": "Saved from Tauri",
+                "connection_id": "c1",
+                "spec": $specJson,
+                "created_at": "1710000000"
+              }
+            ]
+            """.trimIndent(),
+        )
+        Files.writeString(
+            dir.resolve("query_history.json"),
+            """
+            [
+              {
+                "id": "h1",
+                "connection_id": "c1",
+                "connection_name": "Tauri PG",
+                "spec": $specJson,
+                "row_count": 3,
+                "warnings": [],
+                "timestamp": "1710000001"
+              }
+            ]
+            """.trimIndent(),
+        )
+        Files.writeString(
+            dir.resolve("settings.json"),
+            """
+            {
+              "blocked_schemas": ["audit"],
+              "explain_cost_threshold": 42.0,
+              "theme": "dark"
+            }
+            """.trimIndent(),
+        )
+
+        val connections = ConfigStore.new(dir).list()
+        val queries = QueryStore.new(dir)
+        val settings = SettingsStore.new(dir).load()
+
+        assertEquals("Tauri PG", connections.single().name)
+        assertEquals(
+            TransportSecurity().copy(mode = TransportSecurityMode.Disabled, legacyImplicit = true),
+            connections.single().transportSecurity,
+        )
+        assertEquals("Saved from Tauri", queries.listSaved().single().name)
+        assertEquals("Tauri PG", queries.listHistory().single().connectionName)
+        assertEquals(listOf("audit"), settings.blockedSchemas)
+        assertEquals(42.0, settings.explainCostThreshold)
+        assertEquals("dark", settings.theme)
     }
 
     @Test
