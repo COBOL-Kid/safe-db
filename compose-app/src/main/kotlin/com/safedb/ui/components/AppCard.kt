@@ -1,5 +1,7 @@
 package com.safedb.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,8 +20,8 @@ import com.safedb.ui.theme.CardShape
 
 /**
  * Bordered card with a subtle hover-lift: the border darkens slightly and a
- * soft shadow appears when hovered. Pass [onClick] to make the whole card
- * clickable; leave null for a static card.
+ * soft shadow appears when hovered, both smoothly animated. Pass [onClick]
+ * to make the whole card clickable; leave null for a static card.
  */
 @Composable
 fun AppCard(
@@ -32,12 +34,16 @@ fun AppCard(
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
 
-    val border = if (hoverLift && hovered) {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.9f))
-    } else {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    }
-    val shadow = if (hoverLift && hovered) 2.dp else 0.dp
+    val lifted = hoverLift && hovered
+    val borderColor by animateColorAsState(
+        if (lifted) {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+        } else {
+            MaterialTheme.colorScheme.outline
+        },
+    )
+    val shadow by animateDpAsState(if (lifted) 3.dp else 0.dp)
+    val border = BorderStroke(1.dp, borderColor)
 
     if (onClick != null) {
         Surface(

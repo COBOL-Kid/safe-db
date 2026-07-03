@@ -1,6 +1,9 @@
 package com.safedb.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.Button
@@ -8,9 +11,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
+import com.safedb.ui.theme.ButtonShape
 import com.safedb.ui.theme.SafeDbTheme
 
 @Composable
@@ -23,8 +28,8 @@ private fun flatElevation() = ButtonDefaults.elevatedButtonElevation(
 )
 
 /**
- * Primary action button — flat neutral fill (contrast-flips between light/dark),
- * no Material elevation. Blue stays an accent, not a primary fill.
+ * Primary action button — flat indigo fill with a slightly deeper hover
+ * shade, no Material elevation.
  *
  * Pass [destructive] to render in the error color (for delete/confirm-destructive).
  */
@@ -37,6 +42,9 @@ fun PrimaryButton(
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+
     val colors = if (destructive) {
         ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.error,
@@ -44,8 +52,9 @@ fun PrimaryButton(
         )
     } else {
         val c = SafeDbTheme.colors
+        val container by animateColorAsState(if (hovered) c.actionPrimaryHover else c.actionPrimary)
         ButtonDefaults.buttonColors(
-            containerColor = c.actionPrimary,
+            containerColor = container,
             contentColor = c.onActionPrimary,
         )
     }
@@ -53,16 +62,17 @@ fun PrimaryButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
+        shape = ButtonShape,
         colors = colors,
         elevation = flatElevation(),
         contentPadding = contentPadding,
+        interactionSource = interactionSource,
         content = content,
     )
 }
 
 /**
- * Secondary/outline button — bordered, transparent fill, flat (no elevation).
+ * Secondary/outline button — bordered, subtle surface fill on hover, flat.
  */
 @Composable
 fun SecondaryButton(
@@ -71,16 +81,28 @@ fun SecondaryButton(
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val container by animateColorAsState(
+        if (hovered) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+        },
+    )
+
     OutlinedButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
+        shape = ButtonShape,
         colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = container,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         elevation = flatElevation(),
+        interactionSource = interactionSource,
         content = content,
     )
 }

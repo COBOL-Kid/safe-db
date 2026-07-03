@@ -10,6 +10,7 @@ See the git history (early commits `P0`–`P4`) for the original implementation 
 ### Compose / Kotlin commands
 - `cd compose-app && ./gradlew run` — boot the desktop app
 - `cd compose-app && ./gradlew check` — Compose + shared unit tests (query engine, stores, adapters, connection parser, UI state)
+- `cd compose-app && ./gradlew renderPreview` — headless render of the main screens (light + dark) to `/tmp/safedb-preview/*.png` via `ImageComposeScene` with a fake service; use for visual verification without a display
 - `cd compose-app && ./gradlew packageDistributionForCurrentOS` — native package (deb/AppImage/rpm on Linux)
 - App data: `~/.local/share/com.safedb.app/` (Linux), same JSON filenames as Tauri
 - Credentials: `SAFEDB_KEYCHAIN_BACKEND` (`auto`, `disabled`, `protected` on macOS); Compose Linux uses keyutils when available and otherwise falls back to in-memory `disabled` credentials
@@ -144,6 +145,7 @@ The primary app is now Kotlin using Jetpack Compose (Compose Multiplatform for *
 - Advanced connection settings target technical users; use direct, explicit labels with "SSL" terminology (e.g., "SSL with hostname verification", "SSL encrypt only (no cert check)").
 
 ## Learned Workspace Facts
+- Compose UI theme: slate neutrals + a single indigo accent (`SafeDbTheme.colors.actionPrimary` / `accentContainer`), bundled Inter (UI) and JetBrains Mono (`DataMono` for data cells, identifiers, hosts) fonts in `compose-app/src/main/resources/fonts/`; all hex colors live only in `ui/theme/Color.kt` (plus scrollbar alphas in `Theme.kt`).
 - Empty database passwords are valid connection credentials, especially for local MySQL; preserve `""` through form submission, credential storage, and builder/query paths.
 - `scripts/seed_mysql.sh` no longer wipes the app data dir by default; it leaves `connections.json` and `query_history.json` alone and streams a generated larger dataset (~50k orders by default, configurable with direct args) without committing generated SQL. Use `scripts/seed_mysql.sh --static` to load the smaller bundled `testdata_mysql.sql` fixture. Use `scripts/seed_mysql.sh --reset-state` to wipe connections and history (saved queries and settings are always left untouched). Use `scripts/seed_mysql.sh --reset` to drop the DB before generated seeding.
 - `window.confirm()` and `prompt()` are unreliable in Tauri’s macOS WebView (dialogs can hide behind the app window); use in-app `ConfirmDialog` / `PromptDialog` for delete, clear-history, and save-query flows.

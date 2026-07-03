@@ -1,12 +1,17 @@
 package com.safedb.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.safedb.ui.theme.InputShape
 
 @Composable
 fun PromptDialog(
@@ -25,15 +30,20 @@ fun PromptDialog(
 
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text(title) },
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        title = { Text(title, style = MaterialTheme.typography.titleMedium) },
         text = {
-            androidx.compose.foundation.layout.Column {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(message, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
                     placeholder = { Text(placeholder) },
                     singleLine = true,
+                    shape = InputShape,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

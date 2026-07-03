@@ -14,15 +14,18 @@ import androidx.compose.ui.graphics.Color
  * action*) are exposed through [LocalSafeDbColors] and accessed via
  * `SafeDbTheme.colors`.
  *
- * Palette: Slate neutrals with restrained semantic accents. Primary action
- * fills use a neutral [actionPrimary] that contrast-flips between light/dark
- * (slate-900 in light, slate-100 in dark); builder joins use tertiary amber
- * instead of making blue the global interaction color.
+ * Palette: Slate neutrals with a single restrained indigo accent. Primary
+ * actions, selection, and focus states all use [actionPrimary] (indigo-600 in
+ * light, indigo-400 in dark) so interactive elements read instantly against
+ * the quiet neutral chrome. Builder joins stay on tertiary amber.
  */
 @Immutable
 data class SafeDbColors(
     val actionPrimary: Color,
     val onActionPrimary: Color,
+    val actionPrimaryHover: Color,
+    val accentContainer: Color,
+    val onAccentContainer: Color,
     val success: Color,
     val onSuccess: Color,
     val successContainer: Color,
@@ -42,7 +45,7 @@ data class SafeDbColors(
 )
 
 // ------------------------------------------------------------------
-// Light — Slate neutral core
+// Light — Slate neutral core, indigo accent
 // ------------------------------------------------------------------
 
 private val LightBackground = Color(0xFFF8FAFC) // slate-50
@@ -53,19 +56,19 @@ private val LightSurfaceContainer = Color(0xFFF1F5F9) // slate-100
 private val LightSurfaceContainerHigh = Color(0xFFEBEEF2)
 private val LightSurfaceContainerHighest = Color(0xFFE2E8F0) // slate-200
 private val LightOutline = Color(0xFFE2E8F0) // slate-200
-private val LightOutlineVariant = Color(0xFFF1F5F9) // slate-100
+private val LightOutlineVariant = Color(0xFFEEF2F6) // slate-100/200 blend
 private val LightOnSurface = Color(0xFF0F172A) // slate-900
-private val LightOnSurfaceVariant = Color(0xFF475569) // slate-600
+private val LightOnSurfaceVariant = Color(0xFF64748B) // slate-500
 
-private val LightPrimary = Color(0xFF0F172A) // slate-900
+private val LightPrimary = Color(0xFF4F46E5) // indigo-600
 private val LightOnPrimary = Color(0xFFFFFFFF)
-private val LightPrimaryContainer = Color(0xFFF1F5F9) // slate-100
-private val LightOnPrimaryContainer = Color(0xFF1E293B) // slate-800
+private val LightPrimaryContainer = Color(0xFFEEF2FF) // indigo-50
+private val LightOnPrimaryContainer = Color(0xFF3730A3) // indigo-800
 
 private val LightSecondary = Color(0xFF475569) // slate-600
 private val LightOnSecondary = Color(0xFFFFFFFF)
 private val LightSecondaryContainer = Color(0xFFF1F5F9) // slate-100
-private val LightOnSecondaryContainer = Color(0xFF1E293B) // slate-800
+private val LightOnSecondaryContainer = Color(0xFF334155) // slate-700
 
 private val LightTertiary = Color(0xFFB45309) // amber-700
 private val LightOnTertiary = Color(0xFFFFFFFF)
@@ -79,8 +82,11 @@ private val LightOnErrorContainer = Color(0xFFB91C1C) // red-700
 
 private val LightScrim = Color(0x66000000)
 
-private val LightActionPrimary = Color(0xFF0F172A) // slate-900
+private val LightActionPrimary = Color(0xFF4F46E5) // indigo-600
 private val LightOnActionPrimary = Color(0xFFFFFFFF)
+private val LightActionPrimaryHover = Color(0xFF4338CA) // indigo-700
+private val LightAccentContainer = Color(0xFFEEF2FF) // indigo-50
+private val LightOnAccentContainer = Color(0xFF4338CA) // indigo-700
 private val LightSuccess = Color(0xFF047857) // emerald-700
 private val LightOnSuccess = Color(0xFFFFFFFF)
 private val LightSuccessContainer = Color(0xFFECFDF5) // emerald-50
@@ -99,59 +105,62 @@ private val LightUqContainer = Color(0xFFF5F3FF) // violet-50
 private val LightOnUqContainer = Color(0xFF5B21B6) // violet-800
 
 // ------------------------------------------------------------------
-// Dark — deep slate neutral core
+// Dark — deep slate neutral core, indigo accent
 // ------------------------------------------------------------------
 
-private val DarkBackground = Color(0xFF020617) // slate-950
-private val DarkSurface = Color(0xFF0F172A) // slate-900
-private val DarkSurfaceContainerLowest = Color(0xFF020617) // slate-950
-private val DarkSurfaceContainerLow = Color(0xFF0F172A) // slate-900
-private val DarkSurfaceContainer = Color(0xFF1E293B) // slate-800
-private val DarkSurfaceContainerHigh = Color(0xFF1E293B) // slate-800
-private val DarkSurfaceContainerHighest = Color(0xFF334155) // slate-700
-private val DarkOutline = Color(0xFF334155) // slate-700
-private val DarkOutlineVariant = Color(0xFF1E293B) // slate-800
+private val DarkBackground = Color(0xFF0B1120) // between slate-900 and 950
+private val DarkSurface = Color(0xFF111827) // refined slate-900
+private val DarkSurfaceContainerLowest = Color(0xFF0B1120)
+private val DarkSurfaceContainerLow = Color(0xFF151D2E)
+private val DarkSurfaceContainer = Color(0xFF1B2436) // slate-800 blend
+private val DarkSurfaceContainerHigh = Color(0xFF222C40)
+private val DarkSurfaceContainerHighest = Color(0xFF2C374D)
+private val DarkOutline = Color(0xFF283349) // muted slate-700
+private val DarkOutlineVariant = Color(0xFF1D2739)
 private val DarkOnSurface = Color(0xFFF1F5F9) // slate-100
 private val DarkOnSurfaceVariant = Color(0xFF94A3B8) // slate-400
 
-private val DarkPrimary = Color(0xFFF1F5F9) // slate-100
-private val DarkOnPrimary = Color(0xFF0F172A) // slate-900
-private val DarkPrimaryContainer = Color(0xFF1E293B) // slate-800
-private val DarkOnPrimaryContainer = Color(0xFFE2E8F0) // slate-200
+private val DarkPrimary = Color(0xFFA5B4FC) // indigo-300
+private val DarkOnPrimary = Color(0xFF1E1B4B) // indigo-950
+private val DarkPrimaryContainer = Color(0xFF2A2A5C) // deep indigo
+private val DarkOnPrimaryContainer = Color(0xFFC7D2FE) // indigo-200
 
 private val DarkSecondary = Color(0xFF94A3B8) // slate-400
-private val DarkOnSecondary = Color(0xFF020617) // slate-950
-private val DarkSecondaryContainer = Color(0xFF1E293B) // slate-800
+private val DarkOnSecondary = Color(0xFF0B1120)
+private val DarkSecondaryContainer = Color(0xFF1B2436)
 private val DarkOnSecondaryContainer = Color(0xFFE2E8F0) // slate-200
 
 private val DarkTertiary = Color(0xFFFCD34D) // amber-300
-private val DarkOnTertiary = Color(0xFF020617) // slate-950
+private val DarkOnTertiary = Color(0xFF0B1120)
 private val DarkTertiaryContainer = Color(0xFF2A1F0A)
 private val DarkOnTertiaryContainer = Color(0xFFFDE68A) // amber-200
 
 private val DarkError = Color(0xFFF87171) // red-400
-private val DarkOnError = Color(0xFF020617) // slate-950
+private val DarkOnError = Color(0xFF0B1120)
 private val DarkErrorContainer = Color(0xFF2A1414)
 private val DarkOnErrorContainer = Color(0xFFFCA5A5) // red-300
 
 private val DarkScrim = Color(0x99000000)
 
-private val DarkActionPrimary = Color(0xFFF1F5F9) // slate-100
-private val DarkOnActionPrimary = Color(0xFF0F172A) // slate-900
+private val DarkActionPrimary = Color(0xFF6366F1) // indigo-500
+private val DarkOnActionPrimary = Color(0xFFFFFFFF)
+private val DarkActionPrimaryHover = Color(0xFF818CF8) // indigo-400
+private val DarkAccentContainer = Color(0xFF272A55) // deep indigo tint
+private val DarkOnAccentContainer = Color(0xFFA5B4FC) // indigo-300
 private val DarkSuccess = Color(0xFF34D399) // emerald-400
-private val DarkOnSuccess = Color(0xFF020617) // slate-950
+private val DarkOnSuccess = Color(0xFF0B1120)
 private val DarkSuccessContainer = Color(0xFF0A2818)
 private val DarkOnSuccessContainer = Color(0xFF6EE7B7) // emerald-300
 private val DarkWarning = Color(0xFFFCD34D) // amber-300
-private val DarkOnWarning = Color(0xFF020617) // slate-950
+private val DarkOnWarning = Color(0xFF0B1120)
 private val DarkWarningContainer = Color(0xFF2A1F0A)
 private val DarkOnWarningContainer = Color(0xFFFDE68A) // amber-200
 private val DarkInfo = Color(0xFFCBD5E1) // slate-300
-private val DarkOnInfo = Color(0xFF020617) // slate-950
-private val DarkInfoContainer = Color(0xFF1E293B) // slate-800
+private val DarkOnInfo = Color(0xFF0B1120)
+private val DarkInfoContainer = Color(0xFF1B2436)
 private val DarkOnInfoContainer = Color(0xFFCBD5E1) // slate-300
 private val DarkUq = Color(0xFFC4B5FD) // violet-300
-private val DarkOnUq = Color(0xFF020617) // slate-950
+private val DarkOnUq = Color(0xFF0B1120)
 private val DarkUqContainer = Color(0xFF221840)
 private val DarkOnUqContainer = Color(0xFFC4B5FD) // violet-300
 
@@ -194,6 +203,9 @@ fun lightScheme(): Pair<ColorScheme, SafeDbColors> =
     ) to SafeDbColors(
         actionPrimary = LightActionPrimary,
         onActionPrimary = LightOnActionPrimary,
+        actionPrimaryHover = LightActionPrimaryHover,
+        accentContainer = LightAccentContainer,
+        onAccentContainer = LightOnAccentContainer,
         success = LightSuccess,
         onSuccess = LightOnSuccess,
         successContainer = LightSuccessContainer,
@@ -251,6 +263,9 @@ fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
     ) to SafeDbColors(
         actionPrimary = DarkActionPrimary,
         onActionPrimary = DarkOnActionPrimary,
+        actionPrimaryHover = DarkActionPrimaryHover,
+        accentContainer = DarkAccentContainer,
+        onAccentContainer = DarkOnAccentContainer,
         success = DarkSuccess,
         onSuccess = DarkOnSuccess,
         successContainer = DarkSuccessContainer,
@@ -264,7 +279,7 @@ fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
         infoContainer = DarkInfoContainer,
         onInfoContainer = DarkOnInfoContainer,
         uq = DarkUq,
-        onUq = DarkUq,
+        onUq = DarkOnUq,
         uqContainer = DarkUqContainer,
         onUqContainer = DarkOnUqContainer,
     )

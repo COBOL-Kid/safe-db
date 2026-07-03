@@ -45,9 +45,11 @@ import com.safedb.model.FilterOp
 import com.safedb.query.CANVAS_HEADER_HEIGHT
 import com.safedb.query.opLabel
 import com.safedb.query.opsForColumn
+import androidx.compose.ui.text.font.FontWeight
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.theme.DataMono
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 
@@ -192,13 +194,13 @@ fun TableCard(
                             }
                             Text(
                                 column.name,
-                                style = MaterialTheme.typography.labelMedium,
+                                style = DataMono.copy(fontWeight = FontWeight.Medium),
                                 modifier = Modifier.padding(start = 6.dp),
                             )
                             Text(
                                 column.dataType,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.padding(start = 6.dp),
                             )
                         }

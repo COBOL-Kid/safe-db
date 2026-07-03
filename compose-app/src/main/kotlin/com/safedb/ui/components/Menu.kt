@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.LabelMicro
+import com.safedb.ui.theme.SafeDbTheme
 
 @Composable
 fun SafeDropdownMenu(
@@ -38,7 +39,7 @@ fun SafeDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier.widthIn(min = minWidth),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
         shadowElevation = 12.dp,
@@ -74,14 +75,14 @@ fun MenuActionRow(
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
     val background = when {
-        selected -> MaterialTheme.colorScheme.surfaceContainer
+        selected -> SafeDbTheme.colors.accentContainer
         hovered -> MaterialTheme.colorScheme.surfaceContainerLow
         else -> Color.Transparent
     }
-    val contentColor = if (selected || hovered) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+    val contentColor = when {
+        selected -> SafeDbTheme.colors.onAccentContainer
+        hovered -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Row(

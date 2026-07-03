@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -25,8 +26,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.safedb.ui.theme.DataMono
 import com.safedb.model.Dialect
 import com.safedb.model.Settings
 import com.safedb.ui.components.PrimaryButton
@@ -58,7 +59,11 @@ fun SettingsPanel(
 
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text("Settings") },
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        title = { Text("Settings", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
                 modifier = Modifier
@@ -161,7 +166,7 @@ fun SettingsPanel(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text(schema, fontFamily = FontFamily.Monospace)
+                                    Text(schema, style = DataMono, color = MaterialTheme.colorScheme.onSurface)
                                     TextButton(onClick = { viewModel.removeBlockedSchema(schema) }) {
                                         Text("Remove")
                                     }

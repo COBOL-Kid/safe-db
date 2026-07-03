@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.safedb.ui.theme.SafeDbTheme
 
 @Composable
 fun EmptyState(
@@ -30,11 +31,16 @@ fun EmptyState(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
                 modifier = Modifier.size(56.dp),
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(18.dp),
+                color = SafeDbTheme.colors.accentContainer,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null)
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = SafeDbTheme.colors.onAccentContainer,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
             Text(

@@ -81,3 +81,10 @@ fun splitSeedMysqlArgs(raw: String): List<String> {
     if (current.isNotEmpty()) args.add(current.toString())
     return args
 }
+
+tasks.register<JavaExec>("renderPreview") {
+    group = "safe-db"
+    description = "Render main screens headlessly to /tmp/safedb-preview for visual checks."
+    classpath = sourceSets.named("main").get().runtimeClasspath
+    mainClass.set("com.safedb.tools.RenderPreviewKt")
+}

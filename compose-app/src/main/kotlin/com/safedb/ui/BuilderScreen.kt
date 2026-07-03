@@ -1,8 +1,13 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,15 +19,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +43,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
@@ -49,6 +60,10 @@ import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.PromptDialog
+import com.safedb.ui.theme.ChipShape
+import com.safedb.ui.theme.DataMono
+import com.safedb.ui.theme.InputShape
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.SavedQueriesViewModel
 import com.safedb.viewmodel.SchemaViewModel
@@ -84,6 +99,35 @@ private fun costGuardDialogCopy(reason: String?): CostGuardDialogCopy {
             confirmLabel = "Run with safeguards",
         )
     }
+}
+
+@Composable
+private fun LimitChoiceChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val c = SafeDbTheme.colors
+    val background = when {
+        selected -> c.accentContainer
+        hovered -> MaterialTheme.colorScheme.surfaceContainer
+        else -> Color.Transparent
+    }
+    val content = if (selected) c.onAccentContainer else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Text(
+        label,
+        style = MaterialTheme.typography.labelSmall,
+        color = content,
+        modifier = Modifier
+            .clip(ChipShape)
+            .background(background)
+            .hoverable(interactionSource)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+    )
 }
 
 @Composable
@@ -130,7 +174,11 @@ fun BuilderScreen(
                 showCostGuardConfirm = false
                 queryViewModel.dismissError()
             },
-            title = { Text(costGuardCopy.title) },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text(costGuardCopy.title, style = MaterialTheme.typography.titleMedium) },
             text = { Text(costGuardCopy.message) },
             confirmButton = {
                 PrimaryButton(
@@ -184,7 +232,11 @@ fun BuilderScreen(
     if (showWarningMuteConfirm) {
         AlertDialog(
             onDismissRequest = { showWarningMuteConfirm = false },
-            title = { Text("Mute cost warnings?") },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("Mute cost warnings?", style = MaterialTheme.typography.titleMedium) },
             text = {
                 Text(
                     "Safe DB can stop popping up cost warnings for this session. The safeguards stay on: read-only checks, row limits, and timeouts still apply.",
@@ -252,27 +304,30 @@ fun BuilderScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .background(
-                                MaterialTheme.colorScheme.surface,
-                                MaterialTheme.shapes.medium,
-                            )
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
                     ) {
-                        Text("Limit", style = MaterialTheme.typography.labelMedium)
-                        OutlinedTextField(
+                        Text(
+                            "Limit",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        BasicTextField(
                             value = queryViewModel.limit.toString(),
                             onValueChange = { queryViewModel.setLimit(parseLimit(it)) },
-                            modifier = Modifier.width(80.dp),
+                            modifier = Modifier
+                                .width(72.dp)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, InputShape)
+                                .background(MaterialTheme.colorScheme.surface, InputShape)
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
                             singleLine = true,
+                            textStyle = DataMono.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         )
                         for (choice in limitChoices) {
-                            TextButton(onClick = { queryViewModel.setLimit(choice) }) {
-                                Text(
-                                    "%,d".format(choice),
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
+                            LimitChoiceChip(
+                                label = "%,d".format(choice),
+                                selected = queryViewModel.limit == choice,
+                                onClick = { queryViewModel.setLimit(choice) },
+                            )
                         }
                     }
                     TextButton(
@@ -299,15 +354,24 @@ fun BuilderScreen(
                 ) {
                     Text(if (queryViewModel.warningPopupsDisabled) "Warnings Off" else "Warnings On")
                 }
-                IconButton(
+                PrimaryButton(
                     onClick = { connection?.id?.let { queryViewModel.run(it) } },
-                    enabled = queryViewModel.canRun && connection != null,
+                    enabled = queryViewModel.canRun && connection != null && !queryViewModel.running,
                 ) {
                     if (queryViewModel.running) {
-                        CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.width(16.dp).height(16.dp),
+                            strokeWidth = 2.dp,
+                            color = LocalContentColor.current,
+                        )
                     } else {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Run query")
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.width(18.dp).height(18.dp),
+                        )
                     }
+                    Text("Run", modifier = Modifier.padding(start = 6.dp))
                 }
             }
         }
@@ -324,9 +388,11 @@ fun BuilderScreen(
                 Text(
                     "Connect to a database to start building queries.",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             Row(modifier = Modifier.fillMaxSize()) {
                 Surface(
                     modifier = Modifier
@@ -340,6 +406,12 @@ fun BuilderScreen(
                         onAddTable = { queryViewModel.addTable(it) },
                     )
                 }
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outline),
+                )
 
                 Column(modifier = Modifier.fillMaxSize()) {
                     queryViewModel.hydrationWarning?.let { warning ->
