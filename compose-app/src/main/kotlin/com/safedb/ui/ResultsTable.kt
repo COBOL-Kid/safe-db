@@ -27,8 +27,11 @@ import androidx.compose.ui.unit.dp
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import androidx.compose.ui.text.font.FontWeight
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
+import com.safedb.ui.theme.DataMono
+import com.safedb.ui.theme.SafeDbTheme
 
 @Composable
 fun ResultsTable(
@@ -87,14 +90,14 @@ fun ResultsTable(
             ) {
                 Row(
                     modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .padding(vertical = 4.dp),
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .padding(vertical = 2.dp),
                 ) {
                     for (column in result.columns) {
                         Text(
                             displayColumnName(column),
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = DataMono.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -112,8 +115,8 @@ fun ResultsTable(
                         val interactionSource = remember { MutableInteractionSource() }
                         val hovered by interactionSource.collectIsHoveredAsState()
                         val rowBg = when {
-                            hovered -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                            rowIdx % 2 == 1 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                            hovered -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.55f)
+                            rowIdx % 2 == 1 -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f)
                             else -> MaterialTheme.colorScheme.surface
                         }
                         Row(
@@ -128,15 +131,15 @@ fun ResultsTable(
                                     Text(
                                         "null",
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = DataMono,
                                         fontStyle = FontStyle.Italic,
-                                        color = MaterialTheme.colorScheme.outline,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     )
                                 } else {
                                     Text(
                                         formatted,
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = DataMono,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )

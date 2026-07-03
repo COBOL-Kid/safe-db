@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,14 +20,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -148,58 +149,46 @@ private fun Sidebar(
     onToggleTheme: () -> Unit,
 ) {
     val navItems = listOf(
-        NavItem(AppRoute.Home, "Home", Icons.Filled.Home),
-        NavItem(AppRoute.Connections, "Connections", Icons.Filled.Link),
-        NavItem(AppRoute.Builder, "Query Builder", Icons.Filled.Build),
-        NavItem(AppRoute.History, "History", Icons.Filled.History),
+        NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
+        NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
+        NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
+        NavItem(AppRoute.History, "History", Icons.Outlined.History),
     )
 
-    Surface(
-        modifier = Modifier
-            .width(224.dp)
-            .fillMaxHeight(),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        tonalElevation = 0.dp,
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+    Row(modifier = Modifier.fillMaxHeight()) {
+        Column(
+            modifier = Modifier
+                .width(232.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                    .padding(horizontal = 20.dp, vertical = 22.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val action = SafeDbTheme.colors.actionPrimary
-                val onAction = SafeDbTheme.colors.onActionPrimary
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(action),
-                    contentAlignment = Alignment.Center,
-                ) {
+                LogoMark()
+                Column {
                     Text(
-                        "sd",
-                        color = onAction,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
+                        "safe-db",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "read-only explorer",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    "safe-db",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
             }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 for (item in navItems) {
                     NavButton(
@@ -210,11 +199,9 @@ private fun Sidebar(
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
             Column(
                 modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 SidebarCommandButton(onClick = onOpenPalette)
 
@@ -223,28 +210,35 @@ private fun Sidebar(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 4.dp),
                     ) {
-                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(SafeDbTheme.colors.success),
+                        )
+                        Column {
                             Text(
                                 "Safe Read Mode",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
                                 "No-lock · Indexed joins",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
 
-                    Spacer(Modifier.width(8.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         SidebarIconButton(
                             icon = Icons.Filled.Settings,
                             contentDescription = "Settings",
@@ -259,6 +253,33 @@ private fun Sidebar(
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outline),
+        )
+    }
+}
+
+@Composable
+private fun LogoMark() {
+    val accent = SafeDbTheme.colors.actionPrimary
+    val accentDeep = SafeDbTheme.colors.actionPrimaryHover
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Brush.linearGradient(listOf(accent, accentDeep))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "sd",
+            color = SafeDbTheme.colors.onActionPrimary,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -266,13 +287,16 @@ private fun Sidebar(
 private fun SidebarCommandButton(onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
+    val background by animateColorAsState(
+        if (hovered) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+    )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (hovered) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(9.dp))
+            .background(background)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(9.dp))
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -280,9 +304,9 @@ private fun SidebarCommandButton(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "Command",
+            "Search commands…",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
         Kbd("\u2318K")
@@ -297,12 +321,15 @@ private fun SidebarIconButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
+    val background by animateColorAsState(
+        if (hovered) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+    )
 
     Box(
         modifier = Modifier
             .size(32.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (hovered) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent)
+            .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -325,28 +352,40 @@ private fun NavButton(
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
 
-    val action = SafeDbTheme.colors.actionPrimary
-    val onAction = SafeDbTheme.colors.onActionPrimary
-    val background = when {
-        selected -> action
-        hovered -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        else -> Color.Transparent
-    }
-    val content = if (selected) onAction else MaterialTheme.colorScheme.onSurfaceVariant
+    val c = SafeDbTheme.colors
+    val background by animateColorAsState(
+        when {
+            selected -> c.accentContainer
+            hovered -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f)
+            else -> Color.Transparent
+        },
+    )
+    val content by animateColorAsState(
+        when {
+            selected -> c.onAccentContainer
+            hovered -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(9.dp))
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Icon(item.icon, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
-        Text(item.label, color = content, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            item.label,
+            color = content,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        )
     }
 }
 

@@ -1,24 +1,25 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterOp
@@ -42,7 +47,6 @@ import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.viewmodel.QueryViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterRow(
     queryViewModel: QueryViewModel,
@@ -140,22 +144,20 @@ fun FilterRow(
                         modifier = Modifier.width(80.dp),
                     )
                 } else {
-                    OutlinedTextField(
+                    CompactTextInput(
                         value = single?.text.orEmpty(),
                         onValueChange = { text ->
                             val kind = single?.kind ?: LiteralKind.Text
                             update(filter.copy(value = FilterValue.Single(FilterLiteral(kind, text))))
                         },
                         modifier = Modifier.width(100.dp),
-                        singleLine = true,
-                        placeholder = { Text("value", style = MaterialTheme.typography.labelSmall) },
-                        textStyle = MaterialTheme.typography.labelSmall,
+                        placeholder = "value",
                     )
                 }
             }
             ValueKind.Pair -> {
                 val pair = filter.value as? FilterValue.Pair
-                OutlinedTextField(
+                CompactTextInput(
                     value = pair?.first?.text.orEmpty(),
                     onValueChange = { text ->
                         val first = pair?.first ?: FilterLiteral(LiteralKind.Text, "")
@@ -163,12 +165,10 @@ fun FilterRow(
                         update(filter.copy(value = FilterValue.Pair(first.copy(text = text), second)))
                     },
                     modifier = Modifier.width(80.dp),
-                    singleLine = true,
-                    placeholder = { Text("from", style = MaterialTheme.typography.labelSmall) },
-                    textStyle = MaterialTheme.typography.labelSmall,
+                    placeholder = "from",
                 )
                 Text("and", style = MaterialTheme.typography.labelSmall)
-                OutlinedTextField(
+                CompactTextInput(
                     value = pair?.second?.text.orEmpty(),
                     onValueChange = { text ->
                         val first = pair?.first ?: FilterLiteral(LiteralKind.Text, "")
@@ -176,16 +176,14 @@ fun FilterRow(
                         update(filter.copy(value = FilterValue.Pair(first, second.copy(text = text))))
                     },
                     modifier = Modifier.width(80.dp),
-                    singleLine = true,
-                    placeholder = { Text("to", style = MaterialTheme.typography.labelSmall) },
-                    textStyle = MaterialTheme.typography.labelSmall,
+                    placeholder = "to",
                 )
             }
             ValueKind.List -> {
                 val listValue = filter.value as? FilterValue.ListValue
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listValue?.literals?.forEachIndexed { index, literal ->
-                        OutlinedTextField(
+                        CompactTextInput(
                             value = literal.text,
                             onValueChange = { text ->
                                 val items = listValue.literals.mapIndexed { i, lit ->
@@ -194,28 +192,32 @@ fun FilterRow(
                                 update(filter.copy(value = FilterValue.ListValue(items)))
                             },
                             modifier = Modifier.width(72.dp),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.labelSmall,
+                            placeholder = "value",
                         )
                         if ((listValue.literals.size) > 1) {
-                            IconButton(onClick = {
-                                val items = listValue.literals.filterIndexed { i, _ -> i != index }
-                                update(filter.copy(value = FilterValue.ListValue(items)))
-                            }) {
+                            CompactIconButton(
+                                contentDescription = "Remove value",
+                                onClick = {
+                                    val items = listValue.literals.filterIndexed { i, _ -> i != index }
+                                    update(filter.copy(value = FilterValue.ListValue(items)))
+                                },
+                            ) {
                                 Icon(Icons.Default.Close, contentDescription = "Remove value")
                             }
                         }
                     }
-                    IconButton(
+                    CompactIconButton(
+                        contentDescription = "Add value",
                         onClick = {
                             val current = listValue?.literals.orEmpty()
-                            if (current.size >= MAX_IN_LIST_SIZE) return@IconButton
-                            val kind = current.firstOrNull()?.kind ?: LiteralKind.Text
-                            update(
-                                filter.copy(
-                                    value = FilterValue.ListValue(current + FilterLiteral(kind, "")),
-                                ),
-                            )
+                            if (current.size < MAX_IN_LIST_SIZE) {
+                                val kind = current.firstOrNull()?.kind ?: LiteralKind.Text
+                                update(
+                                    filter.copy(
+                                        value = FilterValue.ListValue(current + FilterLiteral(kind, "")),
+                                    ),
+                                )
+                            }
                         },
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Add value")
@@ -224,13 +226,15 @@ fun FilterRow(
             }
         }
 
-        IconButton(onClick = { queryViewModel.removeFilterNode(path) }) {
+        CompactIconButton(
+            contentDescription = "Remove filter",
+            onClick = { queryViewModel.removeFilterNode(path) },
+        ) {
             Icon(Icons.Default.Close, contentDescription = "Remove filter")
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun <T> FilterDropdown(
     label: String,
@@ -240,20 +244,13 @@ private fun <T> FilterDropdown(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
+    Box(
         modifier = modifier,
     ) {
-        TextField(
+        CompactSelectSurface(
+            label = label,
             value = value,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth(),
-            textStyle = MaterialTheme.typography.labelSmall,
-            singleLine = true,
+            onClick = { expanded = true },
         )
         SafeDropdownMenu(
             expanded = expanded,
@@ -270,6 +267,104 @@ private fun <T> FilterDropdown(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CompactSelectSurface(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(30.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 8.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                "$label:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 1,
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                Icons.Default.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactTextInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    val textStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        modifier = modifier
+            .height(30.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+        decorationBox = { innerTextField ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (value.isEmpty()) {
+                    Text(
+                        placeholder,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                    )
+                }
+                innerTextField()
+            }
+        },
+    )
+}
+
+@Composable
+private fun CompactIconButton(
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .size(28.dp)
+            .semantics { this.contentDescription = contentDescription }
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 

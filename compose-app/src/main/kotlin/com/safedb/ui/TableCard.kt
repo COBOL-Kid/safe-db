@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,15 +36,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.safedb.model.FilterOp
 import com.safedb.query.CANVAS_HEADER_HEIGHT
 import com.safedb.query.opLabel
 import com.safedb.query.opsForColumn
+import androidx.compose.ui.text.font.FontWeight
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.theme.DataMono
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 
@@ -51,10 +57,15 @@ import com.safedb.viewmodel.QueryViewModel
 fun TableCard(
     canvasTable: CanvasTable,
     queryViewModel: QueryViewModel,
-    onStartDrag: (Offset) -> Unit,
-    onStartJoin: (Offset, String) -> Unit,
+    onStartDrag: () -> Unit,
+    onDragTable: (Offset) -> Unit,
+    onStartJoin: (String) -> Unit,
+    onDragJoin: (Offset) -> Unit,
+    onJoinClick: (String) -> Unit,
     onJoinTargetClick: (String, String) -> Unit,
-    onStartResize: (Offset) -> Unit,
+    onStartResize: () -> Unit,
+    onResizeTable: (Offset) -> Unit,
+    onEndGesture: () -> Unit,
     joinDragActive: Boolean = false,
     highlightJoinTargets: Pair<String, String>? = null,
     modifier: Modifier = Modifier,
@@ -63,11 +74,23 @@ fun TableCard(
     val alias = canvasTable.alias
     var menuColumn by remember { mutableStateOf<String?>(null) }
     val bodyHeight = (canvasTable.height - CANVAS_HEADER_HEIGHT).coerceAtLeast(64f)
+    val resizeHandleColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
 
     Surface(
         modifier = modifier
             .width(canvasTable.width.dp)
-            .height(canvasTable.height.dp),
+            .height(canvasTable.height.dp)
+            .pointerInput(alias) {
+                detectDragGestures(
+                    onDragStart = { onStartDrag() },
+                    onDragEnd = { onEndGesture() },
+                    onDragCancel = { onEndGesture() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDragTable(dragAmount)
+                    },
+                )
+            },
         shape = RoundedCornerShape(12.dp),
         shadowElevation = 4.dp,
         tonalElevation = 0.dp,
@@ -79,12 +102,6 @@ fun TableCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .pointerInput(alias) {
-                        detectDragGestures(
-                            onDragStart = { offset -> onStartDrag(offset) },
-                            onDrag = { change, _ -> onStartDrag(change.position) },
-                        )
-                    }
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -128,7 +145,7 @@ fun TableCard(
                             .background(
                                 when {
                                     selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                                    joinTarget -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                    joinTarget -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f)
                                     else -> MaterialTheme.colorScheme.surface
                                 },
                                 RoundedCornerShape(6.dp),
@@ -139,7 +156,13 @@ fun TableCard(
                         Row(
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { queryViewModel.toggleColumn(alias, column.name) },
+                                .clickable {
+                                    if (joinTarget && joinDragActive) {
+                                        onJoinTargetClick(alias, column.name)
+                                    } else {
+                                        queryViewModel.toggleColumn(alias, column.name)
+                                    }
+                                },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
@@ -171,13 +194,13 @@ fun TableCard(
                             }
                             Text(
                                 column.name,
-                                style = MaterialTheme.typography.labelMedium,
+                                style = DataMono.copy(fontWeight = FontWeight.Medium),
                                 modifier = Modifier.padding(start = 6.dp),
                             )
                             Text(
                                 column.dataType,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.padding(start = 6.dp),
                             )
                         }
@@ -211,14 +234,21 @@ fun TableCard(
                                 onClick = {
                                     if (joinDragActive) {
                                         onJoinTargetClick(alias, column.name)
+                                    } else {
+                                        onJoinClick(column.name)
                                     }
                                 },
                                 modifier = Modifier
                                     .size(20.dp)
                                     .pointerInput(column.name) {
                                         detectDragGestures(
-                                            onDragStart = { offset -> onStartJoin(offset, column.name) },
-                                            onDrag = { change, _ -> onStartJoin(change.position, column.name) },
+                                            onDragStart = { onStartJoin(column.name) },
+                                            onDragEnd = { onEndGesture() },
+                                            onDragCancel = { onEndGesture() },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                onDragJoin(dragAmount)
+                                            },
                                         )
                                     },
                             ) {
@@ -226,7 +256,7 @@ fun TableCard(
                                     Icons.Default.Link,
                                     contentDescription = "Drag to join",
                                     modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = MaterialTheme.colorScheme.tertiary,
                                 )
                             }
                         } else {
@@ -244,14 +274,38 @@ fun TableCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(16.dp)
+                        .size(20.dp)
+                        .semantics { contentDescription = "Resize table" }
                         .pointerInput(alias) {
                             detectDragGestures(
-                                onDragStart = { offset -> onStartResize(offset) },
-                                onDrag = { change, _ -> onStartResize(change.position) },
+                                onDragStart = { onStartResize() },
+                                onDragEnd = { onEndGesture() },
+                                onDragCancel = { onEndGesture() },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    onResizeTable(dragAmount)
+                                },
                             )
                         },
-                )
+                ) {
+                    Canvas(modifier = Modifier.size(20.dp)) {
+                        val stroke = 1.8.dp.toPx()
+                        drawLine(
+                            color = resizeHandleColor,
+                            start = Offset(size.width * 0.48f, size.height * 0.82f),
+                            end = Offset(size.width * 0.82f, size.height * 0.48f),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round,
+                        )
+                        drawLine(
+                            color = resizeHandleColor,
+                            start = Offset(size.width * 0.68f, size.height * 0.86f),
+                            end = Offset(size.width * 0.86f, size.height * 0.68f),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                }
             }
         }
     }

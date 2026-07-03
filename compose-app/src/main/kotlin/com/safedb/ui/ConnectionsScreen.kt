@@ -4,11 +4,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -31,7 +33,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.safedb.ui.theme.DataMono
+import com.safedb.ui.theme.LabelMicro
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.ui.components.AppCard
@@ -180,14 +186,15 @@ private fun ConnectionCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         modifier = Modifier.size(30.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(9.dp),
+                        color = SafeDbTheme.colors.accentContainer,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 dialectLabel(connection.dialect).take(2),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
+                                color = SafeDbTheme.colors.onAccentContainer,
                             )
                         }
                     }
@@ -203,10 +210,10 @@ private fun ConnectionCard(
                 DeleteIconButton(onClick = onDelete)
             }
 
-            androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
-            Text("Host  ${connection.host}:${connection.port}", style = MaterialTheme.typography.labelSmall)
-            Text("DB    ${connection.database}", style = MaterialTheme.typography.labelSmall)
-            Text("User  ${connection.username}", style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.height(12.dp))
+            ConnectionDetailRow("host", "${connection.host}:${connection.port}")
+            ConnectionDetailRow("db", connection.database)
+            ConnectionDetailRow("user", connection.username)
 
             PrimaryButton(
                 onClick = onOpen,
@@ -218,6 +225,29 @@ private fun ConnectionCard(
                 Icon(Icons.Filled.ArrowForward, contentDescription = null, modifier = Modifier.padding(start = 8.dp).size(16.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun ConnectionDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.padding(vertical = 1.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = LabelMicro,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(30.dp),
+        )
+        Text(
+            value,
+            style = DataMono,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

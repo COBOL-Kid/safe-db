@@ -94,6 +94,21 @@ class AppViewModelTest {
         query.clear()
         assertTrue(query.warningPopupsDisabled)
     }
+
+    @Test
+    fun queryViewModelKeepsCanvasResizeOutOfQuerySpec() = runTest(dispatcher) {
+        val query = QueryViewModel(FakeSafeDbService(), TestScope(dispatcher))
+        query.addTable(sampleTable())
+
+        query.resizeTable("t0", width = 420f, height = 360f)
+
+        assertEquals(420f, query.canvasTables.single().width)
+        assertEquals(360f, query.canvasTables.single().height)
+        assertEquals(
+            listOf(TableRef(schema = "public", name = "users", alias = "t0")),
+            query.spec.tables,
+        )
+    }
 }
 
 private class FakeSafeDbService(

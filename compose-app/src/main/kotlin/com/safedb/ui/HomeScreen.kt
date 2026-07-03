@@ -1,5 +1,7 @@
 package com.safedb.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,11 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
+import com.safedb.ui.components.DeleteIconButton
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 
@@ -181,33 +182,39 @@ private fun QuickLinkCard(
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
 
-    val border = if (hovered) {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.9f))
-    } else {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    }
-    val shadow = if (hovered) 2.dp else 0.dp
-    val tileColor = if (hovered) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.surfaceVariant
-    val tileIconColor = if (hovered) SafeDbTheme.colors.onActionPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    val borderColor by animateColorAsState(
+        if (hovered) {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+        } else {
+            MaterialTheme.colorScheme.outline
+        },
+    )
+    val shadow by animateDpAsState(if (hovered) 3.dp else 0.dp)
+    val tileColor by animateColorAsState(
+        if (hovered) SafeDbTheme.colors.actionPrimary else SafeDbTheme.colors.accentContainer,
+    )
+    val tileIconColor by animateColorAsState(
+        if (hovered) SafeDbTheme.colors.onActionPrimary else SafeDbTheme.colors.onAccentContainer,
+    )
 
     Surface(
         modifier = modifier
             .hoverable(interactionSource)
             .clickable(interactionSource = interactionSource, onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = border,
+        border = BorderStroke(1.dp, borderColor),
         shadowElevation = shadow,
         tonalElevation = 0.dp,
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Surface(
                 modifier = Modifier.size(40.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(11.dp),
                 color = tileColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = tileIconColor)
+                    Icon(icon, contentDescription = null, tint = tileIconColor, modifier = Modifier.size(20.dp))
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -249,9 +256,7 @@ private fun SavedQueryCard(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete saved query")
-            }
+            DeleteIconButton(onClick = onDelete, contentDescription = "Delete saved query")
         }
     }
 }
@@ -283,14 +288,14 @@ private fun ProtectionItem(title: String, body: String) {
         Surface(
             modifier = Modifier.size(20.dp),
             shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.primaryContainer,
+            color = SafeDbTheme.colors.successContainer,
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Filled.Check,
                     contentDescription = null,
                     modifier = Modifier.size(12.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = SafeDbTheme.colors.success,
                 )
             }
         }

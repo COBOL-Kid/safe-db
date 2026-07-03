@@ -43,6 +43,7 @@ import com.safedb.ui.components.PromptDialog
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
+import com.safedb.ui.theme.DataMono
 import com.safedb.ui.util.formatTime
 import com.safedb.ui.util.summarizeSpec
 import com.safedb.viewmodel.AppViewModel
@@ -196,7 +197,7 @@ private fun HistoryEntryCard(
                 }
                 Text(
                     summarizeSpec(entry),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = DataMono,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
                 )
@@ -221,7 +222,11 @@ private fun HistoryEntryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (entry.error == null) {
                     IconButton(onClick = onSave) {
-                        Icon(Icons.Filled.Save, contentDescription = "Save as query")
+                        Icon(
+                            Icons.Filled.Save,
+                            contentDescription = "Save as query",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 PrimaryButton(onClick = onRerun) {
