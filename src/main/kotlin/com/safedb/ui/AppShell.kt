@@ -172,7 +172,7 @@ private fun Sidebar(
                 LogoMark()
                 Column {
                     Text(
-                        "safe-db",
+                        "Safe-DB",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -275,7 +275,7 @@ private fun LogoMark() {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            "sd",
+            "sDB",
             color = SafeDbTheme.colors.onActionPrimary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
