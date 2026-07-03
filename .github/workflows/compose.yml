@@ -4,11 +4,29 @@ on:
   push:
     branches: [main]
     paths:
-      - 'compose-app/**'
+      - 'src/**'
+      - 'shared/**'
+      - 'gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'scripts/**'
+      - 'testdata_mysql.sql'
       - '.github/workflows/compose.yml'
   pull_request:
     paths:
-      - 'compose-app/**'
+      - 'src/**'
+      - 'shared/**'
+      - 'gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'scripts/**'
+      - 'testdata_mysql.sql'
       - '.github/workflows/compose.yml'
 
 jobs:
@@ -24,5 +42,4 @@ jobs:
           java-version: '25'
 
       - name: Gradle check
-        working-directory: compose-app
         run: ./gradlew check

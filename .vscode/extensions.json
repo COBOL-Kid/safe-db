@@ -1,6 +1,6 @@
 {
 	"recommendations": [
-		"svelte.svelte-vscode",
-		"bradlc.vscode-tailwindcss"
+		"fwcd.kotlin",
+		"vscjava.vscode-gradle"
 	]
 }

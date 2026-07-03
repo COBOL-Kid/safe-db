@@ -2,89 +2,53 @@
 
 Desktop app for safely exploring production databases. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN cost warnings.
 
-## Kotlin + Compose Desktop (primary)
+safe-db is a **Jetpack Compose Desktop** app with a Kotlin/JDBC backend. The Gradle project lives at the repository root.
 
-The app has been migrated to **Jetpack Compose Desktop** with a Kotlin/JDBC backend. See [compose-app/README.md](compose-app/README.md).
+## Quick Start
 
 ```sh
-cd compose-app
-./gradlew run          # desktop app
-./gradlew check        # unit tests (query engine, stores, adapters, connection parser)
-./gradlew seedMysql    # generated local MySQL fixture (~50k orders)
+./gradlew run
+```
+
+## Common Commands
+
+```sh
+./gradlew check                         # unit tests and verification gate
+./gradlew renderPreview                 # headless UI previews in /tmp/safedb-preview
+./gradlew seedMysql                     # generated local MySQL fixture
 ./gradlew packageDistributionForCurrentOS
 ```
 
-Reuses the same app data directory and JSON stores as the legacy Tauri build (`com.safedb.app`).
+The root seed wrapper is still available:
 
-## Legacy Tauri + Svelte (deprecated)
-
-The original stack remains in-tree for reference:
-
-Built with **Tauri 2.11.3** (Rust) and **SvelteKit 2** (Svelte 5).
+```sh
+scripts/seed_mysql.sh
+```
 
 ## Features
 
-- **Connections** — save named profiles; passwords stored in the OS credential store (not on disk); show/hide toggle on the password field
-- **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out
-- **Visual query builder** — drag tables onto a canvas, join, filter, select columns, set a row limit; **recursive filter groups** with per-child AND/OR connector overrides
-- **Safety rails** — read-only `SELECT` queries, default 100 rows with an interactive max of 10 000, guidance above 1 000 rows, 10 s timeout, custom blocked schemas, and a cost-preview guard that asks for confirmation before running when the estimate is unavailable or above threshold
-- **Saved queries & history** — separate persisted stores; reopen past work from the home screen or history page. Timestamps are stored as Unix-seconds strings.
-- **In-app confirmations** — destructive actions and safety overrides use the `ConfirmDialog` component instead of `window.confirm()` (which hides behind the WebView on macOS)
-- **Command palette** — `Cmd+K` / `Ctrl+K` for quick navigation
-- **Light / dark theme** — Tauri window background color is synced to the active theme
+- **Connections** — save named profiles; passwords stored in the OS credential store when available, never in profile JSON.
+- **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out.
+- **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
+- **Safety rails** — read-only `SELECT` queries, default 100 rows with an interactive max of 10,000, guidance above 1,000 rows, 10 s timeout, custom blocked schemas, filter literal type validation, and a cost-preview guard.
+- **Saved queries and history** — persisted through the Kotlin stores in the app data directory; timestamps are Unix-seconds strings.
+- **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas`.
 
-## Supported databases
+## Supported Databases
 
-| Database     | Driver    | Notes                                      |
-| ------------ | --------- | ------------------------------------------ |
-| PostgreSQL   | sqlx      |                                            |
-| MySQL        | sqlx      | `READ ONLY` transactions for non-locking reads |
-| SQL Server   | tiberius  |                                            |
-| Oracle       | `oracle` crate | Optional — build with `--features oracle` (requires Oracle Instant Client SDK) |
+| Database | Driver | Notes |
+| --- | --- | --- |
+| PostgreSQL | JDBC | |
+| MySQL | JDBC | Uses read-only transactions for non-locking reads where supported. |
+| SQL Server | JDBC | |
+| Oracle | JDBC | Requires the Oracle JDBC driver/runtime available to the app. |
 
 ## Prerequisites
 
-- **Node.js** `24.18.0` (see `.nvmrc` / `package.json` `devEngines`)
-- **pnpm** `11.9.0` (`corepack enable` or install from `packageManager` in `package.json`)
-- **Rust** `1.96.0+` (pinned in `src-tauri/rust-toolchain.toml`)
-- Platform deps for Tauri 2 ([Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
+- **JDK 25**. The Gradle projects use `jvmToolchain(25)`.
+- Network access to the databases you want to inspect.
 
-## Getting started
-
-```sh
-pnpm install
-pnpm tauri dev          # desktop app (starts Vite on port 1420 internally)
-```
-
-Frontend-only (no Tauri window):
-
-```sh
-pnpm dev                # http://localhost:1420
-```
-
-Production build:
-
-```sh
-pnpm tauri build
-```
-
-## Testing
-
-```sh
-pnpm check              # Svelte/TypeScript typecheck
-pnpm test               # check + vitest (frontend) + cargo test (Rust)
-pnpm test:unit          # vitest only (frontend unit + component)
-pnpm test:rust          # cargo test only (Rust unit + integration)
-pnpm test:smoke         # secrets_smoke + env-gated pg_smoke + env-gated mysql_smoke
-```
-
-Rust lint gate (run in `src-tauri/`):
-
-```sh
-cargo clippy -- -D warnings
-```
-
-### Local MySQL test database
+## Local MySQL Test Database
 
 Load a generated e-commerce fixture (`categories`, `products`, `customers`, `orders`, `order_items`, `inventory_log`) into `safedb_test`:
 
@@ -99,97 +63,59 @@ Generated data is streamed directly into MySQL and is not checked in as a large 
 
 ```sh
 scripts/seed_mysql.sh --orders 20000 --customers 5000 --seed 7
-cd compose-app && ./gradlew seedMysql -PseedMysqlArgs="--orders 20000 --customers 5000 --seed 7"
+./gradlew seedMysql -PseedMysqlArgs="--orders 20000 --customers 5000 --seed 7"
 ```
 
-The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars (see `scripts/seed_mysql.sh`). If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).
+The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars. If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).
 
 Connect in the app: host `localhost`, port `3306`, database `safedb_test`, user `root` (empty password is valid for local Docker).
 
-### PostgreSQL smoke test
+## Credentials & Keyring
 
-Start PostgreSQL, create a demo database, then export credentials before `pnpm test:smoke`:
-
-```sh
-export SAFEDB_TEST_PG_HOST=localhost
-export SAFEDB_TEST_PG_DATABASE=demo
-export SAFEDB_TEST_PG_USER=safedb
-export SAFEDB_TEST_PG_PASSWORD=<password>
-pnpm test:smoke
-```
-
-## Credentials & keyring
-
-Connection passwords are stored via `keyring-core` with platform-native backends:
+Set `SAFEDB_KEYCHAIN_BACKEND=disabled` for in-memory credentials in debug or CI. Default `auto` uses Java keyring-backed platform stores where available:
 
 | Platform | Store |
-| -------- | ----- |
-| macOS    | Apple Protected Data (`apple-native-keyring-store`) |
-| Windows  | Credential store |
-| Linux    | Kernel keyutils |
+| --- | --- |
+| macOS | Keychain-backed Java credential store |
+| Windows | Credential Manager-backed Java credential store |
+| Linux | Kernel keyutils when available |
 
-Override with `SAFEDB_KEYCHAIN_BACKEND`:
+On Linux hosts where the Java keyring delegate is unavailable, the app falls back to the in-memory `disabled` backend rather than writing a credential file. Saved connection profiles remain on disk, but passwords must be re-entered after restart.
 
-- `auto` (default) — Protected Data on macOS when a startup write probe succeeds; in **debug** builds (`pnpm tauri dev`) falls back to in-memory `disabled` when the unsigned binary lacks keychain entitlements (common for local dev)
-- `protected` — force Protected Data (macOS only); requires a signed app with entitlements
-- `disabled` — in-memory only (tests, CI); passwords do not survive app restart
+**Test Connection** uses the password from the form only and does not touch the keyring. **Save Connection** stores the password in the selected credential backend. After the first unlock, builder and query paths reuse an in-process credential session so repeated schema loads and queries do not re-hit the OS store.
 
-**Test Connection** uses the password from the form only and does not touch the keyring. **Save Connection** stores the password in the OS credential store (or the in-memory fallback above).
+## Data Directory
 
-In **release** builds on macOS, Protected Data must pass the write probe or startup fails. Release bundles need sandbox entitlements — see `src-tauri/Entitlements.plist` and `bundle.macOS.entitlements` in `src-tauri/tauri.conf.json`. Use `pnpm tauri build` and run the signed `.app` to verify credentials persist across restarts.
+The app stores JSON state under `com.safedb.app`:
 
-After the first unlock, builder and query paths reuse an in-process credential session so repeated schema loads and queries do not re-hit the OS store.
+| OS | Path |
+| --- | --- |
+| Linux | `~/.local/share/com.safedb.app/` |
+| macOS | `~/Library/Application Support/com.safedb.app/` |
+| Windows | `%APPDATA%\com.safedb.app\` |
 
-## Query safety behavior
+Existing `connections.json`, `settings.json`, `saved_queries.json`, and `query_history.json` files in that directory are reused automatically.
 
-The builder sends a structured query IR to Rust; the backend validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the interactive max is 10 000, and limits above 1 000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work. EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit "Run anyway" confirmation; forced retries still run with the same row limit and timeout.
+## Query Safety Behavior
 
-## Project layout
+The builder sends a structured query IR to the Kotlin query engine. The engine validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the interactive max is 10,000, and limits above 1,000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work.
 
-```
+EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit confirmation. Forced retries still run with the same row limit and timeout.
+
+## Project Layout
+
+```text
 safe-db/
-├── src/                              # SvelteKit frontend (SPA)
-│   ├── routes/
-│   │   ├── +layout.svelte            # global layout (theme, settings load, title bar)
-│   │   ├── +page.svelte              # home (recent + saved queries)
-│   │   ├── builder/                  # query builder canvas + filter panel
-│   │   ├── connections/              # connection list, add form, delete confirm
-│   │   └── history/                  # query history with confirm-clear
-│   └── lib/
-│       ├── components/               # Canvas, TableCard, FilterBuilder, FilterGroupCard,
-│       │                             #   FilterRow, SchemaBrowser, ResultsTable,
-│       │                             #   ConnectionForm, ConfirmDialog, CommandPalette
-│       ├── stores/                   # connections, schema, query, settings,
-│       │                             #   history, saved-queries
-│       ├── ir.ts                     # shared types (mirrors Rust query IR)
-│       ├── hydrate-query.ts          # legacy QuerySpec → current IR migration
-│       ├── api.ts                    # Tauri invoke wrappers
-│       ├── window.ts                 # syncWindowBackgroundColor (Tauri only)
-│       └── test/setup.ts             # Vitest mocks (Tauri invoke, $app/*)
-├── src-tauri/                        # Rust backend
-│   ├── src/
-│   │   ├── adapters/                 # pg, mysql, mssql, oracle (feature-gated)
-│   │   ├── query/                    # ir, validate + helpers, compile + helpers
-│   │   ├── commands.rs               # command module root / re-exports
-│   │   ├── commands/                 # connections, query, query_core, saved_queries, settings
-│   │   ├── secrets.rs                # secrets module root / re-exports
-│   │   ├── secrets/                  # backend selection, store access, session cache
-│   │   ├── introspect.rs             # shared schema types
-│   │   ├── config.rs                 # connection profiles (no passwords)
-│   │   ├── queries.rs                # saved queries + history store
-│   │   ├── settings.rs
-│   │   ├── types.rs
-│   │   ├── lib.rs / main.rs
-│   ├── tests/                        # adapters, commands, core, ir, query, stores,
-│   │                                 #   secrets*, pg_smoke, mysql_smoke
-│   ├── capabilities/                 # Tauri 2 permissions
-│   ├── Entitlements.plist            # macOS sandbox + keychain-access-groups
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── scripts/seed_mysql.sh             # local MySQL fixture wrapper
-├── testdata_mysql.sql                # MySQL DDL + seed data
-├── vite.config.ts
-└── package.json
+├── src/main/kotlin/com/safedb/        # Compose UI, app shell, platform helpers
+├── src/main/resources/                # fonts and app resources
+├── src/test/kotlin/                   # UI state tests
+├── shared/
+│   ├── src/main/kotlin/com/safedb/    # models, query engine, JDBC adapters, stores, secrets
+│   └── src/test/kotlin/               # shared unit tests
+├── build.gradle.kts
+├── settings.gradle.kts
+├── gradle/                            # Gradle wrapper
+├── scripts/seed_mysql.sh              # local MySQL fixture wrapper
+├── testdata_mysql.sql                 # small static MySQL fixture
+└── AGENTS.md                          # agent-oriented commands and workspace notes
 ```
-
-Agent-oriented notes (commands, conventions, cloud VM tips) live in [AGENTS.md](AGENTS.md).
