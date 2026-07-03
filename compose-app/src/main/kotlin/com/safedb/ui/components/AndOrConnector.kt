@@ -14,8 +14,8 @@ import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.model.GroupConnector
 
 /**
- * AND/OR connector pill between filter group children. AND = sky accent,
- * OR = amber. Clickable to toggle.
+ * AND/OR connector pill between filter group children. AND uses the neutral
+ * primary container; OR uses warning amber. Clickable to toggle.
  */
 @Composable
 fun AndOrConnector(

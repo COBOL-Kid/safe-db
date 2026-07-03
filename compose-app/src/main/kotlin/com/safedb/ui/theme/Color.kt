@@ -14,10 +14,10 @@ import androidx.compose.ui.graphics.Color
  * action*) are exposed through [LocalSafeDbColors] and accessed via
  * `SafeDbTheme.colors`.
  *
- * Palette: Slate neutrals + Sky-blue accent (legacy safe-db design language).
- * Blue is the accent for selection/joins/indexed/focus; primary action fills
- * use a neutral [actionPrimary] that contrast-flips between light/dark
- * (slate-900 in light, slate-100 in dark).
+ * Palette: Slate neutrals with restrained semantic accents. Primary action
+ * fills use a neutral [actionPrimary] that contrast-flips between light/dark
+ * (slate-900 in light, slate-100 in dark); builder joins use tertiary amber
+ * instead of making blue the global interaction color.
  */
 @Immutable
 data class SafeDbColors(
@@ -42,7 +42,7 @@ data class SafeDbColors(
 )
 
 // ------------------------------------------------------------------
-// Light — Slate + Sky (legacy safe-db)
+// Light — Slate neutral core
 // ------------------------------------------------------------------
 
 private val LightBackground = Color(0xFFF8FAFC) // slate-50
@@ -57,10 +57,10 @@ private val LightOutlineVariant = Color(0xFFF1F5F9) // slate-100
 private val LightOnSurface = Color(0xFF0F172A) // slate-900
 private val LightOnSurfaceVariant = Color(0xFF475569) // slate-600
 
-private val LightPrimary = Color(0xFF0EA5E9) // sky-500
+private val LightPrimary = Color(0xFF0F172A) // slate-900
 private val LightOnPrimary = Color(0xFFFFFFFF)
-private val LightPrimaryContainer = Color(0xFFF0F9FF) // sky-50
-private val LightOnPrimaryContainer = Color(0xFF0369A1) // sky-700
+private val LightPrimaryContainer = Color(0xFFF1F5F9) // slate-100
+private val LightOnPrimaryContainer = Color(0xFF1E293B) // slate-800
 
 private val LightSecondary = Color(0xFF475569) // slate-600
 private val LightOnSecondary = Color(0xFFFFFFFF)
@@ -89,17 +89,17 @@ private val LightWarning = Color(0xFFB45309) // amber-700
 private val LightOnWarning = Color(0xFFFFFFFF)
 private val LightWarningContainer = Color(0xFFFFFBEB) // amber-50
 private val LightOnWarningContainer = Color(0xFF92400E) // amber-800
-private val LightInfo = Color(0xFF0EA5E9) // sky-500
+private val LightInfo = Color(0xFF475569) // slate-600
 private val LightOnInfo = Color(0xFFFFFFFF)
-private val LightInfoContainer = Color(0xFFF0F9FF) // sky-50
-private val LightOnInfoContainer = Color(0xFF075985) // sky-800
+private val LightInfoContainer = Color(0xFFF1F5F9) // slate-100
+private val LightOnInfoContainer = Color(0xFF334155) // slate-700
 private val LightUq = Color(0xFF7C3AED) // violet-600
 private val LightOnUq = Color(0xFFFFFFFF)
 private val LightUqContainer = Color(0xFFF5F3FF) // violet-50
 private val LightOnUqContainer = Color(0xFF5B21B6) // violet-800
 
 // ------------------------------------------------------------------
-// Dark — deep slate + Sky (lightened)
+// Dark — deep slate neutral core
 // ------------------------------------------------------------------
 
 private val DarkBackground = Color(0xFF020617) // slate-950
@@ -114,10 +114,10 @@ private val DarkOutlineVariant = Color(0xFF1E293B) // slate-800
 private val DarkOnSurface = Color(0xFFF1F5F9) // slate-100
 private val DarkOnSurfaceVariant = Color(0xFF94A3B8) // slate-400
 
-private val DarkPrimary = Color(0xFF38BDF8) // sky-400
-private val DarkOnPrimary = Color(0xFF020617) // slate-950
-private val DarkPrimaryContainer = Color(0xFF0C4A6E) // sky-900
-private val DarkOnPrimaryContainer = Color(0xFF7DD3FC) // sky-300
+private val DarkPrimary = Color(0xFFF1F5F9) // slate-100
+private val DarkOnPrimary = Color(0xFF0F172A) // slate-900
+private val DarkPrimaryContainer = Color(0xFF1E293B) // slate-800
+private val DarkOnPrimaryContainer = Color(0xFFE2E8F0) // slate-200
 
 private val DarkSecondary = Color(0xFF94A3B8) // slate-400
 private val DarkOnSecondary = Color(0xFF020617) // slate-950
@@ -146,10 +146,10 @@ private val DarkWarning = Color(0xFFFCD34D) // amber-300
 private val DarkOnWarning = Color(0xFF020617) // slate-950
 private val DarkWarningContainer = Color(0xFF2A1F0A)
 private val DarkOnWarningContainer = Color(0xFFFDE68A) // amber-200
-private val DarkInfo = Color(0xFF38BDF8) // sky-400
+private val DarkInfo = Color(0xFFCBD5E1) // slate-300
 private val DarkOnInfo = Color(0xFF020617) // slate-950
-private val DarkInfoContainer = Color(0xFF0F1F3D)
-private val DarkOnInfoContainer = Color(0xFFBAE6FD) // sky-200
+private val DarkInfoContainer = Color(0xFF1E293B) // slate-800
+private val DarkOnInfoContainer = Color(0xFFCBD5E1) // slate-300
 private val DarkUq = Color(0xFFC4B5FD) // violet-300
 private val DarkOnUq = Color(0xFF020617) // slate-950
 private val DarkUqContainer = Color(0xFF221840)

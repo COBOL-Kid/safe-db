@@ -2,6 +2,7 @@ package com.safedb.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
@@ -364,7 +366,7 @@ fun BuilderScreen(
                                 val rightName = queryViewModel.canvasTables
                                     .find { it.alias == join.rightAlias }?.tableInfo?.name ?: join.rightAlias
                                 Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f),
                                     shape = MaterialTheme.shapes.large,
                                 ) {
                                     Row(
@@ -389,6 +391,7 @@ fun BuilderScreen(
                             queryViewModel = queryViewModel,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     }

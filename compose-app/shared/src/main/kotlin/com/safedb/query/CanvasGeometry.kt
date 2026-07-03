@@ -15,6 +15,7 @@ const val CANVAS_CARD_WIDTH = 224f
 const val CANVAS_CARD_HEIGHT = 297f
 const val CANVAS_HEADER_HEIGHT = 41f
 const val CANVAS_ROW_HEIGHT = 28f
+const val CANVAS_ROW_HIT_PAD_X = 6f
 
 const val MIN_TABLE_WIDTH = 180f
 const val MAX_TABLE_WIDTH = 520f
@@ -42,6 +43,58 @@ fun tableRightX(ct: CanvasTableLike, cardWidth: Float = CANVAS_CARD_WIDTH): Floa
     ct.x + (ct.width ?: cardWidth)
 
 fun tableLeftX(ct: CanvasTableLike): Float = ct.x
+
+data class ColumnHitBounds(
+    val alias: String,
+    val column: String,
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+) {
+    fun contains(x: Float, y: Float): Boolean =
+        x in left..right && y in top..bottom
+}
+
+fun columnHitBounds(
+    ct: CanvasTableLike,
+    columnName: String,
+    cardWidth: Float = CANVAS_CARD_WIDTH,
+    headerHeight: Float = CANVAS_HEADER_HEIGHT,
+    rowHeight: Float = CANVAS_ROW_HEIGHT,
+): ColumnHitBounds? {
+    val idx = ct.tableInfo.columns.indexOfFirst { it.name == columnName }
+    if (idx < 0) return null
+    val top = ct.y + headerHeight + idx * rowHeight
+    return ColumnHitBounds(
+        alias = ct.alias,
+        column = columnName,
+        left = ct.x + CANVAS_ROW_HIT_PAD_X,
+        top = top,
+        right = tableRightX(ct, cardWidth) - CANVAS_ROW_HIT_PAD_X,
+        bottom = top + rowHeight,
+    )
+}
+
+fun indexedJoinTargetAt(
+    tables: List<CanvasTableLike>,
+    x: Float,
+    y: Float,
+    sourceAlias: String,
+    sourceColumn: String,
+): Pair<String, String>? {
+    for (table in tables.asReversed()) {
+        for (column in table.tableInfo.columns) {
+            if (!column.isIndexed) continue
+            if (table.alias == sourceAlias && column.name == sourceColumn) continue
+            val bounds = columnHitBounds(table, column.name) ?: continue
+            if (bounds.contains(x, y)) {
+                return table.alias to column.name
+            }
+        }
+    }
+    return null
+}
 
 /** Cubic Bezier path between two tables' join endpoints (SVG path data). */
 fun joinEdgePath(
