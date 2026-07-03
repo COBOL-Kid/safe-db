@@ -1,6 +1,5 @@
 package com.safedb
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,11 +35,7 @@ import kotlinx.coroutines.runBlocking
 fun App(appState: AppState, window: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
     val settings by viewModel.settings.settings.collectAsState()
-    val useDarkTheme = when (settings.theme) {
-        "dark" -> true
-        "light" -> false
-        else -> isSystemInDarkTheme()
-    }
+    val useDarkTheme = settings.theme == "dark"
     var paletteOpen by remember { mutableStateOf(false) }
 
     SafeDbTheme(

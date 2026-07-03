@@ -1,10 +1,10 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.gradle.api.tasks.SourceSetContainer
+import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
 plugins {
-    kotlin("jvm") version "2.4.0"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
-    id("org.jetbrains.compose") version "1.9.3"
+    kotlin("jvm")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.compose")
 }
 
 group = "com.safedb"
@@ -42,12 +42,21 @@ tasks.test {
     useJUnitPlatform()
 }
 
+tasks.register("integrationTest") {
+    group = "verification"
+    description = "Runs :shared JDBC integration tests."
+    dependsOn(":shared:integrationTest")
+}
+
 tasks.register<JavaExec>("seedMysql") {
     group = "safe-db"
     description = "Seed the local safe-db MySQL test database."
     val shared = project(":shared")
-    val sourceSets = shared.extensions.getByType<SourceSetContainer>()
-    classpath = sourceSets.named("main").get().runtimeClasspath
+    val kotlinExt = shared.extensions.getByType<KotlinMultiplatformExtension>()
+    val mainCompilation = kotlinExt.targets.getByName("jvm").compilations.getByName("main")
+    val sharedJar = shared.tasks.named("jvmJar")
+    dependsOn(sharedJar)
+    classpath = files(sharedJar) + (mainCompilation.runtimeDependencyFiles ?: files())
     mainClass.set("com.safedb.tools.SeedMysqlKt")
     workingDir = projectDir
     args(splitSeedMysqlArgs(providers.gradleProperty("seedMysqlArgs").orElse("").get()))
