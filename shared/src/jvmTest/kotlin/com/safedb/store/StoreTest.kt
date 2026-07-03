@@ -138,6 +138,16 @@ class StoreTest {
     }
 
     @Test
+    fun settingsStoreNormalizesLegacyThemeValuesToLight() {
+        val dir = tempDir()
+        Files.writeString(dir.resolve("settings.json"), """{"theme":"system"}""")
+
+        val settings = SettingsStore.new(dir).load()
+
+        assertEquals("light", settings.theme)
+    }
+
+    @Test
     fun settingsStoreSaveRoundTripsNonDefaultValues() {
         val dir = tempDir()
         val store = SettingsStore.new(dir)

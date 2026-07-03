@@ -30,7 +30,7 @@ class SettingsStore private constructor(
         if (content.trim().isEmpty()) {
             return@withLock Settings.default()
         }
-        SafeDbJson.lenient.decodeFromString(Settings.serializer(), content)
+        normalizeSettings(SafeDbJson.lenient.decodeFromString(Settings.serializer(), content))
     }
 
     fun save(settings: Settings) {
