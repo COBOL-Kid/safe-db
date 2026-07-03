@@ -97,20 +97,22 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun updateConnectionRequiresPasswordWhenEndpointChanges() = runBlocking {
-        SecretsManager.useStoreForTest(DisabledMemoryStore())
-        val dir = Files.createTempDirectory("safedb-service-test")
-        val configStore = ConfigStore.new(dir)
-        val service = SafeDbServiceImpl(
-            configStore = configStore,
-            queryStore = QueryStore.new(dir),
-            settingsStore = SettingsStore.new(dir),
-        )
-        configStore.save(sampleConnection())
-        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+    fun updateConnectionRequiresPasswordWhenEndpointChanges() {
+        runBlocking {
+            SecretsManager.useStoreForTest(DisabledMemoryStore())
+            val dir = Files.createTempDirectory("safedb-service-test")
+            val configStore = ConfigStore.new(dir)
+            val service = SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = QueryStore.new(dir),
+                settingsStore = SettingsStore.new(dir),
+            )
+            configStore.save(sampleConnection())
+            SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
 
-        assertFailsWith<IllegalArgumentException> {
-            service.updateConnection(sampleConnection().copy(host = "db.example.com"), password = null)
+            assertFailsWith<IllegalArgumentException> {
+                service.updateConnection(sampleConnection().copy(host = "db.example.com"), password = null)
+            }
         }
     }
 

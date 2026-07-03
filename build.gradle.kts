@@ -54,7 +54,9 @@ tasks.register<JavaExec>("seedMysql") {
     val shared = project(":shared")
     val kotlinExt = shared.extensions.getByType<KotlinMultiplatformExtension>()
     val mainCompilation = kotlinExt.targets.getByName("jvm").compilations.getByName("main")
-    classpath = mainCompilation.runtimeDependencyFiles ?: files()
+    val sharedJar = shared.tasks.named("jvmJar")
+    dependsOn(sharedJar)
+    classpath = files(sharedJar) + (mainCompilation.runtimeDependencyFiles ?: files())
     mainClass.set("com.safedb.tools.SeedMysqlKt")
     workingDir = projectDir
     args(splitSeedMysqlArgs(providers.gradleProperty("seedMysqlArgs").orElse("").get()))

@@ -128,8 +128,14 @@ class SafeDbServiceImpl internal constructor(
 
     private suspend fun openDefaultQuerySession(def: ConnectionDef, password: String): QuerySession {
         val adapter = Adapter.connect(def, password)
+        val schema = try {
+            Adapter.introspectWithTimeout(adapter)
+        } catch (error: Throwable) {
+            runCatching { adapter.close() }.onFailure { closeError -> error.addSuppressed(closeError) }
+            throw error
+        }
         return QuerySession(
-            schema = Adapter.introspectWithTimeout(adapter),
+            schema = schema,
             runner = AdapterQueryRunner(adapter),
             onClose = { adapter.close() },
         )

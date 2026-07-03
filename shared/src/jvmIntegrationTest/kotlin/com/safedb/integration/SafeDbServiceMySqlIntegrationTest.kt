@@ -61,21 +61,23 @@ class MySqlQuerySafetyIntegrationTest {
     }
 
     @Test
-    fun blockedSystemSchemaIsRejected() = runBlocking {
-        IntegrationAssumptions.assumeMysqlAvailable()
-        val dir = Files.createTempDirectory("safedb-integration")
-        val def = IntegrationAssumptions.mysqlConnectionDef()
-        val settingsStore = SettingsStore.new(dir)
-        settingsStore.save(Settings.default().copy(blockedSchemas = listOf("mysql")))
-        val service = SafeDbServiceImpl(
-            configStore = ConfigStore.new(dir),
-            queryStore = QueryStore.new(dir),
-            settingsStore = settingsStore,
-        )
-        service.saveConnection(def, IntegrationAssumptions.mysqlPassword)
+    fun blockedSystemSchemaIsRejected() {
+        runBlocking {
+            IntegrationAssumptions.assumeMysqlAvailable()
+            val dir = Files.createTempDirectory("safedb-integration")
+            val def = IntegrationAssumptions.mysqlConnectionDef()
+            val settingsStore = SettingsStore.new(dir)
+            settingsStore.save(Settings.default().copy(blockedSchemas = listOf("mysql")))
+            val service = SafeDbServiceImpl(
+                configStore = ConfigStore.new(dir),
+                queryStore = QueryStore.new(dir),
+                settingsStore = settingsStore,
+            )
+            service.saveConnection(def, IntegrationAssumptions.mysqlPassword)
 
-        assertFailsWith<IllegalArgumentException> {
-            service.runQuery(def.id, IntegrationFixtures.blockedSchemaQuery(), force = true)
+            assertFailsWith<IllegalArgumentException> {
+                service.runQuery(def.id, IntegrationFixtures.blockedSchemaQuery(), force = true)
+            }
         }
     }
 }
