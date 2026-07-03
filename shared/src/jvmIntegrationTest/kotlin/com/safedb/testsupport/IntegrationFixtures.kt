@@ -19,7 +19,7 @@ object IntegrationFixtures {
                 ColumnSel(tableAlias = "t0", column = "email"),
             ),
             joins = emptyList(),
-            filters = FilterGroup(connector = GroupConnector.And, children = emptyList()),
+            filters = emptyFilters("integration-customers-filters"),
             limit = limit,
         )
     }
@@ -33,7 +33,7 @@ object IntegrationFixtures {
                 ColumnSel(tableAlias = "t0", column = "status"),
             ),
             joins = emptyList(),
-            filters = FilterGroup(connector = GroupConnector.And, children = emptyList()),
+            filters = emptyFilters("integration-orders-filters"),
             limit = limit,
         )
     }
@@ -42,7 +42,7 @@ object IntegrationFixtures {
         tables = listOf(TableRef(schema = "mysql", name = "user", alias = "t0")),
         columns = listOf(ColumnSel(tableAlias = "t0", column = "User")),
         joins = emptyList(),
-        filters = FilterGroup(connector = GroupConnector.And, children = emptyList()),
+        filters = emptyFilters("integration-blocked-schema-filters"),
         limit = 10,
     )
 
@@ -66,4 +66,10 @@ object IntegrationFixtures {
         )
         return table
     }
+
+    private fun emptyFilters(id: String): FilterGroup = FilterGroup(
+        id = id,
+        connector = GroupConnector.And,
+        children = emptyList(),
+    )
 }

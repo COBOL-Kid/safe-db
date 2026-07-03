@@ -22,7 +22,8 @@ object IntegrationAssumptions {
     fun assumeMysqlAvailable() {
         assumeTrue(
             isMysqlReachable(),
-            "MySQL not reachable at $mysqlHost:$mysqlPort; set SAFEDB_TEST_MYSQL_* or start a local instance",
+            "Seeded MySQL fixture not reachable at $mysqlHost:$mysqlPort; " +
+                "set SAFEDB_TEST_MYSQL_* or run scripts/seed_mysql.sh --static",
         )
     }
 
@@ -35,11 +36,19 @@ object IntegrationAssumptions {
             val adapter = Adapter.connect(def, mysqlPassword)
             try {
                 adapter.test()
-                true
+                isCi() || hasSeededSchema(adapter)
             } finally {
                 adapter.close()
             }
         }.getOrDefault(false)
+    }
+
+    private fun isCi(): Boolean = env["CI"].equals("true", ignoreCase = true)
+
+    private suspend fun hasSeededSchema(adapter: Adapter): Boolean {
+        val schema = Adapter.introspectWithTimeout(adapter)
+        val tableNames = schema.tables.map { it.name }.toSet()
+        return "customers" in tableNames && "orders" in tableNames
     }
 
     fun mysqlConnectionDef(
