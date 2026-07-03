@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
-# scripts/seed_mysql.sh - wrapper for the Compose/Kotlin MySQL seed task.
+# scripts/seed_mysql.sh - wrapper for the Kotlin MySQL seed task.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPOSE_DIR="$REPO_ROOT/compose-app"
 
-if [[ ! -x "$COMPOSE_DIR/gradlew" ]]; then
-  echo "error: Gradle wrapper not found at $COMPOSE_DIR/gradlew" >&2
+if [[ ! -x "$REPO_ROOT/gradlew" ]]; then
+  echo "error: Gradle wrapper not found at $REPO_ROOT/gradlew" >&2
   exit 1
 fi
 
 if [[ $# -eq 0 ]]; then
-  exec "$COMPOSE_DIR/gradlew" -p "$COMPOSE_DIR" seedMysql
+  exec "$REPO_ROOT/gradlew" -p "$REPO_ROOT" seedMysql
 fi
 
 args=""
@@ -26,4 +25,4 @@ for arg in "$@"; do
   args+="\"$escaped\""
 done
 
-exec "$COMPOSE_DIR/gradlew" -p "$COMPOSE_DIR" seedMysql -PseedMysqlArgs="$args"
+exec "$REPO_ROOT/gradlew" -p "$REPO_ROOT" seedMysql -PseedMysqlArgs="$args"
