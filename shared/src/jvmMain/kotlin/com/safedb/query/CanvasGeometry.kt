@@ -1,5 +1,6 @@
 package com.safedb.query
 
+import com.safedb.model.JoinSpec
 import com.safedb.model.TableInfo
 
 data class CanvasTableLike(
@@ -95,6 +96,74 @@ fun indexedJoinTargetAt(
     }
     return null
 }
+
+data class SuggestedRelationship(
+    val name: String,
+    val foreignAlias: String,
+    val foreignColumn: String,
+    val referencedAlias: String,
+    val referencedColumn: String,
+)
+
+fun suggestedRelationships(
+    tables: List<CanvasTableLike>,
+    joins: List<JoinSpec>,
+): List<SuggestedRelationship> {
+    val tableByQualifiedName = tables.associateBy { qualifiedTableKey(it.tableInfo.schema, it.tableInfo.name) }
+    val suggestions = mutableListOf<SuggestedRelationship>()
+
+    for (foreignTable in tables) {
+        for (foreignKey in foreignTable.tableInfo.foreignKeys) {
+            if (foreignKey.columns.size != foreignKey.referencedColumns.size) continue
+            if (foreignKey.columns.isEmpty()) continue
+
+            val referencedTable = tableByQualifiedName[
+                qualifiedTableKey(foreignKey.referencedSchema, foreignKey.referencedTable)
+            ] ?: continue
+            if (!referencedTable.tableInfo.hasUniqueKey(foreignKey.referencedColumns)) continue
+
+            for ((foreignColumn, referencedColumn) in foreignKey.columns.zip(foreignKey.referencedColumns)) {
+                if (!foreignTable.tableInfo.hasColumn(foreignColumn)) continue
+                if (!referencedTable.tableInfo.hasColumn(referencedColumn)) continue
+                if (joins.hasJoin(foreignTable.alias, foreignColumn, referencedTable.alias, referencedColumn)) continue
+                suggestions.add(
+                    SuggestedRelationship(
+                        name = foreignKey.name,
+                        foreignAlias = foreignTable.alias,
+                        foreignColumn = foreignColumn,
+                        referencedAlias = referencedTable.alias,
+                        referencedColumn = referencedColumn,
+                    ),
+                )
+            }
+        }
+    }
+
+    return suggestions.distinct()
+}
+
+private fun TableInfo.hasColumn(column: String): Boolean =
+    columns.any { it.name == column }
+
+private fun TableInfo.hasUniqueKey(columns: List<String>): Boolean =
+    indexes.any { index ->
+        (index.isPrimary || index.isUnique) && index.columns == columns
+    }
+
+private fun List<JoinSpec>.hasJoin(
+    leftAlias: String,
+    leftColumn: String,
+    rightAlias: String,
+    rightColumn: String,
+): Boolean = any { join ->
+    (join.leftAlias == leftAlias && join.leftColumn == leftColumn &&
+        join.rightAlias == rightAlias && join.rightColumn == rightColumn) ||
+        (join.leftAlias == rightAlias && join.leftColumn == rightColumn &&
+            join.rightAlias == leftAlias && join.rightColumn == leftColumn)
+}
+
+private fun qualifiedTableKey(schema: String, table: String): String =
+    "$schema.$table"
 
 /** Cubic Bezier path between two tables' join endpoints (SVG path data). */
 fun joinEdgePath(

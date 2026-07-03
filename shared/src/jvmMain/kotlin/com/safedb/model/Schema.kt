@@ -14,6 +14,8 @@ data class TableInfo(
     val name: String,
     val columns: List<ColumnInfo>,
     val indexes: List<IndexInfo>,
+    @SerialName("foreign_keys")
+    val foreignKeys: List<ForeignKeyInfo> = emptyList(),
 )
 
 fun TableInfo.qualifiedName(): String = "$schema.$name"
@@ -44,6 +46,18 @@ data class IndexInfo(
     val isUnique: Boolean = false,
     @SerialName("is_primary")
     val isPrimary: Boolean = false,
+)
+
+@Serializable
+data class ForeignKeyInfo(
+    val name: String,
+    val columns: List<String> = emptyList(),
+    @SerialName("referenced_schema")
+    val referencedSchema: String,
+    @SerialName("referenced_table")
+    val referencedTable: String,
+    @SerialName("referenced_columns")
+    val referencedColumns: List<String> = emptyList(),
 )
 
 @Serializable

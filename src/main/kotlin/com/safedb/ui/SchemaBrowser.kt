@@ -35,9 +35,9 @@ import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.InputShape
 import com.safedb.viewmodel.SchemaViewModel
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Search
 
 @Composable
@@ -162,7 +162,7 @@ fun SchemaBrowser(
                                     imageVector = if (isOpen) {
                                         Icons.Default.KeyboardArrowDown
                                     } else {
-                                        Icons.Default.KeyboardArrowRight
+                                        Icons.AutoMirrored.Filled.KeyboardArrowRight
                                     },
                                     contentDescription = null,
                                 )

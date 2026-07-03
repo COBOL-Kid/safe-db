@@ -10,6 +10,7 @@ import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
+import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.HistoryEntry
 import com.safedb.model.IndexInfo
 import com.safedb.model.QueryResult
@@ -45,10 +46,21 @@ private class FakeService : SafeDbService {
         ),
     )
 
-    private fun table(name: String, cols: List<ColumnInfo>, indexes: List<IndexInfo>): TableInfo {
+    private fun table(
+        name: String,
+        cols: List<ColumnInfo>,
+        indexes: List<IndexInfo>,
+        foreignKeys: List<ForeignKeyInfo> = emptyList(),
+    ): TableInfo {
         val mutable = cols.toMutableList()
         markIndexedColumns(mutable, indexes)
-        return TableInfo(schema = "public", name = name, columns = mutable, indexes = indexes)
+        return TableInfo(
+            schema = "public",
+            name = name,
+            columns = mutable,
+            indexes = indexes,
+            foreignKeys = foreignKeys,
+        )
     }
 
     val schema = Schema(
@@ -75,6 +87,15 @@ private class FakeService : SafeDbService {
                 listOf(
                     IndexInfo("orders_pkey", listOf("id"), isPrimary = true, isUnique = true),
                     IndexInfo("orders_customer_idx", listOf("customer_id")),
+                ),
+                listOf(
+                    ForeignKeyInfo(
+                        name = "orders_customer_id_fkey",
+                        columns = listOf("customer_id"),
+                        referencedSchema = "public",
+                        referencedTable = "customers",
+                        referencedColumns = listOf("id"),
+                    ),
                 ),
             ),
             table(
@@ -204,6 +225,7 @@ fun main() {
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
+                    vm.query.moveTable("t1", 360f, 90f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")

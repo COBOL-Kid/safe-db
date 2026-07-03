@@ -4,6 +4,7 @@ import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
@@ -41,8 +42,9 @@ object MySqlAdapter {
                         val table = readString(rs, "TABLE_NAME")
                         var columns = introspectColumns(conn, schema, table)
                         val indexes = introspectIndexes(conn, schema, table)
+                        val foreignKeys = introspectForeignKeys(conn, schema, table)
                         markIndexedColumns(columns, indexes)
-                        tables.add(TableInfo(schema, table, columns, indexes))
+                        tables.add(TableInfo(schema, table, columns, indexes, foreignKeys))
                     }
                 }
             }
@@ -110,6 +112,47 @@ object MySqlAdapter {
             }
         }
         return indexMap.values.toList()
+    }
+
+    private fun introspectForeignKeys(conn: java.sql.Connection, schema: String, table: String): List<ForeignKeyInfo> {
+        val foreignKeyMap = linkedMapOf<String, ForeignKeyInfo>()
+        conn.prepareStatement(
+            """
+            SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA,
+                   REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+              AND REFERENCED_TABLE_SCHEMA IS NOT NULL
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+              AND REFERENCED_COLUMN_NAME IS NOT NULL
+            ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION
+            """.trimIndent(),
+        ).use { ps ->
+            ps.setString(1, schema)
+            ps.setString(2, table)
+            ps.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val name = readString(rs, "CONSTRAINT_NAME")
+                    val referencedSchema = readString(rs, "REFERENCED_TABLE_SCHEMA")
+                    val referencedTable = readString(rs, "REFERENCED_TABLE_NAME")
+                    val column = readString(rs, "COLUMN_NAME")
+                    val referencedColumn = readString(rs, "REFERENCED_COLUMN_NAME")
+                    val key = "$name|$referencedSchema|$referencedTable"
+                    val entry = foreignKeyMap.getOrPut(key) {
+                        ForeignKeyInfo(
+                            name = name,
+                            referencedSchema = referencedSchema,
+                            referencedTable = referencedTable,
+                        )
+                    }
+                    foreignKeyMap[key] = entry.copy(
+                        columns = entry.columns + column,
+                        referencedColumns = entry.referencedColumns + referencedColumn,
+                    )
+                }
+            }
+        }
+        return foreignKeyMap.values.toList()
     }
 
     fun executeQuery(dataSource: HikariDataSource, compiled: CompiledQuery, timeoutMs: Int): QueryResult =

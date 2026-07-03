@@ -31,6 +31,7 @@ import com.safedb.query.CanvasTableLike
 import com.safedb.query.columnY
 import com.safedb.query.indexedJoinTargetAt
 import com.safedb.query.joinEdgePoints
+import com.safedb.query.suggestedRelationships
 import com.safedb.query.tableLeftX
 import com.safedb.query.tableRightX
 import com.safedb.viewmodel.CanvasTable
@@ -136,6 +137,41 @@ fun Canvas(
             ) {
                 val joinColor = MaterialTheme.colorScheme.tertiary
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    suggestedRelationships(canvasTablesLike(), queryViewModel.joins).forEach { relationship ->
+                        val foreign = queryViewModel.canvasTables.find { it.alias == relationship.foreignAlias }
+                            ?: return@forEach
+                        val referenced = queryViewModel.canvasTables.find { it.alias == relationship.referencedAlias }
+                            ?: return@forEach
+                        val points = joinEdgePoints(
+                            canvasTableLike(foreign),
+                            relationship.foreignColumn,
+                            canvasTableLike(referenced),
+                            relationship.referencedColumn,
+                        )
+                        val path = Path().apply {
+                            moveTo(points.sourceX, points.sourceY)
+                            cubicTo(
+                                points.control1X,
+                                points.control1Y,
+                                points.control2X,
+                                points.control2Y,
+                                points.targetX,
+                                points.targetY,
+                            )
+                        }
+                        drawPath(
+                            path = path,
+                            color = joinColor.copy(alpha = 0.5f),
+                            style = Stroke(
+                                width = 2f,
+                                cap = StrokeCap.Round,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 7f)),
+                            ),
+                        )
+                        drawCircle(joinColor.copy(alpha = 0.45f), 3f, Offset(points.sourceX, points.sourceY))
+                        drawCircle(joinColor.copy(alpha = 0.45f), 3f, Offset(points.targetX, points.targetY))
+                    }
+
                     queryViewModel.joins.forEach { join ->
                         val left = queryViewModel.canvasTables.find { it.alias == join.leftAlias } ?: return@forEach
                         val right = queryViewModel.canvasTables.find { it.alias == join.rightAlias } ?: return@forEach
