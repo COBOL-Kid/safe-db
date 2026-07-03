@@ -14,7 +14,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @Tag("integration")
@@ -33,8 +32,8 @@ class MySqlAdapterIntegrationTest {
         try {
             assertTrue(adapter.test().isNotBlank())
             val schema = Adapter.introspectWithTimeout(adapter)
-            assertTrue(schema.tables.any { it.name == "orders" })
-            assertTrue(schema.tables.any { it.name == "customers" })
+            IntegrationFixtures.requireSeededTable(schema, "orders", setOf("id", "status"))
+            IntegrationFixtures.requireSeededTable(schema, "customers", setOf("id", "email"))
         } finally {
             adapter.close()
         }
@@ -47,7 +46,7 @@ class MySqlAdapterIntegrationTest {
         val adapter = Adapter.connect(def, IntegrationAssumptions.mysqlPassword)
         try {
             val schema = Adapter.introspectWithTimeout(adapter)
-            val spec = IntegrationFixtures.customersQuery(limit = 5)
+            val spec = IntegrationFixtures.customersQuery(schema, limit = 5)
             val validated = when (val validation = validateQuery(spec, schema, emptyList())) {
                 is Outcome.Ok -> validation.value.first
                 is Outcome.Err -> error(validation.message)

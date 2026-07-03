@@ -33,22 +33,31 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Gradle check
         run: ./gradlew check
 
   integration:
     runs-on: ubuntu-latest
+    env:
+      SAFEDB_KEYCHAIN_BACKEND: disabled
+      SAFEDB_TEST_MYSQL_HOST: 127.0.0.1
+      SAFEDB_TEST_MYSQL_USER: root
+      SAFEDB_TEST_MYSQL_PASSWORD: ""
+      SAFEDB_TEST_MYSQL_DATABASE: safedb_test
     services:
       mysql:
-        image: mysql:8
+        image: mysql:8.4
         env:
           MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
           MYSQL_DATABASE: safedb_test
@@ -60,24 +69,16 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
 
-      - name: Wait for MySQL
-        run: |
-          for i in $(seq 1 30); do
-            if mysqladmin ping -h 127.0.0.1 --silent; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "MySQL did not become ready in time"
-          exit 1
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Install MySQL client
         run: sudo apt-get update && sudo apt-get install -y mysql-client
@@ -86,10 +87,13 @@ jobs:
         run: ./scripts/seed_mysql.sh --static
 
       - name: Gradle integrationTest
-        run: ./gradlew integrationTest
-        env:
-          SAFEDB_KEYCHAIN_BACKEND: disabled
-          SAFEDB_TEST_MYSQL_HOST: 127.0.0.1
-          SAFEDB_TEST_MYSQL_USER: root
-          SAFEDB_TEST_MYSQL_PASSWORD: ""
-          SAFEDB_TEST_MYSQL_DATABASE: safedb_test
+        run: ./gradlew integrationTest --stacktrace
+
+      - name: Upload integration test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-test-reports
+          path: |
+            shared/build/reports/tests/integrationTest/
+            shared/build/test-results/integrationTest/

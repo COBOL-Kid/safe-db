@@ -40,9 +40,9 @@ class SafeDbServiceMySqlIntegrationTest {
 
         service.saveConnection(def, IntegrationAssumptions.mysqlPassword)
         val schema = service.getSchema(def.id)
-        assertTrue(schema.tables.any { it.name == "customers" })
+        val spec = IntegrationFixtures.customersQuery(schema, limit = 5)
 
-        val result = service.runQuery(def.id, IntegrationFixtures.customersQuery(limit = 5), force = true)
+        val result = service.runQuery(def.id, spec, force = true)
         assertTrue(result.rowCount > 0)
 
         val history = service.listHistory()
