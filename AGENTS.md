@@ -9,7 +9,8 @@ See the git history for the removed desktop prototype if old implementation cont
 ## Commands
 
 - `./gradlew run` — boot the desktop app
-- `./gradlew check` — Compose + shared unit tests (query engine, stores, adapters, connection parser, UI state)
+- `./gradlew check` — unit tests for `:shared` (`jvmTest`) and the desktop app (`test`); no database required
+- `./gradlew integrationTest` — env-gated JDBC integration tests in `:shared` (`jvmIntegrationTest`, `@Tag("integration")`); requires MySQL seeded via `scripts/seed_mysql.sh --static`
 - `./gradlew renderPreview` — headless render of the main screens (light + dark) to `/tmp/safedb-preview/*.png` via `ImageComposeScene` with a fake service; use for visual verification without a display
 - `./gradlew seedMysql` — generated local MySQL fixture (~50k orders)
 - `./gradlew seedMysql -PseedMysqlArgs="--orders 20000"` — pass seeder args through Gradle
@@ -20,7 +21,7 @@ See the git history for the removed desktop prototype if old implementation cont
 
 - **Connections** — CRUD via `SafeDbService`; passwords in OS keyring when available, metadata in app data dir; form has show/hide password toggle
 - **Schema introspection** — per-dialect JDBC adapters in `shared/`; system schemas blocked in query validation
-- **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/main/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
+- **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/jvmMain/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
 - **Safety** — read-only selects, row limit (default 100, interactive max 10,000, guidance above 1,000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
 - **Saved queries & history** — persisted through `QueryStore` in the app data dir; timestamps are Unix-seconds strings
 - **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas` through the Compose/Kotlin settings store
@@ -39,10 +40,12 @@ Run `./gradlew check` after editing Kotlin/Compose files. There is no separate l
 
 ## Testing
 
-- **Fast gate:** `./gradlew check`
-- **Shared module only:** `./gradlew :shared:test`
+- **Fast gate:** `./gradlew check` — kotlin-test unit tests on JUnit Platform; `:shared` uses KMP `jvmTest`, desktop app uses `test`
+- **Integration gate (optional):** `./gradlew integrationTest` after seeding MySQL (`scripts/seed_mysql.sh --static`). Uses `SAFEDB_TEST_MYSQL_*` env vars (same as the seeder). Tests skip cleanly when MySQL is unreachable.
+- **Shared module only:** `./gradlew :shared:jvmTest`
 - **UI preview:** `./gradlew renderPreview`, then inspect `/tmp/safedb-preview/*.png`
 - **Seeder CLI surface:** `./gradlew seedMysql -PseedMysqlArgs="--help"` and a bad-arg check such as `./gradlew seedMysql -PseedMysqlArgs="--orders nope"` when changing seeding behavior
+- **MySQL env vars for integration/smoke:** `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, `SAFEDB_TEST_MYSQL_DATABASE`, optional `SAFEDB_TEST_MYSQL_DOCKER`
 
 Smoke tests that need a real database should use the app or seeder directly. The MySQL seeder skips unrelated app state by default and streams generated SQL into the target database.
 

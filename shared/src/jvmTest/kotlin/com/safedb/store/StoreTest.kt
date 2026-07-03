@@ -1,5 +1,6 @@
 package com.safedb.store
 
+import com.safedb.model.CURRENT_CONNECTION_VERSION
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -265,6 +266,38 @@ class StoreTest {
         assertEquals(listOf("audit"), normalized.blockedSchemas)
         assertEquals(1.0, normalized.explainCostThreshold)
         assertEquals("dark", normalized.theme)
+    }
+
+    @Test
+    fun configStoreMigratesLegacyConnectionsMissingTransportSecurity() {
+        val dir = tempDir()
+        Files.writeString(
+            dir.resolve("connections.json"),
+            """
+            [
+              {
+                "version": 1,
+                "id": "legacy",
+                "name": "Legacy MySQL",
+                "dialect": "MySql",
+                "host": "localhost",
+                "port": 3306,
+                "database": "safedb_test",
+                "username": "root"
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        val store = ConfigStore.new(dir)
+        val migrated = store.list().single()
+
+        assertEquals(
+            TransportSecurity(mode = TransportSecurityMode.Disabled, legacyImplicit = true),
+            migrated.transportSecurity,
+        )
+        assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
+        assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
     }
 
     @Test

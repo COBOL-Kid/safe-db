@@ -21,11 +21,30 @@ import com.safedb.store.SettingsStore
 import java.time.Instant
 import java.util.UUID
 
-class SafeDbServiceImpl(
+internal fun interface QuerySessionFactory {
+    suspend fun open(def: ConnectionDef, password: String): QuerySession
+}
+
+internal class QuerySession(
+    val schema: Schema,
+    val runner: QueryRunner,
+    private val onClose: suspend () -> Unit = {},
+) {
+    suspend fun close() = onClose()
+}
+
+class SafeDbServiceImpl internal constructor(
     private val configStore: ConfigStore,
     private val queryStore: QueryStore,
     private val settingsStore: SettingsStore,
+    private val querySessionFactory: QuerySessionFactory?,
 ) : SafeDbService {
+
+    constructor(
+        configStore: ConfigStore,
+        queryStore: QueryStore,
+        settingsStore: SettingsStore,
+    ) : this(configStore, queryStore, settingsStore, null)
 
     override suspend fun testConnection(def: ConnectionDef, password: String): String {
         def.validate().getOrThrow()
@@ -84,10 +103,9 @@ class SafeDbServiceImpl(
         val def = configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val settings = settingsStore.load()
-        val adapter = Adapter.connect(def, password)
+        val session = querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
         return try {
-            val schema = Adapter.introspectWithTimeout(adapter)
-            when (val outcome = runQueryCore(AdapterQueryRunner(adapter), def, spec, schema, settings, force)) {
+            when (val outcome = runQueryCore(session.runner, def, spec, session.schema, settings, force)) {
                 is QueryCoreOutcome.Success -> {
                     recordHistory(connectionId, def.name, outcome.historySpec, outcome.result, null)
                     outcome.result
@@ -104,8 +122,17 @@ class SafeDbServiceImpl(
                 }
             }
         } finally {
-            adapter.close()
+            session.close()
         }
+    }
+
+    private suspend fun openDefaultQuerySession(def: ConnectionDef, password: String): QuerySession {
+        val adapter = Adapter.connect(def, password)
+        return QuerySession(
+            schema = Adapter.introspectWithTimeout(adapter),
+            runner = AdapterQueryRunner(adapter),
+            onClose = { adapter.close() },
+        )
     }
 
     override suspend fun listSavedQueries(): List<SavedQuery> = queryStore.listSaved()
