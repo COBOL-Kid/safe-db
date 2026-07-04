@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,6 +73,7 @@ fun TableCard(
     onStartResize: () -> Unit,
     onResizeTable: (Offset) -> Unit,
     onEndGesture: () -> Unit,
+    fieldScrollState: ScrollState = rememberScrollState(),
     joinDragActive: Boolean = false,
     highlightJoinTargets: Pair<String, String>? = null,
     modifier: Modifier = Modifier,
@@ -84,7 +86,6 @@ fun TableCard(
     val resizeHandleColor = SafeDbTheme.colors.actionPrimary.copy(alpha = 0.84f)
     val joinColor = SafeDbTheme.colors.actionPrimary
     val joinTargetColor = SafeDbTheme.colors.accentContainer
-    val fieldScrollState = rememberScrollState()
 
     Surface(
         modifier = modifier

@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,10 +29,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.safedb.model.JoinSpec
+import com.safedb.query.ColumnJoinPort
+import com.safedb.query.JoinPortVisibility
 import com.safedb.query.CanvasTableLike
+import com.safedb.query.RoutedJoinEdge
 import com.safedb.query.columnY
 import com.safedb.query.indexedJoinTargetAt
-import com.safedb.query.joinEdgePoints
+import com.safedb.query.routeJoinEdge
 import com.safedb.query.suggestedRelationships
 import com.safedb.query.tableLeftX
 import com.safedb.query.tableRightX
@@ -63,6 +68,15 @@ fun Canvas(
     var gesture by remember { mutableStateOf<CanvasGesture?>(null) }
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
+    val fieldScrollStates = remember { mutableStateMapOf<String, ScrollState>() }
+
+    val aliases = queryViewModel.canvasTables.map { it.alias }.toSet()
+    fieldScrollStates.keys.toList()
+        .filter { it !in aliases }
+        .forEach { fieldScrollStates.remove(it) }
+    for (table in queryViewModel.canvasTables) {
+        fieldScrollStates.getOrPut(table.alias) { ScrollState(0) }
+    }
 
     fun canvasTableLike(table: CanvasTable): CanvasTableLike =
         CanvasTableLike(
@@ -71,6 +85,7 @@ fun Canvas(
             y = table.y,
             width = table.width,
             height = table.height,
+            fieldScrollOffset = fieldScrollStates[table.alias]?.value?.toFloat() ?: 0f,
             tableInfo = table.tableInfo,
         )
 
@@ -137,69 +152,101 @@ fun Canvas(
                     .size(CANVAS_MIN_WIDTH_DP.dp, CANVAS_MIN_HEIGHT_DP.dp),
             ) {
                 val joinColor = SafeDbTheme.colors.actionPrimary
+                val haloColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    suggestedRelationships(canvasTablesLike(), queryViewModel.joins).forEach { relationship ->
+                    fun drawRoutedEdge(
+                        edge: RoutedJoinEdge,
+                        alpha: Float,
+                        dashed: Boolean,
+                        endpointRadius: Float,
+                    ) {
+                        fun drawPort(port: ColumnJoinPort) {
+                            val point = Offset(port.point.x, port.point.y)
+                            drawCircle(joinColor.copy(alpha = alpha), endpointRadius, point)
+                            val markerLength = 7f
+                            when (port.visibility) {
+                                JoinPortVisibility.HiddenAbove -> drawLine(
+                                    color = joinColor.copy(alpha = alpha),
+                                    start = Offset(point.x, point.y - markerLength),
+                                    end = Offset(point.x, point.y - 1f),
+                                    strokeWidth = 2f,
+                                    cap = StrokeCap.Round,
+                                )
+                                JoinPortVisibility.HiddenBelow -> drawLine(
+                                    color = joinColor.copy(alpha = alpha),
+                                    start = Offset(point.x, point.y + 1f),
+                                    end = Offset(point.x, point.y + markerLength),
+                                    strokeWidth = 2f,
+                                    cap = StrokeCap.Round,
+                                )
+                                JoinPortVisibility.Visible -> Unit
+                            }
+                        }
+
+                        val points = edge.points
+                        if (points.size < 2) return
+                        val path = Path().apply {
+                            moveTo(points.first().x, points.first().y)
+                            for (point in points.drop(1)) {
+                                lineTo(point.x, point.y)
+                            }
+                        }
+                        val pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(8f, 7f)) else null
+                        drawPath(
+                            path = path,
+                            color = haloColor,
+                            style = Stroke(
+                                width = 5f,
+                                cap = StrokeCap.Round,
+                                pathEffect = pathEffect,
+                            ),
+                        )
+                        drawPath(
+                            path = path,
+                            color = joinColor.copy(alpha = alpha),
+                            style = Stroke(
+                                width = 2f,
+                                cap = StrokeCap.Round,
+                                pathEffect = pathEffect,
+                            ),
+                        )
+                        drawPort(edge.sourcePort)
+                        drawPort(edge.targetPort)
+                    }
+
+                    val tablesLike = canvasTablesLike()
+                    suggestedRelationships(tablesLike, queryViewModel.joins).forEachIndexed { index, relationship ->
                         val foreign = queryViewModel.canvasTables.find { it.alias == relationship.foreignAlias }
-                            ?: return@forEach
+                            ?: return@forEachIndexed
                         val referenced = queryViewModel.canvasTables.find { it.alias == relationship.referencedAlias }
-                            ?: return@forEach
-                        val points = joinEdgePoints(
+                            ?: return@forEachIndexed
+                        val edge = routeJoinEdge(
                             canvasTableLike(foreign),
                             relationship.foreignColumn,
                             canvasTableLike(referenced),
                             relationship.referencedColumn,
+                            allTables = tablesLike,
+                            laneIndex = index,
                         )
-                        val path = Path().apply {
-                            moveTo(points.sourceX, points.sourceY)
-                            cubicTo(
-                                points.control1X,
-                                points.control1Y,
-                                points.control2X,
-                                points.control2Y,
-                                points.targetX,
-                                points.targetY,
-                            )
+                        if (edge != null) {
+                            drawRoutedEdge(edge, alpha = 0.5f, dashed = true, endpointRadius = 3f)
                         }
-                        drawPath(
-                            path = path,
-                            color = joinColor.copy(alpha = 0.5f),
-                            style = Stroke(
-                                width = 2f,
-                                cap = StrokeCap.Round,
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 7f)),
-                            ),
-                        )
-                        drawCircle(joinColor.copy(alpha = 0.45f), 3f, Offset(points.sourceX, points.sourceY))
-                        drawCircle(joinColor.copy(alpha = 0.45f), 3f, Offset(points.targetX, points.targetY))
                     }
 
-                    queryViewModel.joins.forEach { join ->
-                        val left = queryViewModel.canvasTables.find { it.alias == join.leftAlias } ?: return@forEach
-                        val right = queryViewModel.canvasTables.find { it.alias == join.rightAlias } ?: return@forEach
-                        val points = joinEdgePoints(
+                    queryViewModel.joins.forEachIndexed { index, join ->
+                        val left = queryViewModel.canvasTables.find { it.alias == join.leftAlias } ?: return@forEachIndexed
+                        val right = queryViewModel.canvasTables.find { it.alias == join.rightAlias } ?: return@forEachIndexed
+                        val edge = routeJoinEdge(
                             canvasTableLike(left),
                             join.leftColumn,
                             canvasTableLike(right),
                             join.rightColumn,
+                            allTables = tablesLike,
+                            laneIndex = index,
                         )
-                        val path = Path().apply {
-                            moveTo(points.sourceX, points.sourceY)
-                            cubicTo(
-                                points.control1X,
-                                points.control1Y,
-                                points.control2X,
-                                points.control2Y,
-                                points.targetX,
-                                points.targetY,
-                            )
+                        if (edge != null) {
+                            drawRoutedEdge(edge, alpha = 1f, dashed = false, endpointRadius = 4f)
                         }
-                        drawPath(
-                            path = path,
-                            color = joinColor,
-                            style = Stroke(width = 2f, cap = StrokeCap.Round),
-                        )
-                        drawCircle(joinColor, 4f, Offset(points.sourceX, points.sourceY))
-                        drawCircle(joinColor, 4f, Offset(points.targetX, points.targetY))
                     }
 
                     dragJoin?.let { state ->
@@ -222,6 +269,7 @@ fun Canvas(
                     TableCard(
                         canvasTable = canvasTable,
                         queryViewModel = queryViewModel,
+                        fieldScrollState = fieldScrollStates.getValue(canvasTable.alias),
                         joinDragActive = dragJoin != null,
                         highlightJoinTargets = dragJoin?.let { it.sourceAlias to it.sourceColumn },
                         onStartDrag = {

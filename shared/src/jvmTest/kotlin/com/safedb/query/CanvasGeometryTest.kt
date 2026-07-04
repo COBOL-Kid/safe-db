@@ -59,6 +59,87 @@ class CanvasGeometryTest {
     }
 
     @Test
+    fun columnJoinPortAlignsToVisibleColumnRowAndSide() {
+        val table = canvasTable(x = 40f, y = 80f, width = 260f)
+
+        val port = assertNotNull(columnJoinPort(table, "org_id", JoinPortSide.Right))
+
+        assertEquals(300f, port.point.x)
+        assertEquals(columnY(table, "org_id"), port.point.y)
+        assertEquals(JoinPortSide.Right, port.side)
+        assertEquals(JoinPortVisibility.Visible, port.visibility)
+    }
+
+    @Test
+    fun columnJoinPortClampsHiddenRowsToFieldViewport() {
+        val table = canvasTable(
+            x = 20f,
+            y = 30f,
+            height = 150f,
+            columns = (0 until 10).map { ColumnInfo("col_$it", "int", nullable = true, isIndexed = true) },
+        )
+
+        val below = assertNotNull(columnJoinPort(table, "col_9", JoinPortSide.Left))
+        val scrolled = assertNotNull(columnJoinPort(table.copy(fieldScrollOffset = CANVAS_ROW_HEIGHT * 4), "col_0", JoinPortSide.Left))
+
+        assertEquals(JoinPortVisibility.HiddenBelow, below.visibility)
+        assertEquals(table.y + table.height!! - CANVAS_RESIZE_FOOTER_HEIGHT - 8f, below.point.y)
+        assertEquals(JoinPortVisibility.HiddenAbove, scrolled.visibility)
+        assertEquals(table.y + CANVAS_HEADER_HEIGHT + 8f, scrolled.point.y)
+    }
+
+    @Test
+    fun routeJoinEdgeUsesColumnPortsAndAvoidsBlockingTable() {
+        val source = canvasTable(alias = "t0", x = 20f, y = 80f, width = 220f)
+        val target = canvasTable(alias = "t1", x = 620f, y = 80f, width = 220f)
+        val blocker = canvasTable(alias = "t2", x = 330f, y = 30f, width = 180f, height = 260f)
+
+        val edge = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target, blocker)))
+
+        assertEquals(tableRightX(source), edge.sourcePort.point.x)
+        assertEquals(tableLeftX(target), edge.targetPort.point.x)
+        assertTrue(edge.points.size >= 4)
+        assertFalse(edgeIntersects(edge.points, tableBounds(blocker).expanded(JOIN_ROUTE_MARGIN)))
+    }
+
+    @Test
+    fun routeJoinEdgeChoosesSidesForRightToLeftTables() {
+        val source = canvasTable(alias = "t0", x = 620f, y = 80f, width = 220f)
+        val target = canvasTable(alias = "t1", x = 20f, y = 80f, width = 220f)
+
+        val edge = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target)))
+
+        assertEquals(JoinPortSide.Left, edge.sourcePort.side)
+        assertEquals(JoinPortSide.Right, edge.targetPort.side)
+        assertEquals(tableLeftX(source), edge.sourcePort.point.x)
+        assertEquals(tableRightX(target), edge.targetPort.point.x)
+    }
+
+    @Test
+    fun routeJoinEdgeHandlesVerticallyStackedTables() {
+        val source = canvasTable(alias = "t0", x = 120f, y = 40f)
+        val target = canvasTable(alias = "t1", x = 120f, y = 420f)
+
+        val edge = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target)))
+
+        assertEquals(columnY(source, "id"), edge.sourcePort.point.y)
+        assertEquals(columnY(target, "customer_id"), edge.targetPort.point.y)
+        assertTrue(edge.points.size >= 4)
+    }
+
+    @Test
+    fun routeJoinEdgeAppliesLaneOffsetsForParallelEdges() {
+        val source = canvasTable(alias = "t0", x = 20f, y = 80f, width = 220f)
+        val target = canvasTable(alias = "t1", x = 620f, y = 80f, width = 220f)
+
+        val first = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target), laneIndex = 0))
+        val second = assertNotNull(routeJoinEdge(source, "org_id", target, "id", listOf(source, target), laneIndex = 1))
+
+        assertEquals(first.sourcePort.point.x + JOIN_PORT_EXIT, first.points[1].x)
+        assertEquals(second.sourcePort.point.x + JOIN_PORT_EXIT + JOIN_ROUTE_LANE_STEP, second.points[1].x)
+    }
+
+    @Test
     fun clampDimensionRejectsInvalidAndClampsBounds() {
         assertEquals(MIN_TABLE_WIDTH, clampDimension(Float.NaN, MIN_TABLE_WIDTH, MAX_TABLE_WIDTH))
         assertEquals(MIN_TABLE_WIDTH, clampDimension(-100f, MIN_TABLE_WIDTH, MAX_TABLE_WIDTH))
@@ -100,7 +181,16 @@ class CanvasGeometryTest {
                 ),
             ),
             suggestedRelationships(listOf(orders, customers), emptyList()),
-        )
+    )
+}
+
+private fun edgeIntersects(points: List<CanvasPoint>, rect: CanvasRect): Boolean =
+    points.zipWithNext().any { (a, b) ->
+        when {
+            a.y == b.y -> rect.intersectsHorizontal(a.y, a.x, b.x)
+            a.x == b.x -> rect.intersectsVertical(a.x, a.y, b.y)
+            else -> true
+        }
     }
 
     @Test
