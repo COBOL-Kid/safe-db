@@ -13,9 +13,10 @@ data class CanvasTableLike(
 )
 
 const val CANVAS_CARD_WIDTH = 224f
-const val CANVAS_CARD_HEIGHT = 297f
-const val CANVAS_HEADER_HEIGHT = 41f
-const val CANVAS_ROW_HEIGHT = 28f
+const val CANVAS_CARD_HEIGHT = 224f
+const val CANVAS_HEADER_HEIGHT = 50f
+const val CANVAS_ROW_HEIGHT = 34f
+const val CANVAS_RESIZE_FOOTER_HEIGHT = 24f
 const val CANVAS_ROW_HIT_PAD_X = 6f
 
 const val MIN_TABLE_WIDTH = 180f
@@ -120,7 +121,6 @@ fun suggestedRelationships(
             val referencedTable = tableByQualifiedName[
                 qualifiedTableKey(foreignKey.referencedSchema, foreignKey.referencedTable)
             ] ?: continue
-            if (!referencedTable.tableInfo.hasUniqueKey(foreignKey.referencedColumns)) continue
 
             for ((foreignColumn, referencedColumn) in foreignKey.columns.zip(foreignKey.referencedColumns)) {
                 if (!foreignTable.tableInfo.hasColumn(foreignColumn)) continue
@@ -144,11 +144,6 @@ fun suggestedRelationships(
 
 private fun TableInfo.hasColumn(column: String): Boolean =
     columns.any { it.name == column }
-
-private fun TableInfo.hasUniqueKey(columns: List<String>): Boolean =
-    indexes.any { index ->
-        (index.isPrimary || index.isUnique) && index.columns == columns
-    }
 
 private fun List<JoinSpec>.hasJoin(
     leftAlias: String,

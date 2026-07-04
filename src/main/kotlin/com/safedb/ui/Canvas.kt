@@ -34,6 +34,7 @@ import com.safedb.query.joinEdgePoints
 import com.safedb.query.suggestedRelationships
 import com.safedb.query.tableLeftX
 import com.safedb.query.tableRightX
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 import kotlin.math.roundToInt
@@ -135,7 +136,7 @@ fun Canvas(
                 modifier = Modifier
                     .size(CANVAS_MIN_WIDTH_DP.dp, CANVAS_MIN_HEIGHT_DP.dp),
             ) {
-                val joinColor = MaterialTheme.colorScheme.tertiary
+                val joinColor = SafeDbTheme.colors.actionPrimary
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     suggestedRelationships(canvasTablesLike(), queryViewModel.joins).forEach { relationship ->
                         val foreign = queryViewModel.canvasTables.find { it.alias == relationship.foreignAlias }

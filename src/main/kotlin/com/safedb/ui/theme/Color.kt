@@ -15,9 +15,9 @@ import androidx.compose.ui.graphics.Color
  * `SafeDbTheme.colors`.
  *
  * Palette: Slate neutrals with a single restrained indigo accent. Primary
- * actions, selection, and focus states all use [actionPrimary] (indigo-600 in
- * light, indigo-400 in dark) so interactive elements read instantly against
- * the quiet neutral chrome. Builder joins stay on tertiary amber.
+ * actions, selection, joins, and focus states all use [actionPrimary]
+ * (indigo-600 in light, indigo-400 in dark) so interactive elements read
+ * instantly against the quiet neutral chrome.
  */
 @Immutable
 data class SafeDbColors(

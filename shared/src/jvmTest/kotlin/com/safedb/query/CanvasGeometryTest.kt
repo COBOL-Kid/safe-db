@@ -104,6 +104,37 @@ class CanvasGeometryTest {
     }
 
     @Test
+    fun suggestedRelationshipsTrustForeignKeysWhenReferencedIndexMetadataIsMissing() {
+        val orders = canvasTable(
+            alias = "t0",
+            name = "orders",
+            foreignKeys = listOf(
+                ForeignKeyInfo(
+                    name = "orders_customer_id_fkey",
+                    columns = listOf("customer_id"),
+                    referencedSchema = "public",
+                    referencedTable = "customers",
+                    referencedColumns = listOf("id"),
+                ),
+            ),
+        )
+        val customers = canvasTable(alias = "t1", name = "customers", indexes = emptyList())
+
+        assertEquals(
+            listOf(
+                SuggestedRelationship(
+                    name = "orders_customer_id_fkey",
+                    foreignAlias = "t0",
+                    foreignColumn = "customer_id",
+                    referencedAlias = "t1",
+                    referencedColumn = "id",
+                ),
+            ),
+            suggestedRelationships(listOf(orders, customers), emptyList()),
+        )
+    }
+
+    @Test
     fun suggestedRelationshipsSkipExistingUserJoin() {
         val orders = canvasTable(
             alias = "t0",
@@ -170,7 +201,7 @@ class CanvasGeometryTest {
     }
 
     @Test
-    fun suggestedRelationshipsIgnoreStaleColumnsAndNonUniqueTargets() {
+    fun suggestedRelationshipsIgnoreStaleColumnsButDoNotRequireUniqueTargetMetadata() {
         val orders = canvasTable(
             alias = "t0",
             name = "orders",
@@ -198,7 +229,12 @@ class CanvasGeometryTest {
             indexes = listOf(IndexInfo("sales_reps_id_idx", listOf("id"), isUnique = false)),
         )
 
-        assertEquals(emptyList(), suggestedRelationships(listOf(orders, customers, salesReps), emptyList()))
+        assertEquals(
+            listOf(
+                SuggestedRelationship("orders_sales_rep_fkey", "t0", "customer_id", "t2", "id"),
+            ),
+            suggestedRelationships(listOf(orders, customers, salesReps), emptyList()),
+        )
     }
 }
 

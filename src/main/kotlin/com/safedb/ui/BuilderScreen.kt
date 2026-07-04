@@ -439,7 +439,7 @@ fun BuilderScreen(
                                 val rightName = queryViewModel.canvasTables
                                     .find { it.alias == join.rightAlias }?.tableInfo?.name ?: join.rightAlias
                                 Surface(
-                                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f),
+                                    color = SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f),
                                     shape = MaterialTheme.shapes.large,
                                 ) {
                                     Row(
