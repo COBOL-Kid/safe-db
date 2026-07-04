@@ -8,6 +8,7 @@ import com.safedb.model.HistoryEntry
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultColumn
+import com.safedb.model.ResultCell
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
@@ -73,6 +74,35 @@ class AppViewModelTest {
         advanceUntilIdle()
 
         assertTrue(service.locked)
+    }
+
+    @Test
+    fun openExploreCreatesSessionAndCloseClearsIt() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = ConnectionDef(
+            id = "c1",
+            name = "Local",
+            dialect = Dialect.MySql,
+            host = "localhost",
+            port = 3306,
+            database = "safedb",
+            username = "root",
+        )
+        val result = QueryResult(
+            columns = listOf(ResultColumn("t0__status", "varchar")),
+            rows = listOf(listOf(ResultCell.text("pending"))),
+            rowCount = 1,
+            truncated = false,
+            warnings = emptyList(),
+        )
+
+        viewModel.openExplore(connection, sampleSpec(), result)
+
+        assertEquals("Local", viewModel.explore.value?.session?.connectionLabel)
+        viewModel.closeExplore()
+        assertNull(viewModel.explore.value)
     }
 
     @Test

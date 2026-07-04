@@ -136,6 +136,7 @@ fun BuilderScreen(
     queryViewModel: QueryViewModel,
     savedQueriesViewModel: SavedQueriesViewModel,
     schemaViewModel: SchemaViewModel,
+    onOpenExplore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showCostGuardConfirm by remember { mutableStateOf(false) }
@@ -514,7 +515,16 @@ fun BuilderScreen(
                                         )
                                     },
                             )
-                            ResultsTable(result = result, modifier = Modifier.fillMaxSize())
+                            ResultsTable(
+                                result = result,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                SecondaryButton(
+                                    onClick = onOpenExplore,
+                                ) {
+                                    Text("Explore")
+                                }
+                            }
                         }
                     }
                 }

@@ -126,6 +126,13 @@ fun AppShell(
                     queryViewModel = viewModel.query,
                     savedQueriesViewModel = viewModel.savedQueries,
                     schemaViewModel = viewModel.schema,
+                    onOpenExplore = {
+                        val connection = activeConnection
+                        val result = viewModel.query.results
+                        if (connection != null && result != null) {
+                            viewModel.openExplore(connection, viewModel.query.spec, result)
+                        }
+                    },
                 )
                 AppRoute.History -> HistoryScreen(
                     viewModel = viewModel,

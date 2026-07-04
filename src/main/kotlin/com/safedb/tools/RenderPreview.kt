@@ -25,8 +25,12 @@ import com.safedb.model.TableRef
 import com.safedb.model.markIndexedColumns
 import com.safedb.service.SafeDbService
 import com.safedb.ui.AppShell
+import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.ExploreViewModel
+import com.safedb.viewmodel.createExploreSession
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
 
@@ -206,6 +210,40 @@ private fun render(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
+private fun renderExplore(name: String, isDark: Boolean) {
+    val service = FakeService()
+    val spec = QuerySpec(
+        tables = listOf(TableRef("public", "orders", "t0")),
+        columns = emptyList(),
+        joins = emptyList(),
+        filters = FilterGroup.empty(),
+        limit = 100,
+    )
+    val sample = runBlocking { service.runQuery("c1", spec, force = false) }
+    val viewModel = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
+
+    ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
+        SafeDbTheme(isDark = isDark) {
+            androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                ExploreWindowContent(
+                    viewModel = viewModel,
+                    currentSpec = spec,
+                    onClose = {},
+                )
+            }
+        }
+    }.use { scene ->
+        scene.render(0L)
+        Thread.sleep(300)
+        val image = scene.render(300_000_000L)
+        val out = File("/tmp/safedb-preview/$name.png")
+        out.parentFile.mkdirs()
+        out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
+        println("wrote ${out.absolutePath}")
+    }
+}
+
 fun main() {
     System.setProperty("java.awt.headless", "false")
 
@@ -238,5 +276,7 @@ fun main() {
         render("history-$suffix", dark) { state, _ ->
             state.navigate(AppRoute.History)
         }
+
+        renderExplore("explore-$suffix", dark)
     }
 }

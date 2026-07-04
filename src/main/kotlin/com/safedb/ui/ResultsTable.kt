@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -37,6 +38,7 @@ import com.safedb.ui.theme.SafeDbTheme
 fun ResultsTable(
     result: QueryResult,
     modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -60,6 +62,8 @@ fun ResultsTable(
                     StatusChipKind.ERROR,
                 )
             }
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
+            actions()
         }
 
         if (result.warnings.isNotEmpty()) {

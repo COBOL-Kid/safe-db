@@ -26,6 +26,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.safedb.secrets.SecretsManager
 import com.safedb.ui.AppShell
+import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import java.awt.Dimension
@@ -35,6 +36,7 @@ import kotlinx.coroutines.runBlocking
 fun App(appState: AppState, window: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
     val settings by viewModel.settings.settings.collectAsState()
+    val exploreViewModel by viewModel.explore.collectAsState()
     val useDarkTheme = settings.theme == "dark"
     var paletteOpen by remember { mutableStateOf(false) }
 
@@ -66,6 +68,29 @@ fun App(appState: AppState, window: java.awt.Window) {
                 paletteOpen = paletteOpen,
                 onPaletteOpenChange = { paletteOpen = it },
             )
+        }
+
+        exploreViewModel?.let { explore ->
+            val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
+            Window(
+                onCloseRequest = viewModel::closeExplore,
+                title = "Explore - safe-db",
+                state = exploreWindowState,
+            ) {
+                SafeDbTheme(isDark = useDarkTheme) {
+                    val exploreBgColor = MaterialTheme.colorScheme.background
+                    SideEffect {
+                        window.background = java.awt.Color(exploreBgColor.toArgb())
+                    }
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        ExploreWindowContent(
+                            viewModel = explore,
+                            currentSpec = viewModel.query.spec,
+                            onClose = viewModel::closeExplore,
+                        )
+                    }
+                }
+            }
         }
     }
 }
