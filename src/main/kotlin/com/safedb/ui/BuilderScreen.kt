@@ -2,6 +2,7 @@ package com.safedb.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas as DrawCanvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -10,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -22,6 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -46,7 +50,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -82,6 +91,12 @@ private data class CostGuardDialogCopy(
     val message: String,
     val confirmLabel: String,
 )
+
+private enum class ResultsPaneMode {
+    Normal,
+    Maximized,
+    Minimized,
+}
 
 private fun costGuardDialogCopy(reason: String?): CostGuardDialogCopy {
     val normalized = reason.orEmpty()
@@ -144,6 +159,8 @@ fun BuilderScreen(
     var showWarningMuteConfirm by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
     var resultsHeight by remember { mutableFloatStateOf(240f) }
+    var previousResultsHeight by remember { mutableFloatStateOf(240f) }
+    var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
     val limitChoices = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5000, MAX_LIMIT)
 
@@ -414,115 +431,151 @@ fun BuilderScreen(
                         .background(MaterialTheme.colorScheme.outline),
                 )
 
-                Column(modifier = Modifier.fillMaxSize()) {
-                    queryViewModel.hydrationWarning?.let { warning ->
-                        MessageBanner(
-                            text = warning,
-                            kind = BannerKind.WARNING,
-                        ) {
-                            TextButton(onClick = { queryViewModel.dismissHydrationWarning() }) {
-                                Text("Dismiss")
-                            }
-                        }
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val maxWorkspaceHeight = maxHeight.value.coerceAtLeast(ResultsPaneMinHeight)
+                    val maxNormalHeight = maxWorkspaceHeight
+                        .coerceAtMost(ResultsPaneMaxHeight)
+                        .coerceAtLeast(ResultsPaneMinHeight)
+                    val resultsPaneHeight = when (resultsPaneMode) {
+                        ResultsPaneMode.Normal -> resultsHeight.coerceIn(ResultsPaneMinHeight, maxNormalHeight)
+                        ResultsPaneMode.Maximized -> maxWorkspaceHeight
+                        ResultsPaneMode.Minimized -> ResultsPaneHandleHeight
                     }
+                    val resultsMaximized = resultsPaneMode == ResultsPaneMode.Maximized
 
-                    if (queryViewModel.joins.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            queryViewModel.joins.forEachIndexed { index, join ->
-                                val leftName = queryViewModel.canvasTables
-                                    .find { it.alias == join.leftAlias }?.tableInfo?.name ?: join.leftAlias
-                                val rightName = queryViewModel.canvasTables
-                                    .find { it.alias == join.rightAlias }?.tableInfo?.name ?: join.rightAlias
-                                Surface(
-                                    color = SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f),
-                                    shape = MaterialTheme.shapes.large,
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (!resultsMaximized) {
+                            queryViewModel.hydrationWarning?.let { warning ->
+                                MessageBanner(
+                                    text = warning,
+                                    kind = BannerKind.WARNING,
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            "join: $leftName.${join.leftColumn} = $rightName.${join.rightColumn}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                        )
-                                        IconButton(onClick = { queryViewModel.removeJoin(index) }) {
-                                            Icon(Icons.Default.Close, contentDescription = "Remove join")
+                                    TextButton(onClick = { queryViewModel.dismissHydrationWarning() }) {
+                                        Text("Dismiss")
+                                    }
+                                }
+                            }
+
+                            if (queryViewModel.joins.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    queryViewModel.joins.forEachIndexed { index, join ->
+                                        val leftName = queryViewModel.canvasTables
+                                            .find { it.alias == join.leftAlias }?.tableInfo?.name ?: join.leftAlias
+                                        val rightName = queryViewModel.canvasTables
+                                            .find { it.alias == join.rightAlias }?.tableInfo?.name ?: join.rightAlias
+                                        Surface(
+                                            color = SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f),
+                                            shape = MaterialTheme.shapes.large,
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(
+                                                    "join: $leftName.${join.leftColumn} = $rightName.${join.rightColumn}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                )
+                                                IconButton(onClick = { queryViewModel.removeJoin(index) }) {
+                                                    Icon(Icons.Default.Close, contentDescription = "Remove join")
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                    }
 
-                    if (queryViewModel.canvasTables.isNotEmpty()) {
-                        FilterBuilder(
-                            queryViewModel = queryViewModel,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                    ) {
-                        if (queryViewModel.canvasTables.isEmpty()) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    "Click + next to a table in the sidebar to add it.",
-                                    style = MaterialTheme.typography.bodySmall,
+                            if (queryViewModel.canvasTables.isNotEmpty()) {
+                                FilterBuilder(
+                                    queryViewModel = queryViewModel,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
                                 )
                             }
-                        } else {
-                            Canvas(queryViewModel = queryViewModel, modifier = Modifier.fillMaxSize())
-                        }
-                    }
 
-                    visibleQueryError?.let { error ->
-                        MessageBanner(
-                            text = error,
-                            kind = BannerKind.ERROR,
-                        )
-                    }
-
-                    queryViewModel.results?.let { result ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(resultsHeight.dp),
-                        ) {
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .background(MaterialTheme.colorScheme.outlineVariant)
-                                    .pointerInput(Unit) {
-                                        detectDragGestures(
-                                            onDragStart = { resizing = true },
-                                            onDragEnd = { resizing = false },
-                                            onDragCancel = { resizing = false },
-                                            onDrag = { change, _ ->
-                                                resultsHeight = (resultsHeight - change.position.y).coerceIn(100f, 600f)
-                                            },
-                                        )
-                                    },
-                            )
-                            ResultsTable(
-                                result = result,
-                                modifier = Modifier.fillMaxSize(),
+                                    .weight(1f)
+                                    .fillMaxWidth(),
                             ) {
-                                SecondaryButton(
-                                    onClick = onOpenExplore,
-                                ) {
-                                    Text("Explore")
+                                if (queryViewModel.canvasTables.isEmpty()) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Text(
+                                            "Click + next to a table in the sidebar to add it.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                } else {
+                                    Canvas(queryViewModel = queryViewModel, modifier = Modifier.fillMaxSize())
+                                }
+                            }
+
+                            visibleQueryError?.let { error ->
+                                MessageBanner(
+                                    text = error,
+                                    kind = BannerKind.ERROR,
+                                )
+                            }
+                        }
+
+                        queryViewModel.results?.let { result ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(resultsPaneHeight.dp),
+                            ) {
+                                ResultsPaneResizeBar(
+                                    mode = resultsPaneMode,
+                                    resizing = resizing,
+                                    onToggleMode = {
+                                        if (resultsPaneMode == ResultsPaneMode.Maximized) {
+                                            resultsHeight = previousResultsHeight.coerceIn(
+                                                ResultsPaneMinHeight,
+                                                maxNormalHeight,
+                                            )
+                                            resultsPaneMode = ResultsPaneMode.Minimized
+                                        } else {
+                                            previousResultsHeight = resultsHeight.coerceIn(
+                                                ResultsPaneMinHeight,
+                                                maxNormalHeight,
+                                            )
+                                            resultsPaneMode = ResultsPaneMode.Maximized
+                                        }
+                                    },
+                                    onDragStart = {
+                                        resizing = true
+                                        resultsHeight = when (resultsPaneMode) {
+                                            ResultsPaneMode.Normal -> resultsHeight
+                                            ResultsPaneMode.Maximized -> maxNormalHeight
+                                            ResultsPaneMode.Minimized -> ResultsPaneMinHeight
+                                        }.coerceIn(ResultsPaneMinHeight, maxNormalHeight)
+                                        resultsPaneMode = ResultsPaneMode.Normal
+                                    },
+                                    onDragEnd = {
+                                        resizing = false
+                                    },
+                                    onDrag = { dragY ->
+                                        resultsHeight = (resultsHeight - dragY)
+                                            .coerceIn(ResultsPaneMinHeight, maxNormalHeight)
+                                    },
+                                )
+                                if (resultsPaneMode != ResultsPaneMode.Minimized) {
+                                    ResultsTable(
+                                        result = result,
+                                        modifier = Modifier.fillMaxSize(),
+                                    ) {
+                                        PrimaryButton(
+                                            onClick = onOpenExplore,
+                                        ) {
+                                            Text("Explore")
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -532,3 +585,99 @@ fun BuilderScreen(
         }
     }
 }
+
+@Composable
+private fun ResultsPaneResizeBar(
+    mode: ResultsPaneMode,
+    resizing: Boolean,
+    onToggleMode: () -> Unit,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit,
+    onDrag: (Float) -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val c = SafeDbTheme.colors
+    val active = hovered || resizing
+    val label = if (mode == ResultsPaneMode.Maximized) "Minimize results" else "Maximize results"
+    val barColor = if (active) {
+        c.accentContainer.copy(alpha = 0.85f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val gripColor = if (active) c.actionPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+    val pillColor = if (active) c.actionPrimary else MaterialTheme.colorScheme.surfaceContainerHigh
+    val pillContent = if (active) c.onActionPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ResultsPaneHandleHeight.dp)
+            .background(barColor)
+            .hoverable(interactionSource)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .semantics { contentDescription = "Resize results panel" }
+            .pointerInput(mode) {
+                detectDragGestures(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDrag(dragAmount.y)
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        DrawCanvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ResultsPaneHandleHeight.dp)
+                .padding(horizontal = 18.dp),
+        ) {
+            val strokeWidth = 1.5.dp.toPx()
+            val y = size.height / 2f
+            val centerGap = 34.dp.toPx()
+            val lineInset = 2.dp.toPx()
+            drawLine(
+                color = gripColor,
+                start = androidx.compose.ui.geometry.Offset(lineInset, y),
+                end = androidx.compose.ui.geometry.Offset(size.width / 2f - centerGap, y),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = gripColor,
+                start = androidx.compose.ui.geometry.Offset(size.width / 2f + centerGap, y),
+                end = androidx.compose.ui.geometry.Offset(size.width - lineInset, y),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(pillColor)
+                .clickable(onClick = onToggleMode)
+                .semantics { contentDescription = label }
+                .padding(horizontal = 12.dp, vertical = 1.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (mode == ResultsPaneMode.Maximized) {
+                    Icons.Default.KeyboardArrowDown
+                } else {
+                    Icons.Default.KeyboardArrowUp
+                },
+                contentDescription = label,
+                tint = pillContent,
+                modifier = Modifier.width(18.dp).height(18.dp),
+            )
+        }
+    }
+}
+
+private const val ResultsPaneMinHeight = 128f
+private const val ResultsPaneMaxHeight = 640f
+private const val ResultsPaneHandleHeight = 18f
