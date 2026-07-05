@@ -180,19 +180,24 @@ fun columnHitBounds(
     ct: CanvasTableLike,
     columnName: String,
     cardWidth: Float = CANVAS_CARD_WIDTH * ct.layoutScale,
+    cardHeight: Float = CANVAS_CARD_HEIGHT * ct.layoutScale,
     headerHeight: Float = CANVAS_HEADER_HEIGHT * ct.layoutScale,
     rowHeight: Float = CANVAS_ROW_HEIGHT * ct.layoutScale,
 ): ColumnHitBounds? {
     val idx = ct.tableInfo.columns.indexOfFirst { it.name == columnName }
     if (idx < 0) return null
-    val top = ct.y + headerHeight + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) + idx * rowHeight
+    val viewport = fieldViewportBounds(ct, cardWidth, cardHeight)
+    val rowTop = ct.y + headerHeight + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) + idx * rowHeight - ct.fieldScrollOffset
+    val rowBottom = rowTop + rowHeight
+    if (rowBottom <= viewport.top || rowTop >= viewport.bottom) return null
+    val top = maxOf(rowTop, viewport.top)
     return ColumnHitBounds(
         alias = ct.alias,
         column = columnName,
         left = ct.x + scaled(CANVAS_ROW_HIT_PAD_X, ct),
         top = top,
         right = tableRightX(ct, cardWidth) - scaled(CANVAS_ROW_HIT_PAD_X, ct),
-        bottom = top + rowHeight,
+        bottom = minOf(rowBottom, viewport.bottom),
     )
 }
 

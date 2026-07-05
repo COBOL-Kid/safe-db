@@ -252,7 +252,12 @@ private fun computeMeasure(
         )
         MeasureFn.CountDistinct -> {
             if (index == null) return ResultCell.IntegerCell(0)
-            ResultCell.IntegerCell(rows.map { stableCellKey(it.getOrNull(index)) }.distinct().count().toLong())
+            ResultCell.IntegerCell(
+                rows.mapNotNull { row ->
+                    val cell = row.getOrNull(index)
+                    if (cell == null || cell is ResultCell.Null) null else stableCellKey(cell)
+                }.distinct().count().toLong(),
+            )
         }
         MeasureFn.Sum -> decimalCells(rows, index, measure, warnings)
             .fold(BigDecimal.ZERO, BigDecimal::add)

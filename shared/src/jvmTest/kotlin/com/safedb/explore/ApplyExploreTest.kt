@@ -88,6 +88,33 @@ class ApplyExploreTest {
     }
 
     @Test
+    fun countDistinctIgnoresNullSourceValues() {
+        val sample = QueryResult(
+            columns = listOf(ResultColumn("category", "varchar"), ResultColumn("code", "varchar")),
+            rows = listOf(
+                listOf(ResultCell.text("A"), ResultCell.text("x")),
+                listOf(ResultCell.text("A"), ResultCell.text("x")),
+                listOf(ResultCell.text("A"), ResultCell.Null),
+                listOf(ResultCell.text("A"), ResultCell.Null),
+            ),
+            rowCount = 4,
+            truncated = false,
+            warnings = emptyList(),
+        )
+
+        val preview = applyExplore(
+            sample = sample,
+            config = ExploreConfig(
+                rowDimensions = listOf(PivotDimension("category")),
+                measures = listOf(PivotMeasure("codes", MeasureFn.CountDistinct, "code", "Codes")),
+                showColumnTotals = false,
+            ),
+        )
+
+        assertEquals(ResultCell.IntegerCell(1), preview.result.rows.single()[1])
+    }
+
+    @Test
     fun sortsByMeasureDescending() {
         val preview = applyExplore(
             sample = sampleResult(),

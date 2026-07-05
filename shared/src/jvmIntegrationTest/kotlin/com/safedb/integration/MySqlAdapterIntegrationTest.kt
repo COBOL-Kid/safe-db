@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @Tag("integration")
@@ -32,8 +33,13 @@ class MySqlAdapterIntegrationTest {
         try {
             assertTrue(adapter.test().isNotBlank())
             val schema = Adapter.introspectWithTimeout(adapter)
-            IntegrationFixtures.requireSeededTable(schema, "orders", setOf("id", "status"))
+            val orders = IntegrationFixtures.requireSeededTable(schema, "orders", setOf("id", "status"))
             IntegrationFixtures.requireSeededTable(schema, "customers", setOf("id", "email"))
+            val customerForeignKey = orders.foreignKeys.single { it.name == "fk_orders_customer" }
+            assertEquals(listOf("customer_id"), customerForeignKey.columns)
+            assertEquals(IntegrationAssumptions.mysqlDatabase, customerForeignKey.referencedSchema)
+            assertEquals("customers", customerForeignKey.referencedTable)
+            assertEquals(listOf("id"), customerForeignKey.referencedColumns)
         } finally {
             adapter.close()
         }

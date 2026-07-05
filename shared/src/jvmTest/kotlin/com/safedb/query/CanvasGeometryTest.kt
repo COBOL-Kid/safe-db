@@ -46,6 +46,30 @@ class CanvasGeometryTest {
     }
 
     @Test
+    fun indexedJoinTargetAtUsesScrolledVisibleColumnBounds() {
+        val left = canvasTable(alias = "t0", x = 40f, y = 40f)
+        val right = canvasTable(
+            alias = "t1",
+            x = 340f,
+            y = 40f,
+            height = 150f,
+            fieldScrollOffset = CANVAS_ROW_HEIGHT * 4,
+            columns = (0 until 10).map { ColumnInfo("col_$it", "int", nullable = true, isIndexed = true) },
+        )
+
+        val visibleCol4Y = right.y + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y + CANVAS_ROW_HEIGHT / 2f
+        assertEquals(
+            "t1" to "col_4",
+            indexedJoinTargetAt(listOf(left, right), x = 360f, y = visibleCol4Y, sourceAlias = "t0", sourceColumn = "id"),
+        )
+
+        val unscrolledCol4Y = columnY(right.copy(fieldScrollOffset = 0f), "col_4")
+        assertNull(
+            indexedJoinTargetAt(listOf(left, right), x = 360f, y = unscrolledCol4Y, sourceAlias = "t0", sourceColumn = "id"),
+        )
+    }
+
+    @Test
     fun joinEdgePointsHonorResizedTableWidth() {
         val left = canvasTable(x = 10f, y = 20f, width = 360f)
         val right = canvasTable(alias = "t1", x = 500f, y = 80f)
@@ -393,6 +417,7 @@ private fun canvasTable(
     width: Float = CANVAS_CARD_WIDTH,
     height: Float = CANVAS_CARD_HEIGHT,
     layoutScale: Float = 1f,
+    fieldScrollOffset: Float = 0f,
     columns: List<ColumnInfo> = listOf(
         ColumnInfo("id", "int", nullable = false, isIndexed = true),
         ColumnInfo("email", "varchar", nullable = true, isIndexed = false),
@@ -408,6 +433,7 @@ private fun canvasTable(
     width = width,
     height = height,
     layoutScale = layoutScale,
+    fieldScrollOffset = fieldScrollOffset,
     tableInfo = TableInfo(
         schema = "public",
         name = name,
