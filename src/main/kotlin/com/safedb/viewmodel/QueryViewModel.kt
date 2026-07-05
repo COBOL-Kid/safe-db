@@ -183,12 +183,7 @@ class QueryViewModel(
         selectedColumns.contains(columnKey(alias, column))
 
     override fun addJoin(join: JoinSpec) {
-        val exists = joins.any { j ->
-            (j.leftAlias == join.leftAlias && j.leftColumn == join.leftColumn &&
-                j.rightAlias == join.rightAlias && j.rightColumn == join.rightColumn) ||
-                (j.leftAlias == join.rightAlias && j.leftColumn == join.rightColumn &&
-                    j.rightAlias == join.leftAlias && j.rightColumn == join.leftColumn)
-        }
+        val exists = joins.any { it.matchesJoin(join) }
         if (!exists) {
             joins.add(join)
         }
@@ -196,6 +191,13 @@ class QueryViewModel(
 
     fun removeJoin(index: Int) {
         if (index in joins.indices) {
+            joins.removeAt(index)
+        }
+    }
+
+    fun removeJoin(join: JoinSpec) {
+        val index = joins.indexOfFirst { it.matchesJoin(join) }
+        if (index >= 0) {
             joins.removeAt(index)
         }
     }
@@ -366,6 +368,12 @@ class QueryViewModel(
         }
     }
 }
+
+private fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
+    (leftAlias == other.leftAlias && leftColumn == other.leftColumn &&
+        rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
+        (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
+            rightAlias == other.leftAlias && rightColumn == other.leftColumn)
 
 private fun newNodeId(): String = UUID.randomUUID().toString()
 

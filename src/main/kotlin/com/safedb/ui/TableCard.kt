@@ -40,7 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -358,6 +360,7 @@ fun TableCard(
                 Box(
                     modifier = Modifier
                         .size(20.dp)
+                        .pointerHoverIcon(PointerIcon.Hand)
                         .semantics { contentDescription = "Resize table" }
                         .pointerInput(alias) {
                             detectDragGestures(

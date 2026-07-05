@@ -20,9 +20,9 @@ class CanvasGeometryTest {
 
         assertEquals("t0", bounds.alias)
         assertEquals("email", bounds.column)
-        assertTrue(bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT + CANVAS_ROW_HEIGHT + 4f))
-        assertFalse(bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT - 1f))
-        assertFalse(bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT + (CANVAS_ROW_HEIGHT * 2) + 2f))
+        assertTrue(bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y + CANVAS_ROW_HEIGHT + 4f))
+        assertFalse(bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y - 1f))
+        assertFalse(bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y + (CANVAS_ROW_HEIGHT * 2) + 2f))
     }
 
     @Test
@@ -59,7 +59,7 @@ class CanvasGeometryTest {
     }
 
     @Test
-    fun columnJoinPortAlignsToVisibleColumnRowAndSide() {
+    fun columnJoinPortAlignsToVisibleColumnRowAndSideEdge() {
         val table = canvasTable(x = 40f, y = 80f, width = 260f)
 
         val port = assertNotNull(columnJoinPort(table, "org_id", JoinPortSide.Right))
@@ -68,6 +68,17 @@ class CanvasGeometryTest {
         assertEquals(columnY(table, "org_id"), port.point.y)
         assertEquals(JoinPortSide.Right, port.side)
         assertEquals(JoinPortVisibility.Visible, port.visibility)
+    }
+
+    @Test
+    fun columnJoinPortScalesToRenderedCardSizeOnHighDensityDisplays() {
+        val table = canvasTable(x = 40f, y = 30f, width = 448f, height = 448f, layoutScale = 2f)
+
+        val port = assertNotNull(columnJoinPort(table, "id", JoinPortSide.Right))
+
+        assertEquals(40f + 448f, port.point.x)
+        assertEquals(30f + CANVAS_HEADER_HEIGHT * 2f + CANVAS_FIELD_BODY_PADDING_Y * 2f + CANVAS_ROW_HEIGHT, port.point.y)
+        assertEquals(40f + 448f, tableRightX(table))
     }
 
     @Test
@@ -83,9 +94,9 @@ class CanvasGeometryTest {
         val scrolled = assertNotNull(columnJoinPort(table.copy(fieldScrollOffset = CANVAS_ROW_HEIGHT * 4), "col_0", JoinPortSide.Left))
 
         assertEquals(JoinPortVisibility.HiddenBelow, below.visibility)
-        assertEquals(table.y + table.height!! - CANVAS_RESIZE_FOOTER_HEIGHT - 8f, below.point.y)
+        assertEquals(table.y + table.height!! - CANVAS_RESIZE_FOOTER_HEIGHT - CANVAS_FIELD_BODY_PADDING_Y - 8f, below.point.y)
         assertEquals(JoinPortVisibility.HiddenAbove, scrolled.visibility)
-        assertEquals(table.y + CANVAS_HEADER_HEIGHT + 8f, scrolled.point.y)
+        assertEquals(table.y + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y + 8f, scrolled.point.y)
     }
 
     @Test
@@ -97,22 +108,30 @@ class CanvasGeometryTest {
         val edge = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target, blocker)))
 
         assertEquals(tableRightX(source), edge.sourcePort.point.x)
-        assertEquals(tableLeftX(target), edge.targetPort.point.x)
+        assertEquals(tableRightX(target), edge.targetPort.point.x)
+        assertEquals(tableRightX(source), edge.points.first().x)
+        assertEquals(tableRightX(source) + JOIN_PORT_EXIT, edge.points[1].x)
+        assertEquals(tableRightX(target) + JOIN_PORT_EXIT, edge.points[edge.points.lastIndex - 1].x)
+        assertEquals(tableRightX(target), edge.points.last().x)
         assertTrue(edge.points.size >= 4)
         assertFalse(edgeIntersects(edge.points, tableBounds(blocker).expanded(JOIN_ROUTE_MARGIN)))
     }
 
     @Test
-    fun routeJoinEdgeChoosesSidesForRightToLeftTables() {
+    fun routeJoinEdgeUsesRightSideEdgesForRightToLeftTables() {
         val source = canvasTable(alias = "t0", x = 620f, y = 80f, width = 220f)
         val target = canvasTable(alias = "t1", x = 20f, y = 80f, width = 220f)
 
         val edge = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target)))
 
-        assertEquals(JoinPortSide.Left, edge.sourcePort.side)
+        assertEquals(JoinPortSide.Right, edge.sourcePort.side)
         assertEquals(JoinPortSide.Right, edge.targetPort.side)
-        assertEquals(tableLeftX(source), edge.sourcePort.point.x)
+        assertEquals(tableRightX(source), edge.sourcePort.point.x)
         assertEquals(tableRightX(target), edge.targetPort.point.x)
+        assertEquals(tableRightX(source), edge.points.first().x)
+        assertEquals(tableRightX(source) + JOIN_PORT_EXIT, edge.points[1].x)
+        assertEquals(tableRightX(target) + JOIN_PORT_EXIT, edge.points[edge.points.lastIndex - 1].x)
+        assertEquals(tableRightX(target), edge.points.last().x)
     }
 
     @Test
@@ -135,8 +154,46 @@ class CanvasGeometryTest {
         val first = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target), laneIndex = 0))
         val second = assertNotNull(routeJoinEdge(source, "org_id", target, "id", listOf(source, target), laneIndex = 1))
 
-        assertEquals(first.sourcePort.point.x + JOIN_PORT_EXIT, first.points[1].x)
-        assertEquals(second.sourcePort.point.x + JOIN_PORT_EXIT + JOIN_ROUTE_LANE_STEP, second.points[1].x)
+        assertEquals(tableRightX(source) + JOIN_PORT_EXIT, first.points[1].x)
+        assertEquals(tableRightX(source) + JOIN_PORT_EXIT + JOIN_ROUTE_LANE_STEP, second.points[1].x)
+    }
+
+    @Test
+    fun pathHitTestingMatchesHorizontalAndVerticalSegmentsWithinTolerance() {
+        val points = listOf(
+            CanvasPoint(10f, 20f),
+            CanvasPoint(90f, 20f),
+            CanvasPoint(90f, 80f),
+        )
+
+        assertTrue(pathContainsPoint(points, CanvasPoint(55f, 25f), tolerance = 6f))
+        assertTrue(pathContainsPoint(points, CanvasPoint(84f, 60f), tolerance = 6f))
+        assertFalse(pathContainsPoint(points, CanvasPoint(55f, 30.5f), tolerance = 6f))
+        assertFalse(pathContainsPoint(points, CanvasPoint(75f, 60f), tolerance = 6f))
+    }
+
+    @Test
+    fun pathHitTestingIncludesEndpointsAndShortSegments() {
+        val points = listOf(CanvasPoint(10f, 10f), CanvasPoint(12f, 10f))
+
+        assertTrue(pathContainsPoint(points, CanvasPoint(10f, 10f), tolerance = 1f))
+        assertTrue(pathContainsPoint(points, CanvasPoint(11f, 10.5f), tolerance = 1f))
+        assertFalse(pathContainsPoint(points, CanvasPoint(11f, 12f), tolerance = 1f))
+    }
+
+    @Test
+    fun routedEdgeHitTestingUsesScaledToleranceWhenProvided() {
+        val source = canvasTable(alias = "t0", x = 20f, y = 80f, width = 440f, height = 448f, layoutScale = 2f)
+        val target = canvasTable(alias = "t1", x = 900f, y = 80f, width = 440f, height = 448f, layoutScale = 2f)
+        val edge = assertNotNull(routeJoinEdge(source, "id", target, "customer_id", listOf(source, target)))
+
+        val firstSegmentStart = edge.points.first()
+        val firstSegmentEnd = edge.points[1]
+        val midX = (firstSegmentStart.x + firstSegmentEnd.x) / 2f
+        val midY = firstSegmentStart.y
+
+        assertTrue(routedEdgeContainsPoint(edge, midX, midY + 19f, tolerance = JOIN_LINE_HIT_TOLERANCE * source.layoutScale))
+        assertFalse(routedEdgeContainsPoint(edge, midX, midY + 21f, tolerance = JOIN_LINE_HIT_TOLERANCE * source.layoutScale))
     }
 
     @Test
@@ -335,6 +392,7 @@ private fun canvasTable(
     y: Float = 0f,
     width: Float = CANVAS_CARD_WIDTH,
     height: Float = CANVAS_CARD_HEIGHT,
+    layoutScale: Float = 1f,
     columns: List<ColumnInfo> = listOf(
         ColumnInfo("id", "int", nullable = false, isIndexed = true),
         ColumnInfo("email", "varchar", nullable = true, isIndexed = false),
@@ -349,6 +407,7 @@ private fun canvasTable(
     y = y,
     width = width,
     height = height,
+    layoutScale = layoutScale,
     tableInfo = TableInfo(
         schema = "public",
         name = name,

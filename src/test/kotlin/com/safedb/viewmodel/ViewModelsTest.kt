@@ -4,6 +4,7 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
 import com.safedb.model.HistoryEntry
+import com.safedb.model.JoinSpec
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultColumn
@@ -135,6 +136,28 @@ class ViewModelsTest {
 
         assertNull(service.savedSettings)
         assertTrue(viewModel.saveError.value?.contains("PostgreSQL") == true)
+    }
+
+    @Test
+    fun queryViewModelRemovesJoinByExactOrReversedMatch() {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = QueryViewModel(service, scope)
+        val customerJoin = JoinSpec("t0", "customer_id", "t1", "id")
+        val productJoin = JoinSpec("t2", "product_id", "t3", "id")
+
+        viewModel.addJoin(customerJoin)
+        viewModel.addJoin(productJoin)
+
+        viewModel.removeJoin(JoinSpec("t1", "id", "t0", "customer_id"))
+
+        assertEquals(listOf(productJoin), viewModel.joins.toList())
+
+        viewModel.removeJoin(JoinSpec("t4", "id", "t5", "id"))
+        assertEquals(listOf(productJoin), viewModel.joins.toList())
+
+        viewModel.removeJoin(productJoin)
+        assertTrue(viewModel.joins.isEmpty())
     }
 }
 
