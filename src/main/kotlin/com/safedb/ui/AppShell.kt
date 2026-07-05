@@ -42,8 +42,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,6 +67,7 @@ import com.safedb.ui.components.CommandPalette
 import com.safedb.ui.components.Kbd
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun AppShell(
@@ -182,11 +185,40 @@ private fun Sidebar(
         NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
         NavItem(AppRoute.History, "History", Icons.Outlined.History),
     )
+    var railCollapsed by remember { mutableStateOf(collapsed) }
     val sidebarWidth by animateDpAsState(
-        targetValue = if (collapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
-        animationSpec = tween(durationMillis = 240),
+        targetValue = if (railCollapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
+        animationSpec = tween(durationMillis = SidebarWidthAnimationMillis),
         label = "sidebarWidth",
     )
+    var revealStep by remember { mutableIntStateOf(if (collapsed) 0 else SidebarRevealAll) }
+    var revealInitialized by remember { mutableStateOf(false) }
+
+    LaunchedEffect(collapsed) {
+        if (!revealInitialized) {
+            revealInitialized = true
+            railCollapsed = collapsed
+            revealStep = if (collapsed) 0 else SidebarRevealAll
+            return@LaunchedEffect
+        }
+
+        if (collapsed) {
+            railCollapsed = false
+            for (step in revealStep downTo 0) {
+                revealStep = step
+                delay(SidebarRevealStaggerMillis.toLong())
+            }
+            railCollapsed = true
+        } else {
+            railCollapsed = false
+            revealStep = 0
+            delay(SidebarWidthAnimationMillis.toLong())
+            for (step in 1..SidebarRevealAll) {
+                revealStep = step
+                delay(SidebarRevealStaggerMillis.toLong())
+            }
+        }
+    }
 
     Row(modifier = Modifier.fillMaxHeight()) {
         Column(
@@ -194,10 +226,11 @@ private fun Sidebar(
                 .width(sidebarWidth)
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.surfaceContainerLow),
-            horizontalAlignment = if (collapsed) Alignment.CenterHorizontally else Alignment.Start,
+            horizontalAlignment = if (railCollapsed) Alignment.CenterHorizontally else Alignment.Start,
         ) {
             SidebarHeader(
-                collapsed = collapsed,
+                collapsed = railCollapsed,
+                brandVisible = revealStep >= SidebarRevealHeader,
                 onToggleCollapsed = { onCollapsedChange(!collapsed) },
             )
 
@@ -208,19 +241,23 @@ private fun Sidebar(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                for (item in navItems) {
+                for ((index, item) in navItems.withIndex()) {
                     NavButton(
                         item = item,
                         selected = route == item.route,
-                        collapsed = collapsed,
+                        collapsed = railCollapsed,
+                        labelVisible = revealStep >= SidebarRevealFirstNav + index,
                         onClick = { onNavigate(item.route) },
                     )
                 }
             }
 
             SidebarUtilities(
-                collapsed = collapsed,
+                collapsed = railCollapsed,
                 isDark = isDark,
+                commandVisible = revealStep >= SidebarRevealCommand,
+                statusVisible = revealStep >= SidebarRevealStatus,
+                utilityButtonsVisible = revealStep >= SidebarRevealUtilityButtons,
                 onOpenPalette = onOpenPalette,
                 onOpenSettings = onOpenSettings,
                 onToggleTheme = onToggleTheme,
@@ -239,6 +276,7 @@ private fun Sidebar(
 @Composable
 private fun SidebarHeader(
     collapsed: Boolean,
+    brandVisible: Boolean,
     onToggleCollapsed: () -> Unit,
 ) {
     if (collapsed) {
@@ -265,7 +303,7 @@ private fun SidebarHeader(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             LogoMark()
-            AnimatedSidebarLabel(visible = true, modifier = Modifier.weight(1f)) {
+            AnimatedSidebarLabel(visible = brandVisible, modifier = Modifier.weight(1f)) {
                 Column {
                     Text(
                         "Safe-DB",
@@ -292,6 +330,9 @@ private fun SidebarHeader(
 private fun SidebarUtilities(
     collapsed: Boolean,
     isDark: Boolean,
+    commandVisible: Boolean,
+    statusVisible: Boolean,
+    utilityButtonsVisible: Boolean,
     onOpenPalette: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleTheme: () -> Unit,
@@ -319,52 +360,58 @@ private fun SidebarUtilities(
                 onClick = onToggleTheme,
             )
         } else {
-            SidebarCommandButton(onClick = onOpenPalette)
+            AnimatedSidebarLabel(visible = commandVisible, modifier = Modifier.fillMaxWidth()) {
+                SidebarCommandButton(onClick = onOpenPalette)
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 4.dp),
-                ) {
-                    Box(
+                AnimatedSidebarLabel(visible = statusVisible, modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier
-                            .size(7.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(SafeDbTheme.colors.success),
-                    )
-                    Column {
-                        Text(
-                            "Safe Read Mode",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            .fillMaxWidth()
+                            .padding(start = 4.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(SafeDbTheme.colors.success),
                         )
-                        Text(
-                            "No-lock · Indexed joins",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Column {
+                            Text(
+                                "Safe Read Mode",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                "No-lock · Indexed joins",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    SidebarIconButton(
-                        icon = Icons.Filled.Settings,
-                        contentDescription = "Settings",
-                        onClick = onOpenSettings,
-                    )
-                    SidebarIconButton(
-                        icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
-                        contentDescription = "Toggle theme",
-                        onClick = onToggleTheme,
-                    )
+                AnimatedSidebarLabel(visible = utilityButtonsVisible) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        SidebarIconButton(
+                            icon = Icons.Filled.Settings,
+                            contentDescription = "Settings",
+                            onClick = onOpenSettings,
+                        )
+                        SidebarIconButton(
+                            icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                            contentDescription = "Toggle theme",
+                            onClick = onToggleTheme,
+                        )
+                    }
                 }
             }
         }
@@ -474,6 +521,7 @@ private fun NavButton(
     item: NavItem,
     selected: Boolean,
     collapsed: Boolean,
+    labelVisible: Boolean,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -512,7 +560,7 @@ private fun NavButton(
             tint = content,
             modifier = Modifier.size(18.dp),
         )
-        AnimatedSidebarLabel(visible = !collapsed) {
+        AnimatedSidebarLabel(visible = labelVisible) {
             Text(
                 item.label,
                 color = content,
@@ -547,3 +595,11 @@ private data class NavItem(
 
 private val ExpandedSidebarWidth = 232.dp
 private val CollapsedSidebarWidth = 72.dp
+private const val SidebarWidthAnimationMillis = 240
+private const val SidebarRevealStaggerMillis = 55
+private const val SidebarRevealHeader = 1
+private const val SidebarRevealFirstNav = 2
+private const val SidebarRevealCommand = 6
+private const val SidebarRevealStatus = 7
+private const val SidebarRevealUtilityButtons = 8
+private const val SidebarRevealAll = SidebarRevealUtilityButtons
