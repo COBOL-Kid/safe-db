@@ -179,6 +179,7 @@ private class FakeService : SafeDbService {
 private fun render(
     name: String,
     isDark: Boolean,
+    sidebarCollapsed: Boolean = false,
     prepare: (AppState, AppViewModel) -> Unit,
 ) {
     val service = FakeService()
@@ -196,6 +197,7 @@ private fun render(
                     viewModel = viewModel,
                     paletteOpen = false,
                     onPaletteOpenChange = {},
+                    initialSidebarCollapsed = sidebarCollapsed,
                 )
             }
         }
@@ -257,6 +259,23 @@ fun main() {
         }
 
         render("builder-$suffix", dark) { state, vm ->
+            state.setActiveConnection("c1")
+            state.navigate(AppRoute.Builder)
+            vm.schema.load("c1") { loaded ->
+                if (loaded) {
+                    vm.query.addTable(vm.schema.tables[1])
+                    vm.query.addTable(vm.schema.tables[0])
+                    vm.query.moveTable("t1", 360f, 90f)
+                    vm.query.toggleColumn("t0", "id")
+                    vm.query.toggleColumn("t0", "status")
+                    vm.query.toggleColumn("t0", "total_cents")
+                    vm.query.run("c1")
+                }
+            }
+            Thread.sleep(900)
+        }
+
+        render("builder-collapsed-$suffix", dark, sidebarCollapsed = true) { state, vm ->
             state.setActiveConnection("c1")
             state.navigate(AppRoute.Builder)
             vm.schema.load("c1") { loaded ->

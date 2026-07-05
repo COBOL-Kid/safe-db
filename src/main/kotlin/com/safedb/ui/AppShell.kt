@@ -1,6 +1,13 @@
 package com.safedb.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +27,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.outlined.AccountTree
@@ -34,13 +44,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
@@ -58,6 +73,7 @@ fun AppShell(
     paletteOpen: Boolean,
     onPaletteOpenChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    initialSidebarCollapsed: Boolean = false,
 ) {
     val route by appState.route.collectAsState()
     val settingsOpen by appState.settingsOpen.collectAsState()
@@ -65,6 +81,7 @@ fun AppShell(
     val settings by viewModel.settings.settings.collectAsState()
     val isDark = settings.theme == "dark"
     val activeConnection = activeConnectionId?.let(viewModel.connections::connectionById)
+    var sidebarCollapsed by rememberSaveable { mutableStateOf(initialSidebarCollapsed) }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
         appState.setActiveConnection(connectionId)
@@ -92,6 +109,8 @@ fun AppShell(
         Sidebar(
             route = route,
             isDark = isDark,
+            collapsed = sidebarCollapsed,
+            onCollapsedChange = { sidebarCollapsed = it },
             onNavigate = appState::navigate,
             onOpenSettings = appState::openSettings,
             onOpenPalette = { onPaletteOpenChange(true) },
@@ -150,6 +169,8 @@ fun AppShell(
 private fun Sidebar(
     route: AppRoute,
     isDark: Boolean,
+    collapsed: Boolean,
+    onCollapsedChange: (Boolean) -> Unit,
     onNavigate: (AppRoute) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPalette: () -> Unit,
@@ -161,22 +182,90 @@ private fun Sidebar(
         NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
         NavItem(AppRoute.History, "History", Icons.Outlined.History),
     )
+    val sidebarWidth by animateDpAsState(
+        targetValue = if (collapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
+        animationSpec = tween(durationMillis = 240),
+        label = "sidebarWidth",
+    )
 
     Row(modifier = Modifier.fillMaxHeight()) {
         Column(
             modifier = Modifier
-                .width(232.dp)
+                .width(sidebarWidth)
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            horizontalAlignment = if (collapsed) Alignment.CenterHorizontally else Alignment.Start,
         ) {
-            Row(
+            SidebarHeader(
+                collapsed = collapsed,
+                onToggleCollapsed = { onCollapsedChange(!collapsed) },
+            )
+
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    .weight(1f)
+                    .padding(horizontal = if (collapsed) 10.dp else 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                LogoMark()
+                for (item in navItems) {
+                    NavButton(
+                        item = item,
+                        selected = route == item.route,
+                        collapsed = collapsed,
+                        onClick = { onNavigate(item.route) },
+                    )
+                }
+            }
+
+            SidebarUtilities(
+                collapsed = collapsed,
+                isDark = isDark,
+                onOpenPalette = onOpenPalette,
+                onOpenSettings = onOpenSettings,
+                onToggleTheme = onToggleTheme,
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outline),
+        )
+    }
+}
+
+@Composable
+private fun SidebarHeader(
+    collapsed: Boolean,
+    onToggleCollapsed: () -> Unit,
+) {
+    if (collapsed) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 22.dp, bottom = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            LogoMark()
+            SidebarIconButton(
+                icon = Icons.Filled.ChevronRight,
+                contentDescription = "Expand sidebar",
+                onClick = onToggleCollapsed,
+            )
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            LogoMark()
+            AnimatedSidebarLabel(visible = true, modifier = Modifier.weight(1f)) {
                 Column {
                     Text(
                         "Safe-DB",
@@ -190,83 +279,95 @@ private fun Sidebar(
                     )
                 }
             }
+            SidebarIconButton(
+                icon = Icons.Filled.ChevronLeft,
+                contentDescription = "Collapse sidebar",
+                onClick = onToggleCollapsed,
+            )
+        }
+    }
+}
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+@Composable
+private fun SidebarUtilities(
+    collapsed: Boolean,
+    isDark: Boolean,
+    onOpenPalette: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onToggleTheme: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (collapsed) {
+            SidebarIconButton(
+                icon = Icons.Filled.Search,
+                contentDescription = "Search commands",
+                onClick = onOpenPalette,
+            )
+            SidebarStatusIndicator()
+            SidebarIconButton(
+                icon = Icons.Filled.Settings,
+                contentDescription = "Settings",
+                onClick = onOpenSettings,
+            )
+            SidebarIconButton(
+                icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                contentDescription = "Toggle theme",
+                onClick = onToggleTheme,
+            )
+        } else {
+            SidebarCommandButton(onClick = onOpenPalette)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                for (item in navItems) {
-                    NavButton(
-                        item = item,
-                        selected = route == item.route,
-                        onClick = { onNavigate(item.route) },
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(SafeDbTheme.colors.success),
+                    )
+                    Column {
+                        Text(
+                            "Safe Read Mode",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "No-lock · Indexed joins",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SidebarIconButton(
+                        icon = Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        onClick = onOpenSettings,
+                    )
+                    SidebarIconButton(
+                        icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                        contentDescription = "Toggle theme",
+                        onClick = onToggleTheme,
                     )
                 }
             }
-
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                SidebarCommandButton(onClick = onOpenPalette)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 4.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(SafeDbTheme.colors.success),
-                        )
-                        Column {
-                            Text(
-                                "Safe Read Mode",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                "No-lock · Indexed joins",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        SidebarIconButton(
-                            icon = Icons.Filled.Settings,
-                            contentDescription = "Settings",
-                            onClick = onOpenSettings,
-                        )
-                        SidebarIconButton(
-                            icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
-                            contentDescription = "Toggle theme",
-                            onClick = onToggleTheme,
-                        )
-                    }
-                }
-            }
         }
-
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.outline),
-        )
     }
 }
 
@@ -286,6 +387,24 @@ private fun LogoMark() {
             color = SafeDbTheme.colors.onActionPrimary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun SidebarStatusIndicator() {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .semantics { contentDescription = "Safe Read Mode" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(RoundedCornerShape(50))
+                .background(SafeDbTheme.colors.success),
         )
     }
 }
@@ -354,6 +473,7 @@ private fun SidebarIconButton(
 private fun NavButton(
     item: NavItem,
     selected: Boolean,
+    collapsed: Boolean,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -377,22 +497,45 @@ private fun NavButton(
 
     Row(
         modifier = Modifier
-            .fillMaxWidth()
+            .then(if (collapsed) Modifier.size(44.dp) else Modifier.fillMaxWidth())
             .clip(RoundedCornerShape(9.dp))
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = if (collapsed) 0.dp else 12.dp, vertical = if (collapsed) 0.dp else 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.spacedBy(11.dp),
     ) {
-        Icon(item.icon, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
-        Text(
-            item.label,
-            color = content,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        Icon(
+            item.icon,
+            contentDescription = if (collapsed) item.label else null,
+            tint = content,
+            modifier = Modifier.size(18.dp),
         )
+        AnimatedSidebarLabel(visible = !collapsed) {
+            Text(
+                item.label,
+                color = content,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnimatedSidebarLabel(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(tween(120)) + expandHorizontally(tween(160), expandFrom = Alignment.Start),
+        exit = fadeOut(tween(80)) + shrinkHorizontally(tween(120), shrinkTowards = Alignment.Start),
+    ) {
+        content()
     }
 }
 
@@ -401,3 +544,6 @@ private data class NavItem(
     val label: String,
     val icon: ImageVector,
 )
+
+private val ExpandedSidebarWidth = 232.dp
+private val CollapsedSidebarWidth = 72.dp
