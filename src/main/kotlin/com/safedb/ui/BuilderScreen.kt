@@ -92,11 +92,22 @@ private data class CostGuardDialogCopy(
     val confirmLabel: String,
 )
 
-private enum class ResultsPaneMode {
+internal enum class ResultsPaneMode {
     Normal,
     Maximized,
-    Minimized,
 }
+
+internal data class ResultsPaneState(
+    val mode: ResultsPaneMode,
+    val height: Float,
+)
+
+internal fun toggleResultsPane(mode: ResultsPaneMode, height: Float): ResultsPaneState =
+    if (mode == ResultsPaneMode.Maximized) {
+        ResultsPaneState(ResultsPaneMode.Normal, ResultsPaneMinHeight)
+    } else {
+        ResultsPaneState(ResultsPaneMode.Maximized, height)
+    }
 
 private fun costGuardDialogCopy(reason: String?): CostGuardDialogCopy {
     val normalized = reason.orEmpty()
@@ -159,7 +170,6 @@ fun BuilderScreen(
     var showWarningMuteConfirm by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
     var resultsHeight by remember { mutableFloatStateOf(240f) }
-    var previousResultsHeight by remember { mutableFloatStateOf(240f) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
     val limitChoices = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5000, MAX_LIMIT)
@@ -439,7 +449,6 @@ fun BuilderScreen(
                     val resultsPaneHeight = when (resultsPaneMode) {
                         ResultsPaneMode.Normal -> resultsHeight.coerceIn(ResultsPaneMinHeight, maxNormalHeight)
                         ResultsPaneMode.Maximized -> maxWorkspaceHeight
-                        ResultsPaneMode.Minimized -> ResultsPaneHandleHeight
                     }
                     val resultsMaximized = resultsPaneMode == ResultsPaneMode.Maximized
 
@@ -534,26 +543,15 @@ fun BuilderScreen(
                                     mode = resultsPaneMode,
                                     resizing = resizing,
                                     onToggleMode = {
-                                        if (resultsPaneMode == ResultsPaneMode.Maximized) {
-                                            resultsHeight = previousResultsHeight.coerceIn(
-                                                ResultsPaneMinHeight,
-                                                maxNormalHeight,
-                                            )
-                                            resultsPaneMode = ResultsPaneMode.Minimized
-                                        } else {
-                                            previousResultsHeight = resultsHeight.coerceIn(
-                                                ResultsPaneMinHeight,
-                                                maxNormalHeight,
-                                            )
-                                            resultsPaneMode = ResultsPaneMode.Maximized
-                                        }
+                                        val nextState = toggleResultsPane(resultsPaneMode, resultsHeight)
+                                        resultsPaneMode = nextState.mode
+                                        resultsHeight = nextState.height
                                     },
                                     onDragStart = {
                                         resizing = true
                                         resultsHeight = when (resultsPaneMode) {
                                             ResultsPaneMode.Normal -> resultsHeight
                                             ResultsPaneMode.Maximized -> maxNormalHeight
-                                            ResultsPaneMode.Minimized -> ResultsPaneMinHeight
                                         }.coerceIn(ResultsPaneMinHeight, maxNormalHeight)
                                         resultsPaneMode = ResultsPaneMode.Normal
                                     },
@@ -565,16 +563,14 @@ fun BuilderScreen(
                                             .coerceIn(ResultsPaneMinHeight, maxNormalHeight)
                                     },
                                 )
-                                if (resultsPaneMode != ResultsPaneMode.Minimized) {
-                                    ResultsTable(
-                                        result = result,
-                                        modifier = Modifier.fillMaxSize(),
+                                ResultsTable(
+                                    result = result,
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
+                                    PrimaryButton(
+                                        onClick = onOpenExplore,
                                     ) {
-                                        PrimaryButton(
-                                            onClick = onOpenExplore,
-                                        ) {
-                                            Text("Explore")
-                                        }
+                                        Text("Explore")
                                     }
                                 }
                             }

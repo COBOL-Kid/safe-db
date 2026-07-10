@@ -6,6 +6,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.explore.MeasureFn
+import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotMeasure
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -213,7 +216,7 @@ private fun render(
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
-private fun renderExplore(name: String, isDark: Boolean) {
+private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = false) {
     val service = FakeService()
     val spec = QuerySpec(
         tables = listOf(TableRef("public", "orders", "t0")),
@@ -224,6 +227,19 @@ private fun renderExplore(name: String, isDark: Boolean) {
     )
     val sample = runBlocking { service.runQuery("c1", spec, force = false) }
     val viewModel = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
+    if (pivoted) {
+        viewModel.updateConfig {
+            it.copy(
+                rowDimensions = emptyList(),
+                columnDimension = PivotDimension("t0__status", "status"),
+                measures = listOf(
+                    PivotMeasure.countRows(),
+                    PivotMeasure("sum_t0__total_cents", MeasureFn.Sum, "t0__total_cents", "Sum total_cents"),
+                ),
+                showColumnTotals = false,
+            )
+        }
+    }
 
     ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
         SafeDbTheme(isDark = isDark) {
@@ -297,5 +313,6 @@ fun main() {
         }
 
         renderExplore("explore-$suffix", dark)
+        renderExplore("explore-pivot-$suffix", dark, pivoted = true)
     }
 }

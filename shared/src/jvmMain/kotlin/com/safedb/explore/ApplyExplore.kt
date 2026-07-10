@@ -32,12 +32,26 @@ fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResu
         byColumn.getOrPut(columnKey) { mutableListOf() }.add(row)
     }
 
+    val orderedColumnKeys = columnKeys.toList().sorted()
+    val hasGrandTotalRow = sample.rows.isNotEmpty() && config.showColumnTotals && rowDimensions.isNotEmpty()
+    val layout = buildPivotLayout(
+        rowDimensions = rowDimensions,
+        columnDimension = columnDimension,
+        columnKeys = orderedColumnKeys,
+        measures = measures,
+        config = config,
+        hasGrandTotalRow = hasGrandTotalRow,
+    )
+
     if (sample.rows.isEmpty()) {
-        val columns = buildOutputColumns(rowDimensions, columnDimension, columnKeys.toList(), measures, config)
-        return ExplorePreviewResult(QueryResult(columns, emptyList(), 0, false, sample.warnings), warnings.toList())
+        val columns = buildOutputColumns(rowDimensions, columnDimension, orderedColumnKeys, measures, config)
+        return ExplorePreviewResult(
+            result = QueryResult(columns, emptyList(), 0, false, sample.warnings),
+            warnings = warnings.toList(),
+            layout = layout,
+        )
     }
 
-    val orderedColumnKeys = columnKeys.toList().sorted()
     val rows = rowKeys.map { rowKey ->
         val byColumn = buckets[rowKey].orEmpty()
         PivotOutputRow(
@@ -63,7 +77,7 @@ fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResu
         .map { it.cells }
         .toMutableList()
 
-    if (config.showColumnTotals && rowDimensions.isNotEmpty()) {
+    if (hasGrandTotalRow) {
         rows.add(
             buildGrandTotalRow(
                 rowDimensions = rowDimensions,
@@ -89,6 +103,57 @@ fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResu
             warnings = resultWarnings,
         ),
         warnings = warnings.toList(),
+        layout = layout,
+    )
+}
+
+private fun buildPivotLayout(
+    rowDimensions: List<PivotDimension>,
+    columnDimension: PivotDimension?,
+    columnKeys: List<String>,
+    measures: List<PivotMeasure>,
+    config: ExploreConfig,
+    hasGrandTotalRow: Boolean,
+): ExplorePivotLayout {
+    var startIndex = rowDimensions.size
+    val groups = buildList {
+        if (columnDimension == null) {
+            add(
+                ExploreColumnGroup(
+                    label = null,
+                    startColumnIndex = startIndex,
+                    measureAliases = measures.map { it.alias },
+                ),
+            )
+        } else {
+            for (columnKey in columnKeys) {
+                add(
+                    ExploreColumnGroup(
+                        label = columnKey,
+                        startColumnIndex = startIndex,
+                        measureAliases = measures.map { it.alias },
+                    ),
+                )
+                startIndex += measures.size
+            }
+            if (config.showRowTotals) {
+                add(
+                    ExploreColumnGroup(
+                        label = "Total",
+                        startColumnIndex = startIndex,
+                        measureAliases = measures.map { it.alias },
+                        isTotal = true,
+                    ),
+                )
+            }
+        }
+    }
+    return ExplorePivotLayout(
+        rowDimensions = rowDimensions,
+        columnDimension = columnDimension,
+        measures = measures,
+        columnGroups = groups,
+        hasGrandTotalRow = hasGrandTotalRow,
     )
 }
 

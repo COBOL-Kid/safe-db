@@ -2,7 +2,9 @@ package com.safedb.explore
 
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.ResultColumn
 import com.safedb.model.SafeDbJson
+import com.safedb.model.TableRef
 import kotlinx.serialization.Serializable
 import java.security.MessageDigest
 
@@ -31,13 +33,14 @@ data class ExploreConfig(
     val sort: ExploreSort? = null,
 ) {
     companion object {
-        fun defaultFor(sample: QueryResult): ExploreConfig {
+        fun defaultFor(sample: QueryResult, tables: List<TableRef> = emptyList()): ExploreConfig {
+            val labels = displayColumnLabels(sample.columns, tables)
             val firstDimension = sample.columns
                 .firstOrNull { !looksUniqueIdentifier(it.name) }
                 ?: sample.columns.firstOrNull()
             return ExploreConfig(
                 rowDimensions = firstDimension?.let {
-                    listOf(PivotDimension(column = it.name, label = displayColumnLabel(it.name)))
+                    listOf(PivotDimension(column = it.name, label = labels.getValue(it.name)))
                 }.orEmpty(),
                 measures = listOf(PivotMeasure.countRows()),
             )
@@ -103,10 +106,62 @@ enum class SortDir {
 data class ExplorePreviewResult(
     val result: QueryResult,
     val warnings: List<String>,
+    val layout: ExplorePivotLayout,
+)
+
+data class ExplorePivotLayout(
+    val rowDimensions: List<PivotDimension>,
+    val columnDimension: PivotDimension?,
+    val measures: List<PivotMeasure>,
+    val columnGroups: List<ExploreColumnGroup>,
+    val hasGrandTotalRow: Boolean,
+)
+
+data class ExploreColumnGroup(
+    val label: String?,
+    val startColumnIndex: Int,
+    val measureAliases: List<String>,
+    val isTotal: Boolean = false,
 )
 
 fun displayColumnLabel(raw: String): String =
     raw.replace(Regex("^t\\d+__(.+)$"), "$1")
+
+/**
+ * Produces short labels for ordinary results and table-qualified labels only
+ * where a joined result would otherwise show duplicate field names.
+ */
+fun displayColumnLabels(
+    columns: List<ResultColumn>,
+    tables: List<TableRef> = emptyList(),
+): Map<String, String> {
+    val baseLabels = columns.associate { it.name to displayColumnLabel(it.name) }
+    val duplicateBases = baseLabels.values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+    if (duplicateBases.isEmpty()) return baseLabels
+
+    val tableByAlias = tables.associate { it.alias to it.name }
+    val qualified = columns.associate { column ->
+        val base = baseLabels.getValue(column.name)
+        if (base !in duplicateBases) {
+            column.name to base
+        } else {
+            val alias = column.name.substringBefore("__", missingDelimiterValue = "")
+            val qualifier = tableByAlias[alias] ?: alias.ifEmpty { "field" }
+            column.name to "$qualifier.$base"
+        }
+    }
+
+    val duplicateQualified = qualified.values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+    if (duplicateQualified.isEmpty()) return qualified
+    return qualified.mapValues { (raw, label) ->
+        if (label !in duplicateQualified) {
+            label
+        } else {
+            val alias = raw.substringBefore("__", missingDelimiterValue = raw)
+            "$label ($alias)"
+        }
+    }
+}
 
 fun exploreSpecHash(spec: QuerySpec): String {
     val json = SafeDbJson.lenient.encodeToString(QuerySpec.serializer(), spec)

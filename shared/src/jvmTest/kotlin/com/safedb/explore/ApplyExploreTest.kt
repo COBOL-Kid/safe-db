@@ -50,6 +50,10 @@ class ApplyExploreTest {
             listOf("region", "pending Revenue", "shipped Revenue", "Total Revenue"),
             preview.result.columns.map { it.name },
         )
+        assertEquals(listOf("pending", "shipped", "Total"), preview.layout.columnGroups.map { it.label })
+        assertEquals(listOf(1, 2, 3), preview.layout.columnGroups.map { it.startColumnIndex })
+        assertTrue(preview.layout.columnGroups.last().isTotal)
+        assertTrue(preview.layout.hasGrandTotalRow)
         assertEquals(
             listOf(
                 listOf(ResultCell.text("East"), ResultCell.IntegerCell(125), ResultCell.IntegerCell(250), ResultCell.IntegerCell(375)),

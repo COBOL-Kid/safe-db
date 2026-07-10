@@ -41,6 +41,21 @@ class ExploreViewModelTest {
     }
 
     @Test
+    fun resetRestoresInitialConfigurationAndPreview() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.updateConfig {
+            it.copy(sort = ExploreSort(ExploreSortTarget.Measure("count"), SortDir.Desc))
+        }
+
+        assertFalse(viewModel.isDefaultConfig())
+        viewModel.resetConfig()
+
+        assertTrue(viewModel.isDefaultConfig())
+        assertEquals(null, viewModel.config.sort)
+        assertEquals("pending", (viewModel.preview.result.rows.first()[0] as ResultCell.TextCell).value.text)
+    }
+
+    @Test
     fun staleDetectionUsesBaseSpecHash() {
         val baseSpec = sampleSpec()
         val viewModel = ExploreViewModel(createExploreSession(connection(), baseSpec, sampleResult()))

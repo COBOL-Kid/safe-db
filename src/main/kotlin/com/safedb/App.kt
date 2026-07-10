@@ -77,6 +77,9 @@ fun App(appState: AppState, window: java.awt.Window) {
                 title = "Explore - safe-db",
                 state = exploreWindowState,
             ) {
+                LaunchedEffect(window) {
+                    window.minimumSize = Dimension(920, 560)
+                }
                 SafeDbTheme(isDark = useDarkTheme) {
                     val exploreBgColor = MaterialTheme.colorScheme.background
                     SideEffect {

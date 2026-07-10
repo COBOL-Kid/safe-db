@@ -16,7 +16,9 @@ import java.nio.file.Path
 class ExploreViewModel(
     val session: ExploreSession,
 ) {
-    var config by mutableStateOf(ExploreConfig.defaultFor(session.sample))
+    private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
+
+    var config by mutableStateOf(defaultConfig)
         private set
     var preview by mutableStateOf(applyExplore(session.sample, config))
         private set
@@ -31,6 +33,14 @@ class ExploreViewModel(
         exportError = null
         exportMessage = null
     }
+
+    fun resetConfig() {
+        config = defaultConfig
+        preview = applyExplore(session.sample, config)
+        clearExportMessages()
+    }
+
+    fun isDefaultConfig(): Boolean = config == defaultConfig
 
     fun isStale(currentSpec: QuerySpec): Boolean =
         exploreSpecHash(currentSpec) != session.baseSpecHash
