@@ -5,6 +5,11 @@ import kotlin.test.assertEquals
 
 class LimitsTest {
     @Test
+    fun interactiveMaximumIsFiveThousand() {
+        assertEquals(5_000, MAX_LIMIT)
+    }
+
+    @Test
     fun parseLimitClampsIntRange() {
         assertEquals(1, parseLimit(0))
         assertEquals(1, parseLimit(-5))

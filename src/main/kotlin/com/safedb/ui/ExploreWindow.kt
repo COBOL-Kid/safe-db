@@ -17,12 +17,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.safedb.explore.PivotFilter
 import com.safedb.model.QuerySpec
+import com.safedb.model.QueryResult
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
@@ -47,6 +52,17 @@ fun ExploreWindowContent(
         buildExploreFieldOptions(session.sample, session.baseSpec.tables)
     }
     val stale = viewModel.isStale(currentSpec)
+    var drillResult by remember { mutableStateOf<QueryResult?>(null) }
+
+    drillResult?.let { result ->
+        ExploreDrillDialog(
+            result = result,
+            onExport = {
+                chooseCsvFile("explore-details")?.let { viewModel.saveResultCsv(result, it) }
+            },
+            onDismiss = { drillResult = null },
+        )
+    }
 
     Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -73,6 +89,7 @@ fun ExploreWindowContent(
                 config = config,
                 fields = fields,
                 onConfigChange = { next -> viewModel.updateConfig { next } },
+                memberOptionsFor = viewModel::memberOptions,
                 onReset = viewModel::resetConfig,
                 resetEnabled = !viewModel.isDefaultConfig(),
                 modifier = Modifier.width(320.dp).fillMaxHeight(),
@@ -98,10 +115,21 @@ fun ExploreWindowContent(
                     }
                 }
 
+                ExploreFilterStrip(
+                    filters = config.filters.filterIsInstance<PivotFilter.Members>().filter { it.pinned },
+                    optionsFor = viewModel::memberOptions,
+                    onSelectionChange = viewModel::updateMemberFilter,
+                )
+
                 ExplorePivotTable(
                     preview = preview,
                     config = config,
                     onConfigChange = { next -> viewModel.updateConfig { next } },
+                    onToggleRow = viewModel::toggleRowPath,
+                    onToggleColumn = viewModel::toggleColumnPath,
+                    onDrill = { rowPath, columnPath, measureAlias ->
+                        drillResult = viewModel.sourceRowsFor(rowPath, columnPath, measureAlias)
+                    },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
 

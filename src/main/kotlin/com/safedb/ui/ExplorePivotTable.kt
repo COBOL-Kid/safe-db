@@ -1,8 +1,10 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -19,8 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -30,10 +30,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -43,7 +43,11 @@ import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExplorePivotLayout
 import com.safedb.explore.ExplorePreviewResult
 import com.safedb.explore.ExploreSortTarget
+import com.safedb.explore.PivotHeaderCell
+import com.safedb.explore.PivotRowEntry
+import com.safedb.explore.PivotRowKind
 import com.safedb.explore.SortDir
+import com.safedb.explore.ShowAsMode
 import com.safedb.model.ResultCell
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
@@ -55,12 +59,15 @@ internal fun ExplorePivotTable(
     preview: ExplorePreviewResult,
     config: ExploreConfig,
     onConfigChange: (ExploreConfig) -> Unit,
+    onToggleRow: (String) -> Unit,
+    onToggleColumn: (String) -> Unit,
+    onDrill: (rowPath: String, columnPath: String, measureAlias: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val result = preview.result
     val layout = preview.layout
     val columns = remember(result.columns, result.rows) { buildResultTableColumns(result) }
-    val groupCount = result.rowCount - if (layout.hasGrandTotalRow) 1 else 0
+    val rowCount = layout.rowEntries.count { it.kind in setOf(PivotRowKind.Leaf, PivotRowKind.Subtotal) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -72,24 +79,19 @@ internal fun ExplorePivotTable(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (layout.rowDimensions.isEmpty()) "Summary" else "$groupCount group${if (groupCount == 1) "" else "s"}",
+                if (layout.rowDimensions.isEmpty()) "Summary" else "$rowCount visible group${if (rowCount == 1) "" else "s"}",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
             )
             if (result.warnings.isNotEmpty()) {
-                StatusChip(
-                    "${result.warnings.size} warning${if (result.warnings.size == 1) "" else "s"}",
-                    StatusChipKind.WARNING,
-                )
+                StatusChip("${result.warnings.size} warning${if (result.warnings.size == 1) "" else "s"}", StatusChipKind.WARNING)
             }
             Spacer(Modifier.weight(1f))
-            config.sort?.let { sort ->
-                Text(
-                    text = "Sorted ${if (sort.dir == SortDir.Asc) "ascending" else "descending"}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                "Double-click a value to show sampled rows",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         if (result.warnings.isNotEmpty()) {
@@ -100,22 +102,14 @@ internal fun ExplorePivotTable(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 result.warnings.forEach { warning ->
-                    Text(
-                        text = "⚠ $warning",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SafeDbTheme.colors.onWarningContainer,
-                    )
+                    Text("⚠ $warning", style = MaterialTheme.typography.labelSmall, color = SafeDbTheme.colors.onWarningContainer)
                 }
             }
         }
 
         if (result.rows.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "No groups to display.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text("No groups to display.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Column
         }
@@ -130,67 +124,32 @@ internal fun ExplorePivotTable(
                     .verticalScroll(verticalScroll)
                     .horizontalScroll(horizontalScroll),
             ) {
-                if (layout.columnDimension != null) {
-                    PivotGroupHeader(columns = columns, layout = layout)
+                layout.columnHeaderRows.forEach { headerRow ->
+                    PivotNestedHeaderRow(
+                        headerRow = headerRow,
+                        layout = layout,
+                        columns = columns,
+                        onToggleColumn = onToggleColumn,
+                    )
                 }
-                Row(
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    columns.forEach { column ->
-                        val index = column.index
-                        val totalColumn = layout.isTotalColumn(index)
-                        PivotLeafHeader(
-                            text = pivotLeafLabel(layout, index, column.label),
-                            width = column.widthDp,
-                            alignment = column.alignment,
-                            target = pivotSortTarget(layout, index),
-                            sortTarget = config.sort?.target,
-                            sortDirection = config.sort?.dir,
-                            total = totalColumn,
-                            onSort = { target -> onConfigChange(toggleExploreSort(config, target)) },
-                        )
-                    }
-                }
+                PivotLeafHeaderRow(layout, columns, config, onConfigChange)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                 result.rows.forEachIndexed { rowIndex, row ->
-                    val isGrandTotal = layout.hasGrandTotalRow && rowIndex == result.rows.lastIndex
-                    val interactionSource = remember { MutableInteractionSource() }
-                    val hovered by interactionSource.collectIsHoveredAsState()
-                    val rowBackground = when {
-                        isGrandTotal -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.62f)
-                        hovered -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.45f)
-                        rowIndex % 2 == 1 -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f)
-                        else -> MaterialTheme.colorScheme.surface
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(rowBackground)
-                            .hoverable(interactionSource),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        columns.forEach { column ->
-                            val cell = row.getOrNull(column.index)
-                            val totalColumn = layout.isTotalColumn(column.index)
-                            PivotCell(
-                                cell = cell,
-                                width = column.widthDp,
-                                alignment = column.alignment,
-                                emphasized = isGrandTotal || totalColumn,
-                                background = if (totalColumn && !isGrandTotal) {
-                                    SafeDbTheme.colors.accentContainer.copy(alpha = 0.28f)
-                                } else {
-                                    Color.Transparent
-                                },
-                            )
-                        }
-                    }
+                    val entry = layout.rowEntries.getOrNull(rowIndex)
+                    val formatted = layout.formattedRows.getOrNull(rowIndex).orEmpty()
+                    PivotDataRow(
+                        row = row,
+                        formatted = formatted,
+                        entry = entry,
+                        layout = layout,
+                        columns = columns,
+                        onToggleRow = onToggleRow,
+                        onDrill = onDrill,
+                    )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                 }
             }
-
             HorizontalScrollbar(
                 adapter = rememberScrollbarAdapter(horizontalScroll),
                 modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
@@ -204,110 +163,186 @@ internal fun ExplorePivotTable(
 }
 
 @Composable
-private fun PivotGroupHeader(
-    columns: List<ResultTableColumnLayout>,
+private fun PivotNestedHeaderRow(
+    headerRow: List<PivotHeaderCell>,
     layout: ExplorePivotLayout,
+    columns: List<ResultTableColumnLayout>,
+    onToggleColumn: (String) -> Unit,
 ) {
     Row(
         modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        layout.rowDimensions.indices.forEach { index ->
-            Spacer(Modifier.width(columns[index].widthDp.dp))
-        }
-        layout.columnGroups.forEach { group ->
-            val width = group.measureAliases.indices.sumOf { offset ->
-                columns.getOrNull(group.startColumnIndex + offset)?.widthDp ?: 0
-            }
-            Text(
-                text = group.label.orEmpty(),
+        val rowHeaderWidth = if (layout.rowDimensions.isNotEmpty()) columns.firstOrNull()?.widthDp ?: 0 else 0
+        if (rowHeaderWidth > 0) Spacer(Modifier.width(rowHeaderWidth.dp))
+        headerRow.forEach { header ->
+            val startColumn = (if (layout.rowDimensions.isNotEmpty()) 1 else 0) + header.startLeafIndex * layout.measures.size
+            val spanColumns = header.leafSpan * layout.measures.size
+            val width = (startColumn until startColumn + spanColumns).sumOf { columns.getOrNull(it)?.widthDp ?: 0 }
+            Row(
                 modifier = Modifier
                     .width(width.dp)
-                    .background(
-                        if (group.isTotal) SafeDbTheme.colors.accentContainer.copy(alpha = 0.5f) else Color.Transparent,
+                    .background(if (header.isTotal) SafeDbTheme.colors.accentContainer.copy(alpha = 0.45f) else Color.Transparent)
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (header.hasChildren) {
+                    Text(
+                        if (header.expanded) "−" else "+",
+                        modifier = Modifier
+                            .clickable { onToggleColumn(header.pathKey) }
+                            .pointerHoverIcon(PointerIcon.Hand)
+                            .padding(end = 5.dp),
+                        color = SafeDbTheme.colors.actionPrimary,
+                        fontWeight = FontWeight.Bold,
                     )
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (group.isTotal) {
-                    SafeDbTheme.colors.onAccentContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                }
+                Text(
+                    header.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
-private fun PivotLeafHeader(
-    text: String,
-    width: Int,
-    alignment: ResultTableCellAlignment,
-    target: ExploreSortTarget?,
-    sortTarget: ExploreSortTarget?,
-    sortDirection: SortDir?,
-    total: Boolean,
-    onSort: (ExploreSortTarget) -> Unit,
+private fun PivotLeafHeaderRow(
+    layout: ExplorePivotLayout,
+    columns: List<ResultTableColumnLayout>,
+    config: ExploreConfig,
+    onConfigChange: (ExploreConfig) -> Unit,
 ) {
-    val active = target != null && target == sortTarget
-    val label = if (active) "$text ${if (sortDirection == SortDir.Asc) "↑" else "↓"}" else text
-    Text(
-        text = label,
-        modifier = Modifier
-            .width(width.dp)
-            .background(if (total) SafeDbTheme.colors.accentContainer.copy(alpha = 0.38f) else Color.Transparent)
-            .clip(RoundedCornerShape(6.dp))
-            .then(
-                if (target != null) {
-                    Modifier
-                        .clickable { onSort(target) }
-                        .pointerHoverIcon(PointerIcon.Hand)
-                } else {
-                    Modifier
-                },
+    Row(
+        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        columns.forEachIndexed { index, column ->
+            val rowHeader = layout.rowDimensions.isNotEmpty() && index == 0
+            val measureIndex = if (rowHeader) -1 else (index - if (layout.rowDimensions.isNotEmpty()) 1 else 0) % layout.measures.size
+            val measure = layout.measures.getOrNull(measureIndex)
+            val target = if (rowHeader) {
+                layout.rowDimensions.firstOrNull()?.let { ExploreSortTarget.Dimension(it.column) }
+            } else {
+                measure?.takeUnless { it.showAs.mode in orderDependentModes }
+                    ?.let { ExploreSortTarget.Measure(it.alias) }
+            }
+            val active = target != null && target == config.sort?.target
+            val label = if (rowHeader) {
+                "Row labels"
+            } else {
+                measure?.label ?: column.label
+            } + if (active) " ${if (config.sort?.dir == SortDir.Asc) "↑" else "↓"}" else ""
+            Text(
+                label,
+                modifier = Modifier
+                    .width(column.widthDp.dp)
+                    .then(
+                        if (target != null) Modifier.clickable { onConfigChange(toggleExploreSort(config, target)) }
+                            .pointerHoverIcon(PointerIcon.Hand) else Modifier,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                style = DataMono.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium),
+                color = if (active) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = column.alignment.textAlign(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-        style = DataMono.copy(fontWeight = if (active || total) FontWeight.SemiBold else FontWeight.Medium),
-        color = if (active) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = alignment.textAlign(),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+        }
+    }
 }
 
 @Composable
-private fun PivotCell(
-    cell: ResultCell?,
-    width: Int,
-    alignment: ResultTableCellAlignment,
-    emphasized: Boolean,
-    background: Color,
+private fun PivotDataRow(
+    row: List<ResultCell>,
+    formatted: List<String>,
+    entry: PivotRowEntry?,
+    layout: ExplorePivotLayout,
+    columns: List<ResultTableColumnLayout>,
+    onToggleRow: (String) -> Unit,
+    onDrill: (String, String, String) -> Unit,
 ) {
-    val isNull = cell == null || cell is ResultCell.Null
-    Text(
-        text = if (isNull) "null" else formatCell(cell),
-        modifier = Modifier
-            .width(width.dp)
-            .background(background)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-        style = DataMono.copy(
-            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
-            fontStyle = if (isNull) FontStyle.Italic else FontStyle.Normal,
-        ),
-        color = if (isNull) {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
-        textAlign = alignment.textAlign(),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val emphasized = entry?.kind in setOf(PivotRowKind.Subtotal, PivotRowKind.GrandTotal)
+    val background = when {
+        entry?.kind == PivotRowKind.GrandTotal -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.62f)
+        entry?.kind == PivotRowKind.Subtotal -> MaterialTheme.colorScheme.surfaceContainer
+        entry?.kind == PivotRowKind.Group -> MaterialTheme.colorScheme.surfaceContainerLow
+        hovered -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.38f)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().background(background).hoverable(interactionSource),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        columns.forEachIndexed { columnIndex, column ->
+            val rowHeader = layout.rowDimensions.isNotEmpty() && columnIndex == 0
+            if (rowHeader) {
+                Row(
+                    modifier = Modifier
+                        .width(column.widthDp.dp)
+                        .padding(start = (10 + (entry?.depth ?: 0) * 16).dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (entry?.hasChildren == true) {
+                        Text(
+                            if (entry.expanded) "−" else "+",
+                            modifier = Modifier
+                                .clickable { onToggleRow(entry.pathKey) }
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .padding(end = 6.dp),
+                            color = SafeDbTheme.colors.actionPrimary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    } else if ((entry?.depth ?: 0) > 0) {
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Text(
+                        formatted.getOrNull(columnIndex) ?: formatCell(row.getOrNull(columnIndex)),
+                        style = DataMono.copy(fontWeight = if (emphasized || entry?.kind == PivotRowKind.Group) FontWeight.SemiBold else FontWeight.Normal),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                val valueOffset = columnIndex - if (layout.rowDimensions.isNotEmpty()) 1 else 0
+                val leafIndex = valueOffset / layout.measures.size
+                val measureIndex = valueOffset % layout.measures.size
+                val leaf = layout.columnLeaves.getOrNull(leafIndex)
+                val measure = layout.measures.getOrNull(measureIndex)
+                val cell = row.getOrNull(columnIndex)
+                val text = formatted.getOrNull(columnIndex) ?: formatCell(cell)
+                Text(
+                    if (cell is ResultCell.Null) "" else text,
+                    modifier = Modifier
+                        .width(column.widthDp.dp)
+                        .pointerInput(entry?.pathKey, leaf?.pathKey, measure?.alias) {
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    if (entry != null && leaf != null && measure != null && entry.kind != PivotRowKind.Group) {
+                                        onDrill(entry.pathKey, leaf.pathKey, measure.alias)
+                                    }
+                                },
+                            )
+                        }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    style = DataMono.copy(
+                        fontWeight = if (emphasized || leaf?.isGrandTotal == true || leaf?.isSubtotal == true) FontWeight.SemiBold else FontWeight.Normal,
+                        fontStyle = if (cell is ResultCell.Null) FontStyle.Italic else FontStyle.Normal,
+                    ),
+                    textAlign = column.alignment.textAlign(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
 }
 
 private fun ResultTableCellAlignment.textAlign(): TextAlign = when (this) {
@@ -316,27 +351,23 @@ private fun ResultTableCellAlignment.textAlign(): TextAlign = when (this) {
 }
 
 internal fun pivotSortTarget(layout: ExplorePivotLayout, columnIndex: Int): ExploreSortTarget? {
-    layout.rowDimensions.getOrNull(columnIndex)?.let { return ExploreSortTarget.Dimension(it.column) }
-    val group = layout.columnGroups.firstOrNull { candidate ->
-        columnIndex >= candidate.startColumnIndex &&
-            columnIndex < candidate.startColumnIndex + candidate.measureAliases.size
-    } ?: return null
-    val offset = columnIndex - group.startColumnIndex
-    return group.measureAliases.getOrNull(offset)?.let(ExploreSortTarget::Measure)
+    if (layout.rowDimensions.isNotEmpty() && columnIndex == 0) {
+        return layout.rowDimensions.firstOrNull()?.let { ExploreSortTarget.Dimension(it.column) }
+    }
+    val offset = columnIndex - if (layout.rowDimensions.isNotEmpty()) 1 else 0
+    if (offset < 0 || layout.measures.isEmpty()) return null
+    return layout.measures.getOrNull(offset % layout.measures.size)?.let { ExploreSortTarget.Measure(it.alias) }
 }
 
-internal fun pivotLeafLabel(
-    layout: ExplorePivotLayout,
-    columnIndex: Int,
-    fallback: String,
-): String {
-    layout.rowDimensions.getOrNull(columnIndex)?.let { return it.label }
+internal fun pivotLeafLabel(layout: ExplorePivotLayout, columnIndex: Int, fallback: String): String {
+    if (layout.rowDimensions.isNotEmpty() && columnIndex == 0) return "Row labels"
     val target = pivotSortTarget(layout, columnIndex) as? ExploreSortTarget.Measure ?: return fallback
     return layout.measures.firstOrNull { it.alias == target.alias }?.label ?: fallback
 }
 
-private fun ExplorePivotLayout.isTotalColumn(columnIndex: Int): Boolean =
-    columnGroups.any { group ->
-        group.isTotal && columnIndex >= group.startColumnIndex &&
-            columnIndex < group.startColumnIndex + group.measureAliases.size
-    }
+private val orderDependentModes = setOf(
+    ShowAsMode.DifferenceFrom,
+    ShowAsMode.PercentDifferenceFrom,
+    ShowAsMode.RunningTotal,
+    ShowAsMode.PercentRunningTotal,
+)

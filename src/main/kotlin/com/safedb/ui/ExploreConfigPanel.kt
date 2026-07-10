@@ -48,23 +48,89 @@ import androidx.compose.ui.unit.dp
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.SortDir
+import com.safedb.explore.SubtotalPosition
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.MemberOption
+import java.util.UUID
 
 @Composable
 internal fun ExploreConfigPanel(
     config: ExploreConfig,
     fields: List<ExploreFieldOption>,
     onConfigChange: (ExploreConfig) -> Unit,
+    memberOptionsFor: (String) -> List<MemberOption>,
     onReset: () -> Unit,
     resetEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var optionsExpanded by remember { mutableStateOf(false) }
+    var editingDimension by remember { mutableStateOf<PivotDimension?>(null) }
+    var editingMeasure by remember { mutableStateOf<PivotMeasure?>(null) }
+    var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
+    var addingCalculatedMeasure by remember { mutableStateOf(false) }
+
+    editingDimension?.let { dimension ->
+        DimensionSettingsDialog(
+            dimension = dimension,
+            field = fields.firstOrNull { it.column == dimension.column },
+            measures = config.measures,
+            onSave = { updated ->
+                onConfigChange(
+                    config.copy(
+                        rowDimensions = config.rowDimensions.map { if (it.id == updated.id) updated else it },
+                        columnDimensions = config.effectiveColumnDimensions.map { if (it.id == updated.id) updated else it },
+                        columnDimension = null,
+                    ),
+                )
+                editingDimension = null
+            },
+            onDismiss = { editingDimension = null },
+        )
+    }
+    editingMeasure?.let { measure ->
+        MeasureSettingsDialog(
+            measure = measure,
+            dimensions = config.rowDimensions + config.effectiveColumnDimensions,
+            availableFunctions = measure.sourceColumn
+                ?.let { source -> fields.firstOrNull { it.column == source } }
+                ?.let(::availableMeasureFunctions)
+                ?: listOf(MeasureFn.Count),
+            onSave = { updated ->
+                onConfigChange(config.copy(measures = config.measures.map { if (it.alias == updated.alias) updated else it }))
+                editingMeasure = null
+            },
+            onDismiss = { editingMeasure = null },
+        )
+    }
+    if (addingCalculatedMeasure) {
+        CalculatedMeasureDialog(
+            existing = config.measures,
+            onSave = { calculated ->
+                onConfigChange(config.copy(measures = config.measures + calculated))
+                addingCalculatedMeasure = false
+            },
+            onDismiss = { addingCalculatedMeasure = false },
+        )
+    }
+    editingFilter?.let { filter ->
+        FilterSettingsDialog(
+            filter = filter,
+            measures = config.measures,
+            memberOptions = memberOptionsFor(filter.column),
+            onSave = { updated ->
+                onConfigChange(config.copy(filters = config.filters.map { if (it.id == updated.id) updated else it }))
+                editingFilter = null
+            },
+            onDismiss = { editingFilter = null },
+        )
+    }
 
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
         Column(
@@ -96,6 +162,7 @@ internal fun ExploreConfigPanel(
                     FieldChip(
                         label = dimension.label,
                         supportingText = field?.dataType,
+                        onClick = { editingDimension = dimension },
                         onRemove = {
                             onConfigChange(config.copy(rowDimensions = config.rowDimensions - dimension))
                         },
@@ -113,38 +180,69 @@ internal fun ExploreConfigPanel(
                 }
                 FieldPickerButton(
                     label = "Add field",
-                    fields = fields.filterNot { candidate ->
-                        config.rowDimensions.any { it.column == candidate.column }
-                    },
+                    fields = fields,
                     onSelect = { field ->
-                        onConfigChange(config.copy(rowDimensions = config.rowDimensions + field.asDimension()))
+                        val dimension = field.asDimension().copy(id = "${field.column}:${UUID.randomUUID()}")
+                        onConfigChange(config.copy(rowDimensions = config.rowDimensions + dimension))
                     },
                 )
             }
 
-            FieldWell(title = "Split into columns") {
-                val columnDimension = config.columnDimension
-                columnDimension?.let { dimension ->
+            FieldWell(title = "Columns") {
+                val columnDimensions = config.effectiveColumnDimensions
+                columnDimensions.forEachIndexed { index, dimension ->
                     val field = fields.firstOrNull { it.column == dimension.column }
                     FieldChip(
                         label = dimension.label,
                         supportingText = field?.dataType,
-                        onRemove = { onConfigChange(config.copy(columnDimension = null)) },
+                        onClick = { editingDimension = dimension },
+                        onRemove = {
+                            onConfigChange(
+                                config.copy(
+                                    columnDimensions = columnDimensions - dimension,
+                                    columnDimension = null,
+                                ),
+                            )
+                        },
+                        onMoveUp = if (index > 0) {
+                            {
+                                onConfigChange(
+                                    config.copy(
+                                        columnDimensions = moveDimension(columnDimensions, dimension, -1),
+                                        columnDimension = null,
+                                    ),
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        onMoveDown = if (index < columnDimensions.lastIndex) {
+                            {
+                                onConfigChange(
+                                    config.copy(
+                                        columnDimensions = moveDimension(columnDimensions, dimension, 1),
+                                        columnDimension = null,
+                                    ),
+                                )
+                            }
+                        } else {
+                            null
+                        },
                     )
                 }
-                if (columnDimension == null) {
-                    FieldPickerButton(
-                        label = "Add field",
-                        fields = fields,
-                        onSelect = { onConfigChange(config.copy(columnDimension = it.asDimension())) },
-                    )
-                } else {
-                    FieldPickerButton(
-                        label = "Replace field",
-                        fields = fields.filterNot { it.column == columnDimension.column },
-                        onSelect = { onConfigChange(config.copy(columnDimension = it.asDimension())) },
-                    )
-                }
+                FieldPickerButton(
+                    label = "Add field",
+                    fields = fields,
+                    onSelect = { field ->
+                        val dimension = field.asDimension().copy(id = "${field.column}:${UUID.randomUUID()}")
+                        onConfigChange(
+                            config.copy(
+                                columnDimensions = columnDimensions + dimension,
+                                columnDimension = null,
+                            ),
+                        )
+                    },
+                )
             }
 
             FieldWell(title = "Values") {
@@ -152,6 +250,7 @@ internal fun ExploreConfigPanel(
                     FieldChip(
                         label = measure.label,
                         supportingText = measureSupportingText(measure, fields),
+                        onClick = { editingMeasure = measure },
                         onRemove = if (config.measures.size > 1) {
                             { onConfigChange(config.copy(measures = config.measures - measure)) }
                         } else {
@@ -163,6 +262,37 @@ internal fun ExploreConfigPanel(
                     fields = fields,
                     existing = config.measures,
                     onSelect = { onConfigChange(config.copy(measures = config.measures + it)) },
+                    onAddCalculated = { addingCalculatedMeasure = true },
+                )
+            }
+
+            FieldWell(title = "Filters") {
+                config.filters.forEach { filter ->
+                    FieldChip(
+                        label = filter.label,
+                        supportingText = when (filter) {
+                            is PivotFilter.Members -> if (filter.includedKeys.isEmpty()) "All values · pinned" else "${filter.includedKeys.size} selected · pinned"
+                            is PivotFilter.Label -> "${humanizeEnumName(filter.op.name)} ${filter.value}"
+                            is PivotFilter.Value -> humanizeEnumName(filter.op.name)
+                        },
+                        onClick = { editingFilter = filter },
+                        onRemove = { onConfigChange(config.copy(filters = config.filters - filter)) },
+                    )
+                }
+                FieldPickerButton(
+                    label = "Add filter",
+                    fields = fields.filterNot { field -> config.filters.any { it.column == field.column } },
+                    onSelect = { field ->
+                        onConfigChange(
+                            config.copy(
+                                filters = config.filters + PivotFilter.Members(
+                                    id = UUID.randomUUID().toString(),
+                                    column = field.column,
+                                    label = field.label,
+                                ),
+                            ),
+                        )
+                    },
                 )
             }
 
@@ -193,7 +323,7 @@ internal fun ExploreConfigPanel(
 
             if (optionsExpanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (config.columnDimension != null) {
+                    if (config.effectiveColumnDimensions.isNotEmpty()) {
                         ExploreToggleRow(
                             label = "Show row totals",
                             checked = config.showRowTotals,
@@ -205,6 +335,28 @@ internal fun ExploreConfigPanel(
                         checked = config.showColumnTotals,
                         onCheckedChange = { onConfigChange(config.copy(showColumnTotals = it)) },
                     )
+                    ExploreToggleRow(
+                        label = "Show subtotals",
+                        checked = config.showSubtotals,
+                        onCheckedChange = { onConfigChange(config.copy(showSubtotals = it)) },
+                    )
+                    if (config.showSubtotals) {
+                        TextButton(
+                            onClick = {
+                                onConfigChange(
+                                    config.copy(
+                                        subtotalPosition = if (config.subtotalPosition == SubtotalPosition.Bottom) {
+                                            SubtotalPosition.Top
+                                        } else {
+                                            SubtotalPosition.Bottom
+                                        },
+                                    ),
+                                )
+                            },
+                        ) {
+                            Text("Subtotals: ${config.subtotalPosition.name.lowercase()}")
+                        }
+                    }
                     config.sort?.let { sort ->
                         HorizontalDivider(
                             modifier = Modifier.padding(vertical = 6.dp),
@@ -254,6 +406,7 @@ private fun FieldChip(
     label: String,
     supportingText: String?,
     onRemove: (() -> Unit)?,
+    onClick: (() -> Unit)? = null,
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
 ) {
@@ -267,7 +420,17 @@ private fun FieldChip(
             modifier = Modifier.padding(start = 11.dp, end = 5.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (onClick != null) {
+                            Modifier.clickable(onClick = onClick).pointerHoverIcon(PointerIcon.Hand)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
                 Text(
                     label,
                     style = MaterialTheme.typography.bodySmall,
@@ -372,17 +535,13 @@ private fun MeasurePickerButton(
     fields: List<ExploreFieldOption>,
     existing: List<PivotMeasure>,
     onSelect: (PivotMeasure) -> Unit,
+    onAddCalculated: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var selectedField by remember { mutableStateOf<ExploreFieldOption?>(null) }
-    val countRowsAvailable = existing.none { it.fn == MeasureFn.Count && it.sourceColumn == null }
-    val availableFields = fields.filter { field ->
-        availableMeasureFunctions(field).any { fn ->
-            val candidate = measureFor(field, fn)
-            existing.none { it.alias == candidate.alias }
-        }
-    }
+    val countRowsAvailable = true
+    val availableFields = fields
     val filteredFields = availableFields.filter { field ->
         query.isBlank() || field.label.contains(query, ignoreCase = true) ||
             field.dataType.contains(query, ignoreCase = true)
@@ -405,13 +564,25 @@ private fun MeasurePickerButton(
             Column(modifier = Modifier.widthIn(min = 292.dp).heightIn(max = 440.dp)) {
                 val field = selectedField
                 if (field == null) {
+                    MenuActionRow(
+                        text = "Calculated measure",
+                        supportingText = "Create a formula from existing values",
+                        onClick = {
+                            expanded = false
+                            onAddCalculated()
+                        },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
                     if (countRowsAvailable) {
                         MenuActionRow(
                             text = "Count rows",
                             supportingText = "Number of records in each group",
                             onClick = {
                                 expanded = false
-                                onSelect(PivotMeasure.countRows())
+                                onSelect(PivotMeasure.countRows("count_${UUID.randomUUID().toString().take(8)}"))
                             },
                         )
                         HorizontalDivider(
@@ -450,17 +621,15 @@ private fun MeasurePickerButton(
                     MenuSectionLabel(field.label)
                     availableMeasureFunctions(field).forEach { function ->
                         val candidate = measureFor(field, function)
-                        if (existing.none { it.alias == candidate.alias }) {
-                            MenuActionRow(
-                                text = measureFunctionLabel(function),
-                                supportingText = candidate.label,
-                                onClick = {
-                                    expanded = false
-                                    selectedField = null
-                                    onSelect(candidate)
-                                },
-                            )
-                        }
+                        MenuActionRow(
+                            text = measureFunctionLabel(function),
+                            supportingText = candidate.label,
+                            onClick = {
+                                expanded = false
+                                selectedField = null
+                                onSelect(candidate)
+                            },
+                        )
                     }
                 }
             }
@@ -551,8 +720,8 @@ private fun measureSupportingText(
 
 private fun optionsSummary(config: ExploreConfig): String {
     val totals = when {
-        config.columnDimension != null && config.showRowTotals && config.showColumnTotals -> "Row and grand totals"
-        config.columnDimension != null && config.showRowTotals -> "Row totals"
+        config.effectiveColumnDimensions.isNotEmpty() && config.showRowTotals && config.showColumnTotals -> "Row and grand totals"
+        config.effectiveColumnDimensions.isNotEmpty() && config.showRowTotals -> "Row totals"
         config.showColumnTotals -> "Grand total"
         else -> "Totals hidden"
     }
@@ -567,3 +736,8 @@ private fun sortSummary(config: ExploreConfig): String {
     } ?: "Unknown field"
     return "$target, ${if (sort.dir == SortDir.Asc) "ascending" else "descending"}"
 }
+
+private fun humanizeEnumName(raw: String): String = raw
+    .replace(Regex("([a-z])([A-Z])"), "$1 $2")
+    .lowercase()
+    .replaceFirstChar(Char::uppercase)

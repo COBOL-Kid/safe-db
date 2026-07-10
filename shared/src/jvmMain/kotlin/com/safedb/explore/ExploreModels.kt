@@ -7,8 +7,12 @@ import com.safedb.model.SafeDbJson
 import com.safedb.model.TableRef
 import kotlinx.serialization.Serializable
 import java.security.MessageDigest
+import java.util.Currency
+import java.util.Locale
 
-const val EXPLORE_SCHEMA_VERSION = 1
+const val EXPLORE_SCHEMA_VERSION = 2
+const val MAX_VISIBLE_PIVOT_CELLS = 100_000
+const val MAX_VISIBLE_COLUMN_LEAVES = 500
 
 @Serializable
 data class ExploreSession(
@@ -25,13 +29,23 @@ data class ExploreSession(
 data class ExploreConfig(
     val schemaVersion: Int = EXPLORE_SCHEMA_VERSION,
     val rowDimensions: List<PivotDimension> = emptyList(),
+    val columnDimensions: List<PivotDimension> = emptyList(),
+    /** Compatibility bridge for v1 callers; new code uses [columnDimensions]. */
     val columnDimension: PivotDimension? = null,
     val measures: List<PivotMeasure> = listOf(PivotMeasure.countRows()),
+    val filters: List<PivotFilter> = emptyList(),
     val showRowTotals: Boolean = true,
     val showColumnTotals: Boolean = true,
+    val showSubtotals: Boolean = true,
+    val subtotalPosition: SubtotalPosition = SubtotalPosition.Bottom,
+    val collapsedRowPaths: Set<String> = emptySet(),
+    val collapsedColumnPaths: Set<String> = emptySet(),
     val nullBucketLabel: String = "(blank)",
     val sort: ExploreSort? = null,
 ) {
+    val effectiveColumnDimensions: List<PivotDimension>
+        get() = columnDimensions.ifEmpty { listOfNotNull(columnDimension) }
+
     companion object {
         fun defaultFor(sample: QueryResult, tables: List<TableRef> = emptyList()): ExploreConfig {
             val labels = displayColumnLabels(sample.columns, tables)
@@ -57,7 +71,51 @@ data class ExploreConfig(
 data class PivotDimension(
     val column: String,
     val label: String = displayColumnLabel(column),
+    val id: String = column,
+    val grouping: PivotGrouping = PivotGrouping.Exact,
+    val showSubtotals: Boolean = true,
+    val sortMode: DimensionSortMode = DimensionSortMode.SourceOrder,
+    val sortMeasureAlias: String? = null,
 )
+
+@Serializable
+enum class DimensionSortMode {
+    SourceOrder,
+    LabelAscending,
+    LabelDescending,
+    ValueAscending,
+    ValueDescending,
+}
+
+@Serializable
+sealed class PivotGrouping {
+    @Serializable
+    data object Exact : PivotGrouping()
+
+    @Serializable
+    data class Date(val unit: DateGroupUnit) : PivotGrouping()
+
+    @Serializable
+    data class NumberBin(
+        val size: String,
+        val start: String? = null,
+    ) : PivotGrouping()
+}
+
+@Serializable
+enum class DateGroupUnit {
+    Year,
+    Quarter,
+    Month,
+    IsoWeek,
+    Day,
+}
+
+@Serializable
+enum class SubtotalPosition {
+    Top,
+    Bottom,
+}
 
 @Serializable
 data class PivotMeasure(
@@ -65,6 +123,9 @@ data class PivotMeasure(
     val fn: MeasureFn,
     val sourceColumn: String? = null,
     val label: String = defaultMeasureLabel(fn, sourceColumn),
+    val formula: String? = null,
+    val showAs: PivotShowAs = PivotShowAs(),
+    val numberFormat: PivotNumberFormat = PivotNumberFormat(),
 ) {
     companion object {
         fun countRows(alias: String = "count"): PivotMeasure =
@@ -75,11 +136,115 @@ data class PivotMeasure(
 @Serializable
 enum class MeasureFn {
     Count,
+    CountNumbers,
     CountDistinct,
     Sum,
     Avg,
     Min,
     Max,
+    Product,
+    StdDev,
+    StdDevPopulation,
+    Variance,
+    VariancePopulation,
+}
+
+@Serializable
+data class PivotShowAs(
+    val mode: ShowAsMode = ShowAsMode.Value,
+    val baseDimensionId: String? = null,
+    val baseItemKey: String? = null,
+)
+
+@Serializable
+enum class ShowAsMode {
+    Value,
+    PercentGrandTotal,
+    PercentRowTotal,
+    PercentColumnTotal,
+    PercentParent,
+    DifferenceFrom,
+    PercentDifferenceFrom,
+    RunningTotal,
+    PercentRunningTotal,
+    RankAscending,
+    RankDescending,
+}
+
+@Serializable
+data class PivotNumberFormat(
+    val kind: NumberFormatKind = NumberFormatKind.Auto,
+    val decimals: Int = 2,
+    val thousandsSeparator: Boolean = true,
+    val currencyCode: String = defaultCurrencyCode(),
+)
+
+@Serializable
+enum class NumberFormatKind {
+    Auto,
+    Number,
+    Percent,
+    Currency,
+    Scientific,
+}
+
+@Serializable
+sealed class PivotFilter {
+    abstract val id: String
+    abstract val column: String
+    abstract val label: String
+    abstract val pinned: Boolean
+
+    @Serializable
+    data class Members(
+        override val id: String,
+        override val column: String,
+        override val label: String,
+        val includedKeys: Set<String> = emptySet(),
+        override val pinned: Boolean = true,
+    ) : PivotFilter()
+
+    @Serializable
+    data class Label(
+        override val id: String,
+        override val column: String,
+        override val label: String,
+        val op: LabelFilterOp,
+        val value: String,
+        override val pinned: Boolean = false,
+    ) : PivotFilter()
+
+    @Serializable
+    data class Value(
+        override val id: String,
+        override val column: String,
+        override val label: String,
+        val measureAlias: String,
+        val op: ValueFilterOp,
+        val value: String = "",
+        val secondValue: String? = null,
+        val count: Int = 10,
+        override val pinned: Boolean = false,
+    ) : PivotFilter()
+}
+
+@Serializable
+enum class LabelFilterOp {
+    Equals,
+    Contains,
+    StartsWith,
+    EndsWith,
+}
+
+@Serializable
+enum class ValueFilterOp {
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+    Between,
+    Top,
+    Bottom,
 }
 
 @Serializable
@@ -112,9 +277,16 @@ data class ExplorePreviewResult(
 data class ExplorePivotLayout(
     val rowDimensions: List<PivotDimension>,
     val columnDimension: PivotDimension?,
+    val columnDimensions: List<PivotDimension> = listOfNotNull(columnDimension),
     val measures: List<PivotMeasure>,
     val columnGroups: List<ExploreColumnGroup>,
     val hasGrandTotalRow: Boolean,
+    val rowEntries: List<PivotRowEntry> = emptyList(),
+    val columnLeaves: List<PivotColumnLeaf> = emptyList(),
+    val columnHeaderRows: List<List<PivotHeaderCell>> = emptyList(),
+    val formattedRows: List<List<String>> = emptyList(),
+    val cellLineage: Map<String, List<Int>> = emptyMap(),
+    val overflowMessage: String? = null,
 )
 
 data class ExploreColumnGroup(
@@ -122,6 +294,40 @@ data class ExploreColumnGroup(
     val startColumnIndex: Int,
     val measureAliases: List<String>,
     val isTotal: Boolean = false,
+)
+
+enum class PivotRowKind {
+    Group,
+    Leaf,
+    Subtotal,
+    GrandTotal,
+}
+
+data class PivotRowEntry(
+    val pathKey: String,
+    val label: String,
+    val depth: Int,
+    val kind: PivotRowKind,
+    val hasChildren: Boolean,
+    val expanded: Boolean,
+)
+
+data class PivotColumnLeaf(
+    val pathKey: String,
+    val labels: List<String>,
+    val isSubtotal: Boolean,
+    val isGrandTotal: Boolean,
+)
+
+data class PivotHeaderCell(
+    val pathKey: String,
+    val label: String,
+    val startLeafIndex: Int,
+    val leafSpan: Int,
+    val depth: Int,
+    val hasChildren: Boolean,
+    val expanded: Boolean,
+    val isTotal: Boolean,
 )
 
 fun displayColumnLabel(raw: String): String =
@@ -173,10 +379,20 @@ private fun defaultMeasureLabel(fn: MeasureFn, sourceColumn: String?): String {
     val source = sourceColumn?.let(::displayColumnLabel)
     return when (fn) {
         MeasureFn.Count -> source?.let { "Count $it" } ?: "Count"
+        MeasureFn.CountNumbers -> "Count numbers ${source ?: "values"}"
         MeasureFn.CountDistinct -> "Distinct ${source ?: "values"}"
         MeasureFn.Sum -> "Sum ${source ?: "value"}"
         MeasureFn.Avg -> "Avg ${source ?: "value"}"
         MeasureFn.Min -> "Min ${source ?: "value"}"
         MeasureFn.Max -> "Max ${source ?: "value"}"
+        MeasureFn.Product -> "Product ${source ?: "value"}"
+        MeasureFn.StdDev -> "StdDev ${source ?: "value"}"
+        MeasureFn.StdDevPopulation -> "StdDevP ${source ?: "value"}"
+        MeasureFn.Variance -> "Variance ${source ?: "value"}"
+        MeasureFn.VariancePopulation -> "VarianceP ${source ?: "value"}"
     }
 }
+
+private fun defaultCurrencyCode(): String = runCatching {
+    Currency.getInstance(Locale.getDefault()).currencyCode
+}.getOrDefault("USD")

@@ -7,8 +7,15 @@ import androidx.compose.ui.use
 import com.safedb.AppRoute
 import com.safedb.AppState
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.DateGroupUnit
+import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotFilter
+import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotNumberFormat
+import com.safedb.explore.PivotShowAs
+import com.safedb.explore.ShowAsMode
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -150,7 +157,7 @@ private class FakeService : SafeDbService {
                     ResultCell.IntegerCell(1000 + i),
                     ResultCell.text(if (i % 3 == 0L) "shipped" else "pending"),
                     ResultCell.IntegerCell(1299 * i),
-                    ResultCell.text("2026-06-${(i % 28) + 1} 14:0$i"),
+                    ResultCell.text("2026-06-${"%02d".format((i % 28) + 1)} 14:${"%02d".format(i % 60)}"),
                 )
             },
             rowCount = 40,
@@ -230,13 +237,39 @@ private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = fals
     if (pivoted) {
         viewModel.updateConfig {
             it.copy(
-                rowDimensions = emptyList(),
-                columnDimension = PivotDimension("t0__status", "status"),
+                rowDimensions = listOf(
+                    PivotDimension(
+                        "t0__placed_at",
+                        "Year",
+                        id = "placed_year",
+                        grouping = PivotGrouping.Date(DateGroupUnit.Year),
+                    ),
+                    PivotDimension(
+                        "t0__placed_at",
+                        "Day",
+                        id = "placed_day",
+                        grouping = PivotGrouping.Date(DateGroupUnit.Day),
+                    ),
+                ),
+                columnDimensions = listOf(PivotDimension("t0__status", "Status", id = "status")),
+                columnDimension = null,
                 measures = listOf(
                     PivotMeasure.countRows(),
-                    PivotMeasure("sum_t0__total_cents", MeasureFn.Sum, "t0__total_cents", "Sum total_cents"),
+                    PivotMeasure(
+                        "sum_t0__total_cents",
+                        MeasureFn.Sum,
+                        "t0__total_cents",
+                        "Revenue",
+                        numberFormat = PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
+                    ),
+                    PivotMeasure(
+                        "share",
+                        MeasureFn.Count,
+                        label = "Share",
+                        showAs = PivotShowAs(ShowAsMode.PercentGrandTotal),
+                    ),
                 ),
-                showColumnTotals = false,
+                filters = listOf(PivotFilter.Members("status-filter", "t0__status", "Status")),
             )
         }
     }

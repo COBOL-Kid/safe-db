@@ -12,6 +12,7 @@ import com.safedb.model.ColumnCategory
 import com.safedb.model.QueryResult
 import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
+import java.util.UUID
 
 internal data class ExploreFieldOption(
     val column: String,
@@ -40,7 +41,19 @@ internal fun buildExploreFieldOptions(
 internal fun availableMeasureFunctions(field: ExploreFieldOption): List<MeasureFn> = when (field.category) {
     ColumnCategory.Integer,
     ColumnCategory.Decimal,
-    -> listOf(MeasureFn.Sum, MeasureFn.Avg, MeasureFn.Min, MeasureFn.Max, MeasureFn.CountDistinct)
+    -> listOf(
+        MeasureFn.Sum,
+        MeasureFn.Avg,
+        MeasureFn.Min,
+        MeasureFn.Max,
+        MeasureFn.CountNumbers,
+        MeasureFn.CountDistinct,
+        MeasureFn.Product,
+        MeasureFn.StdDev,
+        MeasureFn.StdDevPopulation,
+        MeasureFn.Variance,
+        MeasureFn.VariancePopulation,
+    )
 
     ColumnCategory.Date,
     ColumnCategory.DateTime,
@@ -60,14 +73,20 @@ internal fun measureFor(field: ExploreFieldOption, function: MeasureFn): PivotMe
     require(function != MeasureFn.Count) { "Count rows does not use a source field" }
     val functionLabel = when (function) {
         MeasureFn.CountDistinct -> "Distinct"
+        MeasureFn.CountNumbers -> "Count numbers"
         MeasureFn.Sum -> "Sum"
         MeasureFn.Avg -> "Average"
         MeasureFn.Min -> "Minimum"
         MeasureFn.Max -> "Maximum"
+        MeasureFn.Product -> "Product"
+        MeasureFn.StdDev -> "StdDev"
+        MeasureFn.StdDevPopulation -> "StdDevP"
+        MeasureFn.Variance -> "Variance"
+        MeasureFn.VariancePopulation -> "VarianceP"
         MeasureFn.Count -> error("Count rows does not use a source field")
     }
     return PivotMeasure(
-        alias = "${function.name.lowercase()}_${field.column}",
+        alias = "${function.name.lowercase()}_${field.column}_${UUID.randomUUID().toString().take(8)}",
         fn = function,
         sourceColumn = field.column,
         label = "$functionLabel ${field.label}",
@@ -76,11 +95,17 @@ internal fun measureFor(field: ExploreFieldOption, function: MeasureFn): PivotMe
 
 internal fun measureFunctionLabel(function: MeasureFn): String = when (function) {
     MeasureFn.Count -> "Count rows"
+    MeasureFn.CountNumbers -> "Count numbers"
     MeasureFn.CountDistinct -> "Count distinct"
     MeasureFn.Sum -> "Sum"
     MeasureFn.Avg -> "Average"
     MeasureFn.Min -> "Minimum"
     MeasureFn.Max -> "Maximum"
+    MeasureFn.Product -> "Product"
+    MeasureFn.StdDev -> "Standard deviation"
+    MeasureFn.StdDevPopulation -> "Population standard deviation"
+    MeasureFn.Variance -> "Variance"
+    MeasureFn.VariancePopulation -> "Population variance"
 }
 
 internal fun toggleExploreSort(config: ExploreConfig, target: ExploreSortTarget): ExploreConfig {

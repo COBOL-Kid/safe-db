@@ -1,7 +1,6 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas as DrawCanvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -49,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -63,15 +60,12 @@ import com.safedb.model.SavedQuery
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.MAX_LIMIT
-import com.safedb.query.parseLimit
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.PromptDialog
 import com.safedb.ui.theme.ChipShape
-import com.safedb.ui.theme.DataMono
-import com.safedb.ui.theme.InputShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.SavedQueriesViewModel
@@ -85,6 +79,8 @@ private fun dialectLabel(dialect: Dialect): String = when (dialect) {
     Dialect.Mssql -> "SQL Server"
     Dialect.Oracle -> "Oracle"
 }
+
+internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, MAX_LIMIT)
 
 private data class CostGuardDialogCopy(
     val title: String,
@@ -172,7 +168,7 @@ fun BuilderScreen(
     var resultsHeight by remember { mutableFloatStateOf(240f) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
-    val limitChoices = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5000, MAX_LIMIT)
+    val limitChoices = BUILDER_LIMIT_CHOICES
 
     LaunchedEffect(queryViewModel.pendingCostGuard) {
         if (queryViewModel.pendingCostGuard) {
@@ -337,18 +333,6 @@ fun BuilderScreen(
                             "Limit",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        BasicTextField(
-                            value = queryViewModel.limit.toString(),
-                            onValueChange = { queryViewModel.setLimit(parseLimit(it)) },
-                            modifier = Modifier
-                                .width(72.dp)
-                                .border(1.dp, MaterialTheme.colorScheme.outline, InputShape)
-                                .background(MaterialTheme.colorScheme.surface, InputShape)
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                            singleLine = true,
-                            textStyle = DataMono.copy(color = MaterialTheme.colorScheme.onSurface),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         )
                         for (choice in limitChoices) {
                             LimitChoiceChip(

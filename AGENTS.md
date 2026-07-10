@@ -22,7 +22,8 @@ See the git history for the removed desktop prototype if old implementation cont
 - **Connections** — CRUD via `SafeDbService`; passwords in OS keyring when available, metadata in app data dir; form has show/hide password toggle
 - **Schema introspection** — per-dialect JDBC adapters in `shared/`; system schemas blocked in query validation
 - **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/jvmMain/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
-- **Safety** — read-only selects, row limit (default 100, interactive max 10,000, guidance above 1,000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
+- **Explore pivots** — session-only analysis of the current immutable query sample with nested row/column fields, grouping, subtotals, filters/slicers, calculated measures, display calculations, formatting, and sampled-row drill-through
+- **Safety** — read-only selects, row limit (default 100, fixed choices with an interactive max of 5,000, guidance above 1,000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
 - **Saved queries & history** — persisted through `QueryStore` in the app data dir; timestamps are Unix-seconds strings
 - **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas` through the Compose/Kotlin settings store
 

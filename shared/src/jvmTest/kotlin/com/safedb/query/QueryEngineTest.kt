@@ -338,9 +338,9 @@ class QueryEngineTest {
 
     @Test
     fun postgresCompilesLargeLimitPlusOneForTruncationDetection() {
-        val spec = twoTableSpec().copy(limit = 10_000)
+        val spec = twoTableSpec().copy(limit = MAX_LIMIT)
         val compiled = compile(spec, Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.endsWith("LIMIT 10001"))
+        assertTrue(compiled.sql.endsWith("LIMIT 5001"))
     }
 
     @Test

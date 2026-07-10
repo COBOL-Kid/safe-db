@@ -30,7 +30,8 @@ scripts/seed_mysql.sh
 - **Connections** — save named profiles; passwords stored in the OS credential store when available, never in profile JSON.
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out.
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
-- **Safety rails** — read-only `SELECT` queries, default 100 rows with an interactive max of 10,000, guidance above 1,000 rows, 10 s timeout, custom blocked schemas, filter literal type validation, and a cost-preview guard.
+- **Explore pivots** — analyze the current result sample with nested row/column hierarchies, grouping, subtotals, slicers and value filters, advanced aggregations, calculated measures, percentage/rank/running-total views, formatting, and sampled-row drill-through.
+- **Safety rails** — read-only `SELECT` queries, default 100 rows with fixed choices up to an interactive max of 5,000, guidance above 1,000 rows, 10 s timeout, custom blocked schemas, filter literal type validation, and a cost-preview guard.
 - **Saved queries and history** — persisted through the Kotlin stores in the app data directory; timestamps are Unix-seconds strings.
 - **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas`.
 
@@ -98,7 +99,7 @@ Existing `connections.json`, `settings.json`, `saved_queries.json`, and `query_h
 
 ## Query Safety Behavior
 
-The builder sends a structured query IR to the Kotlin query engine. The engine validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the interactive max is 10,000, and limits above 1,000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work.
+The builder sends a structured query IR to the Kotlin query engine. The engine validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the builder offers fixed choices up to an interactive max of 5,000, and limits above 1,000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work.
 
 EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit confirmation. Forced retries still run with the same row limit and timeout.
 

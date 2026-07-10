@@ -46,7 +46,19 @@ class ExploreUiModelTest {
         val text = buildField("status", "varchar")
 
         assertEquals(
-            listOf(MeasureFn.Sum, MeasureFn.Avg, MeasureFn.Min, MeasureFn.Max, MeasureFn.CountDistinct),
+            listOf(
+                MeasureFn.Sum,
+                MeasureFn.Avg,
+                MeasureFn.Min,
+                MeasureFn.Max,
+                MeasureFn.CountNumbers,
+                MeasureFn.CountDistinct,
+                MeasureFn.Product,
+                MeasureFn.StdDev,
+                MeasureFn.StdDevPopulation,
+                MeasureFn.Variance,
+                MeasureFn.VariancePopulation,
+            ),
             availableMeasureFunctions(numeric),
         )
         assertEquals(
