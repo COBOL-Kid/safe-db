@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -185,9 +186,12 @@ private fun Sidebar(
         NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
         NavItem(AppRoute.History, "History", Icons.Outlined.History),
     )
-    var railCollapsed by remember { mutableStateOf(collapsed) }
+    // Keep the leading icon track expanded until the rail finishes shrinking. Switching both
+    // states together centers the compact buttons inside the still-wide rail and makes them jump.
+    var widthCollapsed by remember { mutableStateOf(collapsed) }
+    var layoutCollapsed by remember { mutableStateOf(collapsed) }
     val sidebarWidth by animateDpAsState(
-        targetValue = if (railCollapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
+        targetValue = if (widthCollapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
         animationSpec = tween(durationMillis = SidebarWidthAnimationMillis),
         label = "sidebarWidth",
     )
@@ -197,20 +201,25 @@ private fun Sidebar(
     LaunchedEffect(collapsed) {
         if (!revealInitialized) {
             revealInitialized = true
-            railCollapsed = collapsed
+            widthCollapsed = collapsed
+            layoutCollapsed = collapsed
             revealStep = if (collapsed) 0 else SidebarRevealAll
             return@LaunchedEffect
         }
 
         if (collapsed) {
-            railCollapsed = false
+            widthCollapsed = false
+            layoutCollapsed = false
             for (step in revealStep downTo 0) {
                 revealStep = step
                 delay(SidebarRevealStaggerMillis.toLong())
             }
-            railCollapsed = true
+            widthCollapsed = true
+            delay(SidebarWidthAnimationMillis.toLong())
+            layoutCollapsed = true
         } else {
-            railCollapsed = false
+            layoutCollapsed = false
+            widthCollapsed = false
             revealStep = 0
             delay(SidebarWidthAnimationMillis.toLong())
             for (step in 1..SidebarRevealAll) {
@@ -226,10 +235,10 @@ private fun Sidebar(
                 .width(sidebarWidth)
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.surfaceContainerLow),
-            horizontalAlignment = if (railCollapsed) Alignment.CenterHorizontally else Alignment.Start,
+            horizontalAlignment = if (layoutCollapsed) Alignment.CenterHorizontally else Alignment.Start,
         ) {
             SidebarHeader(
-                collapsed = railCollapsed,
+                collapsed = layoutCollapsed,
                 brandVisible = revealStep >= SidebarRevealHeader,
                 onToggleCollapsed = { onCollapsedChange(!collapsed) },
             )
@@ -237,15 +246,15 @@ private fun Sidebar(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = if (collapsed) 10.dp else 12.dp),
+                    .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                horizontalAlignment = Alignment.Start,
             ) {
                 for ((index, item) in navItems.withIndex()) {
                     NavButton(
                         item = item,
                         selected = route == item.route,
-                        collapsed = railCollapsed,
+                        collapsed = layoutCollapsed,
                         labelVisible = revealStep >= SidebarRevealFirstNav + index,
                         onClick = { onNavigate(item.route) },
                     )
@@ -253,7 +262,7 @@ private fun Sidebar(
             }
 
             SidebarUtilities(
-                collapsed = railCollapsed,
+                collapsed = layoutCollapsed,
                 isDark = isDark,
                 commandVisible = revealStep >= SidebarRevealCommand,
                 statusVisible = revealStep >= SidebarRevealStatus,
@@ -280,25 +289,31 @@ private fun SidebarHeader(
     onToggleCollapsed: () -> Unit,
 ) {
     if (collapsed) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 22.dp, bottom = 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .height(SidebarHeaderHeight)
+                .clickable(onClick = onToggleCollapsed)
+                .semantics { contentDescription = "Expand sidebar" },
+            contentAlignment = Alignment.Center,
         ) {
             LogoMark()
-            SidebarIconButton(
-                icon = Icons.Filled.ChevronRight,
-                contentDescription = "Expand sidebar",
-                onClick = onToggleCollapsed,
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 4.dp)
+                    .size(14.dp),
             )
         }
     } else {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 22.dp),
+                .height(SidebarHeaderHeight)
+                .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -545,14 +560,15 @@ private fun NavButton(
 
     Row(
         modifier = Modifier
-            .then(if (collapsed) Modifier.size(44.dp) else Modifier.fillMaxWidth())
+            .fillMaxWidth()
+            .height(44.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
-            .padding(horizontal = if (collapsed) 0.dp else 12.dp, vertical = if (collapsed) 0.dp else 9.dp),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.spacedBy(11.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Icon(
             item.icon,
@@ -595,6 +611,7 @@ private data class NavItem(
 
 private val ExpandedSidebarWidth = 232.dp
 private val CollapsedSidebarWidth = 72.dp
+private val SidebarHeaderHeight = 78.dp
 private const val SidebarWidthAnimationMillis = 240
 private const val SidebarRevealStaggerMillis = 55
 private const val SidebarRevealHeader = 1
