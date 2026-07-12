@@ -22,9 +22,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -88,7 +95,7 @@ internal fun ExplorePivotTable(
             }
             Spacer(Modifier.weight(1f))
             Text(
-                "Double-click a value to show sampled rows",
+                "Double-click a value or use View rows to show sampled rows",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -188,14 +195,15 @@ private fun PivotNestedHeaderRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (header.hasChildren) {
-                    Text(
-                        if (header.expanded) "−" else "+",
+                    Icon(
+                        imageVector = if (header.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                        contentDescription = if (header.expanded) "Collapse column group" else "Expand column group",
                         modifier = Modifier
+                            .size(18.dp)
                             .clickable { onToggleColumn(header.pathKey) }
                             .pointerHoverIcon(PointerIcon.Hand)
-                            .padding(end = 5.dp),
-                        color = SafeDbTheme.colors.actionPrimary,
-                        fontWeight = FontWeight.Bold,
+                            .padding(end = 4.dp),
+                        tint = SafeDbTheme.colors.actionPrimary,
                     )
                 }
                 Text(
@@ -237,7 +245,11 @@ private fun PivotLeafHeaderRow(
                 "Row labels"
             } else {
                 measure?.label ?: column.label
-            } + if (active) " ${if (config.sort?.dir == SortDir.Asc) "↑" else "↓"}" else ""
+            } + when {
+                active -> " ${if (config.sort?.dir == SortDir.Asc) "↑" else "↓"}"
+                target != null -> " ↕"
+                else -> ""
+            }
             Text(
                 label,
                 modifier = Modifier
@@ -291,17 +303,18 @@ private fun PivotDataRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (entry?.hasChildren == true) {
-                        Text(
-                            if (entry.expanded) "−" else "+",
+                        Icon(
+                            imageVector = if (entry.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                            contentDescription = if (entry.expanded) "Collapse row group" else "Expand row group",
                             modifier = Modifier
+                                .size(18.dp)
                                 .clickable { onToggleRow(entry.pathKey) }
                                 .pointerHoverIcon(PointerIcon.Hand)
-                                .padding(end = 6.dp),
-                            color = SafeDbTheme.colors.actionPrimary,
-                            fontWeight = FontWeight.Bold,
+                                .padding(end = 4.dp),
+                            tint = SafeDbTheme.colors.actionPrimary,
                         )
                     } else if ((entry?.depth ?: 0) > 0) {
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(22.dp))
                     }
                     Text(
                         formatted.getOrNull(columnIndex) ?: formatCell(row.getOrNull(columnIndex)),
@@ -318,28 +331,69 @@ private fun PivotDataRow(
                 val measure = layout.measures.getOrNull(measureIndex)
                 val cell = row.getOrNull(columnIndex)
                 val text = formatted.getOrNull(columnIndex) ?: formatCell(cell)
-                Text(
-                    if (cell is ResultCell.Null) "" else text,
-                    modifier = Modifier
-                        .width(column.widthDp.dp)
-                        .pointerInput(entry?.pathKey, leaf?.pathKey, measure?.alias) {
-                            detectTapGestures(
-                                onDoubleTap = {
-                                    if (entry != null && leaf != null && measure != null && entry.kind != PivotRowKind.Group) {
-                                        onDrill(entry.pathKey, leaf.pathKey, measure.alias)
-                                    }
-                                },
-                            )
-                        }
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                    style = DataMono.copy(
-                        fontWeight = if (emphasized || leaf?.isGrandTotal == true || leaf?.isSubtotal == true) FontWeight.SemiBold else FontWeight.Normal,
-                        fontStyle = if (cell is ResultCell.Null) FontStyle.Italic else FontStyle.Normal,
-                    ),
+                val drillable = entry != null && leaf != null && measure != null && entry.kind != PivotRowKind.Group
+                PivotValueCell(
+                    widthDp = column.widthDp,
+                    text = if (cell is ResultCell.Null) "" else text,
                     textAlign = column.alignment.textAlign(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    emphasized = emphasized || leaf?.isGrandTotal == true || leaf?.isSubtotal == true,
+                    isNull = cell is ResultCell.Null,
+                    drillable = drillable,
+                    onDrill = {
+                        if (drillable) {
+                            onDrill(entry.pathKey, leaf.pathKey, measure.alias)
+                        }
+                    },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PivotValueCell(
+    widthDp: Int,
+    text: String,
+    textAlign: TextAlign,
+    emphasized: Boolean,
+    isNull: Boolean,
+    drillable: Boolean,
+    onDrill: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    Box(
+        modifier = Modifier
+            .width(widthDp.dp)
+            .hoverable(interactionSource)
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = { if (drillable) onDrill() })
+            },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text,
+                modifier = Modifier.weight(1f),
+                style = DataMono.copy(
+                    fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
+                    fontStyle = if (isNull) FontStyle.Italic else FontStyle.Normal,
+                ),
+                textAlign = textAlign,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (drillable && hovered) {
+                TextButton(
+                    onClick = onDrill,
+                    modifier = Modifier.height(24.dp),
+                ) {
+                    Text("View rows", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }

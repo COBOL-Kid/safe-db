@@ -3,10 +3,13 @@ package com.safedb.ui
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSort
 import com.safedb.explore.ExploreSortTarget
+import com.safedb.explore.LabelFilterOp
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.SortDir
+import com.safedb.explore.ValueFilterOp
 import com.safedb.explore.displayColumnLabels
 import com.safedb.model.ColumnCategory
 import com.safedb.model.QueryResult
@@ -132,4 +135,60 @@ internal fun moveDimension(
         removeAt(currentIndex)
         add(targetIndex, dimension)
     }
+}
+
+internal fun exploreConfigSummary(config: ExploreConfig): String {
+    val parts = mutableListOf<String>()
+    val rowLabels = config.rowDimensions.map { it.label }
+    val columnLabels = config.effectiveColumnDimensions.map { it.label }
+    when {
+        rowLabels.isNotEmpty() && columnLabels.isNotEmpty() -> parts += "${rowLabels.joinToString(" → ")} × ${columnLabels.joinToString(" → ")}"
+        rowLabels.isNotEmpty() -> parts += rowLabels.joinToString(" → ")
+        columnLabels.isNotEmpty() -> parts += columnLabels.joinToString(" → ")
+    }
+    if (config.measures.isNotEmpty()) {
+        parts += config.measures.joinToString(", ") { it.label }
+    }
+    if (config.filters.isNotEmpty()) {
+        val count = config.filters.size
+        parts += "$count filter${if (count == 1) "" else "s"}"
+    }
+    return parts.joinToString(" · ").ifEmpty { "No grouping configured" }
+}
+
+internal fun filterSupportingText(filter: PivotFilter, memberCount: Int? = null): String = when (filter) {
+    is PivotFilter.Members -> {
+        val selection = when {
+            filter.includedKeys.isEmpty() -> "All values"
+            memberCount != null && filter.includedKeys.size == memberCount -> "All values"
+            else -> "${filter.includedKeys.size} selected"
+        }
+        if (filter.pinned) "$selection · Pinned" else selection
+    }
+    is PivotFilter.Label -> "${labelFilterOpLabel(filter.op)} \"${filter.value}\""
+    is PivotFilter.Value -> valueFilterSupportingText(filter)
+}
+
+private fun valueFilterSupportingText(filter: PivotFilter.Value): String = when (filter.op) {
+    ValueFilterOp.Top -> "Top ${filter.count}"
+    ValueFilterOp.Bottom -> "Bottom ${filter.count}"
+    ValueFilterOp.Between -> "Between ${filter.value} and ${filter.secondValue.orEmpty()}"
+    else -> "${valueFilterOpLabel(filter.op)} ${filter.value}"
+}
+
+private fun labelFilterOpLabel(op: LabelFilterOp): String = when (op) {
+    LabelFilterOp.Equals -> "Equals"
+    LabelFilterOp.Contains -> "Contains"
+    LabelFilterOp.StartsWith -> "Starts with"
+    LabelFilterOp.EndsWith -> "Ends with"
+}
+
+private fun valueFilterOpLabel(op: ValueFilterOp): String = when (op) {
+    ValueFilterOp.GreaterThan -> ">"
+    ValueFilterOp.GreaterThanOrEqual -> "≥"
+    ValueFilterOp.LessThan -> "<"
+    ValueFilterOp.LessThanOrEqual -> "≤"
+    ValueFilterOp.Between -> "Between"
+    ValueFilterOp.Top -> "Top"
+    ValueFilterOp.Bottom -> "Bottom"
 }

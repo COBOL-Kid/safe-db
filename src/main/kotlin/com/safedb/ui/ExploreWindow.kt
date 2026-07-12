@@ -24,10 +24,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.explore.PivotFilter
-import com.safedb.model.QuerySpec
 import com.safedb.model.QueryResult
+import com.safedb.model.QuerySpec
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
@@ -43,6 +44,8 @@ fun ExploreWindowContent(
     viewModel: ExploreViewModel,
     currentSpec: QuerySpec,
     onClose: () -> Unit,
+    onRefreshSample: (() -> Unit)? = null,
+    sampleRefreshEnabled: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val session = viewModel.session
@@ -76,6 +79,14 @@ fun ExploreWindowContent(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    exploreConfigSummary(config),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
             if (session.sample.truncated) StatusChip("Truncated", StatusChipKind.WARNING)
             IconButton(onClick = onClose) {
@@ -88,8 +99,11 @@ fun ExploreWindowContent(
             ExploreConfigPanel(
                 config = config,
                 fields = fields,
+                sample = session.sample,
                 onConfigChange = { next -> viewModel.updateConfig { next } },
                 memberOptionsFor = viewModel::memberOptions,
+                onApplyTemplate = viewModel::applyTemplate,
+                configDirty = viewModel.isDirty(),
                 onReset = viewModel::resetConfig,
                 resetEnabled = !viewModel.isDefaultConfig(),
                 modifier = Modifier.width(320.dp).fillMaxHeight(),
@@ -102,14 +116,32 @@ fun ExploreWindowContent(
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                         if (session.sample.truncated) {
                             MessageBanner(
-                                text = "This view is based on a truncated sample, so totals may not represent the full result.",
+                                text = "This view is based on a truncated sample, so totals may not represent the full result. Close Explore and raise the row limit in Builder for a larger sample.",
                                 kind = BannerKind.WARNING,
+                                action = {
+                                    SecondaryButton(onClick = onClose) {
+                                        Text("Close and adjust in Builder")
+                                    }
+                                },
                             )
                         }
                         if (stale) {
                             MessageBanner(
-                                text = "The builder query changed. Re-run the query and reopen Explore to analyze the new result.",
+                                text = if (sampleRefreshEnabled) {
+                                    "The builder query changed. Refresh the Explore sample from the latest Builder results."
+                                } else {
+                                    "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore."
+                                },
                                 kind = BannerKind.WARNING,
+                                action = if (sampleRefreshEnabled && onRefreshSample != null) {
+                                    {
+                                        PrimaryButton(onClick = onRefreshSample) {
+                                            Text("Refresh sample")
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
                             )
                         }
                     }

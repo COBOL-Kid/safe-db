@@ -6,6 +6,7 @@ import com.safedb.explore.ExplorePivotLayout
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.SortDir
 import com.safedb.model.QueryResult
@@ -85,6 +86,21 @@ class ExploreUiModelTest {
 
         assertEquals(listOf(status, region), moveDimension(listOf(region, status), status, -1))
         assertEquals(listOf(region, status), moveDimension(listOf(region, status), region, -1))
+    }
+
+    @Test
+    fun exploreConfigSummaryJoinsRowsColumnsMeasuresAndFilters() {
+        val summary = exploreConfigSummary(
+            ExploreConfig(
+                rowDimensions = listOf(PivotDimension("region", "Region")),
+                columnDimensions = listOf(PivotDimension("status", "Status")),
+                measures = listOf(PivotMeasure("revenue", MeasureFn.Sum, "amount", "Revenue")),
+                filters = listOf(
+                    PivotFilter.Members("f1", "status", "Status"),
+                ),
+            ),
+        )
+        assertEquals("Region × Status · Revenue · 1 filter", summary)
     }
 
     @Test

@@ -37,6 +37,7 @@ fun App(appState: AppState, window: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
     val settings by viewModel.settings.settings.collectAsState()
     val exploreViewModel by viewModel.explore.collectAsState()
+    val connections by viewModel.connections.connections.collectAsState()
     val useDarkTheme = settings.theme == "dark"
     var paletteOpen by remember { mutableStateOf(false) }
 
@@ -72,6 +73,11 @@ fun App(appState: AppState, window: java.awt.Window) {
 
         exploreViewModel?.let { explore ->
             val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
+            val queryResults = viewModel.query.results
+            val activeConnection = connections.firstOrNull { connection ->
+                connection.id == explore.session.connectionId
+            }
+            val sampleRefreshEnabled = queryResults != null && activeConnection != null
             Window(
                 onCloseRequest = viewModel::closeExplore,
                 title = "Explore - safe-db",
@@ -90,6 +96,14 @@ fun App(appState: AppState, window: java.awt.Window) {
                             viewModel = explore,
                             currentSpec = viewModel.query.spec,
                             onClose = viewModel::closeExplore,
+                            onRefreshSample = activeConnection?.let { connection ->
+                                queryResults?.let { results ->
+                                    {
+                                        viewModel.refreshExploreSample(connection, viewModel.query.spec, results)
+                                    }
+                                }
+                            },
+                            sampleRefreshEnabled = sampleRefreshEnabled,
                         )
                     }
                 }

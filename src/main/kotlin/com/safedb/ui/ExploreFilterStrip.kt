@@ -64,7 +64,11 @@ private fun SlicerControl(
     var expanded by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val selected = filter.includedKeys
-    val summary = if (selected.isEmpty() || selected.size == options.size) "All" else "${selected.size} selected"
+    val summary = if (selected.isEmpty() || selected.size == options.size) {
+        "All (${options.size})"
+    } else {
+        "${selected.size} of ${options.size} selected"
+    }
     val visible = options.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) }
 
     Box {

@@ -231,7 +231,7 @@ internal fun MeasureSettingsDialog(
                 SettingsLabel("Number format")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     NumberFormatKind.entries.forEach { kind ->
-                        ChoicePill(kind.name, formatKind == kind) { formatKind = kind }
+                        ChoicePill(numberFormatKindLabel(kind), formatKind == kind) { formatKind = kind }
                     }
                 }
                 if (formatKind != NumberFormatKind.Auto) {
@@ -452,6 +452,14 @@ private fun measureFunctionName(function: MeasureFn): String = when (function) {
     MeasureFn.StdDevPopulation -> "StdDevP"
     MeasureFn.Variance -> "Variance"
     MeasureFn.VariancePopulation -> "VarianceP"
+}
+
+private fun numberFormatKindLabel(kind: NumberFormatKind): String = when (kind) {
+    NumberFormatKind.Auto -> "Auto"
+    NumberFormatKind.Number -> "Number"
+    NumberFormatKind.Percent -> "Percent"
+    NumberFormatKind.Currency -> "Currency"
+    NumberFormatKind.Scientific -> "Scientific"
 }
 
 @Composable

@@ -74,6 +74,14 @@ class AppViewModel(
         _explore.value = ExploreViewModel(createExploreSession(connection, spec, sample))
     }
 
+    fun refreshExploreSample(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
+        val current = _explore.value ?: return
+        _explore.value = ExploreViewModel(
+            session = createExploreSession(connection, spec, sample),
+            initialConfig = current.config,
+        )
+    }
+
     fun closeExplore() {
         _explore.value = null
     }

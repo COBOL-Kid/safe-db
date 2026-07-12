@@ -20,10 +20,11 @@ import java.nio.file.Path
 
 class ExploreViewModel(
     val session: ExploreSession,
+    initialConfig: ExploreConfig? = null,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
-    var config by mutableStateOf(defaultConfig)
+    var config by mutableStateOf(initialConfig ?: defaultConfig)
         private set
     var preview by mutableStateOf(applyExplore(session.sample, config))
         private set
@@ -46,6 +47,14 @@ class ExploreViewModel(
     }
 
     fun isDefaultConfig(): Boolean = config == defaultConfig
+
+    fun isDirty(): Boolean = !isDefaultConfig()
+
+    fun applyTemplate(templateConfig: ExploreConfig) {
+        config = templateConfig
+        preview = applyExplore(session.sample, config)
+        clearExportMessages()
+    }
 
     fun toggleRowPath(pathKey: String) {
         updateConfig {
