@@ -39,6 +39,56 @@ class ExploreUiModelTest {
         )
 
         assertEquals(listOf("id", "orders.status", "shipments.status"), options.map { it.label })
+        assertEquals(listOf("orders", "orders", "shipments"), options.map { it.sourceTableLabel })
+        assertEquals(listOf("orders · bigint", "orders · varchar", "shipments · varchar"), options.map { it.supportingText() })
+    }
+
+    @Test
+    fun fieldOptionsDisambiguateRepeatedTableNamesWithSchema() {
+        val options = buildExploreFieldOptions(
+            sample = QueryResult(
+                columns = listOf(
+                    ResultColumn("t0__occurred_at", "timestamp"),
+                    ResultColumn("t1__occurred_at", "timestamp"),
+                    ResultColumn("t2__status", "varchar"),
+                ),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            ),
+            tables = listOf(
+                TableRef("analytics", "events", "t0"),
+                TableRef("archive", "events", "t1"),
+                TableRef("public", "orders", "t2"),
+            ),
+        )
+
+        assertEquals(listOf("analytics.events", "archive.events", "orders"), options.map { it.sourceTableLabel })
+        assertTrue(options[0].matchesSearch("analytics"))
+        assertTrue(options[1].matchesSearch("archive.events"))
+        assertTrue(options[2].matchesSearch("orders"))
+    }
+
+    @Test
+    fun unmappedFieldsRemainTypeOnlyAndAreGroupedSeparately() {
+        val options = buildExploreFieldOptions(
+            sample = QueryResult(
+                columns = listOf(
+                    ResultColumn("t0__status", "varchar"),
+                    ResultColumn("expression_total", "decimal"),
+                ),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            ),
+            tables = listOf(TableRef("public", "orders", "t0")),
+        )
+
+        assertEquals("decimal", options[1].supportingText())
+        assertEquals(listOf("orders", "Other fields"), groupExploreFields(options).map { it.label })
+        assertTrue(options[1].matchesSearch("expression"))
     }
 
     @Test

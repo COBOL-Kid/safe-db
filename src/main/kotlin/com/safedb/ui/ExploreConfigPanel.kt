@@ -218,7 +218,7 @@ internal fun ExploreConfigPanel(
                     val field = fields.firstOrNull { it.column == dimension.column }
                     FieldChip(
                         label = dimension.label,
-                        supportingText = field?.dataType,
+                        supportingText = field?.supportingText(),
                         onClick = { editingDimension = dimension },
                         onRemove = {
                             onConfigChange(config.copy(rowDimensions = config.rowDimensions - dimension))
@@ -251,7 +251,7 @@ internal fun ExploreConfigPanel(
                     val field = fields.firstOrNull { it.column == dimension.column }
                     FieldChip(
                         label = dimension.label,
-                        supportingText = field?.dataType,
+                        supportingText = field?.supportingText(),
                         onClick = { editingDimension = dimension },
                         onRemove = {
                             onConfigChange(
@@ -324,9 +324,13 @@ internal fun ExploreConfigPanel(
             FieldWell(title = "Filters") {
                 config.filters.forEach { filter ->
                     val memberCount = (filter as? PivotFilter.Members)?.let { memberOptionsFor(filter.column).size }
+                    val field = fields.firstOrNull { it.column == filter.column }
                     FieldChip(
                         label = filter.label,
-                        supportingText = filterSupportingText(filter, memberCount),
+                        supportingText = listOf(
+                            field?.supportingText(),
+                            filterSupportingText(filter, memberCount),
+                        ).filterNotNull().joinToString(" · "),
                         onClick = { editingFilter = filter },
                         onRemove = { onConfigChange(config.copy(filters = config.filters - filter)) },
                     )
@@ -542,10 +546,7 @@ private fun FieldPickerButton(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    val filtered = fields.filter { field ->
-        query.isBlank() || field.label.contains(query, ignoreCase = true) ||
-            field.dataType.contains(query, ignoreCase = true)
-    }
+    val filtered = fields.filter { it.matchesSearch(query) }
 
     Box {
         TextButton(onClick = { expanded = true }, enabled = fields.isNotEmpty()) {
@@ -565,16 +566,19 @@ private fun FieldPickerButton(
                 if (filtered.isEmpty()) {
                     EmptyPickerMessage("No matching fields")
                 } else {
-                    filtered.forEach { field ->
-                        MenuActionRow(
-                            text = field.label,
-                            supportingText = field.dataType,
-                            onClick = {
-                                expanded = false
-                                query = ""
-                                onSelect(field)
-                            },
-                        )
+                    groupExploreFields(filtered).forEach { group ->
+                        MenuSectionLabel(group.label)
+                        group.fields.forEach { field ->
+                            MenuActionRow(
+                                text = field.label,
+                                supportingText = field.supportingText(),
+                                onClick = {
+                                    expanded = false
+                                    query = ""
+                                    onSelect(field)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -594,10 +598,7 @@ private fun MeasurePickerButton(
     var selectedField by remember { mutableStateOf<ExploreFieldOption?>(null) }
     val countRowsAvailable = true
     val availableFields = fields
-    val filteredFields = availableFields.filter { field ->
-        query.isBlank() || field.label.contains(query, ignoreCase = true) ||
-            field.dataType.contains(query, ignoreCase = true)
-    }
+    val filteredFields = availableFields.filter { it.matchesSearch(query) }
 
     Box {
         TextButton(onClick = { expanded = true }, enabled = countRowsAvailable || availableFields.isNotEmpty()) {
@@ -647,15 +648,18 @@ private fun MeasurePickerButton(
                     if (filteredFields.isEmpty()) {
                         EmptyPickerMessage("No more values available")
                     } else {
-                        filteredFields.forEach { option ->
-                            MenuActionRow(
-                                text = option.label,
-                                supportingText = option.dataType,
-                                onClick = {
-                                    selectedField = option
-                                    query = ""
-                                },
-                            )
+                        groupExploreFields(filteredFields).forEach { group ->
+                            MenuSectionLabel(group.label)
+                            group.fields.forEach { option ->
+                                MenuActionRow(
+                                    text = option.label,
+                                    supportingText = option.supportingText(),
+                                    onClick = {
+                                        selectedField = option
+                                        query = ""
+                                    },
+                                )
+                            }
                         }
                     }
                 } else {
@@ -670,7 +674,7 @@ private fun MeasurePickerButton(
                         modifier = Modifier.padding(vertical = 4.dp),
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
-                    MenuSectionLabel(field.label)
+                    MenuSectionLabel("${field.label} · ${field.sourceTableLabel ?: field.dataType}")
                     availableMeasureFunctions(field).forEach { function ->
                         val candidate = measureFor(field, function)
                         MenuActionRow(
@@ -767,7 +771,7 @@ private fun measureSupportingText(
 ): String = if (measure.fn == MeasureFn.Count && measure.sourceColumn == null) {
     "All rows"
 } else {
-    fields.firstOrNull { it.column == measure.sourceColumn }?.dataType ?: measure.fn.name
+    fields.firstOrNull { it.column == measure.sourceColumn }?.supportingText() ?: measure.fn.name
 }
 
 private fun optionsSummary(config: ExploreConfig): String {
@@ -788,4 +792,3 @@ private fun sortSummary(config: ExploreConfig): String {
     } ?: "Unknown field"
     return "$target, ${if (sort.dir == SortDir.Asc) "ascending" else "descending"}"
 }
-

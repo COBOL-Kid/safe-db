@@ -22,21 +22,52 @@ internal data class ExploreFieldOption(
     val label: String,
     val dataType: String,
     val category: ColumnCategory,
+    val sourceTableName: String? = null,
+    val sourceSchema: String? = null,
+    val sourceTableLabel: String? = null,
 ) {
     fun asDimension(): PivotDimension = PivotDimension(column = column, label = label)
+
+    fun supportingText(): String = listOfNotNull(sourceTableLabel, dataType).joinToString(" · ")
+
+    fun matchesSearch(query: String): Boolean = query.isBlank() || listOfNotNull(
+        label,
+        dataType,
+        sourceTableName,
+        sourceSchema,
+        sourceTableLabel,
+    ).any { it.contains(query, ignoreCase = true) }
 }
+
+internal data class ExploreFieldGroup(
+    val label: String,
+    val fields: List<ExploreFieldOption>,
+)
+
+internal fun groupExploreFields(fields: List<ExploreFieldOption>): List<ExploreFieldGroup> =
+    fields
+        .groupBy { it.sourceTableLabel ?: "Other fields" }
+        .map { (label, groupedFields) -> ExploreFieldGroup(label, groupedFields) }
 
 internal fun buildExploreFieldOptions(
     sample: QueryResult,
     tables: List<TableRef>,
 ): List<ExploreFieldOption> {
     val labels = displayColumnLabels(sample.columns, tables)
+    val duplicateTableNames = tables.groupingBy { it.name }.eachCount().filterValues { it > 1 }.keys
+    val tablesByAlias = tables.associateBy { it.alias }
     return sample.columns.map { column ->
+        val source = tablesByAlias[column.name.substringBefore("__", missingDelimiterValue = "")]
         ExploreFieldOption(
             column = column.name,
             label = labels.getValue(column.name),
             dataType = column.dataType,
             category = classifyColumn(column.dataType),
+            sourceTableName = source?.name,
+            sourceSchema = source?.schema,
+            sourceTableLabel = source?.let { table ->
+                if (table.name in duplicateTableNames) "${table.schema}.${table.name}" else table.name
+            },
         )
     }
 }
