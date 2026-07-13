@@ -55,6 +55,12 @@ data class CanvasTable(
     val height: Float = CANVAS_CARD_HEIGHT,
 )
 
+data class BuilderQuerySample(
+    val connectionId: String,
+    val spec: QuerySpec,
+    val result: QueryResult,
+)
+
 typealias NewFilterSpec = FilterSpec
 
 class QueryViewModel(
@@ -79,6 +85,8 @@ class QueryViewModel(
 
     var results by mutableStateOf<QueryResult?>(null)
         private set
+    private var resultConnectionId by mutableStateOf<String?>(null)
+    private var resultSpec by mutableStateOf<QuerySpec?>(null)
     var running by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
@@ -121,6 +129,8 @@ class QueryViewModel(
         filterGroupState = FilterGroup.empty()
         queryLimit = DEFAULT_LIMIT
         results = null
+        resultConnectionId = null
+        resultSpec = null
         error = null
         running = false
         pendingCostGuard = false
@@ -290,19 +300,26 @@ class QueryViewModel(
 
     fun run(connectionId: String, force: Boolean = false) {
         if (!canRun) return
+        val executedSpec = spec
         scope.launch {
             running = true
             error = null
             results = null
+            resultConnectionId = null
+            resultSpec = null
             pendingCostGuard = false
             try {
-                results = service.runQuery(connectionId, spec, force)
+                results = service.runQuery(connectionId, executedSpec, force)
+                resultConnectionId = connectionId
+                resultSpec = executedSpec
             } catch (e: Exception) {
                 val message = e.message ?: e.toString()
                 if (!force && message.startsWith(COST_GUARD_PREFIX)) {
                     if (warningPopupsDisabled) {
                         try {
-                            results = service.runQuery(connectionId, spec, force = true)
+                            results = service.runQuery(connectionId, executedSpec, force = true)
+                            resultConnectionId = connectionId
+                            resultSpec = executedSpec
                         } catch (forced: Exception) {
                             error = forced.message ?: forced.toString()
                         }
@@ -317,6 +334,14 @@ class QueryViewModel(
                 running = false
             }
         }
+    }
+
+    fun currentSample(connectionId: String?): BuilderQuerySample? {
+        if (connectionId == null || resultConnectionId != connectionId) return null
+        val result = results ?: return null
+        val executedSpec = resultSpec ?: return null
+        if (spec != executedSpec) return null
+        return BuilderQuerySample(connectionId, executedSpec, result)
     }
 
     fun runForced(connectionId: String) {
@@ -369,7 +394,7 @@ class QueryViewModel(
     }
 }
 
-private fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
+internal fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
     (leftAlias == other.leftAlias && leftColumn == other.leftColumn &&
         rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
         (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&

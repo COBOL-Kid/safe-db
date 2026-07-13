@@ -14,6 +14,7 @@ import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
+import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.GroupConnector
 import com.safedb.model.IndexInfo
 import com.safedb.model.JoinSpec
@@ -82,6 +83,53 @@ class QueryEngineTest {
         )
         val (_, outcome) = validate(spec, sampleSchema(), emptyList()).unwrap()
         assertTrue(outcome.warnings.isEmpty())
+    }
+
+    @Test
+    fun validateAndCompileAcceptCompleteCompositeForeignKeyJoin() {
+        val child = TableInfo(
+            schema = "public",
+            name = "line_items",
+            columns = listOf(
+                ColumnInfo("order_id", "int", false, true, true, ColumnCategory.Integer),
+                ColumnInfo("store_id", "int", false, true, false, ColumnCategory.Integer),
+            ),
+            indexes = listOf(IndexInfo("line_items_order_idx", listOf("order_id", "store_id"))),
+            foreignKeys = listOf(
+                ForeignKeyInfo(
+                    name = "line_items_order_fkey",
+                    columns = listOf("order_id", "store_id"),
+                    referencedSchema = "public",
+                    referencedTable = "orders",
+                    referencedColumns = listOf("id", "store_id"),
+                ),
+            ),
+        )
+        val parent = TableInfo(
+            schema = "public",
+            name = "orders",
+            columns = listOf(
+                ColumnInfo("id", "int", false, true, true, ColumnCategory.Integer),
+                ColumnInfo("store_id", "int", false, true, false, ColumnCategory.Integer),
+            ),
+            indexes = listOf(IndexInfo("orders_pkey", listOf("id", "store_id"), isPrimary = true, isUnique = true)),
+        )
+        val spec = QuerySpec(
+            tables = listOf(TableRef("public", "line_items", "t0"), TableRef("public", "orders", "t1")),
+            columns = listOf(ColumnSel("t0", "order_id")),
+            joins = listOf(
+                JoinSpec("t0", "order_id", "t1", "id"),
+                JoinSpec("t0", "store_id", "t1", "store_id"),
+            ),
+            filters = FilterGroup.empty(),
+            limit = 100,
+        )
+
+        val normalized = validate(spec, Schema(listOf(child, parent)), emptyList()).unwrap().first
+        val sql = compile(normalized, Dialect.Postgres).unwrap().sql
+
+        assertTrue(sql.contains("\"t0\".\"order_id\" = \"t1\".\"id\""))
+        assertTrue(sql.contains("\"t0\".\"store_id\" = \"t1\".\"store_id\""))
     }
 
     @Test

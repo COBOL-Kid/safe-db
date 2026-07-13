@@ -59,6 +59,7 @@ import com.safedb.query.tableRightX
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
+import com.safedb.viewmodel.matchesJoin
 import kotlin.math.roundToInt
 
 private const val CANVAS_MIN_WIDTH_DP = 2400
@@ -86,7 +87,7 @@ private sealed interface ClickableJoinLine {
     ) : ClickableJoinLine
 
     data class Suggested(
-        val join: JoinSpec,
+        val joins: List<JoinSpec>,
         override val edge: RoutedJoinEdge,
     ) : ClickableJoinLine
 }
@@ -188,26 +189,26 @@ fun Canvas(
                 laneIndex = index,
             )?.let { edge -> ClickableJoinLine.Existing(join, edge) }
         }
-        val suggestedLines = suggestedRelationships(tablesLike, queryViewModel.joins).mapIndexedNotNull { index, relationship ->
-            val foreign = queryViewModel.canvasTables.find { it.alias == relationship.foreignAlias }
+        val relationships = suggestedRelationships(tablesLike, queryViewModel.joins)
+        val suggestedLines = relationships.flatMap { relationship ->
+            relationship.joins.filterNot { suggested ->
+                queryViewModel.joins.any { it.matchesJoin(suggested) }
+            }.map { relationship to it }
+        }.mapIndexedNotNull { index, (relationship, suggested) ->
+            val foreign = queryViewModel.canvasTables.find { it.alias == suggested.leftAlias }
                 ?: return@mapIndexedNotNull null
-            val referenced = queryViewModel.canvasTables.find { it.alias == relationship.referencedAlias }
+            val referenced = queryViewModel.canvasTables.find { it.alias == suggested.rightAlias }
                 ?: return@mapIndexedNotNull null
             routeJoinEdge(
                 canvasTableLike(foreign),
-                relationship.foreignColumn,
+                suggested.leftColumn,
                 canvasTableLike(referenced),
-                relationship.referencedColumn,
+                suggested.rightColumn,
                 allTables = tablesLike,
                 laneIndex = index,
             )?.let { edge ->
                 ClickableJoinLine.Suggested(
-                    JoinSpec(
-                        leftAlias = relationship.foreignAlias,
-                        leftColumn = relationship.foreignColumn,
-                        rightAlias = relationship.referencedAlias,
-                        rightColumn = relationship.referencedColumn,
-                    ),
+                    relationship.joins,
                     edge,
                 )
             }
@@ -244,7 +245,7 @@ fun Canvas(
             null -> return false
         }
 
-        queryViewModel.addJoin(suggestedHit.join)
+        suggestedHit.joins.forEach(queryViewModel::addJoin)
         return true
     }
 
@@ -354,23 +355,29 @@ fun Canvas(
                     }
 
                     val tablesLike = canvasTablesLike()
-                    suggestedRelationships(tablesLike, queryViewModel.joins).forEachIndexed { index, relationship ->
-                        val foreign = queryViewModel.canvasTables.find { it.alias == relationship.foreignAlias }
-                            ?: return@forEachIndexed
-                        val referenced = queryViewModel.canvasTables.find { it.alias == relationship.referencedAlias }
-                            ?: return@forEachIndexed
-                        val edge = routeJoinEdge(
-                            canvasTableLike(foreign),
-                            relationship.foreignColumn,
-                            canvasTableLike(referenced),
-                            relationship.referencedColumn,
-                            allTables = tablesLike,
-                            laneIndex = index,
-                        )
-                        if (edge != null) {
-                            drawRoutedEdge(edge, alpha = 0.5f, dashed = true, endpointRadius = 3f)
+                    suggestedRelationships(tablesLike, queryViewModel.joins)
+                        .flatMap { relationship ->
+                            relationship.joins.filterNot { suggested ->
+                                queryViewModel.joins.any { it.matchesJoin(suggested) }
+                            }
                         }
-                    }
+                        .forEachIndexed { index, suggested ->
+                            val foreign = queryViewModel.canvasTables.find { it.alias == suggested.leftAlias }
+                                ?: return@forEachIndexed
+                            val referenced = queryViewModel.canvasTables.find { it.alias == suggested.rightAlias }
+                                ?: return@forEachIndexed
+                            val edge = routeJoinEdge(
+                                canvasTableLike(foreign),
+                                suggested.leftColumn,
+                                canvasTableLike(referenced),
+                                suggested.rightColumn,
+                                allTables = tablesLike,
+                                laneIndex = index,
+                            )
+                            if (edge != null) {
+                                drawRoutedEdge(edge, alpha = 0.5f, dashed = true, endpointRadius = 3f)
+                            }
+                        }
 
                     queryViewModel.joins.forEachIndexed { index, join ->
                         val left = queryViewModel.canvasTables.find { it.alias == join.leftAlias } ?: return@forEachIndexed

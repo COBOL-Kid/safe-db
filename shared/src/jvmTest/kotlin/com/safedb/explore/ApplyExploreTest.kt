@@ -345,6 +345,77 @@ class ApplyExploreTest {
     }
 
     @Test
+    fun valueFilterStillAppliesAfterItsFieldLeavesBothAxes() {
+        val count = PivotMeasure("count", MeasureFn.Count, label = "Orders")
+        val preview = applyExplore(
+            sampleResult(),
+            ExploreConfig(
+                rowDimensions = listOf(PivotDimension("t0__status", id = "status")),
+                measures = listOf(count),
+                filters = listOf(
+                    PivotFilter.Value(
+                        id = "f",
+                        column = "t0__region",
+                        label = "Region",
+                        measureAlias = "count",
+                        op = ValueFilterOp.Top,
+                        count = 1,
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(listOf("pending", "shipped", "Total"), preview.layout.rowEntries.map { it.label })
+        assertEquals(
+            listOf(
+                ResultCell.IntegerCell(2),
+                ResultCell.IntegerCell(1),
+                ResultCell.IntegerCell(3),
+            ),
+            preview.result.rows.map { it[1] },
+        )
+    }
+
+    @Test
+    fun runningTotalFollowsSortedDisplayOrder() {
+        val revenue = PivotMeasure(
+            alias = "sum",
+            fn = MeasureFn.Sum,
+            sourceColumn = "t0__amount",
+            label = "Revenue",
+            showAs = PivotShowAs(ShowAsMode.RunningTotal, baseDimensionId = "region"),
+        )
+        val preview = applyExplore(
+            sample = sampleResult(),
+            config = ExploreConfig(
+                rowDimensions = listOf(
+                    PivotDimension(
+                        "t0__region",
+                        id = "region",
+                        sortMode = DimensionSortMode.LabelDescending,
+                    ),
+                ),
+                measures = listOf(revenue),
+                showColumnTotals = false,
+            ),
+        )
+
+        // Label desc display order: West, East, (blank) — not source insertion (East, West, blank).
+        assertEquals(
+            listOf("West", "East", "(blank)"),
+            preview.result.rows.map { (it.first() as ResultCell.TextCell).value.text },
+        )
+        assertEquals(
+            listOf(
+                ResultCell.IntegerCell(500),
+                ResultCell.IntegerCell(875),
+                ResultCell.IntegerCell(925),
+            ),
+            preview.result.rows.map { it[1] },
+        )
+    }
+
+    @Test
     fun calculatesMeasuresFormatsPercentagesAndTracksLineage() {
         val revenue = PivotMeasure("revenue", MeasureFn.Sum, "t0__amount", "Revenue")
         val count = PivotMeasure("orders", MeasureFn.Count, label = "Orders")

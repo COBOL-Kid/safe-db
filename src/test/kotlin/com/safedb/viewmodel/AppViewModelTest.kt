@@ -1,5 +1,6 @@
 package com.safedb.viewmodel
 
+import com.safedb.explore.exploreSpecHash
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -103,6 +104,72 @@ class AppViewModelTest {
         assertEquals("Local", viewModel.explore.value?.session?.connectionLabel)
         viewModel.closeExplore()
         assertNull(viewModel.explore.value)
+    }
+
+    @Test
+    fun refreshExploreSampleReplacesSessionSampleAndSpecHash() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = ConnectionDef(
+            id = "c1",
+            name = "Local",
+            dialect = Dialect.MySql,
+            host = "localhost",
+            port = 3306,
+            database = "safedb",
+            username = "root",
+        )
+        val sampleA = QueryResult(
+            columns = listOf(ResultColumn("t0__status", "varchar")),
+            rows = listOf(listOf(ResultCell.text("pending"))),
+            rowCount = 1,
+            truncated = false,
+            warnings = emptyList(),
+        )
+        val sampleB = QueryResult(
+            columns = listOf(ResultColumn("t0__status", "varchar")),
+            rows = listOf(
+                listOf(ResultCell.text("pending")),
+                listOf(ResultCell.text("shipped")),
+            ),
+            rowCount = 2,
+            truncated = false,
+            warnings = emptyList(),
+        )
+        val specA = sampleSpec()
+        val specB = sampleSpec().copy(limit = 50)
+
+        viewModel.openExplore(connection, specA, sampleA)
+        viewModel.refreshExploreSample(connection, specB, sampleB)
+
+        val session = viewModel.explore.value?.session
+        assertEquals(2, session?.sample?.rowCount)
+        assertEquals(sampleB.rows, session?.sample?.rows)
+        assertEquals(exploreSpecHash(specB), session?.baseSpecHash)
+        assertEquals(50, session?.builderLimit)
+
+        viewModel.refreshExploreSample(connection.copy(id = "c2", name = "Other"), specA, sampleA)
+        assertEquals("c1", viewModel.explore.value?.session?.connectionId)
+        assertEquals("Local", viewModel.explore.value?.session?.connectionLabel)
+        assertEquals(sampleB.rows, viewModel.explore.value?.session?.sample?.rows)
+    }
+
+    @Test
+    fun querySampleIsBoundToItsExecutedConnectionAndSpec() = runTest(dispatcher) {
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(FakeSafeDbService(), scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertEquals("c1", query.currentSample("c1")?.connectionId)
+        assertNull(query.currentSample("c2"))
+
+        query.toggleColumn("t0", "name")
+
+        assertNull(query.currentSample("c1"))
     }
 
     @Test

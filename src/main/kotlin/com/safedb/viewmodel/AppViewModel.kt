@@ -76,6 +76,7 @@ class AppViewModel(
 
     fun refreshExploreSample(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
         val current = _explore.value ?: return
+        if (current.session.connectionId != connection.id) return
         _explore.value = ExploreViewModel(
             session = createExploreSession(connection, spec, sample),
             initialConfig = current.config,

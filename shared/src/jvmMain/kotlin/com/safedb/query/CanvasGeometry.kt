@@ -473,10 +473,7 @@ fun indexedJoinTargetAt(
 
 data class SuggestedRelationship(
     val name: String,
-    val foreignAlias: String,
-    val foreignColumn: String,
-    val referencedAlias: String,
-    val referencedColumn: String,
+    val joins: List<JoinSpec>,
 )
 
 fun suggestedRelationships(
@@ -495,20 +492,31 @@ fun suggestedRelationships(
                 qualifiedTableKey(foreignKey.referencedSchema, foreignKey.referencedTable)
             ] ?: continue
 
-            for ((foreignColumn, referencedColumn) in foreignKey.columns.zip(foreignKey.referencedColumns)) {
-                if (!foreignTable.tableInfo.hasColumn(foreignColumn)) continue
-                if (!referencedTable.tableInfo.hasColumn(referencedColumn)) continue
-                if (joins.hasJoin(foreignTable.alias, foreignColumn, referencedTable.alias, referencedColumn)) continue
-                suggestions.add(
-                    SuggestedRelationship(
-                        name = foreignKey.name,
-                        foreignAlias = foreignTable.alias,
-                        foreignColumn = foreignColumn,
-                        referencedAlias = referencedTable.alias,
-                        referencedColumn = referencedColumn,
-                    ),
+            val columnPairs = foreignKey.columns.zip(foreignKey.referencedColumns)
+            if (columnPairs.any { (foreignColumn, referencedColumn) ->
+                    !foreignTable.tableInfo.hasColumn(foreignColumn) ||
+                        !referencedTable.tableInfo.hasColumn(referencedColumn)
+                }
+            ) continue
+
+            val relationshipJoins = columnPairs.map { (foreignColumn, referencedColumn) ->
+                JoinSpec(
+                    leftAlias = foreignTable.alias,
+                    leftColumn = foreignColumn,
+                    rightAlias = referencedTable.alias,
+                    rightColumn = referencedColumn,
                 )
             }
+            if (relationshipJoins.all { suggested ->
+                    joins.hasJoin(
+                        suggested.leftAlias,
+                        suggested.leftColumn,
+                        suggested.rightAlias,
+                        suggested.rightColumn,
+                    )
+                }
+            ) continue
+            suggestions.add(SuggestedRelationship(name = foreignKey.name, joins = relationshipJoins))
         }
     }
 

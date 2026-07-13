@@ -255,15 +255,12 @@ class CanvasGeometryTest {
             listOf(
                 SuggestedRelationship(
                     name = "orders_customer_id_fkey",
-                    foreignAlias = "t0",
-                    foreignColumn = "customer_id",
-                    referencedAlias = "t1",
-                    referencedColumn = "id",
+                    joins = listOf(JoinSpec("t0", "customer_id", "t1", "id")),
                 ),
             ),
             suggestedRelationships(listOf(orders, customers), emptyList()),
-    )
-}
+        )
+    }
 
 private fun edgeIntersects(points: List<CanvasPoint>, rect: CanvasRect): Boolean =
     points.zipWithNext().any { (a, b) ->
@@ -295,10 +292,7 @@ private fun edgeIntersects(points: List<CanvasPoint>, rect: CanvasRect): Boolean
             listOf(
                 SuggestedRelationship(
                     name = "orders_customer_id_fkey",
-                    foreignAlias = "t0",
-                    foreignColumn = "customer_id",
-                    referencedAlias = "t1",
-                    referencedColumn = "id",
+                    joins = listOf(JoinSpec("t0", "customer_id", "t1", "id")),
                 ),
             ),
             suggestedRelationships(listOf(orders, customers), emptyList()),
@@ -334,7 +328,7 @@ private fun edgeIntersects(points: List<CanvasPoint>, rect: CanvasRect): Boolean
     }
 
     @Test
-    fun suggestedRelationshipsExpandCompositeForeignKeys() {
+    fun suggestedRelationshipsKeepCompositeForeignKeysAtomic() {
         val items = canvasTable(
             alias = "t0",
             name = "line_items",
@@ -364,10 +358,29 @@ private fun edgeIntersects(points: List<CanvasPoint>, rect: CanvasRect): Boolean
 
         assertEquals(
             listOf(
-                SuggestedRelationship("line_items_order_fkey", "t0", "order_id", "t1", "id"),
-                SuggestedRelationship("line_items_order_fkey", "t0", "store_id", "t1", "store_id"),
+                SuggestedRelationship(
+                    "line_items_order_fkey",
+                    listOf(
+                        JoinSpec("t0", "order_id", "t1", "id"),
+                        JoinSpec("t0", "store_id", "t1", "store_id"),
+                    ),
+                ),
             ),
             suggestedRelationships(listOf(items, orders), emptyList()),
+        )
+
+        val partialJoin = listOf(JoinSpec("t0", "order_id", "t1", "id"))
+        assertEquals(
+            listOf(
+                SuggestedRelationship(
+                    "line_items_order_fkey",
+                    listOf(
+                        JoinSpec("t0", "order_id", "t1", "id"),
+                        JoinSpec("t0", "store_id", "t1", "store_id"),
+                    ),
+                ),
+            ),
+            suggestedRelationships(listOf(items, orders), partialJoin),
         )
     }
 
@@ -402,7 +415,10 @@ private fun edgeIntersects(points: List<CanvasPoint>, rect: CanvasRect): Boolean
 
         assertEquals(
             listOf(
-                SuggestedRelationship("orders_sales_rep_fkey", "t0", "customer_id", "t2", "id"),
+                SuggestedRelationship(
+                    "orders_sales_rep_fkey",
+                    listOf(JoinSpec("t0", "customer_id", "t2", "id")),
+                ),
             ),
             suggestedRelationships(listOf(orders, customers, salesReps), emptyList()),
         )

@@ -38,7 +38,7 @@ private class PivotEngine(
     private val aggregateCache = mutableMapOf<BitSet, Map<String, ResultCell>>()
 
     fun apply(): ExplorePreviewResult {
-        val records = sample.rows.mapIndexedNotNull { index, row ->
+        var records = sample.rows.mapIndexedNotNull { index, row ->
             if (!passesSourceFilters(row)) return@mapIndexedNotNull null
             PivotRecord(
                 index = index,
@@ -47,8 +47,36 @@ private class PivotEngine(
                 columnBuckets = columnDimensions.map { bucketFor(row, it) },
             )
         }
-        val filteredRows = BitSet(sample.rows.size).apply { records.forEach { set(it.index) } }
+        var filteredRows = BitSet(sample.rows.size).apply { records.forEach { set(it.index) } }
         activeRows = filteredRows
+        val axisColumns = (rowDimensions + columnDimensions).mapTo(mutableSetOf()) { it.column }
+        config.filters.filterIsInstance<PivotFilter.Value>()
+            .filter { it.column !in axisColumns }
+            .forEach { filter ->
+                val columnIndex = indexes[filter.column] ?: return@forEach
+                val groupedRows = linkedMapOf<String, BitSet>()
+                records.forEach { record ->
+                    val key = pivotCellKey(record.row.getOrNull(columnIndex))
+                    groupedRows.getOrPut(key, ::BitSet).set(record.index)
+                }
+                val scored = groupedRows.map { (key, rows) ->
+                    key to aggregateDecimal(rows, activeRows, filter.measureAlias)
+                }
+                val retainedKeys = when (filter.op) {
+                    ValueFilterOp.Top -> scored.sortedByDescending { it.second }
+                        .take(filter.count.coerceAtLeast(1)).mapTo(mutableSetOf()) { it.first }
+                    ValueFilterOp.Bottom -> scored.sortedBy { it.second }
+                        .take(filter.count.coerceAtLeast(1)).mapTo(mutableSetOf()) { it.first }
+                    else -> scored.filter { (_, value) -> passesValueComparison(value, filter) }
+                        .mapTo(mutableSetOf()) { it.first }
+                }
+                val retainedRows = BitSet(sample.rows.size)
+                retainedKeys.forEach { key -> groupedRows[key]?.let(retainedRows::or) }
+                activeRows.and(retainedRows)
+                aggregateCache.clear()
+                records = records.filter { activeRows[it.index] }
+            }
+        filteredRows = activeRows.clone() as BitSet
         var rowRoot = buildTree(records, rowDimensions, filteredRows) { it.rowBuckets }
         var columnRoot = buildTree(records, columnDimensions, filteredRows) { it.columnBuckets }
         var rawRowSlices = buildRowSlices(rowRoot)
@@ -422,7 +450,14 @@ private class PivotEngine(
     ): BigDecimal? {
         val useColumns = columnDimensions.any { it.id == measure.showAs.baseDimensionId }
         val node = if (useColumns) columnNode else rowNode
-        val siblings = node.parent?.children?.values?.toList().orEmpty()
+        val parent = node.parent ?: return null
+        val dimensions = if (useColumns) columnDimensions else rowDimensions
+        val dimension = dimensions.getOrNull(node.depth - 1)
+        val siblings = if (dimension == null) {
+            parent.children.values.toList()
+        } else {
+            orderedChildren(parent, dimension)
+        }
         val index = siblings.indexOf(node)
         if (index < 0) return null
         fun siblingValue(sibling: AxisNode): BigDecimal = if (useColumns) {

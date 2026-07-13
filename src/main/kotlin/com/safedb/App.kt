@@ -33,11 +33,12 @@ import java.awt.Dimension
 import kotlinx.coroutines.runBlocking
 
 @Composable
-fun App(appState: AppState, window: java.awt.Window) {
+fun App(appState: AppState, mainWindow: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
     val settings by viewModel.settings.settings.collectAsState()
     val exploreViewModel by viewModel.explore.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
+    val activeConnectionId by appState.activeConnectionId.collectAsState()
     val useDarkTheme = settings.theme == "dark"
     var paletteOpen by remember { mutableStateOf(false) }
 
@@ -46,7 +47,7 @@ fun App(appState: AppState, window: java.awt.Window) {
     ) {
         val bgColor = MaterialTheme.colorScheme.background
         SideEffect {
-            window.background = java.awt.Color(bgColor.toArgb())
+            mainWindow.background = java.awt.Color(bgColor.toArgb())
         }
         Surface(
             modifier = Modifier
@@ -73,11 +74,11 @@ fun App(appState: AppState, window: java.awt.Window) {
 
         exploreViewModel?.let { explore ->
             val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
-            val queryResults = viewModel.query.results
-            val activeConnection = connections.firstOrNull { connection ->
-                connection.id == explore.session.connectionId
-            }
-            val sampleRefreshEnabled = queryResults != null && activeConnection != null
+            val currentSpec = viewModel.query.spec
+            val builderSample = viewModel.query.currentSample(activeConnectionId)
+            val sampleRefreshEnabled = activeConnectionId == explore.session.connectionId &&
+                builderSample != null &&
+                connections.any { it.id == activeConnectionId }
             Window(
                 onCloseRequest = viewModel::closeExplore,
                 title = "Explore - safe-db",
@@ -94,14 +95,26 @@ fun App(appState: AppState, window: java.awt.Window) {
                     Surface(color = MaterialTheme.colorScheme.background) {
                         ExploreWindowContent(
                             viewModel = explore,
-                            currentSpec = viewModel.query.spec,
+                            currentSpec = currentSpec,
                             onClose = viewModel::closeExplore,
-                            onRefreshSample = activeConnection?.let { connection ->
-                                queryResults?.let { results ->
-                                    {
-                                        viewModel.refreshExploreSample(connection, viewModel.query.spec, results)
+                            onRefreshSample = if (sampleRefreshEnabled) {
+                                refresh@{
+                                    val builderConnectionId = appState.activeConnectionId.value
+                                    if (builderConnectionId != explore.session.connectionId) return@refresh
+                                    val connection = connections.firstOrNull { connection ->
+                                        connection.id == builderConnectionId
+                                    }
+                                    val latestSample = viewModel.query.currentSample(builderConnectionId)
+                                    if (connection != null && latestSample != null) {
+                                        viewModel.refreshExploreSample(
+                                            connection,
+                                            latestSample.spec,
+                                            latestSample.result,
+                                        )
                                     }
                                 }
+                            } else {
+                                null
                             },
                             sampleRefreshEnabled = sampleRefreshEnabled,
                         )
