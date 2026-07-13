@@ -25,8 +25,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -196,7 +196,7 @@ private fun PivotNestedHeaderRow(
             ) {
                 if (header.hasChildren) {
                     Icon(
-                        imageVector = if (header.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                        imageVector = if (header.expanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = if (header.expanded) "Collapse column group" else "Expand column group",
                         modifier = Modifier
                             .size(18.dp)
@@ -304,7 +304,7 @@ private fun PivotDataRow(
                 ) {
                     if (entry?.hasChildren == true) {
                         Icon(
-                            imageVector = if (entry.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                            imageVector = if (entry.expanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = if (entry.expanded) "Collapse row group" else "Expand row group",
                             modifier = Modifier
                                 .size(18.dp)

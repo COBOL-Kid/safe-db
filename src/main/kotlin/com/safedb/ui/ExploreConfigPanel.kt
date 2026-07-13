@@ -308,10 +308,8 @@ internal fun ExploreConfigPanel(
                         label = measure.label,
                         supportingText = measureSupportingText(measure, fields),
                         onClick = { editingMeasure = measure },
-                        onRemove = if (config.measures.size > 1) {
-                            { onConfigChange(config.copy(measures = config.measures - measure)) }
-                        } else {
-                            null
+                        onRemove = {
+                            onConfigChange(config.copy(measures = config.measures - measure))
                         },
                     )
                 }
