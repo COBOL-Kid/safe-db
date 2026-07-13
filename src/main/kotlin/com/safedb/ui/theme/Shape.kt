@@ -5,15 +5,15 @@ import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
 val SafeDbShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(10.dp),
-    large = RoundedCornerShape(12.dp),
-    extraLarge = RoundedCornerShape(16.dp),
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(6.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(10.dp),
+    extraLarge = RoundedCornerShape(12.dp),
 )
 
-val CardShape = RoundedCornerShape(14.dp)
-val InputShape = RoundedCornerShape(10.dp)
-val ButtonShape = RoundedCornerShape(9.dp)
+val CardShape = RoundedCornerShape(8.dp)
+val InputShape = RoundedCornerShape(6.dp)
+val ButtonShape = RoundedCornerShape(6.dp)
 val PillShape = RoundedCornerShape(50)
-val ChipShape = RoundedCornerShape(7.dp)
+val ChipShape = RoundedCornerShape(5.dp)

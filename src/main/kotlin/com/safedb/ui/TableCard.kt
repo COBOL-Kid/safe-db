@@ -104,7 +104,7 @@ fun TableCard(
                     },
                 )
             },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         shadowElevation = 4.dp,
         tonalElevation = 0.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),

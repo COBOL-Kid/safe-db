@@ -37,7 +37,7 @@ fun AppCard(
     val lifted = hoverLift && hovered
     val borderColor by animateColorAsState(
         if (lifted) {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
         } else {
             MaterialTheme.colorScheme.outline
         },

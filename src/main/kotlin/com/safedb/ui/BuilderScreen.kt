@@ -198,7 +198,7 @@ fun BuilderScreen(
                 showCostGuardConfirm = false
                 queryViewModel.dismissError()
             },
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(12.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -256,7 +256,7 @@ fun BuilderScreen(
     if (showWarningMuteConfirm) {
         AlertDialog(
             onDismissRequest = { showWarningMuteConfirm = false },
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(12.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,

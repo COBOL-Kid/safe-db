@@ -67,7 +67,7 @@ fun FilterRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,

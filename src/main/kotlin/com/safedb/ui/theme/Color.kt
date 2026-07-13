@@ -48,15 +48,15 @@ data class SafeDbColors(
 // Light — Slate neutral core, indigo accent
 // ------------------------------------------------------------------
 
-private val LightBackground = Color(0xFFF8FAFC) // slate-50
+private val LightBackground = Color(0xFFF1F5F9) // slate-100 — deeper canvas so white cards read distinctly
 private val LightSurface = Color(0xFFFFFFFF) // white
 private val LightSurfaceContainerLowest = Color(0xFFFFFFFF)
-private val LightSurfaceContainerLow = Color(0xFFF8FAFC) // slate-50
+private val LightSurfaceContainerLow = Color(0xFFF8FAFC) // slate-50 — sidebar rail, lighter than content canvas
 private val LightSurfaceContainer = Color(0xFFF1F5F9) // slate-100
 private val LightSurfaceContainerHigh = Color(0xFFEBEEF2)
 private val LightSurfaceContainerHighest = Color(0xFFE2E8F0) // slate-200
-private val LightOutline = Color(0xFFE2E8F0) // slate-200
-private val LightOutlineVariant = Color(0xFFEEF2F6) // slate-100/200 blend
+private val LightOutline = Color(0xFFCBD5E1) // slate-300 — stronger, visible resting borders
+private val LightOutlineVariant = Color(0xFFE2E8F0) // slate-200 — subtle internal dividers
 private val LightOnSurface = Color(0xFF0F172A) // slate-900
 private val LightOnSurfaceVariant = Color(0xFF64748B) // slate-500
 
@@ -115,8 +115,8 @@ private val DarkSurfaceContainerLow = Color(0xFF151D2E)
 private val DarkSurfaceContainer = Color(0xFF1B2436) // slate-800 blend
 private val DarkSurfaceContainerHigh = Color(0xFF222C40)
 private val DarkSurfaceContainerHighest = Color(0xFF2C374D)
-private val DarkOutline = Color(0xFF283349) // muted slate-700
-private val DarkOutlineVariant = Color(0xFF1D2739)
+private val DarkOutline = Color(0xFF334155) // slate-700 — clearer card/panel edges
+private val DarkOutlineVariant = Color(0xFF283349) // muted slate-700 — subtle dividers
 private val DarkOnSurface = Color(0xFFF1F5F9) // slate-100
 private val DarkOnSurfaceVariant = Color(0xFF94A3B8) // slate-400
 

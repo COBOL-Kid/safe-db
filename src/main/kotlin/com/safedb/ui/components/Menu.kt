@@ -39,7 +39,7 @@ fun SafeDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier.widthIn(min = minWidth),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
         shadowElevation = 12.dp,

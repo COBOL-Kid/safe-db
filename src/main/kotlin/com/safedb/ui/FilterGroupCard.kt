@@ -59,7 +59,7 @@ fun FilterGroupCard(
     val backgroundModifier = if (depth > 0) {
         Modifier
             .background(depthTint!!, RoundedCornerShape(8.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
             .padding(6.dp)
     } else {
         Modifier

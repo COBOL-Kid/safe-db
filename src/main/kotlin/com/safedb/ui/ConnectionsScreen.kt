@@ -186,7 +186,7 @@ private fun ConnectionCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         modifier = Modifier.size(30.dp),
-                        shape = RoundedCornerShape(9.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = SafeDbTheme.colors.accentContainer,
                     ) {
                         Box(contentAlignment = Alignment.Center) {

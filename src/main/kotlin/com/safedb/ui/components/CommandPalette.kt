@@ -186,7 +186,7 @@ fun CommandPalette(
                         else -> false
                     }
                 },
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 24.dp,
             tonalElevation = 0.dp,
@@ -217,7 +217,7 @@ fun CommandPalette(
                             )
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         textStyle = MaterialTheme.typography.bodyMedium,
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,

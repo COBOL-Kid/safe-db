@@ -70,7 +70,7 @@ internal fun DimensionSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         title = { Text("Field settings", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -183,7 +183,7 @@ internal fun MeasureSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         title = { Text("Value settings", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
@@ -303,7 +303,7 @@ internal fun CalculatedMeasureDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         title = { Text("Calculated measure", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
@@ -498,7 +498,7 @@ internal fun FilterSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         title = { Text("${filter.label} filter", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(modifier = Modifier.widthIn(min = 500.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

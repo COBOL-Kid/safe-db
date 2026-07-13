@@ -468,7 +468,7 @@ private fun FieldChip(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(9.dp),
+        shape = RoundedCornerShape(6.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {

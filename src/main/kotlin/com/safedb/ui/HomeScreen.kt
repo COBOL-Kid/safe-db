@@ -181,7 +181,7 @@ private fun QuickLinkCard(
 
     val borderColor by animateColorAsState(
         if (hovered) {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
         } else {
             MaterialTheme.colorScheme.outline
         },
@@ -193,7 +193,7 @@ private fun QuickLinkCard(
     val tileIconColor by animateColorAsState(
         if (hovered) SafeDbTheme.colors.onActionPrimary else SafeDbTheme.colors.onAccentContainer,
     )
-    val cardShape = RoundedCornerShape(14.dp)
+    val cardShape = RoundedCornerShape(8.dp)
 
     Surface(
         modifier = modifier.hoverable(interactionSource),
@@ -208,7 +208,7 @@ private fun QuickLinkCard(
         Column(modifier = Modifier.padding(20.dp)) {
             Surface(
                 modifier = Modifier.size(40.dp),
-                shape = RoundedCornerShape(11.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = tileColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {

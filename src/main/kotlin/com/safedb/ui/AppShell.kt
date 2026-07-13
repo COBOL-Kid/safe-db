@@ -440,7 +440,7 @@ private fun LogoMark() {
     Box(
         modifier = Modifier
             .size(34.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(Brush.linearGradient(listOf(accent, accentDeep))),
         contentAlignment = Alignment.Center,
     ) {
@@ -458,7 +458,7 @@ private fun SidebarStatusIndicator() {
     Box(
         modifier = Modifier
             .size(32.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(6.dp))
             .semantics { contentDescription = "Safe Read Mode" },
         contentAlignment = Alignment.Center,
     ) {
@@ -482,9 +482,9 @@ private fun SidebarCommandButton(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(background)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(9.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -516,7 +516,7 @@ private fun SidebarIconButton(
     Box(
         modifier = Modifier
             .size(32.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick),
@@ -562,7 +562,7 @@ private fun NavButton(
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)

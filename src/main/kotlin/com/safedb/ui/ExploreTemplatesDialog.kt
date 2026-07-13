@@ -37,7 +37,7 @@ internal fun ExploreTemplatesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         title = { Text("Templates", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
@@ -101,7 +101,7 @@ private fun TemplateCard(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (template.available) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         color = containerColor,
         border = BorderStroke(1.dp, borderColor),
     ) {
