@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
@@ -58,6 +59,7 @@ import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ToolbarTooltipIconButton
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.MemberOption
 import java.util.UUID
@@ -209,7 +211,11 @@ internal fun ExploreConfigPanel(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = { showTemplates = true }) { Text("Templates") }
+                ToolbarTooltipIconButton(
+                    label = "Templates",
+                    icon = Icons.Default.GridView,
+                    onClick = { showTemplates = true },
+                )
                 TextButton(onClick = onReset, enabled = resetEnabled) { Text("Reset") }
             }
 

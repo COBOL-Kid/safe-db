@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -64,6 +65,7 @@ import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.ToolbarTooltipIconButton
 import com.safedb.ui.components.PromptDialog
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
@@ -355,7 +357,9 @@ fun BuilderScreen(
                         Text("Clear")
                     }
                 }
-                SecondaryButton(
+                ToolbarTooltipIconButton(
+                    label = if (queryViewModel.warningPopupsDisabled) "Warnings off" else "Warnings on",
+                    icon = Icons.Default.WarningAmber,
                     onClick = {
                         if (queryViewModel.warningPopupsDisabled) {
                             queryViewModel.updateWarningPopupsDisabled(false)
@@ -363,9 +367,8 @@ fun BuilderScreen(
                             showWarningMuteConfirm = true
                         }
                     },
-                ) {
-                    Text(if (queryViewModel.warningPopupsDisabled) "Warnings Off" else "Warnings On")
-                }
+                    highlighted = !queryViewModel.warningPopupsDisabled,
+                )
                 PrimaryButton(
                     onClick = { connection?.id?.let { queryViewModel.run(it) } },
                     enabled = queryViewModel.canRun && connection != null && !queryViewModel.running,

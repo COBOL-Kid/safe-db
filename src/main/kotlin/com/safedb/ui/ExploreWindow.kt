@@ -116,13 +116,8 @@ fun ExploreWindowContent(
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                         if (session.sample.truncated) {
                             MessageBanner(
-                                text = "This view is based on a truncated sample, so totals may not represent the full result. Close Explore and raise the row limit in Builder for a larger sample.",
+                                text = "You’re viewing a sample, so totals may not represent the full result.",
                                 kind = BannerKind.WARNING,
-                                action = {
-                                    SecondaryButton(onClick = onClose) {
-                                        Text("Close and adjust in Builder")
-                                    }
-                                },
                             )
                         }
                         if (stale) {
