@@ -6,13 +6,14 @@ import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
 import com.safedb.model.LiteralKind
+import com.safedb.model.JoinSpec
 import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
 import com.safedb.model.classifyColumn
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
-const val MAX_LIMIT = 10_000
+const val MAX_LIMIT = 5_000
 const val DEFAULT_LIMIT = 100
 const val MAX_FILTER_DEPTH = 5
 const val MAX_IN_LIST_SIZE = 1000
@@ -226,12 +227,13 @@ fun validate(
         val rightCol = rightTable.columns.find { it.name == join.rightColumn }
             ?: return Outcome.err("Join column '${join.rightAlias}.${join.rightColumn}' does not exist")
 
-        if (!leftCol.joinEligible) {
+        val completeForeignKeyJoin = isPartOfCompleteForeignKey(schema, spec, join)
+        if (!leftCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
                 "Join column '${join.leftAlias}.${join.leftColumn}' is not the leading key of an equality-capable index",
             )
         }
-        if (!rightCol.joinEligible) {
+        if (!rightCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
                 "Join column '${join.rightAlias}.${join.rightColumn}' is not the leading key of an equality-capable index",
             )
@@ -292,3 +294,30 @@ internal fun findTableByAlias(schema: Schema, spec: QuerySpec, alias: String) =
     spec.tables.find { it.alias == alias }?.let { tableRef ->
         findTable(schema, tableRef.schema, tableRef.name)
     }
+
+private fun isPartOfCompleteForeignKey(schema: Schema, spec: QuerySpec, join: JoinSpec): Boolean {
+    for (foreignRef in spec.tables) {
+        val foreignTable = findTable(schema, foreignRef.schema, foreignRef.name) ?: continue
+        for (foreignKey in foreignTable.foreignKeys) {
+            if (foreignKey.columns.isEmpty() || foreignKey.columns.size != foreignKey.referencedColumns.size) continue
+            val referencedRefs = spec.tables.filter { tableRef ->
+                tableRef.schema == foreignKey.referencedSchema && tableRef.name == foreignKey.referencedTable
+            }
+            for (referencedRef in referencedRefs) {
+                val expected = foreignKey.columns.zip(foreignKey.referencedColumns).map { (foreignColumn, referencedColumn) ->
+                    JoinSpec(foreignRef.alias, foreignColumn, referencedRef.alias, referencedColumn)
+                }
+                if (expected.any { it.matches(join) } && expected.all { candidate -> spec.joins.any(candidate::matches) }) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+private fun JoinSpec.matches(other: JoinSpec): Boolean =
+    (leftAlias == other.leftAlias && leftColumn == other.leftColumn &&
+        rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
+        (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
+            rightAlias == other.leftAlias && rightColumn == other.leftColumn)

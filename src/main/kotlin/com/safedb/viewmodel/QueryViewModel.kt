@@ -55,6 +55,12 @@ data class CanvasTable(
     val height: Float = CANVAS_CARD_HEIGHT,
 )
 
+data class BuilderQuerySample(
+    val connectionId: String,
+    val spec: QuerySpec,
+    val result: QueryResult,
+)
+
 typealias NewFilterSpec = FilterSpec
 
 class QueryViewModel(
@@ -62,6 +68,7 @@ class QueryViewModel(
     private val scope: CoroutineScope,
 ) : QueryHydrationTarget {
     private var aliasCounter = 0
+    private var runGeneration = 0
 
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
     var selectedColumns by mutableStateOf(setOf<String>())
@@ -79,6 +86,8 @@ class QueryViewModel(
 
     var results by mutableStateOf<QueryResult?>(null)
         private set
+    private var resultConnectionId by mutableStateOf<String?>(null)
+    private var resultSpec by mutableStateOf<QuerySpec?>(null)
     var running by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
@@ -115,12 +124,15 @@ class QueryViewModel(
         }
 
     override fun clear() {
+        runGeneration += 1
         canvasTables.clear()
         selectedColumns = emptySet()
         joins.clear()
         filterGroupState = FilterGroup.empty()
         queryLimit = DEFAULT_LIMIT
         results = null
+        resultConnectionId = null
+        resultSpec = null
         error = null
         running = false
         pendingCostGuard = false
@@ -183,12 +195,7 @@ class QueryViewModel(
         selectedColumns.contains(columnKey(alias, column))
 
     override fun addJoin(join: JoinSpec) {
-        val exists = joins.any { j ->
-            (j.leftAlias == join.leftAlias && j.leftColumn == join.leftColumn &&
-                j.rightAlias == join.rightAlias && j.rightColumn == join.rightColumn) ||
-                (j.leftAlias == join.rightAlias && j.leftColumn == join.rightColumn &&
-                    j.rightAlias == join.leftAlias && j.rightColumn == join.leftColumn)
-        }
+        val exists = joins.any { it.matchesJoin(join) }
         if (!exists) {
             joins.add(join)
         }
@@ -196,6 +203,13 @@ class QueryViewModel(
 
     fun removeJoin(index: Int) {
         if (index in joins.indices) {
+            joins.removeAt(index)
+        }
+    }
+
+    fun removeJoin(join: JoinSpec) {
+        val index = joins.indexOfFirst { it.matchesJoin(join) }
+        if (index >= 0) {
             joins.removeAt(index)
         }
     }
@@ -288,21 +302,38 @@ class QueryViewModel(
 
     fun run(connectionId: String, force: Boolean = false) {
         if (!canRun) return
+        val executedSpec = spec
+        val generation = ++runGeneration
+        running = true
+        error = null
+        results = null
+        resultConnectionId = null
+        resultSpec = null
+        pendingCostGuard = false
         scope.launch {
-            running = true
-            error = null
-            results = null
-            pendingCostGuard = false
             try {
-                results = service.runQuery(connectionId, spec, force)
+                val completed = service.runQuery(connectionId, executedSpec, force)
+                if (generation == runGeneration) {
+                    results = completed
+                    resultConnectionId = connectionId
+                    resultSpec = executedSpec
+                }
             } catch (e: Exception) {
+                if (generation != runGeneration) return@launch
                 val message = e.message ?: e.toString()
                 if (!force && message.startsWith(COST_GUARD_PREFIX)) {
                     if (warningPopupsDisabled) {
                         try {
-                            results = service.runQuery(connectionId, spec, force = true)
+                            val completed = service.runQuery(connectionId, executedSpec, force = true)
+                            if (generation == runGeneration) {
+                                results = completed
+                                resultConnectionId = connectionId
+                                resultSpec = executedSpec
+                            }
                         } catch (forced: Exception) {
-                            error = forced.message ?: forced.toString()
+                            if (generation == runGeneration) {
+                                error = forced.message ?: forced.toString()
+                            }
                         }
                     } else {
                         pendingCostGuard = true
@@ -312,9 +343,19 @@ class QueryViewModel(
                     error = message
                 }
             } finally {
-                running = false
+                if (generation == runGeneration) {
+                    running = false
+                }
             }
         }
+    }
+
+    fun currentSample(connectionId: String?): BuilderQuerySample? {
+        if (connectionId == null || resultConnectionId != connectionId) return null
+        val result = results ?: return null
+        val executedSpec = resultSpec ?: return null
+        if (spec != executedSpec) return null
+        return BuilderQuerySample(connectionId, executedSpec, result)
     }
 
     fun runForced(connectionId: String) {
@@ -366,6 +407,12 @@ class QueryViewModel(
         }
     }
 }
+
+internal fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
+    (leftAlias == other.leftAlias && leftColumn == other.leftColumn &&
+        rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
+        (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
+            rightAlias == other.leftAlias && rightColumn == other.leftColumn)
 
 private fun newNodeId(): String = UUID.randomUUID().toString()
 
@@ -500,17 +547,16 @@ private fun rebuildOverrides(
     val parentMap = mutableMapOf<String, FilterGroup>()
 
     fun walk(g: FilterGroup) {
-        if (g.id.isNotEmpty()) ids.add(g.id)
-        for (child in g.children) {
+        for ((index, child) in g.children.withIndex()) {
             when (child) {
                 is FilterNode.Leaf -> {
-                    if (child.spec.id.isNotEmpty()) {
+                    if (index > 0 && child.spec.id.isNotEmpty()) {
                         ids.add(child.spec.id)
                         parentMap[child.spec.id] = g
                     }
                 }
                 is FilterNode.Group -> {
-                    if (child.group.id.isNotEmpty()) {
+                    if (index > 0 && child.group.id.isNotEmpty()) {
                         ids.add(child.group.id)
                         parentMap[child.group.id] = g
                     }

@@ -1,6 +1,7 @@
 package com.safedb.viewmodel
 
 import com.safedb.model.ConnectionDef
+import com.safedb.model.QueryResult
 import com.safedb.model.HistoryEntry
 import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
@@ -27,6 +28,9 @@ class AppViewModel(
     val history = HistoryViewModel(service, scope)
     val query = QueryViewModel(service, scope)
     val schema = SchemaViewModel(service, scope)
+
+    private val _explore = MutableStateFlow<ExploreViewModel?>(null)
+    val explore: StateFlow<ExploreViewModel?> = _explore.asStateFlow()
 
     private val _initialLoading = MutableStateFlow(true)
     val initialLoading: StateFlow<Boolean> = _initialLoading.asStateFlow()
@@ -64,5 +68,22 @@ class AppViewModel(
         scope.launch {
             service.lockCredentials()
         }
+    }
+
+    fun openExplore(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
+        _explore.value = ExploreViewModel(createExploreSession(connection, spec, sample))
+    }
+
+    fun refreshExploreSample(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
+        val current = _explore.value ?: return
+        if (current.session.connectionId != connection.id) return
+        _explore.value = ExploreViewModel(
+            session = createExploreSession(connection, spec, sample),
+            initialConfig = current.config,
+        )
+    }
+
+    fun closeExplore() {
+        _explore.value = null
     }
 }

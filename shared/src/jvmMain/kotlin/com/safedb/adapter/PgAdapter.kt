@@ -4,6 +4,7 @@ import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
@@ -41,8 +42,9 @@ object PgAdapter {
                         val table = readString(rs, "table_name")
                         var columns = introspectColumns(conn, schema, table)
                         val indexes = introspectIndexes(conn, schema, table)
+                        val foreignKeys = introspectForeignKeys(conn, schema, table)
                         markIndexedColumns(columns, indexes)
-                        tables.add(TableInfo(schema, table, columns, indexes))
+                        tables.add(TableInfo(schema, table, columns, indexes, foreignKeys))
                     }
                 }
             }
@@ -122,6 +124,60 @@ object PgAdapter {
             }
         }
         return indexMap.values.toList()
+    }
+
+    private fun introspectForeignKeys(conn: java.sql.Connection, schema: String, table: String): List<ForeignKeyInfo> {
+        val foreignKeyMap = linkedMapOf<String, ForeignKeyInfo>()
+        conn.prepareStatement(
+            """
+            SELECT con.conname AS constraint_name,
+                   child_attr.attname AS column_name,
+                   parent_ns.nspname AS referenced_schema,
+                   parent.relname AS referenced_table,
+                   parent_attr.attname AS referenced_column
+            FROM pg_constraint con
+            JOIN pg_class child ON child.oid = con.conrelid
+            JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+            JOIN pg_class parent ON parent.oid = con.confrelid
+            JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+            JOIN unnest(con.conkey) WITH ORDINALITY AS child_key(attnum, ordinality) ON true
+            JOIN unnest(con.confkey) WITH ORDINALITY AS parent_key(attnum, ordinality)
+              ON parent_key.ordinality = child_key.ordinality
+            JOIN pg_attribute child_attr
+              ON child_attr.attrelid = child.oid AND child_attr.attnum = child_key.attnum
+            JOIN pg_attribute parent_attr
+              ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = parent_key.attnum
+            WHERE con.contype = 'f'
+              AND child_ns.nspname = ?
+              AND child.relname = ?
+            ORDER BY con.conname, child_key.ordinality
+            """.trimIndent(),
+        ).use { ps ->
+            ps.setString(1, schema)
+            ps.setString(2, table)
+            ps.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val name = readString(rs, "constraint_name")
+                    val referencedSchema = readString(rs, "referenced_schema")
+                    val referencedTable = readString(rs, "referenced_table")
+                    val column = readString(rs, "column_name")
+                    val referencedColumn = readString(rs, "referenced_column")
+                    val key = "$name|$referencedSchema|$referencedTable"
+                    val entry = foreignKeyMap.getOrPut(key) {
+                        ForeignKeyInfo(
+                            name = name,
+                            referencedSchema = referencedSchema,
+                            referencedTable = referencedTable,
+                        )
+                    }
+                    foreignKeyMap[key] = entry.copy(
+                        columns = entry.columns + column,
+                        referencedColumns = entry.referencedColumns + referencedColumn,
+                    )
+                }
+            }
+        }
+        return foreignKeyMap.values.toList()
     }
 
     fun executeQuery(dataSource: HikariDataSource, compiled: CompiledQuery, timeoutMs: Int): QueryResult =

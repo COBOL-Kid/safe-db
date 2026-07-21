@@ -4,6 +4,7 @@ import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
@@ -68,8 +69,9 @@ object OracleAdapter {
             val tables = tableData.map { (schema, table) ->
                 var columns = introspectColumns(conn, schema, table)
                 val indexes = introspectIndexes(conn, schema, table)
+                val foreignKeys = introspectForeignKeys(conn, schema, table)
                 markIndexedColumns(columns, indexes)
-                TableInfo(schema, table, columns, indexes)
+                TableInfo(schema, table, columns, indexes, foreignKeys)
             }
             return Schema(tables)
         }
@@ -138,6 +140,59 @@ object OracleAdapter {
             }
         }
         return indexMap.values.toList()
+    }
+
+    private fun introspectForeignKeys(conn: java.sql.Connection, schema: String, table: String): List<ForeignKeyInfo> {
+        val foreignKeyMap = linkedMapOf<String, ForeignKeyInfo>()
+        conn.prepareStatement(
+            """
+            SELECT child.constraint_name,
+                   child_cols.column_name,
+                   parent.owner AS referenced_schema,
+                   parent.table_name AS referenced_table,
+                   parent_cols.column_name AS referenced_column
+            FROM all_constraints child
+            JOIN all_cons_columns child_cols
+              ON child.owner = child_cols.owner
+             AND child.constraint_name = child_cols.constraint_name
+            JOIN all_constraints parent
+              ON child.r_owner = parent.owner
+             AND child.r_constraint_name = parent.constraint_name
+            JOIN all_cons_columns parent_cols
+              ON parent.owner = parent_cols.owner
+             AND parent.constraint_name = parent_cols.constraint_name
+             AND parent_cols.position = child_cols.position
+            WHERE child.constraint_type = 'R'
+              AND child.owner = ?
+              AND child.table_name = ?
+            ORDER BY child.constraint_name, child_cols.position
+            """.trimIndent(),
+        ).use { ps ->
+            ps.setString(1, schema)
+            ps.setString(2, table)
+            ps.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val name = readString(rs, "constraint_name")
+                    val referencedSchema = readString(rs, "referenced_schema")
+                    val referencedTable = readString(rs, "referenced_table")
+                    val column = readString(rs, "column_name")
+                    val referencedColumn = readString(rs, "referenced_column")
+                    val key = "$name|$referencedSchema|$referencedTable"
+                    val entry = foreignKeyMap.getOrPut(key) {
+                        ForeignKeyInfo(
+                            name = name,
+                            referencedSchema = referencedSchema,
+                            referencedTable = referencedTable,
+                        )
+                    }
+                    foreignKeyMap[key] = entry.copy(
+                        columns = entry.columns + column,
+                        referencedColumns = entry.referencedColumns + referencedColumn,
+                    )
+                }
+            }
+        }
+        return foreignKeyMap.values.toList()
     }
 
     fun executeQuery(dataSource: HikariDataSource, compiled: CompiledQuery, timeoutMs: Int): QueryResult =

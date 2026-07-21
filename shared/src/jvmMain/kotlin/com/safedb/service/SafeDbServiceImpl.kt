@@ -25,6 +25,35 @@ internal fun interface QuerySessionFactory {
     suspend fun open(def: ConnectionDef, password: String): QuerySession
 }
 
+internal interface ConnectedAdapter {
+    suspend fun test(): String
+    suspend fun introspect(): Schema
+    suspend fun explain(compiled: CompiledQuery): ExplainResult
+    suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult
+    fun close()
+}
+
+internal fun interface AdapterFactory {
+    suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter
+}
+
+private object DefaultAdapterFactory : AdapterFactory {
+    override suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter {
+        val adapter = Adapter.connect(def, password)
+        return object : ConnectedAdapter {
+            override suspend fun test(): String = adapter.test()
+            override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
+            override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+                Adapter.explainWithTimeout(adapter, compiled)
+
+            override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
+                adapter.executeQuery(compiled, timeoutMs)
+
+            override fun close() = adapter.close()
+        }
+    }
+}
+
 internal class QuerySession(
     val schema: Schema,
     val runner: QueryRunner,
@@ -38,6 +67,7 @@ class SafeDbServiceImpl internal constructor(
     private val queryStore: QueryStore,
     private val settingsStore: SettingsStore,
     private val querySessionFactory: QuerySessionFactory?,
+    private val adapterFactory: AdapterFactory = DefaultAdapterFactory,
 ) : SafeDbService {
 
     constructor(
@@ -48,7 +78,7 @@ class SafeDbServiceImpl internal constructor(
 
     override suspend fun testConnection(def: ConnectionDef, password: String): String {
         def.validate().getOrThrow()
-        val adapter = Adapter.connect(def, password)
+        val adapter = adapterFactory.connect(def, password)
         return try {
             adapter.test()
         } finally {
@@ -91,9 +121,9 @@ class SafeDbServiceImpl internal constructor(
     override suspend fun getSchema(connectionId: String): Schema {
         val def = configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
-        val adapter = Adapter.connect(def, password)
+        val adapter = adapterFactory.connect(def, password)
         return try {
-            Adapter.introspectWithTimeout(adapter)
+            adapter.introspect()
         } finally {
             adapter.close()
         }
@@ -127,9 +157,9 @@ class SafeDbServiceImpl internal constructor(
     }
 
     private suspend fun openDefaultQuerySession(def: ConnectionDef, password: String): QuerySession {
-        val adapter = Adapter.connect(def, password)
+        val adapter = adapterFactory.connect(def, password)
         val schema = try {
-            Adapter.introspectWithTimeout(adapter)
+            adapter.introspect()
         } catch (error: Throwable) {
             runCatching { adapter.close() }.onFailure { closeError -> error.addSuppressed(closeError) }
             throw error
@@ -199,9 +229,9 @@ class SafeDbServiceImpl internal constructor(
         }
     }
 
-    private class AdapterQueryRunner(private val adapter: Adapter) : QueryRunner {
+    private class AdapterQueryRunner(private val adapter: ConnectedAdapter) : QueryRunner {
         override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-            Adapter.explainWithTimeout(adapter, compiled)
+            adapter.explain(compiled)
 
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> =
             runCatching { adapter.executeQuery(compiled, timeoutMs) }

@@ -1,5 +1,6 @@
 package com.safedb.viewmodel
 
+import com.safedb.explore.exploreSpecHash
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -8,6 +9,7 @@ import com.safedb.model.HistoryEntry
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultColumn
+import com.safedb.model.ResultCell
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
@@ -16,11 +18,13 @@ import com.safedb.model.TableRef
 import com.safedb.query.COST_GUARD_PREFIX
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
@@ -76,6 +80,101 @@ class AppViewModelTest {
     }
 
     @Test
+    fun openExploreCreatesSessionAndCloseClearsIt() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = ConnectionDef(
+            id = "c1",
+            name = "Local",
+            dialect = Dialect.MySql,
+            host = "localhost",
+            port = 3306,
+            database = "safedb",
+            username = "root",
+        )
+        val result = QueryResult(
+            columns = listOf(ResultColumn("t0__status", "varchar")),
+            rows = listOf(listOf(ResultCell.text("pending"))),
+            rowCount = 1,
+            truncated = false,
+            warnings = emptyList(),
+        )
+
+        viewModel.openExplore(connection, sampleSpec(), result)
+
+        assertEquals("Local", viewModel.explore.value?.session?.connectionLabel)
+        viewModel.closeExplore()
+        assertNull(viewModel.explore.value)
+    }
+
+    @Test
+    fun refreshExploreSampleReplacesSessionSampleAndSpecHash() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = ConnectionDef(
+            id = "c1",
+            name = "Local",
+            dialect = Dialect.MySql,
+            host = "localhost",
+            port = 3306,
+            database = "safedb",
+            username = "root",
+        )
+        val sampleA = QueryResult(
+            columns = listOf(ResultColumn("t0__status", "varchar")),
+            rows = listOf(listOf(ResultCell.text("pending"))),
+            rowCount = 1,
+            truncated = false,
+            warnings = emptyList(),
+        )
+        val sampleB = QueryResult(
+            columns = listOf(ResultColumn("t0__status", "varchar")),
+            rows = listOf(
+                listOf(ResultCell.text("pending")),
+                listOf(ResultCell.text("shipped")),
+            ),
+            rowCount = 2,
+            truncated = false,
+            warnings = emptyList(),
+        )
+        val specA = sampleSpec()
+        val specB = sampleSpec().copy(limit = 50)
+
+        viewModel.openExplore(connection, specA, sampleA)
+        viewModel.refreshExploreSample(connection, specB, sampleB)
+
+        val session = viewModel.explore.value?.session
+        assertEquals(2, session?.sample?.rowCount)
+        assertEquals(sampleB.rows, session?.sample?.rows)
+        assertEquals(exploreSpecHash(specB), session?.baseSpecHash)
+        assertEquals(50, session?.builderLimit)
+
+        viewModel.refreshExploreSample(connection.copy(id = "c2", name = "Other"), specA, sampleA)
+        assertEquals("c1", viewModel.explore.value?.session?.connectionId)
+        assertEquals("Local", viewModel.explore.value?.session?.connectionLabel)
+        assertEquals(sampleB.rows, viewModel.explore.value?.session?.sample?.rows)
+    }
+
+    @Test
+    fun querySampleIsBoundToItsExecutedConnectionAndSpec() = runTest(dispatcher) {
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(FakeSafeDbService(), scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertEquals("c1", query.currentSample("c1")?.connectionId)
+        assertNull(query.currentSample("c2"))
+
+        query.toggleColumn("t0", "name")
+
+        assertNull(query.currentSample("c1"))
+    }
+
+    @Test
     fun queryViewModelMutedCostGuardRetriesWithForceForSessionOnly() = runTest(dispatcher) {
         val service = FakeSafeDbService(costGuardFirstRun = true)
         val scope = TestScope(dispatcher)
@@ -109,10 +208,51 @@ class AppViewModelTest {
             query.spec.tables,
         )
     }
+
+    @Test
+    fun queryViewModelRejectsDuplicateRunsBeforeCoroutineStarts() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertEquals(listOf(false), service.forceCalls)
+        assertFalse(query.running)
+    }
+
+    @Test
+    fun queryViewModelIgnoresCompletionAfterClear() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val service = FakeSafeDbService(queryGate = gate, queryStarted = started)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        assertTrue(query.running)
+        scope.runCurrent()
+        assertTrue(started.isCompleted)
+
+        query.clear()
+        gate.complete(Unit)
+        scope.advanceUntilIdle()
+
+        assertFalse(query.running)
+        assertNull(query.results)
+        assertNull(query.error)
+        assertEquals(0, query.tableCount)
+    }
 }
 
 private class FakeSafeDbService(
     private val costGuardFirstRun: Boolean = false,
+    private val queryGate: CompletableDeferred<Unit>? = null,
+    private val queryStarted: CompletableDeferred<Unit>? = null,
 ) : SafeDbService {
     var locked = false
     val forceCalls = mutableListOf<Boolean>()
@@ -132,6 +272,8 @@ private class FakeSafeDbService(
 
     override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult {
         forceCalls.add(force)
+        queryStarted?.complete(Unit)
+        queryGate?.await()
         if (costGuardFirstRun && !force) {
             throw IllegalArgumentException("${COST_GUARD_PREFIX}EXPLAIN failed. Confirm to run this query anyway.")
         }

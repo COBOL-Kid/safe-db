@@ -6,10 +6,21 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.explore.MeasureFn
+import com.safedb.explore.DateGroupUnit
+import com.safedb.explore.NumberFormatKind
+import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotFilter
+import com.safedb.explore.PivotGrouping
+import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotNumberFormat
+import com.safedb.explore.PivotShowAs
+import com.safedb.explore.ShowAsMode
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
+import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.HistoryEntry
 import com.safedb.model.IndexInfo
 import com.safedb.model.QueryResult
@@ -24,8 +35,12 @@ import com.safedb.model.TableRef
 import com.safedb.model.markIndexedColumns
 import com.safedb.service.SafeDbService
 import com.safedb.ui.AppShell
+import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.ExploreViewModel
+import com.safedb.viewmodel.createExploreSession
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
 
@@ -45,10 +60,21 @@ private class FakeService : SafeDbService {
         ),
     )
 
-    private fun table(name: String, cols: List<ColumnInfo>, indexes: List<IndexInfo>): TableInfo {
+    private fun table(
+        name: String,
+        cols: List<ColumnInfo>,
+        indexes: List<IndexInfo>,
+        foreignKeys: List<ForeignKeyInfo> = emptyList(),
+    ): TableInfo {
         val mutable = cols.toMutableList()
         markIndexedColumns(mutable, indexes)
-        return TableInfo(schema = "public", name = name, columns = mutable, indexes = indexes)
+        return TableInfo(
+            schema = "public",
+            name = name,
+            columns = mutable,
+            indexes = indexes,
+            foreignKeys = foreignKeys,
+        )
     }
 
     val schema = Schema(
@@ -75,6 +101,15 @@ private class FakeService : SafeDbService {
                 listOf(
                     IndexInfo("orders_pkey", listOf("id"), isPrimary = true, isUnique = true),
                     IndexInfo("orders_customer_idx", listOf("customer_id")),
+                ),
+                listOf(
+                    ForeignKeyInfo(
+                        name = "orders_customer_id_fkey",
+                        columns = listOf("customer_id"),
+                        referencedSchema = "public",
+                        referencedTable = "customers",
+                        referencedColumns = listOf("id"),
+                    ),
                 ),
             ),
             table(
@@ -122,7 +157,7 @@ private class FakeService : SafeDbService {
                     ResultCell.IntegerCell(1000 + i),
                     ResultCell.text(if (i % 3 == 0L) "shipped" else "pending"),
                     ResultCell.IntegerCell(1299 * i),
-                    ResultCell.text("2026-06-${(i % 28) + 1} 14:0$i"),
+                    ResultCell.text("2026-06-${"%02d".format((i % 28) + 1)} 14:${"%02d".format(i % 60)}"),
                 )
             },
             rowCount = 40,
@@ -154,6 +189,7 @@ private class FakeService : SafeDbService {
 private fun render(
     name: String,
     isDark: Boolean,
+    sidebarCollapsed: Boolean = false,
     prepare: (AppState, AppViewModel) -> Unit,
 ) {
     val service = FakeService()
@@ -171,6 +207,80 @@ private fun render(
                     viewModel = viewModel,
                     paletteOpen = false,
                     onPaletteOpenChange = {},
+                    initialSidebarCollapsed = sidebarCollapsed,
+                )
+            }
+        }
+    }.use { scene ->
+        scene.render(0L)
+        Thread.sleep(300)
+        val image = scene.render(300_000_000L)
+        val out = File("/tmp/safedb-preview/$name.png")
+        out.parentFile.mkdirs()
+        out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
+        println("wrote ${out.absolutePath}")
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = false) {
+    val service = FakeService()
+    val spec = QuerySpec(
+        tables = listOf(TableRef("public", "orders", "t0")),
+        columns = emptyList(),
+        joins = emptyList(),
+        filters = FilterGroup.empty(),
+        limit = 100,
+    )
+    val sample = runBlocking { service.runQuery("c1", spec, force = false) }
+    val viewModel = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
+    if (pivoted) {
+        viewModel.updateConfig {
+            it.copy(
+                rowDimensions = listOf(
+                    PivotDimension(
+                        "t0__placed_at",
+                        "Year",
+                        id = "placed_year",
+                        grouping = PivotGrouping.Date(DateGroupUnit.Year),
+                    ),
+                    PivotDimension(
+                        "t0__placed_at",
+                        "Day",
+                        id = "placed_day",
+                        grouping = PivotGrouping.Date(DateGroupUnit.Day),
+                    ),
+                ),
+                columnDimensions = listOf(PivotDimension("t0__status", "Status", id = "status")),
+                columnDimension = null,
+                measures = listOf(
+                    PivotMeasure.countRows(),
+                    PivotMeasure(
+                        "sum_t0__total_cents",
+                        MeasureFn.Sum,
+                        "t0__total_cents",
+                        "Revenue",
+                        numberFormat = PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
+                    ),
+                    PivotMeasure(
+                        "share",
+                        MeasureFn.Count,
+                        label = "Share",
+                        showAs = PivotShowAs(ShowAsMode.PercentGrandTotal),
+                    ),
+                ),
+                filters = listOf(PivotFilter.Members("status-filter", "t0__status", "Status")),
+            )
+        }
+    }
+
+    ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
+        SafeDbTheme(isDark = isDark) {
+            androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                ExploreWindowContent(
+                    viewModel = viewModel,
+                    currentSpec = spec,
+                    onClose = {},
                 )
             }
         }
@@ -204,6 +314,24 @@ fun main() {
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
+                    vm.query.moveTable("t1", 360f, 90f)
+                    vm.query.toggleColumn("t0", "id")
+                    vm.query.toggleColumn("t0", "status")
+                    vm.query.toggleColumn("t0", "total_cents")
+                    vm.query.run("c1")
+                }
+            }
+            Thread.sleep(900)
+        }
+
+        render("builder-collapsed-$suffix", dark, sidebarCollapsed = true) { state, vm ->
+            state.setActiveConnection("c1")
+            state.navigate(AppRoute.Builder)
+            vm.schema.load("c1") { loaded ->
+                if (loaded) {
+                    vm.query.addTable(vm.schema.tables[1])
+                    vm.query.addTable(vm.schema.tables[0])
+                    vm.query.moveTable("t1", 360f, 90f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
@@ -216,5 +344,8 @@ fun main() {
         render("history-$suffix", dark) { state, _ ->
             state.navigate(AppRoute.History)
         }
+
+        renderExplore("explore-$suffix", dark)
+        renderExplore("explore-pivot-$suffix", dark, pivoted = true)
     }
 }

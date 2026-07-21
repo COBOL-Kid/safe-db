@@ -29,6 +29,10 @@ fun buildJdbcUrl(def: ConnectionDef, password: String): String = when (def.diale
 }
 
 fun createDataSource(def: ConnectionDef, password: String): HikariDataSource {
+    return HikariDataSource(createDataSourceConfig(def, password))
+}
+
+internal fun createDataSourceConfig(def: ConnectionDef, password: String): HikariConfig {
     val config = HikariConfig()
     config.jdbcUrl = buildJdbcUrl(def, password)
     config.username = def.username
@@ -43,7 +47,7 @@ fun createDataSource(def: ConnectionDef, password: String): HikariDataSource {
         Dialect.Mssql -> applyMssqlSsl(config, def)
         Dialect.Oracle -> applyOracleSsl(config, def)
     }
-    return HikariDataSource(config)
+    return config
 }
 
 private fun buildPostgresUrl(def: ConnectionDef): String {
@@ -146,7 +150,7 @@ private fun writeTempPem(pem: String, prefix: String): File {
 }
 
 fun jdbcSql(compiled: CompiledQuery, dialect: Dialect): String = when (dialect) {
-    Dialect.Postgres -> compiled.sql
+    Dialect.Postgres -> compiled.sql.replace(Regex("\\$(\\d+)"), "?")
     Dialect.MySql -> compiled.sql
     Dialect.Mssql -> compiled.sql.replace(Regex("@P(\\d+)"), "?")
     Dialect.Oracle -> compiled.sql.replace(Regex(":(\\d+)"), "?")

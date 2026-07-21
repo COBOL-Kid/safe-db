@@ -26,15 +26,19 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.safedb.secrets.SecretsManager
 import com.safedb.ui.AppShell
+import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import java.awt.Dimension
 import kotlinx.coroutines.runBlocking
 
 @Composable
-fun App(appState: AppState, window: java.awt.Window) {
+fun App(appState: AppState, mainWindow: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
     val settings by viewModel.settings.settings.collectAsState()
+    val exploreViewModel by viewModel.explore.collectAsState()
+    val connections by viewModel.connections.connections.collectAsState()
+    val activeConnectionId by appState.activeConnectionId.collectAsState()
     val useDarkTheme = settings.theme == "dark"
     var paletteOpen by remember { mutableStateOf(false) }
 
@@ -43,7 +47,7 @@ fun App(appState: AppState, window: java.awt.Window) {
     ) {
         val bgColor = MaterialTheme.colorScheme.background
         SideEffect {
-            window.background = java.awt.Color(bgColor.toArgb())
+            mainWindow.background = java.awt.Color(bgColor.toArgb())
         }
         Surface(
             modifier = Modifier
@@ -66,6 +70,57 @@ fun App(appState: AppState, window: java.awt.Window) {
                 paletteOpen = paletteOpen,
                 onPaletteOpenChange = { paletteOpen = it },
             )
+        }
+
+        exploreViewModel?.let { explore ->
+            val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
+            val currentSpec = viewModel.query.spec
+            val builderSample = viewModel.query.currentSample(activeConnectionId)
+            val sampleRefreshEnabled = activeConnectionId == explore.session.connectionId &&
+                builderSample != null &&
+                connections.any { it.id == activeConnectionId }
+            Window(
+                onCloseRequest = viewModel::closeExplore,
+                title = "Explore - safe-db",
+                state = exploreWindowState,
+            ) {
+                LaunchedEffect(window) {
+                    window.minimumSize = Dimension(920, 560)
+                }
+                SafeDbTheme(isDark = useDarkTheme) {
+                    val exploreBgColor = MaterialTheme.colorScheme.background
+                    SideEffect {
+                        window.background = java.awt.Color(exploreBgColor.toArgb())
+                    }
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        ExploreWindowContent(
+                            viewModel = explore,
+                            currentSpec = currentSpec,
+                            onClose = viewModel::closeExplore,
+                            onRefreshSample = if (sampleRefreshEnabled) {
+                                refresh@{
+                                    val builderConnectionId = appState.activeConnectionId.value
+                                    if (builderConnectionId != explore.session.connectionId) return@refresh
+                                    val connection = connections.firstOrNull { connection ->
+                                        connection.id == builderConnectionId
+                                    }
+                                    val latestSample = viewModel.query.currentSample(builderConnectionId)
+                                    if (connection != null && latestSample != null) {
+                                        viewModel.refreshExploreSample(
+                                            connection,
+                                            latestSample.spec,
+                                            latestSample.result,
+                                        )
+                                    }
+                                }
+                            } else {
+                                null
+                            },
+                            sampleRefreshEnabled = sampleRefreshEnabled,
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -14,6 +14,8 @@ safe-db is a **Jetpack Compose Desktop** app with a Kotlin/JDBC backend. The Gra
 
 ```sh
 ./gradlew check                         # unit tests and verification gate
+./gradlew koverHtmlReport               # merged desktop/shared coverage report
+./gradlew integrationTest               # optional seeded MySQL/PostgreSQL contracts
 ./gradlew renderPreview                 # headless UI previews in /tmp/safedb-preview
 ./gradlew seedMysql                     # generated local MySQL fixture
 ./gradlew packageDistributionForCurrentOS
@@ -30,7 +32,8 @@ scripts/seed_mysql.sh
 - **Connections** — save named profiles; passwords stored in the OS credential store when available, never in profile JSON.
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out.
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
-- **Safety rails** — read-only `SELECT` queries, default 100 rows with an interactive max of 10,000, guidance above 1,000 rows, 10 s timeout, custom blocked schemas, filter literal type validation, and a cost-preview guard.
+- **Explore pivots** — analyze the current result sample with nested row/column hierarchies, grouping, subtotals, slicers and value filters, advanced aggregations, calculated measures, percentage/rank/running-total views, formatting, and sampled-row drill-through.
+- **Safety rails** — read-only `SELECT` queries, default 100 rows with fixed choices up to an interactive max of 5,000, guidance above 1,000 rows, 10 s timeout, custom blocked schemas, filter literal type validation, and a cost-preview guard.
 - **Saved queries and history** — persisted through the Kotlin stores in the app data directory; timestamps are Unix-seconds strings.
 - **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas`.
 
@@ -68,6 +71,8 @@ scripts/seed_mysql.sh --orders 20000 --customers 5000 --seed 7
 
 The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars. If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).
 
+Integration tests skip locally when their seeded database is unavailable. CI sets `SAFEDB_TEST_REQUIRE_MYSQL=true` or `SAFEDB_TEST_REQUIRE_POSTGRES=true` so a configured engine must execute rather than silently skip. PostgreSQL uses the `SAFEDB_TEST_POSTGRES_*` variables and the minimal `testdata_postgres.sql` fixture.
+
 Connect in the app: host `localhost`, port `3306`, database `safedb_test`, user `root` (empty password is valid for local Docker).
 
 ## Credentials & Keyring
@@ -98,7 +103,7 @@ Existing `connections.json`, `settings.json`, `saved_queries.json`, and `query_h
 
 ## Query Safety Behavior
 
-The builder sends a structured query IR to the Kotlin query engine. The engine validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the interactive max is 10,000, and limits above 1,000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work.
+The builder sends a structured query IR to the Kotlin query engine. The engine validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the builder offers fixed choices up to an interactive max of 5,000, and limits above 1,000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work.
 
 EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit confirmation. Forced retries still run with the same row limit and timeout.
 

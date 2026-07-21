@@ -3,7 +3,6 @@ package com.safedb.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -43,15 +42,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.ui.components.AppCard
+import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.DeleteIconButton
+import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 
@@ -63,6 +62,7 @@ fun HomeScreen(
 ) {
     val initialLoading by viewModel.initialLoading.collectAsState()
     val savedQueries by viewModel.savedQueries.queries.collectAsState()
+    val savedQueryError by viewModel.savedQueries.error.collectAsState()
     var deleteTargetId by remember { mutableStateOf<String?>(null) }
 
     ConfirmDialog(
@@ -103,6 +103,14 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
+
+            savedQueryError?.let { error ->
+                MessageBanner(
+                    text = error,
+                    kind = BannerKind.ERROR,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
 
             Spacer(Modifier.height(40.dp))
 
@@ -184,7 +192,7 @@ private fun QuickLinkCard(
 
     val borderColor by animateColorAsState(
         if (hovered) {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
         } else {
             MaterialTheme.colorScheme.outline
         },
@@ -196,21 +204,22 @@ private fun QuickLinkCard(
     val tileIconColor by animateColorAsState(
         if (hovered) SafeDbTheme.colors.onActionPrimary else SafeDbTheme.colors.onAccentContainer,
     )
+    val cardShape = RoundedCornerShape(8.dp)
 
     Surface(
-        modifier = modifier
-            .hoverable(interactionSource)
-            .clickable(interactionSource = interactionSource, onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.hoverable(interactionSource),
+        shape = cardShape,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, borderColor),
         shadowElevation = shadow,
         tonalElevation = 0.dp,
+        interactionSource = interactionSource,
+        onClick = onClick,
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Surface(
                 modifier = Modifier.size(40.dp),
-                shape = RoundedCornerShape(11.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = tileColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {

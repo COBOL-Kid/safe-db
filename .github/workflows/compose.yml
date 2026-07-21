@@ -1,5 +1,12 @@
 name: Compose (Kotlin)
 
+permissions:
+  contents: read
+
+concurrency:
+  group: compose-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -14,6 +21,7 @@ on:
       - 'gradlew.bat'
       - 'scripts/**'
       - 'testdata_mysql.sql'
+      - 'testdata_postgres.sql'
       - '.github/workflows/compose.yml'
   pull_request:
     paths:
@@ -27,11 +35,13 @@ on:
       - 'gradlew.bat'
       - 'scripts/**'
       - 'testdata_mysql.sql'
+      - 'testdata_postgres.sql'
       - '.github/workflows/compose.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -45,16 +55,31 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Gradle check
-        run: ./gradlew check
+        run: ./gradlew check koverXmlReport koverHtmlReport koverVerify
+
+      - name: Upload unit test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-and-coverage-reports
+          retention-days: 14
+          path: |
+            build/reports/tests/test/
+            build/test-results/test/
+            shared/build/reports/tests/jvmTest/
+            shared/build/test-results/jvmTest/
+            build/reports/kover/
 
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       SAFEDB_KEYCHAIN_BACKEND: disabled
       SAFEDB_TEST_MYSQL_HOST: 127.0.0.1
       SAFEDB_TEST_MYSQL_USER: root
       SAFEDB_TEST_MYSQL_PASSWORD: ""
       SAFEDB_TEST_MYSQL_DATABASE: safedb_test
+      SAFEDB_TEST_REQUIRE_MYSQL: "true"
     services:
       mysql:
         image: mysql:8.4

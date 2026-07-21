@@ -13,26 +13,26 @@ object DataDirectory {
         return dir
     }
 
-    internal fun baseDir(): Path =
-        when (currentOs()) {
+    internal fun baseDir(environment: PlatformEnvironment = PlatformEnvironment.current()): Path =
+        when (currentOs(environment.osName)) {
             Os.Windows -> {
-                val appData = System.getenv("APPDATA")
+                val appData = environment.appData
                 require(!appData.isNullOrBlank()) { "APPDATA is not set" }
                 Path.of(appData)
             }
-            Os.MacOs -> Path.of(System.getProperty("user.home"), "Library", "Application Support")
+            Os.MacOs -> Path.of(environment.userHome, "Library", "Application Support")
             Os.Linux -> {
-                val xdg = System.getenv("XDG_DATA_HOME")
+                val xdg = environment.xdgDataHome
                 if (!xdg.isNullOrBlank()) {
                     Path.of(xdg)
                 } else {
-                    Path.of(System.getProperty("user.home"), ".local", "share")
+                    Path.of(environment.userHome, ".local", "share")
                 }
             }
         }
 
-    private fun currentOs(): Os {
-        val name = System.getProperty("os.name").lowercase()
+    private fun currentOs(osName: String): Os {
+        val name = osName.lowercase()
         return when {
             name.contains("mac") || name.contains("darwin") -> Os.MacOs
             name.contains("win") -> Os.Windows
@@ -44,5 +44,21 @@ object DataDirectory {
         Linux,
         MacOs,
         Windows,
+    }
+}
+
+internal data class PlatformEnvironment(
+    val osName: String,
+    val userHome: String,
+    val appData: String? = null,
+    val xdgDataHome: String? = null,
+) {
+    companion object {
+        fun current(): PlatformEnvironment = PlatformEnvironment(
+            osName = System.getProperty("os.name"),
+            userHome = System.getProperty("user.home"),
+            appData = System.getenv("APPDATA"),
+            xdgDataHome = System.getenv("XDG_DATA_HOME"),
+        )
     }
 }

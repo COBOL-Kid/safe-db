@@ -31,7 +31,7 @@ fun EmptyState(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
                 modifier = Modifier.size(56.dp),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = SafeDbTheme.colors.accentContainer,
             ) {
                 Box(contentAlignment = Alignment.Center) {

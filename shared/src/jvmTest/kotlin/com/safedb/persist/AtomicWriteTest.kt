@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class AtomicWriteTest {
@@ -44,6 +45,25 @@ class AtomicWriteTest {
         assertEquals(
             PosixFilePermissions.fromString("rwx------"),
             perms,
+        )
+    }
+
+    @Test
+    fun atomicWriteRemovesPrivateTempFileWhenReplacementFails() {
+        val dir = Files.createTempDirectory("safedb-atomic-test")
+        val destination = Files.createDirectory(dir.resolve("state.json"))
+        Files.writeString(destination.resolve("keep.txt"), "keep")
+
+        assertFailsWith<Exception> {
+            atomicWrite(destination, "new")
+        }
+
+        assertTrue(Files.isDirectory(destination))
+        assertEquals(
+            0L,
+            Files.list(dir).use { files ->
+                files.filter { it.fileName.toString().startsWith(".state.json.") }.count()
+            },
         )
     }
 }

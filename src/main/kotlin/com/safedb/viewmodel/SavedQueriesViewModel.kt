@@ -18,10 +18,16 @@ class SavedQueriesViewModel(
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
     suspend fun load() {
         _loading.value = true
+        _error.value = null
         try {
             _queries.value = service.listSavedQueries()
+        } catch (error: Exception) {
+            _error.value = error.message ?: error.toString()
         } finally {
             _loading.value = false
         }
@@ -33,16 +39,30 @@ class SavedQueriesViewModel(
 
     fun delete(id: String) {
         scope.launch {
-            service.deleteSavedQuery(id)
-            _queries.value = service.listSavedQueries()
+            _error.value = null
+            try {
+                service.deleteSavedQuery(id)
+                _queries.value = service.listSavedQueries()
+            } catch (error: Exception) {
+                _error.value = error.message ?: error.toString()
+            }
         }
     }
 
     fun save(query: SavedQuery, onComplete: () -> Unit = {}) {
         scope.launch {
-            service.saveSavedQuery(query)
-            _queries.value = service.listSavedQueries()
-            onComplete()
+            _error.value = null
+            try {
+                service.saveSavedQuery(query)
+                _queries.value = service.listSavedQueries()
+                onComplete()
+            } catch (error: Exception) {
+                _error.value = error.message ?: error.toString()
+            }
         }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }
