@@ -18,10 +18,16 @@ class HistoryViewModel(
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
     suspend fun load() {
         _loading.value = true
+        _error.value = null
         try {
             _entries.value = service.listHistory()
+        } catch (error: Exception) {
+            _error.value = error.message ?: error.toString()
         } finally {
             _loading.value = false
         }
@@ -33,9 +39,18 @@ class HistoryViewModel(
 
     fun clear(onComplete: () -> Unit = {}) {
         scope.launch {
-            service.clearHistory()
-            _entries.value = emptyList()
-            onComplete()
+            _error.value = null
+            try {
+                service.clearHistory()
+                _entries.value = emptyList()
+                onComplete()
+            } catch (error: Exception) {
+                _error.value = error.message ?: error.toString()
+            }
         }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }

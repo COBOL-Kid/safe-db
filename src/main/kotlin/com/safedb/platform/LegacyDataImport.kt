@@ -16,10 +16,11 @@ object LegacyDataImport {
     )
 
     fun resolveDataDir(): Path {
-        val candidates = candidateDirs().distinct()
-        val existing = candidates.firstOrNull { dir -> hasSafeDbData(dir) }
-        return existing ?: DataDirectory.resolve()
+        return resolveDataDir(candidateDirs(), DataDirectory::resolve)
     }
+
+    internal fun resolveDataDir(candidates: List<Path>, fallback: () -> Path): Path =
+        candidates.distinct().firstOrNull(::hasSafeDbData) ?: fallback()
 
     fun hasSafeDbData(dir: Path): Boolean =
         DATA_MARKERS.any { marker -> Files.isRegularFile(dir.resolve(marker)) }

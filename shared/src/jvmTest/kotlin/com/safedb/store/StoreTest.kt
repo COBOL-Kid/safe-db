@@ -22,6 +22,7 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class StoreTest {
@@ -359,5 +360,62 @@ class StoreTest {
         assertTrue(rewritten.contains("\"connector\""))
         assertFalse(rewritten.contains("\"filters\":["))
         assertTrue(Files.exists(dir.resolve("saved_queries.migration.bak")))
+    }
+
+    @Test
+    fun queryStoreQuarantinesMalformedWholeFile() {
+        val dir = tempDir()
+        val path = dir.resolve("saved_queries.json")
+        Files.writeString(path, "not-json")
+
+        val failure = assertFailsWith<IllegalStateException> {
+            QueryStore.new(dir).listSaved()
+        }
+
+        assertTrue(failure.message?.contains("saved_queries.json was corrupt") == true)
+        assertFalse(Files.exists(path))
+        assertEquals(
+            1L,
+            Files.list(dir).use { files ->
+                files.filter { it.fileName.toString().startsWith("saved_queries.corrupt-") }.count()
+            },
+        )
+    }
+
+    @Test
+    fun queryStoreDropsMalformedEntriesButPreservesValidOnes() {
+        val dir = tempDir()
+        val validSpec = """
+            {
+              "tables": [], "columns": [], "joins": [],
+              "filters": {"id":"root", "connector":"And", "children":[]},
+              "limit":100, "schema_version":3, "connector_overrides":{}
+            }
+        """.trimIndent()
+        Files.writeString(
+            dir.resolve("saved_queries.json"),
+            """
+            [
+              {"id":"good", "name":"Good", "connection_id":"c1", "spec":$validSpec, "created_at":"1"},
+              {"id":42, "broken":true}
+            ]
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("good"), QueryStore.new(dir).listSaved().map { it.id })
+    }
+
+    @Test
+    fun configAndSettingsStoresSurfaceMalformedFilesWithoutOverwritingThem() {
+        val dir = tempDir()
+        val connections = dir.resolve("connections.json")
+        val settings = dir.resolve("settings.json")
+        Files.writeString(connections, "{")
+        Files.writeString(settings, "{")
+
+        assertFailsWith<Exception> { ConfigStore.new(dir).list() }
+        assertFailsWith<Exception> { SettingsStore.new(dir).load() }
+        assertEquals("{", Files.readString(connections))
+        assertEquals("{", Files.readString(settings))
     }
 }

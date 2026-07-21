@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -190,6 +191,7 @@ fun BuilderScreen(
 
     val costGuardCopy = costGuardDialogCopy(queryViewModel.error)
     val visibleQueryError = if (queryViewModel.pendingCostGuard) null else queryViewModel.error
+    val savedQueryError by savedQueriesViewModel.error.collectAsState()
     val showLargeLimitGuidance = connection != null &&
         queryViewModel.canvasTables.isNotEmpty() &&
         queryViewModel.limit > LARGE_LIMIT_WARNING_THRESHOLD
@@ -395,6 +397,14 @@ fun BuilderScreen(
             MessageBanner(
                 text = "Large result limit. Higher limits are useful for reporting, but filters, selected columns, and indexed predicates make queries faster and easier to reuse.",
                 kind = BannerKind.INFO,
+            )
+        }
+
+        savedQueryError?.let { error ->
+            MessageBanner(
+                text = error,
+                kind = BannerKind.ERROR,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
         }
 

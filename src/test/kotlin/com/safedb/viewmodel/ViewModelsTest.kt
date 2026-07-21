@@ -26,6 +26,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -159,6 +160,65 @@ class ViewModelsTest {
         viewModel.removeJoin(productJoin)
         assertTrue(viewModel.joins.isEmpty())
     }
+
+    @Test
+    fun historyFailurePreservesEntriesAndOnlyCompletesAfterRetry() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = HistoryViewModel(service, scope)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        service.failHistoryClear = true
+        var completed = false
+        viewModel.clear { completed = true }
+        advanceUntilIdle()
+
+        assertFalse(completed)
+        assertEquals(1, viewModel.entries.value.size)
+        assertEquals("history clear failed", viewModel.error.value)
+
+        service.failHistoryClear = false
+        viewModel.clear { completed = true }
+        advanceUntilIdle()
+        assertTrue(completed)
+        assertTrue(viewModel.entries.value.isEmpty())
+        assertNull(viewModel.error.value)
+    }
+
+    @Test
+    fun savedQueryFailurePreservesLastGoodListAndSuppressesCallback() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SavedQueriesViewModel(service, scope)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        service.failSavedMutation = true
+        var completed = false
+        viewModel.save(SavedQuery("q2", "New", "c1", emptyQuerySpec(), "2")) { completed = true }
+        advanceUntilIdle()
+
+        assertFalse(completed)
+        assertEquals(listOf("q1"), viewModel.queries.value.map { it.id })
+        assertEquals("saved query mutation failed", viewModel.error.value)
+    }
+
+    @Test
+    fun settingsSaveFailureKeepsCurrentSettingsAndExposesError() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SettingsViewModel(service, scope)
+        viewModel.load()
+        advanceUntilIdle()
+        service.failSettingsSave = true
+
+        viewModel.toggleTheme()
+        advanceUntilIdle()
+
+        assertEquals("light", viewModel.settings.value.theme)
+        assertEquals("settings save failed", viewModel.saveError.value)
+    }
 }
 
 private class RecordingSafeDbService : SafeDbService {
@@ -166,6 +226,9 @@ private class RecordingSafeDbService : SafeDbService {
     val deletedSavedIds = mutableListOf<String>()
     var historyCleared = false
     var savedSettings: Settings? = null
+    var failHistoryClear = false
+    var failSavedMutation = false
+    var failSettingsSave = false
 
     private val connection = ConnectionDef(
         id = "c1",
@@ -208,8 +271,11 @@ private class RecordingSafeDbService : SafeDbService {
             emptyList()
         }
 
-    override suspend fun saveSavedQuery(query: SavedQuery) = Unit
+    override suspend fun saveSavedQuery(query: SavedQuery) {
+        if (failSavedMutation) error("saved query mutation failed")
+    }
     override suspend fun deleteSavedQuery(id: String) {
+        if (failSavedMutation) error("saved query mutation failed")
         deletedSavedIds.add(id)
     }
 
@@ -219,11 +285,13 @@ private class RecordingSafeDbService : SafeDbService {
         )
 
     override suspend fun clearHistory() {
+        if (failHistoryClear) error("history clear failed")
         historyCleared = true
     }
 
     override suspend fun getSettings(): Settings = Settings.default()
     override suspend fun saveSettings(settings: Settings) {
+        if (failSettingsSave) error("settings save failed")
         savedSettings = settings
     }
 }

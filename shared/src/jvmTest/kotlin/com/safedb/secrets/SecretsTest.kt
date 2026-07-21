@@ -57,4 +57,17 @@ class SecretsTest {
         SecretsManager.initStore("disabled")
         assertEquals("disabled", SecretsManager.activeBackendLabel())
     }
+
+    @Test
+    fun lockingCredentialsClearsSessionAndAllowsStoreReload() {
+        val id = "conn-lock"
+        SecretsManager.savePassword(id, "secret").getOrThrow()
+        assertTrue(CredentialSession.containsForTest(id))
+
+        SecretsManager.lockCredentials()
+
+        assertFalse(CredentialSession.containsForTest(id))
+        assertEquals("secret", SecretsManager.getPassword(id).getOrThrow())
+        assertTrue(CredentialSession.containsForTest(id))
+    }
 }

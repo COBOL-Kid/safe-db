@@ -32,9 +32,10 @@ class SafeDbServiceMySqlIntegrationTest {
         IntegrationAssumptions.assumeMysqlAvailable()
         val dir = Files.createTempDirectory("safedb-integration")
         val def = IntegrationAssumptions.mysqlConnectionDef()
+        val queryStore = QueryStore.new(dir)
         val service = SafeDbServiceImpl(
             configStore = ConfigStore.new(dir),
-            queryStore = QueryStore.new(dir),
+            queryStore = queryStore,
             settingsStore = SettingsStore.new(dir),
         )
 
@@ -43,7 +44,8 @@ class SafeDbServiceMySqlIntegrationTest {
         val spec = IntegrationFixtures.customersQuery(schema, limit = 5)
 
         val result = service.runQuery(def.id, spec, force = true)
-        assertTrue(result.rowCount > 0)
+        assertEquals(5, result.rowCount)
+        assertTrue(result.truncated)
 
         val history = service.listHistory()
         assertEquals(1, history.size)
@@ -67,10 +69,11 @@ class MySqlQuerySafetyIntegrationTest {
             val dir = Files.createTempDirectory("safedb-integration")
             val def = IntegrationAssumptions.mysqlConnectionDef()
             val settingsStore = SettingsStore.new(dir)
+            val queryStore = QueryStore.new(dir)
             settingsStore.save(Settings.default().copy(blockedSchemas = listOf("mysql")))
             val service = SafeDbServiceImpl(
                 configStore = ConfigStore.new(dir),
-                queryStore = QueryStore.new(dir),
+                queryStore = queryStore,
                 settingsStore = settingsStore,
             )
             service.saveConnection(def, IntegrationAssumptions.mysqlPassword)
@@ -79,6 +82,7 @@ class MySqlQuerySafetyIntegrationTest {
                 service.runQuery(def.id, IntegrationFixtures.blockedSchemaQuery(), force = true)
             }
             assertTrue(error.message?.contains("Schema 'mysql' is blocked") == true)
+            assertTrue(queryStore.listHistory().single().error?.contains("Schema 'mysql' is blocked") == true)
         }
     }
 }

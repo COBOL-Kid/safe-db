@@ -68,6 +68,7 @@ class QueryViewModel(
     private val scope: CoroutineScope,
 ) : QueryHydrationTarget {
     private var aliasCounter = 0
+    private var runGeneration = 0
 
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
     var selectedColumns by mutableStateOf(setOf<String>())
@@ -123,6 +124,7 @@ class QueryViewModel(
         }
 
     override fun clear() {
+        runGeneration += 1
         canvasTables.clear()
         selectedColumns = emptySet()
         joins.clear()
@@ -301,27 +303,37 @@ class QueryViewModel(
     fun run(connectionId: String, force: Boolean = false) {
         if (!canRun) return
         val executedSpec = spec
+        val generation = ++runGeneration
+        running = true
+        error = null
+        results = null
+        resultConnectionId = null
+        resultSpec = null
+        pendingCostGuard = false
         scope.launch {
-            running = true
-            error = null
-            results = null
-            resultConnectionId = null
-            resultSpec = null
-            pendingCostGuard = false
             try {
-                results = service.runQuery(connectionId, executedSpec, force)
-                resultConnectionId = connectionId
-                resultSpec = executedSpec
+                val completed = service.runQuery(connectionId, executedSpec, force)
+                if (generation == runGeneration) {
+                    results = completed
+                    resultConnectionId = connectionId
+                    resultSpec = executedSpec
+                }
             } catch (e: Exception) {
+                if (generation != runGeneration) return@launch
                 val message = e.message ?: e.toString()
                 if (!force && message.startsWith(COST_GUARD_PREFIX)) {
                     if (warningPopupsDisabled) {
                         try {
-                            results = service.runQuery(connectionId, executedSpec, force = true)
-                            resultConnectionId = connectionId
-                            resultSpec = executedSpec
+                            val completed = service.runQuery(connectionId, executedSpec, force = true)
+                            if (generation == runGeneration) {
+                                results = completed
+                                resultConnectionId = connectionId
+                                resultSpec = executedSpec
+                            }
                         } catch (forced: Exception) {
-                            error = forced.message ?: forced.toString()
+                            if (generation == runGeneration) {
+                                error = forced.message ?: forced.toString()
+                            }
                         }
                     } else {
                         pendingCostGuard = true
@@ -331,7 +343,9 @@ class QueryViewModel(
                     error = message
                 }
             } finally {
-                running = false
+                if (generation == runGeneration) {
+                    running = false
+                }
             }
         }
     }
@@ -533,17 +547,16 @@ private fun rebuildOverrides(
     val parentMap = mutableMapOf<String, FilterGroup>()
 
     fun walk(g: FilterGroup) {
-        if (g.id.isNotEmpty()) ids.add(g.id)
-        for (child in g.children) {
+        for ((index, child) in g.children.withIndex()) {
             when (child) {
                 is FilterNode.Leaf -> {
-                    if (child.spec.id.isNotEmpty()) {
+                    if (index > 0 && child.spec.id.isNotEmpty()) {
                         ids.add(child.spec.id)
                         parentMap[child.spec.id] = g
                     }
                 }
                 is FilterNode.Group -> {
-                    if (child.group.id.isNotEmpty()) {
+                    if (index > 0 && child.group.id.isNotEmpty()) {
                         ids.add(child.group.id)
                         parentMap[child.group.id] = g
                     }

@@ -14,6 +14,8 @@ safe-db is a **Jetpack Compose Desktop** app with a Kotlin/JDBC backend. The Gra
 
 ```sh
 ./gradlew check                         # unit tests and verification gate
+./gradlew koverHtmlReport               # merged desktop/shared coverage report
+./gradlew integrationTest               # optional seeded MySQL/PostgreSQL contracts
 ./gradlew renderPreview                 # headless UI previews in /tmp/safedb-preview
 ./gradlew seedMysql                     # generated local MySQL fixture
 ./gradlew packageDistributionForCurrentOS
@@ -68,6 +70,8 @@ scripts/seed_mysql.sh --orders 20000 --customers 5000 --seed 7
 ```
 
 The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars. If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).
+
+Integration tests skip locally when their seeded database is unavailable. CI sets `SAFEDB_TEST_REQUIRE_MYSQL=true` or `SAFEDB_TEST_REQUIRE_POSTGRES=true` so a configured engine must execute rather than silently skip. PostgreSQL uses the `SAFEDB_TEST_POSTGRES_*` variables and the minimal `testdata_postgres.sql` fixture.
 
 Connect in the app: host `localhost`, port `3306`, database `safedb_test`, user `root` (empty password is valid for local Docker).
 

@@ -38,6 +38,8 @@ import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.HoverRevealActions
+import com.safedb.ui.components.BannerKind
+import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.PromptDialog
 import com.safedb.ui.components.SecondaryButton
@@ -58,6 +60,8 @@ fun HistoryScreen(
 ) {
     val entries by viewModel.history.entries.collectAsState()
     val loading by viewModel.history.loading.collectAsState()
+    val historyError by viewModel.history.error.collectAsState()
+    val savedQueryError by viewModel.savedQueries.error.collectAsState()
     var showClearConfirm by remember { mutableStateOf(false) }
     var showSavePrompt by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
@@ -129,6 +133,15 @@ fun HistoryScreen(
         }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        val visibleError = historyError ?: savedQueryError
+        visibleError?.let { error ->
+            MessageBanner(
+                text = error,
+                kind = BannerKind.ERROR,
+                modifier = Modifier.padding(horizontal = 32.dp, vertical = 12.dp),
+            )
+        }
 
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

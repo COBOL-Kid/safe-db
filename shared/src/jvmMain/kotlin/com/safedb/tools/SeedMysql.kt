@@ -303,7 +303,7 @@ private class SeedMysql(rawArgs: List<String>) {
         }
 }
 
-private data class SeedOptions(
+internal data class SeedOptions(
     val help: Boolean = false,
     val static: Boolean = false,
     val reset: Boolean = false,
@@ -311,7 +311,7 @@ private data class SeedOptions(
     val generator: GeneratorOptions = GeneratorOptions(),
 )
 
-private data class GeneratorOptions(
+internal data class GeneratorOptions(
     val database: String = DEFAULT_DATABASE,
     val categories: Int = DEFAULT_CATEGORIES,
     val products: Int = DEFAULT_PRODUCTS,
@@ -321,7 +321,7 @@ private data class GeneratorOptions(
     val batchSize: Int = DEFAULT_BATCH_SIZE,
 )
 
-private fun parseArgs(args: List<String>): SeedOptions {
+internal fun parseArgs(args: List<String>): SeedOptions {
     var help = false
     var static = false
     var reset = false
@@ -416,7 +416,7 @@ private fun printUsage(out: java.io.PrintStream) {
     )
 }
 
-private class MysqlFixtureGenerator(
+internal class MysqlFixtureGenerator(
     private val options: GeneratorOptions,
     private val out: BufferedWriter,
 ) {
@@ -779,7 +779,7 @@ private class SeededRandom(seed: Int) {
     }
 }
 
-private fun sqlString(value: String?): String =
+internal fun sqlString(value: String?): String =
     value?.let { "'${it.replace("\\", "\\\\").replace("'", "''")}'" } ?: "NULL"
 
 private fun sqlNumber(value: Double): String = BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString()
@@ -811,7 +811,7 @@ private fun runningMysqlContainers(): List<String> =
         .mapNotNull { parseMysqlContainerLine(it) }
         .toList()
 
-private fun parseMysqlContainerLine(line: String): String? {
+internal fun parseMysqlContainerLine(line: String): String? {
     val parts = line.split('\t')
     if (parts.size < 2) return null
     val image = parts[1].lowercase()
@@ -827,7 +827,7 @@ private fun dockerEnvVar(container: String, key: String): String {
         .orEmpty()
 }
 
-private fun sanitizeIdentifier(value: String, label: String) {
+internal fun sanitizeIdentifier(value: String, label: String) {
     if (!Regex("""^[A-Za-z0-9_.-]+$""").matches(value)) {
         throw RuntimeException("invalid $label (allowed: letters, digits, ., _, -)")
     }
@@ -865,4 +865,4 @@ private fun runCommand(command: List<String>, writeInput: ((java.io.OutputStream
     return CommandResult(exitCode, stdout, stderr.trimEnd())
 }
 
-private class UsageError(message: String) : RuntimeException(message)
+internal class UsageError(message: String) : RuntimeException(message)

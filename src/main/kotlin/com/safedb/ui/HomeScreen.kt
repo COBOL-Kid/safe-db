@@ -47,8 +47,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.ui.components.AppCard
+import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.DeleteIconButton
+import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 
@@ -60,6 +62,7 @@ fun HomeScreen(
 ) {
     val initialLoading by viewModel.initialLoading.collectAsState()
     val savedQueries by viewModel.savedQueries.queries.collectAsState()
+    val savedQueryError by viewModel.savedQueries.error.collectAsState()
     var deleteTargetId by remember { mutableStateOf<String?>(null) }
 
     ConfirmDialog(
@@ -100,6 +103,14 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
+
+            savedQueryError?.let { error ->
+                MessageBanner(
+                    text = error,
+                    kind = BannerKind.ERROR,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
 
             Spacer(Modifier.height(40.dp))
 

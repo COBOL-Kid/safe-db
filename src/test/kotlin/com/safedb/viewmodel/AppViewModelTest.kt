@@ -18,11 +18,13 @@ import com.safedb.model.TableRef
 import com.safedb.query.COST_GUARD_PREFIX
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
@@ -206,10 +208,51 @@ class AppViewModelTest {
             query.spec.tables,
         )
     }
+
+    @Test
+    fun queryViewModelRejectsDuplicateRunsBeforeCoroutineStarts() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertEquals(listOf(false), service.forceCalls)
+        assertFalse(query.running)
+    }
+
+    @Test
+    fun queryViewModelIgnoresCompletionAfterClear() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val service = FakeSafeDbService(queryGate = gate, queryStarted = started)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        assertTrue(query.running)
+        scope.runCurrent()
+        assertTrue(started.isCompleted)
+
+        query.clear()
+        gate.complete(Unit)
+        scope.advanceUntilIdle()
+
+        assertFalse(query.running)
+        assertNull(query.results)
+        assertNull(query.error)
+        assertEquals(0, query.tableCount)
+    }
 }
 
 private class FakeSafeDbService(
     private val costGuardFirstRun: Boolean = false,
+    private val queryGate: CompletableDeferred<Unit>? = null,
+    private val queryStarted: CompletableDeferred<Unit>? = null,
 ) : SafeDbService {
     var locked = false
     val forceCalls = mutableListOf<Boolean>()
@@ -229,6 +272,8 @@ private class FakeSafeDbService(
 
     override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult {
         forceCalls.add(force)
+        queryStarted?.complete(Unit)
+        queryGate?.await()
         if (costGuardFirstRun && !force) {
             throw IllegalArgumentException("${COST_GUARD_PREFIX}EXPLAIN failed. Confirm to run this query anyway.")
         }

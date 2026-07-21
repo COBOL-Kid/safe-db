@@ -44,6 +44,7 @@ fun SettingsPanel(
 
     val settings by viewModel.settings.collectAsState()
     val saveError by viewModel.saveError.collectAsState()
+    val loadError by viewModel.loadError.collectAsState()
     var newSchema by remember { mutableStateOf("") }
     val thresholdInputs = remember { mutableStateMapOf<Dialect, String>() }
 
@@ -54,6 +55,7 @@ fun SettingsPanel(
             }
             newSchema = ""
             viewModel.clearSaveError()
+            viewModel.clearLoadError()
         }
     }
 
@@ -71,6 +73,13 @@ fun SettingsPanel(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
+                loadError?.let { error ->
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Column {
                     Text(
                         "EXPLAIN cost thresholds",

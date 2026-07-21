@@ -23,13 +23,19 @@ class SettingsViewModel(
     private val _saveError = MutableStateFlow<String?>(null)
     val saveError: StateFlow<String?> = _saveError.asStateFlow()
 
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+
     val isDark: Boolean
         get() = _settings.value.theme == "dark"
 
     suspend fun load() {
         _loading.value = true
+        _loadError.value = null
         try {
             _settings.value = service.getSettings()
+        } catch (error: Exception) {
+            _loadError.value = error.message ?: error.toString()
         } finally {
             _loading.value = false
         }
@@ -37,6 +43,7 @@ class SettingsViewModel(
 
     fun toggleTheme() {
         scope.launch {
+            _saveError.value = null
             val next = if (_settings.value.theme == "dark") Settings.DEFAULT_THEME else "dark"
             val updated = _settings.value.copy(theme = next)
             save(updated)
@@ -55,8 +62,9 @@ class SettingsViewModel(
                 explainCostThresholds = thresholds,
                 explainCostThreshold = thresholds[Dialect.Postgres] ?: Settings.DEFAULT_COST_THRESHOLD,
             )
-            save(updated)
-            onSuccess()
+            if (save(updated)) {
+                onSuccess()
+            }
         }
     }
 
@@ -64,6 +72,7 @@ class SettingsViewModel(
         val normalized = schema.trim().lowercase()
         if (normalized.isEmpty()) return
         scope.launch {
+            _saveError.value = null
             val current = _settings.value.blockedSchemas
             if (current.contains(normalized)) return@launch
             save(_settings.value.copy(blockedSchemas = current + normalized))
@@ -72,6 +81,7 @@ class SettingsViewModel(
 
     fun removeBlockedSchema(schema: String) {
         scope.launch {
+            _saveError.value = null
             save(
                 _settings.value.copy(
                     blockedSchemas = _settings.value.blockedSchemas.filterNot { it == schema },
@@ -84,10 +94,20 @@ class SettingsViewModel(
         _saveError.value = null
     }
 
-    private suspend fun save(settings: Settings) {
+    fun clearLoadError() {
+        _loadError.value = null
+    }
+
+    private suspend fun save(settings: Settings): Boolean {
         val normalized = normalizeSettings(settings)
-        service.saveSettings(normalized)
-        _settings.value = normalized
+        return try {
+            service.saveSettings(normalized)
+            _settings.value = normalized
+            true
+        } catch (error: Exception) {
+            _saveError.value = error.message ?: error.toString()
+            false
+        }
     }
 
     companion object {

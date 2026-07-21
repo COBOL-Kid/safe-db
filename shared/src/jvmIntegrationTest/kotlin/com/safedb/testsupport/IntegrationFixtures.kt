@@ -10,8 +10,8 @@ import com.safedb.model.TableRef
 import kotlin.test.assertTrue
 
 object IntegrationFixtures {
-    fun customersQuery(schema: Schema, limit: Int = 10): QuerySpec {
-        val table = requireSeededTable(schema, "customers", setOf("id", "email"))
+    fun customersQuery(schema: Schema, limit: Int = 10, expectedSchema: String? = null): QuerySpec {
+        val table = requireSeededTable(schema, "customers", setOf("id", "email"), expectedSchema)
         return QuerySpec(
             tables = listOf(TableRef(schema = table.schema, name = table.name, alias = "t0")),
             columns = listOf(
@@ -50,11 +50,12 @@ object IntegrationFixtures {
         schema: Schema,
         tableName: String,
         requiredColumns: Set<String>,
+        expectedSchema: String? = null,
     ): TableInfo {
         val candidates = schema.tables.filter { it.name == tableName }
         assertTrue(candidates.isNotEmpty(), "Expected seeded table '$tableName' in introspected schema")
 
-        val table = candidates.firstOrNull { it.schema == IntegrationAssumptions.mysqlDatabase }
+        val table = candidates.firstOrNull { it.schema == (expectedSchema ?: IntegrationAssumptions.mysqlDatabase) }
             ?: candidates.singleOrNull()
             ?: candidates.first()
         val columns = table.columns.map { it.name }.toSet()

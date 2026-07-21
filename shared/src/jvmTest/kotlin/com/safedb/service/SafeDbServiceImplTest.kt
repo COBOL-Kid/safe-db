@@ -33,6 +33,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class SafeDbServiceImplTest {
@@ -142,6 +143,80 @@ class SafeDbServiceImplTest {
         assertEquals(1, queryStore.listHistory().size)
         assertEquals("Delete me", queryStore.listHistory().single().connectionName)
     }
+
+    @Test
+    fun testConnectionAlwaysClosesAdapter() = runBlocking {
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val adapter = FakeConnectedAdapter()
+        val service = SafeDbServiceImpl(
+            configStore = ConfigStore.new(dir),
+            queryStore = QueryStore.new(dir),
+            settingsStore = SettingsStore.new(dir),
+            querySessionFactory = null,
+            adapterFactory = AdapterFactory { _, _ -> adapter },
+        )
+
+        assertEquals("ok", service.testConnection(sampleConnection(), "secret"))
+        assertEquals(1, adapter.closeCount)
+
+        adapter.testFailure = IllegalStateException("probe failed")
+        assertFailsWith<IllegalStateException> {
+            service.testConnection(sampleConnection(), "secret")
+        }
+        assertEquals(2, adapter.closeCount)
+    }
+
+    @Test
+    fun schemaIntrospectionFailureClosesAdapter() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter(introspectionFailure = IllegalStateException("metadata failed"))
+        val service = SafeDbServiceImpl(
+            configStore = configStore,
+            queryStore = QueryStore.new(dir),
+            settingsStore = SettingsStore.new(dir),
+            querySessionFactory = null,
+            adapterFactory = AdapterFactory { _, _ -> adapter },
+        )
+
+        assertFailsWith<IllegalStateException> { service.getSchema("c1") }
+        assertEquals(1, adapter.closeCount)
+    }
+
+    @Test
+    fun runQueryRecordsFailureAndClosesSession() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        var closeCount = 0
+        val service = SafeDbServiceImpl(
+            configStore = configStore,
+            queryStore = queryStore,
+            settingsStore = SettingsStore.new(dir),
+            querySessionFactory = QuerySessionFactory { _, _ ->
+                QuerySession(
+                    schema = sampleSchema(),
+                    runner = FailingRunner(),
+                    onClose = { closeCount += 1 },
+                )
+            },
+        )
+
+        val failure = assertFailsWith<IllegalArgumentException> {
+            service.runQuery("c1", sampleQuerySpec(), force = true)
+        }
+
+        assertTrue(failure.message?.contains("execution failed") == true)
+        assertEquals(1, closeCount)
+        val history = queryStore.listHistory().single()
+        assertTrue(assertNotNull(history.error).contains("execution failed"))
+    }
 }
 
 private fun sampleQuerySpec() = QuerySpec(
@@ -195,6 +270,39 @@ private class StubRunner : QueryRunner {
                 warnings = emptyList(),
             ),
         )
+}
+
+private class FailingRunner : QueryRunner {
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult = ExplainResult.Estimated(1.0)
+
+    override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> =
+        Outcome.err("execution failed")
+}
+
+private class FakeConnectedAdapter(
+    private val introspectionFailure: Throwable? = null,
+) : ConnectedAdapter {
+    var closeCount = 0
+    var testFailure: Throwable? = null
+
+    override suspend fun test(): String {
+        testFailure?.let { throw it }
+        return "ok"
+    }
+
+    override suspend fun introspect(): Schema {
+        introspectionFailure?.let { throw it }
+        return sampleSchema()
+    }
+
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult = ExplainResult.Estimated(1.0)
+
+    override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
+        QueryResult(emptyList(), emptyList(), 0, false, emptyList())
+
+    override fun close() {
+        closeCount += 1
+    }
 }
 
 private fun sampleConnection() = ConnectionDef(

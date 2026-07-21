@@ -12,6 +12,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -370,30 +371,29 @@ private fun PivotValueCell(
                 detectTapGestures(onDoubleTap = { if (drillable) onDrill() })
             },
     ) {
-        Row(
+        Text(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text,
-                modifier = Modifier.weight(1f),
-                style = DataMono.copy(
-                    fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
-                    fontStyle = if (isNull) FontStyle.Italic else FontStyle.Normal,
-                ),
-                textAlign = textAlign,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (drillable && hovered) {
-                TextButton(
-                    onClick = onDrill,
-                    modifier = Modifier.height(24.dp),
-                ) {
-                    Text("View rows", style = MaterialTheme.typography.labelSmall)
-                }
+            text = text,
+            style = DataMono.copy(
+                fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
+                fontStyle = if (isNull) FontStyle.Italic else FontStyle.Normal,
+            ),
+            textAlign = textAlign,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (drillable && hovered) {
+            TextButton(
+                onClick = onDrill,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 4.dp)
+                    .height(24.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+            ) {
+                Text("View rows", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
