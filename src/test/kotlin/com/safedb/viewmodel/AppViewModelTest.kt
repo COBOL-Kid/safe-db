@@ -276,7 +276,7 @@ class AppViewModelTest {
     }
 
     @Test
-    fun queryBackedRecipeSurvivesCostConfirmationAndCanBeCancelled() = runTest(dispatcher) {
+    fun queryBackedRecipeCanBeCancelledAtCostConfirmation() = runTest(dispatcher) {
         val service = FakeSafeDbService(costGuardFirstRun = true)
         val viewModel = AppViewModel(service)
         advanceUntilIdle()
@@ -291,10 +291,34 @@ class AppViewModelTest {
         assertTrue(viewModel.query.pendingCostGuard)
         assertEquals("r2", viewModel.pendingRecipeRun.value?.recipe?.id)
 
+        viewModel.query.dismissError()
+        viewModel.cancelPendingRecipeRun()
+        assertNull(viewModel.pendingRecipeRun.value)
+
         viewModel.query.runForced(connection.id)
         advanceUntilIdle()
         assertNotNull(viewModel.query.currentSample(connection.id))
-        viewModel.cancelPendingRecipeRun()
+        assertNull(viewModel.pendingRecipeRun.value)
+        assertNull(viewModel.explore.value)
+    }
+
+    @Test
+    fun queryBackedRecipeIsCancelledWhenActiveConnectionChanges() = runTest(dispatcher) {
+        val service = FakeSafeDbService(costGuardFirstRun = true)
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r3", name = "Switching", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.cancelPendingRecipeRunIfConnectionChanged(connection.id))
+        assertNotNull(viewModel.pendingRecipeRun.value)
+        assertTrue(viewModel.cancelPendingRecipeRunIfConnectionChanged("c2"))
         assertNull(viewModel.pendingRecipeRun.value)
     }
 

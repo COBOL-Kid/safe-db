@@ -169,6 +169,7 @@ fun AppShell(
                             }
                         }
                     },
+                    onCancelQueryRun = viewModel::cancelPendingRecipeRun,
                 )
                 AppRoute.History -> HistoryScreen(
                     viewModel = viewModel,

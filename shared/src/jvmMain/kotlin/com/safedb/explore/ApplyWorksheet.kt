@@ -140,8 +140,8 @@ private class WorksheetEngine(
         val comparison = compareTextOrNumber(text, filter.value)
         when (filter.op) {
             WorksheetFilterOp.Members -> filter.includedKeys.isEmpty() || pivotCellKey(cell) in filter.includedKeys
-            WorksheetFilterOp.Equals -> text.equals(filter.value, ignoreCase = true)
-            WorksheetFilterOp.NotEquals -> !text.equals(filter.value, ignoreCase = true)
+            WorksheetFilterOp.Equals -> filterEquals(cell, text, filter.value)
+            WorksheetFilterOp.NotEquals -> !filterEquals(cell, text, filter.value)
             WorksheetFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)
             WorksheetFilterOp.StartsWith -> text.startsWith(filter.value, ignoreCase = true)
             WorksheetFilterOp.EndsWith -> text.endsWith(filter.value, ignoreCase = true)
@@ -314,7 +314,7 @@ private class WorksheetEngine(
                         (calculation.groupColumn == null || entry.groupColumn == calculation.groupColumn)
                 }
             }
-            eligible.groupBy { entry -> calculation.restartColumns.joinToString("|") { entry.partitionValue(it) } }
+            eligible.groupBy { entry -> calculation.restartColumns.map(entry::partitionValue) }
                 .values.forEach { partition -> applyWindowPartition(partition, calculation) }
         }
     }
@@ -491,6 +491,16 @@ private fun compareTextOrNumber(left: String, right: String): Int {
     val leftNumber = left.toBigDecimalOrNull()
     val rightNumber = right.toBigDecimalOrNull()
     return if (leftNumber != null && rightNumber != null) leftNumber.compareTo(rightNumber) else left.compareTo(right, ignoreCase = true)
+}
+
+private fun filterEquals(cell: ResultCell, text: String, expected: String): Boolean {
+    val numeric = cell is ResultCell.IntegerCell || cell is ResultCell.FloatCell
+    if (numeric) {
+        val left = cell.decimalOrNull()
+        val right = expected.toBigDecimalOrNull()
+        if (left != null && right != null) return left.compareTo(right) == 0
+    }
+    return text.equals(expected, ignoreCase = true)
 }
 
 private fun cellText(cell: ResultCell?): String = when (cell) {

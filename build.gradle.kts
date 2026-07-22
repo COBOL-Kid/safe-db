@@ -100,8 +100,8 @@ val verifyUnitTestDiscovery = tasks.register("verifyUnitTestDiscovery") {
             logger.lifecycle("$label discovery verified: $executed tests")
         }
 
-        verifySuite("desktop", layout.buildDirectory.dir("test-results/test").get().asFile, 69)
-        verifySuite("shared", project(":shared").layout.buildDirectory.dir("test-results/jvmTest").get().asFile, 189)
+        verifySuite("desktop", layout.buildDirectory.dir("test-results/test").get().asFile, 78)
+        verifySuite("shared", project(":shared").layout.buildDirectory.dir("test-results/jvmTest").get().asFile, 212)
     }
 }
 

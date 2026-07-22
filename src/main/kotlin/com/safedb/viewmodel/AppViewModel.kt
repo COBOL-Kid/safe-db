@@ -104,6 +104,13 @@ class AppViewModel(
         _pendingRecipeRun.value = null
     }
 
+    fun cancelPendingRecipeRunIfConnectionChanged(activeConnectionId: String?): Boolean {
+        val pending = _pendingRecipeRun.value ?: return false
+        if (pending.connectionId == activeConnectionId) return false
+        _pendingRecipeRun.value = null
+        return true
+    }
+
     fun refreshExploreSample(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
         val current = _explore.value ?: return
         if (current.session.connectionId != connection.id) return

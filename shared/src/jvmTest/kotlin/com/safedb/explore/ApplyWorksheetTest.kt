@@ -25,6 +25,25 @@ class ApplyWorksheetTest {
     }
 
     @Test
+    fun numericEqualityIgnoresEquivalentDecimalFormatting() {
+        val equals = applyWorksheet(
+            sample(),
+            WorksheetConfig(
+                filters = listOf(WorksheetFilter("f", "amount", op = WorksheetFilterOp.Equals, value = "10.00")),
+            ),
+        )
+        val notEquals = applyWorksheet(
+            sample(),
+            WorksheetConfig(
+                filters = listOf(WorksheetFilter("f", "amount", op = WorksheetFilterOp.NotEquals, value = "20.0")),
+            ),
+        )
+
+        assertEquals(listOf("Acme"), equals.detailValues("name"))
+        assertEquals(listOf("Acme"), notEquals.detailValues("name"))
+    }
+
+    @Test
     fun nestedGroupsCollapseAndAggregateAtSelectedLevel() {
         val aggregate = WorksheetCalculation.Aggregate(
             id = "sum",
@@ -152,6 +171,45 @@ class ApplyWorksheetTest {
         assertEquals(listOf(10.0, 30.0), east.map { (it.cells[it.cells.lastIndex - 1].value as ResultCell.FloatCell).value })
         assertTrue(east.first().cells.last().value is ResultCell.Null)
         assertEquals(10.0, (east.last().cells.last().value as ResultCell.FloatCell).value)
+    }
+
+    @Test
+    fun windowPartitionsKeepDelimiterValuesDistinct() {
+        val sample = QueryResult(
+            columns = listOf(
+                ResultColumn("first", "varchar"),
+                ResultColumn("second", "varchar"),
+                ResultColumn("sequence", "int"),
+                ResultColumn("amount", "decimal"),
+            ),
+            rows = listOf(
+                listOf(ResultCell.text("a|TextCell:b"), ResultCell.text("c"), ResultCell.IntegerCell(1), ResultCell.FloatCell(10.0)),
+                listOf(ResultCell.text("a"), ResultCell.text("b|TextCell:c"), ResultCell.IntegerCell(2), ResultCell.FloatCell(20.0)),
+            ),
+            rowCount = 2,
+            truncated = false,
+            warnings = emptyList(),
+        )
+        val preview = applyWorksheet(
+            sample,
+            WorksheetConfig(
+                sorts = listOf(WorksheetSort(WorksheetValueRef.Column("sequence"))),
+                calculations = listOf(
+                    WorksheetCalculation.Window(
+                        id = "running",
+                        label = "Running",
+                        fn = WorksheetWindowFn.RunningTotal,
+                        source = WorksheetValueRef.Column("amount"),
+                        restartColumns = listOf("first", "second"),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(10.0, 20.0),
+            preview.rows.map { (it.cells.last().value as ResultCell.FloatCell).value },
+        )
     }
 
     @Test

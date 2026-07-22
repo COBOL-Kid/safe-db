@@ -167,6 +167,7 @@ fun BuilderScreen(
     schemaViewModel: SchemaViewModel,
     onOpenExplore: () -> Unit,
     onApplyRecipe: (ExploreRecipe, ConnectionDef) -> Unit,
+    onCancelQueryRun: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showCostGuardConfirm by remember { mutableStateOf(false) }
@@ -206,6 +207,7 @@ fun BuilderScreen(
             onDismissRequest = {
                 showCostGuardConfirm = false
                 queryViewModel.dismissError()
+                onCancelQueryRun()
             },
             shape = RoundedCornerShape(12.dp),
             containerColor = MaterialTheme.colorScheme.surface,
@@ -229,6 +231,7 @@ fun BuilderScreen(
                     onClick = {
                         showCostGuardConfirm = false
                         queryViewModel.dismissError()
+                        onCancelQueryRun()
                     },
                 ) {
                     Text("Cancel")

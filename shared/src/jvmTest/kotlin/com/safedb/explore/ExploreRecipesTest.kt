@@ -46,6 +46,22 @@ class ExploreRecipesTest {
     }
 
     @Test
+    fun exactAliasesStillRequireCompatibleTypeAndSourceTable() {
+        val recipe = recipe(listOf(RecipeField("t0__amount", "Amount", "decimal", "orders")))
+        val incompatibleType = QueryResult(
+            columns = listOf(ResultColumn("t0__amount", "varchar")),
+            rows = emptyList(), rowCount = 0, truncated = false, warnings = emptyList(),
+        )
+        val differentSource = QuerySpec(
+            tables = listOf(TableRef("public", "refunds", "t0")),
+            columns = emptyList(), joins = emptyList(), filters = FilterGroup.empty(), limit = 100,
+        )
+
+        assertEquals(1, resolveRecipeFields(recipe, incompatibleType, spec()).unresolved.size)
+        assertEquals(1, resolveRecipeFields(recipe, sample(), differentSource).unresolved.size)
+    }
+
+    @Test
     fun remapRewritesPivotWorksheetAndFormulaReferences() {
         val recipe = ExploreRecipe(
             id = "r",

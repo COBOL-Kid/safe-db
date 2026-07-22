@@ -28,7 +28,11 @@ fun resolveRecipeFields(
             resolved[required.column] = manuallySelected
             return@forEach
         }
-        candidates.firstOrNull { it.column == required.column }?.let {
+        candidates.firstOrNull { candidate ->
+            candidate.column == required.column &&
+                compatibleTypes(required.dataType, candidate.dataType) &&
+                (required.sourceTable == null || candidate.sourceTable == required.sourceTable)
+        }?.let {
             resolved[required.column] = it.column
             return@forEach
         }
