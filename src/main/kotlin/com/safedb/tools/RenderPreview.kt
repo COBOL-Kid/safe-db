@@ -16,6 +16,19 @@ import com.safedb.explore.PivotMeasure
 import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.PivotShowAs
 import com.safedb.explore.ShowAsMode
+import com.safedb.explore.ExploreMode
+import com.safedb.explore.WorksheetAggregateFn
+import com.safedb.explore.WorksheetCalculation
+import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetGroup
+import com.safedb.explore.WorksheetSort
+import com.safedb.explore.WorksheetValueRef
+import com.safedb.explore.WorksheetWindowFn
+import com.safedb.explore.SortDir
+import com.safedb.explore.ExploreConfig
+import com.safedb.explore.ExploreRecipe
+import com.safedb.explore.RecipeField
+import com.safedb.explore.VisualizationConfig
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -36,10 +49,14 @@ import com.safedb.model.markIndexedColumns
 import com.safedb.service.SafeDbService
 import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
+import com.safedb.ui.RecipeLibraryDialog
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.ExploreViewModel
+import com.safedb.viewmodel.RecipesViewModel
 import com.safedb.viewmodel.createExploreSession
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
@@ -223,7 +240,7 @@ private fun render(
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
-private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = false) {
+private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = false, worksheet: Boolean = false) {
     val service = FakeService()
     val spec = QuerySpec(
         tables = listOf(TableRef("public", "orders", "t0")),
@@ -273,6 +290,20 @@ private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = fals
             )
         }
     }
+    if (worksheet) {
+        viewModel.selectMode(ExploreMode.Worksheet)
+        viewModel.updateWorksheet {
+            WorksheetConfig(
+                groups = listOf(WorksheetGroup("status", "t0__status", "Status")),
+                sorts = listOf(WorksheetSort(WorksheetValueRef.Column("t0__placed_at"), SortDir.Asc)),
+                calculations = listOf(
+                    WorksheetCalculation.RowFormula("dollars", "Order value", "[t0__total_cents] / 100"),
+                    WorksheetCalculation.Aggregate("revenue", "Group revenue", WorksheetAggregateFn.Sum, "t0__total_cents", "t0__status"),
+                    WorksheetCalculation.Window("running", "Running revenue", WorksheetWindowFn.RunningTotal, WorksheetValueRef.Column("t0__total_cents")),
+                ),
+            )
+        }
+    }
 
     ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
         SafeDbTheme(isDark = isDark) {
@@ -281,6 +312,62 @@ private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = fals
                     viewModel = viewModel,
                     currentSpec = spec,
                     onClose = {},
+                    recipesViewModel = RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined)),
+                    connections = service.connections,
+                )
+            }
+        }
+    }.use { scene ->
+        scene.render(0L)
+        Thread.sleep(300)
+        val image = scene.render(300_000_000L)
+        val out = File("/tmp/safedb-preview/$name.png")
+        out.parentFile.mkdirs()
+        out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
+        println("wrote ${out.absolutePath}")
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun renderRecipeLibrary(name: String, isDark: Boolean) {
+    val service = FakeService()
+    val spec = QuerySpec(
+        tables = listOf(TableRef("public", "orders", "t0")),
+        columns = emptyList(), joins = emptyList(), filters = FilterGroup.empty(), limit = 100,
+    )
+    val sample = runBlocking { service.runQuery("c1", spec, force = false) }
+    val explore = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
+    val recipesViewModel = RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined))
+    val now = "1784600000"
+    val recipes = listOf(
+        ExploreRecipe(
+            id = "worksheet-recipe", name = "Order review", description = "Grouped worksheet with running revenue",
+            createdAt = now, updatedAt = now, defaultMode = ExploreMode.Worksheet,
+            worksheet = WorksheetConfig(groups = listOf(WorksheetGroup("status", "t0__status", "Status"))),
+            requiredFields = listOf(RecipeField("t0__status", "Status", "varchar", "orders")),
+        ),
+        ExploreRecipe(
+            id = "report-recipe", name = "Monthly reporting pack", description = "Pivot, worksheet, and future visualization",
+            createdAt = now, updatedAt = now, defaultMode = ExploreMode.Pivot,
+            pivot = ExploreConfig(), worksheet = WorksheetConfig(), visualization = VisualizationConfig(), querySpec = spec,
+        ),
+    )
+    ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
+        SafeDbTheme(isDark = isDark) {
+            androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                ExploreWindowContent(
+                    viewModel = explore,
+                    currentSpec = spec,
+                    onClose = {},
+                    recipesViewModel = recipesViewModel,
+                    connections = service.connections,
+                )
+                RecipeLibraryDialog(
+                    explore = explore,
+                    recipes = recipes,
+                    recipesViewModel = recipesViewModel,
+                    onApply = {},
+                    onDismiss = {},
                 )
             }
         }
@@ -347,5 +434,7 @@ fun main() {
 
         renderExplore("explore-$suffix", dark)
         renderExplore("explore-pivot-$suffix", dark, pivoted = true)
+        renderExplore("explore-worksheet-$suffix", dark, worksheet = true)
+        renderRecipeLibrary("explore-recipes-$suffix", dark)
     }
 }

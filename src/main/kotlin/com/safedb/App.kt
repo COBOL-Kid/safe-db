@@ -25,6 +25,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.safedb.secrets.SecretsManager
+import com.safedb.explore.exploreSpecHash
 import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
@@ -37,10 +38,22 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
     val settings by viewModel.settings.settings.collectAsState()
     val exploreViewModel by viewModel.explore.collectAsState()
+    val pendingRecipeRun by viewModel.pendingRecipeRun.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val useDarkTheme = settings.theme == "dark"
     var paletteOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pendingRecipeRun, viewModel.query.results, viewModel.query.running, viewModel.query.error, activeConnectionId) {
+        val pending = pendingRecipeRun ?: return@LaunchedEffect
+        val activeConnection = connections.firstOrNull { it.id == pending.connectionId }
+        val sample = viewModel.query.currentSample(pending.connectionId)
+        when {
+            activeConnection != null && sample != null -> viewModel.completePendingRecipeRun(activeConnection, sample.result, sample.spec)
+            exploreSpecHash(viewModel.query.spec) != pending.specHash -> viewModel.cancelPendingRecipeRun()
+            !viewModel.query.running && viewModel.query.error != null && !viewModel.query.pendingCostGuard -> viewModel.cancelPendingRecipeRun()
+        }
+    }
 
     SafeDbTheme(
         isDark = useDarkTheme,
@@ -117,6 +130,13 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
                                 null
                             },
                             sampleRefreshEnabled = sampleRefreshEnabled,
+                            recipesViewModel = viewModel.recipes,
+                            connections = connections,
+                            onRunRecipe = { recipe, connection ->
+                                appState.setActiveConnection(connection.id)
+                                viewModel.closeExplore()
+                                viewModel.runRecipe(connection, recipe)
+                            },
                         )
                     }
                 }

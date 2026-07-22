@@ -16,6 +16,9 @@ import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.query.COST_GUARD_PREFIX
+import com.safedb.explore.ExploreConfig
+import com.safedb.explore.ExploreMode
+import com.safedb.explore.ExploreRecipe
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
@@ -33,6 +36,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -247,6 +251,57 @@ class AppViewModelTest {
         assertNull(query.error)
         assertEquals(0, query.tableCount)
     }
+
+    @Test
+    fun queryBackedRecipeRestoresRunsAndOpensMatchingExploreSession() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r1", name = "Users pivot", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        val pending = viewModel.pendingRecipeRun.value
+        assertEquals("r1", pending?.recipe?.id)
+        val sample = assertNotNull(viewModel.query.currentSample(connection.id))
+        viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+
+        assertNull(viewModel.pendingRecipeRun.value)
+        assertEquals("r1", viewModel.explore.value?.appliedRecipeId)
+    }
+
+    @Test
+    fun queryBackedRecipeSurvivesCostConfirmationAndCanBeCancelled() = runTest(dispatcher) {
+        val service = FakeSafeDbService(costGuardFirstRun = true)
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r2", name = "Guarded", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+        assertTrue(viewModel.query.pendingCostGuard)
+        assertEquals("r2", viewModel.pendingRecipeRun.value?.recipe?.id)
+
+        viewModel.query.runForced(connection.id)
+        advanceUntilIdle()
+        assertNotNull(viewModel.query.currentSample(connection.id))
+        viewModel.cancelPendingRecipeRun()
+        assertNull(viewModel.pendingRecipeRun.value)
+    }
+
+    private fun testConnection() = ConnectionDef(
+        id = "c1", name = "Local", dialect = Dialect.MySql, host = "localhost", port = 3306,
+        database = "test", username = "reader",
+    )
 }
 
 private class FakeSafeDbService(

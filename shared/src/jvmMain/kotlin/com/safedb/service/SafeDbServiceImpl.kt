@@ -1,5 +1,6 @@
 package com.safedb.service
 
+import com.safedb.explore.ExploreRecipe
 import com.safedb.adapter.Adapter
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
@@ -17,6 +18,7 @@ import com.safedb.query.runQueryCore
 import com.safedb.secrets.SecretsManager
 import com.safedb.store.ConfigStore
 import com.safedb.store.QueryStore
+import com.safedb.store.RecipeStore
 import com.safedb.store.SettingsStore
 import java.time.Instant
 import java.util.UUID
@@ -68,13 +70,15 @@ class SafeDbServiceImpl internal constructor(
     private val settingsStore: SettingsStore,
     private val querySessionFactory: QuerySessionFactory?,
     private val adapterFactory: AdapterFactory = DefaultAdapterFactory,
+    private val recipeStore: RecipeStore? = null,
 ) : SafeDbService {
 
     constructor(
         configStore: ConfigStore,
         queryStore: QueryStore,
         settingsStore: SettingsStore,
-    ) : this(configStore, queryStore, settingsStore, null)
+        recipeStore: RecipeStore? = null,
+    ) : this(configStore, queryStore, settingsStore, null, DefaultAdapterFactory, recipeStore)
 
     override suspend fun testConnection(def: ConnectionDef, password: String): String {
         def.validate().getOrThrow()
@@ -176,6 +180,22 @@ class SafeDbServiceImpl internal constructor(
     override suspend fun saveSavedQuery(query: SavedQuery) = queryStore.saveQuery(query)
 
     override suspend fun deleteSavedQuery(id: String) = queryStore.deleteSaved(id)
+
+    override suspend fun listExploreRecipes(): List<ExploreRecipe> = recipeStore?.list().orEmpty()
+
+    override suspend fun saveExploreRecipe(recipe: ExploreRecipe) {
+        (recipeStore ?: error("Recipe store is unavailable")).save(recipe)
+    }
+
+    override suspend fun deleteExploreRecipe(id: String) {
+        (recipeStore ?: error("Recipe store is unavailable")).delete(id)
+    }
+
+    override suspend fun importExploreRecipe(json: String, nowEpochSec: String): ExploreRecipe =
+        (recipeStore ?: error("Recipe store is unavailable")).importJson(json, nowEpochSec)
+
+    override suspend fun exportExploreRecipe(recipe: ExploreRecipe): String =
+        (recipeStore ?: error("Recipe store is unavailable")).exportJson(recipe)
 
     override suspend fun listHistory(): List<HistoryEntry> = queryStore.listHistory()
 

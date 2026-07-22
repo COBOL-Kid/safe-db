@@ -146,14 +146,27 @@ fun AppShell(
                 )
                 AppRoute.Builder -> BuilderScreen(
                     connection = activeConnection,
+                    connections = viewModel.connections.connections.value,
                     queryViewModel = viewModel.query,
                     savedQueriesViewModel = viewModel.savedQueries,
+                    recipesViewModel = viewModel.recipes,
                     schemaViewModel = viewModel.schema,
                     onOpenExplore = {
                         val connection = activeConnection
                         val result = viewModel.query.results
                         if (connection != null && result != null) {
                             viewModel.openExplore(connection, viewModel.query.spec, result)
+                        }
+                    },
+                    onApplyRecipe = { recipe, targetConnection ->
+                        if (recipe.querySpec != null) {
+                            appState.setActiveConnection(targetConnection.id)
+                            viewModel.runRecipe(targetConnection, recipe)
+                        } else {
+                            val sample = viewModel.query.currentSample(targetConnection.id)
+                            if (sample != null) {
+                                viewModel.openExploreRecipe(targetConnection, sample.spec, sample.result, recipe)
+                            }
                         }
                     },
                 )

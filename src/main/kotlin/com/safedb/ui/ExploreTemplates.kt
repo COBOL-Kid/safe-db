@@ -79,7 +79,7 @@ internal fun resolveExploreTemplate(
     catalog: ExploreTemplateCatalog = BuiltinExploreTemplateCatalog,
 ): ExploreTemplateBuildResult {
     val template = catalog.builtinTemplates().firstOrNull { it.id == templateId }
-        ?: return ExploreTemplateBuildResult.Unavailable("Template not found.")
+        ?: return ExploreTemplateBuildResult.Unavailable("Recipe not found.")
     return template.build(sample, fields)
 }
 

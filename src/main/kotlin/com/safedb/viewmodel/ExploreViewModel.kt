@@ -4,10 +4,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.safedb.explore.ExploreConfig
+import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExplorePreviewResult
+import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.ExploreSession
+import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.PivotFilter
+import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.applyExplore
+import com.safedb.explore.applyWorksheet
+import com.safedb.explore.remapRecipe
+import com.safedb.explore.resolveRecipeFields
+import com.safedb.explore.withoutTransientState
 import com.safedb.explore.exploreSpecHash
 import com.safedb.explore.pivotCellKey
 import com.safedb.explore.pivotCellLineageKey
@@ -21,39 +30,108 @@ import java.nio.file.Path
 class ExploreViewModel(
     val session: ExploreSession,
     initialConfig: ExploreConfig? = null,
+    initialWorkspace: ExploreWorkspaceState? = null,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
-    var config by mutableStateOf(initialConfig ?: defaultConfig)
+    var workspace by mutableStateOf(
+        initialWorkspace ?: ExploreWorkspaceState(pivot = initialConfig ?: defaultConfig),
+    )
         private set
-    var preview by mutableStateOf(applyExplore(session.sample, config))
+    val config: ExploreConfig get() = workspace.pivot
+    val worksheetConfig: WorksheetConfig get() = workspace.worksheet
+
+    var preview by mutableStateOf(applyExplore(session.sample, workspace.pivot))
         private set
+    var worksheetPreview by mutableStateOf(applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables))
+        private set
+    var appliedRecipeId by mutableStateOf<String?>(null)
+        private set
+    var pendingRecipe by mutableStateOf<ExploreRecipe?>(null)
+        private set
+    private var appliedRecipeBaseline: ExploreWorkspaceState? = null
     var exportError by mutableStateOf<String?>(null)
         private set
     var exportMessage by mutableStateOf<String?>(null)
         private set
 
     fun updateConfig(block: (ExploreConfig) -> ExploreConfig) {
-        config = block(config)
-        preview = applyExplore(session.sample, config)
+        workspace = workspace.copy(pivot = block(workspace.pivot))
+        preview = applyExplore(session.sample, workspace.pivot)
         exportError = null
         exportMessage = null
     }
 
-    fun resetConfig() {
-        config = defaultConfig
-        preview = applyExplore(session.sample, config)
+    fun updateWorksheet(block: (WorksheetConfig) -> WorksheetConfig) {
+        workspace = workspace.copy(worksheet = block(workspace.worksheet))
+        worksheetPreview = applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
         clearExportMessages()
     }
 
-    fun isDefaultConfig(): Boolean = config == defaultConfig
+    fun selectMode(mode: ExploreMode) {
+        workspace = workspace.copy(activeMode = mode)
+        clearExportMessages()
+    }
+
+    fun resetConfig() {
+        workspace = workspace.copy(pivot = defaultConfig)
+        preview = applyExplore(session.sample, workspace.pivot)
+        clearExportMessages()
+    }
+
+    fun isDefaultConfig(): Boolean = workspace.pivot.withoutTransientState() == defaultConfig.withoutTransientState()
 
     fun isDirty(): Boolean = !isDefaultConfig()
 
     fun applyTemplate(templateConfig: ExploreConfig) {
-        config = templateConfig
-        preview = applyExplore(session.sample, config)
+        workspace = workspace.copy(activeMode = ExploreMode.Pivot, pivot = templateConfig)
+        preview = applyExplore(session.sample, workspace.pivot)
         clearExportMessages()
+    }
+
+    fun applyRecipe(recipe: ExploreRecipe) {
+        workspace = workspace.copy(
+            activeMode = recipe.defaultMode,
+            pivot = recipe.pivot ?: workspace.pivot,
+            worksheet = recipe.worksheet ?: workspace.worksheet,
+            visualization = recipe.visualization ?: workspace.visualization,
+        )
+        preview = applyExplore(session.sample, workspace.pivot)
+        worksheetPreview = applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
+        appliedRecipeId = recipe.id
+        appliedRecipeBaseline = workspace.recipeSnapshot()
+        clearExportMessages()
+    }
+
+    fun requestRecipe(recipe: ExploreRecipe) {
+        val mapping = resolveRecipeFields(recipe, session.sample, session.baseSpec)
+        if (mapping.unresolved.isEmpty()) {
+            applyRecipe(remapRecipe(recipe, mapping.resolved))
+        } else {
+            pendingRecipe = recipe
+        }
+    }
+
+    fun applyPendingRecipe(mapping: Map<String, String>) {
+        val recipe = pendingRecipe ?: return
+        pendingRecipe = null
+        applyRecipe(remapRecipe(recipe, mapping))
+    }
+
+    fun dismissPendingRecipe() {
+        pendingRecipe = null
+    }
+
+    fun recipeDirty(): Boolean = appliedRecipeBaseline?.let { baseline -> workspace.recipeSnapshot() != baseline } ?: false
+
+    fun clearAppliedRecipe() {
+        appliedRecipeId = null
+        appliedRecipeBaseline = null
+    }
+
+    fun inheritRecipeTrackingFrom(previous: ExploreViewModel) {
+        appliedRecipeId = previous.appliedRecipeId
+        appliedRecipeBaseline = previous.appliedRecipeBaseline
     }
 
     fun toggleRowPath(pathKey: String) {
@@ -69,6 +147,12 @@ class ExploreViewModel(
             it.copy(
                 collapsedColumnPaths = it.collapsedColumnPaths.toggle(pathKey),
             )
+        }
+    }
+
+    fun toggleWorksheetGroup(pathKey: String) {
+        updateWorksheet { current ->
+            current.copy(collapsedGroupPaths = current.collapsedGroupPaths.toggle(pathKey))
         }
     }
 
@@ -129,6 +213,22 @@ class ExploreViewModel(
         saveResultCsv(result, path)
     }
 
+    fun saveWorksheetCsv(path: Path) {
+        val rows = worksheetPreview.rows.map { row ->
+            row.cells.map { cell -> cell.error?.let { ResultCell.text("Error: $it") } ?: cell.value }
+        }
+        saveResultCsv(
+            QueryResult(
+                columns = worksheetPreview.columns.map { com.safedb.model.ResultColumn(it.label, it.dataType) },
+                rows = rows,
+                rowCount = rows.size,
+                truncated = session.sample.truncated,
+                warnings = worksheetPreview.warnings,
+            ),
+            path,
+        )
+    }
+
     fun saveResultCsv(result: QueryResult, path: Path) {
         runCatching {
             Files.newOutputStream(path).use { output ->
@@ -159,6 +259,11 @@ data class MemberOption(
 )
 
 private fun Set<String>.toggle(value: String): Set<String> = if (value in this) this - value else this + value
+
+private fun ExploreWorkspaceState.recipeSnapshot(): ExploreWorkspaceState = copy(
+    pivot = pivot.withoutTransientState(),
+    worksheet = worksheet.withoutTransientState(),
+)
 
 private fun memberLabel(cell: com.safedb.model.ResultCell?): String = when (cell) {
     null, is com.safedb.model.ResultCell.Null -> "(blank)"

@@ -5,6 +5,7 @@ import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbServiceImpl
 import com.safedb.store.ConfigStore
 import com.safedb.store.QueryStore
+import com.safedb.store.RecipeStore
 import com.safedb.store.SettingsStore
 
 fun main() {
@@ -14,6 +15,7 @@ fun main() {
         configStore = ConfigStore.new(dataDir),
         queryStore = QueryStore.new(dataDir),
         settingsStore = SettingsStore.new(dataDir),
+        recipeStore = RecipeStore.new(dataDir),
     )
     runApp(AppState(service))
 }

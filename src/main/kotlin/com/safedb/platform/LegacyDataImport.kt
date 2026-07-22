@@ -13,6 +13,7 @@ object LegacyDataImport {
         "settings.json",
         "saved_queries.json",
         "query_history.json",
+        "explore_recipes.json",
     )
 
     fun resolveDataDir(): Path {
