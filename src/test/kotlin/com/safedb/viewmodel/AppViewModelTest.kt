@@ -322,6 +322,28 @@ class AppViewModelTest {
         assertNull(viewModel.pendingRecipeRun.value)
     }
 
+
+    @Test
+    fun queryBackedRecipeDoesNotRemainPendingWhenHydratedQueryCannotRun() = runTest(dispatcher) {
+        val service = FakeSafeDbService(schemaTables = emptyList())
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r4", name = "Missing tables", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        assertNull(viewModel.pendingRecipeRun.value)
+        assertFalse(viewModel.query.canRun)
+        assertNull(viewModel.query.currentSample(connection.id))
+        assertNull(viewModel.explore.value)
+        assertTrue(service.forceCalls.isEmpty())
+    }
+
     private fun testConnection() = ConnectionDef(
         id = "c1", name = "Local", dialect = Dialect.MySql, host = "localhost", port = 3306,
         database = "test", username = "reader",
@@ -332,6 +354,7 @@ private class FakeSafeDbService(
     private val costGuardFirstRun: Boolean = false,
     private val queryGate: CompletableDeferred<Unit>? = null,
     private val queryStarted: CompletableDeferred<Unit>? = null,
+    private val schemaTables: List<TableInfo> = listOf(sampleTable()),
 ) : SafeDbService {
     var locked = false
     val forceCalls = mutableListOf<Boolean>()
@@ -347,7 +370,7 @@ private class FakeSafeDbService(
         locked = true
     }
 
-    override suspend fun getSchema(connectionId: String): Schema = Schema(listOf(sampleTable()))
+    override suspend fun getSchema(connectionId: String): Schema = Schema(schemaTables)
 
     override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult {
         forceCalls.add(force)

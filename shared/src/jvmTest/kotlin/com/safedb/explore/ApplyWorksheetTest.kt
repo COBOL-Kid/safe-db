@@ -84,6 +84,45 @@ class ApplyWorksheetTest {
         assertEquals(2, preview.rows.count { it.kind == WorksheetRowKind.Detail })
     }
 
+
+    @Test
+    fun groupedDateAndNumericBucketSortsUseTypedBucketOrder() {
+        val dateSample = QueryResult(
+            columns = listOf(ResultColumn("day", "date"), ResultColumn("amount", "decimal")),
+            rows = listOf(
+                listOf(ResultCell.text("2026-04-01"), ResultCell.FloatCell(10.0)),
+                listOf(ResultCell.text("2026-01-01"), ResultCell.FloatCell(2.0)),
+                listOf(ResultCell.text("2026-02-01"), ResultCell.FloatCell(20.0)),
+            ),
+            rowCount = 3,
+            truncated = false,
+            warnings = emptyList(),
+        )
+        val monthPreview = applyWorksheet(
+            dateSample,
+            WorksheetConfig(
+                groups = listOf(WorksheetGroup("month", "day", grouping = PivotGrouping.Date(DateGroupUnit.Month))),
+                sorts = listOf(WorksheetSort(WorksheetValueRef.Column("day"))),
+            ),
+        )
+        val binPreview = applyWorksheet(
+            dateSample,
+            WorksheetConfig(
+                groups = listOf(WorksheetGroup("amount-bin", "amount", grouping = PivotGrouping.NumberBin("2"))),
+                sorts = listOf(WorksheetSort(WorksheetValueRef.Column("amount"))),
+            ),
+        )
+
+        assertEquals(
+            listOf("day: Jan 2026", "day: Feb 2026", "day: Apr 2026"),
+            monthPreview.rows.filter { it.kind == WorksheetRowKind.Group }.map { it.label },
+        )
+        assertEquals(
+            listOf("amount: 2 – 4", "amount: 10 – 12", "amount: 20 – 22"),
+            binPreview.rows.filter { it.kind == WorksheetRowKind.Group }.map { it.label },
+        )
+    }
+
     @Test
     fun rowFormulaSupportsFieldsNullsAndErrors() {
         val preview = applyWorksheet(

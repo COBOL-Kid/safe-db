@@ -85,9 +85,13 @@ class AppViewModel(
     }
 
     fun runRecipe(connection: ConnectionDef, recipe: ExploreRecipe) {
+        _pendingRecipeRun.value = null
         val spec = recipe.querySpec ?: return
         restoreQueryForConnection(connection.id, spec) { restored ->
-            if (!restored) return@restoreQueryForConnection
+            if (!restored || !query.canRun) {
+                _pendingRecipeRun.value = null
+                return@restoreQueryForConnection
+            }
             _pendingRecipeRun.value = PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
             query.run(connection.id)
         }

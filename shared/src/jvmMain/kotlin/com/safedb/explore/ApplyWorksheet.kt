@@ -196,7 +196,7 @@ private class WorksheetEngine(
             for (sort in config.sorts) {
                 val compared = when (val target = sort.target) {
                     is WorksheetValueRef.Column -> if (target.column == group.column) {
-                        left.key.label.compareTo(right.key.label, ignoreCase = true)
+                        compareCells(left.key.sortValue, right.key.sortValue)
                     } else {
                         compareCells(left.value.firstOrNull()?.source(target.column), right.value.firstOrNull()?.source(target.column))
                     }
@@ -365,9 +365,9 @@ private class WorksheetEngine(
     }
 
     private fun groupBucket(cell: ResultCell?, group: WorksheetGroup): GroupBucket {
-        if (cell == null || cell is ResultCell.Null) return GroupBucket("<null>", "(blank)")
+        if (cell == null || cell is ResultCell.Null) return GroupBucket("<null>", "(blank)", ResultCell.Null)
         return when (val grouping = group.grouping) {
-            PivotGrouping.Exact -> GroupBucket(pivotCellKey(cell), cellText(cell))
+            PivotGrouping.Exact -> GroupBucket(pivotCellKey(cell), cellText(cell), cell)
             is PivotGrouping.Date -> dateBucket(cell, grouping.unit, group.label)
             is PivotGrouping.NumberBin -> numberBucket(cell, grouping, group.label)
         }
@@ -377,22 +377,27 @@ private class WorksheetEngine(
         val date = parseDate(cellText(cell))
         if (date == null) {
             warnings += "$label contains values that could not be grouped as dates"
-            return GroupBucket("<invalid-date>", "(invalid date)")
+            return GroupBucket("<invalid-date>", "(invalid date)", ResultCell.Null)
         }
         return when (unit) {
-            DateGroupUnit.Year -> GroupBucket(date.year.toString(), date.year.toString())
+            DateGroupUnit.Year -> GroupBucket(date.year.toString(), date.year.toString(), ResultCell.text(date.year.toString()))
             DateGroupUnit.Quarter -> {
                 val quarter = ((date.monthValue - 1) / 3) + 1
-                GroupBucket("${date.year}-Q$quarter", "Q$quarter ${date.year}")
+                val key = "${date.year}-Q$quarter"
+                GroupBucket(key, "Q$quarter ${date.year}", ResultCell.text(key))
             }
-            DateGroupUnit.Month -> GroupBucket("%04d-%02d".format(date.year, date.monthValue), date.format(DateTimeFormatter.ofPattern("MMM yyyy")))
+            DateGroupUnit.Month -> {
+                val key = "%04d-%02d".format(date.year, date.monthValue)
+                GroupBucket(key, date.format(DateTimeFormatter.ofPattern("MMM yyyy")), ResultCell.text(key))
+            }
             DateGroupUnit.IsoWeek -> {
                 val fields = WeekFields.ISO
                 val year = date.get(fields.weekBasedYear())
                 val week = date.get(fields.weekOfWeekBasedYear())
-                GroupBucket("$year-W$week", "%04d-W%02d".format(year, week))
+                val key = "%04d-W%02d".format(year, week)
+                GroupBucket(key, key, ResultCell.text(key))
             }
-            DateGroupUnit.Day -> GroupBucket(date.toString(), date.toString())
+            DateGroupUnit.Day -> GroupBucket(date.toString(), date.toString(), ResultCell.text(date.toString()))
         }
     }
 
@@ -402,12 +407,16 @@ private class WorksheetEngine(
         val start = grouping.start?.toBigDecimalOrNull() ?: BigDecimal.ZERO
         if (value == null || size == null || size <= BigDecimal.ZERO) {
             warnings += "$label needs a positive numeric bin size"
-            return GroupBucket(pivotCellKey(cell), cellText(cell))
+            return GroupBucket(pivotCellKey(cell), cellText(cell), cell)
         }
         val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
         val lower = start.add(index.multiply(size)).stripTrailingZeros()
         val upper = lower.add(size).stripTrailingZeros()
-        return GroupBucket("${lower.toPlainString()}:${size.toPlainString()}", "${lower.toPlainString()} – ${upper.toPlainString()}")
+        return GroupBucket(
+            "${lower.toPlainString()}:${size.toPlainString()}",
+            "${lower.toPlainString()} – ${upper.toPlainString()}",
+            ResultCell.FloatCell(lower.toDouble()),
+        )
     }
 
     private fun WorksheetRecord.source(column: String): ResultCell = indexes[column]?.let(row::getOrNull) ?: ResultCell.Null
@@ -459,7 +468,7 @@ private data class MutableWorksheetEntry(
     private fun sourceIndex(column: String): Int? = sourceIndexes[column]
 }
 
-private data class GroupBucket(val key: String, val label: String)
+private data class GroupBucket(val key: String, val label: String, val sortValue: ResultCell)
 
 private val ORDERED_WINDOWS = setOf(
     WorksheetWindowFn.RunningTotal,
