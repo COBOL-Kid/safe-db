@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -167,14 +168,51 @@ fun ExploreWindowContent(
                     }
                 }
                 ExploreMode.Visualization -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            ModeIcon(ExploreMode.Visualization, Modifier.size(46.dp))
-                            Text("Visualization", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
-                            Text("Chart selection and rendering are coming next. This mode can already be included in recipes.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        VisualizationConfigPanel(
+                            config = viewModel.visualizationConfig,
+                            sample = session.sample,
+                            tables = session.baseSpec.tables,
+                            fields = fields,
+                            memberOptionsFor = viewModel::memberOptions,
+                            onConfigChange = { next -> viewModel.updateVisualization { next } },
+                            onApplyTemplate = viewModel::applyVisualizationTemplate,
+                            onReset = viewModel::resetVisualization,
+                            modifier = Modifier.width(320.dp).fillMaxHeight(),
+                        )
+                        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
+                        Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
+                            viewModel.visualizationPreview.warnings.firstOrNull()?.let { warning ->
+                                MessageBanner(
+                                    text = warning,
+                                    kind = BannerKind.WARNING,
+                                )
+                            }
+                            VisualizationChart(
+                                preview = viewModel.visualizationPreview,
+                                config = viewModel.visualizationConfig,
+                                sampleRowCount = session.sample.rowCount,
+                                sampleTruncated = session.sample.truncated,
+                                onMarkClick = { markId ->
+                                    drillResult = viewModel.sourceRowsForVisualizationMark(markId)
+                                },
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                            )
                         }
                     }
-                    ExploreExportBar(viewModel, enabled = false) {}
+                    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                    VisualizationExportBar(
+                        viewModel = viewModel,
+                        enabled = viewModel.visualizationPreview.ready,
+                        onExportCsv = {
+                            chooseExportFile("${session.connectionLabel}-chart-data", "csv")?.let(viewModel::saveVisualizationCsv)
+                        },
+                        onExportPng = {
+                            chooseExportFile("${session.connectionLabel}-chart", "png")?.let {
+                                viewModel.saveVisualizationPng(it, isDark)
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -227,10 +265,44 @@ private fun ExploreExportBar(viewModel: ExploreViewModel, enabled: Boolean, onEx
     }
 }
 
+@Composable
+private fun VisualizationExportBar(
+    viewModel: ExploreViewModel,
+    enabled: Boolean,
+    onExportCsv: () -> Unit,
+    onExportPng: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        viewModel.exportMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        viewModel.exportError?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        Box(modifier = Modifier.weight(1f))
+        if (viewModel.exportMessage != null || viewModel.exportError != null) {
+            SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
+        }
+        SecondaryButton(modifier = Modifier.padding(start = 8.dp), onClick = onExportCsv, enabled = enabled) {
+            Text("Export chart data")
+        }
+        PrimaryButton(modifier = Modifier.padding(start = 8.dp), onClick = onExportPng, enabled = enabled) {
+            Text("Export PNG")
+        }
+    }
+}
+
 private fun exploreWorkspaceSummary(viewModel: ExploreViewModel): String = when (viewModel.workspace.activeMode) {
     ExploreMode.Pivot -> exploreConfigSummary(viewModel.config)
     ExploreMode.Worksheet -> "${viewModel.worksheetConfig.groups.size} groups · ${viewModel.worksheetConfig.filters.size} filters · ${viewModel.worksheetConfig.calculations.size} calculations"
-    ExploreMode.Visualization -> "Visualization placeholder"
+    ExploreMode.Visualization -> if (viewModel.visualizationConfig.isConfigured()) {
+        "${viewModel.visualizationConfig.chartType.name} · ${viewModel.visualizationPreview.marks.size} plotted values"
+    } else {
+        "No chart configured"
+    }
 }
 
 private fun chooseCsvFile(connectionLabel: String): java.nio.file.Path? {
@@ -243,4 +315,16 @@ private fun chooseCsvFile(connectionLabel: String): java.nio.file.Path? {
     if (result != JFileChooser.APPROVE_OPTION) return null
     val file = chooser.selectedFile
     return if (file.extension.equals("csv", ignoreCase = true)) file.toPath() else File("${file.path}.csv").toPath()
+}
+
+private fun chooseExportFile(connectionLabel: String, extension: String): java.nio.file.Path? {
+    val safeName = connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "explore" }
+    val chooser = JFileChooser().apply {
+        selectedFile = File("explore-$safeName.$extension")
+        dialogTitle = "Export Explore ${extension.uppercase()}"
+    }
+    val result = chooser.showSaveDialog(null)
+    if (result != JFileChooser.APPROVE_OPTION) return null
+    val file = chooser.selectedFile
+    return if (file.extension.equals(extension, ignoreCase = true)) file.toPath() else File("${file.path}.$extension").toPath()
 }

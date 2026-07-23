@@ -17,11 +17,6 @@ enum class ExploreMode {
 }
 
 @Serializable
-data class VisualizationConfig(
-    val schemaVersion: Int = 1,
-)
-
-@Serializable
 data class WorksheetConfig(
     val schemaVersion: Int = WORKSHEET_SCHEMA_VERSION,
     val groups: List<WorksheetGroup> = emptyList(),
@@ -242,6 +237,7 @@ data class ExploreRecipe(
         require(name.isNotBlank()) { "Recipe name is required" }
         require(includedModes.isNotEmpty()) { "Recipe must include at least one Explore mode" }
         require(defaultMode in includedModes) { "Recipe default mode must be included" }
+        visualization?.validate()
         return this
     }
 }
@@ -263,6 +259,7 @@ fun recipeFields(
     spec: QuerySpec,
     pivot: ExploreConfig?,
     worksheet: WorksheetConfig?,
+    visualization: VisualizationConfig? = null,
 ): List<RecipeField> {
     val referenced = linkedSetOf<String>()
     pivot?.let { config ->
@@ -287,6 +284,13 @@ fun recipeFields(
                 }
             }
         }
+    }
+    visualization?.let { config ->
+        config.x?.column?.let(referenced::add)
+        referenced += config.values.mapNotNull { it.sourceColumn }
+        config.series?.column?.let(referenced::add)
+        config.size?.column?.let(referenced::add)
+        referenced += config.filters.map { it.column }
     }
     val labels = displayColumnLabels(sample.columns, spec.tables)
     val tableByAlias = spec.tables.associate { it.alias to it.name }

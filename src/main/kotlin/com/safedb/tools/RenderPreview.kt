@@ -29,6 +29,11 @@ import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.RecipeField
 import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.ChartType
+import com.safedb.explore.VisualizationField
+import com.safedb.explore.VisualizationMeasure
+import com.safedb.explore.VisualizationSort
+import com.safedb.explore.VisualizationSortTarget
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -240,7 +245,13 @@ private fun render(
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
-private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = false, worksheet: Boolean = false) {
+private fun renderExplore(
+    name: String,
+    isDark: Boolean,
+    pivoted: Boolean = false,
+    worksheet: Boolean = false,
+    visualization: String? = null,
+) {
     val service = FakeService()
     val spec = QuerySpec(
         tables = listOf(TableRef("public", "orders", "t0")),
@@ -304,6 +315,78 @@ private fun renderExplore(name: String, isDark: Boolean, pivoted: Boolean = fals
             )
         }
     }
+    if (visualization != null) {
+        viewModel.selectMode(ExploreMode.Visualization)
+        val chart = when (visualization) {
+            "bar" -> VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(
+                    VisualizationMeasure(
+                        "revenue",
+                        MeasureFn.Sum,
+                        "t0__total_cents",
+                        "Revenue",
+                        numberFormat = PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
+                    ),
+                ),
+                title = "Revenue by order status",
+            )
+            "horizontal" -> VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(
+                    VisualizationMeasure(
+                        "revenue",
+                        MeasureFn.Sum,
+                        "t0__total_cents",
+                        "Revenue",
+                        numberFormat = PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
+                    ),
+                ),
+                barOrientation = com.safedb.explore.BarOrientation.Horizontal,
+                topN = 10,
+                title = "Top statuses by revenue",
+            )
+            "line" -> VisualizationConfig(
+                chartType = ChartType.Line,
+                x = VisualizationField(
+                    "t0__placed_at",
+                    "Placed at",
+                    PivotGrouping.Date(DateGroupUnit.Day),
+                ),
+                values = listOf(
+                    VisualizationMeasure(
+                        "revenue",
+                        MeasureFn.Sum,
+                        "t0__total_cents",
+                        "Revenue",
+                        numberFormat = PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
+                    ),
+                ),
+                sort = VisualizationSort(VisualizationSortTarget.Source, SortDir.Asc),
+                title = "Daily sampled revenue",
+            )
+            "scatter" -> VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("t0__id", "Order ID"),
+                values = listOf(
+                    VisualizationMeasure(
+                        "value",
+                        MeasureFn.Sum,
+                        "t0__total_cents",
+                        "Order value",
+                        aggregate = false,
+                    ),
+                ),
+                series = VisualizationField("t0__status", "Status"),
+                size = VisualizationField("t0__total_cents", "Order value"),
+                title = "Order value by order ID",
+            )
+            else -> VisualizationConfig()
+        }
+        viewModel.updateVisualization { chart }
+    }
 
     ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
         SafeDbTheme(isDark = isDark) {
@@ -347,7 +430,7 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
             requiredFields = listOf(RecipeField("t0__status", "Status", "varchar", "orders")),
         ),
         ExploreRecipe(
-            id = "report-recipe", name = "Monthly reporting pack", description = "Pivot, worksheet, and future visualization",
+            id = "report-recipe", name = "Monthly reporting pack", description = "Pivot, worksheet, and visualization",
             createdAt = now, updatedAt = now, defaultMode = ExploreMode.Pivot,
             pivot = ExploreConfig(), worksheet = WorksheetConfig(), visualization = VisualizationConfig(), querySpec = spec,
         ),
@@ -435,6 +518,11 @@ fun main() {
         renderExplore("explore-$suffix", dark)
         renderExplore("explore-pivot-$suffix", dark, pivoted = true)
         renderExplore("explore-worksheet-$suffix", dark, worksheet = true)
+        renderExplore("explore-visualization-empty-$suffix", dark, visualization = "empty")
+        renderExplore("explore-visualization-bar-$suffix", dark, visualization = "bar")
+        renderExplore("explore-visualization-horizontal-$suffix", dark, visualization = "horizontal")
+        renderExplore("explore-visualization-line-$suffix", dark, visualization = "line")
+        renderExplore("explore-visualization-scatter-$suffix", dark, visualization = "scatter")
         renderRecipeLibrary("explore-recipes-$suffix", dark)
     }
 }

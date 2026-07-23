@@ -83,6 +83,52 @@ class ExploreRecipesTest {
         assertEquals("[new] + 1", (mapped.worksheet?.calculations?.single() as WorksheetCalculation.RowFormula).formula)
     }
 
+    @Test
+    fun remapRewritesVisualizationReferences() {
+        val recipe = ExploreRecipe(
+            id = "v",
+            name = "Chart",
+            createdAt = "1",
+            updatedAt = "1",
+            defaultMode = ExploreMode.Visualization,
+            visualization = VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("old"),
+                values = listOf(VisualizationMeasure("value", MeasureFn.Sum, "old", aggregate = false)),
+                series = VisualizationField("old_series"),
+                size = VisualizationField("old_size"),
+                filters = listOf(PivotFilter.Members("f", "old", "Amount")),
+            ),
+        )
+
+        val mapped = remapRecipe(
+            recipe,
+            mapOf("old" to "new", "old_series" to "new_series", "old_size" to "new_size"),
+        )
+
+        assertEquals("new", mapped.visualization?.x?.column)
+        assertEquals("new", mapped.visualization?.values?.single()?.sourceColumn)
+        assertEquals("new_series", mapped.visualization?.series?.column)
+        assertEquals("new_size", mapped.visualization?.size?.column)
+        assertEquals("new", mapped.visualization?.filters?.single()?.column)
+    }
+
+    @Test
+    fun recipeFieldsIncludesEveryVisualizationChannel() {
+        val visualization = VisualizationConfig(
+            chartType = ChartType.Scatter,
+            x = VisualizationField("t0__amount"),
+            values = listOf(VisualizationMeasure("value", MeasureFn.Sum, "t0__amount", aggregate = false)),
+            series = VisualizationField("t0__status"),
+            size = VisualizationField("t0__amount"),
+            filters = listOf(PivotFilter.Members("f", "t0__status", "Status")),
+        )
+
+        val fields = recipeFields(sample(), spec(), null, null, visualization)
+
+        assertEquals(setOf("t0__amount", "t0__status"), fields.map { it.column }.toSet())
+    }
+
     private fun recipe(fields: List<RecipeField>) = ExploreRecipe(
         id = "r", name = "Recipe", createdAt = "1", updatedAt = "1",
         defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), requiredFields = fields,
