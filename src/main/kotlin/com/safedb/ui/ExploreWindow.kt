@@ -1,6 +1,8 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,12 +11,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,11 +28,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.explore.PivotFilter
+import com.safedb.explore.ExploreMode
+import com.safedb.explore.ExploreRecipe
 import com.safedb.model.QueryResult
+import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
@@ -36,6 +45,7 @@ import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
 import com.safedb.viewmodel.ExploreViewModel
+import com.safedb.viewmodel.RecipesViewModel
 import java.io.File
 import javax.swing.JFileChooser
 
@@ -46,6 +56,9 @@ fun ExploreWindowContent(
     onClose: () -> Unit,
     onRefreshSample: (() -> Unit)? = null,
     sampleRefreshEnabled: Boolean = false,
+    recipesViewModel: RecipesViewModel,
+    connections: List<ConnectionDef> = emptyList(),
+    onRunRecipe: (ExploreRecipe, ConnectionDef) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val session = viewModel.session
@@ -80,7 +93,7 @@ fun ExploreWindowContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    exploreConfigSummary(config),
+                    exploreWorkspaceSummary(viewModel),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -89,105 +102,135 @@ fun ExploreWindowContent(
                 )
             }
             if (session.sample.truncated) StatusChip("Truncated", StatusChipKind.WARNING)
+            ExploreModeSelector(
+                selected = viewModel.workspace.activeMode,
+                onSelect = viewModel::selectMode,
+                modifier = Modifier.padding(horizontal = 10.dp),
+            )
+            ExploreRecipeActions(viewModel, recipesViewModel, connections, onRunRecipe)
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = "Close Explore")
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
-        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            ExploreConfigPanel(
-                config = config,
-                fields = fields,
-                sample = session.sample,
-                onConfigChange = { next -> viewModel.updateConfig { next } },
-                memberOptionsFor = viewModel::memberOptions,
-                onApplyTemplate = viewModel::applyTemplate,
-                configDirty = viewModel.isDirty(),
-                onReset = viewModel::resetConfig,
-                resetEnabled = !viewModel.isDefaultConfig(),
-                modifier = Modifier.width(320.dp).fillMaxHeight(),
+        Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            ExploreSampleWarnings(
+                truncated = session.sample.truncated,
+                stale = stale,
+                sampleRefreshEnabled = sampleRefreshEnabled,
+                onRefreshSample = onRefreshSample,
             )
-
-            Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
-
-            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                if (session.sample.truncated || stale) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                        if (session.sample.truncated) {
-                            MessageBanner(
-                                text = "You’re viewing a sample, so totals may not represent the full result.",
-                                kind = BannerKind.WARNING,
-                            )
-                        }
-                        if (stale) {
-                            MessageBanner(
-                                text = if (sampleRefreshEnabled) {
-                                    "The builder query changed. Refresh the Explore sample from the latest Builder results."
-                                } else {
-                                    "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore."
-                                },
-                                kind = BannerKind.WARNING,
-                                action = if (sampleRefreshEnabled && onRefreshSample != null) {
-                                    {
-                                        PrimaryButton(onClick = onRefreshSample) {
-                                            Text("Refresh sample")
-                                        }
-                                    }
-                                } else {
-                                    null
-                                },
-                            )
+            when (viewModel.workspace.activeMode) {
+                ExploreMode.Pivot -> Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    ExploreConfigPanel(
+                        config = config,
+                        fields = fields,
+                        onConfigChange = { next -> viewModel.updateConfig { next } },
+                        memberOptionsFor = viewModel::memberOptions,
+                        onReset = viewModel::resetConfig,
+                        resetEnabled = !viewModel.isDefaultConfig(),
+                        modifier = Modifier.width(320.dp).fillMaxHeight(),
+                    )
+                    Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
+                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        ExploreFilterStrip(
+                            filters = config.filters.filterIsInstance<PivotFilter.Members>().filter { it.pinned },
+                            optionsFor = viewModel::memberOptions,
+                            onSelectionChange = viewModel::updateMemberFilter,
+                        )
+                        ExplorePivotTable(
+                            preview = preview,
+                            config = config,
+                            onConfigChange = { next -> viewModel.updateConfig { next } },
+                            onToggleRow = viewModel::toggleRowPath,
+                            onToggleColumn = viewModel::toggleColumnPath,
+                            onDrill = { rowPath, columnPath, measureAlias -> drillResult = viewModel.sourceRowsFor(rowPath, columnPath, measureAlias) },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                        ExploreExportBar(viewModel, enabled = true) {
+                            chooseCsvFile(session.connectionLabel)?.let(viewModel::savePreviewCsv)
                         }
                     }
                 }
-
-                ExploreFilterStrip(
-                    filters = config.filters.filterIsInstance<PivotFilter.Members>().filter { it.pinned },
-                    optionsFor = viewModel::memberOptions,
-                    onSelectionChange = viewModel::updateMemberFilter,
-                )
-
-                ExplorePivotTable(
-                    preview = preview,
-                    config = config,
-                    onConfigChange = { next -> viewModel.updateConfig { next } },
-                    onToggleRow = viewModel::toggleRowPath,
-                    onToggleColumn = viewModel::toggleColumnPath,
-                    onDrill = { rowPath, columnPath, measureAlias ->
-                        drillResult = viewModel.sourceRowsFor(rowPath, columnPath, measureAlias)
-                    },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    viewModel.exportMessage?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ExploreMode.Worksheet -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    ExploreWorksheet(
+                        sample = session.sample,
+                        config = viewModel.worksheetConfig,
+                        preview = viewModel.worksheetPreview,
+                        onConfigChange = { next -> viewModel.updateWorksheet { next } },
+                        onToggleGroup = viewModel::toggleWorksheetGroup,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                    ExploreExportBar(viewModel, enabled = true) {
+                        chooseCsvFile("${session.connectionLabel}-worksheet")?.let(viewModel::saveWorksheetCsv)
                     }
-                    viewModel.exportError?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
-                    Box(modifier = Modifier.weight(1f))
-                    if (viewModel.exportMessage != null || viewModel.exportError != null) {
-                        SecondaryButton(onClick = viewModel::clearExportMessages) {
-                            Text("Dismiss")
+                }
+                ExploreMode.Visualization -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            ModeIcon(ExploreMode.Visualization, Modifier.size(46.dp))
+                            Text("Visualization", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+                            Text("Chart selection and rendering are coming next. This mode can already be included in recipes.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                         }
                     }
-                    PrimaryButton(
-                        modifier = Modifier.padding(start = 8.dp),
-                        onClick = {
-                            chooseCsvFile(session.connectionLabel)?.let(viewModel::savePreviewCsv)
-                        },
-                    ) {
-                        Text("Export CSV")
+                    ExploreExportBar(viewModel, enabled = false) {}
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExploreModeSelector(selected: ExploreMode, onSelect: (ExploreMode) -> Unit, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(9.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Row(modifier = Modifier.padding(3.dp)) {
+            ExploreMode.entries.forEach { mode ->
+                Surface(
+                    shape = RoundedCornerShape(7.dp),
+                    color = if (mode == selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    modifier = Modifier.clickable { onSelect(mode) },
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ModeIcon(mode, Modifier.size(16.dp))
+                        Text(mode.displayName(), modifier = Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelMedium, fontWeight = if (mode == selected) FontWeight.SemiBold else FontWeight.Normal)
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ExploreSampleWarnings(truncated: Boolean, stale: Boolean, sampleRefreshEnabled: Boolean, onRefreshSample: (() -> Unit)?) {
+    if (!truncated && !stale) return
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        if (truncated) MessageBanner(text = "You’re viewing a sample, so totals may not represent the full result.", kind = BannerKind.WARNING)
+        if (stale) {
+            MessageBanner(
+                text = if (sampleRefreshEnabled) "The builder query changed. Refresh the Explore sample from the latest Builder results." else "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
+                kind = BannerKind.WARNING,
+                action = if (sampleRefreshEnabled && onRefreshSample != null) {{ PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }} else null,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExploreExportBar(viewModel: ExploreViewModel, enabled: Boolean, onExport: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        viewModel.exportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        viewModel.exportError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        Box(modifier = Modifier.weight(1f))
+        if (viewModel.exportMessage != null || viewModel.exportError != null) SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
+        PrimaryButton(modifier = Modifier.padding(start = 8.dp), onClick = onExport, enabled = enabled) { Text("Export CSV") }
+    }
+}
+
+private fun exploreWorkspaceSummary(viewModel: ExploreViewModel): String = when (viewModel.workspace.activeMode) {
+    ExploreMode.Pivot -> exploreConfigSummary(viewModel.config)
+    ExploreMode.Worksheet -> "${viewModel.worksheetConfig.groups.size} groups · ${viewModel.worksheetConfig.filters.size} filters · ${viewModel.worksheetConfig.calculations.size} calculations"
+    ExploreMode.Visualization -> "Visualization placeholder"
 }
 
 private fun chooseCsvFile(connectionLabel: String): java.nio.file.Path? {

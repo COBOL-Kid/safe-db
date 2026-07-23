@@ -16,6 +16,9 @@ import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.query.COST_GUARD_PREFIX
+import com.safedb.explore.ExploreConfig
+import com.safedb.explore.ExploreMode
+import com.safedb.explore.ExploreRecipe
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
@@ -33,6 +36,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -247,12 +251,110 @@ class AppViewModelTest {
         assertNull(query.error)
         assertEquals(0, query.tableCount)
     }
+
+    @Test
+    fun queryBackedRecipeRestoresRunsAndOpensMatchingExploreSession() = runTest(dispatcher) {
+        val service = FakeSafeDbService()
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r1", name = "Users pivot", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        val pending = viewModel.pendingRecipeRun.value
+        assertEquals("r1", pending?.recipe?.id)
+        val sample = assertNotNull(viewModel.query.currentSample(connection.id))
+        viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+
+        assertNull(viewModel.pendingRecipeRun.value)
+        assertEquals("r1", viewModel.explore.value?.appliedRecipeId)
+    }
+
+    @Test
+    fun queryBackedRecipeCanBeCancelledAtCostConfirmation() = runTest(dispatcher) {
+        val service = FakeSafeDbService(costGuardFirstRun = true)
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r2", name = "Guarded", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+        assertTrue(viewModel.query.pendingCostGuard)
+        assertEquals("r2", viewModel.pendingRecipeRun.value?.recipe?.id)
+
+        viewModel.query.dismissError()
+        viewModel.cancelPendingRecipeRun()
+        assertNull(viewModel.pendingRecipeRun.value)
+
+        viewModel.query.runForced(connection.id)
+        advanceUntilIdle()
+        assertNotNull(viewModel.query.currentSample(connection.id))
+        assertNull(viewModel.pendingRecipeRun.value)
+        assertNull(viewModel.explore.value)
+    }
+
+    @Test
+    fun queryBackedRecipeIsCancelledWhenActiveConnectionChanges() = runTest(dispatcher) {
+        val service = FakeSafeDbService(costGuardFirstRun = true)
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r3", name = "Switching", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.cancelPendingRecipeRunIfConnectionChanged(connection.id))
+        assertNotNull(viewModel.pendingRecipeRun.value)
+        assertTrue(viewModel.cancelPendingRecipeRunIfConnectionChanged("c2"))
+        assertNull(viewModel.pendingRecipeRun.value)
+    }
+
+
+    @Test
+    fun queryBackedRecipeDoesNotRemainPendingWhenHydratedQueryCannotRun() = runTest(dispatcher) {
+        val service = FakeSafeDbService(schemaTables = emptyList())
+        val viewModel = AppViewModel(service)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r4", name = "Missing tables", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        assertNull(viewModel.pendingRecipeRun.value)
+        assertFalse(viewModel.query.canRun)
+        assertNull(viewModel.query.currentSample(connection.id))
+        assertNull(viewModel.explore.value)
+        assertTrue(service.forceCalls.isEmpty())
+    }
+
+    private fun testConnection() = ConnectionDef(
+        id = "c1", name = "Local", dialect = Dialect.MySql, host = "localhost", port = 3306,
+        database = "test", username = "reader",
+    )
 }
 
 private class FakeSafeDbService(
     private val costGuardFirstRun: Boolean = false,
     private val queryGate: CompletableDeferred<Unit>? = null,
     private val queryStarted: CompletableDeferred<Unit>? = null,
+    private val schemaTables: List<TableInfo> = listOf(sampleTable()),
 ) : SafeDbService {
     var locked = false
     val forceCalls = mutableListOf<Boolean>()
@@ -268,7 +370,7 @@ private class FakeSafeDbService(
         locked = true
     }
 
-    override suspend fun getSchema(connectionId: String): Schema = Schema(listOf(sampleTable()))
+    override suspend fun getSchema(connectionId: String): Schema = Schema(schemaTables)
 
     override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult {
         forceCalls.add(force)

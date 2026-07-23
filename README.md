@@ -32,7 +32,8 @@ scripts/seed_mysql.sh
 - **Connections** — save named profiles; passwords stored in the OS credential store when available, never in profile JSON.
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out.
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
-- **Explore pivots** — analyze the current result sample with nested row/column hierarchies, grouping, subtotals, slicers and value filters, advanced aggregations, calculated measures, percentage/rank/running-total views, formatting, and sampled-row drill-through.
+- **Explore modes** — analyze the current immutable result sample as a nested pivot or worksheet. Worksheet mode adds direct sort/group/filter controls, row and group formulas, summaries, and window calculations such as running totals, previous values, percentages, and ranks; Visualization is reserved as the next mode.
+- **Explore recipes** — save any combination of Pivot, Worksheet, and Visualization configurations, optionally with the Builder query, then reuse locally or share through versioned `.safedb-recipe.json` files.
 - **Safety rails** — read-only `SELECT` queries, default 100 rows with fixed choices up to an interactive max of 5,000, guidance above 1,000 rows, 10 s timeout, custom blocked schemas, filter literal type validation, and a cost-preview guard.
 - **Saved queries and history** — persisted through the Kotlin stores in the app data directory; timestamps are Unix-seconds strings.
 - **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas`.
@@ -99,7 +100,7 @@ The app stores JSON state under `com.safedb.app`:
 | macOS | `~/Library/Application Support/com.safedb.app/` |
 | Windows | `%APPDATA%\com.safedb.app\` |
 
-Existing `connections.json`, `settings.json`, `saved_queries.json`, and `query_history.json` files in that directory are reused automatically.
+Existing `connections.json`, `settings.json`, `saved_queries.json`, `query_history.json`, and `explore_recipes.json` files in that directory are reused automatically.
 
 ## Query Safety Behavior
 

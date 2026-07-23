@@ -72,6 +72,8 @@ import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.SavedQueriesViewModel
+import com.safedb.viewmodel.RecipesViewModel
+import com.safedb.explore.ExploreRecipe
 import com.safedb.viewmodel.SchemaViewModel
 import java.time.Instant
 import java.util.UUID
@@ -158,10 +160,14 @@ private fun LimitChoiceChip(
 @Composable
 fun BuilderScreen(
     connection: ConnectionDef?,
+    connections: List<ConnectionDef>,
     queryViewModel: QueryViewModel,
     savedQueriesViewModel: SavedQueriesViewModel,
+    recipesViewModel: RecipesViewModel,
     schemaViewModel: SchemaViewModel,
     onOpenExplore: () -> Unit,
+    onApplyRecipe: (ExploreRecipe, ConnectionDef) -> Unit,
+    onCancelQueryRun: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showCostGuardConfirm by remember { mutableStateOf(false) }
@@ -201,6 +207,7 @@ fun BuilderScreen(
             onDismissRequest = {
                 showCostGuardConfirm = false
                 queryViewModel.dismissError()
+                onCancelQueryRun()
             },
             shape = RoundedCornerShape(12.dp),
             containerColor = MaterialTheme.colorScheme.surface,
@@ -224,6 +231,7 @@ fun BuilderScreen(
                     onClick = {
                         showCostGuardConfirm = false
                         queryViewModel.dismissError()
+                        onCancelQueryRun()
                     },
                 ) {
                     Text("Cancel")
@@ -328,6 +336,14 @@ fun BuilderScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                BuilderRecipeButton(
+                    recipesViewModel = recipesViewModel,
+                    connections = connections,
+                    activeConnection = connection,
+                    currentSample = connection?.id?.let(queryViewModel::currentSample)?.result,
+                    currentSpec = queryViewModel.spec,
+                    onApply = onApplyRecipe,
+                )
                 if (queryViewModel.canvasTables.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

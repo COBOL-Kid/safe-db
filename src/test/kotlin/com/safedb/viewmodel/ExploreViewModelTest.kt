@@ -9,6 +9,12 @@ import com.safedb.explore.PivotShowAs
 import com.safedb.explore.ShowAsMode
 import com.safedb.explore.SortDir
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.ExploreMode
+import com.safedb.explore.ExploreRecipe
+import com.safedb.explore.RecipeField
+import com.safedb.explore.WorksheetCalculation
+import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetGroup
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
@@ -141,6 +147,102 @@ class ExploreViewModelTest {
             "status,Count\r\npending,2\r\nshipped,1\r\nTotal,3\r\n",
             path.readText(),
         )
+    }
+
+    @Test
+    fun modesKeepIndependentStateAndWorksheetExportsDisplayedRows() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Worksheet)
+        viewModel.updateWorksheet {
+            it.copy(
+                groups = listOf(WorksheetGroup("g", "t0__status")),
+                calculations = listOf(WorksheetCalculation.RowFormula("double", "Double", "[t0__amount] * 2")),
+            )
+        }
+        val groupPath = viewModel.worksheetPreview.rows.first { it.kind == com.safedb.explore.WorksheetRowKind.Group }.pathKey
+        viewModel.toggleWorksheetGroup(groupPath)
+        val path = createTempFile(suffix = ".csv")
+        viewModel.saveWorksheetCsv(path)
+
+        assertEquals(ExploreMode.Worksheet, viewModel.workspace.activeMode)
+        assertEquals(listOf("t0__status"), viewModel.worksheetConfig.groups.map { it.column })
+        assertTrue(groupPath in viewModel.worksheetConfig.collapsedGroupPaths)
+        assertTrue(path.readText().contains("Double"))
+        viewModel.selectMode(ExploreMode.Pivot)
+        assertEquals(listOf("t0__status"), viewModel.config.rowDimensions.map { it.column })
+    }
+
+    @Test
+    fun recipeAppliesSelectedModesTracksDirtyAndCanClearIdentity() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.updateConfig { it.copy(showSubtotals = false) }
+        val recipe = ExploreRecipe(
+            id = "r1",
+            name = "Worksheet",
+            createdAt = "1",
+            updatedAt = "1",
+            defaultMode = ExploreMode.Worksheet,
+            worksheet = WorksheetConfig(groups = listOf(WorksheetGroup("g", "t0__status"))),
+            requiredFields = listOf(RecipeField("t0__status", "status", "varchar", "orders")),
+        )
+
+        viewModel.requestRecipe(recipe)
+        assertEquals("r1", viewModel.appliedRecipeId)
+        assertEquals(ExploreMode.Worksheet, viewModel.workspace.activeMode)
+        assertFalse(viewModel.config.showSubtotals)
+        assertFalse(viewModel.recipeDirty())
+
+        val path = viewModel.worksheetPreview.rows.first { it.kind == com.safedb.explore.WorksheetRowKind.Group }.pathKey
+        viewModel.toggleWorksheetGroup(path)
+        assertFalse(viewModel.recipeDirty())
+
+        viewModel.updateWorksheet { it.copy(filters = listOf(com.safedb.explore.WorksheetFilter("f", "t0__status"))) }
+        assertTrue(viewModel.recipeDirty())
+        viewModel.clearAppliedRecipe()
+        assertEquals(null, viewModel.appliedRecipeId)
+    }
+
+    @Test
+    fun unresolvedRecipeWaitsForManualMapping() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        val recipe = ExploreRecipe(
+            id = "r2",
+            name = "Mapped",
+            createdAt = "1",
+            updatedAt = "1",
+            defaultMode = ExploreMode.Worksheet,
+            worksheet = WorksheetConfig(groups = listOf(WorksheetGroup("g", "old_status"))),
+            requiredFields = listOf(RecipeField("old_status", "Unknown status", "varchar")),
+        )
+
+        viewModel.requestRecipe(recipe)
+        assertEquals("r2", viewModel.pendingRecipe?.id)
+        viewModel.applyPendingRecipe(mapOf("old_status" to "t0__status"))
+        assertEquals("t0__status", viewModel.worksheetConfig.groups.single().column)
+        assertEquals(null, viewModel.pendingRecipe)
+
+        viewModel.requestRecipe(recipe)
+        viewModel.dismissPendingRecipe()
+        assertEquals(null, viewModel.pendingRecipe)
+    }
+
+    @Test
+    fun refreshedWorkspaceCanPreserveAppliedRecipeTracking() {
+        val original = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        val recipe = ExploreRecipe(
+            id = "tracked", name = "Tracked", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = original.config,
+        )
+        original.applyRecipe(recipe)
+        val refreshed = ExploreViewModel(
+            createExploreSession(connection(), sampleSpec().copy(limit = 50), sampleResult()),
+            initialWorkspace = original.workspace,
+        )
+
+        refreshed.inheritRecipeTrackingFrom(original)
+
+        assertEquals("tracked", refreshed.appliedRecipeId)
+        assertFalse(refreshed.recipeDirty())
     }
 
     private fun connection() = ConnectionDef(

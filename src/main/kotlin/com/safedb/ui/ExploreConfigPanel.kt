@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
@@ -54,12 +53,9 @@ import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.SortDir
 import com.safedb.explore.SubtotalPosition
-import com.safedb.model.QueryResult
-import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.SafeDropdownMenu
-import com.safedb.ui.components.ToolbarTooltipIconButton
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.MemberOption
 import java.util.UUID
@@ -68,20 +64,13 @@ import java.util.UUID
 internal fun ExploreConfigPanel(
     config: ExploreConfig,
     fields: List<ExploreFieldOption>,
-    sample: QueryResult,
     onConfigChange: (ExploreConfig) -> Unit,
     memberOptionsFor: (String) -> List<MemberOption>,
-    onApplyTemplate: (ExploreConfig) -> Unit,
-    configDirty: Boolean,
     onReset: () -> Unit,
     resetEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var optionsExpanded by remember { mutableStateOf(false) }
-    var showTemplates by remember { mutableStateOf(false) }
-    var selectedTemplateId by remember { mutableStateOf<ExploreBuiltinTemplateId?>(null) }
-    var pendingTemplateConfig by remember { mutableStateOf<ExploreConfig?>(null) }
-    var showTemplateConfirm by remember { mutableStateOf(false) }
     var editingDimension by remember { mutableStateOf<PivotDimension?>(null) }
     var editingMeasure by remember { mutableStateOf<PivotMeasure?>(null) }
     var editingFilter by remember { mutableStateOf<PivotFilter?>(null) }
@@ -143,53 +132,6 @@ internal fun ExploreConfigPanel(
         )
     }
 
-    if (showTemplates) {
-        ExploreTemplatesDialog(
-            sample = sample,
-            fields = fields,
-            selectedTemplateId = selectedTemplateId,
-            onSelectTemplate = { templateId -> selectedTemplateId = templateId },
-            onApplyTemplate = { templateId ->
-                when (val result = resolveExploreTemplate(templateId, sample, fields)) {
-                    is ExploreTemplateBuildResult.Ready -> {
-                        if (configDirty) {
-                            pendingTemplateConfig = result.config
-                            showTemplateConfirm = true
-                            showTemplates = false
-                        } else {
-                            onApplyTemplate(result.config)
-                            showTemplates = false
-                            selectedTemplateId = null
-                        }
-                    }
-                    is ExploreTemplateBuildResult.Unavailable -> Unit
-                }
-            },
-            onDismiss = {
-                showTemplates = false
-                selectedTemplateId = null
-            },
-        )
-    }
-
-    ConfirmDialog(
-        open = showTemplateConfirm,
-        title = "Replace current view?",
-        message = "Applying this template will replace your current Explore configuration.",
-        confirmLabel = "Apply template",
-        onConfirm = {
-            pendingTemplateConfig?.let(onApplyTemplate)
-            pendingTemplateConfig = null
-            showTemplateConfirm = false
-            selectedTemplateId = null
-        },
-        onCancel = {
-            pendingTemplateConfig = null
-            showTemplateConfirm = false
-            selectedTemplateId = null
-        },
-    )
-
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -211,11 +153,6 @@ internal fun ExploreConfigPanel(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                ToolbarTooltipIconButton(
-                    label = "Templates",
-                    icon = Icons.Default.GridView,
-                    onClick = { showTemplates = true },
-                )
                 TextButton(onClick = onReset, enabled = resetEnabled) { Text("Reset") }
             }
 

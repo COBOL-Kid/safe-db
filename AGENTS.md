@@ -23,7 +23,8 @@ See the git history for the removed desktop prototype if old implementation cont
 - **Connections** — CRUD via `SafeDbService`; passwords in OS keyring when available, metadata in app data dir; form has show/hide password toggle
 - **Schema introspection** — per-dialect JDBC adapters in `shared/`; system schemas blocked in query validation
 - **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/jvmMain/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
-- **Explore pivots** — session-only analysis of the current immutable query sample with nested row/column fields, grouping, subtotals, filters/slicers, calculated measures, display calculations, formatting, and sampled-row drill-through
+- **Explore modes** — session-only Pivot and Worksheet analysis of the current immutable query sample; Worksheet supports direct sort/group/filter controls, row/group formulas, summaries, and database-neutral window calculations; Visualization is currently a recipe-capable placeholder
+- **Explore recipes** — local/importable/exportable bundles of one or more Explore mode configurations with an optional Builder `QuerySpec`; recipe files never contain sample rows or credentials
 - **Safety** — read-only selects, row limit (default 100, fixed choices with an interactive max of 5,000, guidance above 1,000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
 - **Saved queries & history** — persisted through `QueryStore` in the app data dir; timestamps are Unix-seconds strings
 - **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas` through the Compose/Kotlin settings store
@@ -92,7 +93,7 @@ safe-db/
 ## App Data And Credentials
 
 - App data: `~/.local/share/com.safedb.app/` on Linux, `~/Library/Application Support/com.safedb.app/` on macOS, `%APPDATA%\com.safedb.app\` on Windows.
-- Store filenames: `connections.json`, `settings.json`, `saved_queries.json`, and `query_history.json`.
+- Store filenames: `connections.json`, `settings.json`, `saved_queries.json`, `query_history.json`, and `explore_recipes.json`.
 - `SAFEDB_KEYCHAIN_BACKEND=auto` uses Java keyring-backed platform stores when available.
 - `SAFEDB_KEYCHAIN_BACKEND=disabled` is in-memory only and is appropriate for tests/CI; passwords do not survive restart.
 - Compose Linux uses keyutils when available and otherwise falls back to in-memory `disabled` credentials.

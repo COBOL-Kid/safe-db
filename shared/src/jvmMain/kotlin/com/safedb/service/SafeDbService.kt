@@ -1,5 +1,6 @@
 package com.safedb.service
 
+import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ConnectionDef
 import com.safedb.model.HistoryEntry
 import com.safedb.model.QueryResult
@@ -33,6 +34,18 @@ interface SafeDbService {
     suspend fun saveSavedQuery(query: SavedQuery)
 
     suspend fun deleteSavedQuery(id: String)
+
+    suspend fun listExploreRecipes(): List<ExploreRecipe> = emptyList()
+
+    suspend fun saveExploreRecipe(recipe: ExploreRecipe) = Unit
+
+    suspend fun deleteExploreRecipe(id: String) = Unit
+
+    suspend fun importExploreRecipe(json: String, nowEpochSec: String): ExploreRecipe =
+        throw UnsupportedOperationException("Explore recipes are unavailable")
+
+    suspend fun exportExploreRecipe(recipe: ExploreRecipe): String =
+        throw UnsupportedOperationException("Explore recipes are unavailable")
 
     suspend fun listHistory(): List<HistoryEntry>
 
