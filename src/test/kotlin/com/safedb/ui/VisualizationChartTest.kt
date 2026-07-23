@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import com.safedb.explore.BarArrangement
+import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationMark
@@ -41,6 +42,33 @@ class VisualizationChartTest {
         assertEquals(firstCategory[0].left, firstCategory[1].left)
         assertEquals(firstCategory[0].right, firstCategory[1].right)
         assertEquals(firstCategory[0].top, firstCategory[1].bottom)
+    }
+
+
+    @Test
+    fun horizontalBarsWithNegativeValuesUseComputedZeroBaseline() {
+        val preview = VisualizationPreview(
+            chartType = ChartType.Bar,
+            title = "Chart",
+            marks = listOf(
+                mark("negative", "a", "A", "one", -10.0, 1.0),
+                mark("positive", "b", "B", "one", 20.0, 2.0),
+            ),
+        )
+        val geometry = visualizationGeometry(
+            preview,
+            VisualizationConfig(chartType = ChartType.Bar, barOrientation = BarOrientation.Horizontal),
+            600f,
+            380f,
+        )
+        val zero = geometry.plot.left + ((0.0 - geometry.yMin) / (geometry.yMax - geometry.yMin) * geometry.plot.width).toFloat()
+        val negative = geometry.regions.first { it.markId == "negative" }.bounds
+        val positive = geometry.regions.first { it.markId == "positive" }.bounds
+
+        assertEquals(zero, negative.right)
+        assertTrue(negative.left >= geometry.plot.left)
+        assertEquals(zero, positive.left)
+        assertTrue(positive.right <= geometry.plot.right)
     }
 
     @Test

@@ -91,6 +91,8 @@ internal fun visualizationGeometry(
     val yMax = if (rawMax == rawMin) rawMax + 1.0 else rawMax
     fun yPosition(value: Double): Float =
         (plot.bottom - ((value - yMin) / (yMax - yMin) * plot.height)).toFloat()
+    fun xPosition(value: Double): Float =
+        (plot.left + ((value - yMin) / (yMax - yMin) * plot.width)).toFloat()
 
     val regions = mutableListOf<VisualizationHitRegion>()
     val points = linkedMapOf<String, Offset>()
@@ -104,14 +106,20 @@ internal fun visualizationGeometry(
                 if (config.barOrientation == BarOrientation.Horizontal && type == ChartType.Bar) {
                     val horizontalBand = plot.height / categories.size.coerceAtLeast(1)
                     if (stacked) {
-                        var cumulative = 0.0
+                        var positiveCumulative = 0.0
+                        var negativeCumulative = 0.0
                         marks.forEach { mark ->
-                            val next = cumulative + mark.y
-                            val left = plot.left + (cumulative / yMax.coerceAtLeast(1.0) * plot.width).toFloat()
-                            val right = plot.left + (next / yMax.coerceAtLeast(1.0) * plot.width).toFloat()
+                            val start = if (mark.y >= 0.0) positiveCumulative else negativeCumulative
+                            val end = start + mark.y
+                            if (mark.y >= 0.0) {
+                                positiveCumulative = end
+                            } else {
+                                negativeCumulative = end
+                            }
+                            val left = xPosition(start)
+                            val right = xPosition(end)
                             val top = plot.top + categoryIndex * horizontalBand + horizontalBand * 0.15f
-                            val rect = Rect(left, top, right, top + horizontalBand * 0.7f)
-                            cumulative = next
+                            val rect = Rect(min(left, right), top, max(left, right), top + horizontalBand * 0.7f)
                             regions += VisualizationHitRegion(mark.id, rect)
                             points[mark.id] = rect.center
                         }
@@ -119,9 +127,9 @@ internal fun visualizationGeometry(
                         marks.forEachIndexed { seriesIndex, mark ->
                             val barHeight = horizontalBand * 0.7f / marks.size.coerceAtLeast(1)
                             val top = plot.top + categoryIndex * horizontalBand + horizontalBand * 0.15f + seriesIndex * barHeight
-                            val zero = plot.left
-                            val right = plot.left + (mark.y / yMax.coerceAtLeast(1.0) * plot.width).toFloat()
-                            val rect = Rect(min(zero, right), top, max(zero, right), top + barHeight * 0.82f)
+                            val zero = xPosition(0.0)
+                            val value = xPosition(mark.y)
+                            val rect = Rect(min(zero, value), top, max(zero, value), top + barHeight * 0.82f)
                             regions += VisualizationHitRegion(mark.id, rect)
                             points[mark.id] = rect.center
                         }
