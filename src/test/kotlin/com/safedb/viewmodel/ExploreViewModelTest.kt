@@ -15,6 +15,10 @@ import com.safedb.explore.RecipeField
 import com.safedb.explore.WorksheetCalculation
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetGroup
+import com.safedb.explore.ChartType
+import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.VisualizationField
+import com.safedb.explore.VisualizationMeasure
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
@@ -30,6 +34,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import java.nio.file.Files
+import org.jetbrains.skia.Image
 
 class ExploreViewModelTest {
     @Test
@@ -243,6 +249,54 @@ class ExploreViewModelTest {
 
         assertEquals("tracked", refreshed.appliedRecipeId)
         assertFalse(refreshed.recipeDirty())
+    }
+
+    @Test
+    fun visualizationUpdatesDrillsResetsAndExportsChartData() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.updateVisualization {
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("amount", MeasureFn.Sum, "t0__amount", "Amount")),
+            )
+        }
+
+        assertTrue(viewModel.visualizationPreview.ready)
+        assertEquals(2, viewModel.visualizationPreview.marks.size)
+        val pending = viewModel.visualizationPreview.marks.first { it.xLabel == "pending" }
+        assertEquals(2, viewModel.sourceRowsForVisualizationMark(pending.id).rowCount)
+        assertFalse(viewModel.isDefaultVisualization())
+
+        val csv = createTempFile(suffix = ".csv")
+        viewModel.saveVisualizationCsv(csv)
+        assertTrue(csv.readText().contains("Status,Series,Measure,Value,Source rows"))
+        assertTrue(csv.readText().contains("pending"))
+
+        viewModel.resetVisualization()
+        assertTrue(viewModel.isDefaultVisualization())
+        assertFalse(viewModel.visualizationPreview.ready)
+    }
+
+    @Test
+    fun visualizationPngExportsAtRequiredDimensions() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.updateVisualization {
+            VisualizationConfig(
+                chartType = ChartType.Kpi,
+                values = listOf(VisualizationMeasure("amount", MeasureFn.Sum, "t0__amount", "Amount")),
+            )
+        }
+        val path = createTempFile(suffix = ".png")
+
+        viewModel.saveVisualizationPng(path, isDark = false)
+
+        assertEquals(null, viewModel.exportError)
+        val bytes = Files.readAllBytes(path)
+        assertTrue(bytes.take(8).toByteArray().contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10)))
+        val image = Image.makeFromEncoded(bytes)
+        assertEquals(1600, image.width)
+        assertEquals(900, image.height)
     }
 
     private fun connection() = ConnectionDef(

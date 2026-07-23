@@ -12,8 +12,11 @@ import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetPreview
+import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.VisualizationPreview
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyWorksheet
+import com.safedb.explore.applyVisualization
 import com.safedb.explore.remapRecipe
 import com.safedb.explore.resolveRecipeFields
 import com.safedb.explore.withoutTransientState
@@ -21,6 +24,7 @@ import com.safedb.explore.exploreSpecHash
 import com.safedb.explore.pivotCellKey
 import com.safedb.explore.pivotCellLineageKey
 import com.safedb.export.writeQueryResultCsv
+import com.safedb.export.writeVisualizationPng
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.QuerySpec
@@ -40,10 +44,13 @@ class ExploreViewModel(
         private set
     val config: ExploreConfig get() = workspace.pivot
     val worksheetConfig: WorksheetConfig get() = workspace.worksheet
+    val visualizationConfig: VisualizationConfig get() = workspace.visualization
 
     var preview by mutableStateOf(applyExplore(session.sample, workspace.pivot))
         private set
     var worksheetPreview by mutableStateOf(applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables))
+        private set
+    var visualizationPreview by mutableStateOf(applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables))
         private set
     var appliedRecipeId by mutableStateOf<String?>(null)
         private set
@@ -68,6 +75,12 @@ class ExploreViewModel(
         clearExportMessages()
     }
 
+    fun updateVisualization(block: (VisualizationConfig) -> VisualizationConfig) {
+        workspace = workspace.copy(visualization = block(workspace.visualization))
+        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+        clearExportMessages()
+    }
+
     fun selectMode(mode: ExploreMode) {
         workspace = workspace.copy(activeMode = mode)
         clearExportMessages()
@@ -79,13 +92,27 @@ class ExploreViewModel(
         clearExportMessages()
     }
 
+    fun resetVisualization() {
+        workspace = workspace.copy(visualization = VisualizationConfig())
+        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+        clearExportMessages()
+    }
+
     fun isDefaultConfig(): Boolean = workspace.pivot.withoutTransientState() == defaultConfig.withoutTransientState()
+
+    fun isDefaultVisualization(): Boolean = workspace.visualization == VisualizationConfig()
 
     fun isDirty(): Boolean = !isDefaultConfig()
 
     fun applyTemplate(templateConfig: ExploreConfig) {
         workspace = workspace.copy(activeMode = ExploreMode.Pivot, pivot = templateConfig)
         preview = applyExplore(session.sample, workspace.pivot)
+        clearExportMessages()
+    }
+
+    fun applyVisualizationTemplate(templateConfig: VisualizationConfig) {
+        workspace = workspace.copy(activeMode = ExploreMode.Visualization, visualization = templateConfig)
+        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
         clearExportMessages()
     }
 
@@ -98,6 +125,7 @@ class ExploreViewModel(
         )
         preview = applyExplore(session.sample, workspace.pivot)
         worksheetPreview = applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
+        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
         appliedRecipeId = recipe.id
         appliedRecipeBaseline = workspace.recipeSnapshot()
         clearExportMessages()
@@ -198,6 +226,18 @@ class ExploreViewModel(
         )
     }
 
+    fun sourceRowsForVisualizationMark(markId: String): QueryResult {
+        val indexes = visualizationPreview.marks.firstOrNull { it.id == markId }?.sourceRowIndices.orEmpty()
+        val rows = indexes.mapNotNull(session.sample.rows::getOrNull)
+        return QueryResult(
+            columns = session.sample.columns,
+            rows = rows,
+            rowCount = rows.size,
+            truncated = session.sample.truncated,
+            warnings = session.sample.warnings,
+        )
+    }
+
     fun isStale(currentSpec: QuerySpec): Boolean =
         exploreSpecHash(currentSpec) != session.baseSpecHash
 
@@ -226,6 +266,38 @@ class ExploreViewModel(
                 warnings = worksheetPreview.warnings,
             ),
             path,
+        )
+    }
+
+    fun saveVisualizationCsv(path: Path) {
+        val result = visualizationPreview.exportResult
+        if (result == null) {
+            exportMessage = null
+            exportError = "Complete the chart before exporting."
+            return
+        }
+        saveResultCsv(result, path)
+    }
+
+    fun saveVisualizationPng(path: Path, isDark: Boolean) {
+        runCatching {
+            writeVisualizationPng(
+                preview = visualizationPreview,
+                config = visualizationConfig,
+                sampleRowCount = session.sample.rowCount,
+                sampleTruncated = session.sample.truncated,
+                isDark = isDark,
+                path = path,
+            )
+        }.fold(
+            onSuccess = {
+                exportError = null
+                exportMessage = "Exported chart PNG"
+            },
+            onFailure = { error ->
+                exportMessage = null
+                exportError = error.message ?: error.toString()
+            },
         )
     }
 

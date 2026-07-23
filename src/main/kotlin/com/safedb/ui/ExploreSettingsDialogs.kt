@@ -467,6 +467,7 @@ internal fun FilterSettingsDialog(
     filter: PivotFilter,
     measures: List<PivotMeasure>,
     memberOptions: List<MemberOption>,
+    showPinnedOption: Boolean = true,
     onSave: (PivotFilter) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -510,12 +511,14 @@ internal fun FilterSettingsDialog(
                 }
                 when (kind) {
                     FilterEditorKind.Members -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clickable { pinned = !pinned },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(checked = pinned, onCheckedChange = null)
-                            Text("Pin this multi-select filter above the pivot")
+                        if (showPinnedOption) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { pinned = !pinned },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = pinned, onCheckedChange = null)
+                                Text("Pin this multi-select filter above the pivot")
+                            }
                         }
                         Text(
                             if (includedKeys.isEmpty()) "All sample values selected" else "${includedKeys.size} selected",

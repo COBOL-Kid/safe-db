@@ -54,6 +54,7 @@ fun compatibleTypes(left: String, right: String): Boolean = dataTypeFamily(left)
 fun remapRecipe(recipe: ExploreRecipe, mapping: Map<String, String>): ExploreRecipe = recipe.copy(
     pivot = recipe.pivot?.remapColumns(mapping),
     worksheet = recipe.worksheet?.remapColumns(mapping),
+    visualization = recipe.visualization?.remapColumns(mapping),
     requiredFields = recipe.requiredFields.map { field -> field.copy(column = mapping[field.column] ?: field.column) },
 )
 
@@ -98,6 +99,22 @@ private fun WorksheetConfig.remapColumns(mapping: Map<String, String>): Workshee
                 groupColumn = calculation.groupColumn?.let { mapping[it] ?: it },
                 restartColumns = calculation.restartColumns.map { mapping[it] ?: it },
             )
+        }
+    },
+)
+
+private fun VisualizationConfig.remapColumns(mapping: Map<String, String>): VisualizationConfig = copy(
+    x = x?.copy(column = mapping[x.column] ?: x.column),
+    values = values.map { value ->
+        value.copy(sourceColumn = value.sourceColumn?.let { mapping[it] ?: it })
+    },
+    series = series?.copy(column = mapping[series.column] ?: series.column),
+    size = size?.copy(column = mapping[size.column] ?: size.column),
+    filters = filters.map { filter ->
+        when (filter) {
+            is PivotFilter.Members -> filter.copy(column = mapping[filter.column] ?: filter.column)
+            is PivotFilter.Label -> filter.copy(column = mapping[filter.column] ?: filter.column)
+            is PivotFilter.Value -> filter.copy(column = mapping[filter.column] ?: filter.column)
         }
     },
 )

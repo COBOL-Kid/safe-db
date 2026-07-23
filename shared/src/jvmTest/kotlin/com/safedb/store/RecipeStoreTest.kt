@@ -5,6 +5,11 @@ import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.RecipeField
 import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.ChartType
+import com.safedb.explore.MeasureFn
+import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.VisualizationField
+import com.safedb.explore.VisualizationMeasure
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,6 +71,41 @@ class RecipeStoreTest {
 
         assertFailsWith<IllegalStateException> { RecipeStore.new(dir).list() }
         assertTrue(Files.list(dir).use { files -> files.anyMatch { it.fileName.toString().startsWith("explore_recipes.corrupt-") } })
+    }
+
+    @Test
+    fun visualizationRoundTripsAndOldPlaceholderRemainsCompatible() {
+        val store = RecipeStore.new(Files.createTempDirectory("recipe-visualization"))
+        val chart = ExploreRecipe(
+            id = "chart",
+            name = "Chart",
+            createdAt = "1",
+            updatedAt = "1",
+            defaultMode = ExploreMode.Visualization,
+            visualization = VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("status"),
+                values = listOf(VisualizationMeasure("amount", MeasureFn.Sum, "amount")),
+            ),
+        )
+
+        store.save(chart)
+        assertEquals(ChartType.Bar, store.list().single().visualization?.chartType)
+
+        val placeholder = """
+            {
+              "schemaVersion": 1,
+              "id": "old",
+              "name": "Old chart",
+              "createdAt": "1",
+              "updatedAt": "1",
+              "defaultMode": "Visualization",
+              "visualization": {"schemaVersion": 1}
+            }
+        """.trimIndent()
+        val imported = store.importJson(placeholder, "2")
+        assertEquals(ChartType.Auto, imported.visualization?.chartType)
+        assertFalse(imported.visualization?.isConfigured() ?: true)
     }
 
     private fun recipe(id: String, name: String) = ExploreRecipe(

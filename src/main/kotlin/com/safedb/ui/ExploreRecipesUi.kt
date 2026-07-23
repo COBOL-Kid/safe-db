@@ -55,6 +55,9 @@ import com.safedb.explore.recipeFields
 import com.safedb.explore.remapRecipe
 import com.safedb.explore.resolveRecipeFields
 import com.safedb.explore.withoutTransientState
+import com.safedb.explore.VisualizationTemplateBuildResult
+import com.safedb.explore.VisualizationTemplateId
+import com.safedb.explore.visualizationTemplates
 import com.safedb.model.ConnectionDef
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.PrimaryButton
@@ -155,7 +158,9 @@ internal fun ExploreRecipeActions(
             recipesViewModel = recipesViewModel,
             onApply = { recipe ->
                 val worksheetDirty = explore.worksheetConfig.groups.isNotEmpty() || explore.worksheetConfig.sorts.isNotEmpty() || explore.worksheetConfig.filters.isNotEmpty() || explore.worksheetConfig.calculations.isNotEmpty()
-                if (recipe.querySpec != null || explore.recipeDirty() || explore.isDirty() || worksheetDirty) {
+                if (recipe.querySpec != null || explore.recipeDirty() || explore.isDirty() ||
+                    explore.isDefaultVisualization().not() || worksheetDirty
+                ) {
                     pendingApply = recipe
                 } else {
                     explore.requestRecipe(recipe)
@@ -263,7 +268,13 @@ private fun SaveRecipeDialog(
                             pivot = pivot,
                             worksheet = worksheet,
                             visualization = visualization,
-                            requiredFields = recipeFields(explore.session.sample, explore.session.baseSpec, pivot, worksheet),
+                            requiredFields = recipeFields(
+                                explore.session.sample,
+                                explore.session.baseSpec,
+                                pivot,
+                                worksheet,
+                                visualization,
+                            ),
                             querySpec = explore.session.baseSpec.takeIf { includeQuery },
                         ),
                     )
@@ -287,6 +298,7 @@ internal fun RecipeLibraryDialog(
         buildExploreFieldOptions(explore.session.sample, explore.session.baseSpec.tables)
     }
     var selectedBuiltin by remember { mutableStateOf<ExploreBuiltinTemplateId?>(null) }
+    var selectedVisualization by remember { mutableStateOf<VisualizationTemplateId?>(null) }
     var pendingMapping by remember { mutableStateOf<ExploreRecipe?>(null) }
     var deleting by remember { mutableStateOf<ExploreRecipe?>(null) }
     var renaming by remember { mutableStateOf<ExploreRecipe?>(null) }
@@ -333,7 +345,32 @@ internal fun RecipeLibraryDialog(
                         available = item.available,
                         reason = item.unavailableReason,
                         selected = selectedBuiltin == item.id,
-                        onSelect = { selectedBuiltin = item.id },
+                        onSelect = {
+                            selectedBuiltin = item.id
+                            selectedVisualization = null
+                        },
+                    )
+                }
+                Text(
+                    "Visualization templates",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                visualizationTemplates(explore.session.sample, explore.session.baseSpec.tables).forEach { template ->
+                    val available = template.result is VisualizationTemplateBuildResult.Ready
+                    RecipeCard(
+                        name = template.name,
+                        description = template.description,
+                        modes = setOf(ExploreMode.Visualization),
+                        queryBacked = false,
+                        available = available,
+                        reason = (template.result as? VisualizationTemplateBuildResult.Unavailable)?.reason,
+                        selected = selectedVisualization == template.id,
+                        onSelect = {
+                            selectedVisualization = template.id
+                            selectedBuiltin = null
+                        },
                     )
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 5.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -370,9 +407,9 @@ internal fun RecipeLibraryDialog(
         confirmButton = {
             PrimaryButton(
                 onClick = {
-                    val selected = selectedBuiltin ?: return@PrimaryButton
-                    val result = resolveExploreTemplate(selected, explore.session.sample, fields)
-                    if (result is ExploreTemplateBuildResult.Ready) {
+                    selectedBuiltin?.let { selected ->
+                        val result = resolveExploreTemplate(selected, explore.session.sample, fields)
+                        if (result !is ExploreTemplateBuildResult.Ready) return@let
                         val definition = listExploreTemplates(explore.session.sample, fields).first { it.id == selected }
                         val now = Instant.now().epochSecond.toString()
                         onApply(
@@ -388,9 +425,34 @@ internal fun RecipeLibraryDialog(
                             ),
                         )
                         onDismiss()
+                        return@PrimaryButton
                     }
+                    val selected = selectedVisualization ?: return@PrimaryButton
+                    val definition = visualizationTemplates(explore.session.sample, explore.session.baseSpec.tables)
+                        .first { it.id == selected }
+                    val result = definition.result as? VisualizationTemplateBuildResult.Ready ?: return@PrimaryButton
+                    val now = Instant.now().epochSecond.toString()
+                    onApply(
+                        ExploreRecipe(
+                            id = "builtin:visualization:$selected",
+                            name = definition.name,
+                            description = definition.description,
+                            createdAt = now,
+                            updatedAt = now,
+                            defaultMode = ExploreMode.Visualization,
+                            visualization = result.config,
+                            requiredFields = recipeFields(
+                                explore.session.sample,
+                                explore.session.baseSpec,
+                                null,
+                                null,
+                                result.config,
+                            ),
+                        ),
+                    )
+                    onDismiss()
                 },
-                enabled = selectedBuiltin != null,
+                enabled = selectedBuiltin != null || selectedVisualization != null,
             ) { Text("Apply built-in") }
         },
         dismissButton = { SecondaryButton(onClick = onDismiss) { Text("Close") } },

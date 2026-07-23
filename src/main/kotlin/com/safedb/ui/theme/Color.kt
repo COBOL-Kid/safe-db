@@ -6,6 +6,17 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
+val VisualizationSeriesPalette = listOf(
+    Color(0xFF4F46E5),
+    Color(0xFF0F766E),
+    Color(0xFFB45309),
+    Color(0xFF7C3AED),
+    Color(0xFFBE123C),
+    Color(0xFF0369A1),
+    Color(0xFF4D7C0F),
+    Color(0xFFC2410C),
+)
+
 /**
  * Custom semantic color roles that extend the standard Material 3 [ColorScheme].
  *
