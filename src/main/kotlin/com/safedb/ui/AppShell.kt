@@ -54,7 +54,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
@@ -194,6 +193,7 @@ private fun Sidebar(
     onOpenPalette: () -> Unit,
     onToggleTheme: () -> Unit,
 ) {
+    val c = SafeDbTheme.colors
     val navItems = listOf(
         NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
         NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
@@ -248,7 +248,7 @@ private fun Sidebar(
             modifier = Modifier
                 .width(sidebarWidth)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                .background(c.navigationBackground),
             horizontalAlignment = if (layoutCollapsed) Alignment.CenterHorizontally else Alignment.Start,
         ) {
             SidebarHeader(
@@ -291,7 +291,7 @@ private fun Sidebar(
             modifier = Modifier
                 .width(1.dp)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.outline),
+                .background(c.navigationBorder),
         )
     }
 }
@@ -302,6 +302,7 @@ private fun SidebarHeader(
     brandVisible: Boolean,
     onToggleCollapsed: () -> Unit,
 ) {
+    val c = SafeDbTheme.colors
     if (collapsed) {
         Box(
             modifier = Modifier
@@ -315,7 +316,7 @@ private fun SidebarHeader(
             Icon(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = c.onNavigationMuted,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 4.dp)
@@ -327,7 +328,7 @@ private fun SidebarHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(SidebarHeaderHeight)
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -338,11 +339,12 @@ private fun SidebarHeader(
                         "Safe-DB",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
+                        color = c.onNavigation,
                     )
                     Text(
                         "read-only explorer",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = c.onNavigationMuted,
                     )
                 }
             }
@@ -366,6 +368,7 @@ private fun SidebarUtilities(
     onOpenSettings: () -> Unit,
     onToggleTheme: () -> Unit,
 ) {
+    val c = SafeDbTheme.colors
     Column(
         modifier = Modifier.padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -417,12 +420,12 @@ private fun SidebarUtilities(
                                 "Safe Read Mode",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = c.onNavigation,
                             )
                             Text(
                                 "No-lock · Indexed joins",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = c.onNavigationMuted,
                             )
                         }
                     }
@@ -449,18 +452,17 @@ private fun SidebarUtilities(
 
 @Composable
 private fun LogoMark() {
-    val accent = SafeDbTheme.colors.actionPrimary
-    val accentDeep = SafeDbTheme.colors.actionPrimaryHover
+    val c = SafeDbTheme.colors
     Box(
         modifier = Modifier
             .size(34.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Brush.linearGradient(listOf(accent, accentDeep))),
+            .clip(RoundedCornerShape(2.dp))
+            .background(c.actionPrimary),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             "sDB",
-            color = SafeDbTheme.colors.onActionPrimary,
+            color = c.onActionPrimary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
         )
@@ -469,10 +471,11 @@ private fun LogoMark() {
 
 @Composable
 private fun SidebarStatusIndicator() {
+    val c = SafeDbTheme.colors
     Box(
         modifier = Modifier
             .size(32.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(2.dp))
             .semantics { contentDescription = "Safe Read Mode" },
         contentAlignment = Alignment.Center,
     ) {
@@ -480,7 +483,7 @@ private fun SidebarStatusIndicator() {
             modifier = Modifier
                 .size(8.dp)
                 .clip(RoundedCornerShape(50))
-                .background(SafeDbTheme.colors.success),
+                .background(c.success),
         )
     }
 }
@@ -489,16 +492,17 @@ private fun SidebarStatusIndicator() {
 private fun SidebarCommandButton(onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
+    val c = SafeDbTheme.colors
     val background by animateColorAsState(
-        if (hovered) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+        if (hovered) c.navigationHover else c.navigationBackground,
     )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(2.dp))
             .background(background)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
+            .border(1.dp, c.navigationBorder, RoundedCornerShape(2.dp))
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -508,10 +512,14 @@ private fun SidebarCommandButton(onClick: () -> Unit) {
         Text(
             "Search commands…",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = c.onNavigationMuted,
             modifier = Modifier.weight(1f),
         )
-        Kbd("\u2318K")
+        Kbd(
+            "\u2318K",
+            contentColor = c.onNavigationMuted,
+            borderColor = c.navigationBorder,
+        )
     }
 }
 
@@ -523,14 +531,15 @@ private fun SidebarIconButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
+    val c = SafeDbTheme.colors
     val background by animateColorAsState(
-        if (hovered) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+        if (hovered) c.navigationHover else Color.Transparent,
     )
 
     Box(
         modifier = Modifier
             .size(32.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(2.dp))
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick),
@@ -539,7 +548,7 @@ private fun SidebarIconButton(
         Icon(
             icon,
             contentDescription = contentDescription,
-            tint = if (hovered) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (hovered) c.onNavigation else c.onNavigationMuted,
             modifier = Modifier.size(18.dp),
         )
     }
@@ -559,16 +568,16 @@ private fun NavButton(
     val c = SafeDbTheme.colors
     val background by animateColorAsState(
         when {
-            selected -> c.accentContainer
-            hovered -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f)
+            selected -> c.navigationSelected
+            hovered -> c.navigationHover
             else -> Color.Transparent
         },
     )
     val content by animateColorAsState(
         when {
-            selected -> c.onAccentContainer
-            hovered -> MaterialTheme.colorScheme.onSurface
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
+            selected -> c.actionPrimary
+            hovered -> c.onNavigation
+            else -> c.onNavigationMuted
         },
     )
 
@@ -576,20 +585,27 @@ private fun NavButton(
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .clip(RoundedCornerShape(6.dp))
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        horizontalArrangement = Arrangement.Start,
     ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(if (selected) c.actionPrimary else Color.Transparent),
+        )
+        Spacer(Modifier.width(9.dp))
         Icon(
             item.icon,
             contentDescription = if (collapsed) item.label else null,
             tint = content,
             modifier = Modifier.size(18.dp),
         )
+        Spacer(Modifier.width(11.dp))
         AnimatedSidebarLabel(visible = labelVisible) {
             Text(
                 item.label,

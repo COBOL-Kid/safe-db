@@ -215,7 +215,7 @@ internal fun VisualizationChart(
             }
         },
         color = MaterialTheme.colorScheme.surface,
-        shape = if (exportMode) RoundedCornerShape(0.dp) else RoundedCornerShape(10.dp),
+        shape = if (exportMode) RoundedCornerShape(0.dp) else RoundedCornerShape(4.dp),
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(if (exportMode) 44.dp else 20.dp)) {
             if (preview.title.isNotBlank()) {
@@ -276,7 +276,7 @@ private fun KpiChart(preview: VisualizationPreview, onMarkClick: (String) -> Uni
                 detectTapGestures { onMarkClick(mark.id) }
             },
             color = SafeDbTheme.colors.accentContainer,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(4.dp),
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 52.dp, vertical = 34.dp),
@@ -423,7 +423,7 @@ private fun PlotChart(
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                 color = MaterialTheme.colorScheme.inverseSurface,
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(3.dp),
                 shadowElevation = 4.dp,
             ) {
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {

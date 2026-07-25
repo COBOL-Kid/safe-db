@@ -29,11 +29,11 @@ fun SafeDbTheme(
 
     val scrollbarStyle = ScrollbarStyle(
         minimalHeight = 32.dp,
-        thickness = 7.dp,
-        shape = RoundedCornerShape(4.dp),
-        hoverDurationMillis = 200,
-        unhoverColor = if (isDark) Color(0x4094A3B8) else Color(0x5994A3B8), // translucent slate-400
-        hoverColor = if (isDark) Color(0x8094A3B8) else Color(0x9994A3B8),
+        thickness = 6.dp,
+        shape = RoundedCornerShape(1.dp),
+        hoverDurationMillis = 120,
+        unhoverColor = if (isDark) Color(0x405F7182) else Color(0x50687889),
+        hoverColor = if (isDark) Color(0xA06F8497) else Color(0xA0526576),
     )
 
     CompositionLocalProvider(

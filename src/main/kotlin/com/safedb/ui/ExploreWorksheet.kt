@@ -365,7 +365,7 @@ private fun CalculationRail(
             }
             calculations.forEach { calculation ->
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(3.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier.fillMaxWidth().clickable { onEdit(calculation) },
@@ -600,7 +600,7 @@ private fun <T> SelectRow(label: String, choices: List<T>, selected: T, display:
 @Composable
 private fun SelectPill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(7.dp),
+        shape = RoundedCornerShape(3.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.clickable(onClick = onClick),

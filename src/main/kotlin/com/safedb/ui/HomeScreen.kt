@@ -1,7 +1,6 @@
 package com.safedb.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -22,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -52,6 +50,7 @@ import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.DeleteIconButton
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.theme.CardShape
 import com.safedb.viewmodel.AppViewModel
 
 @Composable
@@ -96,7 +95,7 @@ fun HomeScreen(
                 .widthIn(max = 896.dp)
                 .padding(horizontal = 32.dp, vertical = 48.dp),
         ) {
-            Text("Welcome to safe-db", style = MaterialTheme.typography.headlineLarge)
+            Text("Welcome to Safe-DB", style = MaterialTheme.typography.headlineLarge)
             Text(
                 "Safely explore production databases with non-locking reads and enforced best practices.",
                 style = MaterialTheme.typography.bodyLarge,
@@ -192,26 +191,27 @@ private fun QuickLinkCard(
 
     val borderColor by animateColorAsState(
         if (hovered) {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+            SafeDbTheme.colors.actionPrimary
         } else {
             MaterialTheme.colorScheme.outline
         },
     )
-    val shadow by animateDpAsState(if (hovered) 3.dp else 0.dp)
+    val cardColor by animateColorAsState(
+        if (hovered) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
+    )
     val tileColor by animateColorAsState(
         if (hovered) SafeDbTheme.colors.actionPrimary else SafeDbTheme.colors.accentContainer,
     )
     val tileIconColor by animateColorAsState(
         if (hovered) SafeDbTheme.colors.onActionPrimary else SafeDbTheme.colors.onAccentContainer,
     )
-    val cardShape = RoundedCornerShape(8.dp)
 
     Surface(
         modifier = modifier.hoverable(interactionSource),
-        shape = cardShape,
-        color = MaterialTheme.colorScheme.surface,
+        shape = CardShape,
+        color = cardColor,
         border = BorderStroke(1.dp, borderColor),
-        shadowElevation = shadow,
+        shadowElevation = 0.dp,
         tonalElevation = 0.dp,
         interactionSource = interactionSource,
         onClick = onClick,
@@ -219,7 +219,7 @@ private fun QuickLinkCard(
         Column(modifier = Modifier.padding(20.dp)) {
             Surface(
                 modifier = Modifier.size(40.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.small,
                 color = tileColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -274,7 +274,7 @@ private fun SavedQueryCard(
 private fun ProtectionInfoCard() {
     AppCard {
         Column(modifier = Modifier.padding(24.dp)) {
-            Text("How safe-db protects your database", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text("How Safe-DB protects your database", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(16.dp))
             val items = listOf(
                 "Non-locking reads" to "Dirty-read tolerant isolation — never blocks production writes.",
@@ -296,7 +296,7 @@ private fun ProtectionItem(title: String, body: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
             modifier = Modifier.size(20.dp),
-            shape = RoundedCornerShape(50),
+            shape = MaterialTheme.shapes.small,
             color = SafeDbTheme.colors.successContainer,
         ) {
             Box(contentAlignment = Alignment.Center) {

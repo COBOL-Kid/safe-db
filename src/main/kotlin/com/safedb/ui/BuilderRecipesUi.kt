@@ -122,7 +122,7 @@ internal fun BuilderRecipeButton(
                                     )
                                 }
                             } else Modifier),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(3.dp),
                             color = if (selected?.id == "builtin:${item.id}") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                             border = BorderStroke(1.dp, if (selected?.id == "builtin:${item.id}") SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
                         ) {
@@ -146,7 +146,7 @@ internal fun BuilderRecipeButton(
                     val available = recipe.querySpec != null || (activeConnection != null && currentSample != null && resolveRecipeFields(recipe, currentSample, currentSpec).unresolved.isEmpty())
                     Surface(
                         modifier = Modifier.fillMaxWidth().then(if (available) Modifier.clickable { selected = recipe } else Modifier),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(3.dp),
                         color = if (selected?.id == recipe.id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                         border = BorderStroke(1.dp, if (selected?.id == recipe.id) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
                     ) {
@@ -196,7 +196,7 @@ internal fun BuilderRecipeButton(
 
 @Composable
 private fun BuilderRecipePill(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(shape = RoundedCornerShape(7.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.clickable(onClick = onClick)) {
+    Surface(shape = RoundedCornerShape(3.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.clickable(onClick = onClick)) {
         Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
     }
 }

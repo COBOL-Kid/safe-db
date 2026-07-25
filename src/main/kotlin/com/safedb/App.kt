@@ -95,7 +95,7 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
                 connections.any { it.id == activeConnectionId }
             Window(
                 onCloseRequest = viewModel::closeExplore,
-                title = "Explore - safe-db",
+                title = "Explore - Safe-DB",
                 state = exploreWindowState,
             ) {
                 LaunchedEffect(window) {
@@ -154,7 +154,7 @@ fun runApp(appState: AppState) = application {
             runBlocking { SecretsManager.lockCredentials() }
             exitApplication()
         },
-        title = "safe-db",
+        title = "Safe-DB",
         state = windowState,
     ) {
         LaunchedEffect(window) {

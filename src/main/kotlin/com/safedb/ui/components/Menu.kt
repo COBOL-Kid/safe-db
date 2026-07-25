@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.LabelMicro
+import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.SafeDbTheme
 
 @Composable
@@ -39,10 +39,10 @@ fun SafeDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier.widthIn(min = minWidth),
-        shape = RoundedCornerShape(8.dp),
+        shape = CardShape,
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
-        shadowElevation = 12.dp,
+        shadowElevation = 6.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         content()
@@ -89,7 +89,7 @@ fun MenuActionRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(background)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)

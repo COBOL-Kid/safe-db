@@ -320,7 +320,7 @@ private fun PanelButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(3.dp)
     val action = com.safedb.ui.theme.SafeDbTheme.colors.actionPrimary
     val onAction = com.safedb.ui.theme.SafeDbTheme.colors.onActionPrimary
     val background = when {
@@ -364,7 +364,7 @@ private fun SegmentButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(3.dp)
     val action = com.safedb.ui.theme.SafeDbTheme.colors.actionPrimary
     val onAction = com.safedb.ui.theme.SafeDbTheme.colors.onActionPrimary
     val background = when {
@@ -414,7 +414,7 @@ private fun PlainTextAction(
             MaterialTheme.colorScheme.onSurfaceVariant
         },
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(2.dp))
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -434,7 +434,7 @@ private fun InlineIconButton(
     Box(
         modifier = modifier
             .size(28.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(2.dp))
             .background(if (hovered) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent)
             .hoverable(interactionSource)
             .clickable(onClick = onClick),

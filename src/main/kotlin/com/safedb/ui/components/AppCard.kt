@@ -1,7 +1,6 @@
 package com.safedb.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -17,11 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.CardShape
+import com.safedb.ui.theme.SafeDbTheme
 
 /**
- * Bordered card with a subtle hover-lift: the border darkens slightly and a
- * soft shadow appears when hovered, both smoothly animated. Pass [onClick]
- * to make the whole card clickable; leave null for a static card.
+ * Flat Control Plane panel. Hover is expressed through a cobalt border and
+ * cool surface shift rather than Material elevation.
  */
 @Composable
 fun AppCard(
@@ -37,21 +36,23 @@ fun AppCard(
     val lifted = hoverLift && hovered
     val borderColor by animateColorAsState(
         if (lifted) {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+            SafeDbTheme.colors.actionPrimary
         } else {
             MaterialTheme.colorScheme.outline
         },
     )
-    val shadow by animateDpAsState(if (lifted) 3.dp else 0.dp)
+    val backgroundColor by animateColorAsState(
+        if (lifted) MaterialTheme.colorScheme.surfaceContainerLow else containerColor,
+    )
     val border = BorderStroke(1.dp, borderColor)
 
     if (onClick != null) {
         Surface(
             modifier = modifier,
             shape = CardShape,
-            color = containerColor,
+            color = backgroundColor,
             border = border,
-            shadowElevation = shadow,
+            shadowElevation = 0.dp,
             tonalElevation = 0.dp,
             interactionSource = interactionSource,
             onClick = onClick,
@@ -61,9 +62,9 @@ fun AppCard(
         Surface(
             modifier = modifier.hoverable(interactionSource),
             shape = CardShape,
-            color = containerColor,
+            color = backgroundColor,
             border = border,
-            shadowElevation = shadow,
+            shadowElevation = 0.dp,
             tonalElevation = 0.dp,
             content = { Column(content = content) },
         )

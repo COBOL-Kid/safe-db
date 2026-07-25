@@ -22,7 +22,7 @@ internal fun ExploreDrillDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(4.dp),
         title = {
             Column {
                 Text("Source rows", style = MaterialTheme.typography.titleMedium)

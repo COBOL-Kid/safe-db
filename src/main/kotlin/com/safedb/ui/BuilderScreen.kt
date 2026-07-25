@@ -2,6 +2,7 @@ package com.safedb.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas as DrawCanvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -138,11 +139,11 @@ private fun LimitChoiceChip(
     val hovered by interactionSource.collectIsHoveredAsState()
     val c = SafeDbTheme.colors
     val background = when {
-        selected -> c.accentContainer
-        hovered -> MaterialTheme.colorScheme.surfaceContainer
+        selected -> MaterialTheme.colorScheme.surface
+        hovered -> MaterialTheme.colorScheme.surfaceContainerLow
         else -> Color.Transparent
     }
-    val content = if (selected) c.onAccentContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    val content = if (selected) c.actionPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 
     Text(
         label,
@@ -151,6 +152,11 @@ private fun LimitChoiceChip(
         modifier = Modifier
             .clip(ChipShape)
             .background(background)
+            .border(
+                1.dp,
+                if (selected) c.actionPrimary else Color.Transparent,
+                ChipShape,
+            )
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 5.dp),
@@ -209,7 +215,7 @@ fun BuilderScreen(
                 queryViewModel.dismissError()
                 onCancelQueryRun()
             },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(4.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -268,7 +274,7 @@ fun BuilderScreen(
     if (showWarningMuteConfirm) {
         AlertDialog(
             onDismissRequest = { showWarningMuteConfirm = false },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(4.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -666,7 +672,7 @@ private fun ResultsPaneResizeBar(
         }
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(999.dp))
+                .clip(RoundedCornerShape(2.dp))
                 .background(pillColor)
                 .clickable(onClick = onToggleMode)
                 .semantics { contentDescription = label }

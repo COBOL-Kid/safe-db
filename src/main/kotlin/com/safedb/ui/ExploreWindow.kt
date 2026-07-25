@@ -221,11 +221,11 @@ fun ExploreWindowContent(
 
 @Composable
 private fun ExploreModeSelector(selected: ExploreMode, onSelect: (ExploreMode) -> Unit, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(9.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(3.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Row(modifier = Modifier.padding(3.dp)) {
             ExploreMode.entries.forEach { mode ->
                 Surface(
-                    shape = RoundedCornerShape(7.dp),
+                    shape = RoundedCornerShape(3.dp),
                     color = if (mode == selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                     modifier = Modifier.clickable { onSelect(mode) },
                 ) {

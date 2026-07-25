@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -104,8 +105,8 @@ fun TableCard(
                     },
                 )
             },
-        shape = RoundedCornerShape(8.dp),
-        shadowElevation = 4.dp,
+        shape = MaterialTheme.shapes.small,
+        shadowElevation = 0.dp,
         tonalElevation = 0.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         color = MaterialTheme.colorScheme.surface,
@@ -115,7 +116,7 @@ fun TableCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(CANVAS_HEADER_HEIGHT.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -145,6 +146,7 @@ fun TableCard(
                     )
                 }
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
             Box(
                 modifier = Modifier
@@ -166,8 +168,7 @@ fun TableCard(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(CANVAS_ROW_HEIGHT.dp)
-                                .padding(vertical = 1.dp)
+                                .height((CANVAS_ROW_HEIGHT - 1f).dp)
                                 .then(
                                     if (joinTarget && joinDragActive) {
                                         Modifier.clickable { onJoinTargetClick(alias, column.name) }
@@ -177,11 +178,11 @@ fun TableCard(
                                 )
                                 .background(
                                     when {
-                                        selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                        selected -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.72f)
                                         joinTarget -> joinTargetColor.copy(alpha = 0.72f)
                                         else -> MaterialTheme.colorScheme.surface
                                     },
-                                    RoundedCornerShape(6.dp),
+                                    RoundedCornerShape(0.dp),
                                 )
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -208,11 +209,11 @@ fun TableCard(
                                             } else {
                                                 MaterialTheme.colorScheme.outline
                                             },
-                                            RoundedCornerShape(3.dp),
+                                            RoundedCornerShape(1.dp),
                                         )
                                         .background(
                                             if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                                            RoundedCornerShape(3.dp),
+                                            RoundedCornerShape(1.dp),
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -320,6 +321,7 @@ fun TableCard(
                                 Box(modifier = Modifier.size(18.dp))
                             }
                         }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
 

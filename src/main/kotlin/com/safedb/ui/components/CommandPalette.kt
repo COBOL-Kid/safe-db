@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
@@ -50,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.ui.theme.CardShape
+import com.safedb.ui.theme.InputShape
 import com.safedb.viewmodel.AppViewModel
 
 private data class PaletteCommand(
@@ -186,9 +187,9 @@ fun CommandPalette(
                         else -> false
                     }
                 },
-            shape = RoundedCornerShape(12.dp),
+            shape = CardShape,
             color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 24.dp,
+            shadowElevation = 12.dp,
             tonalElevation = 0.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
@@ -217,7 +218,7 @@ fun CommandPalette(
                             )
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = InputShape,
                         textStyle = MaterialTheme.typography.bodyMedium,
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -289,7 +290,7 @@ fun CommandPalette(
 private fun CommandIconBox(icon: ImageVector) {
     Surface(
         modifier = Modifier.size(28.dp),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp,
     ) {
