@@ -108,13 +108,21 @@ fun CommandPalette(
                 },
             )
             val runConnectionId = activeConnectionId
-            val runSchema = viewModel.schema.schema
-            if (runConnectionId != null && runSchema != null && viewModel.query.canRun) {
+            val schemaMatchesConnection =
+                runConnectionId != null &&
+                    viewModel.schema.schema != null &&
+                    viewModel.schema.loadedConnectionId == runConnectionId
+            if (runConnectionId != null && schemaMatchesConnection && viewModel.query.canRun) {
                 add(
                     PaletteCommand("run-query", "Run Query", "Execute current query", Icons.Filled.PlayArrow) {
-                        viewModel.query.run(runConnectionId, runSchema)
-                        appState.navigate(AppRoute.Builder)
-                        onDismiss()
+                        if (
+                            viewModel.schema.schema != null &&
+                            viewModel.schema.loadedConnectionId == runConnectionId
+                        ) {
+                            viewModel.query.run(runConnectionId)
+                            appState.navigate(AppRoute.Builder)
+                            onDismiss()
+                        }
                     },
                 )
             }

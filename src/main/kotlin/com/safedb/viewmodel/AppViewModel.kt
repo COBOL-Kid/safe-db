@@ -102,7 +102,7 @@ class AppViewModel(
                 return@restoreQueryForConnection
             }
             _pendingRecipeRun.value = PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
-            query.run(connection.id, schema.schema ?: return@restoreQueryForConnection)
+            query.run(connection.id)
         }
     }
 

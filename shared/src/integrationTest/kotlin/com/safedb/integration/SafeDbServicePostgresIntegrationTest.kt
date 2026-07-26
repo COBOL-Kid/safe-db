@@ -43,7 +43,6 @@ class SafeDbServicePostgresIntegrationTest {
             QueryRunRequest(
                 def.id,
                 IntegrationFixtures.customersQuery(schema, limit = 2, expectedSchema = "public"),
-                schema,
                 force = true,
             ),
         )

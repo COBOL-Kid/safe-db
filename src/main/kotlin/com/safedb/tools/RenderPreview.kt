@@ -270,7 +270,7 @@ private fun renderExplore(
         limit = 100,
     )
     val sample = runBlocking {
-        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec, service.schema))
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec))
     }
     val viewModel = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     if (pivoted) {
@@ -430,7 +430,7 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
         columns = emptyList(), joins = emptyList(), filters = FilterGroup.empty(), limit = 100,
     )
     val sample = runBlocking {
-        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec, service.schema))
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec))
     }
     val explore = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     val recipesViewModel = RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined))
@@ -501,7 +501,7 @@ fun main() {
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
-                    vm.query.run("c1", vm.schema.schema!!)
+                    vm.query.run("c1")
                 }
             }
             Thread.sleep(900)
@@ -518,7 +518,7 @@ fun main() {
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
-                    vm.query.run("c1", vm.schema.schema!!)
+                    vm.query.run("c1")
                 }
             }
             Thread.sleep(900)

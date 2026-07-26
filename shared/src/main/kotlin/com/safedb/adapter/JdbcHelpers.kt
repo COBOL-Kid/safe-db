@@ -33,10 +33,20 @@ fun buildJdbcUrl(def: ConnectionDef): String = when (def.dialect) {
 
 fun createDataSource(def: ConnectionDef, password: String): HikariDataSource {
     val temporaryFiles = mutableListOf<Path>()
-    val dataSource = HikariDataSource(createDataSourceConfig(def, password) { temporaryFiles.add(it.toPath()) })
+    val dataSource = createWithTemporaryPemCleanup(temporaryFiles) {
+        HikariDataSource(createDataSourceConfig(def, password) { temporaryFiles.add(it.toPath()) })
+    }
     if (temporaryFiles.isNotEmpty()) temporaryPemFiles[dataSource] = temporaryFiles
     return dataSource
 }
+
+internal fun <T> createWithTemporaryPemCleanup(temporaryFiles: List<Path>, create: () -> T): T =
+    try {
+        create()
+    } catch (error: Throwable) {
+        temporaryFiles.forEach { path -> runCatching { Files.deleteIfExists(path) } }
+        throw error
+    }
 
 private val temporaryPemFiles =
     Collections.synchronizedMap(WeakHashMap<HikariDataSource, List<Path>>())

@@ -169,7 +169,7 @@ class AppViewModelTest {
         val query = QueryViewModel(FakeSafeDbService(), scope)
         query.addTable(sampleTable())
 
-        query.run("c1", Schema(listOf(sampleTable())))
+        query.run("c1")
         scope.advanceUntilIdle()
 
         assertEquals("c1", query.currentSample("c1")?.connectionId)
@@ -188,7 +188,7 @@ class AppViewModelTest {
         query.addTable(sampleTable())
         query.updateWarningPopupsDisabled(true)
 
-        query.run("c1", Schema(listOf(sampleTable())))
+        query.run("c1")
         scope.advanceUntilIdle()
 
         assertEquals(listOf(false, true), service.forceCalls)
@@ -222,8 +222,8 @@ class AppViewModelTest {
         val query = QueryViewModel(service, scope)
         query.addTable(sampleTable())
 
-        query.run("c1", Schema(listOf(sampleTable())))
-        query.run("c1", Schema(listOf(sampleTable())))
+        query.run("c1")
+        query.run("c1")
         scope.advanceUntilIdle()
 
         assertEquals(listOf(false), service.forceCalls)
@@ -239,7 +239,7 @@ class AppViewModelTest {
         val query = QueryViewModel(service, scope)
         query.addTable(sampleTable())
 
-        query.run("c1", Schema(listOf(sampleTable())))
+        query.run("c1")
         assertTrue(query.running)
         scope.runCurrent()
         assertTrue(started.isCompleted)

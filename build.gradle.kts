@@ -1,6 +1,6 @@
-import com.safedb.build.VerifyCoverageRatchet
-import com.safedb.build.VerifyIntegrationTestDiscovery
-import com.safedb.build.VerifyUnitTestDiscovery
+import com.safedb.buildlogic.VerifyCoverageRatchet
+import com.safedb.buildlogic.VerifyIntegrationTestDiscovery
+import com.safedb.buildlogic.VerifyUnitTestDiscovery
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -86,7 +86,7 @@ val verifyUnitTestDiscovery = tasks.register<VerifyUnitTestDiscovery>("verifyUni
     desktopResults.set(layout.buildDirectory.dir("test-results/test"))
     sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
     minimumDesktopTests.set(89)
-    minimumSharedTests.set(233)
+    minimumSharedTests.set(235)
 }
 
 val verifyCoverageRatchet = tasks.register<VerifyCoverageRatchet>("verifyCoverageRatchet") {

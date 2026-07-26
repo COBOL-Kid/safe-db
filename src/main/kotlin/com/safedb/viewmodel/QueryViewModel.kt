@@ -19,7 +19,6 @@ import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
-import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ValueKind
@@ -321,9 +320,9 @@ class QueryViewModel(
         queryLimit = parseLimit(limit)
     }
 
-    fun run(connectionId: String, schema: Schema, force: Boolean = false) {
+    fun run(connectionId: String, force: Boolean = false) {
         if (!canRun) return
-        run(QueryRunRequest(connectionId, spec, schema, force))
+        run(QueryRunRequest(connectionId, spec, force))
     }
 
     private fun run(request: QueryRunRequest) {

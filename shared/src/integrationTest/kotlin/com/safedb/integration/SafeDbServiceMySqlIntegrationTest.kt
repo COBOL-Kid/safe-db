@@ -44,7 +44,7 @@ class SafeDbServiceMySqlIntegrationTest {
         val schema = service.getSchema(def.id)
         val spec = IntegrationFixtures.customersQuery(schema, limit = 5)
 
-        val result = service.runQuery(QueryRunRequest(def.id, spec, schema, force = true))
+        val result = service.runQuery(QueryRunRequest(def.id, spec, force = true))
         assertEquals(5, result.rowCount)
         assertTrue(result.truncated)
 
@@ -84,7 +84,6 @@ class MySqlQuerySafetyIntegrationTest {
                     QueryRunRequest(
                         def.id,
                         IntegrationFixtures.blockedSchemaQuery(),
-                        com.safedb.model.Schema(emptyList()),
                         force = true,
                     ),
                 )

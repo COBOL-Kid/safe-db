@@ -132,12 +132,13 @@ class SafeDbServiceImplTest {
             settingsStore = SettingsStore.new(dir),
             querySessionFactory = QuerySessionFactory { _, _ ->
                 QuerySession(
+                    schema = sampleSchema(),
                     runner = StubRunner(),
                 )
             },
         )
 
-        val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), sampleSchema(), force = true))
+        val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
         assertEquals(1, result.rowCount)
         assertEquals(1, queryStore.listHistory().size)
         assertEquals("Delete me", queryStore.listHistory().single().connectionName)
@@ -186,7 +187,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun runQueryUsesSuppliedSchemaWithoutIntrospection() = runBlocking {
+    fun runQueryIntrospectsConnectedSchemaBeforeValidation() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
@@ -201,9 +202,34 @@ class SafeDbServiceImplTest {
             adapterFactory = AdapterFactory { _, _ -> adapter },
         )
 
-        service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), sampleSchema(), force = true))
+        service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
 
-        assertEquals(0, adapter.introspectionCount)
+        assertEquals(1, adapter.introspectionCount)
+        assertEquals(1, adapter.closeCount)
+    }
+
+    @Test
+    fun runQueryIntrospectionFailureClosesAdapter() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter(introspectionFailure = IllegalStateException("metadata failed"))
+        val service = SafeDbServiceImpl(
+            configStore = configStore,
+            queryStore = QueryStore.new(dir),
+            settingsStore = SettingsStore.new(dir),
+            querySessionFactory = null,
+            adapterFactory = AdapterFactory { _, _ -> adapter },
+        )
+
+        val failure = assertFailsWith<IllegalStateException> {
+            service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
+        }
+
+        assertEquals("metadata failed", failure.message)
+        assertEquals(1, adapter.introspectionCount)
         assertEquals(1, adapter.closeCount)
     }
 
@@ -222,6 +248,7 @@ class SafeDbServiceImplTest {
             settingsStore = SettingsStore.new(dir),
             querySessionFactory = QuerySessionFactory { _, _ ->
                 QuerySession(
+                    schema = sampleSchema(),
                     runner = FailingRunner(),
                     onClose = { closeCount += 1 },
                 )
@@ -229,7 +256,7 @@ class SafeDbServiceImplTest {
         )
 
         val failure = assertFailsWith<QueryFailureException> {
-            service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), sampleSchema(), force = true))
+            service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
         }
 
         assertTrue(failure.message?.contains("execution failed") == true)

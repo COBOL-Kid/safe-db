@@ -57,6 +57,7 @@ private object DefaultAdapterFactory : AdapterFactory {
 }
 
 internal class QuerySession(
+    val schema: Schema,
     val runner: QueryRunner,
     private val onClose: suspend () -> Unit = {},
 ) {
@@ -143,7 +144,7 @@ class SafeDbServiceImpl internal constructor(
                     session.runner,
                     def,
                     request.spec,
-                    request.schema,
+                    session.schema,
                     settings,
                     request.force,
                 )
@@ -170,7 +171,14 @@ class SafeDbServiceImpl internal constructor(
 
     private suspend fun openDefaultQuerySession(def: ConnectionDef, password: String): QuerySession {
         val adapter = adapterFactory.connect(def, password)
+        val schema = try {
+            adapter.introspect()
+        } catch (error: Throwable) {
+            runCatching { adapter.close() }.onFailure(error::addSuppressed)
+            throw error
+        }
         return QuerySession(
+            schema = schema,
             runner = AdapterQueryRunner(adapter),
             onClose = { adapter.close() },
         )

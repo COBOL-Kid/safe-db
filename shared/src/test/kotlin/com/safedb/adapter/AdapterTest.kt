@@ -12,15 +12,32 @@ import java.math.BigDecimal
 import java.sql.ResultSet
 import java.sql.Connection
 import java.sql.PreparedStatement
+import java.nio.file.Files
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AdapterTest {
+    @Test
+    fun datasourceCreationFailureDeletesTemporaryPemFiles() {
+        val temporaryPem = Files.createTempFile("safedb-failed-datasource", ".pem")
+
+        val failure = assertFailsWith<IllegalStateException> {
+            createWithTemporaryPemCleanup(listOf(temporaryPem)) {
+                error("datasource creation failed")
+            }
+        }
+
+        assertEquals("datasource creation failed", failure.message)
+        assertFalse(Files.exists(temporaryPem))
+    }
+
     @Test
     fun parseShowplanCostExtractsSubtreeCost() {
         val xml =

@@ -388,14 +388,18 @@ fun BuilderScreen(
                 PrimaryButton(
                     onClick = {
                         val connectionId = connection?.id
-                        val schema = schemaViewModel.schema
-                        if (connectionId != null && schema != null) {
-                            queryViewModel.run(connectionId, schema)
+                        if (
+                            connectionId != null &&
+                            schemaViewModel.schema != null &&
+                            schemaViewModel.loadedConnectionId == connectionId
+                        ) {
+                            queryViewModel.run(connectionId)
                         }
                     },
                     enabled = queryViewModel.canRun &&
                         connection != null &&
                         schemaViewModel.schema != null &&
+                        schemaViewModel.loadedConnectionId == connection.id &&
                         !queryViewModel.running,
                 ) {
                     if (queryViewModel.running) {

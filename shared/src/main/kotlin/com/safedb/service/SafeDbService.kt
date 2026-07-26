@@ -14,7 +14,6 @@ import com.safedb.query.QueryError
 data class QueryRunRequest(
     val connectionId: String,
     val spec: QuerySpec,
-    val schema: Schema,
     val force: Boolean = false,
 )
 
