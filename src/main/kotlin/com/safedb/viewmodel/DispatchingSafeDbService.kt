@@ -18,9 +18,6 @@ internal class DispatchingSafeDbService(
     override suspend fun testConnection(def: ConnectionDef, password: String) =
         onIo { delegate.testConnection(def, password) }
 
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) =
-        onIo { delegate.saveConnection(def, password) }
-
     override suspend fun createConnection(def: ConnectionDef, password: String) =
         onIo { delegate.createConnection(def, password) }
 

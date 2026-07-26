@@ -6,9 +6,6 @@ import com.safedb.model.TableRef
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 
@@ -374,7 +371,7 @@ private class WorksheetEngine(
     }
 
     private fun dateBucket(cell: ResultCell, unit: DateGroupUnit, label: String): GroupBucket {
-        val date = parseDate(cellText(cell))
+        val date = parseExploreDate(cellText(cell))
         if (date == null) {
             warnings += "$label contains values that could not be grouped as dates"
             return GroupBucket("<invalid-date>", "(invalid date)", ResultCell.Null)
@@ -509,9 +506,5 @@ private fun filterEquals(cell: ResultCell, text: String, expected: String): Bool
 
 private fun cellText(cell: ResultCell?): String = resultCellText(cell)
 
-private fun parseDate(text: String): LocalDate? = runCatching { LocalDate.parse(text) }.getOrNull()
-    ?: runCatching { LocalDateTime.parse(text).toLocalDate() }.getOrNull()
-    ?: runCatching { LocalDateTime.parse(text.replaceFirst(' ', 'T')).toLocalDate() }.getOrNull()
-    ?: runCatching { OffsetDateTime.parse(text).toLocalDate() }.getOrNull()
 
 private fun escapeGroupPath(value: String): String = value.replace("%", "%25").replace("/", "%2F")

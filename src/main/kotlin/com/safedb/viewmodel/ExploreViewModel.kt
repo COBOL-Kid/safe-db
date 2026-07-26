@@ -75,12 +75,9 @@ class ExploreViewModel(
         private set
     var visualizationPreviewState by mutableStateOf(PreviewState(visualizationPreview))
         private set
-    private var pivotGeneration = 0
-    private var worksheetGeneration = 0
-    private var visualizationGeneration = 0
-    private var pivotJob: Job? = null
-    private var worksheetJob: Job? = null
-    private var visualizationJob: Job? = null
+    private val pivotTask = PreviewTask<ExplorePreviewResult>()
+    private val worksheetTask = PreviewTask<WorksheetPreview>()
+    private val visualizationTask = PreviewTask<VisualizationPreview>()
     private val dirtyModes = mutableSetOf<ExploreMode>()
     private val memberOptionsCache = mutableMapOf<String, List<MemberOption>>()
     var appliedRecipeId by mutableStateOf<String?>(null)
@@ -243,67 +240,25 @@ class ExploreViewModel(
         }
         when (mode) {
             ExploreMode.Pivot -> {
-                val generation = ++pivotGeneration
-                pivotJob?.cancel()
-                pivotPreviewState = pivotPreviewState.copy(loading = true, error = null)
                 val config = workspace.pivot
-                pivotJob = scope.launch {
-                    delay(PREVIEW_DEBOUNCE_MS)
-                    val outcome = runCatching { withContext(computeDispatcher) { applyExplore(session.sample, config) } }
-                    if (generation == pivotGeneration) {
-                        outcome.onSuccess {
-                            preview = it
-                            pivotPreviewState = PreviewState(it)
-                            dirtyModes -= mode
-                        }.onFailure {
-                            pivotPreviewState = pivotPreviewState.copy(loading = false, error = it.message ?: it.toString())
-                        }
-                    }
-                }
+                pivotTask.schedule(scope, computeDispatcher, { applyExplore(session.sample, config) },
+                    { pivotPreviewState = pivotPreviewState.copy(loading = true, error = null) },
+                    { result -> preview = result; pivotPreviewState = PreviewState(result); dirtyModes -= mode },
+                    { error -> pivotPreviewState = pivotPreviewState.copy(loading = false, error = error) })
             }
             ExploreMode.Worksheet -> {
-                val generation = ++worksheetGeneration
-                worksheetJob?.cancel()
-                worksheetPreviewState = worksheetPreviewState.copy(loading = true, error = null)
                 val config = workspace.worksheet
-                worksheetJob = scope.launch {
-                    delay(PREVIEW_DEBOUNCE_MS)
-                    val outcome = runCatching {
-                        withContext(computeDispatcher) { applyWorksheet(session.sample, config, session.baseSpec.tables) }
-                    }
-                    if (generation == worksheetGeneration) {
-                        outcome.onSuccess {
-                            worksheetPreview = it
-                            worksheetPreviewState = PreviewState(it)
-                            dirtyModes -= mode
-                        }.onFailure {
-                            worksheetPreviewState =
-                                worksheetPreviewState.copy(loading = false, error = it.message ?: it.toString())
-                        }
-                    }
-                }
+                worksheetTask.schedule(scope, computeDispatcher, { applyWorksheet(session.sample, config, session.baseSpec.tables) },
+                    { worksheetPreviewState = worksheetPreviewState.copy(loading = true, error = null) },
+                    { result -> worksheetPreview = result; worksheetPreviewState = PreviewState(result); dirtyModes -= mode },
+                    { error -> worksheetPreviewState = worksheetPreviewState.copy(loading = false, error = error) })
             }
             ExploreMode.Visualization -> {
-                val generation = ++visualizationGeneration
-                visualizationJob?.cancel()
-                visualizationPreviewState = visualizationPreviewState.copy(loading = true, error = null)
                 val config = workspace.visualization
-                visualizationJob = scope.launch {
-                    delay(PREVIEW_DEBOUNCE_MS)
-                    val outcome = runCatching {
-                        withContext(computeDispatcher) { applyVisualization(session.sample, config, session.baseSpec.tables) }
-                    }
-                    if (generation == visualizationGeneration) {
-                        outcome.onSuccess {
-                            visualizationPreview = it
-                            visualizationPreviewState = PreviewState(it)
-                            dirtyModes -= mode
-                        }.onFailure {
-                            visualizationPreviewState =
-                                visualizationPreviewState.copy(loading = false, error = it.message ?: it.toString())
-                        }
-                    }
-                }
+                visualizationTask.schedule(scope, computeDispatcher, { applyVisualization(session.sample, config, session.baseSpec.tables) },
+                    { visualizationPreviewState = visualizationPreviewState.copy(loading = true, error = null) },
+                    { result -> visualizationPreview = result; visualizationPreviewState = PreviewState(result); dirtyModes -= mode },
+                    { error -> visualizationPreviewState = visualizationPreviewState.copy(loading = false, error = error) })
             }
         }
     }
@@ -327,9 +282,9 @@ class ExploreViewModel(
     }
 
     fun close() {
-        pivotJob?.cancel()
-        worksheetJob?.cancel()
-        visualizationJob?.cancel()
+        pivotTask.cancel()
+        worksheetTask.cancel()
+        visualizationTask.cancel()
     }
 
     fun updateMemberFilter(filterId: String, includedKeys: Set<String>) {
@@ -492,6 +447,36 @@ private fun memberLabel(cell: com.safedb.model.ResultCell?): String = when (cell
     is com.safedb.model.ResultCell.FloatCell -> cell.value.toString()
     is com.safedb.model.ResultCell.TextCell -> cell.value.text
     is com.safedb.model.ResultCell.BinaryCell -> cell.value.base64
+}
+
+/** Latest-result-wins scheduling shared by the independent Explore evaluators. */
+private class PreviewTask<T> {
+    private var generation = 0
+    private var job: Job? = null
+
+    fun schedule(
+        scope: CoroutineScope,
+        dispatcher: CoroutineDispatcher,
+        compute: () -> T,
+        loading: () -> Unit,
+        success: (T) -> Unit,
+        failure: (String) -> Unit,
+    ) {
+        val scheduledGeneration = ++generation
+        job?.cancel()
+        loading()
+        job = scope.launch {
+            delay(PREVIEW_DEBOUNCE_MS)
+            val outcome = runCatching { withContext(dispatcher) { compute() } }
+            if (scheduledGeneration != generation) return@launch
+            outcome.onSuccess(success).onFailure { error -> failure(error.message ?: error.toString()) }
+        }
+    }
+
+    fun cancel() {
+        generation++
+        job?.cancel()
+    }
 }
 
 private const val PREVIEW_DEBOUNCE_MS = 75L

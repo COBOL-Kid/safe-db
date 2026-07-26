@@ -126,7 +126,7 @@ fun ConnectionForm(
         scope.launch {
             try {
                 val def = form.buildDef()
-                service.saveConnection(def, form.password)
+                service.createConnection(def, form.password)
                 form.password = ""
                 form.showPassword = false
                 onSaved()
@@ -191,49 +191,11 @@ fun ConnectionForm(
                 )
 
                 FormStep.Credentials -> CredentialsStep(
-                    parsedFromString = form.parsedFromString,
+                    form = form,
                     selectedDialectLabel = selectedDialect?.label ?: form.dialect.name,
-                    host = form.host,
-                    port = form.port,
-                    database = form.database,
                     securityLabelText = securityLabel.text,
-                    parseWarnings = form.parseWarnings,
-                    location = form.location,
-                    isRemoteHost = form.isRemoteHost(form.host),
                     onApplyCloudDefaults = { form.applyLocationPreset(DatabaseLocation.Cloud) },
-                    name = form.name,
-                    onNameChange = { form.updateName(it) },
-                    dialect = form.dialect,
-                    onSelectDialect = { form.selectDialect(it) },
-                    hostValue = form.host,
-                    onHostChange = { form.handleHostInput(it) },
-                    portValue = form.port.toString(),
-                    onPortChange = { form.handlePortInput(it) },
-                    databaseValue = form.database,
-                    onDatabaseChange = { form.updateDatabase(it) },
-                    username = form.username,
-                    onUsernameChange = { form.updateUsername(it) },
-                    password = form.password,
-                    onPasswordChange = { form.updatePassword(it) },
-                    showPassword = form.showPassword,
-                    onToggleShowPassword = { form.showPassword = !form.showPassword },
-                    dialectIsOracle = form.dialect == Dialect.Oracle,
-                    transportMode = form.transportMode,
-                    oracleWalletLocation = form.oracleWalletLocation,
-                    onOracleWalletChange = { form.handleOracleWalletInput(it) },
-                    transportOverridden = form.transportOverridden,
-                    onReapplyRecommended = { form.reapplyRecommendedSettings() },
-                    caPem = form.caPem,
-                    onCaPemChange = { form.caPem = it },
-                    onTransportModeChange = { form.transportMode = it },
-                    onTransportManualChange = { form.markTransportManual() },
-                    testResult = form.testResult,
-                    testError = form.testError,
                     errorClassification = errorClassification,
-                    onTroubleshootingCaChange = { form.applyTroubleshootingCa(it) },
-                    formError = form.formError,
-                    testing = form.testing,
-                    saving = form.saving,
                     onTest = { handleTest() },
                     onCancel = onCancel,
                     onSave = { handleSave() },
@@ -605,53 +567,54 @@ private fun ResponsiveFormRow(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CredentialsStep(
-    parsedFromString: Boolean,
+    form: ConnectionFormState,
     selectedDialectLabel: String,
-    host: String,
-    port: Int,
-    database: String,
     securityLabelText: String,
-    parseWarnings: List<String>,
-    location: DatabaseLocation?,
-    isRemoteHost: Boolean,
     onApplyCloudDefaults: () -> Unit,
-    name: String,
-    onNameChange: (String) -> Unit,
-    dialect: Dialect,
-    onSelectDialect: (Dialect) -> Unit,
-    hostValue: String,
-    onHostChange: (String) -> Unit,
-    portValue: String,
-    onPortChange: (String) -> Unit,
-    databaseValue: String,
-    onDatabaseChange: (String) -> Unit,
-    username: String,
-    onUsernameChange: (String) -> Unit,
-    password: String,
-    onPasswordChange: (String) -> Unit,
-    showPassword: Boolean,
-    onToggleShowPassword: () -> Unit,
-    dialectIsOracle: Boolean,
-    transportMode: TransportSecurityMode,
-    oracleWalletLocation: String,
-    onOracleWalletChange: (String) -> Unit,
-    transportOverridden: Boolean,
-    onReapplyRecommended: () -> Unit,
-    caPem: String,
-    onCaPemChange: (String) -> Unit,
-    onTransportModeChange: (TransportSecurityMode) -> Unit,
-    onTransportManualChange: () -> Unit,
-    testResult: String?,
-    testError: String?,
     errorClassification: com.safedb.connection.ConnectionErrorClassification?,
-    onTroubleshootingCaChange: (String) -> Unit,
-    formError: String?,
-    testing: Boolean,
-    saving: Boolean,
     onTest: () -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
 ) {
+    val parsedFromString = form.parsedFromString
+    val host = form.host
+    val port = form.port
+    val database = form.database
+    val parseWarnings = form.parseWarnings
+    val location = form.location
+    val isRemoteHost = form.isRemoteHost(form.host)
+    val name = form.name
+    val dialect = form.dialect
+    val hostValue = form.host
+    val portValue = form.port.toString()
+    val databaseValue = form.database
+    val username = form.username
+    val password = form.password
+    val showPassword = form.showPassword
+    val dialectIsOracle = form.dialect == Dialect.Oracle
+    val transportMode = form.transportMode
+    val oracleWalletLocation = form.oracleWalletLocation
+    val transportOverridden = form.transportOverridden
+    val caPem = form.caPem
+    val testResult = form.testResult
+    val testError = form.testError
+    val formError = form.formError
+    val testing = form.testing
+    val saving = form.saving
+    val onNameChange = form::updateName
+    val onSelectDialect = form::selectDialect
+    val onHostChange = form::handleHostInput
+    val onPortChange = form::handlePortInput
+    val onDatabaseChange = form::updateDatabase
+    val onUsernameChange = form::updateUsername
+    val onPasswordChange = form::updatePassword
+    val onToggleShowPassword = { form.showPassword = !form.showPassword }
+    val onOracleWalletChange = form::handleOracleWalletInput
+    val onReapplyRecommended = form::reapplyRecommendedSettings
+    val onCaPemChange = { value: String -> form.caPem = value }
+    val onTransportModeChange = { value: TransportSecurityMode -> form.transportMode = value }
+    val onTransportManualChange = form::markTransportManual
+    val onTroubleshootingCaChange = form::applyTroubleshootingCa
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (parsedFromString) {
             Surface(

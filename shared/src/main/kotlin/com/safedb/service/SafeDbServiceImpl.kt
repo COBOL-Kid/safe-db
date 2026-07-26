@@ -90,14 +90,10 @@ class SafeDbServiceImpl internal constructor(
         }
     }
 
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) {
-        persistConnection(def, password)
-    }
-
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef {
-        val created = def.copy(id = UUID.randomUUID().toString())
-        persistConnection(created, password)
-        return created
+        require(configStore.get(def.id) == null) { "Connection already exists" }
+        persistConnection(def, password)
+        return def
     }
 
     override suspend fun updateConnection(def: ConnectionDef, password: String?) {

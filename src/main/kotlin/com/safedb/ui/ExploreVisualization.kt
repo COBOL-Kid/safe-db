@@ -68,11 +68,15 @@ import com.safedb.explore.visualizationTemplates
 import com.safedb.model.ColumnCategory
 import com.safedb.model.QueryResult
 import com.safedb.model.TableRef
+import com.safedb.model.isNumeric
+import com.safedb.model.isTemporal
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.SectionLabel
+import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.MemberOption
 import java.util.UUID
@@ -684,21 +688,14 @@ private fun VisualizationFieldChip(
 @Composable
 private fun ConfigSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(title.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+        SectionLabel(title)
         content()
     }
 }
 
 @Composable
 private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(3.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
-    }
+    SelectablePill(label, selected, onClick)
 }
 
 @Composable
@@ -797,9 +794,6 @@ private fun xCompatible(type: ChartType, field: ExploreFieldOption): Boolean = w
     else -> field.category !in setOf(ColumnCategory.Binary, ColumnCategory.Json)
 }
 
-private fun ColumnCategory.isNumeric(): Boolean = this == ColumnCategory.Integer || this == ColumnCategory.Decimal
-
-private fun ColumnCategory.isTemporal(): Boolean = this == ColumnCategory.Date || this == ColumnCategory.DateTime
 
 private fun asPivotMeasure(value: VisualizationMeasure) = PivotMeasure(
     alias = value.alias,

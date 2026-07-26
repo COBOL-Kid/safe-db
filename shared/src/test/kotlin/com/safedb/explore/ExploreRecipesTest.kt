@@ -72,15 +72,28 @@ class ExploreRecipesTest {
             pivot = ExploreConfig(rowDimensions = listOf(PivotDimension("old"))),
             worksheet = WorksheetConfig(
                 groups = listOf(WorksheetGroup("g", "old")),
-                calculations = listOf(WorksheetCalculation.RowFormula("calc", "Calc", "[old] + 1")),
+                calculations = listOf(
+                    WorksheetCalculation.RowFormula("calc", "Calc", "[old] + 1"),
+                    WorksheetCalculation.GroupFormula("group", "Group", "[sum] / [count]", groupColumn = "old_group"),
+                    WorksheetCalculation.Aggregate("sum", "Sum", WorksheetAggregateFn.Sum, "old", "old_group"),
+                    WorksheetCalculation.Window(
+                        "window", "Window", WorksheetWindowFn.RunningTotal,
+                        WorksheetValueRef.Column("old"), groupColumn = "old_group", restartColumns = listOf("old_restart"),
+                    ),
+                ),
             ),
         )
 
-        val mapped = remapRecipe(recipe, mapOf("old" to "new"))
+        val mapped = remapRecipe(recipe, mapOf("old" to "new", "old_group" to "new_group", "old_restart" to "new_restart"))
 
         assertEquals("new", mapped.pivot?.rowDimensions?.single()?.column)
         assertEquals("new", mapped.worksheet?.groups?.single()?.column)
-        assertEquals("[new] + 1", (mapped.worksheet?.calculations?.single() as WorksheetCalculation.RowFormula).formula)
+        val calculations = mapped.worksheet!!.calculations
+        assertEquals("[new] + 1", (calculations[0] as WorksheetCalculation.RowFormula).formula)
+        assertEquals("[sum] / [count]", (calculations[1] as WorksheetCalculation.GroupFormula).formula)
+        assertEquals("new_group", (calculations[1] as WorksheetCalculation.GroupFormula).groupColumn)
+        assertEquals("new_group", (calculations[2] as WorksheetCalculation.Aggregate).groupColumn)
+        assertEquals("new_restart", (calculations[3] as WorksheetCalculation.Window).restartColumns.single())
     }
 
     @Test
@@ -125,6 +138,24 @@ class ExploreRecipesTest {
         )
 
         val fields = recipeFields(sample(), spec(), null, null, visualization)
+
+        assertEquals(setOf("t0__amount", "t0__status"), fields.map { it.column }.toSet())
+    }
+
+    @Test
+    fun recipeFieldsUsesTheSameTraversalAsRemapping() {
+        val pivot = ExploreConfig(
+            rowDimensions = listOf(PivotDimension("t0__status")),
+            measures = listOf(PivotMeasure("sum", MeasureFn.Sum, "t0__amount")),
+        )
+        val worksheet = WorksheetConfig(
+            calculations = listOf(
+                WorksheetCalculation.GroupFormula("g", "Group", "[sum] / [count]", groupColumn = "t0__status"),
+            ),
+        )
+        val visualization = VisualizationConfig(x = VisualizationField("t0__status"))
+
+        val fields = recipeFields(sample(), spec(), pivot, worksheet, visualization)
 
         assertEquals(setOf("t0__amount", "t0__status"), fields.map { it.column }.toSet())
     }

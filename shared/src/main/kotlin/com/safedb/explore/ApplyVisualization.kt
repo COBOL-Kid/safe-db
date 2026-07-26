@@ -1,6 +1,8 @@
 package com.safedb.explore
 
 import com.safedb.model.ColumnCategory
+import com.safedb.model.isNumeric
+import com.safedb.model.isTemporal
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
@@ -11,9 +13,6 @@ import java.math.MathContext
 import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 import java.util.Currency
@@ -315,7 +314,7 @@ private class VisualizationPlanner(
     }
 
     private fun dateBucket(cell: ResultCell, field: VisualizationField, unit: DateGroupUnit): Bucket {
-        val date = parseDate(cell.text())
+        val date = parseExploreDate(cell.text())
         if (date == null) {
             warnings += "${field.label} contains values that could not be grouped as dates"
             return Bucket("<invalid-date>", "(invalid date)", null)
@@ -450,19 +449,9 @@ private data class ChartRecord(val index: Int, val row: List<ResultCell>)
 
 private data class Bucket(val key: String, val label: String, val numeric: Double?)
 
-private fun ColumnCategory?.isNumeric(): Boolean = this == ColumnCategory.Integer || this == ColumnCategory.Decimal
-
-private fun ColumnCategory?.isTemporal(): Boolean = this == ColumnCategory.Date || this == ColumnCategory.DateTime
-
 private fun ResultCell.decimalOrNull(): BigDecimal? = resultCellDecimal(this)
 
 private fun ResultCell.text(): String = resultCellText(this)
-
-private fun parseDate(text: String): LocalDate? =
-    runCatching { LocalDate.parse(text) }.getOrNull()
-        ?: runCatching { LocalDateTime.parse(text).toLocalDate() }.getOrNull()
-        ?: runCatching { LocalDateTime.parse(text.replaceFirst(' ', 'T')).toLocalDate() }.getOrNull()
-        ?: runCatching { OffsetDateTime.parse(text).toLocalDate() }.getOrNull()
 
 private fun List<BigDecimal>.sumDecimals(): BigDecimal = fold(BigDecimal.ZERO, BigDecimal::add)
 

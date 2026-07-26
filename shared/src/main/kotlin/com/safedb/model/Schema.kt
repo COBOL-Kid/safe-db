@@ -73,6 +73,11 @@ enum class ColumnCategory {
     Other,
 }
 
+/** Semantic helpers shared by query and Explore surfaces. */
+fun ColumnCategory?.isNumeric(): Boolean = this == ColumnCategory.Integer || this == ColumnCategory.Decimal
+
+fun ColumnCategory?.isTemporal(): Boolean = this == ColumnCategory.Date || this == ColumnCategory.DateTime
+
 fun classifyColumn(dataType: String): ColumnCategory {
     val dt = dataType.lowercase()
     return when {

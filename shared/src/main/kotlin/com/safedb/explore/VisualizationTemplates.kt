@@ -5,6 +5,8 @@ import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
+import com.safedb.model.isNumeric
+import com.safedb.model.isTemporal
 
 enum class VisualizationTemplateId {
     Breakdown,
@@ -277,7 +279,3 @@ private data class ProfileField(
         aggregate = false,
     )
 }
-
-private fun ColumnCategory.isNumeric(): Boolean = this == ColumnCategory.Integer || this == ColumnCategory.Decimal
-
-private fun ColumnCategory.isTemporal(): Boolean = this == ColumnCategory.Date || this == ColumnCategory.DateTime

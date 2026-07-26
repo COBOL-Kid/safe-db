@@ -1,5 +1,56 @@
 # safe-db — Agent Notes
 
+## Agent Workflow
+
+### Roles
+
+The primary Codex thread is the orchestrator.
+
+- `orchestrator`
+  - Uses GPT-5.6 with high reasoning.
+  - Inspects the repository, creates the plan, delegates work, reviews results, and summarizes outcomes.
+  - Does not directly edit source or documentation.
+  - Does not run Git or GitHub commands.
+
+- `implementer`
+  - Uses GPT-5.6 Terra with high reasoning.
+  - Implements approved application-code changes.
+  - Adds regression tests and runs verification.
+  - Does not perform Git operations.
+
+- `documentation_agent`
+  - Uses GPT-5.6 Luna with high reasoning.
+  - Maintains `AGENTS.md`, `README.md`, setup instructions, contributor guidance, and workflow documentation.
+  - Verifies documentation against the actual code and commands.
+  - Does not modify application source or perform Git operations.
+
+- `git_operator`
+  - Uses GPT-5.6 Luna with high reasoning.
+  - Handles Git and GitHub operations, including status, fetch, pull, commit, push, pull requests, branches, and worktrees.
+  - Does not modify application source or documentation.
+
+### Required Workflow
+
+1. Inspect the repository and current changes.
+2. Create a concrete implementation plan and success criteria.
+3. Delegate source-code changes to `implementer`.
+4. Delegate documentation changes to `documentation_agent`.
+5. Review the implementation and documentation results.
+6. Run or confirm required tests and verification.
+7. Delegate Git and GitHub operations to `git_operator`.
+8. Summarize changed files, verification results, Git state, and remaining risks.
+
+Use sequential handoffs when agents modify overlapping files. Avoid parallel write operations that could conflict.
+
+### Safety Rules
+
+- Preserve unrelated user changes.
+- Inspect repository state before any mutation.
+- Require confirmation before pull, push, PR mutation, deletion, or worktree cleanup.
+- Use `git pull --ff-only` unless explicitly instructed otherwise.
+- Do not expose credentials, secrets, passwords, or private tokens.
+- Report failed commands and unresolved risks clearly.
+
 ## Project
 
 safe-db is a Jetpack Compose Desktop app with a Kotlin/JDBC backend. The Gradle project lives at the repository root (`shared` module plus Compose UI).
@@ -23,7 +74,7 @@ See the git history for the removed desktop prototype if old implementation cont
 - **Connections** — CRUD via `SafeDbService`; passwords in OS keyring when available, metadata in app data dir; form has show/hide password toggle
 - **Schema introspection** — per-dialect JDBC adapters in `shared/`; system schemas blocked in query validation
 - **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/main/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
-- **Explore modes** — session-only Pivot and Worksheet analysis of the current immutable query sample; Worksheet supports direct sort/group/filter controls, row/group formulas, summaries, and database-neutral window calculations; Visualization is currently a recipe-capable placeholder
+- **Explore modes** — session-only Pivot, Worksheet, and Visualization analysis of the current immutable query sample; Worksheet supports direct sort/group/filter controls, row/group formulas, summaries, and database-neutral window calculations; Visualization provides templates and editable field shelves for bar, line, scatter, histogram, and KPI charts, contributing-row drill-through, PNG export, and chart-data CSV export
 - **Explore recipes** — local/importable/exportable bundles of one or more Explore mode configurations with an optional Builder `QuerySpec`; recipe files never contain sample rows or credentials
 - **Safety** — read-only selects, row limit (default 100, fixed choices with an interactive max of 5,000, guidance above 1,000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
 - **Saved queries & history** — persisted through `QueryStore` in the app data dir; timestamps are Unix-seconds strings

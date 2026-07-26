@@ -12,8 +12,6 @@ import com.safedb.model.u64OrDefault
 import com.safedb.persist.atomicWrite
 import com.safedb.persist.ensurePrivateDir
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -21,12 +19,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -94,19 +91,9 @@ class QueryStore private constructor(
     }
 
     private fun <T> readValid(path: Path, serializer: KSerializer<T>): List<T> {
-        if (!Files.exists(path)) return emptyList()
-        val content = Files.readString(path)
-        if (content.trim().isEmpty()) return emptyList()
-
-        val array = try {
-            SafeDbJson.lenient.parseToJsonElement(content).jsonArray
-        } catch (error: Exception) {
-            val quarantine = path.resolveSibling(
-                "${path.fileName.toString().substringBeforeLast('.')}.corrupt-${UUID.randomUUID()}.json",
-            )
-            Files.move(path, quarantine, StandardCopyOption.REPLACE_EXISTING)
-            throw IllegalStateException("${path.fileName} was corrupt and was moved to $quarantine: $error")
-        }
+        val document = readJsonList(path) ?: return emptyList()
+        val content = document.originalContent
+        val array = document.entries
 
         val valid = mutableListOf<T>()
         var migratedCount = 0
@@ -147,8 +134,7 @@ class QueryStore private constructor(
     }
 
     private fun <T> writeJson(path: Path, data: List<T>, serializer: KSerializer<T>) {
-        val json = SafeDbJson.store.encodeToString(ListSerializer(serializer), data)
-        atomicWrite(path, json)
+        writeJsonList(path, data, serializer)
     }
 }
 

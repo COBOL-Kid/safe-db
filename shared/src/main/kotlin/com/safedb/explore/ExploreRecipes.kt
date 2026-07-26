@@ -51,82 +51,109 @@ fun resolveRecipeFields(
 
 fun compatibleTypes(left: String, right: String): Boolean = dataTypeFamily(left) == dataTypeFamily(right)
 
-fun remapRecipe(recipe: ExploreRecipe, mapping: Map<String, String>): ExploreRecipe = recipe.copy(
-    pivot = recipe.pivot?.remapColumns(mapping),
-    worksheet = recipe.worksheet?.remapColumns(mapping),
-    visualization = recipe.visualization?.remapColumns(mapping),
-    requiredFields = recipe.requiredFields.map { field -> field.copy(column = mapping[field.column] ?: field.column) },
+/**
+ * The single traversal for every persisted column reference in a recipe.
+ * Keep new field-bearing configuration properties here so discovery and
+ * remapping cannot silently drift apart.
+ */
+fun ExploreRecipe.mapColumnReferences(transform: (String) -> String): ExploreRecipe = copy(
+    pivot = pivot?.mapColumnReferences(transform),
+    worksheet = worksheet?.mapColumnReferences(transform),
+    visualization = visualization?.mapColumnReferences(transform),
+    requiredFields = requiredFields.map { field -> field.copy(column = transform(field.column)) },
 )
 
-private fun ExploreConfig.remapColumns(mapping: Map<String, String>): ExploreConfig = copy(
-    rowDimensions = rowDimensions.map { it.copy(column = mapping[it.column] ?: it.column) },
-    columnDimensions = effectiveColumnDimensions.map { it.copy(column = mapping[it.column] ?: it.column) },
+fun remapRecipe(recipe: ExploreRecipe, mapping: Map<String, String>): ExploreRecipe =
+    recipe.mapColumnReferences { column -> mapping[column] ?: column }
+
+fun recipeColumnReferences(
+    pivot: ExploreConfig?,
+    worksheet: WorksheetConfig?,
+    visualization: VisualizationConfig?,
+): Set<String> {
+    val references = linkedSetOf<String>()
+    ExploreRecipe(
+        id = "references",
+        name = "references",
+        createdAt = "0",
+        updatedAt = "0",
+        defaultMode = pivot?.let { ExploreMode.Pivot } ?: worksheet?.let { ExploreMode.Worksheet } ?: ExploreMode.Visualization,
+        pivot = pivot,
+        worksheet = worksheet,
+        visualization = visualization,
+    ).mapColumnReferences { column -> references += column; column }
+    return references
+}
+
+private fun ExploreConfig.mapColumnReferences(transform: (String) -> String): ExploreConfig = copy(
+    rowDimensions = rowDimensions.map { it.copy(column = transform(it.column)) },
+    columnDimensions = effectiveColumnDimensions.map { it.copy(column = transform(it.column)) },
     columnDimension = null,
-    measures = measures.map { measure -> measure.copy(sourceColumn = measure.sourceColumn?.let { mapping[it] ?: it }) },
+    measures = measures.map { measure -> measure.copy(sourceColumn = measure.sourceColumn?.let(transform)) },
     filters = filters.map { filter ->
         when (filter) {
-            is PivotFilter.Members -> filter.copy(column = mapping[filter.column] ?: filter.column)
-            is PivotFilter.Label -> filter.copy(column = mapping[filter.column] ?: filter.column)
-            is PivotFilter.Value -> filter.copy(column = mapping[filter.column] ?: filter.column)
+            is PivotFilter.Members -> filter.copy(column = transform(filter.column))
+            is PivotFilter.Label -> filter.copy(column = transform(filter.column))
+            is PivotFilter.Value -> filter.copy(column = transform(filter.column))
         }
     },
     sort = sort?.let { current ->
         current.copy(
             target = when (val target = current.target) {
-                is ExploreSortTarget.Dimension -> target.copy(column = mapping[target.column] ?: target.column)
+                is ExploreSortTarget.Dimension -> target.copy(column = transform(target.column))
                 is ExploreSortTarget.Measure -> target
             },
         )
     },
 )
 
-private fun WorksheetConfig.remapColumns(mapping: Map<String, String>): WorksheetConfig = copy(
-    groups = groups.map { it.copy(column = mapping[it.column] ?: it.column) },
-    sorts = sorts.map { sort -> sort.copy(target = sort.target.remap(mapping)) },
-    filters = filters.map { it.copy(column = mapping[it.column] ?: it.column) },
+private fun WorksheetConfig.mapColumnReferences(transform: (String) -> String): WorksheetConfig = copy(
+    groups = groups.map { it.copy(column = transform(it.column)) },
+    sorts = sorts.map { sort -> sort.copy(target = sort.target.mapColumnReferences(transform)) },
+    filters = filters.map { it.copy(column = transform(it.column)) },
     calculations = calculations.map { calculation ->
         when (calculation) {
-            is WorksheetCalculation.RowFormula -> calculation.copy(formula = remapFormula(calculation.formula, mapping))
+            is WorksheetCalculation.RowFormula -> calculation.copy(formula = mapFormulaReferences(calculation.formula, transform))
             is WorksheetCalculation.Aggregate -> calculation.copy(
-                sourceColumn = calculation.sourceColumn?.let { mapping[it] ?: it },
-                groupColumn = calculation.groupColumn?.let { mapping[it] ?: it },
+                sourceColumn = calculation.sourceColumn?.let(transform),
+                groupColumn = calculation.groupColumn?.let(transform),
             )
             is WorksheetCalculation.GroupFormula -> calculation.copy(
-                groupColumn = calculation.groupColumn?.let { mapping[it] ?: it },
+                groupColumn = calculation.groupColumn?.let(transform),
             )
             is WorksheetCalculation.Window -> calculation.copy(
-                source = calculation.source.remap(mapping),
-                groupColumn = calculation.groupColumn?.let { mapping[it] ?: it },
-                restartColumns = calculation.restartColumns.map { mapping[it] ?: it },
+                source = calculation.source.mapColumnReferences(transform),
+                groupColumn = calculation.groupColumn?.let(transform),
+                restartColumns = calculation.restartColumns.map(transform),
             )
         }
     },
 )
 
-private fun VisualizationConfig.remapColumns(mapping: Map<String, String>): VisualizationConfig = copy(
-    x = x?.copy(column = mapping[x.column] ?: x.column),
+private fun VisualizationConfig.mapColumnReferences(transform: (String) -> String): VisualizationConfig = copy(
+    x = x?.copy(column = transform(x.column)),
     values = values.map { value ->
-        value.copy(sourceColumn = value.sourceColumn?.let { mapping[it] ?: it })
+        value.copy(sourceColumn = value.sourceColumn?.let(transform))
     },
-    series = series?.copy(column = mapping[series.column] ?: series.column),
-    size = size?.copy(column = mapping[size.column] ?: size.column),
+    series = series?.copy(column = transform(series.column)),
+    size = size?.copy(column = transform(size.column)),
     filters = filters.map { filter ->
         when (filter) {
-            is PivotFilter.Members -> filter.copy(column = mapping[filter.column] ?: filter.column)
-            is PivotFilter.Label -> filter.copy(column = mapping[filter.column] ?: filter.column)
-            is PivotFilter.Value -> filter.copy(column = mapping[filter.column] ?: filter.column)
+            is PivotFilter.Members -> filter.copy(column = transform(filter.column))
+            is PivotFilter.Label -> filter.copy(column = transform(filter.column))
+            is PivotFilter.Value -> filter.copy(column = transform(filter.column))
         }
     },
 )
 
-private fun WorksheetValueRef.remap(mapping: Map<String, String>): WorksheetValueRef = when (this) {
-    is WorksheetValueRef.Column -> copy(column = mapping[column] ?: column)
+private fun WorksheetValueRef.mapColumnReferences(transform: (String) -> String): WorksheetValueRef = when (this) {
+    is WorksheetValueRef.Column -> copy(column = transform(column))
     is WorksheetValueRef.Calculation -> this
 }
 
-private fun remapFormula(formula: String, mapping: Map<String, String>): String = Regex("\\[([^]]+)]").replace(formula) { match ->
+private fun mapFormulaReferences(formula: String, transform: (String) -> String): String = Regex("\\[([^]]+)]").replace(formula) { match ->
     val reference = match.groupValues[1].trim()
-    "[${mapping[reference] ?: reference}]"
+    "[${transform(reference)}]"
 }
 
 private fun dataTypeFamily(raw: String): String {

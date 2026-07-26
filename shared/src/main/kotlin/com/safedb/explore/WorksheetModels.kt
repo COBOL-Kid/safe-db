@@ -261,37 +261,7 @@ fun recipeFields(
     worksheet: WorksheetConfig?,
     visualization: VisualizationConfig? = null,
 ): List<RecipeField> {
-    val referenced = linkedSetOf<String>()
-    pivot?.let { config ->
-        referenced += config.rowDimensions.map { it.column }
-        referenced += config.effectiveColumnDimensions.map { it.column }
-        referenced += config.measures.mapNotNull { it.sourceColumn }
-        referenced += config.filters.map { it.column }
-        (config.sort?.target as? ExploreSortTarget.Dimension)?.let { referenced += it.column }
-    }
-    worksheet?.let { config ->
-        referenced += config.groups.map { it.column }
-        referenced += config.filters.map { it.column }
-        referenced += config.sorts.mapNotNull { (it.target as? WorksheetValueRef.Column)?.column }
-        config.calculations.forEach { calculation ->
-            when (calculation) {
-                is WorksheetCalculation.Aggregate -> calculation.sourceColumn?.let(referenced::add)
-                is WorksheetCalculation.GroupFormula -> Unit
-                is WorksheetCalculation.RowFormula -> referenced += formulaReferences(calculation.formula)
-                is WorksheetCalculation.Window -> {
-                    (calculation.source as? WorksheetValueRef.Column)?.let { referenced += it.column }
-                    referenced += calculation.restartColumns
-                }
-            }
-        }
-    }
-    visualization?.let { config ->
-        config.x?.column?.let(referenced::add)
-        referenced += config.values.mapNotNull { it.sourceColumn }
-        config.series?.column?.let(referenced::add)
-        config.size?.column?.let(referenced::add)
-        referenced += config.filters.map { it.column }
-    }
+    val referenced = recipeColumnReferences(pivot, worksheet, visualization)
     val labels = displayColumnLabels(sample.columns, spec.tables)
     val tableByAlias = spec.tables.associate { it.alias to it.name }
     return sample.columns.filter { it.name in referenced }.map { column ->

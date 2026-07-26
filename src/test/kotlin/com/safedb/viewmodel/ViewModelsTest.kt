@@ -269,7 +269,6 @@ private class RecordingSafeDbService : SafeDbService {
     )
 
     override suspend fun testConnection(def: ConnectionDef, password: String): String = "ok"
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun listConnections(): List<ConnectionDef> =

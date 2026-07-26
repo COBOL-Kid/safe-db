@@ -37,7 +37,7 @@ class SafeDbServicePostgresIntegrationTest {
             settingsStore = SettingsStore.new(dir),
         )
         val def = IntegrationAssumptions.postgresConnectionDef()
-        service.saveConnection(def, IntegrationAssumptions.postgresPassword)
+        service.createConnection(def, IntegrationAssumptions.postgresPassword)
         val schema = service.getSchema(def.id)
         val result = service.runQuery(
             QueryRunRequest(

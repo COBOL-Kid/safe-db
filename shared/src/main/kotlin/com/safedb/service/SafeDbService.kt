@@ -29,8 +29,6 @@ internal fun QueryFailureException(coreError: QueryCoreError): QueryFailureExcep
 interface SafeDbService {
     suspend fun testConnection(def: ConnectionDef, password: String): String
 
-    suspend fun saveConnection(def: ConnectionDef, password: String?)
-
     suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef
 
     suspend fun updateConnection(def: ConnectionDef, password: String?)
@@ -51,6 +49,7 @@ interface SafeDbService {
 
     suspend fun deleteSavedQuery(id: String)
 
+    // Small test and preview fakes do not all model local recipe persistence.
     suspend fun listExploreRecipes(): List<ExploreRecipe> = emptyList()
 
     suspend fun saveExploreRecipe(recipe: ExploreRecipe) = Unit

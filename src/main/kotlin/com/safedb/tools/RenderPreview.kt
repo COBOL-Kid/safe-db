@@ -159,7 +159,6 @@ private class FakeService(
     )
 
     override suspend fun testConnection(def: ConnectionDef, password: String) = "ok"
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) {}
     override suspend fun createConnection(def: ConnectionDef, password: String) = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) {}
     override suspend fun listConnections() = connections

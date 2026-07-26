@@ -59,7 +59,7 @@ fun ConnectionsScreen(
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
     val deleteError by viewModel.deleteError.collectAsState()
-    var showFormPlaceholder by remember { mutableStateOf(false) }
+    var showConnectionForm by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<ConnectionDef?>(null) }
 
     ConfirmDialog(
@@ -92,8 +92,8 @@ fun ConnectionsScreen(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            if (!showFormPlaceholder) {
-                PrimaryButton(onClick = { showFormPlaceholder = true }) {
+            if (!showConnectionForm) {
+                PrimaryButton(onClick = { showConnectionForm = true }) {
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text("Add Connection", modifier = Modifier.padding(start = 8.dp))
                 }
@@ -103,7 +103,7 @@ fun ConnectionsScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         when {
-            showFormPlaceholder -> Box(
+            showConnectionForm -> Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(32.dp),
@@ -112,10 +112,10 @@ fun ConnectionsScreen(
                 ConnectionForm(
                     service = service,
                     onSaved = {
-                        showFormPlaceholder = false
+                        showConnectionForm = false
                         onSaved()
                     },
-                    onCancel = { showFormPlaceholder = false },
+                    onCancel = { showConnectionForm = false },
                     modifier = Modifier.widthIn(max = 720.dp),
                 )
             }
@@ -130,7 +130,7 @@ fun ConnectionsScreen(
                 title = "No connections yet",
                 subtitle = "Add a connection to start exploring your data.",
             ) {
-                PrimaryButton(onClick = { showFormPlaceholder = true }) {
+                PrimaryButton(onClick = { showConnectionForm = true }) {
                     Text("Add Connection")
                 }
             }

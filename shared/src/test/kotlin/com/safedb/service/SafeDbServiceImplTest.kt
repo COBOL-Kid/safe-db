@@ -62,7 +62,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun saveConnectionAcceptsEmptyPassword() = runBlocking {
+    fun createConnectionAcceptsEmptyPassword() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val service = SafeDbServiceImpl(
@@ -71,7 +71,7 @@ class SafeDbServiceImplTest {
             settingsStore = SettingsStore.new(dir),
         )
 
-        service.saveConnection(sampleConnection(), "")
+        service.createConnection(sampleConnection(), "")
 
         assertEquals(
             "",
@@ -80,7 +80,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun saveConnectionRollsBackProfileWhenPasswordSaveFails() = runBlocking {
+    fun createConnectionRollsBackProfileWhenPasswordSaveFails() = runBlocking {
         SecretsManager.useStoreForTest(FailingSaveStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
@@ -91,7 +91,7 @@ class SafeDbServiceImplTest {
         )
 
         assertFailsWith<IllegalStateException> {
-            service.saveConnection(sampleConnection(), "secret")
+            service.createConnection(sampleConnection(), "secret")
         }
 
         assertEquals(null, configStore.get("c1"))

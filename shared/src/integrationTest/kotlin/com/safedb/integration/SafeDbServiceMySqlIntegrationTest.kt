@@ -40,7 +40,7 @@ class SafeDbServiceMySqlIntegrationTest {
             settingsStore = SettingsStore.new(dir),
         )
 
-        service.saveConnection(def, IntegrationAssumptions.mysqlPassword)
+        service.createConnection(def, IntegrationAssumptions.mysqlPassword)
         val schema = service.getSchema(def.id)
         val spec = IntegrationFixtures.customersQuery(schema, limit = 5)
 
@@ -77,7 +77,7 @@ class MySqlQuerySafetyIntegrationTest {
                 queryStore = queryStore,
                 settingsStore = settingsStore,
             )
-            service.saveConnection(def, IntegrationAssumptions.mysqlPassword)
+            service.createConnection(def, IntegrationAssumptions.mysqlPassword)
 
             val error = assertFailsWith<IllegalArgumentException> {
                 service.runQuery(

@@ -61,6 +61,7 @@ import com.safedb.explore.visualizationTemplates
 import com.safedb.model.ConnectionDef
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.ExploreViewModel
@@ -551,12 +552,7 @@ internal fun ExploreMode.displayName(): String = when (this) {
 
 @Composable
 private fun RecipePill(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(3.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.clickable(onClick = onClick),
-    ) { Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium) }
+    SelectablePill(label, selected, onClick)
 }
 
 @Composable
