@@ -49,7 +49,6 @@ import com.safedb.explore.VisualizationMark
 import com.safedb.explore.VisualizationPreview
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
-import com.safedb.ui.theme.VisualizationSeriesPalette
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -248,6 +247,7 @@ internal fun VisualizationChart(
 
 @Composable
 private fun VisualizationLegend(preview: VisualizationPreview, modifier: Modifier = Modifier) {
+    val seriesPalette = SafeDbTheme.colors.series
     FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -257,7 +257,7 @@ private fun VisualizationLegend(preview: VisualizationPreview, modifier: Modifie
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(9.dp).background(
-                        VisualizationSeriesPalette[index % VisualizationSeriesPalette.size],
+                        seriesPalette[index % seriesPalette.size],
                         CircleShape,
                     ),
                 )
@@ -312,6 +312,7 @@ private fun PlotChart(
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val surfaceColor = MaterialTheme.colorScheme.surface
+    val seriesPalette = SafeDbTheme.colors.series
     val labelStyle = DataMono.copy(color = labelColor)
     val seriesIndex = preview.series.mapIndexed { index, series -> series.key to index }.toMap()
 
@@ -365,7 +366,7 @@ private fun PlotChart(
             when (preview.chartType) {
                 ChartType.Bar, ChartType.Histogram -> geometry.regions.forEach { region ->
                     val mark = preview.marks.first { it.id == region.markId }
-                    val color = VisualizationSeriesPalette[seriesIndex[mark.seriesKey]?.rem(VisualizationSeriesPalette.size) ?: 0]
+                    val color = seriesPalette[seriesIndex[mark.seriesKey]?.rem(seriesPalette.size) ?: 0]
                     drawRect(color, region.bounds.topLeft, region.bounds.size)
                     if (hovered?.id == mark.id) drawRect(labelColor, region.bounds.topLeft, region.bounds.size, style = Stroke(2f))
                     if (config.showLabels && region.bounds.height > 16f) {
@@ -374,7 +375,7 @@ private fun PlotChart(
                 }
                 ChartType.Line -> {
                     preview.marks.groupBy { it.seriesKey }.forEach { (key, marks) ->
-                        val color = VisualizationSeriesPalette[seriesIndex[key]?.rem(VisualizationSeriesPalette.size) ?: 0]
+                        val color = seriesPalette[seriesIndex[key]?.rem(seriesPalette.size) ?: 0]
                         marks.zipWithNext().forEach { (left, right) ->
                             drawLine(color, geometry.points.getValue(left.id), geometry.points.getValue(right.id), strokeWidth = 3f)
                         }
@@ -386,7 +387,7 @@ private fun PlotChart(
                     }
                 }
                 ChartType.Scatter -> preview.marks.forEach { mark ->
-                    val color = VisualizationSeriesPalette[seriesIndex[mark.seriesKey]?.rem(VisualizationSeriesPalette.size) ?: 0]
+                    val color = seriesPalette[seriesIndex[mark.seriesKey]?.rem(seriesPalette.size) ?: 0]
                     val region = geometry.regions.first { it.markId == mark.id }
                     drawCircle(color.copy(alpha = 0.82f), region.bounds.width / 2f, region.bounds.center)
                     if (hovered?.id == mark.id) drawCircle(labelColor, region.bounds.width / 2f + 2f, region.bounds.center, style = Stroke(2f))

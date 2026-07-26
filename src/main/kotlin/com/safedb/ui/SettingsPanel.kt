@@ -32,6 +32,8 @@ import com.safedb.model.Dialect
 import com.safedb.model.Settings
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.ColorSchemePicker
+import com.safedb.ui.components.ModeToggle
 import com.safedb.viewmodel.SettingsViewModel
 
 @Composable
@@ -80,6 +82,40 @@ fun SettingsPanel(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                saveError?.let { error ->
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Column {
+                    Text("Appearance", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Control Plane keeps the same sharp layout in every scheme.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+                    )
+                    ModeToggle(
+                        isDark = settings.theme == "dark",
+                        onSelect = viewModel::setDarkMode,
+                    )
+                    Text(
+                        "Color scheme",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 14.dp, bottom = 6.dp),
+                    )
+                    ColorSchemePicker(
+                        selected = settings.palette(),
+                        isDark = settings.theme == "dark",
+                        onSelect = viewModel::setColorScheme,
+                    )
+                }
+
+                HorizontalDivider()
+
                 Column {
                     Text(
                         "EXPLAIN cost thresholds",
@@ -116,14 +152,6 @@ fun SettingsPanel(
                         modifier = Modifier.padding(top = 8.dp),
                     ) {
                         Text("Save thresholds")
-                    }
-                    saveError?.let { error ->
-                        Text(
-                            error,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
                     }
                     Text(
                         "Queries above this estimated cost require confirmation.",

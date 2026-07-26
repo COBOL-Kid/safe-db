@@ -10,22 +10,29 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.safedb.model.ThemePalette
 
 object SafeDbTheme {
     val colors: SafeDbColors
         @Composable get() = LocalSafeDbColors.current
+
+    val palette: ThemePalette
+        @Composable get() = LocalThemePalette.current
 }
 
 val LocalSafeDbColors = staticCompositionLocalOf<SafeDbColors> {
     error("SafeDbColors not provided. Wrap content in SafeDbTheme.")
 }
 
+val LocalThemePalette = staticCompositionLocalOf { ThemePalette.DEFAULT }
+
 @Composable
 fun SafeDbTheme(
     isDark: Boolean = isSystemInDarkTheme(),
+    palette: ThemePalette = ThemePalette.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    val (colorScheme, safeDbColors) = if (isDark) darkScheme() else lightScheme()
+    val (colorScheme, safeDbColors) = if (isDark) darkScheme(palette) else lightScheme(palette)
 
     val scrollbarStyle = ScrollbarStyle(
         minimalHeight = 32.dp,
@@ -38,6 +45,7 @@ fun SafeDbTheme(
 
     CompositionLocalProvider(
         LocalSafeDbColors provides safeDbColors,
+        LocalThemePalette provides palette,
         LocalScrollbarStyle provides scrollbarStyle,
     ) {
         MaterialTheme(

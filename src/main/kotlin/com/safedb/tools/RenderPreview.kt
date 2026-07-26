@@ -50,6 +50,7 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
+import com.safedb.model.ThemePalette
 import com.safedb.model.markIndexedColumns
 import com.safedb.service.SafeDbService
 import com.safedb.ui.AppShell
@@ -70,7 +71,9 @@ import java.io.File
  * Dev-only utility: renders the main screens headlessly to PNG files in
  * /tmp/safedb-preview for visual verification without a display.
  */
-private class FakeService : SafeDbService {
+private class FakeService(
+    private val settings: Settings = Settings(),
+) : SafeDbService {
     val connections = listOf(
         ConnectionDef(
             id = "c1", name = "Production Replica", dialect = Dialect.Postgres,
@@ -203,18 +206,24 @@ private class FakeService : SafeDbService {
     )
 
     override suspend fun clearHistory() {}
-    override suspend fun getSettings() = Settings()
+    override suspend fun getSettings() = settings
     override suspend fun saveSettings(settings: Settings) {}
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
-private fun render(
+internal fun render(
     name: String,
     isDark: Boolean,
+    palette: ThemePalette = ThemePalette.DEFAULT,
     sidebarCollapsed: Boolean = false,
     prepare: (AppState, AppViewModel) -> Unit,
 ) {
-    val service = FakeService()
+    val service = FakeService(
+        Settings(
+            theme = if (isDark) "dark" else Settings.DEFAULT_THEME,
+            colorScheme = palette.id,
+        ),
+    )
     val appState = AppState(service)
     val viewModel = AppViewModel(service)
     Thread.sleep(700)
@@ -222,7 +231,7 @@ private fun render(
     Thread.sleep(700)
 
     ImageComposeScene(width = 1280, height = 832, density = Density(1f)) {
-        SafeDbTheme(isDark = isDark) {
+        SafeDbTheme(isDark = isDark, palette = palette) {
             androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
                 AppShell(
                     appState = appState,

@@ -28,6 +28,7 @@ import com.safedb.export.writeVisualizationPng
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.QuerySpec
+import com.safedb.model.ThemePalette
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -279,7 +280,11 @@ class ExploreViewModel(
         saveResultCsv(result, path)
     }
 
-    fun saveVisualizationPng(path: Path, isDark: Boolean) {
+    fun saveVisualizationPng(
+        path: Path,
+        isDark: Boolean,
+        palette: ThemePalette = ThemePalette.DEFAULT,
+    ) {
         runCatching {
             writeVisualizationPng(
                 preview = visualizationPreview,
@@ -287,6 +292,7 @@ class ExploreViewModel(
                 sampleRowCount = session.sample.rowCount,
                 sampleTruncated = session.sample.truncated,
                 isDark = isDark,
+                palette = palette,
                 path = path,
             )
         }.fold(

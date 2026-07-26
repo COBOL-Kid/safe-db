@@ -100,8 +100,8 @@ val verifyUnitTestDiscovery = tasks.register("verifyUnitTestDiscovery") {
             logger.lifecycle("$label discovery verified: $executed tests")
         }
 
-        verifySuite("desktop", layout.buildDirectory.dir("test-results/test").get().asFile, 78)
-        verifySuite("shared", project(":shared").layout.buildDirectory.dir("test-results/jvmTest").get().asFile, 212)
+        verifySuite("desktop", layout.buildDirectory.dir("test-results/test").get().asFile, 89)
+        verifySuite("shared", project(":shared").layout.buildDirectory.dir("test-results/jvmTest").get().asFile, 228)
     }
 }
 
@@ -276,4 +276,11 @@ tasks.register<JavaExec>("renderPreview") {
     description = "Render main screens headlessly to /tmp/safedb-preview for visual checks."
     classpath = sourceSets.named("main").get().runtimeClasspath
     mainClass.set("com.safedb.tools.RenderPreviewKt")
+}
+
+tasks.register<JavaExec>("renderThemeGallery") {
+    group = "safe-db"
+    description = "Render the color scheme picker and Connections screen for every scheme."
+    classpath = sourceSets.named("main").get().runtimeClasspath
+    mainClass.set("com.safedb.tools.RenderThemeGalleryKt")
 }

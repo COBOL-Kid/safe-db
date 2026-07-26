@@ -205,6 +205,7 @@ fun ExploreWindowContent(
                         }
                     }
                     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                    val themePalette = SafeDbTheme.palette
                     VisualizationExportBar(
                         viewModel = viewModel,
                         enabled = viewModel.visualizationPreview.ready,
@@ -213,7 +214,7 @@ fun ExploreWindowContent(
                         },
                         onExportPng = {
                             chooseExportFile("${session.connectionLabel}-chart", "png")?.let {
-                                viewModel.saveVisualizationPng(it, isDark)
+                                viewModel.saveVisualizationPng(it, isDark, themePalette)
                             }
                         },
                     )

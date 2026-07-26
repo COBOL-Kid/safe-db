@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationPreview
+import com.safedb.model.ThemePalette
 import com.safedb.ui.VisualizationChart
 import com.safedb.ui.theme.SafeDbTheme
 import org.jetbrains.skia.EncodedImageFormat
@@ -26,6 +27,7 @@ fun writeVisualizationPng(
     sampleRowCount: Int,
     sampleTruncated: Boolean,
     isDark: Boolean,
+    palette: ThemePalette = ThemePalette.DEFAULT,
     path: Path,
 ) {
     require(preview.ready) { "Complete the chart before exporting." }
@@ -34,7 +36,7 @@ fun writeVisualizationPng(
         height = VISUALIZATION_EXPORT_HEIGHT,
         density = Density(1f),
     ) {
-        SafeDbTheme(isDark = isDark) {
+        SafeDbTheme(isDark = isDark, palette = palette) {
             Surface(color = MaterialTheme.colorScheme.background) {
                 VisualizationChart(
                     preview = preview,

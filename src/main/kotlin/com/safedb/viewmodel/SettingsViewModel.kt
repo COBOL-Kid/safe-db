@@ -2,6 +2,7 @@ package com.safedb.viewmodel
 
 import com.safedb.model.Dialect
 import com.safedb.model.Settings
+import com.safedb.model.ThemePalette
 import com.safedb.model.normalizeSettings
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,9 @@ class SettingsViewModel(
     val isDark: Boolean
         get() = _settings.value.theme == "dark"
 
+    val palette: ThemePalette
+        get() = _settings.value.palette()
+
     suspend fun load() {
         _loading.value = true
         _loadError.value = null
@@ -42,11 +46,24 @@ class SettingsViewModel(
     }
 
     fun toggleTheme() {
+        setDarkMode(!isDark)
+    }
+
+    fun setDarkMode(isDark: Boolean) {
+        val next = if (isDark) "dark" else Settings.DEFAULT_THEME
+        if (_settings.value.theme == next) return
         scope.launch {
             _saveError.value = null
-            val next = if (_settings.value.theme == "dark") Settings.DEFAULT_THEME else "dark"
             val updated = _settings.value.copy(theme = next)
             save(updated)
+        }
+    }
+
+    fun setColorScheme(palette: ThemePalette) {
+        if (_settings.value.palette() == palette) return
+        scope.launch {
+            _saveError.value = null
+            save(_settings.value.copy(colorScheme = palette.id))
         }
     }
 

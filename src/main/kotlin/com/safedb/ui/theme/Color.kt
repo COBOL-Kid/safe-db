@@ -5,6 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import com.safedb.model.ThemePalette
 
 val VisualizationSeriesPalette = listOf(
     Color(0xFF0B5ED7),
@@ -62,6 +63,7 @@ data class SafeDbColors(
     val onUq: Color,
     val uqContainer: Color,
     val onUqContainer: Color,
+    val series: List<Color>,
 )
 
 // ------------------------------------------------------------------
@@ -204,7 +206,7 @@ private val DarkOnUq = Color(0xFF0B1120)
 private val DarkUqContainer = Color(0xFF221840)
 private val DarkOnUqContainer = Color(0xFFC4B5FD) // violet-300
 
-fun lightScheme(): Pair<ColorScheme, SafeDbColors> =
+private fun controlBlueLightScheme(): Pair<ColorScheme, SafeDbColors> =
     lightColorScheme(
         primary = LightPrimary,
         onPrimary = LightOnPrimary,
@@ -272,9 +274,10 @@ fun lightScheme(): Pair<ColorScheme, SafeDbColors> =
         onUq = LightOnUq,
         uqContainer = LightUqContainer,
         onUqContainer = LightOnUqContainer,
+        series = VisualizationSeriesPalette,
     )
 
-fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
+private fun controlBlueDarkScheme(): Pair<ColorScheme, SafeDbColors> =
     darkColorScheme(
         primary = DarkPrimary,
         onPrimary = DarkOnPrimary,
@@ -342,4 +345,17 @@ fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
         onUq = DarkOnUq,
         uqContainer = DarkUqContainer,
         onUqContainer = DarkOnUqContainer,
+        series = VisualizationSeriesPalette,
     )
+
+fun lightScheme(palette: ThemePalette = ThemePalette.DEFAULT): Pair<ColorScheme, SafeDbColors> =
+    when (palette) {
+        ThemePalette.ControlBlue -> controlBlueLightScheme()
+        else -> paletteSpecFor(palette, isDark = false).toScheme(isDark = false)
+    }
+
+fun darkScheme(palette: ThemePalette = ThemePalette.DEFAULT): Pair<ColorScheme, SafeDbColors> =
+    when (palette) {
+        ThemePalette.ControlBlue -> controlBlueDarkScheme()
+        else -> paletteSpecFor(palette, isDark = true).toScheme(isDark = true)
+    }

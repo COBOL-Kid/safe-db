@@ -17,6 +17,7 @@ import com.safedb.model.Settings
 import com.safedb.model.TableRef
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.model.ThemePalette
 import com.safedb.model.normalizeSettings
 import java.nio.file.Files
 import kotlin.test.Test
@@ -128,6 +129,7 @@ class StoreTest {
         val store = SettingsStore.new(dir)
         val defaults = store.load()
         assertEquals("light", defaults.theme)
+        assertEquals(ThemePalette.DEFAULT.id, defaults.colorScheme)
         assertEquals(100_000.0, defaults.explainCostThreshold)
         assertTrue(defaults.blockedSchemas.isEmpty())
 
@@ -135,6 +137,7 @@ class StoreTest {
         val loaded = store.load()
         assertEquals(listOf("audit"), loaded.blockedSchemas)
         assertEquals("light", loaded.theme)
+        assertEquals(ThemePalette.DEFAULT.id, loaded.colorScheme)
         assertEquals(100_000.0, loaded.explainCostThreshold)
     }
 
@@ -156,12 +159,25 @@ class StoreTest {
             blockedSchemas = listOf("pg_catalog", "information_schema"),
             explainCostThreshold = 42.5,
             theme = "dark",
+            colorScheme = ThemePalette.Oxide.id,
         )
         store.save(saved)
         val loaded = store.load()
         assertEquals(saved.blockedSchemas, loaded.blockedSchemas)
         assertEquals(saved.explainCostThreshold, loaded.explainCostThreshold)
         assertEquals("dark", loaded.theme)
+        assertEquals(ThemePalette.Oxide.id, loaded.colorScheme)
+    }
+
+    @Test
+    fun settingsStoreRepairsUnknownColorScheme() {
+        val dir = tempDir()
+        Files.writeString(dir.resolve("settings.json"), """{"color_scheme":"future-scheme"}""")
+
+        val settings = SettingsStore.new(dir).load()
+
+        assertEquals(ThemePalette.DEFAULT.id, settings.colorScheme)
+        assertEquals(ThemePalette.DEFAULT, settings.palette())
     }
 
     @Test
@@ -272,11 +288,13 @@ class StoreTest {
                 blockedSchemas = listOf("Audit", "audit"),
                 explainCostThreshold = 0.5,
                 theme = "dark",
+                colorScheme = " SIGNAL-TEAL ",
             ),
         )
         assertEquals(listOf("audit"), normalized.blockedSchemas)
         assertEquals(1.0, normalized.explainCostThreshold)
         assertEquals("dark", normalized.theme)
+        assertEquals(ThemePalette.SignalTeal.id, normalized.colorScheme)
     }
 
     @Test

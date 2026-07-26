@@ -12,6 +12,7 @@ import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
+import com.safedb.model.ThemePalette
 import com.safedb.model.TransportSecurity
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +126,31 @@ class ViewModelsTest {
     }
 
     @Test
+    fun settingsViewModelPersistsModeAndColorSchemeWithoutRedundantSaves() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SettingsViewModel(service, scope)
+        viewModel.load()
+        advanceUntilIdle()
+
+        viewModel.setDarkMode(false)
+        viewModel.setColorScheme(ThemePalette.ControlBlue)
+        advanceUntilIdle()
+        assertEquals(0, service.settingsSaveCount)
+
+        viewModel.setColorScheme(ThemePalette.Oxide)
+        advanceUntilIdle()
+        assertEquals(ThemePalette.Oxide.id, viewModel.settings.value.colorScheme)
+        assertEquals(ThemePalette.Oxide.id, service.savedSettings?.colorScheme)
+        assertEquals(1, service.settingsSaveCount)
+
+        viewModel.setDarkMode(true)
+        advanceUntilIdle()
+        assertEquals("dark", viewModel.settings.value.theme)
+        assertEquals(2, service.settingsSaveCount)
+    }
+
+    @Test
     fun settingsViewModelRejectsInvalidThreshold() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val scope = TestScope(dispatcher)
@@ -229,6 +255,7 @@ private class RecordingSafeDbService : SafeDbService {
     var failHistoryClear = false
     var failSavedMutation = false
     var failSettingsSave = false
+    var settingsSaveCount = 0
 
     private val connection = ConnectionDef(
         id = "c1",
@@ -292,6 +319,7 @@ private class RecordingSafeDbService : SafeDbService {
     override suspend fun getSettings(): Settings = Settings.default()
     override suspend fun saveSettings(settings: Settings) {
         if (failSettingsSave) error("settings save failed")
+        settingsSaveCount += 1
         savedSettings = settings
     }
 }
