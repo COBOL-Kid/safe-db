@@ -6,14 +6,18 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class RecipesViewModel(
     private val service: SafeDbService,
     private val scope: CoroutineScope,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val _recipes = MutableStateFlow<List<ExploreRecipe>>(emptyList())
     val recipes: StateFlow<List<ExploreRecipe>> = _recipes.asStateFlow()
@@ -45,7 +49,8 @@ class RecipesViewModel(
     fun import(path: Path, onComplete: (ExploreRecipe?) -> Unit = {}) {
         scope.launch {
             runCatching {
-                service.importExploreRecipe(Files.readString(path), Instant.now().epochSecond.toString())
+                val json = withContext(ioDispatcher) { Files.readString(path) }
+                service.importExploreRecipe(json, Instant.now().epochSecond.toString())
             }.onSuccess { recipe ->
                 load()
                 onComplete(recipe)
@@ -60,7 +65,7 @@ class RecipesViewModel(
         scope.launch {
             runCatching {
                 val json = service.exportExploreRecipe(recipe)
-                com.safedb.persist.atomicWrite(path, json)
+                withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
             }.onSuccess { onComplete(true) }
                 .onFailure { _error.value = it.message ?: it.toString(); onComplete(false) }
         }

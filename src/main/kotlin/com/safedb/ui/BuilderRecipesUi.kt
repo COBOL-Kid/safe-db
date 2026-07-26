@@ -24,7 +24,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,14 +45,11 @@ import com.safedb.explore.resolveRecipeFields
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
-import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.RecipesViewModel
-import java.io.File
 import java.time.Instant
-import javax.swing.JFileChooser
 
 @Composable
 internal fun BuilderRecipeButton(
@@ -76,23 +72,19 @@ internal fun BuilderRecipeButton(
         Icon(Icons.Default.Bookmarks, contentDescription = null, modifier = Modifier.size(17.dp))
         Text("Recipes", modifier = Modifier.padding(start = 5.dp))
     }
-    ConfirmDialog(
-        open = deleting != null,
-        title = "Delete recipe?",
-        message = deleting?.let { "Delete “${it.name}”? This cannot be undone." }.orEmpty(),
-        confirmLabel = "Delete",
-        onConfirm = { deleting?.let { recipesViewModel.delete(it.id) }; deleting = null },
-        onCancel = { deleting = null },
+    RecipeMaintenanceDialogs(
+        deleting = deleting,
+        renaming = renaming,
+        renameValue = renameValue,
+        onRenameValueChange = { renameValue = it },
+        onDelete = { recipesViewModel.delete(it.id); deleting = null },
+        onDeleteDismiss = { deleting = null },
+        onRename = { recipe, name ->
+            recipesViewModel.save(recipe.copy(name = name, updatedAt = Instant.now().epochSecond.toString()))
+            renaming = null
+        },
+        onRenameDismiss = { renaming = null },
     )
-    renaming?.let { recipe ->
-        AlertDialog(
-            onDismissRequest = { renaming = null },
-            title = { Text("Rename recipe") },
-            text = { OutlinedTextField(renameValue, { renameValue = it }, label = { Text("Name") }, singleLine = true) },
-            confirmButton = { PrimaryButton(onClick = { recipesViewModel.save(recipe.copy(name = renameValue.trim(), updatedAt = Instant.now().epochSecond.toString())); renaming = null }, enabled = renameValue.isNotBlank()) { Text("Rename") } },
-            dismissButton = { SecondaryButton(onClick = { renaming = null }) { Text("Cancel") } },
-        )
-    }
     if (!open) return
     val target = connections.firstOrNull { it.id == connectionId }
     val fields = remember(currentSample, currentSpec.tables) {
@@ -136,7 +128,7 @@ internal fun BuilderRecipeButton(
                 androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("My recipes", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    TextButton(onClick = { chooseBuilderRecipeFile(openFile = true)?.let { recipesViewModel.import(it.toPath()) } }) {
+                    TextButton(onClick = { chooseRecipeFile(open = true)?.let { recipesViewModel.import(it.toPath()) } }) {
                         Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Text("Import", modifier = Modifier.padding(start = 4.dp))
                     }
@@ -168,7 +160,7 @@ internal fun BuilderRecipeButton(
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { recipe.includedModes.forEach { ModeIcon(it, Modifier.size(14.dp)) } }
                             }
                             IconButton(onClick = { renaming = recipe; renameValue = recipe.name }, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Edit, "Rename ${recipe.name}", modifier = Modifier.size(16.dp)) }
-                            IconButton(onClick = { chooseBuilderRecipeFile(false, recipe.name)?.let { recipesViewModel.export(recipe, it.toPath()) } }, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Download, "Export ${recipe.name}", modifier = Modifier.size(16.dp)) }
+                            IconButton(onClick = { chooseRecipeFile(false, recipe.name)?.let { recipesViewModel.export(recipe, it.toPath()) } }, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Download, "Export ${recipe.name}", modifier = Modifier.size(16.dp)) }
                             IconButton(onClick = { deleting = recipe }, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Delete, "Delete ${recipe.name}", modifier = Modifier.size(16.dp)) }
                         }
                     }
@@ -199,17 +191,4 @@ private fun BuilderRecipePill(label: String, selected: Boolean, onClick: () -> U
     Surface(shape = RoundedCornerShape(3.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.clickable(onClick = onClick)) {
         Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
     }
-}
-
-private fun chooseBuilderRecipeFile(openFile: Boolean, suggestedName: String = "explore-recipe"): File? {
-    val safeName = suggestedName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "explore-recipe" }
-    val chooser = JFileChooser().apply {
-        dialogTitle = if (openFile) "Import Explore recipe" else "Export Explore recipe"
-        if (!openFile) selectedFile = File("$safeName.safedb-recipe.json")
-    }
-    val result = if (openFile) chooser.showOpenDialog(null) else chooser.showSaveDialog(null)
-    if (result != JFileChooser.APPROVE_OPTION) return null
-    if (openFile) return chooser.selectedFile
-    val file = chooser.selectedFile
-    return if (file.name.endsWith(".json")) file else File("${file.path}.safedb-recipe.json")
 }

@@ -1,0 +1,190 @@
+package com.safedb.query
+
+import com.safedb.model.FilterGroup
+import com.safedb.model.FilterLiteral
+import com.safedb.model.FilterNode
+import com.safedb.model.FilterSpec
+import com.safedb.model.FilterValue
+import com.safedb.model.GroupConnector
+import com.safedb.model.JoinSpec
+import com.safedb.model.QuerySpec
+import com.safedb.model.TableInfo
+
+interface QueryHydrationTarget {
+    fun clear()
+    fun addTable(tableInfo: TableInfo)
+    val tables: List<AliasRef>
+    fun toggleColumn(alias: String, column: String)
+    fun addJoin(join: JoinSpec)
+    fun setFilters(group: FilterGroup)
+    fun setConnectorOverrides(map: Map<String, GroupConnector>)
+    fun setLimit(limit: Int)
+}
+
+data class AliasRef(val alias: String)
+
+data class HydrationWarnings(
+    val droppedTables: List<String> = emptyList(),
+    val droppedColumns: List<String> = emptyList(),
+    val droppedJoins: Int = 0,
+    val droppedFilters: Boolean = false,
+)
+
+private fun schemaKey(schema: String, name: String): String = "$schema\u0000$name"
+
+fun countFilterLeaves(group: FilterGroup): Int =
+    group.children.sumOf { child ->
+        when (child) {
+            is FilterNode.Leaf -> 1
+            is FilterNode.Group -> countFilterLeaves(child.group)
+        }
+    }
+
+private fun normalizeFilterValue(value: FilterValue?, dataType: String): FilterValue? {
+    if (value == null) return null
+    val kind = literalKindForColumn(dataType)
+    return when (value) {
+        is FilterValue.Single -> FilterValue.Single(value.literal.copy(kind = kind))
+        is FilterValue.ListValue -> FilterValue.ListValue(
+            value.literals.map { it.copy(kind = kind) },
+        )
+        is FilterValue.Pair -> FilterValue.Pair(
+            value.first.copy(kind = kind),
+            value.second.copy(kind = kind),
+        )
+    }
+}
+
+private fun remapFilterGroup(
+    group: FilterGroup,
+    aliasMap: Map<String, String>,
+    tableByNewAlias: Map<String, TableInfo>,
+): FilterGroup {
+    val children = mutableListOf<FilterNode>()
+    for (child in group.children) {
+        when (child) {
+            is FilterNode.Leaf -> {
+                val tableAlias = aliasMap[child.spec.tableAlias]
+                val tableInfo = tableAlias?.let { tableByNewAlias[it] }
+                val columnInfo = tableInfo?.columns?.find { it.name == child.spec.column }
+                if (tableAlias != null && columnInfo != null) {
+                    children.add(
+                        FilterNode.Leaf(
+                            child.spec.copy(
+                                tableAlias = tableAlias,
+                                value = normalizeFilterValue(child.spec.value, columnInfo.dataType),
+                            ),
+                        ),
+                    )
+                }
+            }
+            is FilterNode.Group -> {
+                val remapped = remapFilterGroup(child.group, aliasMap, tableByNewAlias)
+                if (remapped.children.isNotEmpty()) {
+                    children.add(FilterNode.Group(remapped))
+                }
+            }
+        }
+    }
+    return group.copy(children = children)
+}
+
+/** Restore a saved or history query spec into the query store, remapping table aliases. */
+fun hydrateQueryFromSpec(
+    spec: QuerySpec,
+    schemaTables: List<TableInfo>,
+    target: QueryHydrationTarget,
+): HydrationWarnings {
+    target.clear()
+
+    val schemaByKey = schemaTables.associateBy { schemaKey(it.schema, it.name) }
+    val aliasMap = mutableMapOf<String, String>()
+    val tableByNewAlias = mutableMapOf<String, TableInfo>()
+    val droppedTables = mutableListOf<String>()
+    val droppedColumns = mutableListOf<String>()
+
+    for (table in spec.tables) {
+        val tableInfo = schemaByKey[schemaKey(table.schema, table.name)]
+        if (tableInfo == null) {
+            droppedTables.add("${table.schema}.${table.name}")
+            continue
+        }
+
+        target.addTable(tableInfo)
+        val newAlias = target.tables.lastOrNull()?.alias
+        if (newAlias != null) {
+            aliasMap[table.alias] = newAlias
+            tableByNewAlias[newAlias] = tableInfo
+        }
+    }
+
+    for (col in spec.columns) {
+        val newAlias = aliasMap[col.tableAlias]
+        val tableInfo = newAlias?.let { tableByNewAlias[it] }
+        if (newAlias != null && tableInfo?.columns?.any { it.name == col.column } == true) {
+            target.toggleColumn(newAlias, col.column)
+        } else {
+            droppedColumns.add("${col.tableAlias}.${col.column}")
+        }
+    }
+
+    var droppedJoins = 0
+    for (join in spec.joins) {
+        val leftAlias = aliasMap[join.leftAlias]
+        val rightAlias = aliasMap[join.rightAlias]
+        val leftTable = leftAlias?.let { tableByNewAlias[it] }
+        val rightTable = rightAlias?.let { tableByNewAlias[it] }
+        val leftColumnExists = leftTable?.columns?.any { it.name == join.leftColumn } == true
+        val rightColumnExists = rightTable?.columns?.any { it.name == join.rightColumn } == true
+        if (leftAlias == null || rightAlias == null || !leftColumnExists || !rightColumnExists) {
+            droppedJoins += 1
+            continue
+        }
+
+        target.addJoin(
+            JoinSpec(
+                leftAlias = leftAlias,
+                leftColumn = join.leftColumn,
+                rightAlias = rightAlias,
+                rightColumn = join.rightColumn,
+            ),
+        )
+    }
+
+    val originalFilterLeaves = countFilterLeaves(spec.filters)
+    val remappedFilters = remapFilterGroup(spec.filters, aliasMap, tableByNewAlias)
+    val droppedFilters = countFilterLeaves(remappedFilters) < originalFilterLeaves
+    target.setFilters(remappedFilters)
+
+    target.setConnectorOverrides(spec.connectorOverrides)
+    target.setLimit(spec.limit)
+
+    return HydrationWarnings(
+        droppedTables = droppedTables,
+        droppedColumns = droppedColumns,
+        droppedJoins = droppedJoins,
+        droppedFilters = droppedFilters,
+    )
+}
+
+fun formatHydrationWarning(warnings: HydrationWarnings): String? {
+    val parts = mutableListOf<String>()
+    if (warnings.droppedTables.isNotEmpty()) {
+        parts.add("missing tables: ${warnings.droppedTables.joinToString(", ")}")
+    }
+    if (warnings.droppedColumns.isNotEmpty()) {
+        val count = warnings.droppedColumns.size
+        parts.add(
+            "$count selected column${if (count != 1) "s" else ""} could not be restored",
+        )
+    }
+    if (warnings.droppedJoins > 0) {
+        val count = warnings.droppedJoins
+        parts.add("${count} join${if (count != 1) "s" else ""} could not be restored")
+    }
+    if (warnings.droppedFilters) {
+        parts.add("some filters were dropped")
+    }
+    if (parts.isEmpty()) return null
+    return "Query restored partially (${parts.joinToString("; ")}). Review before running."
+}

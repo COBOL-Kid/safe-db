@@ -19,6 +19,7 @@ import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ValueKind
@@ -26,17 +27,30 @@ import com.safedb.model.valueKind
 import com.safedb.query.AliasRef
 import com.safedb.query.CANVAS_CARD_HEIGHT
 import com.safedb.query.CANVAS_CARD_WIDTH
-import com.safedb.query.COST_GUARD_PREFIX
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.QueryError
 import com.safedb.query.QueryHydrationTarget
 import com.safedb.query.clampDimension
+import com.safedb.query.countFilterLeaves
+import com.safedb.query.addFilterGroup
+import com.safedb.query.addFilterLeaf
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
+import com.safedb.query.ensureFilterNodeIds
+import com.safedb.query.filterGroupAtPath
+import com.safedb.query.filterLeafIdAtPath
+import com.safedb.query.filterNodeIdAtPath
 import com.safedb.query.formatHydrationWarning
 import com.safedb.query.hydrateQueryFromSpec
 import com.safedb.query.literalKindForColumn
 import com.safedb.query.parseColumnKey
 import com.safedb.query.parseLimit
+import com.safedb.query.pruneFiltersForAlias
+import com.safedb.query.rebuildConnectorOverrides
+import com.safedb.query.removeFilterNode
+import com.safedb.query.updateFilterNode
+import com.safedb.service.QueryFailureException
+import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
 import com.safedb.query.MAX_TABLE_HEIGHT
 import com.safedb.query.MAX_TABLE_WIDTH
@@ -44,7 +58,6 @@ import com.safedb.query.MIN_TABLE_HEIGHT
 import com.safedb.query.MIN_TABLE_WIDTH
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 data class CanvasTable(
     val tableInfo: TableInfo,
@@ -59,6 +72,11 @@ data class BuilderQuerySample(
     val connectionId: String,
     val spec: QuerySpec,
     val result: QueryResult,
+)
+
+data class PendingCostGuard(
+    val request: QueryRunRequest,
+    val reason: String,
 )
 
 typealias NewFilterSpec = FilterSpec
@@ -92,8 +110,11 @@ class QueryViewModel(
         private set
     var error by mutableStateOf<String?>(null)
         private set
-    var pendingCostGuard by mutableStateOf(false)
-        private set
+    private var pendingCostGuardState by mutableStateOf<PendingCostGuard?>(null)
+    val pendingCostGuard: Boolean
+        get() = pendingCostGuardState != null
+    val pendingCostGuardReason: String?
+        get() = pendingCostGuardState?.reason
     var hydrationWarning by mutableStateOf<String?>(null)
         private set
     var warningPopupsDisabled by mutableStateOf(false)
@@ -101,7 +122,7 @@ class QueryViewModel(
 
     val tableCount: Int get() = canvasTables.size
     val canRun: Boolean get() = canvasTables.isNotEmpty() && !running
-    val filterCount: Int get() = countLeaves(filters)
+    val filterCount: Int get() = countFilterLeaves(filters)
 
     val spec: QuerySpec
         get() {
@@ -135,7 +156,7 @@ class QueryViewModel(
         resultSpec = null
         error = null
         running = false
-        pendingCostGuard = false
+        pendingCostGuardState = null
         hydrationWarning = null
         aliasCounter = 0
         connectorOverrideState = emptyMap()
@@ -161,8 +182,8 @@ class QueryViewModel(
         canvasTables.removeAll { it.alias == alias }
         selectedColumns = selectedColumns.filterNot { it.startsWith(columnKeyPrefix(alias)) }.toSet()
         joins.removeAll { it.leftAlias == alias || it.rightAlias == alias }
-        filterGroupState = pruneFiltersReferencingAlias(filters, alias)
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides)
+        filterGroupState = pruneFiltersForAlias(filters, alias)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun moveTable(alias: String, x: Float, y: Float) {
@@ -215,51 +236,51 @@ class QueryViewModel(
     }
 
     fun addFilter(spec: NewFilterSpec) {
-        filterGroupState = addLeafToGroup(filters, emptyList(), spec)
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides)
+        filterGroupState = addFilterLeaf(filters, emptyList(), spec)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     override fun setFilters(group: FilterGroup) {
-        filterGroupState = ensureGroupIds(group)
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides)
+        filterGroupState = ensureFilterNodeIds(group)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun addFilterToGroup(groupPath: List<Int>, spec: NewFilterSpec) {
-        filterGroupState = addLeafToGroup(filters, groupPath, spec)
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides)
+        filterGroupState = addFilterLeaf(filters, groupPath, spec)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun addGroupToGroup(groupPath: List<Int>, connector: GroupConnector) {
-        filterGroupState = addGroupToGroup(filters, groupPath, connector)
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides)
+        filterGroupState = addFilterGroup(filters, groupPath, connector)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun updateFilter(path: List<Int>, spec: NewFilterSpec) {
-        val existingId = getLeafIdAtPath(filters, path)
+        val existingId = filterLeafIdAtPath(filters, path)
         val specWithId = spec.copy(id = existingId ?: spec.id.ifEmpty { newNodeId() })
-        filterGroupState = updateNodeAtPath(filters, path, FilterNode.Leaf(specWithId))
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides)
+        filterGroupState = updateFilterNode(filters, path, FilterNode.Leaf(specWithId))
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun setGroupConnector(path: List<Int>, connector: GroupConnector) {
         filterGroupState = if (path.isEmpty()) {
             filters.copy(connector = connector)
         } else {
-            val group = getGroupAtPath(filters, path)
+            val group = filterGroupAtPath(filters, path)
             if (group != null) {
-                updateNodeAtPath(filters, path, FilterNode.Group(group.copy(connector = connector)))
+                updateFilterNode(filters, path, FilterNode.Group(group.copy(connector = connector)))
             } else {
                 filters
             }
         }
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides, path)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides, path)
     }
 
     override fun setConnectorOverrides(map: Map<String, GroupConnector>) {
-        connectorOverrideState = rebuildOverrides(filters, map)
+        connectorOverrideState = rebuildConnectorOverrides(filters, map)
     }
 
-    fun pathKey(path: List<Int>): String? = childIdAtPath(filters, path)
+    fun pathKey(path: List<Int>): String? = filterNodeIdAtPath(filters, path)
 
     fun getConnectorForChild(path: List<Int>): GroupConnector {
         if (path.isEmpty()) return filters.connector
@@ -267,14 +288,14 @@ class QueryViewModel(
         if (key != null) {
             connectorOverrides[key]?.let { return it }
         }
-        val parent = getGroupAtPath(filters, path.dropLast(1))
+        val parent = filterGroupAtPath(filters, path.dropLast(1))
         return parent?.connector ?: GroupConnector.And
     }
 
     fun setChildConnector(path: List<Int>, connector: GroupConnector) {
         if (path.isEmpty() || path.last() == 0) return
         val key = pathKey(path) ?: return
-        val parent = getGroupAtPath(filters, path.dropLast(1))
+        val parent = filterGroupAtPath(filters, path.dropLast(1))
         val groupDefault = parent?.connector ?: filters.connector
         val next = connectorOverrides.toMutableMap()
         if (connector == groupDefault) {
@@ -292,42 +313,46 @@ class QueryViewModel(
 
     fun removeFilterNode(path: List<Int>) {
         if (path.isEmpty()) return
-        filterGroupState = removeNodeAtPath(filters, path)
-        connectorOverrideState = rebuildOverrides(filters, connectorOverrides)
+        filterGroupState = removeFilterNode(filters, path)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     override fun setLimit(limit: Int) {
         queryLimit = parseLimit(limit)
     }
 
-    fun run(connectionId: String, force: Boolean = false) {
+    fun run(connectionId: String, schema: Schema, force: Boolean = false) {
         if (!canRun) return
-        val executedSpec = spec
+        run(QueryRunRequest(connectionId, spec, schema, force))
+    }
+
+    private fun run(request: QueryRunRequest) {
+        val executedSpec = request.spec
         val generation = ++runGeneration
         running = true
         error = null
         results = null
         resultConnectionId = null
         resultSpec = null
-        pendingCostGuard = false
+        pendingCostGuardState = null
         scope.launch {
             try {
-                val completed = service.runQuery(connectionId, executedSpec, force)
+                val completed = service.runQuery(request)
                 if (generation == runGeneration) {
                     results = completed
-                    resultConnectionId = connectionId
+                    resultConnectionId = request.connectionId
                     resultSpec = executedSpec
                 }
-            } catch (e: Exception) {
+            } catch (failure: QueryFailureException) {
                 if (generation != runGeneration) return@launch
-                val message = e.message ?: e.toString()
-                if (!force && message.startsWith(COST_GUARD_PREFIX)) {
+                val queryError = failure.queryError
+                if (!request.force && queryError is QueryError.CostGuard) {
                     if (warningPopupsDisabled) {
                         try {
-                            val completed = service.runQuery(connectionId, executedSpec, force = true)
+                            val completed = service.runQuery(request.copy(force = true))
                             if (generation == runGeneration) {
                                 results = completed
-                                resultConnectionId = connectionId
+                                resultConnectionId = request.connectionId
                                 resultSpec = executedSpec
                             }
                         } catch (forced: Exception) {
@@ -336,12 +361,14 @@ class QueryViewModel(
                             }
                         }
                     } else {
-                        pendingCostGuard = true
-                        error = message.removePrefix(COST_GUARD_PREFIX)
+                        pendingCostGuardState = PendingCostGuard(request, queryError.reason)
+                        error = queryError.message
                     }
                 } else {
-                    error = message
+                    error = failure.message ?: failure.toString()
                 }
+            } catch (e: Exception) {
+                if (generation == runGeneration) error = e.message ?: e.toString()
             } finally {
                 if (generation == runGeneration) {
                     running = false
@@ -358,8 +385,9 @@ class QueryViewModel(
         return BuilderQuerySample(connectionId, executedSpec, result)
     }
 
-    fun runForced(connectionId: String) {
-        run(connectionId, force = true)
+    fun confirmPendingCostGuard() {
+        val pending = pendingCostGuardState ?: return
+        run(pending.request.copy(force = true))
     }
 
     fun dismissHydrationWarning() {
@@ -367,7 +395,7 @@ class QueryViewModel(
     }
 
     fun clearPendingCostGuard() {
-        pendingCostGuard = false
+        pendingCostGuardState = null
         error = null
     }
 
@@ -414,172 +442,4 @@ internal fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
         (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
             rightAlias == other.leftAlias && rightColumn == other.leftColumn)
 
-private fun newNodeId(): String = UUID.randomUUID().toString()
-
-private fun countLeaves(group: FilterGroup): Int =
-    group.children.sumOf { child ->
-        when (child) {
-            is FilterNode.Leaf -> 1
-            is FilterNode.Group -> countLeaves(child.group)
-        }
-    }
-
-private fun getGroupAtPath(group: FilterGroup, path: List<Int>): FilterGroup? {
-    if (path.isEmpty()) return group
-    val head = path.first()
-    val child = group.children.getOrNull(head) ?: return null
-    return when (child) {
-        is FilterNode.Group -> if (path.size == 1) child.group else getGroupAtPath(child.group, path.drop(1))
-        is FilterNode.Leaf -> null
-    }
-}
-
-private fun addLeafToGroup(group: FilterGroup, path: List<Int>, spec: NewFilterSpec): FilterGroup {
-    val specWithId = spec.copy(id = spec.id.ifEmpty { newNodeId() })
-    if (path.isEmpty()) {
-        return group.copy(children = group.children + FilterNode.Leaf(specWithId))
-    }
-    val head = path.first()
-    val child = group.children.getOrNull(head) as? FilterNode.Group ?: return group
-    val newChildren = group.children.toMutableList()
-    newChildren[head] = FilterNode.Group(addLeafToGroup(child.group, path.drop(1), specWithId))
-    return group.copy(children = newChildren)
-}
-
-private fun addGroupToGroup(group: FilterGroup, path: List<Int>, connector: GroupConnector): FilterGroup {
-    if (path.isEmpty()) {
-        return group.copy(
-            children = group.children + FilterNode.Group(
-                FilterGroup(id = newNodeId(), connector = connector, children = emptyList()),
-            ),
-        )
-    }
-    val head = path.first()
-    val child = group.children.getOrNull(head) as? FilterNode.Group ?: return group
-    val newChildren = group.children.toMutableList()
-    newChildren[head] = FilterNode.Group(addGroupToGroup(child.group, path.drop(1), connector))
-    return group.copy(children = newChildren)
-}
-
-private fun updateNodeAtPath(group: FilterGroup, path: List<Int>, newNode: FilterNode): FilterGroup {
-    if (path.isEmpty()) return group
-    if (path.size == 1) {
-        val idx = path[0]
-        if (idx !in group.children.indices) return group
-        val newChildren = group.children.toMutableList()
-        newChildren[idx] = newNode
-        return group.copy(children = newChildren)
-    }
-    val head = path.first()
-    val child = group.children.getOrNull(head) as? FilterNode.Group ?: return group
-    val newChildren = group.children.toMutableList()
-    newChildren[head] = FilterNode.Group(updateNodeAtPath(child.group, path.drop(1), newNode))
-    return group.copy(children = newChildren)
-}
-
-private fun removeNodeAtPath(group: FilterGroup, path: List<Int>): FilterGroup {
-    if (path.isEmpty()) return group
-    if (path.size == 1) {
-        return group.copy(children = group.children.filterIndexed { index, _ -> index != path[0] })
-    }
-    val head = path.first()
-    val child = group.children.getOrNull(head) as? FilterNode.Group ?: return group
-    val newChildren = group.children.toMutableList()
-    newChildren[head] = FilterNode.Group(removeNodeAtPath(child.group, path.drop(1)))
-    return group.copy(children = newChildren)
-}
-
-private fun pruneFiltersReferencingAlias(group: FilterGroup, alias: String): FilterGroup {
-    val children = group.children.mapNotNull { child ->
-        when (child) {
-            is FilterNode.Leaf -> if (child.spec.tableAlias == alias) null else child
-            is FilterNode.Group -> {
-                val pruned = pruneFiltersReferencingAlias(child.group, alias)
-                if (pruned.children.isEmpty()) null else FilterNode.Group(pruned)
-            }
-        }
-    }
-    return group.copy(children = children)
-}
-
-private fun childIdAtPath(group: FilterGroup, path: List<Int>): String? {
-    if (path.isEmpty()) return group.id.ifEmpty { null }
-    val head = path.first()
-    val child = group.children.getOrNull(head) ?: return null
-    return when (child) {
-        is FilterNode.Leaf -> if (path.size == 1) child.spec.id.ifEmpty { null } else null
-        is FilterNode.Group -> childIdAtPath(child.group, path.drop(1))
-    }
-}
-
-private fun getLeafIdAtPath(group: FilterGroup, path: List<Int>): String? {
-    if (path.isEmpty()) return null
-    val head = path.first()
-    val child = group.children.getOrNull(head) ?: return null
-    return when (child) {
-        is FilterNode.Leaf -> if (path.size == 1) child.spec.id.ifEmpty { null } else null
-        is FilterNode.Group -> getLeafIdAtPath(child.group, path.drop(1))
-    }
-}
-
-private fun ensureGroupIds(group: FilterGroup): FilterGroup =
-    group.copy(
-        id = group.id.ifEmpty { newNodeId() },
-        children = group.children.map { child ->
-            when (child) {
-                is FilterNode.Leaf -> {
-                    val spec = child.spec
-                    FilterNode.Leaf(
-                        if (spec.id.isNotEmpty()) spec else spec.copy(id = newNodeId()),
-                    )
-                }
-                is FilterNode.Group -> FilterNode.Group(ensureGroupIds(child.group))
-            }
-        },
-    )
-
-private fun rebuildOverrides(
-    group: FilterGroup,
-    overrides: Map<String, GroupConnector>,
-    modifiedGroupPath: List<Int>? = null,
-): Map<String, GroupConnector> {
-    val ids = mutableSetOf<String>()
-    val parentMap = mutableMapOf<String, FilterGroup>()
-
-    fun walk(g: FilterGroup) {
-        for ((index, child) in g.children.withIndex()) {
-            when (child) {
-                is FilterNode.Leaf -> {
-                    if (index > 0 && child.spec.id.isNotEmpty()) {
-                        ids.add(child.spec.id)
-                        parentMap[child.spec.id] = g
-                    }
-                }
-                is FilterNode.Group -> {
-                    if (index > 0 && child.group.id.isNotEmpty()) {
-                        ids.add(child.group.id)
-                        parentMap[child.group.id] = g
-                    }
-                    walk(child.group)
-                }
-            }
-        }
-    }
-    walk(group)
-
-    val modifiedGroup = modifiedGroupPath?.let { getGroupAtPath(group, it) }
-    val pruneByParent = modifiedGroup != null
-
-    val next = mutableMapOf<String, GroupConnector>()
-    for ((key, value) in overrides) {
-        if (!ids.contains(key)) continue
-        if (pruneByParent) {
-            val parent = parentMap[key]
-            if (parent != null && parent.id == modifiedGroup.id && parent.connector == value) {
-                continue
-            }
-        }
-        next[key] = value
-    }
-    return next
-}
+private fun newNodeId(): String = java.util.UUID.randomUUID().toString()

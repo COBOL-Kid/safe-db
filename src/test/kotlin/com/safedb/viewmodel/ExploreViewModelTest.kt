@@ -254,6 +254,7 @@ class ExploreViewModelTest {
     @Test
     fun visualizationUpdatesDrillsResetsAndExportsChartData() {
         val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Visualization)
         viewModel.updateVisualization {
             VisualizationConfig(
                 chartType = ChartType.Bar,
@@ -281,6 +282,7 @@ class ExploreViewModelTest {
     @Test
     fun visualizationPngExportsAtRequiredDimensions() {
         val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Visualization)
         viewModel.updateVisualization {
             VisualizationConfig(
                 chartType = ChartType.Kpi,

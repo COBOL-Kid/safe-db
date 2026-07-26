@@ -288,7 +288,7 @@ private class RecordingSafeDbService : SafeDbService {
         ),
     )
 
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult =
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): QueryResult =
         QueryResult(emptyList(), emptyList(), 0, false, emptyList())
 
     override suspend fun listSavedQueries(): List<SavedQuery> =

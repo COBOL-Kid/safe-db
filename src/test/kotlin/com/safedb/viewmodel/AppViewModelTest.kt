@@ -15,11 +15,13 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
-import com.safedb.query.COST_GUARD_PREFIX
+import com.safedb.query.QueryError
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.service.SafeDbService
+import com.safedb.service.QueryFailureException
+import com.safedb.service.QueryRunRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,7 +58,7 @@ class AppViewModelTest {
     @Test
     fun restoreQueryForConnectionLoadsSchemaAndHydratesSpec() = runTest(dispatcher) {
         val service = FakeSafeDbService()
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
 
         var completed: Boolean? = null
@@ -74,7 +76,7 @@ class AppViewModelTest {
     @Test
     fun lockCredentialsDelegatesThroughService() = runTest(dispatcher) {
         val service = FakeSafeDbService()
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
 
         viewModel.lockCredentials()
@@ -86,7 +88,7 @@ class AppViewModelTest {
     @Test
     fun openExploreCreatesSessionAndCloseClearsIt() = runTest(dispatcher) {
         val service = FakeSafeDbService()
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
         val connection = ConnectionDef(
             id = "c1",
@@ -115,7 +117,7 @@ class AppViewModelTest {
     @Test
     fun refreshExploreSampleReplacesSessionSampleAndSpecHash() = runTest(dispatcher) {
         val service = FakeSafeDbService()
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
         val connection = ConnectionDef(
             id = "c1",
@@ -167,7 +169,7 @@ class AppViewModelTest {
         val query = QueryViewModel(FakeSafeDbService(), scope)
         query.addTable(sampleTable())
 
-        query.run("c1")
+        query.run("c1", Schema(listOf(sampleTable())))
         scope.advanceUntilIdle()
 
         assertEquals("c1", query.currentSample("c1")?.connectionId)
@@ -186,7 +188,7 @@ class AppViewModelTest {
         query.addTable(sampleTable())
         query.updateWarningPopupsDisabled(true)
 
-        query.run("c1")
+        query.run("c1", Schema(listOf(sampleTable())))
         scope.advanceUntilIdle()
 
         assertEquals(listOf(false, true), service.forceCalls)
@@ -220,8 +222,8 @@ class AppViewModelTest {
         val query = QueryViewModel(service, scope)
         query.addTable(sampleTable())
 
-        query.run("c1")
-        query.run("c1")
+        query.run("c1", Schema(listOf(sampleTable())))
+        query.run("c1", Schema(listOf(sampleTable())))
         scope.advanceUntilIdle()
 
         assertEquals(listOf(false), service.forceCalls)
@@ -237,7 +239,7 @@ class AppViewModelTest {
         val query = QueryViewModel(service, scope)
         query.addTable(sampleTable())
 
-        query.run("c1")
+        query.run("c1", Schema(listOf(sampleTable())))
         assertTrue(query.running)
         scope.runCurrent()
         assertTrue(started.isCompleted)
@@ -255,7 +257,7 @@ class AppViewModelTest {
     @Test
     fun queryBackedRecipeRestoresRunsAndOpensMatchingExploreSession() = runTest(dispatcher) {
         val service = FakeSafeDbService()
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
         val connection = testConnection()
         val recipe = ExploreRecipe(
@@ -278,7 +280,7 @@ class AppViewModelTest {
     @Test
     fun queryBackedRecipeCanBeCancelledAtCostConfirmation() = runTest(dispatcher) {
         val service = FakeSafeDbService(costGuardFirstRun = true)
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
         val connection = testConnection()
         val recipe = ExploreRecipe(
@@ -295,9 +297,9 @@ class AppViewModelTest {
         viewModel.cancelPendingRecipeRun()
         assertNull(viewModel.pendingRecipeRun.value)
 
-        viewModel.query.runForced(connection.id)
+        viewModel.query.confirmPendingCostGuard()
         advanceUntilIdle()
-        assertNotNull(viewModel.query.currentSample(connection.id))
+        assertNull(viewModel.query.currentSample(connection.id))
         assertNull(viewModel.pendingRecipeRun.value)
         assertNull(viewModel.explore.value)
     }
@@ -305,7 +307,7 @@ class AppViewModelTest {
     @Test
     fun queryBackedRecipeIsCancelledWhenActiveConnectionChanges() = runTest(dispatcher) {
         val service = FakeSafeDbService(costGuardFirstRun = true)
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
         val connection = testConnection()
         val recipe = ExploreRecipe(
@@ -326,7 +328,7 @@ class AppViewModelTest {
     @Test
     fun queryBackedRecipeDoesNotRemainPendingWhenHydratedQueryCannotRun() = runTest(dispatcher) {
         val service = FakeSafeDbService(schemaTables = emptyList())
-        val viewModel = AppViewModel(service)
+        val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
         val connection = testConnection()
         val recipe = ExploreRecipe(
@@ -372,12 +374,12 @@ private class FakeSafeDbService(
 
     override suspend fun getSchema(connectionId: String): Schema = Schema(schemaTables)
 
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult {
-        forceCalls.add(force)
+    override suspend fun runQuery(request: QueryRunRequest): QueryResult {
+        forceCalls.add(request.force)
         queryStarted?.complete(Unit)
         queryGate?.await()
-        if (costGuardFirstRun && !force) {
-            throw IllegalArgumentException("${COST_GUARD_PREFIX}EXPLAIN failed. Confirm to run this query anyway.")
+        if (costGuardFirstRun && !request.force) {
+            throw QueryFailureException(QueryError.CostGuard("EXPLAIN failed", request.spec))
         }
         return QueryResult(
             columns = listOf(ResultColumn("name", "varchar")),

@@ -167,7 +167,7 @@ private class FakeService(
     override suspend fun lockCredentials() {}
     override suspend fun getSchema(connectionId: String) = schema
 
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult =
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): QueryResult =
         QueryResult(
             columns = listOf(
                 ResultColumn("t0__id", "bigint"),
@@ -269,7 +269,9 @@ private fun renderExplore(
         filters = FilterGroup.empty(),
         limit = 100,
     )
-    val sample = runBlocking { service.runQuery("c1", spec, force = false) }
+    val sample = runBlocking {
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec, service.schema))
+    }
     val viewModel = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     if (pivoted) {
         viewModel.updateConfig {
@@ -427,7 +429,9 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
         tables = listOf(TableRef("public", "orders", "t0")),
         columns = emptyList(), joins = emptyList(), filters = FilterGroup.empty(), limit = 100,
     )
-    val sample = runBlocking { service.runQuery("c1", spec, force = false) }
+    val sample = runBlocking {
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec, service.schema))
+    }
     val explore = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     val recipesViewModel = RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined))
     val now = "1784600000"
@@ -497,7 +501,7 @@ fun main() {
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
-                    vm.query.run("c1")
+                    vm.query.run("c1", vm.schema.schema!!)
                 }
             }
             Thread.sleep(900)
@@ -514,7 +518,7 @@ fun main() {
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
-                    vm.query.run("c1")
+                    vm.query.run("c1", vm.schema.schema!!)
                 }
             }
             Thread.sleep(900)

@@ -18,7 +18,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,7 +39,6 @@ import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.LabelMicro
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.model.ConnectionDef
-import com.safedb.model.Dialect
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.EmptyState
@@ -223,7 +222,11 @@ private fun ConnectionCard(
                     .padding(top = 14.dp),
             ) {
                 Text("Open")
-                Icon(Icons.Filled.ArrowForward, contentDescription = null, modifier = Modifier.padding(start = 8.dp).size(16.dp))
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.padding(start = 8.dp).size(16.dp),
+                )
             }
         }
     }
@@ -251,11 +254,3 @@ private fun ConnectionDetailRow(label: String, value: String) {
         )
     }
 }
-
-private fun dialectLabel(dialect: Dialect): String =
-    when (dialect) {
-        Dialect.Postgres -> "PostgreSQL"
-        Dialect.MySql -> "MySQL"
-        Dialect.Mssql -> "SQL Server"
-        Dialect.Oracle -> "Oracle"
-    }

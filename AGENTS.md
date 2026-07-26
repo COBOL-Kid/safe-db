@@ -9,9 +9,9 @@ See the git history for the removed desktop prototype if old implementation cont
 ## Commands
 
 - `./gradlew run` — boot the desktop app
-- `./gradlew check` — unit tests for `:shared` (`jvmTest`) and the desktop app (`test`); no database required
+- `./gradlew check` — unit tests for `:shared` (`test`) and the desktop app (`test`); no database required
 - `./gradlew koverHtmlReport` — merged desktop/shared JVM coverage report; `check` enforces the checked-in coverage and discovery ratchets
-- `./gradlew integrationTest` — env-gated JDBC integration tests in `:shared` (`jvmIntegrationTest`, `@Tag("integration")`); supports seeded MySQL and PostgreSQL fixtures
+- `./gradlew integrationTest` — env-gated JDBC integration tests in `:shared` (`integrationTest`, `@Tag("integration")`); supports seeded MySQL and PostgreSQL fixtures
 - `./gradlew renderPreview` — headless render of the main screens (light + dark) to `/tmp/safedb-preview/*.png` via `ImageComposeScene` with a fake service; use for visual verification without a display
 - `./gradlew seedMysql` — generated local MySQL fixture (~50k orders)
 - `./gradlew seedMysql -PseedMysqlArgs="--orders 20000"` — pass seeder args through Gradle
@@ -22,7 +22,7 @@ See the git history for the removed desktop prototype if old implementation cont
 
 - **Connections** — CRUD via `SafeDbService`; passwords in OS keyring when available, metadata in app data dir; form has show/hide password toggle
 - **Schema introspection** — per-dialect JDBC adapters in `shared/`; system schemas blocked in query validation
-- **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/jvmMain/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
+- **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/main/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
 - **Explore modes** — session-only Pivot and Worksheet analysis of the current immutable query sample; Worksheet supports direct sort/group/filter controls, row/group formulas, summaries, and database-neutral window calculations; Visualization is currently a recipe-capable placeholder
 - **Explore recipes** — local/importable/exportable bundles of one or more Explore mode configurations with an optional Builder `QuerySpec`; recipe files never contain sample rows or credentials
 - **Safety** — read-only selects, row limit (default 100, fixed choices with an interactive max of 5,000, guidance above 1,000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
@@ -43,9 +43,9 @@ Run `./gradlew check` after editing Kotlin/Compose files. There is no separate l
 
 ## Testing
 
-- **Fast gate:** `./gradlew check` — kotlin-test unit tests on JUnit Platform; `:shared` uses KMP `jvmTest`, desktop app uses `test`
+- **Fast gate:** `./gradlew check` — kotlin-test unit tests on JUnit Platform; both `:shared` and the desktop app use `test`
 - **Integration gate (optional):** `./gradlew integrationTest` after seeding MySQL (`scripts/seed_mysql.sh --static`) or PostgreSQL (`testdata_postgres.sql`). Tests skip cleanly when the selected fixture is unreachable unless its `SAFEDB_TEST_REQUIRE_*` flag is true.
-- **Shared module only:** `./gradlew :shared:jvmTest`
+- **Shared module only:** `./gradlew :shared:test`
 - **UI preview:** `./gradlew renderPreview`, then inspect `/tmp/safedb-preview/*.png`
 - **Seeder CLI surface:** `./gradlew seedMysql -PseedMysqlArgs="--help"` and a bad-arg check such as `./gradlew seedMysql -PseedMysqlArgs="--orders nope"` when changing seeding behavior
 - **MySQL env vars for integration/smoke:** `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, `SAFEDB_TEST_MYSQL_DATABASE`, optional `SAFEDB_TEST_MYSQL_DOCKER`

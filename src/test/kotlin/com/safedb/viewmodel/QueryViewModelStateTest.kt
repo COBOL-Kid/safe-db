@@ -116,7 +116,7 @@ private class NoOpService : SafeDbService {
     override suspend fun deleteConnection(id: String) = Unit
     override suspend fun lockCredentials() = Unit
     override suspend fun getSchema(connectionId: String) = Schema(emptyList())
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean) =
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) =
         QueryResult(emptyList(), emptyList(), 0, false, emptyList())
     override suspend fun listSavedQueries() = emptyList<SavedQuery>()
     override suspend fun saveSavedQuery(query: SavedQuery) = Unit

@@ -66,8 +66,8 @@ jobs:
           path: |
             build/reports/tests/test/
             build/test-results/test/
-            shared/build/reports/tests/jvmTest/
-            shared/build/test-results/jvmTest/
+            shared/build/reports/tests/test/
+            shared/build/test-results/test/
             build/reports/kover/
 
   integration:

@@ -65,10 +65,8 @@ import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
-import java.io.File
 import java.time.Instant
 import java.util.UUID
-import javax.swing.JFileChooser
 
 @Composable
 internal fun ExploreRecipeActions(
@@ -297,6 +295,12 @@ internal fun RecipeLibraryDialog(
     val fields = remember(explore.session.sample, explore.session.baseSpec) {
         buildExploreFieldOptions(explore.session.sample, explore.session.baseSpec.tables)
     }
+    val pivotTemplates = remember(explore.session.sample, fields) {
+        listExploreTemplates(explore.session.sample, fields).filterNot { it.isUserTemplate }
+    }
+    val visualizationTemplateCatalog = remember(explore.session.sample, explore.session.baseSpec.tables) {
+        visualizationTemplates(explore.session.sample, explore.session.baseSpec.tables)
+    }
     var selectedBuiltin by remember { mutableStateOf<ExploreBuiltinTemplateId?>(null) }
     var selectedVisualization by remember { mutableStateOf<VisualizationTemplateId?>(null) }
     var pendingMapping by remember { mutableStateOf<ExploreRecipe?>(null) }
@@ -312,23 +316,19 @@ internal fun RecipeLibraryDialog(
             onDismiss = { pendingMapping = null },
         )
     }
-    ConfirmDialog(
-        open = deleting != null,
-        title = "Delete recipe?",
-        message = deleting?.let { "Delete “${it.name}”? This cannot be undone." }.orEmpty(),
-        confirmLabel = "Delete",
-        onConfirm = { deleting?.let { recipesViewModel.delete(it.id) }; deleting = null },
-        onCancel = { deleting = null },
+    RecipeMaintenanceDialogs(
+        deleting = deleting,
+        renaming = renaming,
+        renameValue = renameValue,
+        onRenameValueChange = { renameValue = it },
+        onDelete = { recipesViewModel.delete(it.id); deleting = null },
+        onDeleteDismiss = { deleting = null },
+        onRename = { recipe, name ->
+            recipesViewModel.save(recipe.copy(name = name, updatedAt = Instant.now().epochSecond.toString()))
+            renaming = null
+        },
+        onRenameDismiss = { renaming = null },
     )
-    renaming?.let { recipe ->
-        AlertDialog(
-            onDismissRequest = { renaming = null },
-            title = { Text("Rename recipe") },
-            text = { OutlinedTextField(renameValue, { renameValue = it }, label = { Text("Name") }, singleLine = true) },
-            confirmButton = { PrimaryButton(onClick = { recipesViewModel.save(recipe.copy(name = renameValue.trim(), updatedAt = Instant.now().epochSecond.toString())); renaming = null }, enabled = renameValue.isNotBlank()) { Text("Rename") } },
-            dismissButton = { SecondaryButton(onClick = { renaming = null }) { Text("Cancel") } },
-        )
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -336,7 +336,7 @@ internal fun RecipeLibraryDialog(
         text = {
             Column(modifier = Modifier.widthIn(min = 620.dp, max = 700.dp).heightIn(max = 620.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Built-in recipes", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                listExploreTemplates(explore.session.sample, fields).filterNot { it.isUserTemplate }.forEach { item ->
+                pivotTemplates.forEach { item ->
                     RecipeCard(
                         name = item.name,
                         description = item.description,
@@ -357,7 +357,7 @@ internal fun RecipeLibraryDialog(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 6.dp),
                 )
-                visualizationTemplates(explore.session.sample, explore.session.baseSpec.tables).forEach { template ->
+                visualizationTemplateCatalog.forEach { template ->
                     val available = template.result is VisualizationTemplateBuildResult.Ready
                     RecipeCard(
                         name = template.name,
@@ -410,7 +410,7 @@ internal fun RecipeLibraryDialog(
                     selectedBuiltin?.let { selected ->
                         val result = resolveExploreTemplate(selected, explore.session.sample, fields)
                         if (result !is ExploreTemplateBuildResult.Ready) return@let
-                        val definition = listExploreTemplates(explore.session.sample, fields).first { it.id == selected }
+                        val definition = pivotTemplates.first { it.id == selected }
                         val now = Instant.now().epochSecond.toString()
                         onApply(
                             ExploreRecipe(
@@ -428,7 +428,7 @@ internal fun RecipeLibraryDialog(
                         return@PrimaryButton
                     }
                     val selected = selectedVisualization ?: return@PrimaryButton
-                    val definition = visualizationTemplates(explore.session.sample, explore.session.baseSpec.tables)
+                    val definition = visualizationTemplateCatalog
                         .first { it.id == selected }
                     val result = definition.result as? VisualizationTemplateBuildResult.Ready ?: return@PrimaryButton
                     val now = Instant.now().epochSecond.toString()
@@ -562,17 +562,4 @@ private fun RecipePill(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun RecipeLabel(text: String) {
     Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-}
-
-private fun chooseRecipeFile(open: Boolean, suggestedName: String = "explore-recipe"): File? {
-    val safeName = suggestedName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "explore-recipe" }
-    val chooser = JFileChooser().apply {
-        dialogTitle = if (open) "Import Explore recipe" else "Export Explore recipe"
-        if (!open) selectedFile = File("$safeName.safedb-recipe.json")
-    }
-    val result = if (open) chooser.showOpenDialog(null) else chooser.showSaveDialog(null)
-    if (result != JFileChooser.APPROVE_OPTION) return null
-    if (open) return chooser.selectedFile
-    val file = chooser.selectedFile
-    return if (file.name.endsWith(".json")) file else File("${file.path}.safedb-recipe.json")
 }

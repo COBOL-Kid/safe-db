@@ -11,7 +11,9 @@ import com.safedb.explore.exploreSpecHash
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,8 +22,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class AppViewModel(
-    private val service: SafeDbService,
+    service: SafeDbService,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    private val service = DispatchingSafeDbService(service, ioDispatcher)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     val connections = ConnectionsViewModel(service, scope)
@@ -77,11 +81,16 @@ class AppViewModel(
     }
 
     fun openExplore(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
-        _explore.value = ExploreViewModel(createExploreSession(connection, spec, sample))
+        _explore.value?.close()
+        _explore.value = ExploreViewModel(createExploreSession(connection, spec, sample), computationScope = scope)
     }
 
     fun openExploreRecipe(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult, recipe: ExploreRecipe) {
-        _explore.value = ExploreViewModel(createExploreSession(connection, spec, sample)).also { it.requestRecipe(recipe) }
+        _explore.value?.close()
+        _explore.value = ExploreViewModel(
+            createExploreSession(connection, spec, sample),
+            computationScope = scope,
+        ).also { it.requestRecipe(recipe) }
     }
 
     fun runRecipe(connection: ConnectionDef, recipe: ExploreRecipe) {
@@ -93,7 +102,7 @@ class AppViewModel(
                 return@restoreQueryForConnection
             }
             _pendingRecipeRun.value = PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
-            query.run(connection.id)
+            query.run(connection.id, schema.schema ?: return@restoreQueryForConnection)
         }
     }
 
@@ -118,14 +127,22 @@ class AppViewModel(
     fun refreshExploreSample(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
         val current = _explore.value ?: return
         if (current.session.connectionId != connection.id) return
+        current.close()
         _explore.value = ExploreViewModel(
             session = createExploreSession(connection, spec, sample),
             initialWorkspace = current.workspace,
+            computationScope = scope,
         ).also { it.inheritRecipeTrackingFrom(current) }
     }
 
     fun closeExplore() {
+        _explore.value?.close()
         _explore.value = null
+    }
+
+    fun close() {
+        closeExplore()
+        scope.cancel()
     }
 }
 
