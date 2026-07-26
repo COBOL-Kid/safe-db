@@ -269,7 +269,6 @@ private class RecordingSafeDbService : SafeDbService {
     )
 
     override suspend fun testConnection(def: ConnectionDef, password: String): String = "ok"
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun listConnections(): List<ConnectionDef> =
@@ -288,7 +287,7 @@ private class RecordingSafeDbService : SafeDbService {
         ),
     )
 
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult =
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): QueryResult =
         QueryResult(emptyList(), emptyList(), 0, false, emptyList())
 
     override suspend fun listSavedQueries(): List<SavedQuery> =

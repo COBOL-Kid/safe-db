@@ -109,14 +109,13 @@ class QueryViewModelStateTest {
 
 private class NoOpService : SafeDbService {
     override suspend fun testConnection(def: ConnectionDef, password: String) = "ok"
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun createConnection(def: ConnectionDef, password: String) = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun listConnections() = emptyList<ConnectionDef>()
     override suspend fun deleteConnection(id: String) = Unit
     override suspend fun lockCredentials() = Unit
     override suspend fun getSchema(connectionId: String) = Schema(emptyList())
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean) =
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) =
         QueryResult(emptyList(), emptyList(), 0, false, emptyList())
     override suspend fun listSavedQueries() = emptyList<SavedQuery>()
     override suspend fun saveSavedQuery(query: SavedQuery) = Unit

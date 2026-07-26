@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,6 +37,9 @@ import kotlinx.coroutines.runBlocking
 @Composable
 fun App(appState: AppState, mainWindow: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
+    DisposableEffect(viewModel) {
+        onDispose(viewModel::close)
+    }
     val settings by viewModel.settings.settings.collectAsState()
     val exploreViewModel by viewModel.explore.collectAsState()
     val pendingRecipeRun by viewModel.pendingRecipeRun.collectAsState()

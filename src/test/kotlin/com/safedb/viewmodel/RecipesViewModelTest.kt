@@ -29,7 +29,7 @@ class RecipesViewModelTest {
     fun loadSaveDeleteImportAndExportUpdateState() = runTest {
         val service = RecipeFakeService()
         val scope = TestScope(StandardTestDispatcher(testScheduler))
-        val viewModel = RecipesViewModel(service, scope)
+        val viewModel = RecipesViewModel(service, scope, StandardTestDispatcher(testScheduler))
         val recipe = recipe("r1", "Revenue")
 
         viewModel.load()
@@ -91,14 +91,13 @@ private class RecipeFakeService(private val fail: Boolean = false) : SafeDbServi
         return imported
     }
     override suspend fun testConnection(def: ConnectionDef, password: String) = "ok"
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun createConnection(def: ConnectionDef, password: String) = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun listConnections() = emptyList<ConnectionDef>()
     override suspend fun deleteConnection(id: String) = Unit
     override suspend fun lockCredentials() = Unit
     override suspend fun getSchema(connectionId: String) = Schema(emptyList())
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean) = error("unused")
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) = error("unused")
     override suspend fun listSavedQueries() = emptyList<SavedQuery>()
     override suspend fun saveSavedQuery(query: SavedQuery) = Unit
     override suspend fun deleteSavedQuery(id: String) = Unit

@@ -65,6 +65,11 @@ fun ExploreWindowContent(
 ) {
     val session = viewModel.session
     val preview = viewModel.preview
+    val activePreviewLoading = when (viewModel.workspace.activeMode) {
+        ExploreMode.Pivot -> viewModel.pivotPreviewState.loading
+        ExploreMode.Worksheet -> viewModel.worksheetPreviewState.loading
+        ExploreMode.Visualization -> viewModel.visualizationPreviewState.loading
+    }
     val config = viewModel.config
     val fields = remember(session.sample.columns, session.baseSpec.tables) {
         buildExploreFieldOptions(session.sample, session.baseSpec.tables)
@@ -107,6 +112,13 @@ fun ExploreWindowContent(
                 )
             }
             if (session.sample.truncated) StatusChip("Truncated", StatusChipKind.WARNING)
+            if (activePreviewLoading) {
+                Text(
+                    "Refreshing…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             ExploreModeSelector(
                 selected = viewModel.workspace.activeMode,
                 onSelect = viewModel::selectMode,
@@ -150,10 +162,14 @@ fun ExploreWindowContent(
                             onConfigChange = { next -> viewModel.updateConfig { next } },
                             onToggleRow = viewModel::toggleRowPath,
                             onToggleColumn = viewModel::toggleColumnPath,
-                            onDrill = { rowPath, columnPath, measureAlias -> drillResult = viewModel.sourceRowsFor(rowPath, columnPath, measureAlias) },
+                            onDrill = { rowPath, columnPath, measureAlias ->
+                                if (!viewModel.pivotPreviewState.loading) {
+                                    drillResult = viewModel.sourceRowsFor(rowPath, columnPath, measureAlias)
+                                }
+                            },
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
-                        ExploreExportBar(viewModel, enabled = true) {
+                        ExploreExportBar(viewModel, enabled = !viewModel.pivotPreviewState.loading) {
                             chooseCsvFile(session.connectionLabel)?.let(viewModel::savePreviewCsv)
                         }
                     }
@@ -167,7 +183,7 @@ fun ExploreWindowContent(
                         onToggleGroup = viewModel::toggleWorksheetGroup,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
-                    ExploreExportBar(viewModel, enabled = true) {
+                    ExploreExportBar(viewModel, enabled = !viewModel.worksheetPreviewState.loading) {
                         chooseCsvFile("${session.connectionLabel}-worksheet")?.let(viewModel::saveWorksheetCsv)
                     }
                 }
@@ -198,7 +214,9 @@ fun ExploreWindowContent(
                                 sampleRowCount = session.sample.rowCount,
                                 sampleTruncated = session.sample.truncated,
                                 onMarkClick = { markId ->
-                                    drillResult = viewModel.sourceRowsForVisualizationMark(markId)
+                                    if (!viewModel.visualizationPreviewState.loading) {
+                                        drillResult = viewModel.sourceRowsForVisualizationMark(markId)
+                                    }
                                 },
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                             )
@@ -208,7 +226,7 @@ fun ExploreWindowContent(
                     val themePalette = SafeDbTheme.palette
                     VisualizationExportBar(
                         viewModel = viewModel,
-                        enabled = viewModel.visualizationPreview.ready,
+                        enabled = viewModel.visualizationPreview.ready && !viewModel.visualizationPreviewState.loading,
                         onExportCsv = {
                             chooseExportFile("${session.connectionLabel}-chart-data", "csv")?.let(viewModel::saveVisualizationCsv)
                         },
@@ -266,7 +284,12 @@ private fun ExploreExportBar(viewModel: ExploreViewModel, enabled: Boolean, onEx
         viewModel.exportError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         Box(modifier = Modifier.weight(1f))
         if (viewModel.exportMessage != null || viewModel.exportError != null) SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
-        PrimaryButton(modifier = Modifier.padding(start = 8.dp), onClick = onExport, enabled = enabled) { Text("Export CSV") }
+        if (viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+        PrimaryButton(
+            modifier = Modifier.padding(start = 8.dp),
+            onClick = onExport,
+            enabled = enabled && !viewModel.exporting,
+        ) { Text("Export CSV") }
     }
 }
 
@@ -291,10 +314,19 @@ private fun VisualizationExportBar(
         if (viewModel.exportMessage != null || viewModel.exportError != null) {
             SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
         }
-        SecondaryButton(modifier = Modifier.padding(start = 8.dp), onClick = onExportCsv, enabled = enabled) {
+        if (viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+        SecondaryButton(
+            modifier = Modifier.padding(start = 8.dp),
+            onClick = onExportCsv,
+            enabled = enabled && !viewModel.exporting,
+        ) {
             Text("Export chart data")
         }
-        PrimaryButton(modifier = Modifier.padding(start = 8.dp), onClick = onExportPng, enabled = enabled) {
+        PrimaryButton(
+            modifier = Modifier.padding(start = 8.dp),
+            onClick = onExportPng,
+            enabled = enabled && !viewModel.exporting,
+        ) {
             Text("Export PNG")
         }
     }

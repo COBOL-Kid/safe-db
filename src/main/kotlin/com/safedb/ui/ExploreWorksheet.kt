@@ -80,7 +80,12 @@ import com.safedb.explore.evaluatePivotFormula
 import com.safedb.explore.pivotCellKey
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.model.classifyColumn
+import com.safedb.model.isNumeric
+import com.safedb.model.isTemporal
 import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SectionLabel
+import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
@@ -590,7 +595,7 @@ private fun WorksheetCalculationDialog(
 @Composable
 private fun <T> SelectRow(label: String, choices: List<T>, selected: T, display: (T) -> String, onSelect: (T) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+        SectionLabel(label)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             choices.forEach { choice -> SelectPill(display(choice), choice == selected) { onSelect(choice) } }
         }
@@ -599,14 +604,7 @@ private fun <T> SelectRow(label: String, choices: List<T>, selected: T, display:
 
 @Composable
 private fun SelectPill(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(3.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, maxLines = 1)
-    }
+    SelectablePill(label, selected, onClick)
 }
 
 private enum class CalculationKind(val label: String) {
@@ -662,8 +660,9 @@ private fun filterOps(type: String): List<WorksheetFilterOp> = when {
 
 private fun defaultFilterOp(type: String): WorksheetFilterOp = if (isNumericType(type) || isTemporalType(type)) WorksheetFilterOp.Equals else WorksheetFilterOp.Contains
 
-private fun isNumericType(type: String): Boolean = listOf("int", "decimal", "numeric", "number", "real", "double", "float", "money").any(type.lowercase()::contains)
-private fun isTemporalType(type: String): Boolean = listOf("date", "time").any(type.lowercase()::contains)
+private fun isNumericType(type: String): Boolean = classifyColumn(type).isNumeric()
+
+private fun isTemporalType(type: String): Boolean = classifyColumn(type).isTemporal()
 
 private fun groupingLabel(grouping: PivotGrouping): String = when (grouping) {
     PivotGrouping.Exact -> "Exact values"

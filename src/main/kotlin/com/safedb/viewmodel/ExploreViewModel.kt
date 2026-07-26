@@ -31,11 +31,27 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.ThemePalette
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+data class PreviewState<T>(
+    val value: T,
+    val loading: Boolean = false,
+    val error: String? = null,
+)
 
 class ExploreViewModel(
     val session: ExploreSession,
     initialConfig: ExploreConfig? = null,
     initialWorkspace: ExploreWorkspaceState? = null,
+    private val computationScope: CoroutineScope? = null,
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
@@ -53,6 +69,17 @@ class ExploreViewModel(
         private set
     var visualizationPreview by mutableStateOf(applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables))
         private set
+    var pivotPreviewState by mutableStateOf(PreviewState(preview))
+        private set
+    var worksheetPreviewState by mutableStateOf(PreviewState(worksheetPreview))
+        private set
+    var visualizationPreviewState by mutableStateOf(PreviewState(visualizationPreview))
+        private set
+    private val pivotTask = PreviewTask<ExplorePreviewResult>()
+    private val worksheetTask = PreviewTask<WorksheetPreview>()
+    private val visualizationTask = PreviewTask<VisualizationPreview>()
+    private val dirtyModes = mutableSetOf<ExploreMode>()
+    private val memberOptionsCache = mutableMapOf<String, List<MemberOption>>()
     var appliedRecipeId by mutableStateOf<String?>(null)
         private set
     var pendingRecipe by mutableStateOf<ExploreRecipe?>(null)
@@ -62,40 +89,43 @@ class ExploreViewModel(
         private set
     var exportMessage by mutableStateOf<String?>(null)
         private set
+    var exporting by mutableStateOf(false)
+        private set
 
     fun updateConfig(block: (ExploreConfig) -> ExploreConfig) {
         workspace = workspace.copy(pivot = block(workspace.pivot))
-        preview = applyExplore(session.sample, workspace.pivot)
+        refreshMode(ExploreMode.Pivot)
         exportError = null
         exportMessage = null
     }
 
     fun updateWorksheet(block: (WorksheetConfig) -> WorksheetConfig) {
         workspace = workspace.copy(worksheet = block(workspace.worksheet))
-        worksheetPreview = applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
+        refreshMode(ExploreMode.Worksheet)
         clearExportMessages()
     }
 
     fun updateVisualization(block: (VisualizationConfig) -> VisualizationConfig) {
         workspace = workspace.copy(visualization = block(workspace.visualization))
-        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+        refreshMode(ExploreMode.Visualization)
         clearExportMessages()
     }
 
     fun selectMode(mode: ExploreMode) {
         workspace = workspace.copy(activeMode = mode)
+        if (mode in dirtyModes) refreshMode(mode)
         clearExportMessages()
     }
 
     fun resetConfig() {
         workspace = workspace.copy(pivot = defaultConfig)
-        preview = applyExplore(session.sample, workspace.pivot)
+        refreshMode(ExploreMode.Pivot)
         clearExportMessages()
     }
 
     fun resetVisualization() {
         workspace = workspace.copy(visualization = VisualizationConfig())
-        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+        refreshMode(ExploreMode.Visualization)
         clearExportMessages()
     }
 
@@ -107,13 +137,13 @@ class ExploreViewModel(
 
     fun applyTemplate(templateConfig: ExploreConfig) {
         workspace = workspace.copy(activeMode = ExploreMode.Pivot, pivot = templateConfig)
-        preview = applyExplore(session.sample, workspace.pivot)
+        refreshMode(ExploreMode.Pivot)
         clearExportMessages()
     }
 
     fun applyVisualizationTemplate(templateConfig: VisualizationConfig) {
         workspace = workspace.copy(activeMode = ExploreMode.Visualization, visualization = templateConfig)
-        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+        refreshMode(ExploreMode.Visualization)
         clearExportMessages()
     }
 
@@ -124,9 +154,8 @@ class ExploreViewModel(
             worksheet = recipe.worksheet ?: workspace.worksheet,
             visualization = recipe.visualization ?: workspace.visualization,
         )
-        preview = applyExplore(session.sample, workspace.pivot)
-        worksheetPreview = applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
-        visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+        dirtyModes += setOf(ExploreMode.Pivot, ExploreMode.Worksheet, ExploreMode.Visualization)
+        refreshMode(workspace.activeMode)
         appliedRecipeId = recipe.id
         appliedRecipeBaseline = workspace.recipeSnapshot()
         clearExportMessages()
@@ -186,19 +215,76 @@ class ExploreViewModel(
     }
 
     fun memberOptions(column: String): List<MemberOption> {
-        val index = session.sample.columns.indexOfFirst { it.name == column }
-        if (index < 0) return emptyList()
-        return session.sample.rows
-            .map { row -> row.getOrNull(index) }
-            .groupingBy(::pivotCellKey)
-            .eachCount()
-            .map { (key, count) ->
-                val cell = session.sample.rows.firstNotNullOfOrNull { row ->
-                    row.getOrNull(index)?.takeIf { pivotCellKey(it) == key }
-                }
-                MemberOption(key, memberLabel(cell), count)
+        return memberOptionsCache.getOrPut(column) {
+            val index = session.sample.columns.indexOfFirst { it.name == column }
+            if (index < 0) return@getOrPut emptyList()
+            val cells = linkedMapOf<String, Pair<ResultCell?, Int>>()
+            session.sample.rows.forEach { row ->
+                val cell = row.getOrNull(index)
+                val key = pivotCellKey(cell)
+                val current = cells[key]
+                cells[key] = (current?.first ?: cell) to ((current?.second ?: 0) + 1)
             }
-            .sortedBy { it.label }
+            cells.map { (key, value) -> MemberOption(key, memberLabel(value.first), value.second) }
+                .sortedBy { it.label }
+        }
+    }
+
+    private fun refreshMode(mode: ExploreMode) {
+        dirtyModes += mode
+        if (workspace.activeMode != mode) return
+        val scope = computationScope
+        if (scope == null) {
+            computeModeNow(mode)
+            return
+        }
+        when (mode) {
+            ExploreMode.Pivot -> {
+                val config = workspace.pivot
+                pivotTask.schedule(scope, computeDispatcher, { applyExplore(session.sample, config) },
+                    { pivotPreviewState = pivotPreviewState.copy(loading = true, error = null) },
+                    { result -> preview = result; pivotPreviewState = PreviewState(result); dirtyModes -= mode },
+                    { error -> pivotPreviewState = pivotPreviewState.copy(loading = false, error = error) })
+            }
+            ExploreMode.Worksheet -> {
+                val config = workspace.worksheet
+                worksheetTask.schedule(scope, computeDispatcher, { applyWorksheet(session.sample, config, session.baseSpec.tables) },
+                    { worksheetPreviewState = worksheetPreviewState.copy(loading = true, error = null) },
+                    { result -> worksheetPreview = result; worksheetPreviewState = PreviewState(result); dirtyModes -= mode },
+                    { error -> worksheetPreviewState = worksheetPreviewState.copy(loading = false, error = error) })
+            }
+            ExploreMode.Visualization -> {
+                val config = workspace.visualization
+                visualizationTask.schedule(scope, computeDispatcher, { applyVisualization(session.sample, config, session.baseSpec.tables) },
+                    { visualizationPreviewState = visualizationPreviewState.copy(loading = true, error = null) },
+                    { result -> visualizationPreview = result; visualizationPreviewState = PreviewState(result); dirtyModes -= mode },
+                    { error -> visualizationPreviewState = visualizationPreviewState.copy(loading = false, error = error) })
+            }
+        }
+    }
+
+    private fun computeModeNow(mode: ExploreMode) {
+        when (mode) {
+            ExploreMode.Pivot -> {
+                preview = applyExplore(session.sample, workspace.pivot)
+                pivotPreviewState = PreviewState(preview)
+            }
+            ExploreMode.Worksheet -> {
+                worksheetPreview = applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
+                worksheetPreviewState = PreviewState(worksheetPreview)
+            }
+            ExploreMode.Visualization -> {
+                visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+                visualizationPreviewState = PreviewState(visualizationPreview)
+            }
+        }
+        dirtyModes -= mode
+    }
+
+    fun close() {
+        pivotTask.cancel()
+        worksheetTask.cancel()
+        visualizationTask.cancel()
     }
 
     fun updateMemberFilter(filterId: String, includedKeys: Set<String>) {
@@ -285,7 +371,7 @@ class ExploreViewModel(
         isDark: Boolean,
         palette: ThemePalette = ThemePalette.DEFAULT,
     ) {
-        runCatching {
+        executeExport("Exported chart PNG") {
             writeVisualizationPng(
                 preview = visualizationPreview,
                 config = visualizationConfig,
@@ -295,31 +381,42 @@ class ExploreViewModel(
                 palette = palette,
                 path = path,
             )
-        }.fold(
-            onSuccess = {
-                exportError = null
-                exportMessage = "Exported chart PNG"
-            },
-            onFailure = { error ->
-                exportMessage = null
-                exportError = error.message ?: error.toString()
-            },
-        )
+        }
     }
 
     fun saveResultCsv(result: QueryResult, path: Path) {
-        runCatching {
+        executeExport("Exported ${result.rowCount} row${if (result.rowCount == 1) "" else "s"}") {
             Files.newOutputStream(path).use { output ->
                 writeQueryResultCsv(result, output)
             }
-        }.fold(
+        }
+    }
+
+    private fun executeExport(successMessage: String, block: () -> Unit) {
+        val scope = computationScope
+        if (scope == null) {
+            completeExport(runCatching(block), successMessage)
+            return
+        }
+        scope.launch {
+            exporting = true
+            exportError = null
+            exportMessage = null
+            val outcome = withContext(ioDispatcher) { runCatching(block) }
+            completeExport(outcome, successMessage)
+        }
+    }
+
+    private fun completeExport(outcome: Result<Unit>, successMessage: String) {
+        exporting = false
+        outcome.fold(
             onSuccess = {
                 exportError = null
-                exportMessage = "Exported ${result.rowCount} row${if (result.rowCount == 1) "" else "s"}"
+                exportMessage = successMessage
             },
-            onFailure = { error ->
+            onFailure = {
                 exportMessage = null
-                exportError = error.message ?: error.toString()
+                exportError = it.message ?: it.toString()
             },
         )
     }
@@ -351,3 +448,35 @@ private fun memberLabel(cell: com.safedb.model.ResultCell?): String = when (cell
     is com.safedb.model.ResultCell.TextCell -> cell.value.text
     is com.safedb.model.ResultCell.BinaryCell -> cell.value.base64
 }
+
+/** Latest-result-wins scheduling shared by the independent Explore evaluators. */
+private class PreviewTask<T> {
+    private var generation = 0
+    private var job: Job? = null
+
+    fun schedule(
+        scope: CoroutineScope,
+        dispatcher: CoroutineDispatcher,
+        compute: () -> T,
+        loading: () -> Unit,
+        success: (T) -> Unit,
+        failure: (String) -> Unit,
+    ) {
+        val scheduledGeneration = ++generation
+        job?.cancel()
+        loading()
+        job = scope.launch {
+            delay(PREVIEW_DEBOUNCE_MS)
+            val outcome = runCatching { withContext(dispatcher) { compute() } }
+            if (scheduledGeneration != generation) return@launch
+            outcome.onSuccess(success).onFailure { error -> failure(error.message ?: error.toString()) }
+        }
+    }
+
+    fun cancel() {
+        generation++
+        job?.cancel()
+    }
+}
+
+private const val PREVIEW_DEBOUNCE_MS = 75L

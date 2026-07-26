@@ -35,8 +35,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import java.nio.file.Files
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.jetbrains.skia.Image
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ExploreViewModelTest {
     @Test
     fun defaultConfigChoosesReadableDimensionAndCountMeasure() {
@@ -56,6 +62,27 @@ class ExploreViewModelTest {
         }
 
         assertEquals("pending", (viewModel.preview.result.rows.first()[0] as ResultCell.TextCell).value.text)
+    }
+
+    @Test
+    fun debouncedPreviewPublishesOnlyTheLatestConfig() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val viewModel = ExploreViewModel(
+            createExploreSession(connection(), sampleSpec(), sampleResult()),
+            computationScope = this,
+            computeDispatcher = dispatcher,
+        )
+
+        viewModel.updateConfig { it.copy(sort = ExploreSort(ExploreSortTarget.Dimension("t0__status"), SortDir.Desc)) }
+        viewModel.updateConfig { it.copy(sort = ExploreSort(ExploreSortTarget.Dimension("t0__status"), SortDir.Asc)) }
+
+        assertTrue(viewModel.pivotPreviewState.loading)
+        advanceTimeBy(75)
+        runCurrent()
+
+        assertFalse(viewModel.pivotPreviewState.loading)
+        assertEquals(SortDir.Asc, viewModel.config.sort?.dir)
+        assertEquals("pending", (viewModel.preview.result.rows.first().first() as ResultCell.TextCell).value.text)
     }
 
     @Test
@@ -254,6 +281,7 @@ class ExploreViewModelTest {
     @Test
     fun visualizationUpdatesDrillsResetsAndExportsChartData() {
         val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Visualization)
         viewModel.updateVisualization {
             VisualizationConfig(
                 chartType = ChartType.Bar,
@@ -281,6 +309,7 @@ class ExploreViewModelTest {
     @Test
     fun visualizationPngExportsAtRequiredDimensions() {
         val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Visualization)
         viewModel.updateVisualization {
             VisualizationConfig(
                 chartType = ChartType.Kpi,

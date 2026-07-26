@@ -159,7 +159,6 @@ private class FakeService(
     )
 
     override suspend fun testConnection(def: ConnectionDef, password: String) = "ok"
-    override suspend fun saveConnection(def: ConnectionDef, password: String?) {}
     override suspend fun createConnection(def: ConnectionDef, password: String) = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) {}
     override suspend fun listConnections() = connections
@@ -167,7 +166,7 @@ private class FakeService(
     override suspend fun lockCredentials() {}
     override suspend fun getSchema(connectionId: String) = schema
 
-    override suspend fun runQuery(connectionId: String, spec: QuerySpec, force: Boolean): QueryResult =
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): QueryResult =
         QueryResult(
             columns = listOf(
                 ResultColumn("t0__id", "bigint"),
@@ -269,7 +268,9 @@ private fun renderExplore(
         filters = FilterGroup.empty(),
         limit = 100,
     )
-    val sample = runBlocking { service.runQuery("c1", spec, force = false) }
+    val sample = runBlocking {
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec))
+    }
     val viewModel = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     if (pivoted) {
         viewModel.updateConfig {
@@ -427,7 +428,9 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
         tables = listOf(TableRef("public", "orders", "t0")),
         columns = emptyList(), joins = emptyList(), filters = FilterGroup.empty(), limit = 100,
     )
-    val sample = runBlocking { service.runQuery("c1", spec, force = false) }
+    val sample = runBlocking {
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec))
+    }
     val explore = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     val recipesViewModel = RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined))
     val now = "1784600000"

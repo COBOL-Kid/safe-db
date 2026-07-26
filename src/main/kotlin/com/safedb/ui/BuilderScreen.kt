@@ -58,7 +58,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
-import com.safedb.model.Dialect
 import com.safedb.model.SavedQuery
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
@@ -78,13 +77,6 @@ import com.safedb.explore.ExploreRecipe
 import com.safedb.viewmodel.SchemaViewModel
 import java.time.Instant
 import java.util.UUID
-
-private fun dialectLabel(dialect: Dialect): String = when (dialect) {
-    Dialect.Postgres -> "PostgreSQL"
-    Dialect.MySql -> "MySQL"
-    Dialect.Mssql -> "SQL Server"
-    Dialect.Oracle -> "Oracle"
-}
 
 internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, MAX_LIMIT)
 
@@ -201,7 +193,7 @@ fun BuilderScreen(
         }
     }
 
-    val costGuardCopy = costGuardDialogCopy(queryViewModel.error)
+    val costGuardCopy = costGuardDialogCopy(queryViewModel.pendingCostGuardReason)
     val visibleQueryError = if (queryViewModel.pendingCostGuard) null else queryViewModel.error
     val savedQueryError by savedQueriesViewModel.error.collectAsState()
     val showLargeLimitGuidance = connection != null &&
@@ -225,8 +217,7 @@ fun BuilderScreen(
                 PrimaryButton(
                     onClick = {
                         showCostGuardConfirm = false
-                        queryViewModel.clearPendingCostGuard()
-                        connection?.id?.let { queryViewModel.runForced(it) }
+                        queryViewModel.confirmPendingCostGuard()
                     },
                 ) {
                     Text(costGuardCopy.confirmLabel)
@@ -395,8 +386,21 @@ fun BuilderScreen(
                     highlighted = !queryViewModel.warningPopupsDisabled,
                 )
                 PrimaryButton(
-                    onClick = { connection?.id?.let { queryViewModel.run(it) } },
-                    enabled = queryViewModel.canRun && connection != null && !queryViewModel.running,
+                    onClick = {
+                        val connectionId = connection?.id
+                        if (
+                            connectionId != null &&
+                            schemaViewModel.schema != null &&
+                            schemaViewModel.loadedConnectionId == connectionId
+                        ) {
+                            queryViewModel.run(connectionId)
+                        }
+                    },
+                    enabled = queryViewModel.canRun &&
+                        connection != null &&
+                        schemaViewModel.schema != null &&
+                        schemaViewModel.loadedConnectionId == connection.id &&
+                        !queryViewModel.running,
                 ) {
                     if (queryViewModel.running) {
                         CircularProgressIndicator(
