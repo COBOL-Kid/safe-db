@@ -42,6 +42,7 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
     val connections by viewModel.connections.connections.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val useDarkTheme = settings.theme == "dark"
+    val themePalette = settings.palette()
     var paletteOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(pendingRecipeRun, viewModel.query.results, viewModel.query.running, viewModel.query.error, activeConnectionId) {
@@ -58,6 +59,7 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
 
     SafeDbTheme(
         isDark = useDarkTheme,
+        palette = themePalette,
     ) {
         val bgColor = MaterialTheme.colorScheme.background
         SideEffect {
@@ -95,13 +97,13 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
                 connections.any { it.id == activeConnectionId }
             Window(
                 onCloseRequest = viewModel::closeExplore,
-                title = "Explore - safe-db",
+                title = "Explore - Safe-DB",
                 state = exploreWindowState,
             ) {
                 LaunchedEffect(window) {
                     window.minimumSize = Dimension(920, 560)
                 }
-                SafeDbTheme(isDark = useDarkTheme) {
+                SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
                     val exploreBgColor = MaterialTheme.colorScheme.background
                     SideEffect {
                         window.background = java.awt.Color(exploreBgColor.toArgb())
@@ -154,7 +156,7 @@ fun runApp(appState: AppState) = application {
             runBlocking { SecretsManager.lockCredentials() }
             exitApplication()
         },
-        title = "safe-db",
+        title = "Safe-DB",
         state = windowState,
     ) {
         LaunchedEffect(window) {

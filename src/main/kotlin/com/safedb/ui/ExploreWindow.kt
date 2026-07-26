@@ -45,6 +45,7 @@ import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import java.io.File
@@ -81,9 +82,12 @@ fun ExploreWindowContent(
         )
     }
 
-    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceBackground)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(SafeDbTheme.colors.workspaceHeader)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -201,6 +205,7 @@ fun ExploreWindowContent(
                         }
                     }
                     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                    val themePalette = SafeDbTheme.palette
                     VisualizationExportBar(
                         viewModel = viewModel,
                         enabled = viewModel.visualizationPreview.ready,
@@ -209,7 +214,7 @@ fun ExploreWindowContent(
                         },
                         onExportPng = {
                             chooseExportFile("${session.connectionLabel}-chart", "png")?.let {
-                                viewModel.saveVisualizationPng(it, isDark)
+                                viewModel.saveVisualizationPng(it, isDark, themePalette)
                             }
                         },
                     )
@@ -221,11 +226,11 @@ fun ExploreWindowContent(
 
 @Composable
 private fun ExploreModeSelector(selected: ExploreMode, onSelect: (ExploreMode) -> Unit, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(9.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(3.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Row(modifier = Modifier.padding(3.dp)) {
             ExploreMode.entries.forEach { mode ->
                 Surface(
-                    shape = RoundedCornerShape(7.dp),
+                    shape = RoundedCornerShape(3.dp),
                     color = if (mode == selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                     modifier = Modifier.clickable { onSelect(mode) },
                 ) {

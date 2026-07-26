@@ -257,7 +257,7 @@ fun Canvas(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+            .background(SafeDbTheme.colors.workspaceCanvas),
     ) {
         Box(
             modifier = Modifier

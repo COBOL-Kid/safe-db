@@ -5,16 +5,17 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import com.safedb.model.ThemePalette
 
 val VisualizationSeriesPalette = listOf(
-    Color(0xFF4F46E5),
-    Color(0xFF0F766E),
-    Color(0xFFB45309),
-    Color(0xFF7C3AED),
-    Color(0xFFBE123C),
-    Color(0xFF0369A1),
-    Color(0xFF4D7C0F),
-    Color(0xFFC2410C),
+    Color(0xFF0B5ED7),
+    Color(0xFF087E8B),
+    Color(0xFFB76A00),
+    Color(0xFF6941C6),
+    Color(0xFFB4233C),
+    Color(0xFF1976A3),
+    Color(0xFF527A22),
+    Color(0xFFC14F18),
 )
 
 /**
@@ -25,10 +26,9 @@ val VisualizationSeriesPalette = listOf(
  * action*) are exposed through [LocalSafeDbColors] and accessed via
  * `SafeDbTheme.colors`.
  *
- * Palette: Slate neutrals with a single restrained indigo accent. Primary
- * actions, selection, joins, and focus states all use [actionPrimary]
- * (indigo-600 in light, indigo-400 in dark) so interactive elements read
- * instantly against the quiet neutral chrome.
+ * Control Plane palette: cool steel content planes, permanent graphite
+ * navigation chrome, and a single cobalt interaction color. Navigation gets
+ * explicit roles because it remains dark in both app themes.
  */
 @Immutable
 data class SafeDbColors(
@@ -37,6 +37,16 @@ data class SafeDbColors(
     val actionPrimaryHover: Color,
     val accentContainer: Color,
     val onAccentContainer: Color,
+    val workspaceBackground: Color,
+    val workspaceHeader: Color,
+    val workspacePanel: Color,
+    val workspaceCanvas: Color,
+    val navigationBackground: Color,
+    val navigationBorder: Color,
+    val navigationHover: Color,
+    val navigationSelected: Color,
+    val onNavigation: Color,
+    val onNavigationMuted: Color,
     val success: Color,
     val onSuccess: Color,
     val successContainer: Color,
@@ -53,33 +63,34 @@ data class SafeDbColors(
     val onUq: Color,
     val uqContainer: Color,
     val onUqContainer: Color,
+    val series: List<Color>,
 )
 
 // ------------------------------------------------------------------
-// Light — Slate neutral core, indigo accent
+// Light — cool steel content planes, graphite rail, cobalt signal
 // ------------------------------------------------------------------
 
-private val LightBackground = Color(0xFFF1F5F9) // slate-100 — deeper canvas so white cards read distinctly
-private val LightSurface = Color(0xFFFFFFFF) // white
+private val LightBackground = Color(0xFFF7F9FB)
+private val LightSurface = Color(0xFFFFFFFF)
 private val LightSurfaceContainerLowest = Color(0xFFFFFFFF)
-private val LightSurfaceContainerLow = Color(0xFFF8FAFC) // slate-50 — sidebar rail, lighter than content canvas
-private val LightSurfaceContainer = Color(0xFFF1F5F9) // slate-100
-private val LightSurfaceContainerHigh = Color(0xFFEBEEF2)
-private val LightSurfaceContainerHighest = Color(0xFFE2E8F0) // slate-200
-private val LightOutline = Color(0xFFCBD5E1) // slate-300 — stronger, visible resting borders
-private val LightOutlineVariant = Color(0xFFE2E8F0) // slate-200 — subtle internal dividers
-private val LightOnSurface = Color(0xFF0F172A) // slate-900
-private val LightOnSurfaceVariant = Color(0xFF64748B) // slate-500
+private val LightSurfaceContainerLow = Color(0xFFF4F7FA)
+private val LightSurfaceContainer = Color(0xFFEDF1F5)
+private val LightSurfaceContainerHigh = Color(0xFFE5EBF0)
+private val LightSurfaceContainerHighest = Color(0xFFDCE4EB)
+private val LightOutline = Color(0xFFB8C3CE)
+private val LightOutlineVariant = Color(0xFFD7DFE7)
+private val LightOnSurface = Color(0xFF17212B)
+private val LightOnSurfaceVariant = Color(0xFF607080)
 
-private val LightPrimary = Color(0xFF4F46E5) // indigo-600
+private val LightPrimary = Color(0xFF0B5ED7)
 private val LightOnPrimary = Color(0xFFFFFFFF)
-private val LightPrimaryContainer = Color(0xFFEEF2FF) // indigo-50
-private val LightOnPrimaryContainer = Color(0xFF3730A3) // indigo-800
+private val LightPrimaryContainer = Color(0xFFE8F0FF)
+private val LightOnPrimaryContainer = Color(0xFF0847A6)
 
-private val LightSecondary = Color(0xFF475569) // slate-600
+private val LightSecondary = Color(0xFF526273)
 private val LightOnSecondary = Color(0xFFFFFFFF)
-private val LightSecondaryContainer = Color(0xFFF1F5F9) // slate-100
-private val LightOnSecondaryContainer = Color(0xFF334155) // slate-700
+private val LightSecondaryContainer = Color(0xFFEDF1F5)
+private val LightOnSecondaryContainer = Color(0xFF354454)
 
 private val LightTertiary = Color(0xFFB45309) // amber-700
 private val LightOnTertiary = Color(0xFFFFFFFF)
@@ -93,11 +104,21 @@ private val LightOnErrorContainer = Color(0xFFB91C1C) // red-700
 
 private val LightScrim = Color(0x66000000)
 
-private val LightActionPrimary = Color(0xFF4F46E5) // indigo-600
+private val LightActionPrimary = Color(0xFF0B5ED7)
 private val LightOnActionPrimary = Color(0xFFFFFFFF)
-private val LightActionPrimaryHover = Color(0xFF4338CA) // indigo-700
-private val LightAccentContainer = Color(0xFFEEF2FF) // indigo-50
-private val LightOnAccentContainer = Color(0xFF4338CA) // indigo-700
+private val LightActionPrimaryHover = Color(0xFF084CB3)
+private val LightAccentContainer = Color(0xFFE8F0FF)
+private val LightOnAccentContainer = Color(0xFF0847A6)
+private val LightWorkspaceBackground = Color(0xFFE6EBF0)
+private val LightWorkspaceHeader = Color(0xFFDCE3E9)
+private val LightWorkspacePanel = Color(0xFFE6EBF0)
+private val LightWorkspaceCanvas = Color(0xFFF7F9FB)
+private val LightNavigationBackground = Color(0xFF18222D)
+private val LightNavigationBorder = Color(0xFF344250)
+private val LightNavigationHover = Color(0xFF222F3C)
+private val LightNavigationSelected = Color(0xFF202D3A)
+private val LightOnNavigation = Color(0xFFEAF0F5)
+private val LightOnNavigationMuted = Color(0xFFA2B1C0)
 private val LightSuccess = Color(0xFF047857) // emerald-700
 private val LightOnSuccess = Color(0xFFFFFFFF)
 private val LightSuccessContainer = Color(0xFFECFDF5) // emerald-50
@@ -116,30 +137,30 @@ private val LightUqContainer = Color(0xFFF5F3FF) // violet-50
 private val LightOnUqContainer = Color(0xFF5B21B6) // violet-800
 
 // ------------------------------------------------------------------
-// Dark — deep slate neutral core, indigo accent
+// Dark — deep graphite content planes, matching rail, brighter cobalt signal
 // ------------------------------------------------------------------
 
-private val DarkBackground = Color(0xFF0B1120) // between slate-900 and 950
-private val DarkSurface = Color(0xFF111827) // refined slate-900
-private val DarkSurfaceContainerLowest = Color(0xFF0B1120)
-private val DarkSurfaceContainerLow = Color(0xFF151D2E)
-private val DarkSurfaceContainer = Color(0xFF1B2436) // slate-800 blend
-private val DarkSurfaceContainerHigh = Color(0xFF222C40)
-private val DarkSurfaceContainerHighest = Color(0xFF2C374D)
-private val DarkOutline = Color(0xFF334155) // slate-700 — clearer card/panel edges
-private val DarkOutlineVariant = Color(0xFF283349) // muted slate-700 — subtle dividers
-private val DarkOnSurface = Color(0xFFF1F5F9) // slate-100
-private val DarkOnSurfaceVariant = Color(0xFF94A3B8) // slate-400
+private val DarkBackground = Color(0xFF0D141C)
+private val DarkSurface = Color(0xFF121B25)
+private val DarkSurfaceContainerLowest = Color(0xFF0A1118)
+private val DarkSurfaceContainerLow = Color(0xFF16212C)
+private val DarkSurfaceContainer = Color(0xFF1B2733)
+private val DarkSurfaceContainerHigh = Color(0xFF22303E)
+private val DarkSurfaceContainerHighest = Color(0xFF2A3948)
+private val DarkOutline = Color(0xFF3A4958)
+private val DarkOutlineVariant = Color(0xFF2A3846)
+private val DarkOnSurface = Color(0xFFE8EEF4)
+private val DarkOnSurfaceVariant = Color(0xFF97A8B8)
 
-private val DarkPrimary = Color(0xFFA5B4FC) // indigo-300
-private val DarkOnPrimary = Color(0xFF1E1B4B) // indigo-950
-private val DarkPrimaryContainer = Color(0xFF2A2A5C) // deep indigo
-private val DarkOnPrimaryContainer = Color(0xFFC7D2FE) // indigo-200
+private val DarkPrimary = Color(0xFF6EA2FF)
+private val DarkOnPrimary = Color(0xFF07172C)
+private val DarkPrimaryContainer = Color(0xFF173761)
+private val DarkOnPrimaryContainer = Color(0xFFB9D1FF)
 
-private val DarkSecondary = Color(0xFF94A3B8) // slate-400
-private val DarkOnSecondary = Color(0xFF0B1120)
-private val DarkSecondaryContainer = Color(0xFF1B2436)
-private val DarkOnSecondaryContainer = Color(0xFFE2E8F0) // slate-200
+private val DarkSecondary = Color(0xFF9AAABA)
+private val DarkOnSecondary = Color(0xFF0D141C)
+private val DarkSecondaryContainer = Color(0xFF1B2733)
+private val DarkOnSecondaryContainer = Color(0xFFD9E2EA)
 
 private val DarkTertiary = Color(0xFFFCD34D) // amber-300
 private val DarkOnTertiary = Color(0xFF0B1120)
@@ -153,11 +174,21 @@ private val DarkOnErrorContainer = Color(0xFFFCA5A5) // red-300
 
 private val DarkScrim = Color(0x99000000)
 
-private val DarkActionPrimary = Color(0xFF6366F1) // indigo-500
+private val DarkActionPrimary = Color(0xFF4C8DFF)
 private val DarkOnActionPrimary = Color(0xFFFFFFFF)
-private val DarkActionPrimaryHover = Color(0xFF818CF8) // indigo-400
-private val DarkAccentContainer = Color(0xFF272A55) // deep indigo tint
-private val DarkOnAccentContainer = Color(0xFFA5B4FC) // indigo-300
+private val DarkActionPrimaryHover = Color(0xFF72A5FF)
+private val DarkAccentContainer = Color(0xFF18365D)
+private val DarkOnAccentContainer = Color(0xFFB8D0FF)
+private val DarkWorkspaceBackground = Color(0xFF16212C)
+private val DarkWorkspaceHeader = Color(0xFF1B2733)
+private val DarkWorkspacePanel = Color(0xFF16212C)
+private val DarkWorkspaceCanvas = Color(0xFF0D141C)
+private val DarkNavigationBackground = Color(0xFF0A1118)
+private val DarkNavigationBorder = Color(0xFF2D3A47)
+private val DarkNavigationHover = Color(0xFF141F29)
+private val DarkNavigationSelected = Color(0xFF172430)
+private val DarkOnNavigation = Color(0xFFE8EEF4)
+private val DarkOnNavigationMuted = Color(0xFF91A3B3)
 private val DarkSuccess = Color(0xFF34D399) // emerald-400
 private val DarkOnSuccess = Color(0xFF0B1120)
 private val DarkSuccessContainer = Color(0xFF0A2818)
@@ -175,7 +206,7 @@ private val DarkOnUq = Color(0xFF0B1120)
 private val DarkUqContainer = Color(0xFF221840)
 private val DarkOnUqContainer = Color(0xFFC4B5FD) // violet-300
 
-fun lightScheme(): Pair<ColorScheme, SafeDbColors> =
+private fun controlBlueLightScheme(): Pair<ColorScheme, SafeDbColors> =
     lightColorScheme(
         primary = LightPrimary,
         onPrimary = LightOnPrimary,
@@ -217,6 +248,16 @@ fun lightScheme(): Pair<ColorScheme, SafeDbColors> =
         actionPrimaryHover = LightActionPrimaryHover,
         accentContainer = LightAccentContainer,
         onAccentContainer = LightOnAccentContainer,
+        workspaceBackground = LightWorkspaceBackground,
+        workspaceHeader = LightWorkspaceHeader,
+        workspacePanel = LightWorkspacePanel,
+        workspaceCanvas = LightWorkspaceCanvas,
+        navigationBackground = LightNavigationBackground,
+        navigationBorder = LightNavigationBorder,
+        navigationHover = LightNavigationHover,
+        navigationSelected = LightNavigationSelected,
+        onNavigation = LightOnNavigation,
+        onNavigationMuted = LightOnNavigationMuted,
         success = LightSuccess,
         onSuccess = LightOnSuccess,
         successContainer = LightSuccessContainer,
@@ -233,9 +274,10 @@ fun lightScheme(): Pair<ColorScheme, SafeDbColors> =
         onUq = LightOnUq,
         uqContainer = LightUqContainer,
         onUqContainer = LightOnUqContainer,
+        series = VisualizationSeriesPalette,
     )
 
-fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
+private fun controlBlueDarkScheme(): Pair<ColorScheme, SafeDbColors> =
     darkColorScheme(
         primary = DarkPrimary,
         onPrimary = DarkOnPrimary,
@@ -277,6 +319,16 @@ fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
         actionPrimaryHover = DarkActionPrimaryHover,
         accentContainer = DarkAccentContainer,
         onAccentContainer = DarkOnAccentContainer,
+        workspaceBackground = DarkWorkspaceBackground,
+        workspaceHeader = DarkWorkspaceHeader,
+        workspacePanel = DarkWorkspacePanel,
+        workspaceCanvas = DarkWorkspaceCanvas,
+        navigationBackground = DarkNavigationBackground,
+        navigationBorder = DarkNavigationBorder,
+        navigationHover = DarkNavigationHover,
+        navigationSelected = DarkNavigationSelected,
+        onNavigation = DarkOnNavigation,
+        onNavigationMuted = DarkOnNavigationMuted,
         success = DarkSuccess,
         onSuccess = DarkOnSuccess,
         successContainer = DarkSuccessContainer,
@@ -293,4 +345,17 @@ fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
         onUq = DarkOnUq,
         uqContainer = DarkUqContainer,
         onUqContainer = DarkOnUqContainer,
+        series = VisualizationSeriesPalette,
     )
+
+fun lightScheme(palette: ThemePalette = ThemePalette.DEFAULT): Pair<ColorScheme, SafeDbColors> =
+    when (palette) {
+        ThemePalette.ControlBlue -> controlBlueLightScheme()
+        else -> paletteSpecFor(palette, isDark = false).toScheme(isDark = false)
+    }
+
+fun darkScheme(palette: ThemePalette = ThemePalette.DEFAULT): Pair<ColorScheme, SafeDbColors> =
+    when (palette) {
+        ThemePalette.ControlBlue -> controlBlueDarkScheme()
+        else -> paletteSpecFor(palette, isDark = true).toScheme(isDark = true)
+    }

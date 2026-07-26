@@ -511,7 +511,7 @@ private fun RecipeCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().then(if (available) Modifier.clickable(onClick = onSelect) else Modifier),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(3.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
     ) {
@@ -552,7 +552,7 @@ internal fun ExploreMode.displayName(): String = when (this) {
 @Composable
 private fun RecipePill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(7.dp),
+        shape = RoundedCornerShape(3.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.clickable(onClick = onClick),

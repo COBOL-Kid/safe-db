@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,7 @@ import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.DataMono
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.util.formatTime
 import com.safedb.ui.util.summarizeSpec
 import com.safedb.viewmodel.AppViewModel
@@ -112,6 +114,7 @@ fun HistoryScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(SafeDbTheme.colors.workspaceHeader)
                 .padding(horizontal = 32.dp, vertical = 20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,

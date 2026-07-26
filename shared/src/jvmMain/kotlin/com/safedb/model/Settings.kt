@@ -12,9 +12,13 @@ data class Settings(
     @SerialName("explain_cost_thresholds")
     val explainCostThresholds: Map<Dialect, Double> = defaultDialectThresholds(),
     val theme: String = DEFAULT_THEME,
+    @SerialName("color_scheme")
+    val colorScheme: String = ThemePalette.DEFAULT.id,
 ) {
     fun costThreshold(dialect: Dialect): Double =
         explainCostThresholds[dialect] ?: explainCostThreshold
+
+    fun palette(): ThemePalette = ThemePalette.fromId(colorScheme)
 
     companion object {
         const val DEFAULT_COST_THRESHOLD: Double = 100_000.0
@@ -48,11 +52,13 @@ fun normalizeSettings(settings: Settings): Settings {
     }
 
     val theme = if (settings.theme == "dark") "dark" else Settings.DEFAULT_THEME
+    val colorScheme = settings.palette().id
 
     return settings.copy(
         blockedSchemas = blockedSchemas,
         explainCostThreshold = explainCostThreshold,
         explainCostThresholds = explainCostThresholds,
         theme = theme,
+        colorScheme = colorScheme,
     )
 }

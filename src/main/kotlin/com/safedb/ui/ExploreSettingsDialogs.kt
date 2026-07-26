@@ -70,7 +70,7 @@ internal fun DimensionSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(4.dp),
         title = { Text("Field settings", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -183,7 +183,7 @@ internal fun MeasureSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(4.dp),
         title = { Text("Value settings", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
@@ -303,7 +303,7 @@ internal fun CalculatedMeasureDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(4.dp),
         title = { Text("Calculated measure", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
@@ -360,7 +360,7 @@ internal fun CalculatedMeasureDialog(
 @Composable
 private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(3.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.clickable(onClick = onClick),
@@ -499,7 +499,7 @@ internal fun FilterSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(4.dp),
         title = { Text("${filter.label} filter", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(modifier = Modifier.widthIn(min = 500.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

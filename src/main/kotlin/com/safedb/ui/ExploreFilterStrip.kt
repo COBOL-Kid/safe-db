@@ -73,7 +73,7 @@ private fun SlicerControl(
 
     Box {
         Surface(
-            shape = RoundedCornerShape(6.dp),
+            shape = RoundedCornerShape(2.dp),
             color = if (selected.isEmpty()) MaterialTheme.colorScheme.surface else SafeDbTheme.colors.accentContainer,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             onClick = { expanded = true },

@@ -119,7 +119,7 @@ internal fun VisualizationConfigPanel(
         )
     }
 
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
+    Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel) {
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(17.dp),
@@ -457,7 +457,7 @@ private fun VisualizationValueChip(
     onRemove: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(7.dp),
+        shape = RoundedCornerShape(3.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
@@ -632,7 +632,7 @@ private fun VisualizationFieldPicker(
 private fun VisualizationSearch(value: String, onChange: (String) -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(3.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
@@ -663,7 +663,7 @@ private fun VisualizationFieldChip(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(7.dp),
+        shape = RoundedCornerShape(3.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
@@ -693,7 +693,7 @@ private fun ConfigSection(title: String, content: @Composable () -> Unit) {
 private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(7.dp),
+        shape = RoundedCornerShape(3.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
     ) {
@@ -747,7 +747,7 @@ private fun TemplateCard(
     val reason = (template.result as? VisualizationTemplateBuildResult.Unavailable)?.reason
     Surface(
         modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.55f).then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(3.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, if (selected) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.outlineVariant),
     ) {

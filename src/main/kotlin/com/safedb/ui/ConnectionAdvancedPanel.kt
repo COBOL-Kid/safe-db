@@ -75,7 +75,7 @@ fun ConnectionAdvancedPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(2.dp))
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -142,7 +142,7 @@ private fun TransportSegmentButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(3.dp)
     val action = com.safedb.ui.theme.SafeDbTheme.colors.actionPrimary
     val onAction = com.safedb.ui.theme.SafeDbTheme.colors.onActionPrimary
     val background = when {

@@ -67,7 +67,7 @@ fun FilterRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -282,7 +282,7 @@ private fun CompactSelectSurface(
             .fillMaxWidth()
             .height(30.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(2.dp),
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
@@ -331,7 +331,7 @@ private fun CompactTextInput(
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
             .height(30.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
             .padding(horizontal = 8.dp, vertical = 7.dp),
         decorationBox = { innerTextField ->
             Box(contentAlignment = Alignment.CenterStart) {

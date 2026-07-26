@@ -58,8 +58,8 @@ fun FilterGroupCard(
     }
     val backgroundModifier = if (depth > 0) {
         Modifier
-            .background(depthTint!!, RoundedCornerShape(8.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .background(depthTint!!, RoundedCornerShape(3.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
             .padding(6.dp)
     } else {
         Modifier
@@ -155,7 +155,7 @@ private fun CompactGroupAction(
     Surface(
         modifier = Modifier
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(999.dp),
+        shape = RoundedCornerShape(2.dp),
         color = Color.Transparent,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {

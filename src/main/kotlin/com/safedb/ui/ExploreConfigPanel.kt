@@ -132,7 +132,7 @@ internal fun ExploreConfigPanel(
         )
     }
 
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+    Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel, tonalElevation = 0.dp) {
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -411,7 +411,7 @@ private fun FieldChip(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(2.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
@@ -643,7 +643,7 @@ private fun ExploreSearchField(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(3.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
