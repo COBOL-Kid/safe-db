@@ -119,7 +119,7 @@ internal fun VisualizationConfigPanel(
         )
     }
 
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
+    Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel) {
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(17.dp),

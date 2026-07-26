@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,6 +79,7 @@ fun ConnectionsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(SafeDbTheme.colors.workspaceHeader)
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,

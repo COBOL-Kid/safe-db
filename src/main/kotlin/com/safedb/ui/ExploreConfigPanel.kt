@@ -132,7 +132,7 @@ internal fun ExploreConfigPanel(
         )
     }
 
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+    Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel, tonalElevation = 0.dp) {
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),

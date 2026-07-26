@@ -36,6 +36,10 @@ data class SafeDbColors(
     val actionPrimaryHover: Color,
     val accentContainer: Color,
     val onAccentContainer: Color,
+    val workspaceBackground: Color,
+    val workspaceHeader: Color,
+    val workspacePanel: Color,
+    val workspaceCanvas: Color,
     val navigationBackground: Color,
     val navigationBorder: Color,
     val navigationHover: Color,
@@ -103,6 +107,10 @@ private val LightOnActionPrimary = Color(0xFFFFFFFF)
 private val LightActionPrimaryHover = Color(0xFF084CB3)
 private val LightAccentContainer = Color(0xFFE8F0FF)
 private val LightOnAccentContainer = Color(0xFF0847A6)
+private val LightWorkspaceBackground = Color(0xFFE6EBF0)
+private val LightWorkspaceHeader = Color(0xFFDCE3E9)
+private val LightWorkspacePanel = Color(0xFFE6EBF0)
+private val LightWorkspaceCanvas = Color(0xFFF7F9FB)
 private val LightNavigationBackground = Color(0xFF18222D)
 private val LightNavigationBorder = Color(0xFF344250)
 private val LightNavigationHover = Color(0xFF222F3C)
@@ -169,6 +177,10 @@ private val DarkOnActionPrimary = Color(0xFFFFFFFF)
 private val DarkActionPrimaryHover = Color(0xFF72A5FF)
 private val DarkAccentContainer = Color(0xFF18365D)
 private val DarkOnAccentContainer = Color(0xFFB8D0FF)
+private val DarkWorkspaceBackground = Color(0xFF16212C)
+private val DarkWorkspaceHeader = Color(0xFF1B2733)
+private val DarkWorkspacePanel = Color(0xFF16212C)
+private val DarkWorkspaceCanvas = Color(0xFF0D141C)
 private val DarkNavigationBackground = Color(0xFF0A1118)
 private val DarkNavigationBorder = Color(0xFF2D3A47)
 private val DarkNavigationHover = Color(0xFF141F29)
@@ -234,6 +246,10 @@ fun lightScheme(): Pair<ColorScheme, SafeDbColors> =
         actionPrimaryHover = LightActionPrimaryHover,
         accentContainer = LightAccentContainer,
         onAccentContainer = LightOnAccentContainer,
+        workspaceBackground = LightWorkspaceBackground,
+        workspaceHeader = LightWorkspaceHeader,
+        workspacePanel = LightWorkspacePanel,
+        workspaceCanvas = LightWorkspaceCanvas,
         navigationBackground = LightNavigationBackground,
         navigationBorder = LightNavigationBorder,
         navigationHover = LightNavigationHover,
@@ -300,6 +316,10 @@ fun darkScheme(): Pair<ColorScheme, SafeDbColors> =
         actionPrimaryHover = DarkActionPrimaryHover,
         accentContainer = DarkAccentContainer,
         onAccentContainer = DarkOnAccentContainer,
+        workspaceBackground = DarkWorkspaceBackground,
+        workspaceHeader = DarkWorkspaceHeader,
+        workspacePanel = DarkWorkspacePanel,
+        workspaceCanvas = DarkWorkspaceCanvas,
         navigationBackground = DarkNavigationBackground,
         navigationBorder = DarkNavigationBorder,
         navigationHover = DarkNavigationHover,

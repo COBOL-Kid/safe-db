@@ -124,7 +124,7 @@ fun AppShell(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
-            color = MaterialTheme.colorScheme.background,
+            color = SafeDbTheme.colors.workspaceBackground,
         ) {
             when (route) {
                 AppRoute.Home -> HomeScreen(

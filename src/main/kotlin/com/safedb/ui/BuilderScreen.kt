@@ -324,6 +324,7 @@ fun BuilderScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(SafeDbTheme.colors.workspaceHeader)
                 .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -445,7 +446,7 @@ fun BuilderScreen(
                     modifier = Modifier
                         .width(288.dp)
                         .fillMaxHeight(),
-                    color = MaterialTheme.colorScheme.surface,
+                    color = SafeDbTheme.colors.workspacePanel,
                     tonalElevation = 0.dp,
                 ) {
                     SchemaBrowser(
@@ -460,7 +461,11 @@ fun BuilderScreen(
                         .background(MaterialTheme.colorScheme.outline),
                 )
 
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(SafeDbTheme.colors.workspaceCanvas),
+                ) {
                     val maxWorkspaceHeight = maxHeight.value.coerceAtLeast(ResultsPaneMinHeight)
                     val maxNormalHeight = maxWorkspaceHeight
                         .coerceAtMost(ResultsPaneMaxHeight)
