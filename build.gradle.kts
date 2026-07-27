@@ -81,12 +81,12 @@ tasks.test {
 
 val verifyUnitTestDiscovery = tasks.register<VerifyUnitTestDiscovery>("verifyUnitTestDiscovery") {
     group = "verification"
-    description = "Fails when JVM unit tests are missing from JUnit XML or contain failures."
+    description = "Fails when JVM unit tests are missing from JUnit XML or contain failures or skips."
     dependsOn(tasks.test, ":shared:test")
     desktopResults.set(layout.buildDirectory.dir("test-results/test"))
     sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-    minimumDesktopTests.set(89)
-    minimumSharedTests.set(235)
+    minimumDesktopTests.set(90)
+    minimumSharedTests.set(236)
 }
 
 val verifyCoverageRatchet = tasks.register<VerifyCoverageRatchet>("verifyCoverageRatchet") {

@@ -22,12 +22,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
       - name: Fresh Gradle check
         shell: bash
         run: ./gradlew check --rerun-tasks
@@ -57,23 +57,19 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v6
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
       - name: Seed PostgreSQL fixture
-        env:
-          PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -U postgres -d safedb_test -v ON_ERROR_STOP=1 -f testdata_postgres.sql
+        run: docker exec -i -e PGPASSWORD=postgres "${{ job.services.postgres.id }}" psql -U postgres -d safedb_test -v ON_ERROR_STOP=1 < testdata_postgres.sql
       - name: Run required PostgreSQL integration tests
         run: ./gradlew integrationTest --stacktrace --rerun-tasks
       - name: Upload PostgreSQL reports
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: postgres-integration-reports
           retention-days: 14
@@ -105,21 +101,21 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v6
-      - name: Install MySQL client
-        run: sudo apt-get update && sudo apt-get install -y mysql-client
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
       - name: Seed generated MySQL fixture
+        env:
+          SAFEDB_TEST_MYSQL_DOCKER: ${{ job.services.mysql.id }}
         run: ./scripts/seed_mysql.sh --categories 2 --products 12 --customers 30 --orders 100 --batch-size 25 --seed 7
       - name: Run required MySQL integration tests
         run: ./gradlew integrationTest --stacktrace --rerun-tasks
       - name: Upload MySQL reports
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mysql-generated-integration-reports
           retention-days: 14
@@ -131,12 +127,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
       - name: Install preview and packaging tools
         run: sudo apt-get update && sudo apt-get install -y xvfb imagemagick fakeroot rpm
       - name: Verify seeder command surface
@@ -161,17 +157,17 @@ jobs:
             test "$(identify -format '%wx%h' "$image")" = "1120x760"
           done
       - name: Build current-OS distribution
-        run: ./gradlew packageDistributionForCurrentOS --rerun-tasks
+        run: ./gradlew packageDistributionForCurrentOS
       - name: Upload preview renders
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-renders
           retention-days: 14
           path: /tmp/safedb-preview/*.png
       - name: Upload packaging reports
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: packaging-reports
           retention-days: 14

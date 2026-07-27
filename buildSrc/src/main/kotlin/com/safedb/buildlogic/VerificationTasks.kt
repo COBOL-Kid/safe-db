@@ -40,9 +40,12 @@ abstract class VerifyUnitTestDiscovery : DefaultTask() {
         check(reports.isNotEmpty()) { "$label produced no JUnit XML reports in $resultsDir" }
         val testcase = Regex("<testcase\\b")
         val failure = Regex("<(failure|error)\\b")
+        val skipped = Regex("<skipped\\b")
         val executed = reports.sumOf { report -> testcase.findAll(report.readText()).count() }
         val failures = reports.sumOf { report -> failure.findAll(report.readText()).count() }
+        val skippedTests = reports.sumOf { report -> skipped.findAll(report.readText()).count() }
         check(failures == 0) { "$label JUnit XML contains $failures failures/errors" }
+        check(skippedTests == 0) { "$label JUnit XML contains $skippedTests skipped tests" }
         check(executed >= minimumTests) {
             "$label discovered $executed tests; expected at least $minimumTests. " +
                 "Raise this floor when intentionally adding tests, never lower it to hide missing discovery."
