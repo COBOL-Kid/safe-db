@@ -27,6 +27,12 @@ The root seed wrapper is still available:
 scripts/seed_mysql.sh
 ```
 
+## Pull Request Checks
+
+For changes covered by the Compose workflow's path filters, its jobs do not run for draft pull requests. Marking such a pull request ready for review runs the standard `./gradlew check` gate. MySQL integration tests run automatically for ready pull requests whose branch is in this repository; pull requests from forks run them only after a maintainer applies the `ci:integration` label.
+
+Before public launch, maintainers should configure GitHub Actions to require approval for all external contributors. This repository setting is separate from the workflow and is not enabled by the workflow file.
+
 ## Features
 
 - **Connections** — save named profiles; passwords stored in the OS credential store when available, never in profile JSON.
