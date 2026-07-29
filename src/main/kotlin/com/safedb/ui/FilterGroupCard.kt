@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,16 +24,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.safedb.model.FilterGroup
-import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
-import com.safedb.model.FilterSpec
-import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
-import com.safedb.model.ValueKind
-import com.safedb.model.valueKind
 import com.safedb.query.MAX_FILTER_DEPTH
-import com.safedb.query.literalKindForColumn
-import com.safedb.query.opsForColumn
 import com.safedb.ui.components.AndOrConnector
 import com.safedb.viewmodel.QueryViewModel
 
@@ -67,11 +59,9 @@ fun FilterGroupCard(
 
     Column(
         modifier = modifier.then(backgroundModifier),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Column(
             modifier = Modifier.padding(start = if (depth > 0) 12.dp else 0.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             group.children.forEachIndexed { index, child ->
                 val childPath = path + index
@@ -100,13 +90,12 @@ fun FilterGroupCard(
             }
         }
 
-        if (group.children.isEmpty()) {
+        if (group.children.isEmpty() && depth > 0) {
             Text(
                 "No conditions",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier
-                    .fillMaxWidth()
                     .padding(vertical = 8.dp),
             )
         }
@@ -153,8 +142,7 @@ private fun CompactGroupAction(
     content: @Composable () -> Unit,
 ) {
     Surface(
-        modifier = Modifier
-            .clickable(enabled = enabled, onClick = onClick),
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(2.dp),
         color = Color.Transparent,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -187,20 +175,8 @@ private fun CompactIconAction(
 private fun addFilter(queryViewModel: QueryViewModel, path: List<Int>) {
     val table = queryViewModel.canvasTables.firstOrNull() ?: return
     val column = table.tableInfo.columns.firstOrNull() ?: return
-    val ops = opsForColumn(column.dataType)
-    val op = ops.first()
-    val kind = literalKindForColumn(column.dataType)
-    val value = when (op.valueKind()) {
-        ValueKind.None -> null
-        ValueKind.Single -> FilterValue.Single(FilterLiteral(kind, ""))
-        ValueKind.List -> FilterValue.ListValue(listOf(FilterLiteral(kind, "")))
-        ValueKind.Pair -> FilterValue.Pair(FilterLiteral(kind, ""), FilterLiteral(kind, ""))
-    }
-    val spec = FilterSpec(
-        tableAlias = table.alias,
-        column = column.name,
-        op = op,
-        value = value,
+    queryViewModel.addFilterToGroup(
+        path,
+        QueryViewModel.defaultFilterForColumn(table.alias, column.name, column.dataType),
     )
-    queryViewModel.addFilterToGroup(path, spec)
 }

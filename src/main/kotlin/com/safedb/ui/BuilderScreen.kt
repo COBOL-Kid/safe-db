@@ -18,10 +18,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -56,9 +60,13 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
+import com.safedb.model.GroupSpec
 import com.safedb.model.SavedQuery
+import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.MAX_LIMIT
@@ -102,6 +110,130 @@ internal fun toggleResultsPane(mode: ResultsPaneMode, height: Float): ResultsPan
     } else {
         ResultsPaneState(ResultsPaneMode.Maximized, height)
     }
+
+internal fun groupingOrderLabels(
+    groups: List<GroupSpec>,
+    tableNamesByAlias: Map<String, String>,
+): List<String> = groups.map { group ->
+    "${tableNamesByAlias[group.tableAlias] ?: group.tableAlias}.${group.column}"
+}
+
+internal fun sortOrderLabels(
+    sorts: List<SortSpec>,
+    tableNamesByAlias: Map<String, String>,
+): List<String> = sorts.map { sort ->
+    val column = "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
+    "$column ${if (sort.direction == SortDirection.Asc) "ascending" else "descending"}"
+}
+
+@Composable
+private fun QueryOrderCard(
+    groups: List<GroupSpec>,
+    sorts: List<SortSpec>,
+    tableNamesByAlias: Map<String, String>,
+    modifier: Modifier = Modifier,
+) {
+    val groupLabels = groupingOrderLabels(groups, tableNamesByAlias)
+    val sortLabels = sorts.map { sort ->
+        "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
+    }
+
+    Surface(
+        modifier = modifier.semantics {
+            val groupingDescription = groupLabels
+                .mapIndexed { index, label -> "${index + 1} $label" }
+                .joinToString(prefix = "Grouping order: ")
+            val sortingDescription = sortOrderLabels(sorts, tableNamesByAlias)
+                .mapIndexed { index, label -> "${index + 1} $label" }
+                .joinToString(prefix = "Sorting order: ")
+            contentDescription = listOfNotNull(
+                groupingDescription.takeIf { groups.isNotEmpty() },
+                sortingDescription.takeIf { sorts.isNotEmpty() },
+            ).joinToString(". ")
+        },
+        shape = RoundedCornerShape(4.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .heightIn(max = 184.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            Text(
+                "Query order",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (groupLabels.isNotEmpty()) {
+                QueryOrderSection(
+                    title = "Group by",
+                    labels = groupLabels,
+                )
+            }
+            if (sortLabels.isNotEmpty()) {
+                QueryOrderSection(
+                    title = "Sort by",
+                    labels = sortLabels,
+                    directions = sorts.map { it.direction },
+                    separated = groupLabels.isNotEmpty(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueryOrderSection(
+    title: String,
+    labels: List<String>,
+    directions: List<SortDirection>? = null,
+    separated: Boolean = false,
+) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelSmall,
+        color = SafeDbTheme.colors.actionPrimary,
+        modifier = Modifier.padding(top = if (separated) 8.dp else 5.dp),
+    )
+    labels.forEachIndexed { index, label ->
+        Row(
+            modifier = Modifier.padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Surface(
+                modifier = Modifier.size(20.dp),
+                shape = RoundedCornerShape(50),
+                color = SafeDbTheme.colors.accentContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "${index + 1}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SafeDbTheme.colors.actionPrimary,
+                    )
+                }
+            }
+            directions?.get(index)?.let { direction ->
+                Text(
+                    if (direction == SortDirection.Asc) "↑" else "↓",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = SafeDbTheme.colors.actionPrimary,
+                )
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
 
 private fun costGuardDialogCopy(reason: String?): CostGuardDialogCopy {
     val normalized = reason.orEmpty()
@@ -507,18 +639,25 @@ fun BuilderScreen(
                                             .find { it.alias == join.rightAlias }?.tableInfo?.name ?: join.rightAlias
                                         Surface(
                                             color = SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f),
-                                            shape = MaterialTheme.shapes.large,
+                                            shape = RoundedCornerShape(50),
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                                modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
                                                 Text(
                                                     "join: $leftName.${join.leftColumn} = $rightName.${join.rightColumn}",
                                                     style = MaterialTheme.typography.labelSmall,
                                                 )
-                                                IconButton(onClick = { queryViewModel.removeJoin(index) }) {
-                                                    Icon(Icons.Default.Close, contentDescription = "Remove join")
+                                                IconButton(
+                                                    onClick = { queryViewModel.removeJoin(index) },
+                                                    modifier = Modifier.size(28.dp),
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Close,
+                                                        contentDescription = "Remove join",
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
                                                 }
                                             }
                                         }
@@ -526,14 +665,39 @@ fun BuilderScreen(
                                 }
                             }
 
-                            if (queryViewModel.canvasTables.isNotEmpty()) {
-                                FilterBuilder(
-                                    queryViewModel = queryViewModel,
+                            if (
+                                queryViewModel.filterCount > 0 ||
+                                queryViewModel.groups.isNotEmpty() ||
+                                queryViewModel.sorts.isNotEmpty()
+                            ) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState())
                                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                                )
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        if (queryViewModel.filterCount > 0) {
+                                            FilterBuilder(
+                                                queryViewModel = queryViewModel,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
+                                            )
+                                        }
+                                    }
+                                    if (queryViewModel.groups.isNotEmpty() || queryViewModel.sorts.isNotEmpty()) {
+                                        QueryOrderCard(
+                                            groups = queryViewModel.groups,
+                                            sorts = queryViewModel.sorts,
+                                            tableNamesByAlias = queryViewModel.canvasTables.associate {
+                                                it.alias to it.tableInfo.name
+                                            },
+                                            modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
+                                        )
+                                    }
+                                }
                             }
 
                             Box(

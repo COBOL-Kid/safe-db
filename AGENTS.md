@@ -1,84 +1,33 @@
 # safe-db — Agent Notes
 
-## Agent Workflow
-
-### Roles
-
-The primary Codex thread is the orchestrator.
-
-- `orchestrator`
-  - Uses GPT-5.6 with high reasoning.
-  - Inspects the repository, creates the plan, delegates work, reviews results, and summarizes outcomes.
-  - Does not directly edit source or documentation.
-  - Does not run Git or GitHub commands.
-
-- `implementer`
-  - Uses GPT-5.6 Terra with high reasoning.
-  - Implements approved application-code changes.
-  - Adds regression tests and runs verification.
-  - Does not perform Git operations.
-
-- `documentation_agent`
-  - Uses GPT-5.6 Luna with high reasoning.
-  - Maintains `AGENTS.md`, `README.md`, setup instructions, contributor guidance, and workflow documentation.
-  - Verifies documentation against the actual code and commands.
-  - Does not modify application source or perform Git operations.
-
-- `git_operator`
-  - Uses GPT-5.6 Luna with high reasoning.
-  - Handles Git and GitHub operations, including status, fetch, pull, commit, push, pull requests, branches, and worktrees.
-  - Does not modify application source or documentation.
-
-### Required Workflow
-
-1. Inspect the repository and current changes.
-2. Create a concrete implementation plan and success criteria.
-3. Delegate source-code changes to `implementer`.
-4. Delegate documentation changes to `documentation_agent`.
-5. Review the implementation and documentation results.
-6. Run or confirm required tests and verification.
-7. Delegate Git and GitHub operations to `git_operator`.
-8. Summarize changed files, verification results, Git state, and remaining risks.
-
-Use sequential handoffs when agents modify overlapping files. Avoid parallel write operations that could conflict.
-
-### Safety Rules
-
-- Preserve unrelated user changes.
-- Inspect repository state before any mutation.
-- Require confirmation before pull, push, PR mutation, deletion, or worktree cleanup.
-- Use `git pull --ff-only` unless explicitly instructed otherwise.
-- Do not expose credentials, secrets, passwords, or private tokens.
-- Report failed commands and unresolved risks clearly.
-
 ## Project
 
-safe-db is a Jetpack Compose Desktop app with a Kotlin/JDBC backend. The Gradle project lives at the repository root (`shared` module plus Compose UI).
-
-See the git history for the removed desktop prototype if old implementation context is needed.
+safe-db is a root Gradle, Jetpack Compose Desktop application for safely exploring production databases. The desktop application is in `src/`; the `:shared` JVM module owns the domain model, query engine, JDBC adapters, persistence, credentials, and service layer. It supports PostgreSQL, MySQL, SQL Server, and Oracle.
 
 ## Commands
 
-- `./gradlew run` — boot the desktop app
-- `./gradlew check` — unit tests for `:shared` and the desktop app plus the checked-in test-discovery and coverage ratchets; no database required
-- `./gradlew koverHtmlReport` — merged desktop/shared JVM coverage report; `check` enforces the checked-in coverage and discovery ratchets
-- `./gradlew integrationTest` — env-gated JDBC integration tests in `:shared` (`integrationTest`, `@Tag("integration")`); supports seeded MySQL and PostgreSQL fixtures
-- `./gradlew renderPreview` — headless render of the main screens (light + dark) to `/tmp/safedb-preview/*.png` via `ImageComposeScene` with a fake service; use for visual verification without a display
-- `./gradlew seedMysql` — generated local MySQL fixture (~50k orders)
-- `./gradlew seedMysql -PseedMysqlArgs="--orders 20000"` — pass seeder args through Gradle
-- `./gradlew packageDistributionForCurrentOS` — native package (deb/AppImage/rpm on Linux)
-- `scripts/seed_mysql.sh` — thin root wrapper around the Gradle-backed Compose/Kotlin MySQL seeder
+- `./gradlew help` — validate root Gradle configuration; run this first after changing root build logic or `buildSrc/`.
+- `./gradlew run` — start the desktop app; it requires a graphical display.
+- `./gradlew check` — fast verification gate: desktop and shared unit tests, JUnit-XML discovery verification, and Kover ratchets. No database is required.
+- `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` — fresh coverage proof after broad Kotlin/build changes. Run the cache-reuse check separately if it matters.
+- `./gradlew integrationTest` — run the tagged `:shared` JDBC integration suite. It is environment-gated and may skip locally when no selected fixture is available.
+- `./gradlew renderPreview --rerun-tasks` — headlessly render UI states to `/tmp/safedb-preview/`; use it for Compose changes when a display is unavailable.
+- `./gradlew renderThemeGallery` — render the Connections/settings surfaces across all color schemes.
+- `./gradlew seedMysql` — create the default generated MySQL fixture (50,000 orders).
+- `./gradlew seedMysql -PseedMysqlArgs="--orders 20000"` — pass seeder arguments through Gradle.
+- `scripts/seed_mysql.sh --static` — load the smaller checked-in MySQL fixture.
+- `./gradlew packageDistributionForCurrentOS` — build the configured Compose distribution. The current target formats are Linux Deb, AppImage, and RPM; do not assume packaging is configured for macOS or Windows.
 
-## Features
+Use the project wrapper, not a system Gradle installation. Do not run `./gradlew run` concurrently with daemon-less builds that would contend for `build/`.
 
-- **Connections** — CRUD via `SafeDbService`; passwords in OS keyring when available, metadata in app data dir; form has show/hide password toggle
-- **Schema introspection** — per-dialect JDBC adapters in `shared/`; system schemas blocked in query validation
-- **Visual query builder** — Kotlin query IR compiled to dialect-specific SQL in `shared/src/main/kotlin/com/safedb/query/`; recursive filter groups with per-child AND/OR connector overrides
-- **Explore modes** — session-only Pivot, Worksheet, and Visualization analysis of the current immutable query sample; Worksheet supports direct sort/group/filter controls, row/group formulas, summaries, and database-neutral window calculations; Visualization provides templates and editable field shelves for bar, line, scatter, histogram, and KPI charts, contributing-row drill-through, PNG export, and chart-data CSV export
-- **Explore recipes** — local/importable/exportable bundles of one or more Explore mode configurations with an optional Builder `QuerySpec`; recipe files never contain sample rows or credentials
-- **Safety** — read-only selects, row limit (default 100, fixed choices with an interactive max of 5,000, guidance above 1,000), 10 s query timeout, blocked schemas, filter literal type validation, and a cost-preview guard that requires confirmation when cost is unavailable or above threshold
-- **Saved queries & history** — persisted through `QueryStore` in the app data dir; timestamps are Unix-seconds strings
-- **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas` through the Compose/Kotlin settings store
+## Verification
+
+- `check` currently enforces minimum unit discovery of 98 desktop and 248 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
+- Kover line-coverage floors are 72% for desktop code and 66% for shared code. Stale incremental reports can be misleading, so use `--rerun-tasks --no-build-cache` for fresh coverage claims.
+- The integration source set is `shared/src/integrationTest/kotlin/`. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to make the corresponding engine mandatory; required suites must meet their discovery floor without skipped tests.
+- MySQL settings use `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, and `SAFEDB_TEST_MYSQL_DATABASE`; `SAFEDB_TEST_MYSQL_DOCKER` can select a Docker container. PostgreSQL uses the matching `SAFEDB_TEST_POSTGRES_*` names.
+- The preview renderer currently writes 28 PNGs: 10 main-app images at 1280×832 and 18 Explore/recipe images at 1120×760, in light and dark modes.
+- `.github/workflows/compose.yml` runs the unit/coverage gate plus required static-MySQL integration on selected application/build changes. `.github/workflows/durability.yml` runs each Monday at 09:00 UTC and on demand, covering three-platform unit checks, required PostgreSQL and generated-MySQL integration, previews, and Linux packaging.
 
 ## Tech Stack
 
@@ -125,58 +74,52 @@ Smoke tests that need a real database should use the app or seeder directly. The
 ```text
 safe-db/
 ├── src/main/kotlin/com/safedb/
-│   ├── App.kt / Main.kt              # app shell and service wiring
-│   ├── platform/                     # data directory compatibility helpers
-│   ├── secrets/                      # platform credential delegates
-│   ├── ui/                           # Compose screens/components/theme
+│   ├── App.kt / Main.kt              # application wiring and entry point
+│   ├── export/                       # CSV and chart PNG export
+│   ├── platform/                     # application-data paths and legacy import
+│   ├── tools/                        # headless preview/theme-gallery renderers
+│   ├── ui/                           # Compose screens, components, and theme
 │   └── viewmodel/                    # UI state and service orchestration
-├── src/main/resources/               # fonts and resources
-├── src/test/kotlin/com/safedb/       # UI state and preview tests
+├── src/test/kotlin/com/safedb/        # desktop unit tests
 ├── shared/
 │   ├── src/main/kotlin/com/safedb/
-│   │   ├── adapters/                 # JDBC dialect adapters
-│   │   ├── connection/               # connection presets and parser
-│   │   ├── model/                    # shared app/query/store models
-│   │   ├── query/                    # validation, hydration, compilation, execution
-│   │   ├── secrets/                  # credential session/store selection
-│   │   ├── service/                  # SafeDbService and implementation
-│   │   ├── store/                    # config, query, settings stores
-│   │   └── tools/                    # SeedMysql CLI
-│   └── src/test/kotlin/com/safedb/
-├── scripts/seed_mysql.sh
-├── testdata_mysql.sql
-└── testdata_postgres.sql
+│   │   ├── adapter/                  # JDBC dialect adapters
+│   │   ├── connection/               # connection parsing and presets
+│   │   ├── explore/                  # Pivot, Worksheet, Visualization, Recipes
+│   │   ├── model/                    # shared models and settings
+│   │   ├── persist/                  # atomic file persistence
+│   │   ├── query/                    # hydration, validation, compilation, execution
+│   │   ├── secrets/                  # credential stores and session cache
+│   │   ├── service/                  # SafeDbService implementation
+│   │   ├── store/                    # connection, query, settings, recipe stores
+│   │   └── tools/                    # MySQL fixture generator and CLI
+│   ├── src/test/kotlin/com/safedb/    # shared unit tests
+│   └── src/integrationTest/kotlin/    # live JDBC integration tests
+├── buildSrc/                          # Gradle verification tasks
+├── scripts/seed_mysql.sh              # root MySQL seeder wrapper
+├── testdata_mysql.sql                 # static MySQL fixture
+└── testdata_postgres.sql              # PostgreSQL fixture
 ```
 
-## Key Conventions
+## Product And Safety Constraints
 
-- Empty database passwords are valid connection credentials, especially for local MySQL; preserve `""` through form submission, credential storage, and builder/query paths.
-- Query filter values must use literal kinds matching the schema-derived column category; hydration should normalize old saved/history specs before rerun.
-- Empty result sets should still expose selected column metadata in results where the adapter can infer it from compiled SQL.
-- Compose UI theme uses slate neutrals plus a single indigo accent (`SafeDbTheme.colors.actionPrimary` / `accentContainer`); all hex colors live in `src/main/kotlin/com/safedb/ui/theme/Color.kt` except scrollbar alphas in `Theme.kt`.
-- Bundled Inter (UI) and JetBrains Mono (`DataMono` for data cells, identifiers, hosts) fonts live in `src/main/resources/fonts/`.
-- Advanced connection settings target technical users; use direct, explicit labels with "SSL" terminology, e.g. "SSL with hostname verification" and "SSL encrypt only (no cert check)".
+- Connections are persisted through `SafeDbService`; profile JSON never contains passwords. Empty passwords are valid credentials, particularly for local MySQL, and must remain `""` through form, service, and query paths.
+- The visual builder works from a typed Kotlin query IR. Preserve recursive filter connectors, schema-derived literal kinds, query hydration for old saved/history specs, and selected-column metadata for empty result sets where an adapter can infer it.
+- Query execution is read-only and guarded by blocked schemas, a default 100-row limit, a 5,000-row maximum, guidance above 1,000 rows, a 10-second timeout, and explicit confirmation when EXPLAIN is unavailable or above the per-dialect cost threshold.
+- Explore operates on the immutable query sample. Pivot, Worksheet, and Visualization configurations may be saved/exported as Recipes, but recipe files must never include credentials or sample rows.
+- Use semantic Compose colors (`MaterialTheme.colorScheme` and `SafeDbTheme.colors`) rather than copying hex values into UI code. The selectable Control Blue, Signal Teal, Oxide, and Command Violet palettes live in `src/main/kotlin/com/safedb/ui/theme/`.
+- Keep default connection flows simple. Advanced settings are for technical users and should use direct SSL labels such as “SSL with hostname verification” and “SSL encrypt only (no cert check)”. Avoid security-state indicators that can be transiently misleading.
 
 ## App Data And Credentials
 
-- App data: `~/.local/share/com.safedb.app/` on Linux, `~/Library/Application Support/com.safedb.app/` on macOS, `%APPDATA%\com.safedb.app\` on Windows.
-- Store filenames: `connections.json`, `settings.json`, `saved_queries.json`, `query_history.json`, and `explore_recipes.json`.
-- `SAFEDB_KEYCHAIN_BACKEND=auto` uses Java keyring-backed platform stores when available.
-- `SAFEDB_KEYCHAIN_BACKEND=disabled` is in-memory only and is appropriate for tests/CI; passwords do not survive restart.
-- Compose Linux uses keyutils when available and otherwise falls back to in-memory `disabled` credentials.
-- **Test Connection** does not use the keyring; **Save Connection** does.
-- Query and schema paths use the in-process credential session in `shared/src/main/kotlin/com/safedb/secrets/CredentialSession.kt` after the first unlock.
+- State is stored in `com.safedb.app`: `$XDG_DATA_HOME/com.safedb.app/` when set, otherwise `~/.local/share/com.safedb.app/` on Linux; `~/Library/Application Support/com.safedb.app/` on macOS; and `%APPDATA%\\com.safedb.app\\` on Windows.
+- The persisted files are `connections.json`, `settings.json`, `saved_queries.json`, `query_history.json`, and `explore_recipes.json`.
+- `SAFEDB_KEYCHAIN_BACKEND=auto` chooses the platform credential backend; on Linux it uses keyutils when available and otherwise falls back to in-memory credentials. `SAFEDB_KEYCHAIN_BACKEND=disabled` is in-memory only and appropriate for tests/CI, so passwords do not survive restart.
+- **Test Connection** uses the form password without writing the keyring; **Save Connection** writes the selected credential backend. Query and schema operations then use the in-process `CredentialSession` cache after the first unlock.
 
-## Cursor Cloud Specific Notes
+## Working Conventions
 
-- **Toolchain:** Temurin **JDK 25** at `/opt/jdk-25` (`JAVA_HOME` is exported in `~/.bashrc`), Gradle **9.6.1** at `/opt/gradle`. Prefer the project wrapper `./gradlew`.
-- **Running the app:** `./gradlew run` needs an X display; use `DISPLAY=:1`. On launch Skiko may log `Cannot create Linux GL context` and `Fallback to next API`; this is expected in the no-GPU VM and renders via software rasterization. The window title is `safe-db (Compose)`.
-- **Gradle contention:** do not run a daemon-less build and `./gradlew run` at the same time from two shells if they would contend on `build/`; stop the running app first or use separate tasks.
-- **Testing DB connectivity:** for MySQL, `scripts/seed_mysql.sh` streams a deterministic generated e-commerce schema. Use `scripts/seed_mysql.sh --static` to load the smaller bundled `testdata_mysql.sql` fixture. PostgreSQL is installed but not auto-started; start it with `sudo pg_ctlcluster 16 main start`.
-
-## Learned User Preferences
-
-- Trust DB admin/infra teams for transport security configuration; do not surface secure-transport acknowledgment or notification checkboxes to end users.
-- Avoid security status indicators that can be temporarily misleading; prefer omitting such indicators over showing potentially wrong state.
-- Keep default connection flows simple: auto-detect first, hide advanced/manual controls behind recovery or administrator guidance.
-- Prefer warning-first guidance over hard blocking for reporting-oriented query limits.
+- Inspect `git status --short` before editing and preserve unrelated work.
+- Treat database credentials, tokens, and user state as sensitive; never print or commit them.
+- Keep implementation changes focused, add a regression test for corrected behavior, and select verification proportional to the touched surface.
+- Inspect JUnit XML in `build/test-results/` or `shared/build/test-results/` when test discovery or integration execution is in doubt; it is the decisive record of test cases, skips, failures, and errors.

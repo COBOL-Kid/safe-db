@@ -3,6 +3,7 @@ package com.safedb.query
 import com.safedb.model.ColumnCategory
 import com.safedb.model.ColumnSel
 import com.safedb.model.CURRENT_SCHEMA_VERSION
+import com.safedb.model.Dialect
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
 import com.safedb.model.LiteralKind
@@ -79,8 +80,9 @@ fun validateQuery(
     spec: QuerySpec,
     schema: Schema,
     customBlocked: List<String>,
+    dialect: Dialect? = null,
 ): Outcome<Pair<ValidatedQuery, ValidationOutcome>> {
-    val (normalizedSpec, outcome) = when (val result = validate(spec, schema, customBlocked)) {
+    val (normalizedSpec, outcome) = when (val result = validate(spec, schema, customBlocked, dialect)) {
         is Outcome.Ok -> result.value
         is Outcome.Err -> return Outcome.err(result.message)
     }
@@ -127,7 +129,9 @@ fun literalKindForColumn(dataType: String): LiteralKind = when (classifyColumn(d
 
 fun opsForColumn(dataType: String): List<FilterOp> = when (classifyColumn(dataType)) {
     ColumnCategory.Text -> listOf(
-        FilterOp.Eq, FilterOp.Ne, FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike,
+        FilterOp.Eq, FilterOp.Ne,
+        FilterOp.Contains, FilterOp.ContainsIgnoreCase, FilterOp.NotContains,
+        FilterOp.StartsWith, FilterOp.EndsWith,
         FilterOp.In, FilterOp.NotIn, FilterOp.IsNull, FilterOp.IsNotNull,
         FilterOp.IsEmpty, FilterOp.IsNotEmpty,
     )
@@ -147,10 +151,18 @@ fun opsForColumn(dataType: String): List<FilterOp> = when (classifyColumn(dataTy
     )
 }
 
+/** Includes historical raw LIKE operators so saved queries continue to validate and run. */
+internal fun validOpsForColumn(dataType: String): List<FilterOp> =
+    opsForColumn(dataType) + when (classifyColumn(dataType)) {
+        ColumnCategory.Text -> listOf(FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike)
+        else -> emptyList()
+    }
+
 fun validate(
     spec: QuerySpec,
     schema: Schema,
     customBlocked: List<String>,
+    dialect: Dialect? = null,
 ): Outcome<Pair<QuerySpec, ValidationOutcome>> {
     val warnings = mutableListOf<String>()
 
@@ -206,6 +218,66 @@ fun validate(
     for (col in spec.columns) {
         if (!tableAliases.contains(col.tableAlias)) {
             return Outcome.err("Column selection references unknown table alias '${col.tableAlias}'")
+        }
+    }
+
+    val groupedColumns = mutableSetOf<Pair<String, String>>()
+    for (group in spec.groups) {
+        if (!tableAliases.contains(group.tableAlias)) {
+            return Outcome.err("Group references unknown table alias '${group.tableAlias}'")
+        }
+        val table = findTableByAlias(schema, spec, group.tableAlias)
+            ?: return Outcome.err("Cannot resolve table for group alias '${group.tableAlias}'")
+        val column = table.columns.find { it.name == group.column }
+            ?: return Outcome.err("Group column '${group.tableAlias}.${group.column}' does not exist")
+        if (dialect != null && !supportsGroupingAndSorting(column.dataType, dialect)) {
+            return Outcome.err(
+                "Group column '${group.tableAlias}.${group.column}' has type '${column.dataType}', " +
+                    "which cannot be grouped by ${dialect.displayName()}",
+            )
+        }
+        if (!groupedColumns.add(group.tableAlias to group.column)) {
+            return Outcome.err("Group column '${group.tableAlias}.${group.column}' is duplicated")
+        }
+    }
+
+    val sortedColumns = mutableSetOf<Pair<String, String>>()
+    for (sort in spec.sorts) {
+        if (!tableAliases.contains(sort.tableAlias)) {
+            return Outcome.err("Sort references unknown table alias '${sort.tableAlias}'")
+        }
+        val table = findTableByAlias(schema, spec, sort.tableAlias)
+            ?: return Outcome.err("Cannot resolve table for sort alias '${sort.tableAlias}'")
+        val column = table.columns.find { it.name == sort.column }
+            ?: return Outcome.err("Sort column '${sort.tableAlias}.${sort.column}' does not exist")
+        if (dialect != null && !supportsGroupingAndSorting(column.dataType, dialect)) {
+            return Outcome.err(
+                "Sort column '${sort.tableAlias}.${sort.column}' has type '${column.dataType}', " +
+                    "which cannot be sorted by ${dialect.displayName()}",
+            )
+        }
+        if (!sortedColumns.add(sort.tableAlias to sort.column)) {
+            return Outcome.err("Sort column '${sort.tableAlias}.${sort.column}' is duplicated")
+        }
+    }
+
+    if (spec.groups.isNotEmpty()) {
+        if (spec.columns.isEmpty()) {
+            return Outcome.err("Grouping requires explicitly selected output columns")
+        }
+        for (column in spec.columns) {
+            if ((column.tableAlias to column.column) !in groupedColumns) {
+                return Outcome.err(
+                    "Selected output column '${column.tableAlias}.${column.column}' must appear in GROUP BY",
+                )
+            }
+        }
+        for (sort in spec.sorts) {
+            if ((sort.tableAlias to sort.column) !in groupedColumns) {
+                return Outcome.err(
+                    "Sort column '${sort.tableAlias}.${sort.column}' must appear in GROUP BY",
+                )
+            }
         }
     }
 
@@ -294,6 +366,23 @@ internal fun findTableByAlias(schema: Schema, spec: QuerySpec, alias: String) =
     spec.tables.find { it.alias == alias }?.let { tableRef ->
         findTable(schema, tableRef.schema, tableRef.name)
     }
+
+internal fun supportsGroupingAndSorting(dataType: String, dialect: Dialect): Boolean {
+    val normalized = dataType.lowercase().substringBefore('(').trim()
+    return when (dialect) {
+        Dialect.Postgres -> normalized !in setOf("json", "xml")
+        Dialect.Mssql -> normalized !in setOf("text", "ntext", "image", "xml", "geometry", "geography")
+        Dialect.Oracle -> normalized !in setOf("blob", "clob", "nclob", "bfile", "long", "xmltype")
+        Dialect.MySql -> true
+    }
+}
+
+private fun Dialect.displayName(): String = when (this) {
+    Dialect.Postgres -> "PostgreSQL"
+    Dialect.MySql -> "MySQL"
+    Dialect.Mssql -> "SQL Server"
+    Dialect.Oracle -> "Oracle"
+}
 
 private fun isPartOfCompleteForeignKey(schema: Schema, spec: QuerySpec, join: JoinSpec): Boolean {
     for (foreignRef in spec.tables) {

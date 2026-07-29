@@ -21,12 +21,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -54,11 +57,26 @@ fun FilterRow(
     path: List<Int>,
     modifier: Modifier = Modifier,
 ) {
+    val valueFocusRequester = remember(filter.id) { FocusRequester() }
+    val focusRequested = queryViewModel.requestedFilterFocusId == filter.id
     val table = queryViewModel.canvasTables.find { it.alias == filter.tableAlias }
     val columns = table?.tableInfo?.columns.orEmpty()
     val columnInfo = columns.find { it.name == filter.column }
     val availableOps = columnInfo?.let { opsForColumn(it.dataType) }.orEmpty()
     val valueKind = filter.op.valueKind()
+    val canFocusValue = when (valueKind) {
+        ValueKind.None -> false
+        ValueKind.Single -> columnInfo == null || literalKindForColumn(columnInfo.dataType) != LiteralKind.Bool
+        ValueKind.Pair -> true
+        ValueKind.List -> (filter.value as? FilterValue.ListValue)?.literals?.isNotEmpty() == true
+    }
+    val shouldFocusValue = focusRequested && canFocusValue
+    if (focusRequested) {
+        LaunchedEffect(filter.id, canFocusValue) {
+            if (canFocusValue) valueFocusRequester.requestFocus()
+            queryViewModel.consumeRequestedFilterFocus(filter.id)
+        }
+    }
 
     fun update(newFilter: FilterSpec) {
         queryViewModel.updateFilter(path, newFilter)
@@ -152,6 +170,7 @@ fun FilterRow(
                         },
                         modifier = Modifier.width(100.dp),
                         placeholder = "value",
+                        focusRequester = if (shouldFocusValue) valueFocusRequester else null,
                     )
                 }
             }
@@ -166,6 +185,7 @@ fun FilterRow(
                     },
                     modifier = Modifier.width(80.dp),
                     placeholder = "from",
+                    focusRequester = if (shouldFocusValue) valueFocusRequester else null,
                 )
                 Text("and", style = MaterialTheme.typography.labelSmall)
                 CompactTextInput(
@@ -193,6 +213,7 @@ fun FilterRow(
                             },
                             modifier = Modifier.width(72.dp),
                             placeholder = "value",
+                            focusRequester = if (shouldFocusValue && index == 0) valueFocusRequester else null,
                         )
                         if ((listValue.literals.size) > 1) {
                             CompactIconButton(
@@ -321,6 +342,7 @@ private fun CompactTextInput(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
 ) {
     val textStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     BasicTextField(
@@ -330,6 +352,7 @@ private fun CompactTextInput(
         textStyle = textStyle,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .height(30.dp)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
             .padding(horizontal = 8.dp, vertical = 7.dp),

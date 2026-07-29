@@ -36,6 +36,8 @@ private fun compileSpec(
         }
         is Outcome.Err -> return Outcome.err(result.message)
     }
+    val orderByClause = buildOrderByClause(spec, dialect)
+    val groupByClause = buildGroupByClause(spec, dialect)
 
     val fetchLimit = spec.limit + 1
     val sql = buildString {
@@ -55,6 +57,14 @@ private fun compileSpec(
             append('\n')
             append("WHERE ")
             append(whereClause)
+        }
+        if (groupByClause.isNotEmpty()) {
+            append("\nGROUP BY ")
+            append(groupByClause)
+        }
+        if (orderByClause.isNotEmpty()) {
+            append("\nORDER BY ")
+            append(orderByClause)
         }
         when (dialect) {
             Dialect.Mssql -> Unit

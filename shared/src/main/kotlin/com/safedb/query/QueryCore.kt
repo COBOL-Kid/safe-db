@@ -72,7 +72,9 @@ suspend fun runQueryCore(
     settings: Settings,
     force: Boolean,
 ): QueryCoreOutcome {
-    val (validated, outcome) = when (val validation = validateQuery(spec, schema, settings.blockedSchemas)) {
+    val (validated, outcome) = when (
+        val validation = validateQuery(spec, schema, settings.blockedSchemas, def.dialect)
+    ) {
         is Outcome.Ok -> validation.value
         is Outcome.Err -> return QueryCoreOutcome.Failure(
             QueryCoreError(QueryError.Validation(validation.message)),

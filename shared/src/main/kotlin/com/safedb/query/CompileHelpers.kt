@@ -100,6 +100,20 @@ internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
     return clauses.joinToString("\n")
 }
 
+internal fun buildOrderByClause(spec: QuerySpec, dialect: Dialect): String =
+    spec.sorts.joinToString(", ") { sort ->
+        val direction = when (sort.direction) {
+            com.safedb.model.SortDirection.Asc -> "ASC"
+            com.safedb.model.SortDirection.Desc -> "DESC"
+        }
+        "${quote(sort.tableAlias, dialect)}.${quote(sort.column, dialect)} $direction"
+    }
+
+internal fun buildGroupByClause(spec: QuerySpec, dialect: Dialect): String =
+    spec.groups.joinToString(", ") { group ->
+        "${quote(group.tableAlias, dialect)}.${quote(group.column, dialect)}"
+    }
+
 internal fun buildWhereRoot(
     group: FilterGroup,
     overrides: Map<String, GroupConnector>,
@@ -198,6 +212,26 @@ private fun buildLeaf(
     val columnRef = "${quote(filter.tableAlias, dialect)}.${quote(filter.column, dialect)}"
     var currentIdx = paramIdx
 
+    if (filter.op.isFriendlyTextPattern()) {
+        val literal = (filter.value as? FilterValue.Single)?.literal
+            ?: return Outcome.err("${opLabel(filter.op)} expects a single text value")
+        val bound = when (val result = bindLiteral(literal)) {
+            is Outcome.Ok -> result.value
+            is Outcome.Err -> return Outcome.err(result.message)
+        }
+        val text = (bound as? BindValue.Text)?.value
+            ?: return Outcome.err("${opLabel(filter.op)} expects a text value")
+        val ph = placeholder(currentIdx, dialect)
+        currentIdx += 1
+        params.add(BindValue.Text(friendlyPatternText(filter.op, text)))
+        val predicate = if (filter.op == FilterOp.ContainsIgnoreCase) {
+            buildIlike(columnRef, ph, dialect)
+        } else {
+            "$columnRef ${friendlyPatternOperator(filter.op)} $ph"
+        }
+        return Outcome.ok("$predicate ESCAPE '!'" to currentIdx)
+    }
+
     val sqlOp = filter.op.sqlOperator()
     if (sqlOp != null) {
         val value = filter.value
@@ -283,6 +317,35 @@ private fun buildLeaf(
         else -> Outcome.err("Unsupported operator in compiler")
     }
 }
+
+private fun FilterOp.isFriendlyTextPattern(): Boolean = this in setOf(
+    FilterOp.Contains,
+    FilterOp.ContainsIgnoreCase,
+    FilterOp.NotContains,
+    FilterOp.StartsWith,
+    FilterOp.EndsWith,
+)
+
+private fun friendlyPatternOperator(op: FilterOp): String = when (op) {
+    FilterOp.NotContains -> "NOT LIKE"
+    FilterOp.Contains, FilterOp.StartsWith, FilterOp.EndsWith -> "LIKE"
+    else -> error("Not a friendly text pattern: $op")
+}
+
+private fun friendlyPatternText(op: FilterOp, text: String): String {
+    val escaped = escapeLikeLiteral(text)
+    return when (op) {
+        FilterOp.Contains, FilterOp.ContainsIgnoreCase, FilterOp.NotContains -> "%$escaped%"
+        FilterOp.StartsWith -> "$escaped%"
+        FilterOp.EndsWith -> "%$escaped"
+        else -> error("Not a friendly text pattern: $op")
+    }
+}
+
+private fun escapeLikeLiteral(text: String): String = text
+    .replace("!", "!!")
+    .replace("%", "!%")
+    .replace("_", "!_")
 
 private fun buildIlike(columnRef: String, ph: String, dialect: Dialect): String = when (dialect) {
     Dialect.Postgres -> "$columnRef ILIKE $ph"
