@@ -55,6 +55,7 @@ import com.safedb.model.ResultColumn
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
+import com.safedb.model.SortDirection
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ThemePalette
@@ -515,6 +516,8 @@ fun main() {
                             GroupSpec("t0", "total_cents"),
                         ),
                     )
+                    vm.query.setSort("t0", "status", SortDirection.Asc)
+                    vm.query.setSort("t0", "total_cents", SortDirection.Desc)
                     vm.query.addFilter(
                         FilterSpec(
                             tableAlias = "t0",
@@ -548,6 +551,8 @@ fun main() {
                             GroupSpec("t0", "total_cents"),
                         ),
                     )
+                    vm.query.setSort("t0", "status", SortDirection.Asc)
+                    vm.query.setSort("t0", "total_cents", SortDirection.Desc)
                     vm.query.addFilter(
                         FilterSpec(
                             tableAlias = "t0",

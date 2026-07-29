@@ -65,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
 import com.safedb.model.GroupSpec
 import com.safedb.model.SavedQuery
+import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.MAX_LIMIT
@@ -116,19 +118,38 @@ internal fun groupingOrderLabels(
     "${tableNamesByAlias[group.tableAlias] ?: group.tableAlias}.${group.column}"
 }
 
+internal fun sortOrderLabels(
+    sorts: List<SortSpec>,
+    tableNamesByAlias: Map<String, String>,
+): List<String> = sorts.map { sort ->
+    val column = "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
+    "$column ${if (sort.direction == SortDirection.Asc) "ascending" else "descending"}"
+}
+
 @Composable
-private fun GroupingOrderCard(
+private fun QueryOrderCard(
     groups: List<GroupSpec>,
+    sorts: List<SortSpec>,
     tableNamesByAlias: Map<String, String>,
     modifier: Modifier = Modifier,
 ) {
-    val labels = groupingOrderLabels(groups, tableNamesByAlias)
+    val groupLabels = groupingOrderLabels(groups, tableNamesByAlias)
+    val sortLabels = sorts.map { sort ->
+        "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
+    }
 
     Surface(
         modifier = modifier.semantics {
-            contentDescription = labels
+            val groupingDescription = groupLabels
                 .mapIndexed { index, label -> "${index + 1} $label" }
                 .joinToString(prefix = "Grouping order: ")
+            val sortingDescription = sortOrderLabels(sorts, tableNamesByAlias)
+                .mapIndexed { index, label -> "${index + 1} $label" }
+                .joinToString(prefix = "Sorting order: ")
+            contentDescription = listOfNotNull(
+                groupingDescription.takeIf { groups.isNotEmpty() },
+                sortingDescription.takeIf { sorts.isNotEmpty() },
+            ).joinToString(". ")
         },
         shape = RoundedCornerShape(4.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -137,43 +158,79 @@ private fun GroupingOrderCard(
     ) {
         Column(
             modifier = Modifier
-                .heightIn(max = 144.dp)
+                .heightIn(max = 184.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             Text(
-                "Grouping order",
+                "Query order",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            labels.forEachIndexed { index, label ->
-                Row(
-                    modifier = Modifier.padding(top = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Surface(
-                        modifier = Modifier.size(20.dp),
-                        shape = RoundedCornerShape(50),
-                        color = SafeDbTheme.colors.accentContainer,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                "${index + 1}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SafeDbTheme.colors.actionPrimary,
-                            )
-                        }
-                    }
+            if (groupLabels.isNotEmpty()) {
+                QueryOrderSection(
+                    title = "Group by",
+                    labels = groupLabels,
+                )
+            }
+            if (sortLabels.isNotEmpty()) {
+                QueryOrderSection(
+                    title = "Sort by",
+                    labels = sortLabels,
+                    directions = sorts.map { it.direction },
+                    separated = groupLabels.isNotEmpty(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueryOrderSection(
+    title: String,
+    labels: List<String>,
+    directions: List<SortDirection>? = null,
+    separated: Boolean = false,
+) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelSmall,
+        color = SafeDbTheme.colors.actionPrimary,
+        modifier = Modifier.padding(top = if (separated) 8.dp else 5.dp),
+    )
+    labels.forEachIndexed { index, label ->
+        Row(
+            modifier = Modifier.padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Surface(
+                modifier = Modifier.size(20.dp),
+                shape = RoundedCornerShape(50),
+                color = SafeDbTheme.colors.accentContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
                     Text(
-                        label,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        "${index + 1}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SafeDbTheme.colors.actionPrimary,
                     )
                 }
             }
+            directions?.get(index)?.let { direction ->
+                Text(
+                    if (direction == SortDirection.Asc) "↑" else "↓",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = SafeDbTheme.colors.actionPrimary,
+                )
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -608,7 +665,11 @@ fun BuilderScreen(
                                 }
                             }
 
-                            if (queryViewModel.filterCount > 0 || queryViewModel.groups.isNotEmpty()) {
+                            if (
+                                queryViewModel.filterCount > 0 ||
+                                queryViewModel.groups.isNotEmpty() ||
+                                queryViewModel.sorts.isNotEmpty()
+                            ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -626,9 +687,10 @@ fun BuilderScreen(
                                             )
                                         }
                                     }
-                                    if (queryViewModel.groups.isNotEmpty()) {
-                                        GroupingOrderCard(
+                                    if (queryViewModel.groups.isNotEmpty() || queryViewModel.sorts.isNotEmpty()) {
+                                        QueryOrderCard(
                                             groups = queryViewModel.groups,
+                                            sorts = queryViewModel.sorts,
                                             tableNamesByAlias = queryViewModel.canvasTables.associate {
                                                 it.alias to it.tableInfo.name
                                             },

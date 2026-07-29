@@ -1,6 +1,8 @@
 package com.safedb.ui
 
 import com.safedb.model.GroupSpec
+import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -34,6 +36,22 @@ class BuilderScreenStateTest {
 
         assertEquals(
             listOf("customers.region", "orders.status", "missing.category"),
+            labels,
+        )
+    }
+
+    @Test
+    fun sortOrderLabelsPreservePriorityDirectionAndResolveTableNames() {
+        val labels = sortOrderLabels(
+            sorts = listOf(
+                SortSpec("t0", "status", SortDirection.Asc),
+                SortSpec("missing", "created_at", SortDirection.Desc),
+            ),
+            tableNamesByAlias = mapOf("t0" to "orders"),
+        )
+
+        assertEquals(
+            listOf("orders.status ascending", "missing.created_at descending"),
             labels,
         )
     }
