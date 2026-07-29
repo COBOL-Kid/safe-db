@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -112,18 +113,7 @@ fun TableCard(
     Surface(
         modifier = modifier
             .width(canvasTable.width.dp)
-            .height(displayHeight.dp)
-            .pointerInput(alias) {
-                detectDragGestures(
-                    onDragStart = { onStartDrag() },
-                    onDragEnd = { onEndGesture() },
-                    onDragCancel = { onEndGesture() },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        onDragTable(dragAmount)
-                    },
-                )
-            },
+            .height(displayHeight.dp),
         shape = MaterialTheme.shapes.small,
         shadowElevation = 0.dp,
         tonalElevation = 0.dp,
@@ -140,7 +130,25 @@ fun TableCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .semantics { contentDescription = "Move ${table.name} table" }
+                        .pointerInput(alias) {
+                            detectDragGestures(
+                                onDragStart = { onStartDrag() },
+                                onDragEnd = { onEndGesture() },
+                                onDragCancel = { onEndGesture() },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    onDragTable(dragAmount)
+                                },
+                            )
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Icon(
                         Icons.Default.DragHandle,
                         contentDescription = null,
@@ -351,40 +359,23 @@ fun TableCard(
                                 }
 
                                 if (column.isIndexed) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .pointerHoverIcon(PointerIcon.Hand)
-                                            .semantics { contentDescription = "Drag to join" }
-                                            .clickable(role = Role.Button) {
-                                                if (joinDragActive) {
-                                                    onJoinTargetClick(alias, column.name)
-                                                } else {
-                                                    onJoinClick(column.name)
-                                                }
+                                    JoinActionButton(
+                                        column = column.name,
+                                        selectingTarget = joinDragActive,
+                                        tint = joinColor,
+                                        onClick = {
+                                            if (joinDragActive) {
+                                                onJoinTargetClick(alias, column.name)
+                                            } else {
+                                                onJoinClick(column.name)
                                             }
-                                            .pointerInput(column.name) {
-                                                detectDragGestures(
-                                                    onDragStart = { onStartJoin(column.name) },
-                                                    onDragEnd = { onEndGesture() },
-                                                    onDragCancel = { onEndGesture() },
-                                                    onDrag = { change, dragAmount ->
-                                                        change.consume()
-                                                        onDragJoin(dragAmount)
-                                                    },
-                                                )
-                                            },
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Link,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(13.dp),
-                                            tint = joinColor,
-                                        )
-                                    }
+                                        },
+                                        onStartDrag = { onStartJoin(column.name) },
+                                        onDrag = onDragJoin,
+                                        onEndGesture = onEndGesture,
+                                    )
                                 } else {
-                                    Box(modifier = Modifier.size(18.dp))
+                                    Box(modifier = Modifier.size(28.dp))
                                 }
                             }
                         }
@@ -478,6 +469,59 @@ private fun ExactDesktopTargetArea(content: @Composable () -> Unit) {
         LocalViewConfiguration provides exactTargetViewConfiguration,
         content = content,
     )
+}
+
+internal fun joinActionDescription(column: String, selectingTarget: Boolean): String =
+    if (selectingTarget) {
+        "Join to $column; click to complete the join"
+    } else {
+        "Join from $column; click to select or drag to another indexed column"
+    }
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun JoinActionButton(
+    column: String,
+    selectingTarget: Boolean,
+    tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    onStartDrag: () -> Unit,
+    onDrag: (Offset) -> Unit,
+    onEndGesture: () -> Unit,
+) {
+    val description = joinActionDescription(column, selectingTarget)
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(description) } },
+        state = rememberTooltipState(),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .semantics { contentDescription = description }
+                .clickable(role = Role.Button, onClick = onClick)
+                .pointerInput(column) {
+                    detectDragGestures(
+                        onDragStart = { onStartDrag() },
+                        onDragEnd = { onEndGesture() },
+                        onDragCancel = { onEndGesture() },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            onDrag(dragAmount)
+                        },
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.Link,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = tint,
+            )
+        }
+    }
 }
 
 @Composable
