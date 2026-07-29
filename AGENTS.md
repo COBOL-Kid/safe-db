@@ -4,14 +4,6 @@
 
 ### Roles
 
-The primary Codex thread is the orchestrator.
-
-- `orchestrator`
-  - Uses GPT-5.6 with high reasoning.
-  - Inspects the repository, creates the plan, delegates work, reviews results, and summarizes outcomes.
-  - Does not directly edit source or documentation.
-  - Does not run Git or GitHub commands.
-
 - `implementer`
   - Uses GPT-5.6 Terra with high reasoning.
   - Implements approved application-code changes.
