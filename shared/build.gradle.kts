@@ -26,7 +26,7 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
 }
 
 val integrationTest = sourceSets.create("integrationTest")
@@ -41,7 +41,7 @@ configurations[integrationTest.runtimeOnlyConfigurationName]
 dependencies {
     add(integrationTest.implementationConfigurationName, kotlin("test"))
     add(integrationTest.implementationConfigurationName, "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:5.12.2")
+    add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:6.1.2")
     add(integrationTest.runtimeOnlyConfigurationName, "org.junit.platform:junit-platform-launcher:6.1.2")
 }
 
