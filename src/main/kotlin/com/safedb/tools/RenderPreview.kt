@@ -41,6 +41,7 @@ import com.safedb.model.FilterGroup
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.HistoryEntry
 import com.safedb.model.IndexInfo
+import com.safedb.model.JoinSpec
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
@@ -496,6 +497,7 @@ fun main() {
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
+                    vm.query.addJoin(JoinSpec("t0", "customer_id", "t1", "id"))
                     vm.query.moveTable("t1", 360f, 90f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
@@ -513,6 +515,7 @@ fun main() {
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
+                    vm.query.addJoin(JoinSpec("t0", "customer_id", "t1", "id"))
                     vm.query.moveTable("t1", 360f, 90f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
