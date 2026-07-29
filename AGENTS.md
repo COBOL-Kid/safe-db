@@ -1,48 +1,5 @@
 # safe-db — Agent Notes
 
-## Agent Workflow
-
-### Roles
-
-- `implementer`
-  - Uses GPT-5.6 Terra with high reasoning.
-  - Implements approved application-code changes.
-  - Adds regression tests and runs verification.
-  - Does not perform Git operations.
-
-- `documentation_agent`
-  - Uses GPT-5.6 Luna with high reasoning.
-  - Maintains `AGENTS.md`, `README.md`, setup instructions, contributor guidance, and workflow documentation.
-  - Verifies documentation against the actual code and commands.
-  - Does not modify application source or perform Git operations.
-
-- `git_operator`
-  - Uses GPT-5.6 Luna with high reasoning.
-  - Handles Git and GitHub operations, including status, fetch, pull, commit, push, pull requests, branches, and worktrees.
-  - Does not modify application source or documentation.
-
-### Required Workflow
-
-1. Inspect the repository and current changes.
-2. Create a concrete implementation plan and success criteria.
-3. Delegate source-code changes to `implementer`.
-4. Delegate documentation changes to `documentation_agent`.
-5. Review the implementation and documentation results.
-6. Run or confirm required tests and verification.
-7. Delegate Git and GitHub operations to `git_operator`.
-8. Summarize changed files, verification results, Git state, and remaining risks.
-
-Use sequential handoffs when agents modify overlapping files. Avoid parallel write operations that could conflict.
-
-### Safety Rules
-
-- Preserve unrelated user changes.
-- Inspect repository state before any mutation.
-- Require confirmation before pull, push, PR mutation, deletion, or worktree cleanup.
-- Use `git pull --ff-only` unless explicitly instructed otherwise.
-- Do not expose credentials, secrets, passwords, or private tokens.
-- Report failed commands and unresolved risks clearly.
-
 ## Project
 
 safe-db is a Jetpack Compose Desktop app with a Kotlin/JDBC backend. The Gradle project lives at the repository root (`shared` module plus Compose UI).
