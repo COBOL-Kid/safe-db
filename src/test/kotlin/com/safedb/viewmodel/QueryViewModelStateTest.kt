@@ -3,11 +3,13 @@ package com.safedb.viewmodel
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.FilterLiteral
+import com.safedb.model.FilterGroup
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
+import com.safedb.model.GroupSpec
 import com.safedb.model.HistoryEntry
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
@@ -16,6 +18,7 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
+import com.safedb.model.SortDirection
 import com.safedb.model.TableInfo
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -31,9 +34,14 @@ class QueryViewModelStateTest {
     @Test
     fun nestedFilterEditingPreservesIdsAndPrunesConnectorOverrides() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
-        viewModel.addFilter(filter("", "t0", "id"))
-        viewModel.addGroupToGroup(emptyList(), GroupConnector.And)
-        viewModel.addFilterToGroup(listOf(1), filter("", "t1", "customer_id"))
+        viewModel.setFilters(
+            FilterGroup(
+                children = listOf(
+                    FilterNode.Leaf(filter("", "t0", "id")),
+                    FilterNode.Group(FilterGroup(children = listOf(FilterNode.Leaf(filter("", "t1", "customer_id"))))),
+                ),
+            ),
+        )
 
         val rootLeaf = (viewModel.filters.children[0] as FilterNode.Leaf).spec
         val group = (viewModel.filters.children[1] as FilterNode.Group).group
@@ -63,6 +71,9 @@ class QueryViewModelStateTest {
         viewModel.addJoin(JoinSpec("t0", "id", "t1", "customer_id"))
         viewModel.addFilter(filter("first", "t1", "customer_id"))
         viewModel.addFilter(filter("second", "t0", "id"))
+        viewModel.cycleSort("t0", "id")
+        viewModel.cycleSort("t1", "customer_id")
+        viewModel.toggleGroup("t0", "id")
         viewModel.setChildConnector(listOf(1), GroupConnector.Or)
 
         viewModel.removeTable("t0")
@@ -72,6 +83,54 @@ class QueryViewModelStateTest {
         assertTrue(viewModel.joins.isEmpty())
         assertEquals(listOf("first"), viewModel.filters.children.map { (it as FilterNode.Leaf).spec.id })
         assertTrue(viewModel.connectorOverrides.isEmpty())
+        assertEquals(listOf("t1"), viewModel.sorts.map { it.tableAlias })
+        assertEquals(listOf("t1"), viewModel.groups.map { it.tableAlias })
+    }
+
+    @Test
+    fun columnActionsTargetTheExactColumnAndCycleSortInStablePriorityOrder() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("customers", "id"))
+        viewModel.addTable(table("orders", "customer_id"))
+
+        viewModel.addFilterForColumn("t1", "customer_id", "int")
+        val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
+        assertEquals("t1", filter.tableAlias)
+        assertEquals("customer_id", filter.column)
+        assertEquals(filter.id, viewModel.requestedFilterFocusId)
+
+        viewModel.cycleSort("t1", "customer_id")
+        viewModel.cycleSort("t0", "id")
+        assertEquals(listOf("t1", "t0"), viewModel.sorts.map { it.tableAlias })
+        assertEquals(SortDirection.Asc, viewModel.sortForColumn("t1", "customer_id")?.direction)
+
+        viewModel.cycleSort("t1", "customer_id")
+        assertEquals(SortDirection.Desc, viewModel.sortForColumn("t1", "customer_id")?.direction)
+        viewModel.clearSort("t1", "customer_id")
+        assertEquals(null, viewModel.sortForColumn("t1", "customer_id"))
+        assertEquals(listOf("t0"), viewModel.sorts.map { it.tableAlias })
+    }
+
+    @Test
+    fun groupActionsAppendByPriorityAutoSelectAndKeepGroupedBuilderStateValid() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("customers", "id"))
+        viewModel.addTable(table("orders", "customer_id"))
+
+        viewModel.toggleColumn("t0", "id")
+        viewModel.toggleGroup("t1", "customer_id")
+        assertEquals(
+            listOf(GroupSpec("t1", "customer_id"), GroupSpec("t0", "id")),
+            viewModel.groups,
+        )
+        assertTrue(viewModel.isColumnSelected("t1", "customer_id"))
+
+        viewModel.clearGroup("t1", "customer_id")
+        viewModel.toggleGroup("t1", "customer_id")
+        assertEquals(listOf("t0", "t1"), viewModel.groups.map { it.tableAlias })
+
+        viewModel.cycleSort("t0", "id")
+        assertEquals(SortDirection.Asc, viewModel.sortForColumn("t0", "id")?.direction)
     }
 
     @Test

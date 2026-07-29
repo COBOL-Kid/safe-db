@@ -70,7 +70,7 @@ internal fun validateLeaf(
     val col = table.columns.find { it.name == filter.column }
         ?: return Outcome.err("Filter column '${filter.tableAlias}.${filter.column}' does not exist")
 
-    val allowed = opsForColumn(col.dataType)
+    val allowed = validOpsForColumn(col.dataType)
     if (!allowed.contains(filter.op)) {
         return Outcome.err(
             "Operator '${opLabel(filter.op)}' is not applicable to column '${filter.tableAlias}.${filter.column}' (type: ${col.dataType})",
@@ -263,6 +263,10 @@ fun opLabel(op: FilterOp): String = when (op) {
     FilterOp.Gte -> ">="
     FilterOp.Lt -> "<"
     FilterOp.Lte -> "<="
+    FilterOp.Contains -> "contains"
+    FilterOp.NotContains -> "does not contain"
+    FilterOp.StartsWith -> "starts with"
+    FilterOp.EndsWith -> "ends with"
     FilterOp.Like -> "LIKE"
     FilterOp.NotLike -> "NOT LIKE"
     FilterOp.Ilike -> "ILIKE"

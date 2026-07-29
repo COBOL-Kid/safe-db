@@ -15,10 +15,13 @@ import com.safedb.model.FilterOp
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
+import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ValueKind
@@ -31,7 +34,6 @@ import com.safedb.query.QueryError
 import com.safedb.query.QueryHydrationTarget
 import com.safedb.query.clampDimension
 import com.safedb.query.countFilterLeaves
-import com.safedb.query.addFilterGroup
 import com.safedb.query.addFilterLeaf
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
@@ -100,6 +102,21 @@ class QueryViewModel(
     private var connectorOverrideState by mutableStateOf(mapOf<String, GroupConnector>())
     val connectorOverrides: Map<String, GroupConnector>
         get() = connectorOverrideState
+    private var sortState by mutableStateOf(emptyList<SortSpec>())
+    /** Ordered builder-level sorts; the first one is the primary ordering. */
+    val sorts: List<SortSpec>
+        get() = sortState
+    private var groupState by mutableStateOf(emptyList<GroupSpec>())
+    /** Ordered builder-level groups; the first one is the primary grouping. */
+    val groups: List<GroupSpec>
+        get() = groupState
+    private var requestedFilterFocusIdState by mutableStateOf<String?>(null)
+    val requestedFilterFocusId: String?
+        get() = requestedFilterFocusIdState
+
+    fun consumeRequestedFilterFocus(id: String) {
+        if (requestedFilterFocusIdState == id) requestedFilterFocusIdState = null
+    }
 
     var results by mutableStateOf<QueryResult?>(null)
         private set
@@ -138,6 +155,8 @@ class QueryViewModel(
                 joins = joins.toList(),
                 filters = filters,
                 limit = limit,
+                sorts = sorts,
+                groups = groups,
                 schemaVersion = CURRENT_SCHEMA_VERSION,
                 connectorOverrides = connectorOverrides,
             )
@@ -159,6 +178,9 @@ class QueryViewModel(
         hydrationWarning = null
         aliasCounter = 0
         connectorOverrideState = emptyMap()
+        sortState = emptyList()
+        groupState = emptyList()
+        requestedFilterFocusIdState = null
     }
 
     override fun addTable(tableInfo: TableInfo) {
@@ -183,6 +205,8 @@ class QueryViewModel(
         joins.removeAll { it.leftAlias == alias || it.rightAlias == alias }
         filterGroupState = pruneFiltersForAlias(filters, alias)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
+        sortState = sorts.filterNot { it.tableAlias == alias }
+        groupState = groups.filterNot { it.tableAlias == alias }
     }
 
     fun moveTable(alias: String, x: Float, y: Float) {
@@ -204,10 +228,14 @@ class QueryViewModel(
 
     override fun toggleColumn(alias: String, column: String) {
         val key = columnKey(alias, column)
+        if (groups.any { it.tableAlias == alias && it.column == column }) return
         selectedColumns = if (selectedColumns.contains(key)) {
             selectedColumns - key
         } else {
             selectedColumns + key
+        }
+        if (groups.isNotEmpty() && selectedColumns.contains(key)) {
+            addGroup(alias, column)
         }
     }
 
@@ -239,19 +267,107 @@ class QueryViewModel(
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
+    /** Adds a type-aware filter for the exact canvas column and focuses its value when available. */
+    fun addFilterForColumn(
+        tableAlias: String,
+        columnName: String,
+        dataType: String,
+        op: FilterOp = FilterOp.Eq,
+    ) {
+        val filter = defaultFilterForColumn(tableAlias, columnName, dataType).let { default ->
+            if (op == default.op) default else default.copy(op = op, value = defaultValueFor(op, dataType))
+        }
+        addFilter(filter)
+        requestedFilterFocusIdState = filter.id
+    }
+
+    /** Cycles an ordered sort through ascending, descending, and removed. */
+    fun cycleSort(tableAlias: String, columnName: String) {
+        val existing = sorts.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
+        sortState = when (existing?.direction) {
+            null -> {
+                if (groups.isNotEmpty()) addGroup(tableAlias, columnName)
+                sorts + SortSpec(tableAlias, columnName, SortDirection.Asc)
+            }
+            SortDirection.Asc -> sorts.map {
+                if (it.tableAlias == tableAlias && it.column == columnName) it.copy(direction = SortDirection.Desc) else it
+            }
+            SortDirection.Desc -> sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+        }
+    }
+
+    fun sortForColumn(tableAlias: String, columnName: String): SortSpec? =
+        sorts.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
+
+    fun hasFilterForColumn(tableAlias: String, columnName: String): Boolean =
+        filters.containsFilter(tableAlias, columnName)
+
+    fun setSort(tableAlias: String, columnName: String, direction: SortDirection) {
+        val existing = sortForColumn(tableAlias, columnName)
+        sortState = if (existing == null) {
+            if (groups.isNotEmpty()) addGroup(tableAlias, columnName)
+            sorts + SortSpec(tableAlias, columnName, direction)
+        } else {
+            sorts.map { sort ->
+                if (sort.tableAlias == tableAlias && sort.column == columnName) sort.copy(direction = direction) else sort
+            }
+        }
+    }
+
+    fun clearSort(tableAlias: String, columnName: String) {
+        sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+    }
+
+    fun toggleGroup(tableAlias: String, columnName: String) {
+        if (groupForColumn(tableAlias, columnName) == null) {
+            if (groups.isEmpty()) {
+                val existingSelections = selectedColumns
+                    .map(::parseColumnKey)
+                    .filterNot { (alias, column) -> alias == tableAlias && column == columnName }
+                    .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+                groupState = listOf(GroupSpec(tableAlias, columnName)) + existingSelections.map { (alias, column) ->
+                    GroupSpec(alias, column)
+                }
+                selectedColumns = selectedColumns + columnKey(tableAlias, columnName)
+            } else {
+                addGroup(tableAlias, columnName)
+            }
+        } else {
+            clearGroup(tableAlias, columnName)
+        }
+    }
+
+    fun groupForColumn(tableAlias: String, columnName: String): GroupSpec? =
+        groups.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
+
+    fun clearGroup(tableAlias: String, columnName: String) {
+        val clearsLastGroup = groups.size == 1
+        groupState = groups.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+        if (!clearsLastGroup) {
+            selectedColumns = selectedColumns - columnKey(tableAlias, columnName)
+            sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+        }
+    }
+
+    private fun addGroup(tableAlias: String, columnName: String) {
+        if (groupForColumn(tableAlias, columnName) != null) return
+        groupState = groups + GroupSpec(tableAlias, columnName)
+        val key = columnKey(tableAlias, columnName)
+        if (key !in selectedColumns) selectedColumns = selectedColumns + key
+    }
+
     override fun setFilters(group: FilterGroup) {
         filterGroupState = ensureFilterNodeIds(group)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
-    fun addFilterToGroup(groupPath: List<Int>, spec: NewFilterSpec) {
-        filterGroupState = addFilterLeaf(filters, groupPath, spec)
-        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
+    override fun setSorts(sorts: List<SortSpec>) {
+        sortState = sorts
     }
 
-    fun addGroupToGroup(groupPath: List<Int>, connector: GroupConnector) {
-        filterGroupState = addFilterGroup(filters, groupPath, connector)
-        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
+    override fun setGroups(groups: List<GroupSpec>) {
+        groupState = groups.distinctBy { it.tableAlias to it.column }
+        selectedColumns = selectedColumns + groupState.map { group -> columnKey(group.tableAlias, group.column) }
     }
 
     fun updateFilter(path: List<Int>, spec: NewFilterSpec) {
@@ -413,17 +529,8 @@ class QueryViewModel(
 
     companion object {
         fun defaultFilterForColumn(tableAlias: String, columnName: String, dataType: String): FilterSpec {
-            val kind = literalKindForColumn(dataType)
             val op = FilterOp.Eq
-            val value = when (op.valueKind()) {
-                ValueKind.None -> null
-                ValueKind.Single -> FilterValue.Single(FilterLiteral(kind, ""))
-                ValueKind.List -> FilterValue.ListValue(listOf(FilterLiteral(kind, "")))
-                ValueKind.Pair -> FilterValue.Pair(
-                    FilterLiteral(kind, ""),
-                    FilterLiteral(kind, ""),
-                )
-            }
+            val value = defaultValueFor(op, dataType)
             return FilterSpec(
                 id = newNodeId(),
                 tableAlias = tableAlias,
@@ -432,6 +539,23 @@ class QueryViewModel(
                 value = value,
             )
         }
+    }
+}
+
+private fun defaultValueFor(op: FilterOp, dataType: String): FilterValue? {
+    val kind = literalKindForColumn(dataType)
+    return when (op.valueKind()) {
+        ValueKind.None -> null
+        ValueKind.Single -> FilterValue.Single(FilterLiteral(kind, ""))
+        ValueKind.List -> FilterValue.ListValue(listOf(FilterLiteral(kind, "")))
+        ValueKind.Pair -> FilterValue.Pair(FilterLiteral(kind, ""), FilterLiteral(kind, ""))
+    }
+}
+
+private fun FilterGroup.containsFilter(tableAlias: String, columnName: String): Boolean = children.any { child ->
+    when (child) {
+        is FilterNode.Leaf -> child.spec.tableAlias == tableAlias && child.spec.column == columnName
+        is FilterNode.Group -> child.group.containsFilter(tableAlias, columnName)
     }
 }
 

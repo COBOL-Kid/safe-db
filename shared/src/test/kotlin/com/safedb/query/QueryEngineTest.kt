@@ -1,6 +1,7 @@
 package com.safedb.query
 
 import com.safedb.model.ColumnCategory
+import com.safedb.model.BindValue
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ColumnSel
 import com.safedb.model.CompiledQuery
@@ -16,6 +17,7 @@ import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.GroupConnector
+import com.safedb.model.GroupSpec
 import com.safedb.model.IndexInfo
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
@@ -24,6 +26,8 @@ import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.Schema
+import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
@@ -34,6 +38,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.serialization.decodeFromString
 
 class QueryEngineTest {
     @Test
@@ -230,6 +235,113 @@ class QueryEngineTest {
     }
 
     @Test
+    fun textFilterChoicesOfferFriendlyPatternsInsteadOfRawLikeOperators() {
+        val offered = opsForColumn("varchar")
+
+        assertTrue(FilterOp.Contains in offered)
+        assertTrue(FilterOp.NotContains in offered)
+        assertTrue(FilterOp.StartsWith in offered)
+        assertTrue(FilterOp.EndsWith in offered)
+        assertFalse(FilterOp.Like in offered)
+        assertFalse(FilterOp.NotLike in offered)
+        assertFalse(FilterOp.Ilike in offered)
+        assertEquals("contains", opLabel(FilterOp.Contains))
+        assertEquals("does not contain", opLabel(FilterOp.NotContains))
+        assertEquals("starts with", opLabel(FilterOp.StartsWith))
+        assertEquals("ends with", opLabel(FilterOp.EndsWith))
+    }
+
+    @Test
+    fun friendlyTextPatternsCompileWithExpectedOperatorsAndBoundValues() {
+        val cases = listOf(
+            Triple(FilterOp.Contains, "LIKE", "%chair%"),
+            Triple(FilterOp.NotContains, "NOT LIKE", "%chair%"),
+            Triple(FilterOp.StartsWith, "LIKE", "chair%"),
+            Triple(FilterOp.EndsWith, "LIKE", "%chair"),
+        )
+
+        for ((op, sqlOperator, expectedValue) in cases) {
+            val spec = textFilterSpec(op, "chair")
+            val compiled = compile(spec, Dialect.Postgres).unwrap()
+
+            assertTrue(compiled.sql.contains("\"t0\".\"name\" $sqlOperator \$1 ESCAPE '!'"))
+            assertEquals(listOf(BindValue.Text(expectedValue)), compiled.params)
+        }
+    }
+
+    @Test
+    fun friendlyTextPatternsEscapeWildcardsAcrossDialects() {
+        val spec = textFilterSpec(FilterOp.Contains, "50%_!")
+        val expectedSql = mapOf(
+            Dialect.Postgres to "\"t0\".\"name\" LIKE \$1 ESCAPE '!'",
+            Dialect.MySql to "`t0`.`name` LIKE ? ESCAPE '!'",
+            Dialect.Mssql to "[t0].[name] LIKE @P1 ESCAPE '!'",
+            Dialect.Oracle to "\"t0\".\"name\" LIKE :1 ESCAPE '!'",
+        )
+
+        for ((dialect, fragment) in expectedSql) {
+            val compiled = compile(spec, dialect).unwrap()
+
+            assertTrue(compiled.sql.contains(fragment))
+            assertEquals(listOf(BindValue.Text("%50!%!_!!%")), compiled.params)
+        }
+    }
+
+    @Test
+    fun friendlyTextPatternsRejectMissingOrNonTextValuesDuringCompilation() {
+        val missingValue = textFilterSpec(FilterOp.Contains, "chair").copy(
+            filters = FilterGroup(
+                children = listOf(
+                    FilterNode.Leaf(
+                        FilterSpec(
+                            tableAlias = "t0",
+                            column = "name",
+                            op = FilterOp.Contains,
+                            value = null,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(compile(missingValue, Dialect.Postgres).unwrapErr().contains("single text value"))
+
+        val nonTextValue = textFilterSpec(FilterOp.Contains, "chair").copy(
+            filters = FilterGroup(
+                children = listOf(
+                    FilterNode.Leaf(
+                        FilterSpec(
+                            tableAlias = "t0",
+                            column = "name",
+                            op = FilterOp.Contains,
+                            value = FilterValue.Single(FilterLiteral(LiteralKind.Int, "1")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(compile(nonTextValue, Dialect.Postgres).unwrapErr().contains("text value"))
+    }
+
+    @Test
+    fun legacyRawLikeOperatorsStillValidateAndCompileUnchanged() {
+        val cases = listOf(
+            Triple(FilterOp.Like, "A%", "LIKE \$1"),
+            Triple(FilterOp.NotLike, "B_", "NOT LIKE \$1"),
+            Triple(FilterOp.Ilike, "C%", "ILIKE \$1"),
+        )
+
+        for ((op, value, fragment) in cases) {
+            val spec = textFilterSpec(op, value)
+            validate(spec, sampleSchema(), emptyList()).unwrap()
+            val compiled = compile(spec, Dialect.Postgres).unwrap()
+
+            assertTrue(compiled.sql.contains(fragment))
+            assertFalse(compiled.sql.contains("ESCAPE '!'"))
+            assertEquals(listOf(BindValue.Text(value)), compiled.params)
+        }
+    }
+
+    @Test
     fun validateRejectsInWithEmptyList() {
         val spec = sampleSpec().copy(
             filters = sampleSpec().filters.copy(
@@ -382,6 +494,82 @@ class QueryEngineTest {
         assertTrue(compiled.sql.contains("\"t0\".\"deleted_at\" IS NULL"))
         assertTrue(compiled.sql.endsWith("LIMIT 51"))
         assertEquals(1, compiled.params.size)
+    }
+
+    @Test
+    fun sortsAreValidatedQuotedAndCompiledBeforeLimitInPriorityOrder() {
+        val spec = sampleSpec().copy(
+            sorts = listOf(
+                SortSpec("t0", "name", SortDirection.Desc),
+                SortSpec("t0", "id", SortDirection.Asc),
+            ),
+        )
+
+        val normalized = validate(spec, sampleSchema(), emptyList()).unwrap().first
+        val sql = compile(normalized, Dialect.Postgres).unwrap().sql
+
+        assertTrue(sql.contains("ORDER BY \"t0\".\"name\" DESC, \"t0\".\"id\" ASC"))
+        assertTrue(sql.indexOf("ORDER BY") < sql.indexOf("LIMIT 101"))
+    }
+
+    @Test
+    fun validationRejectsUnknownAndDuplicateSortColumns() {
+        val unknownAlias = sampleSpec().copy(sorts = listOf(SortSpec("missing", "id")))
+        assertTrue(validate(unknownAlias, sampleSchema(), emptyList()).unwrapErr().contains("unknown table alias"))
+
+        val duplicate = sampleSpec().copy(sorts = listOf(SortSpec("t0", "id"), SortSpec("t0", "id", SortDirection.Desc)))
+        assertTrue(validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated"))
+    }
+
+    @Test
+    fun groupsAreValidatedQuotedAndCompiledBeforeOrderAndLimitInPriorityOrder() {
+        val spec = sampleSpec().copy(
+            columns = listOf(ColumnSel("t0", "id"), ColumnSel("t0", "name")),
+            groups = listOf(GroupSpec("t0", "name"), GroupSpec("t0", "id")),
+            sorts = listOf(SortSpec("t0", "name")),
+        )
+
+        val normalized = validate(spec, sampleSchema(), emptyList()).unwrap().first
+        val sql = compile(normalized, Dialect.Postgres).unwrap().sql
+
+        assertTrue(sql.contains("GROUP BY \"t0\".\"name\", \"t0\".\"id\""))
+        assertTrue(sql.indexOf("GROUP BY") < sql.indexOf("ORDER BY"))
+        assertTrue(sql.indexOf("ORDER BY") < sql.indexOf("LIMIT 101"))
+
+        val mysql = compile(normalized, Dialect.MySql).unwrap().sql
+        assertTrue(mysql.contains("GROUP BY `t0`.`name`, `t0`.`id`"))
+        assertTrue(mysql.indexOf("GROUP BY") < mysql.indexOf("ORDER BY"))
+    }
+
+    @Test
+    fun validationRejectsInvalidGroupingAndUngroupedSorts() {
+        val unknownAlias = sampleSpec().copy(groups = listOf(GroupSpec("missing", "id")))
+        assertTrue(validate(unknownAlias, sampleSchema(), emptyList()).unwrapErr().contains("unknown table alias"))
+
+        val missingOutput = sampleSpec().copy(groups = listOf(GroupSpec("t0", "id")), columns = emptyList())
+        assertTrue(validate(missingOutput, sampleSchema(), emptyList()).unwrapErr().contains("explicitly selected"))
+
+        val ungroupedOutput = sampleSpec().copy(groups = listOf(GroupSpec("t0", "name")))
+        assertTrue(validate(ungroupedOutput, sampleSchema(), emptyList()).unwrapErr().contains("must appear in GROUP BY"))
+
+        val ungroupedSort = sampleSpec().copy(
+            groups = listOf(GroupSpec("t0", "id")),
+            sorts = listOf(SortSpec("t0", "name")),
+        )
+        assertTrue(validate(ungroupedSort, sampleSchema(), emptyList()).unwrapErr().contains("Sort column"))
+
+        val duplicate = sampleSpec().copy(groups = listOf(GroupSpec("t0", "id"), GroupSpec("t0", "id")))
+        assertTrue(validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated"))
+    }
+
+    @Test
+    fun olderSerializedQueryWithoutSortsOrGroupsUsesEmptyDefaults() {
+        val decoded = com.safedb.model.SafeDbJson.lenient.decodeFromString<QuerySpec>(
+            """{"tables":[],"columns":[],"joins":[],"filters":{"children":[]},"limit":100}""",
+        )
+
+        assertTrue(decoded.sorts.isEmpty())
+        assertTrue(decoded.groups.isEmpty())
     }
 
     @Test
@@ -787,6 +975,23 @@ class QueryEngineTest {
         filters = FilterGroup.empty(),
         limit = 100,
         schemaVersion = CURRENT_SCHEMA_VERSION,
+    )
+
+    private fun textFilterSpec(op: FilterOp, value: String): QuerySpec = sampleSpec().copy(
+        filters = FilterGroup(
+            id = "g0",
+            children = listOf(
+                FilterNode.Leaf(
+                    FilterSpec(
+                        id = "text-pattern",
+                        tableAlias = "t0",
+                        column = "name",
+                        op = op,
+                        value = FilterValue.Single(FilterLiteral(LiteralKind.Text, value)),
+                    ),
+                ),
+            ),
+        ),
     )
 
     private fun lit(kind: LiteralKind, text: String) = FilterLiteral(kind = kind, text = text)

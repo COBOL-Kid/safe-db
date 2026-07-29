@@ -10,6 +10,9 @@ import com.safedb.model.IndexInfo
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.QuerySpec
+import com.safedb.model.SortSpec
+import com.safedb.model.SortDirection
+import com.safedb.model.GroupSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import kotlin.test.Test
@@ -45,10 +48,14 @@ private class TestHydrationTarget : QueryHydrationTarget {
     private var _filters: FilterGroup = FilterGroup.empty()
     private var _connectorOverrides: Map<String, com.safedb.model.GroupConnector> = emptyMap()
     private var _limit: Int = DEFAULT_LIMIT
+    private var _sorts: List<SortSpec> = emptyList()
+    private var _groups: List<GroupSpec> = emptyList()
 
     val filters: FilterGroup get() = _filters
     val connectorOverrides: Map<String, com.safedb.model.GroupConnector> get() = _connectorOverrides
     val limit: Int get() = _limit
+    val sorts: List<SortSpec> get() = _sorts
+    val groups: List<GroupSpec> get() = _groups
 
     override fun clear() {
         aliasCounter = 0
@@ -58,6 +65,8 @@ private class TestHydrationTarget : QueryHydrationTarget {
         _filters = FilterGroup.empty()
         _connectorOverrides = emptyMap()
         _limit = DEFAULT_LIMIT
+        _sorts = emptyList()
+        _groups = emptyList()
     }
 
     override fun addTable(tableInfo: TableInfo) {
@@ -91,6 +100,14 @@ private class TestHydrationTarget : QueryHydrationTarget {
 
     override fun setLimit(limit: Int) {
         _limit = limit
+    }
+
+    override fun setSorts(sorts: List<SortSpec>) {
+        _sorts = sorts
+    }
+
+    override fun setGroups(groups: List<GroupSpec>) {
+        _groups = groups
     }
 }
 
@@ -126,6 +143,8 @@ class HydrateQueryTest {
                 ),
             ),
             limit = 25,
+            sorts = listOf(SortSpec("saved_t1", "name", SortDirection.Desc)),
+            groups = listOf(GroupSpec("saved_t0", "name"), GroupSpec("saved_t1", "name")),
             schemaVersion = 2,
             connectorOverrides = emptyMap(),
         )
@@ -145,6 +164,8 @@ class HydrateQueryTest {
         val leaf = target.filters.children[0] as FilterNode.Leaf
         assertEquals("t0", leaf.spec.tableAlias)
         assertEquals(25, target.limit)
+        assertEquals(listOf(SortSpec("t1", "name", SortDirection.Desc)), target.sorts)
+        assertEquals(listOf(GroupSpec("t0", "name"), GroupSpec("t1", "name")), target.groups)
     }
 
     @Test
@@ -176,6 +197,8 @@ class HydrateQueryTest {
                 ),
             ),
             limit = DEFAULT_LIMIT,
+            sorts = listOf(SortSpec("saved_t0", "id"), SortSpec("saved_t2", "name")),
+            groups = listOf(GroupSpec("saved_t0", "id"), GroupSpec("saved_t2", "name")),
         )
 
         val warnings = hydrateQueryFromSpec(spec, listOf(products), target)
@@ -186,6 +209,10 @@ class HydrateQueryTest {
         assertEquals(2, warnings.droppedTables.size)
         assertEquals(2, warnings.droppedJoins)
         assertTrue(warnings.droppedFilters)
+        assertEquals(1, warnings.droppedSorts)
+        assertEquals(listOf(SortSpec("t0", "name")), target.sorts)
+        assertEquals(1, warnings.droppedGroups)
+        assertEquals(listOf(GroupSpec("t0", "name")), target.groups)
     }
 
     @Test
@@ -196,11 +223,15 @@ class HydrateQueryTest {
                 droppedColumns = listOf("t0.col1", "t0.col2"),
                 droppedJoins = 1,
                 droppedFilters = true,
+                droppedSorts = 1,
+                droppedGroups = 1,
             ),
         )
         assertTrue(message!!.contains("missing tables"))
         assertTrue(message.contains("2 selected columns"))
         assertTrue(message.contains("1 join"))
         assertTrue(message.contains("some filters were dropped"))
+        assertTrue(message.contains("1 sort"))
+        assertTrue(message.contains("1 group"))
     }
 }

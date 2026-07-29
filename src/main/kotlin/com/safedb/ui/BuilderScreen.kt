@@ -534,7 +534,7 @@ fun BuilderScreen(
                                 }
                             }
 
-                            if (queryViewModel.canvasTables.isNotEmpty()) {
+                            if (queryViewModel.filterCount > 0) {
                                 FilterBuilder(
                                     queryViewModel = queryViewModel,
                                     modifier = Modifier

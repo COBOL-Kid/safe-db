@@ -22,34 +22,51 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.safedb.model.FilterOp
+import com.safedb.model.SortDirection
 import com.safedb.query.CANVAS_HEADER_HEIGHT
 import com.safedb.query.CANVAS_ROW_HEIGHT
 import com.safedb.query.CANVAS_RESIZE_FOOTER_HEIGHT
@@ -64,6 +81,7 @@ import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 fun TableCard(
     canvasTable: CanvasTable,
     queryViewModel: QueryViewModel,
@@ -83,7 +101,8 @@ fun TableCard(
 ) {
     val table = canvasTable.tableInfo
     val alias = canvasTable.alias
-    var menuColumn by remember { mutableStateOf<String?>(null) }
+    var filterMenuColumn by remember { mutableStateOf<String?>(null) }
+    var hoveredColumn by remember { mutableStateOf<String?>(null) }
     val displayHeight = canvasTable.height
     val bodyHeight = (displayHeight - CANVAS_HEADER_HEIGHT - CANVAS_RESIZE_FOOTER_HEIGHT).coerceAtLeast(64f)
     val resizeHandleColor = SafeDbTheme.colors.actionPrimary.copy(alpha = 0.84f)
@@ -161,6 +180,12 @@ fun TableCard(
                 ) {
                     for (column in table.columns) {
                         val selected = queryViewModel.isColumnSelected(alias, column.name)
+                        val filterActive = queryViewModel.hasFilterForColumn(alias, column.name)
+                        val group = queryViewModel.groupForColumn(alias, column.name)
+                        val groupIndex = queryViewModel.groups.indexOf(group)
+                        val sort = queryViewModel.sortForColumn(alias, column.name)
+                        val sortIndex = queryViewModel.sorts.indexOf(sort)
+                        val columnHovered = hoveredColumn == column.name
                         val joinTarget = highlightJoinTargets != null &&
                             column.isIndexed &&
                             !(highlightJoinTargets.first == alias && highlightJoinTargets.second == column.name)
@@ -176,6 +201,10 @@ fun TableCard(
                                         Modifier
                                     },
                                 )
+                                .onPointerEvent(PointerEventType.Enter) { hoveredColumn = column.name }
+                                .onPointerEvent(PointerEventType.Exit) {
+                                    if (hoveredColumn == column.name) hoveredColumn = null
+                                }
                                 .background(
                                     when {
                                         selected -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.72f)
@@ -184,7 +213,7 @@ fun TableCard(
                                     },
                                     RoundedCornerShape(0.dp),
                                 )
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                .padding(start = 6.dp, top = 2.dp, end = 4.dp, bottom = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Row(
@@ -256,69 +285,107 @@ fun TableCard(
                                 }
                             }
 
-                            Box {
-                                IconButton(
-                                    onClick = { menuColumn = if (menuColumn == column.name) null else column.name },
-                                    modifier = Modifier.size(24.dp),
+                            ExactDesktopTargetArea {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Start,
                                 ) {
-                                    Icon(
-                                        Icons.Default.MoreVert,
-                                        contentDescription = "Filter options",
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                                SafeDropdownMenu(
-                                    expanded = menuColumn == column.name,
-                                    onDismissRequest = { menuColumn = null },
-                                ) {
-                                    MenuSectionLabel("Filter where")
-                                    for (op in opsForColumn(column.dataType)) {
-                                        MenuActionRow(
-                                            text = "${column.name} ${opLabel(op)}",
-                                            onClick = {
-                                                queryViewModel.addFilter(
-                                                    QueryViewModel.defaultFilterForColumn(alias, column.name, column.dataType)
-                                                        .copy(op = op),
-                                                )
-                                                menuColumn = null
+                                    if (columnHovered || filterActive || filterMenuColumn == column.name) {
+                                        Box {
+                                            ColumnActionButton(
+                                                icon = Icons.Default.FilterAlt,
+                                                contentDescription = if (filterActive) {
+                                                    "Filter ${column.name}; this column already has a filter"
+                                                } else {
+                                                    "Filter ${column.name}"
+                                                },
+                                                active = filterActive,
+                                                onClick = {
+                                                    filterMenuColumn = column.name
+                                                },
+                                            )
+                                            SafeDropdownMenu(
+                                                expanded = filterMenuColumn == column.name,
+                                                onDismissRequest = { filterMenuColumn = null },
+                                            ) {
+                                                MenuSectionLabel("Filter where")
+                                                for (op in opsForColumn(column.dataType)) {
+                                                    MenuActionRow(
+                                                        text = "${column.name} ${opLabel(op)}",
+                                                        onClick = {
+                                                            queryViewModel.addFilterForColumn(
+                                                                alias,
+                                                                column.name,
+                                                                column.dataType,
+                                                                op,
+                                                            )
+                                                            filterMenuColumn = null
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (columnHovered || group != null) {
+                                        ColumnActionButton(
+                                            icon = Icons.Default.GridView,
+                                            contentDescription = groupDescription(column.name, groupIndex, group != null),
+                                            active = group != null,
+                                            badge = group?.let { "${groupIndex + 1}" },
+                                            onClick = { queryViewModel.toggleGroup(alias, column.name) },
+                                        )
+                                    }
+                                    if (columnHovered || sort != null) {
+                                        ColumnActionButton(
+                                            icon = if (sort?.direction == SortDirection.Desc) {
+                                                Icons.Default.ArrowDownward
+                                            } else {
+                                                Icons.Default.ArrowUpward
                                             },
+                                            contentDescription = sortDescription(column.name, sort?.direction, sortIndex),
+                                            active = sort != null,
+                                            badge = sort?.let { "${sortIndex + 1}${if (it.direction == SortDirection.Asc) "↑" else "↓"}" },
+                                            onClick = { queryViewModel.cycleSort(alias, column.name) },
                                         )
                                     }
                                 }
-                            }
 
-                            if (column.isIndexed) {
-                                IconButton(
-                                    onClick = {
-                                        if (joinDragActive) {
-                                            onJoinTargetClick(alias, column.name)
-                                        } else {
-                                            onJoinClick(column.name)
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .pointerInput(column.name) {
-                                            detectDragGestures(
-                                                onDragStart = { onStartJoin(column.name) },
-                                                onDragEnd = { onEndGesture() },
-                                                onDragCancel = { onEndGesture() },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    onDragJoin(dragAmount)
-                                                },
-                                            )
-                                        },
-                                ) {
-                                    Icon(
-                                        Icons.Default.Link,
-                                        contentDescription = "Drag to join",
-                                        modifier = Modifier.size(13.dp),
-                                        tint = joinColor,
-                                    )
+                                if (column.isIndexed) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .pointerHoverIcon(PointerIcon.Hand)
+                                            .semantics { contentDescription = "Drag to join" }
+                                            .clickable(role = Role.Button) {
+                                                if (joinDragActive) {
+                                                    onJoinTargetClick(alias, column.name)
+                                                } else {
+                                                    onJoinClick(column.name)
+                                                }
+                                            }
+                                            .pointerInput(column.name) {
+                                                detectDragGestures(
+                                                    onDragStart = { onStartJoin(column.name) },
+                                                    onDragEnd = { onEndGesture() },
+                                                    onDragCancel = { onEndGesture() },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        onDragJoin(dragAmount)
+                                                    },
+                                                )
+                                            },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Link,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(13.dp),
+                                            tint = joinColor,
+                                        )
+                                    }
+                                } else {
+                                    Box(modifier = Modifier.size(18.dp))
                                 }
-                            } else {
-                                Box(modifier = Modifier.size(18.dp))
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -398,3 +465,66 @@ fun TableCard(
         }
     }
 }
+
+@Composable
+private fun ExactDesktopTargetArea(content: @Composable () -> Unit) {
+    val parentViewConfiguration = LocalViewConfiguration.current
+    val exactTargetViewConfiguration = remember(parentViewConfiguration) {
+        object : ViewConfiguration by parentViewConfiguration {
+            override val minimumTouchTargetSize = DpSize(0.dp, 0.dp)
+        }
+    }
+    CompositionLocalProvider(
+        LocalViewConfiguration provides exactTargetViewConfiguration,
+        content = content,
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ColumnActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    badge: String? = null,
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(contentDescription) } },
+        state = rememberTooltipState(),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .semantics { this.contentDescription = contentDescription }
+                .clickable(role = Role.Button, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+            if (badge != null) {
+                Text(
+                    badge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SafeDbTheme.colors.actionPrimary,
+                    modifier = Modifier.align(Alignment.BottomEnd),
+                )
+            }
+        }
+    }
+}
+
+private fun sortDescription(column: String, direction: SortDirection?, index: Int): String = when (direction) {
+    null -> "Sort $column ascending"
+    SortDirection.Asc -> "Sort $column is priority ${index + 1}, ascending; click for descending"
+    SortDirection.Desc -> "Sort $column is priority ${index + 1}, descending; click to remove sorting"
+}
+
+private fun groupDescription(column: String, index: Int, active: Boolean): String =
+    if (active) "Group $column is priority ${index + 1}; click to remove grouping" else "Group by $column"

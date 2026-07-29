@@ -5,9 +5,11 @@ import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
+import com.safedb.model.GroupSpec
 import com.safedb.model.GroupConnector
 import com.safedb.model.JoinSpec
 import com.safedb.model.QuerySpec
+import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 
 interface QueryHydrationTarget {
@@ -19,6 +21,8 @@ interface QueryHydrationTarget {
     fun setFilters(group: FilterGroup)
     fun setConnectorOverrides(map: Map<String, GroupConnector>)
     fun setLimit(limit: Int)
+    fun setSorts(sorts: List<SortSpec>)
+    fun setGroups(groups: List<GroupSpec>)
 }
 
 data class AliasRef(val alias: String)
@@ -28,6 +32,8 @@ data class HydrationWarnings(
     val droppedColumns: List<String> = emptyList(),
     val droppedJoins: Int = 0,
     val droppedFilters: Boolean = false,
+    val droppedSorts: Int = 0,
+    val droppedGroups: Int = 0,
 )
 
 private fun schemaKey(schema: String, name: String): String = "$schema\u0000$name"
@@ -159,11 +165,41 @@ fun hydrateQueryFromSpec(
     target.setConnectorOverrides(spec.connectorOverrides)
     target.setLimit(spec.limit)
 
+    var droppedSorts = 0
+    target.setSorts(
+        spec.sorts.mapNotNull { sort ->
+            val newAlias = aliasMap[sort.tableAlias]
+            val tableInfo = newAlias?.let { tableByNewAlias[it] }
+            if (newAlias == null || tableInfo?.columns?.none { it.name == sort.column } != false) {
+                droppedSorts += 1
+                null
+            } else {
+                sort.copy(tableAlias = newAlias)
+            }
+        },
+    )
+
+    var droppedGroups = 0
+    target.setGroups(
+        spec.groups.mapNotNull { group ->
+            val newAlias = aliasMap[group.tableAlias]
+            val tableInfo = newAlias?.let { tableByNewAlias[it] }
+            if (newAlias == null || tableInfo?.columns?.none { it.name == group.column } != false) {
+                droppedGroups += 1
+                null
+            } else {
+                group.copy(tableAlias = newAlias)
+            }
+        },
+    )
+
     return HydrationWarnings(
         droppedTables = droppedTables,
         droppedColumns = droppedColumns,
         droppedJoins = droppedJoins,
         droppedFilters = droppedFilters,
+        droppedSorts = droppedSorts,
+        droppedGroups = droppedGroups,
     )
 }
 
@@ -184,6 +220,14 @@ fun formatHydrationWarning(warnings: HydrationWarnings): String? {
     }
     if (warnings.droppedFilters) {
         parts.add("some filters were dropped")
+    }
+    if (warnings.droppedSorts > 0) {
+        val count = warnings.droppedSorts
+        parts.add("$count sort${if (count != 1) "s" else ""} could not be restored")
+    }
+    if (warnings.droppedGroups > 0) {
+        val count = warnings.droppedGroups
+        parts.add("$count group${if (count != 1) "s" else ""} could not be restored")
     }
     if (parts.isEmpty()) return null
     return "Query restored partially (${parts.joinToString("; ")}). Review before running."

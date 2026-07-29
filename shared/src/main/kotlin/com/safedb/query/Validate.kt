@@ -127,7 +127,8 @@ fun literalKindForColumn(dataType: String): LiteralKind = when (classifyColumn(d
 
 fun opsForColumn(dataType: String): List<FilterOp> = when (classifyColumn(dataType)) {
     ColumnCategory.Text -> listOf(
-        FilterOp.Eq, FilterOp.Ne, FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike,
+        FilterOp.Eq, FilterOp.Ne,
+        FilterOp.Contains, FilterOp.NotContains, FilterOp.StartsWith, FilterOp.EndsWith,
         FilterOp.In, FilterOp.NotIn, FilterOp.IsNull, FilterOp.IsNotNull,
         FilterOp.IsEmpty, FilterOp.IsNotEmpty,
     )
@@ -146,6 +147,13 @@ fun opsForColumn(dataType: String): List<FilterOp> = when (classifyColumn(dataTy
         FilterOp.Eq, FilterOp.Ne, FilterOp.IsNull, FilterOp.IsNotNull,
     )
 }
+
+/** Includes historical raw LIKE operators so saved queries continue to validate and run. */
+internal fun validOpsForColumn(dataType: String): List<FilterOp> =
+    opsForColumn(dataType) + when (classifyColumn(dataType)) {
+        ColumnCategory.Text -> listOf(FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike)
+        else -> emptyList()
+    }
 
 fun validate(
     spec: QuerySpec,
@@ -206,6 +214,56 @@ fun validate(
     for (col in spec.columns) {
         if (!tableAliases.contains(col.tableAlias)) {
             return Outcome.err("Column selection references unknown table alias '${col.tableAlias}'")
+        }
+    }
+
+    val groupedColumns = mutableSetOf<Pair<String, String>>()
+    for (group in spec.groups) {
+        if (!tableAliases.contains(group.tableAlias)) {
+            return Outcome.err("Group references unknown table alias '${group.tableAlias}'")
+        }
+        val table = findTableByAlias(schema, spec, group.tableAlias)
+            ?: return Outcome.err("Cannot resolve table for group alias '${group.tableAlias}'")
+        if (table.columns.none { it.name == group.column }) {
+            return Outcome.err("Group column '${group.tableAlias}.${group.column}' does not exist")
+        }
+        if (!groupedColumns.add(group.tableAlias to group.column)) {
+            return Outcome.err("Group column '${group.tableAlias}.${group.column}' is duplicated")
+        }
+    }
+
+    val sortedColumns = mutableSetOf<Pair<String, String>>()
+    for (sort in spec.sorts) {
+        if (!tableAliases.contains(sort.tableAlias)) {
+            return Outcome.err("Sort references unknown table alias '${sort.tableAlias}'")
+        }
+        val table = findTableByAlias(schema, spec, sort.tableAlias)
+            ?: return Outcome.err("Cannot resolve table for sort alias '${sort.tableAlias}'")
+        if (table.columns.none { it.name == sort.column }) {
+            return Outcome.err("Sort column '${sort.tableAlias}.${sort.column}' does not exist")
+        }
+        if (!sortedColumns.add(sort.tableAlias to sort.column)) {
+            return Outcome.err("Sort column '${sort.tableAlias}.${sort.column}' is duplicated")
+        }
+    }
+
+    if (spec.groups.isNotEmpty()) {
+        if (spec.columns.isEmpty()) {
+            return Outcome.err("Grouping requires explicitly selected output columns")
+        }
+        for (column in spec.columns) {
+            if ((column.tableAlias to column.column) !in groupedColumns) {
+                return Outcome.err(
+                    "Selected output column '${column.tableAlias}.${column.column}' must appear in GROUP BY",
+                )
+            }
+        }
+        for (sort in spec.sorts) {
+            if ((sort.tableAlias to sort.column) !in groupedColumns) {
+                return Outcome.err(
+                    "Sort column '${sort.tableAlias}.${sort.column}' must appear in GROUP BY",
+                )
+            }
         }
     }
 

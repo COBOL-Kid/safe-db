@@ -42,6 +42,10 @@ data class QuerySpec(
     val joins: List<JoinSpec> = emptyList(),
     val filters: FilterGroup,
     val limit: Int,
+    /** Ordered builder-level SQL sorting. Earlier entries take precedence. */
+    val sorts: List<SortSpec> = emptyList(),
+    /** Ordered builder-level SQL grouping. Earlier entries take precedence. */
+    val groups: List<GroupSpec> = emptyList(),
     @SerialName("schema_version")
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     @SerialName("connector_overrides")
@@ -61,6 +65,27 @@ data class ColumnSel(
     val tableAlias: String,
     val column: String,
 )
+
+@Serializable
+data class SortSpec(
+    @SerialName("table_alias")
+    val tableAlias: String,
+    val column: String,
+    val direction: SortDirection = SortDirection.Asc,
+)
+
+@Serializable
+data class GroupSpec(
+    @SerialName("table_alias")
+    val tableAlias: String,
+    val column: String,
+)
+
+@Serializable
+enum class SortDirection {
+    Asc,
+    Desc,
+}
 
 @Serializable
 data class JoinSpec(
@@ -143,6 +168,10 @@ enum class FilterOp {
     Gte,
     Lt,
     Lte,
+    Contains,
+    NotContains,
+    StartsWith,
+    EndsWith,
     Like,
     NotLike,
     Ilike,
