@@ -239,6 +239,7 @@ class QueryEngineTest {
         val offered = opsForColumn("varchar")
 
         assertTrue(FilterOp.Contains in offered)
+        assertTrue(FilterOp.ContainsIgnoreCase in offered)
         assertTrue(FilterOp.NotContains in offered)
         assertTrue(FilterOp.StartsWith in offered)
         assertTrue(FilterOp.EndsWith in offered)
@@ -246,6 +247,7 @@ class QueryEngineTest {
         assertFalse(FilterOp.NotLike in offered)
         assertFalse(FilterOp.Ilike in offered)
         assertEquals("contains", opLabel(FilterOp.Contains))
+        assertEquals("contains (case-insensitive)", opLabel(FilterOp.ContainsIgnoreCase))
         assertEquals("does not contain", opLabel(FilterOp.NotContains))
         assertEquals("starts with", opLabel(FilterOp.StartsWith))
         assertEquals("ends with", opLabel(FilterOp.EndsWith))
@@ -277,6 +279,24 @@ class QueryEngineTest {
             Dialect.MySql to "`t0`.`name` LIKE ? ESCAPE '!'",
             Dialect.Mssql to "[t0].[name] LIKE @P1 ESCAPE '!'",
             Dialect.Oracle to "\"t0\".\"name\" LIKE :1 ESCAPE '!'",
+        )
+
+        for ((dialect, fragment) in expectedSql) {
+            val compiled = compile(spec, dialect).unwrap()
+
+            assertTrue(compiled.sql.contains(fragment))
+            assertEquals(listOf(BindValue.Text("%50!%!_!!%")), compiled.params)
+        }
+    }
+
+    @Test
+    fun caseInsensitiveContainsEscapesWildcardsAcrossDialects() {
+        val spec = textFilterSpec(FilterOp.ContainsIgnoreCase, "50%_!")
+        val expectedSql = mapOf(
+            Dialect.Postgres to "\"t0\".\"name\" ILIKE \$1 ESCAPE '!'",
+            Dialect.MySql to "LOWER(`t0`.`name`) LIKE LOWER(?) ESCAPE '!'",
+            Dialect.Mssql to "LOWER([t0].[name]) LIKE LOWER(@P1) ESCAPE '!'",
+            Dialect.Oracle to "UPPER(\"t0\".\"name\") LIKE UPPER(:1) ESCAPE '!'",
         )
 
         for ((dialect, fragment) in expectedSql) {
@@ -560,6 +580,42 @@ class QueryEngineTest {
 
         val duplicate = sampleSpec().copy(groups = listOf(GroupSpec("t0", "id"), GroupSpec("t0", "id")))
         assertTrue(validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated"))
+    }
+
+    @Test
+    fun dialectValidationRejectsNonComparableGroupAndSortTypes() {
+        val jsonColumn = ColumnInfo(
+            name = "payload",
+            dataType = "json",
+            nullable = true,
+            isIndexed = false,
+            category = ColumnCategory.Json,
+        )
+        val users = sampleSchema().tables.first()
+        val schema = sampleSchema().copy(
+            tables = listOf(users.copy(columns = users.columns + jsonColumn)),
+        )
+        val grouped = sampleSpec().copy(
+            columns = listOf(ColumnSel("t0", "payload")),
+            groups = listOf(GroupSpec("t0", "payload")),
+        )
+        val sorted = sampleSpec().copy(
+            sorts = listOf(SortSpec("t0", "payload")),
+        )
+
+        assertTrue(
+            validate(grouped, schema, emptyList(), Dialect.Postgres)
+                .unwrapErr()
+                .contains("cannot be grouped by PostgreSQL"),
+        )
+        assertTrue(
+            validate(sorted, schema, emptyList(), Dialect.Postgres)
+                .unwrapErr()
+                .contains("cannot be sorted by PostgreSQL"),
+        )
+        assertTrue(supportsGroupingAndSorting("jsonb", Dialect.Postgres))
+        assertFalse(supportsGroupingAndSorting("CLOB", Dialect.Oracle))
+        assertFalse(supportsGroupingAndSorting("ntext", Dialect.Mssql))
     }
 
     @Test

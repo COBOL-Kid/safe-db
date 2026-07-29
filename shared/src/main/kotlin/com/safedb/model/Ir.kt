@@ -169,6 +169,7 @@ enum class FilterOp {
     Lt,
     Lte,
     Contains,
+    ContainsIgnoreCase,
     NotContains,
     StartsWith,
     EndsWith,

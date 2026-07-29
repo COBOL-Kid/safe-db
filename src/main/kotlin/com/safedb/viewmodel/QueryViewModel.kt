@@ -348,10 +348,15 @@ class QueryViewModel(
 
     fun clearGroup(tableAlias: String, columnName: String) {
         val clearsLastGroup = groups.size == 1
-        groupState = groups.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+        val remainingGroups = groups.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+        groupState = remainingGroups
         if (!clearsLastGroup) {
             selectedColumns = selectedColumns - columnKey(tableAlias, columnName)
             sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+            if (selectedColumns.isEmpty()) {
+                val fallback = remainingGroups.first()
+                selectedColumns = setOf(columnKey(fallback.tableAlias, fallback.column))
+            }
         }
     }
 

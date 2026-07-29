@@ -187,6 +187,29 @@ class QueryViewModelStateTest {
     }
 
     @Test
+    fun removingOnlySelectedRestoredGroupPromotesRemainingGroupToOutput() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        val orders = table("orders", "id", "status")
+        val savedSpec = QuerySpec(
+            tables = listOf(TableRef("app", "orders", "saved_orders")),
+            columns = listOf(ColumnSel("saved_orders", "id")),
+            joins = emptyList(),
+            filters = FilterGroup.empty(),
+            limit = 100,
+            groups = listOf(
+                GroupSpec("saved_orders", "id"),
+                GroupSpec("saved_orders", "status"),
+            ),
+        )
+        viewModel.restoreFromSpec(savedSpec, listOf(orders))
+
+        viewModel.toggleGroup("t0", "id")
+
+        assertEquals(listOf(GroupSpec("t0", "status")), viewModel.groups)
+        assertEquals(listOf(ColumnSel("t0", "status")), viewModel.spec.columns)
+    }
+
+    @Test
     fun limitsAndClearRestoreStableDefaults() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         viewModel.addTable(table("customers", "id"))

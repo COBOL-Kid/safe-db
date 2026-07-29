@@ -264,6 +264,7 @@ fun opLabel(op: FilterOp): String = when (op) {
     FilterOp.Lt -> "<"
     FilterOp.Lte -> "<="
     FilterOp.Contains -> "contains"
+    FilterOp.ContainsIgnoreCase -> "contains (case-insensitive)"
     FilterOp.NotContains -> "does not contain"
     FilterOp.StartsWith -> "starts with"
     FilterOp.EndsWith -> "ends with"

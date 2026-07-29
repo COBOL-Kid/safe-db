@@ -224,7 +224,12 @@ private fun buildLeaf(
         val ph = placeholder(currentIdx, dialect)
         currentIdx += 1
         params.add(BindValue.Text(friendlyPatternText(filter.op, text)))
-        return Outcome.ok("$columnRef ${friendlyPatternOperator(filter.op)} $ph ESCAPE '!'" to currentIdx)
+        val predicate = if (filter.op == FilterOp.ContainsIgnoreCase) {
+            buildIlike(columnRef, ph, dialect)
+        } else {
+            "$columnRef ${friendlyPatternOperator(filter.op)} $ph"
+        }
+        return Outcome.ok("$predicate ESCAPE '!'" to currentIdx)
     }
 
     val sqlOp = filter.op.sqlOperator()
@@ -315,6 +320,7 @@ private fun buildLeaf(
 
 private fun FilterOp.isFriendlyTextPattern(): Boolean = this in setOf(
     FilterOp.Contains,
+    FilterOp.ContainsIgnoreCase,
     FilterOp.NotContains,
     FilterOp.StartsWith,
     FilterOp.EndsWith,
@@ -329,7 +335,7 @@ private fun friendlyPatternOperator(op: FilterOp): String = when (op) {
 private fun friendlyPatternText(op: FilterOp, text: String): String {
     val escaped = escapeLikeLiteral(text)
     return when (op) {
-        FilterOp.Contains, FilterOp.NotContains -> "%$escaped%"
+        FilterOp.Contains, FilterOp.ContainsIgnoreCase, FilterOp.NotContains -> "%$escaped%"
         FilterOp.StartsWith -> "$escaped%"
         FilterOp.EndsWith -> "%$escaped"
         else -> error("Not a friendly text pattern: $op")
