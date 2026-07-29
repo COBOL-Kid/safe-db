@@ -58,18 +58,25 @@ fun FilterRow(
     modifier: Modifier = Modifier,
 ) {
     val valueFocusRequester = remember(filter.id) { FocusRequester() }
-    val shouldFocusValue = queryViewModel.requestedFilterFocusId == filter.id
-    if (shouldFocusValue) {
-        LaunchedEffect(filter.id) {
-            valueFocusRequester.requestFocus()
-            queryViewModel.consumeRequestedFilterFocus(filter.id)
-        }
-    }
+    val focusRequested = queryViewModel.requestedFilterFocusId == filter.id
     val table = queryViewModel.canvasTables.find { it.alias == filter.tableAlias }
     val columns = table?.tableInfo?.columns.orEmpty()
     val columnInfo = columns.find { it.name == filter.column }
     val availableOps = columnInfo?.let { opsForColumn(it.dataType) }.orEmpty()
     val valueKind = filter.op.valueKind()
+    val canFocusValue = when (valueKind) {
+        ValueKind.None -> false
+        ValueKind.Single -> columnInfo == null || literalKindForColumn(columnInfo.dataType) != LiteralKind.Bool
+        ValueKind.Pair -> true
+        ValueKind.List -> (filter.value as? FilterValue.ListValue)?.literals?.isNotEmpty() == true
+    }
+    val shouldFocusValue = focusRequested && canFocusValue
+    if (focusRequested) {
+        LaunchedEffect(filter.id, canFocusValue) {
+            if (canFocusValue) valueFocusRequester.requestFocus()
+            queryViewModel.consumeRequestedFilterFocus(filter.id)
+        }
+    }
 
     fun update(newFilter: FilterSpec) {
         queryViewModel.updateFilter(path, newFilter)

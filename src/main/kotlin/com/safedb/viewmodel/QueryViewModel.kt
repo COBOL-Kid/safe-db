@@ -34,6 +34,7 @@ import com.safedb.query.QueryError
 import com.safedb.query.QueryHydrationTarget
 import com.safedb.query.clampDimension
 import com.safedb.query.countFilterLeaves
+import com.safedb.query.addFilterGroup
 import com.safedb.query.addFilterLeaf
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
@@ -228,7 +229,12 @@ class QueryViewModel(
 
     override fun toggleColumn(alias: String, column: String) {
         val key = columnKey(alias, column)
-        if (groups.any { it.tableAlias == alias && it.column == column }) return
+        val grouped = groups.any { it.tableAlias == alias && it.column == column }
+        if (grouped && key in selectedColumns) {
+            clearGroup(alias, column)
+            selectedColumns = selectedColumns - key
+            return
+        }
         selectedColumns = if (selectedColumns.contains(key)) {
             selectedColumns - key
         } else {
@@ -278,7 +284,7 @@ class QueryViewModel(
             if (op == default.op) default else default.copy(op = op, value = defaultValueFor(op, dataType))
         }
         addFilter(filter)
-        requestedFilterFocusIdState = filter.id
+        requestedFilterFocusIdState = filter.id.takeIf { hasTextValueInput(op, dataType) }
     }
 
     /** Cycles an ordered sort through ascending, descending, and removed. */
@@ -367,7 +373,16 @@ class QueryViewModel(
 
     override fun setGroups(groups: List<GroupSpec>) {
         groupState = groups.distinctBy { it.tableAlias to it.column }
-        selectedColumns = selectedColumns + groupState.map { group -> columnKey(group.tableAlias, group.column) }
+    }
+
+    fun addFilterToGroup(groupPath: List<Int>, spec: NewFilterSpec) {
+        filterGroupState = addFilterLeaf(filters, groupPath, spec)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
+    }
+
+    fun addGroupToGroup(groupPath: List<Int>, connector: GroupConnector) {
+        filterGroupState = addFilterGroup(filters, groupPath, connector)
+        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun updateFilter(path: List<Int>, spec: NewFilterSpec) {
@@ -550,6 +565,12 @@ private fun defaultValueFor(op: FilterOp, dataType: String): FilterValue? {
         ValueKind.List -> FilterValue.ListValue(listOf(FilterLiteral(kind, "")))
         ValueKind.Pair -> FilterValue.Pair(FilterLiteral(kind, ""), FilterLiteral(kind, ""))
     }
+}
+
+private fun hasTextValueInput(op: FilterOp, dataType: String): Boolean = when (op.valueKind()) {
+    ValueKind.None -> false
+    ValueKind.Single -> literalKindForColumn(dataType) != LiteralKind.Bool
+    ValueKind.Pair, ValueKind.List -> true
 }
 
 private fun FilterGroup.containsFilter(tableAlias: String, columnName: String): Boolean = children.any { child ->
