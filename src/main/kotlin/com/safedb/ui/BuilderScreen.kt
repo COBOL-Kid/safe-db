@@ -18,11 +18,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -57,8 +60,10 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
+import com.safedb.model.GroupSpec
 import com.safedb.model.SavedQuery
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
@@ -103,6 +108,75 @@ internal fun toggleResultsPane(mode: ResultsPaneMode, height: Float): ResultsPan
     } else {
         ResultsPaneState(ResultsPaneMode.Maximized, height)
     }
+
+internal fun groupingOrderLabels(
+    groups: List<GroupSpec>,
+    tableNamesByAlias: Map<String, String>,
+): List<String> = groups.map { group ->
+    "${tableNamesByAlias[group.tableAlias] ?: group.tableAlias}.${group.column}"
+}
+
+@Composable
+private fun GroupingOrderCard(
+    groups: List<GroupSpec>,
+    tableNamesByAlias: Map<String, String>,
+    modifier: Modifier = Modifier,
+) {
+    val labels = groupingOrderLabels(groups, tableNamesByAlias)
+
+    Surface(
+        modifier = modifier.semantics {
+            contentDescription = labels
+                .mapIndexed { index, label -> "${index + 1} $label" }
+                .joinToString(prefix = "Grouping order: ")
+        },
+        shape = RoundedCornerShape(4.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .heightIn(max = 144.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            Text(
+                "Grouping order",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            labels.forEachIndexed { index, label ->
+                Row(
+                    modifier = Modifier.padding(top = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.size(20.dp),
+                        shape = RoundedCornerShape(50),
+                        color = SafeDbTheme.colors.accentContainer,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "${index + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SafeDbTheme.colors.actionPrimary,
+                            )
+                        }
+                    }
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
 
 private fun costGuardDialogCopy(reason: String?): CostGuardDialogCopy {
     val normalized = reason.orEmpty()
@@ -534,14 +608,34 @@ fun BuilderScreen(
                                 }
                             }
 
-                            if (queryViewModel.filterCount > 0) {
-                                FilterBuilder(
-                                    queryViewModel = queryViewModel,
+                            if (queryViewModel.filterCount > 0 || queryViewModel.groups.isNotEmpty()) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState())
                                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                                )
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        if (queryViewModel.filterCount > 0) {
+                                            FilterBuilder(
+                                                queryViewModel = queryViewModel,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
+                                            )
+                                        }
+                                    }
+                                    if (queryViewModel.groups.isNotEmpty()) {
+                                        GroupingOrderCard(
+                                            groups = queryViewModel.groups,
+                                            tableNamesByAlias = queryViewModel.canvasTables.associate {
+                                                it.alias to it.tableInfo.name
+                                            },
+                                            modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
+                                        )
+                                    }
+                                }
                             }
 
                             Box(

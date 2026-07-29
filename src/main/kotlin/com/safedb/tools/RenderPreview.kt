@@ -38,10 +38,16 @@ import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
+import com.safedb.model.FilterLiteral
+import com.safedb.model.FilterOp
+import com.safedb.model.FilterSpec
+import com.safedb.model.FilterValue
 import com.safedb.model.ForeignKeyInfo
+import com.safedb.model.GroupSpec
 import com.safedb.model.HistoryEntry
 import com.safedb.model.IndexInfo
 import com.safedb.model.JoinSpec
+import com.safedb.model.LiteralKind
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
@@ -502,6 +508,21 @@ fun main() {
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
+                    vm.query.setGroups(
+                        listOf(
+                            GroupSpec("t0", "status"),
+                            GroupSpec("t0", "id"),
+                            GroupSpec("t0", "total_cents"),
+                        ),
+                    )
+                    vm.query.addFilter(
+                        FilterSpec(
+                            tableAlias = "t0",
+                            column = "status",
+                            op = FilterOp.Eq,
+                            value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "pending")),
+                        ),
+                    )
                     vm.query.run("c1")
                 }
             }
@@ -520,6 +541,21 @@ fun main() {
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
+                    vm.query.setGroups(
+                        listOf(
+                            GroupSpec("t0", "status"),
+                            GroupSpec("t0", "id"),
+                            GroupSpec("t0", "total_cents"),
+                        ),
+                    )
+                    vm.query.addFilter(
+                        FilterSpec(
+                            tableAlias = "t0",
+                            column = "status",
+                            op = FilterOp.Eq,
+                            value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "pending")),
+                        ),
+                    )
                     vm.query.run("c1")
                 }
             }
