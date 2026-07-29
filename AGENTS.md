@@ -29,6 +29,46 @@ Use the project wrapper, not a system Gradle installation. Do not run `./gradlew
 - The preview renderer currently writes 28 PNGs: 10 main-app images at 1280×832 and 18 Explore/recipe images at 1120×760, in light and dark modes.
 - `.github/workflows/compose.yml` runs the unit/coverage gate plus required static-MySQL integration on selected application/build changes. `.github/workflows/durability.yml` runs each Monday at 09:00 UTC and on demand, covering three-platform unit checks, required PostgreSQL and generated-MySQL integration, previews, and Linux packaging.
 
+## Tech Stack
+
+- Jetpack Compose Desktop / Compose Multiplatform `1.9.3`
+- Kotlin `2.4.0`
+- Gradle wrapper with `jvmToolchain(25)`
+- JDBC via HikariCP and dialect adapters in `shared/`
+- Credentials through Java keyring-backed platform stores where available; `disabled` is in-memory only
+
+## Lint / Typecheck
+
+Run `./gradlew check` after editing Kotlin/Compose files. There is no separate Kotlin linter configured; workflow YAML is validated by the Workflow lint action.
+
+## Testing
+
+- **Fast gate:** `./gradlew check` — JUnit Platform unit tests for `:shared` and the desktop app plus test-discovery and coverage ratchets; no database required
+- **Integration gate (optional):** `./gradlew integrationTest` after seeding MySQL (`scripts/seed_mysql.sh --static`) or PostgreSQL (`testdata_postgres.sql`). Tests skip cleanly when the selected fixture is unreachable unless its `SAFEDB_TEST_REQUIRE_*` flag is true.
+- **Shared module only:** `./gradlew :shared:test`
+- **UI preview:** `./gradlew renderPreview`, then inspect `/tmp/safedb-preview/*.png`
+- **Seeder CLI surface:** `./gradlew seedMysql -PseedMysqlArgs="--help"` and a bad-arg check such as `./gradlew seedMysql -PseedMysqlArgs="--orders nope"` when changing seeding behavior
+- **MySQL env vars for integration/smoke:** `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, `SAFEDB_TEST_MYSQL_DATABASE`, optional `SAFEDB_TEST_MYSQL_DOCKER`
+- **Required integration execution:** `SAFEDB_TEST_REQUIRE_MYSQL=true` or `SAFEDB_TEST_REQUIRE_POSTGRES=true`; PostgreSQL connection variables use the parallel `SAFEDB_TEST_POSTGRES_*` names
+
+To reproduce the pull-request MySQL job with the default local connection:
+
+```sh
+scripts/seed_mysql.sh --static
+SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integrationTest --stacktrace
+```
+
+### CI Policy
+
+- Compose jobs skip draft pull requests and support `merge_group`. The `check` job follows the workflow path filters.
+- MySQL integration is relevant only for `shared/`, build logic, Gradle and wrapper files, scripts, and `testdata_mysql.sql`; it is skipped for `src/`-only, PostgreSQL-fixture-only, and Compose-workflow-only changes.
+- Eligible same-repository pull requests run MySQL integration automatically. Forks require both GitHub approval for the external workflow and the exact maintainer-applied `ci:integration` label. The label controls MySQL eligibility only and must be created outside the workflow.
+- Workflow-only changes run the separate Workflow lint workflow.
+- Durability runs Mondays at 09:00 UTC and manually: fresh cross-platform `check`, required PostgreSQL and generated MySQL integration, preview validation, and Linux packaging.
+- Dependency submission is not a pull-request check; for public repositories it runs on selected dependency-file updates to trusted `main` or by manual dispatch. Dependabot checks Gradle and GitHub Actions monthly, grouping minor and patch updates.
+
+Smoke tests that need a real database should use the app or seeder directly. The MySQL seeder skips unrelated app state by default and streams generated SQL into the target database.
+
 ## Project Structure
 
 ```text

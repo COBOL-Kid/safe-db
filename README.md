@@ -27,6 +27,16 @@ The root seed wrapper is still available:
 scripts/seed_mysql.sh
 ```
 
+## Pull Request Checks
+
+For changes covered by the Compose workflow's path filters, its jobs do not run for draft pull requests. Marking such a pull request ready for review runs the standard `./gradlew check` gate.
+
+MySQL integration is limited to changes under `shared/`, `buildSrc/`, `gradle/`, root Gradle and wrapper files, `scripts/`, or `testdata_mysql.sql`. It is skipped for changes limited to `src/`, `testdata_postgres.sql`, or the Compose workflow itself. Same-repository pull requests run eligible integration automatically; fork pull requests also need the `ci:integration` label from a maintainer. External-contributor approval gates the entire fork workflow, while the label controls only MySQL eligibility and does not bypass approval.
+
+Before public launch, maintainers must create the exact `ci:integration` label and configure GitHub Actions to require approval for all external contributors. The workflow file does not create the label or enable that repository setting. Compose checks also support merge queues through `merge_group`, and the separate Workflow lint workflow validates workflow-only changes.
+
+The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. It reruns `check` on Linux, macOS, and Windows; requires PostgreSQL and generated-fixture MySQL integration; validates UI previews; and builds the Linux package. Dependency submission is not a pull-request check: when the repository is public, it runs for selected dependency-file updates on trusted `main` or by manual dispatch. Dependabot checks Gradle and GitHub Actions monthly and groups minor and patch updates.
+
 ## Features
 
 - **Connections** — save named profiles; passwords stored in the OS credential store when available, never in profile JSON.
@@ -71,6 +81,13 @@ scripts/seed_mysql.sh --orders 20000 --customers 5000 --seed 7
 ```
 
 The script targets `localhost:3306` as `root` by default. Override with `SAFEDB_TEST_MYSQL_*` env vars. If no `mysql` client is on `PATH`, it auto-detects a running MySQL/MariaDB Docker container and runs the client via `docker exec` (pin one with `SAFEDB_TEST_MYSQL_DOCKER=<name>`).
+
+To reproduce the pull-request MySQL job against the default local fixture:
+
+```sh
+scripts/seed_mysql.sh --static
+SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integrationTest --stacktrace
+```
 
 Integration tests skip locally when their seeded database is unavailable. CI sets `SAFEDB_TEST_REQUIRE_MYSQL=true` or `SAFEDB_TEST_REQUIRE_POSTGRES=true` so a configured engine must execute rather than silently skip. PostgreSQL uses the `SAFEDB_TEST_POSTGRES_*` variables and the minimal `testdata_postgres.sql` fixture.
 
