@@ -42,7 +42,7 @@ dependencies {
     add(integrationTest.implementationConfigurationName, kotlin("test"))
     add(integrationTest.implementationConfigurationName, "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:5.12.2")
-    add(integrationTest.runtimeOnlyConfigurationName, "org.junit.platform:junit-platform-launcher:1.12.2")
+    add(integrationTest.runtimeOnlyConfigurationName, "org.junit.platform:junit-platform-launcher:6.1.2")
 }
 
 tasks.test {
