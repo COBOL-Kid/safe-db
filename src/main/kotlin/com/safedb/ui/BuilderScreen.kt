@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,12 +28,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,15 +52,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +96,11 @@ import java.time.Instant
 import java.util.UUID
 
 internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, MAX_LIMIT)
+private val QueryControlsMaxHeight = 208.dp
+private val QueryControlsVerticalPadding = 8.dp
+private val QueryControlsTableGap = 16.dp
+internal val QueryControlsCanvasInset =
+    QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
 
 private data class CostGuardDialogCopy(
     val title: String,
@@ -126,15 +140,35 @@ internal fun sortOrderLabels(
     "$column ${if (sort.direction == SortDirection.Asc) "ascending" else "descending"}"
 }
 
+internal fun queryOptionEmptyLabel(labels: List<String>): String? =
+    "None".takeIf { labels.isEmpty() }
+
 @Composable
-private fun QueryOrderCard(
+private fun QueryOptionsCard(
+    distinct: Boolean,
+    onDistinctChange: (Boolean) -> Unit,
     groups: List<GroupSpec>,
     sorts: List<SortSpec>,
+    distinctSortConflicts: List<SortSpec>,
+    onSelectDistinctSortColumns: () -> Unit,
+    onRemoveDistinctSortConflicts: () -> Unit,
+    onMoveGroup: (Int, Int) -> Unit,
+    onMoveSort: (Int, Int) -> Unit,
     tableNamesByAlias: Map<String, String>,
     modifier: Modifier = Modifier,
 ) {
     val groupLabels = groupingOrderLabels(groups, tableNamesByAlias)
     val sortLabels = sorts.map { sort ->
+        "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
+    }
+    val distinctSortConflictKeys = distinctSortConflicts
+        .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+    val distinctSortConflictIndices = sorts.indices
+        .filterTo(mutableSetOf()) { index ->
+            val sort = sorts[index]
+            (sort.tableAlias to sort.column) in distinctSortConflictKeys
+        }
+    val distinctSortConflictLabels = distinctSortConflicts.map { sort ->
         "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
     }
 
@@ -146,10 +180,16 @@ private fun QueryOrderCard(
             val sortingDescription = sortOrderLabels(sorts, tableNamesByAlias)
                 .mapIndexed { index, label -> "${index + 1} $label" }
                 .joinToString(prefix = "Sorting order: ")
-            contentDescription = listOfNotNull(
-                groupingDescription.takeIf { groups.isNotEmpty() },
-                sortingDescription.takeIf { sorts.isNotEmpty() },
-            ).joinToString(". ")
+            contentDescription = listOf(
+                "Distinct rows: ${if (distinct) "on" else "off"}",
+                groupingDescription.takeIf { groups.isNotEmpty() } ?: "Grouping order: none",
+                sortingDescription.takeIf { sorts.isNotEmpty() } ?: "Sorting order: none",
+                if (distinctSortConflicts.isNotEmpty()) {
+                    "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}"
+                } else {
+                    null
+                },
+            ).filterNotNull().joinToString(". ")
         },
         shape = RoundedCornerShape(4.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -158,54 +198,195 @@ private fun QueryOrderCard(
     ) {
         Column(
             modifier = Modifier
-                .heightIn(max = 184.dp)
+                .heightIn(max = QueryControlsMaxHeight)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             Text(
-                "Query order",
+                "Query options",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            if (groupLabels.isNotEmpty()) {
-                QueryOrderSection(
-                    title = "Group by",
-                    labels = groupLabels,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 5.dp)
+                    .toggleable(
+                        value = distinct,
+                        role = Role.Checkbox,
+                        onValueChange = onDistinctChange,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = distinct,
+                    onCheckedChange = null,
+                    modifier = Modifier.size(28.dp),
+                )
+                Text(
+                    "Distinct rows",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SafeDbTheme.colors.actionPrimary,
+                    modifier = Modifier.padding(start = 5.dp),
                 )
             }
-            if (sortLabels.isNotEmpty()) {
-                QueryOrderSection(
-                    title = "Sort by",
-                    labels = sortLabels,
-                    directions = sorts.map { it.direction },
-                    separated = groupLabels.isNotEmpty(),
+            if (distinctSortConflicts.isNotEmpty()) {
+                DistinctSortProjectionWarning(
+                    onSelectColumns = onSelectDistinctSortColumns,
+                    onRemoveSorts = onRemoveDistinctSortConflicts,
                 )
+            }
+            QueryOrderSection(
+                title = "Group by",
+                labels = groupLabels,
+                onMove = onMoveGroup,
+                separated = true,
+            )
+            QueryOrderSection(
+                title = "Sort by",
+                labels = sortLabels,
+                directions = sorts.map { it.direction },
+                onMove = onMoveSort,
+                warningIndices = distinctSortConflictIndices,
+                separated = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DistinctSortProjectionWarning(
+    onSelectColumns: () -> Unit,
+    onRemoveSorts: () -> Unit,
+) {
+    val colors = SafeDbTheme.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 5.dp),
+        shape = RoundedCornerShape(3.dp),
+        color = colors.warningContainer,
+        tonalElevation = 0.dp,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Text(
+                "Distinct rows cannot sort by unselected columns.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onWarningContainer,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onSelectColumns) {
+                    Text("Select columns", style = MaterialTheme.typography.labelSmall)
+                }
+                TextButton(onClick = onRemoveSorts) {
+                    Text("Remove sorts", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun QueryOrderSection(
     title: String,
     labels: List<String>,
     directions: List<SortDirection>? = null,
+    onMove: (Int, Int) -> Unit,
+    warningIndices: Set<Int> = emptySet(),
     separated: Boolean = false,
 ) {
+    var draggedIndex by remember { mutableStateOf<Int?>(null) }
+    var hoveredIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val dragStepPx = with(LocalDensity.current) { 20.dp.toPx() }
+    val currentLastIndex by rememberUpdatedState(labels.lastIndex)
+    val currentOnMove by rememberUpdatedState(onMove)
+
     Text(
         title,
         style = MaterialTheme.typography.labelSmall,
         color = SafeDbTheme.colors.actionPrimary,
-        modifier = Modifier.padding(top = if (separated) 8.dp else 5.dp),
+        modifier = Modifier.padding(top = if (separated) 5.dp else 4.dp),
     )
-    labels.forEachIndexed { index, label ->
-        Row(
+    queryOptionEmptyLabel(labels)?.let { emptyLabel ->
+        Text(
+            emptyLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+    labels.forEachIndexed { index, label ->
+        val rowBackground = when (index) {
+            draggedIndex -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f)
+            in warningIndices -> SafeDbTheme.colors.warningContainer.copy(alpha = 0.85f)
+            hoveredIndex -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f)
+            else -> Color.Transparent
+        }
+        Row(
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(3.dp))
+                .background(rowBackground)
+                .onPointerEvent(PointerEventType.Enter) { hoveredIndex = index }
+                .onPointerEvent(PointerEventType.Exit) {
+                    if (hoveredIndex == index) hoveredIndex = null
+                }
+                .padding(horizontal = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
+            Icon(
+                Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder $label",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(16.dp)
+                    .pointerHoverIcon(PointerIcon.Hand)
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = {
+                                draggedIndex = index
+                                dragOffset = 0f
+                            },
+                            onDragEnd = {
+                                draggedIndex = null
+                                dragOffset = 0f
+                            },
+                            onDragCancel = {
+                                draggedIndex = null
+                                dragOffset = 0f
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffset += amount.y
+                                var current = draggedIndex ?: return@detectDragGestures
+                                while (dragOffset >= dragStepPx) {
+                                    val target = queryOrderMoveTarget(current, 1, currentLastIndex) ?: break
+                                    currentOnMove(current, target)
+                                    current = target
+                                    draggedIndex = current
+                                    dragOffset -= dragStepPx
+                                }
+                                while (dragOffset <= -dragStepPx) {
+                                    val target = queryOrderMoveTarget(current, -1, currentLastIndex) ?: break
+                                    currentOnMove(current, target)
+                                    current = target
+                                    draggedIndex = current
+                                    dragOffset += dragStepPx
+                                }
+                            },
+                        )
+                    },
+            )
             Surface(
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
                 shape = RoundedCornerShape(50),
                 color = SafeDbTheme.colors.accentContainer,
             ) {
@@ -227,11 +408,64 @@ private fun QueryOrderSection(
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (index in warningIndices) {
+                    SafeDbTheme.colors.onWarningContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            QueryOrderMoveAction(
+                icon = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Move $label up in $title",
+                targetIndex = queryOrderMoveTarget(index, -1, labels.lastIndex),
+                onMove = { target -> onMove(index, target) },
+            )
+            QueryOrderMoveAction(
+                icon = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Move $label down in $title",
+                targetIndex = queryOrderMoveTarget(index, 1, labels.lastIndex),
+                onMove = { target -> onMove(index, target) },
             )
         }
+    }
+}
+
+internal fun queryOrderMoveTarget(index: Int, offset: Int, lastIndex: Int): Int? {
+    if (index !in 0..lastIndex) return null
+    return (index + offset).takeIf { it in 0..lastIndex }
+}
+
+@Composable
+private fun QueryOrderMoveAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    targetIndex: Int?,
+    onMove: (Int) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clickable(
+                enabled = targetIndex != null,
+                role = Role.Button,
+                onClick = { targetIndex?.let(onMove) },
+            )
+            .pointerHoverIcon(if (targetIndex != null) PointerIcon.Hand else PointerIcon.Default),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription.takeIf { targetIndex != null },
+            modifier = Modifier.size(14.dp),
+            tint = if (targetIndex != null) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+            },
+        )
     }
 }
 
@@ -665,41 +899,6 @@ fun BuilderScreen(
                                 }
                             }
 
-                            if (
-                                queryViewModel.filterCount > 0 ||
-                                queryViewModel.groups.isNotEmpty() ||
-                                queryViewModel.sorts.isNotEmpty()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.Top,
-                                ) {
-                                    Box(modifier = Modifier.weight(1f)) {
-                                        if (queryViewModel.filterCount > 0) {
-                                            FilterBuilder(
-                                                queryViewModel = queryViewModel,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .horizontalScroll(rememberScrollState()),
-                                            )
-                                        }
-                                    }
-                                    if (queryViewModel.groups.isNotEmpty() || queryViewModel.sorts.isNotEmpty()) {
-                                        QueryOrderCard(
-                                            groups = queryViewModel.groups,
-                                            sorts = queryViewModel.sorts,
-                                            tableNamesByAlias = queryViewModel.canvasTables.associate {
-                                                it.alias to it.tableInfo.name
-                                            },
-                                            modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
-                                        )
-                                    }
-                                }
-                            }
-
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -713,7 +912,50 @@ fun BuilderScreen(
                                         )
                                     }
                                 } else {
-                                    Canvas(queryViewModel = queryViewModel, modifier = Modifier.fillMaxSize())
+                                    Canvas(
+                                        queryViewModel = queryViewModel,
+                                        contentTopInset = QueryControlsCanvasInset,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .fillMaxWidth()
+                                            .padding(
+                                                horizontal = 16.dp,
+                                                vertical = QueryControlsVerticalPadding,
+                                            ),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.Top,
+                                    ) {
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            if (queryViewModel.filterCount > 0) {
+                                                FilterBuilder(
+                                                    queryViewModel = queryViewModel,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .heightIn(max = QueryControlsMaxHeight)
+                                                        .verticalScroll(rememberScrollState())
+                                                        .horizontalScroll(rememberScrollState()),
+                                                )
+                                            }
+                                        }
+                                        QueryOptionsCard(
+                                            distinct = queryViewModel.distinct,
+                                            onDistinctChange = queryViewModel::setDistinct,
+                                            groups = queryViewModel.groups,
+                                            sorts = queryViewModel.sorts,
+                                            distinctSortConflicts = queryViewModel.distinctSortConflicts,
+                                            onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
+                                            onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
+                                            onMoveGroup = queryViewModel::moveGroup,
+                                            onMoveSort = queryViewModel::moveSort,
+                                            tableNamesByAlias = queryViewModel.canvasTables.associate {
+                                                it.alias to it.tableInfo.name
+                                            },
+                                            modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
+                                        )
+                                    }
                                 }
                             }
 

@@ -20,6 +20,7 @@ import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.service.SafeDbService
@@ -112,6 +113,139 @@ class QueryViewModelStateTest {
         viewModel.clearSort("t1", "customer_id")
         assertEquals(null, viewModel.sortForColumn("t1", "customer_id"))
         assertEquals(listOf("t0"), viewModel.sorts.map { it.tableAlias })
+    }
+
+    @Test
+    fun tableColumnToggleSelectsPartialAndClearsOnlyTheTargetTable() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("customers", "id", "name"))
+        viewModel.addTable(table("orders", "id", "customer_id"))
+        viewModel.toggleColumn("t0", "id")
+        viewModel.toggleColumn("t1", "customer_id")
+
+        viewModel.toggleAllColumns("t0")
+
+        assertEquals(
+            setOf("t0\u0000id", "t0\u0000name", "t1\u0000customer_id"),
+            viewModel.selectedColumns,
+        )
+
+        viewModel.toggleAllColumns("t0")
+
+        assertEquals(setOf("t1\u0000customer_id"), viewModel.selectedColumns)
+    }
+
+    @Test
+    fun tableColumnToggleUsesColumnRulesWhileGroupingIsActive() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id", "status"))
+        viewModel.toggleColumn("t0", "id")
+        viewModel.toggleGroup("t0", "id")
+
+        viewModel.toggleAllColumns("t0")
+
+        assertEquals(
+            setOf("t0\u0000id", "t0\u0000status"),
+            viewModel.selectedColumns,
+        )
+        assertEquals(
+            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")),
+            viewModel.groups,
+        )
+
+        viewModel.toggleAllColumns("t0")
+
+        assertTrue(viewModel.selectedColumns.isEmpty())
+        assertTrue(viewModel.groups.isEmpty())
+    }
+
+    @Test
+    fun groupAndSortRowsCanBeReorderedIndependently() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id", "status", "created_at"))
+        viewModel.setGroups(
+            listOf(
+                GroupSpec("t0", "id"),
+                GroupSpec("t0", "status"),
+                GroupSpec("t0", "created_at"),
+            ),
+        )
+        viewModel.setSorts(
+            listOf(
+                SortSpec("t0", "id"),
+                SortSpec("t0", "status", SortDirection.Desc),
+                SortSpec("t0", "created_at"),
+            ),
+        )
+
+        viewModel.moveGroup(2, 0)
+        viewModel.moveSort(0, 2)
+
+        assertEquals(
+            listOf("created_at", "id", "status"),
+            viewModel.spec.groups.map { it.column },
+        )
+        assertEquals(
+            listOf("status", "created_at", "id"),
+            viewModel.spec.sorts.map { it.column },
+        )
+        assertEquals(SortDirection.Desc, viewModel.spec.sorts.first().direction)
+    }
+
+    @Test
+    fun distinctIsIncludedRestoredAndResetWithBuilderState() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        val orders = table("orders", "id")
+        viewModel.addTable(orders)
+        viewModel.setDistinct(true)
+
+        assertTrue(viewModel.distinct)
+        assertTrue(viewModel.spec.distinct)
+
+        viewModel.clear()
+
+        assertFalse(viewModel.distinct)
+        viewModel.restoreFromSpec(
+            QuerySpec(
+                tables = listOf(TableRef("app", "orders", "saved_orders")),
+                filters = FilterGroup.empty(),
+                limit = 100,
+                distinct = true,
+            ),
+            listOf(orders),
+        )
+        assertTrue(viewModel.distinct)
+        assertTrue(viewModel.spec.distinct)
+    }
+
+    @Test
+    fun distinctSortConflictsDisableRunAndOfferExplicitRepairs() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id", "status", "created_at"))
+        viewModel.toggleColumn("t0", "id")
+        viewModel.setSort("t0", "status", SortDirection.Asc)
+        viewModel.setSort("t0", "created_at", SortDirection.Desc)
+        viewModel.setDistinct(true)
+
+        assertEquals(listOf("status", "created_at"), viewModel.distinctSortConflicts.map { it.column })
+        assertFalse(viewModel.canRun)
+
+        viewModel.selectDistinctSortColumns()
+
+        assertTrue(viewModel.isColumnSelected("t0", "status"))
+        assertTrue(viewModel.isColumnSelected("t0", "created_at"))
+        assertTrue(viewModel.distinctSortConflicts.isEmpty())
+        assertTrue(viewModel.canRun)
+
+        viewModel.toggleColumn("t0", "status")
+        assertEquals(listOf("status"), viewModel.distinctSortConflicts.map { it.column })
+        assertFalse(viewModel.canRun)
+
+        viewModel.removeDistinctSortConflicts()
+
+        assertEquals(listOf("created_at"), viewModel.sorts.map { it.column })
+        assertTrue(viewModel.distinctSortConflicts.isEmpty())
+        assertTrue(viewModel.canRun)
     }
 
     @Test
@@ -224,6 +358,17 @@ class QueryViewModelStateTest {
         assertEquals(0, viewModel.tableCount)
         assertTrue(viewModel.filters.id.isNotEmpty())
         assertNotEquals("", viewModel.filters.id)
+    }
+
+    @Test
+    fun newTablesUseCanvasLocalCoordinates() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+
+        viewModel.addTable(table("orders", "id"))
+        viewModel.addTable(table("customers", "id"))
+
+        assertEquals(0f, viewModel.canvasTables[0].y)
+        assertEquals(30f, viewModel.canvasTables[1].y)
     }
 
     private fun filter(id: String, alias: String, column: String) = FilterSpec(

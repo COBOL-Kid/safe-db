@@ -37,6 +37,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -96,6 +97,7 @@ private sealed interface ClickableJoinLine {
 @Composable
 fun Canvas(
     queryViewModel: QueryViewModel,
+    contentTopInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     var gesture by remember { mutableStateOf<CanvasGesture?>(null) }
@@ -104,6 +106,7 @@ fun Canvas(
     val verticalScroll = rememberScrollState()
     val fieldScrollStates = remember { mutableStateMapOf<String, ScrollState>() }
     val density = LocalDensity.current
+    val contentTopInsetPx = with(density) { contentTopInset.toPx() }
 
     val aliases = queryViewModel.canvasTables.map { it.alias }.toSet()
     fieldScrollStates.keys.toList()
@@ -118,7 +121,7 @@ fun Canvas(
             CanvasTableLike(
                 alias = table.alias,
                 x = table.x,
-                y = table.y,
+                y = canvasDisplayY(table.y, contentTopInsetPx),
                 width = table.width.dp.toPx(),
                 height = table.height.dp.toPx(),
                 fieldScrollOffset = fieldScrollStates[table.alias]?.value?.toFloat() ?: 0f,
@@ -487,7 +490,10 @@ fun Canvas(
                             endGesture()
                         },
                         modifier = Modifier.offset {
-                            IntOffset(canvasTable.x.roundToInt(), canvasTable.y.roundToInt())
+                            IntOffset(
+                                canvasTable.x.roundToInt(),
+                                canvasDisplayY(canvasTable.y, contentTopInsetPx).roundToInt(),
+                            )
                         },
                     )
                 }
@@ -525,3 +531,6 @@ fun Canvas(
         }
     }
 }
+
+internal fun canvasDisplayY(tableY: Float, contentTopInsetPx: Float): Float =
+    tableY + contentTopInsetPx

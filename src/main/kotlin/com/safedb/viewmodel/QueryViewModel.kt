@@ -38,6 +38,7 @@ import com.safedb.query.addFilterGroup
 import com.safedb.query.addFilterLeaf
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
+import com.safedb.query.distinctSortProjectionConflicts
 import com.safedb.query.ensureFilterNodeIds
 import com.safedb.query.filterGroupAtPath
 import com.safedb.query.filterLeafIdAtPath
@@ -100,6 +101,9 @@ class QueryViewModel(
     private var queryLimit by mutableIntStateOf(DEFAULT_LIMIT)
     val limit: Int
         get() = queryLimit
+    private var distinctState by mutableStateOf(false)
+    val distinct: Boolean
+        get() = distinctState
     private var connectorOverrideState by mutableStateOf(mapOf<String, GroupConnector>())
     val connectorOverrides: Map<String, GroupConnector>
         get() = connectorOverrideState
@@ -138,7 +142,10 @@ class QueryViewModel(
         private set
 
     val tableCount: Int get() = canvasTables.size
-    val canRun: Boolean get() = canvasTables.isNotEmpty() && !running
+    val distinctSortConflicts: List<SortSpec>
+        get() = distinctSortProjectionConflicts(spec)
+    val canRun: Boolean
+        get() = canvasTables.isNotEmpty() && distinctSortConflicts.isEmpty() && !running
     val filterCount: Int get() = countFilterLeaves(filters)
 
     val spec: QuerySpec
@@ -156,6 +163,7 @@ class QueryViewModel(
                 joins = joins.toList(),
                 filters = filters,
                 limit = limit,
+                distinct = distinct,
                 sorts = sorts,
                 groups = groups,
                 schemaVersion = CURRENT_SCHEMA_VERSION,
@@ -170,6 +178,7 @@ class QueryViewModel(
         joins.clear()
         filterGroupState = FilterGroup.empty()
         queryLimit = DEFAULT_LIMIT
+        distinctState = false
         results = null
         resultConnectionId = null
         resultSpec = null
@@ -192,7 +201,7 @@ class QueryViewModel(
                 tableInfo = tableInfo,
                 alias = alias,
                 x = 40f + offset,
-                y = 40f + offset,
+                y = offset,
             ),
         )
     }
@@ -247,6 +256,17 @@ class QueryViewModel(
 
     fun isColumnSelected(alias: String, column: String): Boolean =
         selectedColumns.contains(columnKey(alias, column))
+
+    fun toggleAllColumns(alias: String) {
+        val table = canvasTables.firstOrNull { it.alias == alias } ?: return
+        val columns = table.tableInfo.columns.map { it.name }
+        val allSelected = columns.isNotEmpty() && columns.all { isColumnSelected(alias, it) }
+        columns.forEach { column ->
+            if (isColumnSelected(alias, column) == allSelected) {
+                toggleColumn(alias, column)
+            }
+        }
+    }
 
     override fun addJoin(join: JoinSpec) {
         val exists = joins.any { it.matchesJoin(join) }
@@ -324,6 +344,22 @@ class QueryViewModel(
         sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
     }
 
+    fun selectDistinctSortColumns() {
+        distinctSortConflicts.forEach { sort ->
+            toggleColumn(sort.tableAlias, sort.column)
+        }
+    }
+
+    fun removeDistinctSortConflicts() {
+        val conflictKeys = distinctSortConflicts
+            .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+        sortState = sorts.filterNot { (it.tableAlias to it.column) in conflictKeys }
+    }
+
+    fun moveSort(fromIndex: Int, toIndex: Int) {
+        sortState = sorts.moveItem(fromIndex, toIndex)
+    }
+
     fun toggleGroup(tableAlias: String, columnName: String) {
         if (groupForColumn(tableAlias, columnName) == null) {
             if (groups.isEmpty()) {
@@ -360,6 +396,10 @@ class QueryViewModel(
         }
     }
 
+    fun moveGroup(fromIndex: Int, toIndex: Int) {
+        groupState = groups.moveItem(fromIndex, toIndex)
+    }
+
     private fun addGroup(tableAlias: String, columnName: String) {
         if (groupForColumn(tableAlias, columnName) != null) return
         groupState = groups + GroupSpec(tableAlias, columnName)
@@ -378,6 +418,10 @@ class QueryViewModel(
 
     override fun setGroups(groups: List<GroupSpec>) {
         groupState = groups.distinctBy { it.tableAlias to it.column }
+    }
+
+    override fun setDistinct(distinct: Boolean) {
+        distinctState = distinct
     }
 
     fun addFilterToGroup(groupPath: List<Int>, spec: NewFilterSpec) {
@@ -590,5 +634,12 @@ internal fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
         rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
         (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
             rightAlias == other.leftAlias && rightColumn == other.leftColumn)
+
+private fun <T> List<T>.moveItem(fromIndex: Int, toIndex: Int): List<T> {
+    if (fromIndex !in indices || toIndex !in indices || fromIndex == toIndex) return this
+    return toMutableList().apply {
+        add(toIndex, removeAt(fromIndex))
+    }
+}
 
 private fun newNodeId(): String = java.util.UUID.randomUUID().toString()

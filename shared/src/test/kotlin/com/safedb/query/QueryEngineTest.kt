@@ -517,6 +517,17 @@ class QueryEngineTest {
     }
 
     @Test
+    fun distinctCompilesInDialectCorrectKeywordOrder() {
+        val spec = sampleSpec().copy(distinct = true)
+
+        assertTrue(compile(spec, Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT "))
+        assertTrue(compile(spec, Dialect.MySql).unwrap().sql.startsWith("SELECT DISTINCT "))
+        assertTrue(compile(spec, Dialect.Oracle).unwrap().sql.startsWith("SELECT DISTINCT "))
+        assertTrue(compile(spec, Dialect.Mssql).unwrap().sql.startsWith("SELECT DISTINCT TOP 101 "))
+        assertFalse(compile(sampleSpec(), Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT "))
+    }
+
+    @Test
     fun sortsAreValidatedQuotedAndCompiledBeforeLimitInPriorityOrder() {
         val spec = sampleSpec().copy(
             sorts = listOf(
@@ -539,6 +550,31 @@ class QueryEngineTest {
 
         val duplicate = sampleSpec().copy(sorts = listOf(SortSpec("t0", "id"), SortSpec("t0", "id", SortDirection.Desc)))
         assertTrue(validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated"))
+    }
+
+    @Test
+    fun distinctValidationRequiresSortColumnsInExplicitProjection() {
+        val unselectedSort = sampleSpec().copy(
+            distinct = true,
+            sorts = listOf(SortSpec("t0", "name")),
+        )
+
+        assertEquals(listOf(SortSpec("t0", "name")), distinctSortProjectionConflicts(unselectedSort))
+        assertTrue(
+            validate(unselectedSort, sampleSchema(), emptyList())
+                .unwrapErr()
+                .contains("must be explicitly selected"),
+        )
+
+        val selectedSort = unselectedSort.copy(
+            columns = unselectedSort.columns + ColumnSel("t0", "name"),
+        )
+        assertTrue(distinctSortProjectionConflicts(selectedSort).isEmpty())
+        validate(selectedSort, sampleSchema(), emptyList()).unwrap()
+
+        val allColumns = unselectedSort.copy(columns = emptyList())
+        assertTrue(distinctSortProjectionConflicts(allColumns).isEmpty())
+        validate(allColumns, sampleSchema(), emptyList()).unwrap()
     }
 
     @Test
@@ -626,6 +662,7 @@ class QueryEngineTest {
 
         assertTrue(decoded.sorts.isEmpty())
         assertTrue(decoded.groups.isEmpty())
+        assertFalse(decoded.distinct)
     }
 
     @Test

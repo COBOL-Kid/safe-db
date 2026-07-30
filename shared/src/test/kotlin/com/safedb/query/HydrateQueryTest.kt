@@ -48,12 +48,14 @@ private class TestHydrationTarget : QueryHydrationTarget {
     private var _filters: FilterGroup = FilterGroup.empty()
     private var _connectorOverrides: Map<String, com.safedb.model.GroupConnector> = emptyMap()
     private var _limit: Int = DEFAULT_LIMIT
+    private var _distinct: Boolean = false
     private var _sorts: List<SortSpec> = emptyList()
     private var _groups: List<GroupSpec> = emptyList()
 
     val filters: FilterGroup get() = _filters
     val connectorOverrides: Map<String, com.safedb.model.GroupConnector> get() = _connectorOverrides
     val limit: Int get() = _limit
+    val distinct: Boolean get() = _distinct
     val sorts: List<SortSpec> get() = _sorts
     val groups: List<GroupSpec> get() = _groups
 
@@ -65,6 +67,7 @@ private class TestHydrationTarget : QueryHydrationTarget {
         _filters = FilterGroup.empty()
         _connectorOverrides = emptyMap()
         _limit = DEFAULT_LIMIT
+        _distinct = false
         _sorts = emptyList()
         _groups = emptyList()
     }
@@ -100,6 +103,10 @@ private class TestHydrationTarget : QueryHydrationTarget {
 
     override fun setLimit(limit: Int) {
         _limit = limit
+    }
+
+    override fun setDistinct(distinct: Boolean) {
+        _distinct = distinct
     }
 
     override fun setSorts(sorts: List<SortSpec>) {
@@ -143,6 +150,7 @@ class HydrateQueryTest {
                 ),
             ),
             limit = 25,
+            distinct = true,
             sorts = listOf(SortSpec("saved_t1", "name", SortDirection.Desc)),
             groups = listOf(GroupSpec("saved_t0", "name"), GroupSpec("saved_t1", "name")),
             schemaVersion = 2,
@@ -164,6 +172,7 @@ class HydrateQueryTest {
         val leaf = target.filters.children[0] as FilterNode.Leaf
         assertEquals("t0", leaf.spec.tableAlias)
         assertEquals(25, target.limit)
+        assertTrue(target.distinct)
         assertEquals(listOf(SortSpec("t1", "name", SortDirection.Desc)), target.sorts)
         assertEquals(listOf(GroupSpec("t0", "name"), GroupSpec("t1", "name")), target.groups)
     }

@@ -42,6 +42,8 @@ data class QuerySpec(
     val joins: List<JoinSpec> = emptyList(),
     val filters: FilterGroup,
     val limit: Int,
+    /** Return only unique result rows. */
+    val distinct: Boolean = false,
     /** Ordered builder-level SQL sorting. Earlier entries take precedence. */
     val sorts: List<SortSpec> = emptyList(),
     /** Ordered builder-level SQL grouping. Earlier entries take precedence. */

@@ -4,6 +4,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,6 +56,7 @@ fun FilterRow(
     queryViewModel: QueryViewModel,
     filter: FilterSpec,
     path: List<Int>,
+    showRemoveAction: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val valueFocusRequester = remember(filter.id) { FocusRequester() }
@@ -82,71 +84,72 @@ fun FilterRow(
         queryViewModel.updateFilter(path, newFilter)
     }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FilterDropdown(
-            label = "Table",
-            value = table?.tableInfo?.name ?: filter.tableAlias,
-            options = queryViewModel.canvasTables.map { it.alias to it.tableInfo.name },
-            onSelected = { alias ->
-                val selected = queryViewModel.canvasTables.find { it.alias == alias } ?: return@FilterDropdown
-                val firstCol = selected.tableInfo.columns.firstOrNull() ?: return@FilterDropdown
-                val ops = opsForColumn(firstCol.dataType)
-                val op = if (filter.op in ops) filter.op else ops.first()
-                update(
-                    filter.copy(
-                        tableAlias = alias,
-                        column = firstCol.name,
-                        op = op,
-                        value = rebuildValue(op, firstCol.dataType, filter.value),
-                    ),
-                )
-            },
-            modifier = Modifier.width(110.dp),
-        )
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterDropdown(
+                label = "Table",
+                value = table?.tableInfo?.name ?: filter.tableAlias,
+                options = queryViewModel.canvasTables.map { it.alias to it.tableInfo.name },
+                onSelected = { alias ->
+                    val selected = queryViewModel.canvasTables.find { it.alias == alias } ?: return@FilterDropdown
+                    val firstCol = selected.tableInfo.columns.firstOrNull() ?: return@FilterDropdown
+                    val ops = opsForColumn(firstCol.dataType)
+                    val op = if (filter.op in ops) filter.op else ops.first()
+                    update(
+                        filter.copy(
+                            tableAlias = alias,
+                            column = firstCol.name,
+                            op = op,
+                            value = rebuildValue(op, firstCol.dataType, filter.value),
+                        ),
+                    )
+                },
+                modifier = Modifier.width(110.dp),
+            )
 
-        FilterDropdown(
-            label = "Column",
-            value = filter.column,
-            options = columns.map { it.name to it.name },
-            onSelected = { colName ->
-                val col = columns.find { it.name == colName } ?: return@FilterDropdown
-                val ops = opsForColumn(col.dataType)
-                val op = if (filter.op in ops) filter.op else ops.first()
-                update(
-                    filter.copy(
-                        column = colName,
-                        op = op,
-                        value = rebuildValue(op, col.dataType, filter.value),
-                    ),
-                )
-            },
-            modifier = Modifier.width(110.dp),
-        )
+            FilterDropdown(
+                label = "Column",
+                value = filter.column,
+                options = columns.map { it.name to it.name },
+                onSelected = { colName ->
+                    val col = columns.find { it.name == colName } ?: return@FilterDropdown
+                    val ops = opsForColumn(col.dataType)
+                    val op = if (filter.op in ops) filter.op else ops.first()
+                    update(
+                        filter.copy(
+                            column = colName,
+                            op = op,
+                            value = rebuildValue(op, col.dataType, filter.value),
+                        ),
+                    )
+                },
+                modifier = Modifier.width(110.dp),
+            )
 
-        FilterDropdown(
-            label = "Op",
-            value = opLabel(filter.op),
-            options = availableOps.map { it to opLabel(it) },
-            onSelected = { op ->
-                val dataType = columnInfo?.dataType ?: return@FilterDropdown
-                update(
-                    filter.copy(
-                        op = op,
-                        value = rebuildValue(op, dataType, filter.value),
-                    ),
-                )
-            },
-            modifier = Modifier.width(100.dp),
-        )
+            FilterDropdown(
+                label = "Op",
+                value = opLabel(filter.op),
+                options = availableOps.map { it to opLabel(it) },
+                onSelected = { op ->
+                    val dataType = columnInfo?.dataType ?: return@FilterDropdown
+                    update(
+                        filter.copy(
+                            op = op,
+                            value = rebuildValue(op, dataType, filter.value),
+                        ),
+                    )
+                },
+                modifier = Modifier.width(100.dp),
+            )
 
-        when (valueKind) {
+            when (valueKind) {
             ValueKind.None -> Unit
             ValueKind.Single -> {
                 val single = (filter.value as? FilterValue.Single)?.literal
@@ -245,13 +248,17 @@ fun FilterRow(
                     }
                 }
             }
+            }
         }
-
-        CompactIconButton(
-            contentDescription = "Remove filter",
-            onClick = { queryViewModel.removeFilterNode(path) },
-        ) {
-            Icon(Icons.Default.Close, contentDescription = "Remove filter")
+        if (showRemoveAction) {
+            Row(modifier = Modifier.padding(top = 2.dp)) {
+                CompactFilterBuilderAction(
+                    onClick = { queryViewModel.removeFilterNode(path) },
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Text("Remove", style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
     }
 }

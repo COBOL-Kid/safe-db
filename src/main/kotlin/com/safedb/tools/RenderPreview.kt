@@ -56,6 +56,7 @@ import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ThemePalette
@@ -505,7 +506,7 @@ fun main() {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
                     vm.query.addJoin(JoinSpec("t0", "customer_id", "t1", "id"))
-                    vm.query.moveTable("t1", 360f, 90f)
+                    vm.query.moveTable("t1", 360f, 28f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
@@ -540,7 +541,7 @@ fun main() {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
                     vm.query.addJoin(JoinSpec("t0", "customer_id", "t1", "id"))
-                    vm.query.moveTable("t1", 360f, 90f)
+                    vm.query.moveTable("t1", 360f, 28f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
@@ -553,6 +554,9 @@ fun main() {
                     )
                     vm.query.setSort("t0", "status", SortDirection.Asc)
                     vm.query.setSort("t0", "total_cents", SortDirection.Desc)
+                    vm.query.setGroups(vm.query.groups + GroupSpec("t1", "created_at"))
+                    vm.query.setSorts(vm.query.sorts + SortSpec("t1", "created_at", SortDirection.Desc))
+                    vm.query.setDistinct(true)
                     vm.query.addFilter(
                         FilterSpec(
                             tableAlias = "t0",

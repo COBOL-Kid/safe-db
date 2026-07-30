@@ -11,6 +11,7 @@ import com.safedb.model.JoinSpec
 import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
+import com.safedb.model.SortSpec
 import com.safedb.model.classifyColumn
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
@@ -158,6 +159,14 @@ internal fun validOpsForColumn(dataType: String): List<FilterOp> =
         else -> emptyList()
     }
 
+/** Returns sorts that are invalid because SELECT DISTINCT does not project their columns. */
+fun distinctSortProjectionConflicts(spec: QuerySpec): List<SortSpec> {
+    if (!spec.distinct || spec.columns.isEmpty()) return emptyList()
+    val selectedColumns = spec.columns
+        .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+    return spec.sorts.filter { (it.tableAlias to it.column) !in selectedColumns }
+}
+
 fun validate(
     spec: QuerySpec,
     schema: Schema,
@@ -259,6 +268,13 @@ fun validate(
         if (!sortedColumns.add(sort.tableAlias to sort.column)) {
             return Outcome.err("Sort column '${sort.tableAlias}.${sort.column}' is duplicated")
         }
+    }
+
+    val distinctSortConflicts = distinctSortProjectionConflicts(spec)
+    if (distinctSortConflicts.isNotEmpty()) {
+        val labels = distinctSortConflicts.joinToString { "'${it.tableAlias}.${it.column}'" }
+        val subject = if (distinctSortConflicts.size == 1) "Sort column $labels" else "Sort columns $labels"
+        return Outcome.err("$subject must be explicitly selected when Distinct rows is enabled")
     }
 
     if (spec.groups.isNotEmpty()) {

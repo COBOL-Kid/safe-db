@@ -42,6 +42,9 @@ private fun compileSpec(
     val fetchLimit = spec.limit + 1
     val sql = buildString {
         append("SELECT ")
+        if (spec.distinct) {
+            append("DISTINCT ")
+        }
         if (dialect == Dialect.Mssql) {
             append("TOP $fetchLimit ")
         }
