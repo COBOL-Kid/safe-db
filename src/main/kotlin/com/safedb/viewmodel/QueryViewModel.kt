@@ -29,7 +29,6 @@ import com.safedb.model.valueKind
 import com.safedb.query.AliasRef
 import com.safedb.query.CANVAS_CARD_HEIGHT
 import com.safedb.query.CANVAS_CARD_WIDTH
-import com.safedb.query.CANVAS_INITIAL_TABLE_Y
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.QueryError
 import com.safedb.query.QueryHydrationTarget
@@ -198,7 +197,7 @@ class QueryViewModel(
                 tableInfo = tableInfo,
                 alias = alias,
                 x = 40f + offset,
-                y = CANVAS_INITIAL_TABLE_Y + offset,
+                y = offset,
             ),
         )
     }

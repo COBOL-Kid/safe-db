@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -95,6 +96,11 @@ import java.time.Instant
 import java.util.UUID
 
 internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, MAX_LIMIT)
+private val QueryControlsMaxHeight = 208.dp
+private val QueryControlsVerticalPadding = 8.dp
+private val QueryControlsTableGap = 16.dp
+internal val QueryControlsCanvasInset =
+    QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
 
 private data class CostGuardDialogCopy(
     val title: String,
@@ -174,7 +180,7 @@ private fun QueryOptionsCard(
     ) {
         Column(
             modifier = Modifier
-                .heightIn(max = 208.dp)
+                .heightIn(max = QueryControlsMaxHeight)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
@@ -236,6 +242,8 @@ private fun QueryOrderSection(
     var hoveredIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val dragStepPx = with(LocalDensity.current) { 20.dp.toPx() }
+    val currentLastIndex by rememberUpdatedState(labels.lastIndex)
+    val currentOnMove by rememberUpdatedState(onMove)
 
     Text(
         title,
@@ -296,15 +304,17 @@ private fun QueryOrderSection(
                                 change.consume()
                                 dragOffset += amount.y
                                 var current = draggedIndex ?: return@detectDragGestures
-                                while (dragOffset >= dragStepPx && current < labels.lastIndex) {
-                                    onMove(current, current + 1)
-                                    current += 1
+                                while (dragOffset >= dragStepPx) {
+                                    val target = queryOrderMoveTarget(current, 1, currentLastIndex) ?: break
+                                    currentOnMove(current, target)
+                                    current = target
                                     draggedIndex = current
                                     dragOffset -= dragStepPx
                                 }
-                                while (dragOffset <= -dragStepPx && current > 0) {
-                                    onMove(current, current - 1)
-                                    current -= 1
+                                while (dragOffset <= -dragStepPx) {
+                                    val target = queryOrderMoveTarget(current, -1, currentLastIndex) ?: break
+                                    currentOnMove(current, target)
+                                    current = target
                                     draggedIndex = current
                                     dragOffset += dragStepPx
                                 }
@@ -338,8 +348,57 @@ private fun QueryOrderSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            QueryOrderMoveAction(
+                icon = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Move $label up in $title",
+                targetIndex = queryOrderMoveTarget(index, -1, labels.lastIndex),
+                onMove = { target -> onMove(index, target) },
+            )
+            QueryOrderMoveAction(
+                icon = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Move $label down in $title",
+                targetIndex = queryOrderMoveTarget(index, 1, labels.lastIndex),
+                onMove = { target -> onMove(index, target) },
             )
         }
+    }
+}
+
+internal fun queryOrderMoveTarget(index: Int, offset: Int, lastIndex: Int): Int? {
+    if (index !in 0..lastIndex) return null
+    return (index + offset).takeIf { it in 0..lastIndex }
+}
+
+@Composable
+private fun QueryOrderMoveAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    targetIndex: Int?,
+    onMove: (Int) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clickable(
+                enabled = targetIndex != null,
+                role = Role.Button,
+                onClick = { targetIndex?.let(onMove) },
+            )
+            .pointerHoverIcon(if (targetIndex != null) PointerIcon.Hand else PointerIcon.Default),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription.takeIf { targetIndex != null },
+            modifier = Modifier.size(14.dp),
+            tint = if (targetIndex != null) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+            },
+        )
     }
 }
 
@@ -786,12 +845,19 @@ fun BuilderScreen(
                                         )
                                     }
                                 } else {
-                                    Canvas(queryViewModel = queryViewModel, modifier = Modifier.fillMaxSize())
+                                    Canvas(
+                                        queryViewModel = queryViewModel,
+                                        contentTopInset = QueryControlsCanvasInset,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
                                     Row(
                                         modifier = Modifier
                                             .align(Alignment.TopCenter)
                                             .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                            .padding(
+                                                horizontal = 16.dp,
+                                                vertical = QueryControlsVerticalPadding,
+                                            ),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                         verticalAlignment = Alignment.Top,
                                     ) {
@@ -801,7 +867,7 @@ fun BuilderScreen(
                                                     queryViewModel = queryViewModel,
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .heightIn(max = 208.dp)
+                                                        .heightIn(max = QueryControlsMaxHeight)
                                                         .verticalScroll(rememberScrollState())
                                                         .horizontalScroll(rememberScrollState()),
                                                 )

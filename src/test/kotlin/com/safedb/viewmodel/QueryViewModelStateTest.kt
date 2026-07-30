@@ -24,7 +24,6 @@ import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.service.SafeDbService
-import com.safedb.query.CANVAS_INITIAL_TABLE_Y
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlin.test.Test
@@ -332,14 +331,14 @@ class QueryViewModelStateTest {
     }
 
     @Test
-    fun newTablesStartBelowTheFloatingQueryControls() {
+    fun newTablesUseCanvasLocalCoordinates() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
 
         viewModel.addTable(table("orders", "id"))
         viewModel.addTable(table("customers", "id"))
 
-        assertEquals(CANVAS_INITIAL_TABLE_Y, viewModel.canvasTables[0].y)
-        assertEquals(CANVAS_INITIAL_TABLE_Y + 30f, viewModel.canvasTables[1].y)
+        assertEquals(0f, viewModel.canvasTables[0].y)
+        assertEquals(30f, viewModel.canvasTables[1].y)
     }
 
     private fun filter(id: String, alias: String, column: String) = FilterSpec(
