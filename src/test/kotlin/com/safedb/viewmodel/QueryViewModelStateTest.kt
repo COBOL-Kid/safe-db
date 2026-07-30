@@ -20,9 +20,11 @@ import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.service.SafeDbService
+import com.safedb.query.CANVAS_INITIAL_TABLE_Y
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlin.test.Test
@@ -156,6 +158,39 @@ class QueryViewModelStateTest {
 
         assertTrue(viewModel.selectedColumns.isEmpty())
         assertTrue(viewModel.groups.isEmpty())
+    }
+
+    @Test
+    fun groupAndSortRowsCanBeReorderedIndependently() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id", "status", "created_at"))
+        viewModel.setGroups(
+            listOf(
+                GroupSpec("t0", "id"),
+                GroupSpec("t0", "status"),
+                GroupSpec("t0", "created_at"),
+            ),
+        )
+        viewModel.setSorts(
+            listOf(
+                SortSpec("t0", "id"),
+                SortSpec("t0", "status", SortDirection.Desc),
+                SortSpec("t0", "created_at"),
+            ),
+        )
+
+        viewModel.moveGroup(2, 0)
+        viewModel.moveSort(0, 2)
+
+        assertEquals(
+            listOf("created_at", "id", "status"),
+            viewModel.spec.groups.map { it.column },
+        )
+        assertEquals(
+            listOf("status", "created_at", "id"),
+            viewModel.spec.sorts.map { it.column },
+        )
+        assertEquals(SortDirection.Desc, viewModel.spec.sorts.first().direction)
     }
 
     @Test
@@ -294,6 +329,17 @@ class QueryViewModelStateTest {
         assertEquals(0, viewModel.tableCount)
         assertTrue(viewModel.filters.id.isNotEmpty())
         assertNotEquals("", viewModel.filters.id)
+    }
+
+    @Test
+    fun newTablesStartBelowTheFloatingQueryControls() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+
+        viewModel.addTable(table("orders", "id"))
+        viewModel.addTable(table("customers", "id"))
+
+        assertEquals(CANVAS_INITIAL_TABLE_Y, viewModel.canvasTables[0].y)
+        assertEquals(CANVAS_INITIAL_TABLE_Y + 30f, viewModel.canvasTables[1].y)
     }
 
     private fun filter(id: String, alias: String, column: String) = FilterSpec(

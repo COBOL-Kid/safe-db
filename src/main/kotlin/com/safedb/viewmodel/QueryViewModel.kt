@@ -29,6 +29,7 @@ import com.safedb.model.valueKind
 import com.safedb.query.AliasRef
 import com.safedb.query.CANVAS_CARD_HEIGHT
 import com.safedb.query.CANVAS_CARD_WIDTH
+import com.safedb.query.CANVAS_INITIAL_TABLE_Y
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.QueryError
 import com.safedb.query.QueryHydrationTarget
@@ -197,7 +198,7 @@ class QueryViewModel(
                 tableInfo = tableInfo,
                 alias = alias,
                 x = 40f + offset,
-                y = 40f + offset,
+                y = CANVAS_INITIAL_TABLE_Y + offset,
             ),
         )
     }
@@ -340,6 +341,10 @@ class QueryViewModel(
         sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
     }
 
+    fun moveSort(fromIndex: Int, toIndex: Int) {
+        sortState = sorts.moveItem(fromIndex, toIndex)
+    }
+
     fun toggleGroup(tableAlias: String, columnName: String) {
         if (groupForColumn(tableAlias, columnName) == null) {
             if (groups.isEmpty()) {
@@ -374,6 +379,10 @@ class QueryViewModel(
                 selectedColumns = setOf(columnKey(fallback.tableAlias, fallback.column))
             }
         }
+    }
+
+    fun moveGroup(fromIndex: Int, toIndex: Int) {
+        groupState = groups.moveItem(fromIndex, toIndex)
     }
 
     private fun addGroup(tableAlias: String, columnName: String) {
@@ -610,5 +619,12 @@ internal fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
         rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
         (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
             rightAlias == other.leftAlias && rightColumn == other.leftColumn)
+
+private fun <T> List<T>.moveItem(fromIndex: Int, toIndex: Int): List<T> {
+    if (fromIndex !in indices || toIndex !in indices || fromIndex == toIndex) return this
+    return toMutableList().apply {
+        add(toIndex, removeAt(fromIndex))
+    }
+}
 
 private fun newNodeId(): String = java.util.UUID.randomUUID().toString()

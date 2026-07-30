@@ -39,6 +39,7 @@ fun FilterGroupCard(
     modifier: Modifier = Modifier,
 ) {
     val atMaxDepth = depth >= MAX_FILTER_DEPTH - 1
+    val singleLeafPath = if (group.children.singleOrNull() is FilterNode.Leaf) path + 0 else null
     val depthTint = if (depth > 0) {
         if (depth % 2 == 1) {
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
@@ -79,6 +80,7 @@ fun FilterGroupCard(
                         queryViewModel = queryViewModel,
                         filter = child.spec,
                         path = childPath,
+                        showRemoveAction = singleLeafPath == null,
                     )
                     is FilterNode.Group -> FilterGroupCard(
                         queryViewModel = queryViewModel,
@@ -105,16 +107,24 @@ fun FilterGroupCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CompactGroupAction(onClick = { addFilter(queryViewModel, path) }) {
+            CompactFilterBuilderAction(onClick = { addFilter(queryViewModel, path) }) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
                 Text("Filter", style = MaterialTheme.typography.labelSmall)
             }
-            CompactGroupAction(
+            CompactFilterBuilderAction(
                 onClick = { queryViewModel.addGroupToGroup(path, GroupConnector.And) },
                 enabled = !atMaxDepth,
             ) {
                 Icon(Icons.Default.GridView, contentDescription = null, modifier = Modifier.size(13.dp))
                 Text("Group", style = MaterialTheme.typography.labelSmall)
+            }
+            if (singleLeafPath != null) {
+                CompactFilterBuilderAction(
+                    onClick = { queryViewModel.removeFilterNode(singleLeafPath) },
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Text("Remove", style = MaterialTheme.typography.labelSmall)
+                }
             }
             if (depth > 0) {
                 Box(
@@ -136,7 +146,7 @@ fun FilterGroupCard(
 }
 
 @Composable
-private fun CompactGroupAction(
+internal fun CompactFilterBuilderAction(
     onClick: () -> Unit,
     enabled: Boolean = true,
     content: @Composable () -> Unit,

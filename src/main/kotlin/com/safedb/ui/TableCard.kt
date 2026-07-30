@@ -338,7 +338,6 @@ fun TableCard(
                                             icon = Icons.Default.GridView,
                                             contentDescription = groupDescription(column.name, groupIndex, group != null),
                                             active = group != null,
-                                            badge = group?.let { "${groupIndex + 1}" },
                                             onClick = { queryViewModel.toggleGroup(alias, column.name) },
                                         )
                                     }
@@ -351,7 +350,6 @@ fun TableCard(
                                             },
                                             contentDescription = sortDescription(column.name, sort?.direction, sortIndex),
                                             active = sort != null,
-                                            badge = sort?.let { "${sortIndex + 1}${if (it.direction == SortDirection.Asc) "↑" else "↓"}" },
                                             onClick = { queryViewModel.cycleSort(alias, column.name) },
                                         )
                                     }
@@ -571,7 +569,6 @@ private fun ColumnActionButton(
     contentDescription: String,
     active: Boolean,
     onClick: () -> Unit,
-    badge: String? = null,
 ) {
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
@@ -592,14 +589,6 @@ private fun ColumnActionButton(
                 tint = if (active) SafeDbTheme.colors.actionPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
             )
-            if (badge != null) {
-                Text(
-                    badge,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SafeDbTheme.colors.actionPrimary,
-                    modifier = Modifier.align(Alignment.BottomEnd),
-                )
-            }
         }
     }
 }
