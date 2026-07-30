@@ -115,6 +115,76 @@ class QueryViewModelStateTest {
     }
 
     @Test
+    fun tableColumnToggleSelectsPartialAndClearsOnlyTheTargetTable() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("customers", "id", "name"))
+        viewModel.addTable(table("orders", "id", "customer_id"))
+        viewModel.toggleColumn("t0", "id")
+        viewModel.toggleColumn("t1", "customer_id")
+
+        viewModel.toggleAllColumns("t0")
+
+        assertEquals(
+            setOf("t0\u0000id", "t0\u0000name", "t1\u0000customer_id"),
+            viewModel.selectedColumns,
+        )
+
+        viewModel.toggleAllColumns("t0")
+
+        assertEquals(setOf("t1\u0000customer_id"), viewModel.selectedColumns)
+    }
+
+    @Test
+    fun tableColumnToggleUsesColumnRulesWhileGroupingIsActive() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id", "status"))
+        viewModel.toggleColumn("t0", "id")
+        viewModel.toggleGroup("t0", "id")
+
+        viewModel.toggleAllColumns("t0")
+
+        assertEquals(
+            setOf("t0\u0000id", "t0\u0000status"),
+            viewModel.selectedColumns,
+        )
+        assertEquals(
+            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")),
+            viewModel.groups,
+        )
+
+        viewModel.toggleAllColumns("t0")
+
+        assertTrue(viewModel.selectedColumns.isEmpty())
+        assertTrue(viewModel.groups.isEmpty())
+    }
+
+    @Test
+    fun distinctIsIncludedRestoredAndResetWithBuilderState() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        val orders = table("orders", "id")
+        viewModel.addTable(orders)
+        viewModel.setDistinct(true)
+
+        assertTrue(viewModel.distinct)
+        assertTrue(viewModel.spec.distinct)
+
+        viewModel.clear()
+
+        assertFalse(viewModel.distinct)
+        viewModel.restoreFromSpec(
+            QuerySpec(
+                tables = listOf(TableRef("app", "orders", "saved_orders")),
+                filters = FilterGroup.empty(),
+                limit = 100,
+                distinct = true,
+            ),
+            listOf(orders),
+        )
+        assertTrue(viewModel.distinct)
+        assertTrue(viewModel.spec.distinct)
+    }
+
+    @Test
     fun groupActionsAppendByPriorityAutoSelectAndKeepGroupedBuilderStateValid() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         viewModel.addTable(table("customers", "id"))

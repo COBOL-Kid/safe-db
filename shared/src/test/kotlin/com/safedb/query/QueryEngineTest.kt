@@ -517,6 +517,17 @@ class QueryEngineTest {
     }
 
     @Test
+    fun distinctCompilesInDialectCorrectKeywordOrder() {
+        val spec = sampleSpec().copy(distinct = true)
+
+        assertTrue(compile(spec, Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT "))
+        assertTrue(compile(spec, Dialect.MySql).unwrap().sql.startsWith("SELECT DISTINCT "))
+        assertTrue(compile(spec, Dialect.Oracle).unwrap().sql.startsWith("SELECT DISTINCT "))
+        assertTrue(compile(spec, Dialect.Mssql).unwrap().sql.startsWith("SELECT DISTINCT TOP 101 "))
+        assertFalse(compile(sampleSpec(), Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT "))
+    }
+
+    @Test
     fun sortsAreValidatedQuotedAndCompiledBeforeLimitInPriorityOrder() {
         val spec = sampleSpec().copy(
             sorts = listOf(
@@ -626,6 +637,7 @@ class QueryEngineTest {
 
         assertTrue(decoded.sorts.isEmpty())
         assertTrue(decoded.groups.isEmpty())
+        assertFalse(decoded.distinct)
     }
 
     @Test

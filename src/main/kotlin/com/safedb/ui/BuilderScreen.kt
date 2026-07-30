@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -58,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -126,8 +129,13 @@ internal fun sortOrderLabels(
     "$column ${if (sort.direction == SortDirection.Asc) "ascending" else "descending"}"
 }
 
+internal fun queryOptionEmptyLabel(labels: List<String>): String? =
+    "None".takeIf { labels.isEmpty() }
+
 @Composable
-private fun QueryOrderCard(
+private fun QueryOptionsCard(
+    distinct: Boolean,
+    onDistinctChange: (Boolean) -> Unit,
     groups: List<GroupSpec>,
     sorts: List<SortSpec>,
     tableNamesByAlias: Map<String, String>,
@@ -146,9 +154,10 @@ private fun QueryOrderCard(
             val sortingDescription = sortOrderLabels(sorts, tableNamesByAlias)
                 .mapIndexed { index, label -> "${index + 1} $label" }
                 .joinToString(prefix = "Sorting order: ")
-            contentDescription = listOfNotNull(
-                groupingDescription.takeIf { groups.isNotEmpty() },
-                sortingDescription.takeIf { sorts.isNotEmpty() },
+            contentDescription = listOf(
+                "Distinct rows: ${if (distinct) "on" else "off"}",
+                groupingDescription.takeIf { groups.isNotEmpty() } ?: "Grouping order: none",
+                sortingDescription.takeIf { sorts.isNotEmpty() } ?: "Sorting order: none",
             ).joinToString(". ")
         },
         shape = RoundedCornerShape(4.dp),
@@ -158,29 +167,49 @@ private fun QueryOrderCard(
     ) {
         Column(
             modifier = Modifier
-                .heightIn(max = 184.dp)
+                .heightIn(max = 208.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             Text(
-                "Query order",
+                "Query options",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            if (groupLabels.isNotEmpty()) {
-                QueryOrderSection(
-                    title = "Group by",
-                    labels = groupLabels,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 5.dp)
+                    .toggleable(
+                        value = distinct,
+                        role = Role.Checkbox,
+                        onValueChange = onDistinctChange,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = distinct,
+                    onCheckedChange = null,
+                    modifier = Modifier.size(28.dp),
+                )
+                Text(
+                    "Distinct rows",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SafeDbTheme.colors.actionPrimary,
+                    modifier = Modifier.padding(start = 5.dp),
                 )
             }
-            if (sortLabels.isNotEmpty()) {
-                QueryOrderSection(
-                    title = "Sort by",
-                    labels = sortLabels,
-                    directions = sorts.map { it.direction },
-                    separated = groupLabels.isNotEmpty(),
-                )
-            }
+            QueryOrderSection(
+                title = "Group by",
+                labels = groupLabels,
+                separated = true,
+            )
+            QueryOrderSection(
+                title = "Sort by",
+                labels = sortLabels,
+                directions = sorts.map { it.direction },
+                separated = true,
+            )
         }
     }
 }
@@ -196,16 +225,24 @@ private fun QueryOrderSection(
         title,
         style = MaterialTheme.typography.labelSmall,
         color = SafeDbTheme.colors.actionPrimary,
-        modifier = Modifier.padding(top = if (separated) 8.dp else 5.dp),
+        modifier = Modifier.padding(top = if (separated) 5.dp else 4.dp),
     )
+    queryOptionEmptyLabel(labels)?.let { emptyLabel ->
+        Text(
+            emptyLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
     labels.forEachIndexed { index, label ->
         Row(
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Surface(
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
                 shape = RoundedCornerShape(50),
                 color = SafeDbTheme.colors.accentContainer,
             ) {
@@ -665,11 +702,7 @@ fun BuilderScreen(
                                 }
                             }
 
-                            if (
-                                queryViewModel.filterCount > 0 ||
-                                queryViewModel.groups.isNotEmpty() ||
-                                queryViewModel.sorts.isNotEmpty()
-                            ) {
+                            if (queryViewModel.canvasTables.isNotEmpty()) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -687,16 +720,16 @@ fun BuilderScreen(
                                             )
                                         }
                                     }
-                                    if (queryViewModel.groups.isNotEmpty() || queryViewModel.sorts.isNotEmpty()) {
-                                        QueryOrderCard(
-                                            groups = queryViewModel.groups,
-                                            sorts = queryViewModel.sorts,
-                                            tableNamesByAlias = queryViewModel.canvasTables.associate {
-                                                it.alias to it.tableInfo.name
-                                            },
-                                            modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
-                                        )
-                                    }
+                                    QueryOptionsCard(
+                                        distinct = queryViewModel.distinct,
+                                        onDistinctChange = queryViewModel::setDistinct,
+                                        groups = queryViewModel.groups,
+                                        sorts = queryViewModel.sorts,
+                                        tableNamesByAlias = queryViewModel.canvasTables.associate {
+                                            it.alias to it.tableInfo.name
+                                        },
+                                        modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
+                                    )
                                 }
                             }
 

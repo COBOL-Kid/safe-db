@@ -5,6 +5,7 @@ import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class BuilderScreenStateTest {
     @Test
@@ -54,5 +55,11 @@ class BuilderScreenStateTest {
             listOf("orders.status ascending", "missing.created_at descending"),
             labels,
         )
+    }
+
+    @Test
+    fun queryOptionsShowNoneOnlyForEmptySections() {
+        assertEquals("None", queryOptionEmptyLabel(emptyList()))
+        assertNull(queryOptionEmptyLabel(listOf("orders.status")))
     }
 }

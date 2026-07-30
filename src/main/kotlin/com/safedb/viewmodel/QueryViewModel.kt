@@ -100,6 +100,9 @@ class QueryViewModel(
     private var queryLimit by mutableIntStateOf(DEFAULT_LIMIT)
     val limit: Int
         get() = queryLimit
+    private var distinctState by mutableStateOf(false)
+    val distinct: Boolean
+        get() = distinctState
     private var connectorOverrideState by mutableStateOf(mapOf<String, GroupConnector>())
     val connectorOverrides: Map<String, GroupConnector>
         get() = connectorOverrideState
@@ -156,6 +159,7 @@ class QueryViewModel(
                 joins = joins.toList(),
                 filters = filters,
                 limit = limit,
+                distinct = distinct,
                 sorts = sorts,
                 groups = groups,
                 schemaVersion = CURRENT_SCHEMA_VERSION,
@@ -170,6 +174,7 @@ class QueryViewModel(
         joins.clear()
         filterGroupState = FilterGroup.empty()
         queryLimit = DEFAULT_LIMIT
+        distinctState = false
         results = null
         resultConnectionId = null
         resultSpec = null
@@ -247,6 +252,17 @@ class QueryViewModel(
 
     fun isColumnSelected(alias: String, column: String): Boolean =
         selectedColumns.contains(columnKey(alias, column))
+
+    fun toggleAllColumns(alias: String) {
+        val table = canvasTables.firstOrNull { it.alias == alias } ?: return
+        val columns = table.tableInfo.columns.map { it.name }
+        val allSelected = columns.isNotEmpty() && columns.all { isColumnSelected(alias, it) }
+        columns.forEach { column ->
+            if (isColumnSelected(alias, column) == allSelected) {
+                toggleColumn(alias, column)
+            }
+        }
+    }
 
     override fun addJoin(join: JoinSpec) {
         val exists = joins.any { it.matchesJoin(join) }
@@ -378,6 +394,10 @@ class QueryViewModel(
 
     override fun setGroups(groups: List<GroupSpec>) {
         groupState = groups.distinctBy { it.tableAlias to it.column }
+    }
+
+    override fun setDistinct(distinct: Boolean) {
+        distinctState = distinct
     }
 
     fun addFilterToGroup(groupPath: List<Int>, spec: NewFilterSpec) {

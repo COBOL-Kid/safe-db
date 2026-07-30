@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Icon
@@ -63,6 +64,7 @@ import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
@@ -109,6 +111,8 @@ fun TableCard(
     val resizeHandleColor = SafeDbTheme.colors.actionPrimary.copy(alpha = 0.84f)
     val joinColor = SafeDbTheme.colors.actionPrimary
     val joinTargetColor = SafeDbTheme.colors.accentContainer
+    val selectedColumnCount = table.columns.count { queryViewModel.isColumnSelected(alias, it.name) }
+    val tableSelectionState = tableColumnToggleState(selectedColumnCount, table.columns.size)
 
     Surface(
         modifier = modifier
@@ -130,6 +134,25 @@ fun TableCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                Box(
+                    modifier = Modifier
+                        .width(19.dp)
+                        .fillMaxHeight()
+                        .clickable(
+                            enabled = table.columns.isNotEmpty(),
+                            onClick = { queryViewModel.toggleAllColumns(alias) },
+                        )
+                        .semantics {
+                            contentDescription = if (tableSelectionState == ToggleableState.On) {
+                                "Clear all column selections in ${table.name}"
+                            } else {
+                                "Select all columns in ${table.name}"
+                            }
+                        },
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    CompactSelectionIndicator(tableSelectionState)
+                }
                 Row(
                     modifier = Modifier
                         .weight(1f)
@@ -236,33 +259,9 @@ fun TableCard(
                                     },
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(13.dp)
-                                        .border(
-                                            1.dp,
-                                            if (selected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.outline
-                                            },
-                                            RoundedCornerShape(1.dp),
-                                        )
-                                        .background(
-                                            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                                            RoundedCornerShape(1.dp),
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (selected) {
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(9.dp),
-                                        )
-                                    }
-                                }
+                                CompactSelectionIndicator(
+                                    if (selected) ToggleableState.On else ToggleableState.Off,
+                                )
                                 Row(
                                     modifier = Modifier
                                         .padding(start = 6.dp)
@@ -453,6 +452,47 @@ fun TableCard(
                     }
                 }
             }
+        }
+    }
+}
+
+internal fun tableColumnToggleState(selectedCount: Int, totalCount: Int): ToggleableState = when {
+    totalCount <= 0 || selectedCount <= 0 -> ToggleableState.Off
+    selectedCount >= totalCount -> ToggleableState.On
+    else -> ToggleableState.Indeterminate
+}
+
+@Composable
+private fun CompactSelectionIndicator(state: ToggleableState) {
+    val selected = state != ToggleableState.Off
+    Box(
+        modifier = Modifier
+            .size(13.dp)
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                RoundedCornerShape(1.dp),
+            )
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                RoundedCornerShape(1.dp),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (state) {
+            ToggleableState.On -> Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(9.dp),
+            )
+            ToggleableState.Indeterminate -> Icon(
+                Icons.Default.Remove,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(9.dp),
+            )
+            ToggleableState.Off -> Unit
         }
     }
 }
