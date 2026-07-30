@@ -38,6 +38,7 @@ import com.safedb.query.addFilterGroup
 import com.safedb.query.addFilterLeaf
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
+import com.safedb.query.distinctSortProjectionConflicts
 import com.safedb.query.ensureFilterNodeIds
 import com.safedb.query.filterGroupAtPath
 import com.safedb.query.filterLeafIdAtPath
@@ -141,7 +142,10 @@ class QueryViewModel(
         private set
 
     val tableCount: Int get() = canvasTables.size
-    val canRun: Boolean get() = canvasTables.isNotEmpty() && !running
+    val distinctSortConflicts: List<SortSpec>
+        get() = distinctSortProjectionConflicts(spec)
+    val canRun: Boolean
+        get() = canvasTables.isNotEmpty() && distinctSortConflicts.isEmpty() && !running
     val filterCount: Int get() = countFilterLeaves(filters)
 
     val spec: QuerySpec
@@ -338,6 +342,18 @@ class QueryViewModel(
 
     fun clearSort(tableAlias: String, columnName: String) {
         sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+    }
+
+    fun selectDistinctSortColumns() {
+        distinctSortConflicts.forEach { sort ->
+            toggleColumn(sort.tableAlias, sort.column)
+        }
+    }
+
+    fun removeDistinctSortConflicts() {
+        val conflictKeys = distinctSortConflicts
+            .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+        sortState = sorts.filterNot { (it.tableAlias to it.column) in conflictKeys }
     }
 
     fun moveSort(fromIndex: Int, toIndex: Int) {

@@ -149,6 +149,9 @@ private fun QueryOptionsCard(
     onDistinctChange: (Boolean) -> Unit,
     groups: List<GroupSpec>,
     sorts: List<SortSpec>,
+    distinctSortConflicts: List<SortSpec>,
+    onSelectDistinctSortColumns: () -> Unit,
+    onRemoveDistinctSortConflicts: () -> Unit,
     onMoveGroup: (Int, Int) -> Unit,
     onMoveSort: (Int, Int) -> Unit,
     tableNamesByAlias: Map<String, String>,
@@ -156,6 +159,16 @@ private fun QueryOptionsCard(
 ) {
     val groupLabels = groupingOrderLabels(groups, tableNamesByAlias)
     val sortLabels = sorts.map { sort ->
+        "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
+    }
+    val distinctSortConflictKeys = distinctSortConflicts
+        .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+    val distinctSortConflictIndices = sorts.indices
+        .filterTo(mutableSetOf()) { index ->
+            val sort = sorts[index]
+            (sort.tableAlias to sort.column) in distinctSortConflictKeys
+        }
+    val distinctSortConflictLabels = distinctSortConflicts.map { sort ->
         "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
     }
 
@@ -171,7 +184,12 @@ private fun QueryOptionsCard(
                 "Distinct rows: ${if (distinct) "on" else "off"}",
                 groupingDescription.takeIf { groups.isNotEmpty() } ?: "Grouping order: none",
                 sortingDescription.takeIf { sorts.isNotEmpty() } ?: "Sorting order: none",
-            ).joinToString(". ")
+                if (distinctSortConflicts.isNotEmpty()) {
+                    "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}"
+                } else {
+                    null
+                },
+            ).filterNotNull().joinToString(". ")
         },
         shape = RoundedCornerShape(4.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -212,6 +230,12 @@ private fun QueryOptionsCard(
                     modifier = Modifier.padding(start = 5.dp),
                 )
             }
+            if (distinctSortConflicts.isNotEmpty()) {
+                DistinctSortProjectionWarning(
+                    onSelectColumns = onSelectDistinctSortColumns,
+                    onRemoveSorts = onRemoveDistinctSortConflicts,
+                )
+            }
             QueryOrderSection(
                 title = "Group by",
                 labels = groupLabels,
@@ -223,8 +247,45 @@ private fun QueryOptionsCard(
                 labels = sortLabels,
                 directions = sorts.map { it.direction },
                 onMove = onMoveSort,
+                warningIndices = distinctSortConflictIndices,
                 separated = true,
             )
+        }
+    }
+}
+
+@Composable
+private fun DistinctSortProjectionWarning(
+    onSelectColumns: () -> Unit,
+    onRemoveSorts: () -> Unit,
+) {
+    val colors = SafeDbTheme.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 5.dp),
+        shape = RoundedCornerShape(3.dp),
+        color = colors.warningContainer,
+        tonalElevation = 0.dp,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Text(
+                "Distinct rows cannot sort by unselected columns.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onWarningContainer,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onSelectColumns) {
+                    Text("Select columns", style = MaterialTheme.typography.labelSmall)
+                }
+                TextButton(onClick = onRemoveSorts) {
+                    Text("Remove sorts", style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
     }
 }
@@ -236,6 +297,7 @@ private fun QueryOrderSection(
     labels: List<String>,
     directions: List<SortDirection>? = null,
     onMove: (Int, Int) -> Unit,
+    warningIndices: Set<Int> = emptySet(),
     separated: Boolean = false,
 ) {
     var draggedIndex by remember { mutableStateOf<Int?>(null) }
@@ -262,6 +324,7 @@ private fun QueryOrderSection(
     labels.forEachIndexed { index, label ->
         val rowBackground = when (index) {
             draggedIndex -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f)
+            in warningIndices -> SafeDbTheme.colors.warningContainer.copy(alpha = 0.85f)
             hoveredIndex -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f)
             else -> Color.Transparent
         }
@@ -345,7 +408,11 @@ private fun QueryOrderSection(
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (index in warningIndices) {
+                    SafeDbTheme.colors.onWarningContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -878,6 +945,9 @@ fun BuilderScreen(
                                             onDistinctChange = queryViewModel::setDistinct,
                                             groups = queryViewModel.groups,
                                             sorts = queryViewModel.sorts,
+                                            distinctSortConflicts = queryViewModel.distinctSortConflicts,
+                                            onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
+                                            onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
                                             onMoveGroup = queryViewModel::moveGroup,
                                             onMoveSort = queryViewModel::moveSort,
                                             tableNamesByAlias = queryViewModel.canvasTables.associate {

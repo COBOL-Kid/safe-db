@@ -219,6 +219,36 @@ class QueryViewModelStateTest {
     }
 
     @Test
+    fun distinctSortConflictsDisableRunAndOfferExplicitRepairs() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id", "status", "created_at"))
+        viewModel.toggleColumn("t0", "id")
+        viewModel.setSort("t0", "status", SortDirection.Asc)
+        viewModel.setSort("t0", "created_at", SortDirection.Desc)
+        viewModel.setDistinct(true)
+
+        assertEquals(listOf("status", "created_at"), viewModel.distinctSortConflicts.map { it.column })
+        assertFalse(viewModel.canRun)
+
+        viewModel.selectDistinctSortColumns()
+
+        assertTrue(viewModel.isColumnSelected("t0", "status"))
+        assertTrue(viewModel.isColumnSelected("t0", "created_at"))
+        assertTrue(viewModel.distinctSortConflicts.isEmpty())
+        assertTrue(viewModel.canRun)
+
+        viewModel.toggleColumn("t0", "status")
+        assertEquals(listOf("status"), viewModel.distinctSortConflicts.map { it.column })
+        assertFalse(viewModel.canRun)
+
+        viewModel.removeDistinctSortConflicts()
+
+        assertEquals(listOf("created_at"), viewModel.sorts.map { it.column })
+        assertTrue(viewModel.distinctSortConflicts.isEmpty())
+        assertTrue(viewModel.canRun)
+    }
+
+    @Test
     fun groupActionsAppendByPriorityAutoSelectAndKeepGroupedBuilderStateValid() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         viewModel.addTable(table("customers", "id"))

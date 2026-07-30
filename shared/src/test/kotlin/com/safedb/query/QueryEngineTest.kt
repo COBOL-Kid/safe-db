@@ -553,6 +553,31 @@ class QueryEngineTest {
     }
 
     @Test
+    fun distinctValidationRequiresSortColumnsInExplicitProjection() {
+        val unselectedSort = sampleSpec().copy(
+            distinct = true,
+            sorts = listOf(SortSpec("t0", "name")),
+        )
+
+        assertEquals(listOf(SortSpec("t0", "name")), distinctSortProjectionConflicts(unselectedSort))
+        assertTrue(
+            validate(unselectedSort, sampleSchema(), emptyList())
+                .unwrapErr()
+                .contains("must be explicitly selected"),
+        )
+
+        val selectedSort = unselectedSort.copy(
+            columns = unselectedSort.columns + ColumnSel("t0", "name"),
+        )
+        assertTrue(distinctSortProjectionConflicts(selectedSort).isEmpty())
+        validate(selectedSort, sampleSchema(), emptyList()).unwrap()
+
+        val allColumns = unselectedSort.copy(columns = emptyList())
+        assertTrue(distinctSortProjectionConflicts(allColumns).isEmpty())
+        validate(allColumns, sampleSchema(), emptyList()).unwrap()
+    }
+
+    @Test
     fun groupsAreValidatedQuotedAndCompiledBeforeOrderAndLimitInPriorityOrder() {
         val spec = sampleSpec().copy(
             columns = listOf(ColumnSel("t0", "id"), ColumnSel("t0", "name")),
