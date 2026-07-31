@@ -37,14 +37,20 @@ class AppShellTransitionTest {
     }
 
     @Test
-    fun `expanded controls reveal in the same order`() {
+    fun `expanded controls reveal without the command field`() {
         assertEquals(emptyList(), sidebarExpandedUtilityItemsAtStep(5))
-        assertEquals(listOf(SidebarUtilityItem.Command), sidebarExpandedUtilityItemsAtStep(6))
         assertEquals(
-            listOf(SidebarUtilityItem.Command, SidebarUtilityItem.Status),
-            sidebarExpandedUtilityItemsAtStep(7),
+            listOf(SidebarUtilityItem.Status),
+            sidebarExpandedUtilityItemsAtStep(6),
         )
-        assertEquals(SidebarUtilityItem.entries, sidebarExpandedUtilityItemsAtStep(9))
+        assertEquals(
+            listOf(
+                SidebarUtilityItem.Status,
+                SidebarUtilityItem.Settings,
+                SidebarUtilityItem.Theme,
+            ),
+            sidebarExpandedUtilityItemsAtStep(8),
+        )
     }
 
     @Test

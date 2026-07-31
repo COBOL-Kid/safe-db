@@ -67,7 +67,6 @@ import com.safedb.AppRoute
 import com.safedb.AppState
 import com.safedb.model.QuerySpec
 import com.safedb.ui.components.CommandPalette
-import com.safedb.ui.components.Kbd
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import kotlinx.coroutines.delay
@@ -314,7 +313,6 @@ private fun Sidebar(
             SidebarUtilities(
                 collapsed = layoutCollapsed,
                 isDark = isDark,
-                commandVisible = revealStep >= SidebarRevealCommand,
                 statusVisible = revealStep >= SidebarRevealStatus,
                 settingsVisible = revealStep >= SidebarRevealSettings,
                 themeVisible = revealStep >= SidebarRevealTheme,
@@ -399,7 +397,6 @@ private fun SidebarHeader(
 private fun SidebarUtilities(
     collapsed: Boolean,
     isDark: Boolean,
-    commandVisible: Boolean,
     statusVisible: Boolean,
     settingsVisible: Boolean,
     themeVisible: Boolean,
@@ -455,16 +452,6 @@ private fun SidebarUtilities(
                 )
             }
         } else {
-            SidebarFade(
-                visible = commandVisible,
-                modifier = Modifier.fillMaxWidth(),
-            ) { enabled ->
-                SidebarCommandButton(
-                    enabled = enabled,
-                    onClick = onOpenPalette,
-                )
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -566,44 +553,6 @@ private fun SidebarStatusIndicator() {
                 .size(8.dp)
                 .clip(RoundedCornerShape(50))
                 .background(c.success),
-        )
-    }
-}
-
-@Composable
-private fun SidebarCommandButton(
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val hovered by interactionSource.collectIsHoveredAsState()
-    val c = SafeDbTheme.colors
-    val background by animateColorAsState(
-        if (enabled && hovered) c.navigationHover else c.navigationBackground,
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(2.dp))
-            .background(background)
-            .border(1.dp, c.navigationBorder, RoundedCornerShape(2.dp))
-            .hoverable(interactionSource, enabled = enabled)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Search commands…",
-            style = MaterialTheme.typography.labelSmall,
-            color = c.onNavigationMuted,
-            modifier = Modifier.weight(1f),
-        )
-        Kbd(
-            "\u2318K",
-            contentColor = c.onNavigationMuted,
-            borderColor = c.navigationBorder,
         )
     }
 }
@@ -758,8 +707,12 @@ internal fun sidebarCompactUtilityItemsAtStep(step: Int): List<SidebarUtilityIte
     SidebarUtilityItem.entries.take(step.coerceIn(0, SidebarUtilityItem.entries.size))
 
 internal fun sidebarExpandedUtilityItemsAtStep(step: Int): List<SidebarUtilityItem> =
-    SidebarUtilityItem.entries.filterIndexed { index, _ ->
-        step >= SidebarRevealCommand + index
+    listOf(
+        SidebarUtilityItem.Status,
+        SidebarUtilityItem.Settings,
+        SidebarUtilityItem.Theme,
+    ).filterIndexed { index, _ ->
+        step >= SidebarRevealStatus + index
     }
 
 internal fun sidebarRevealSteps(from: Int, to: Int): List<Int> = when {
@@ -784,10 +737,9 @@ private const val SidebarUtilityFadeInMillis = 120
 private const val SidebarUtilityFadeOutMillis = 80
 private const val SidebarRevealHeader = 1
 private const val SidebarRevealFirstNav = 2
-private const val SidebarRevealCommand = 6
-private const val SidebarRevealStatus = 7
-private const val SidebarRevealSettings = 8
-private const val SidebarRevealTheme = 9
+private const val SidebarRevealStatus = 6
+private const val SidebarRevealSettings = 7
+private const val SidebarRevealTheme = 8
 private const val SidebarRevealAll = SidebarRevealTheme
 private const val SidebarCompactRevealCommand = 1
 private const val SidebarCompactRevealStatus = 2
