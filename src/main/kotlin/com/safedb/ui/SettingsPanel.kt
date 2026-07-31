@@ -35,11 +35,13 @@ import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.ColorSchemePicker
 import com.safedb.ui.components.ModeToggle
 import com.safedb.viewmodel.SettingsViewModel
+import com.safedb.viewmodel.QueryViewModel
 
 @Composable
 fun SettingsPanel(
     open: Boolean,
     viewModel: SettingsViewModel,
+    queryViewModel: QueryViewModel,
     onClose: () -> Unit,
 ) {
     if (!open) return
@@ -48,6 +50,7 @@ fun SettingsPanel(
     val saveError by viewModel.saveError.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
     var newSchema by remember { mutableStateOf("") }
+    var showWarningMuteConfirm by remember { mutableStateOf(false) }
     val thresholdInputs = remember { mutableStateMapOf<Dialect, String>() }
 
     LaunchedEffect(open, settings) {
@@ -164,6 +167,33 @@ fun SettingsPanel(
                 HorizontalDivider()
 
                 Column {
+                    Text("Cost warnings", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (queryViewModel.warningPopupsDisabled) {
+                            "Cost confirmations are muted for this session. Read-only checks, row limits, and timeouts remain active."
+                        } else {
+                            "Cost confirmations are enabled for this session."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                    SecondaryButton(
+                        onClick = {
+                            if (queryViewModel.warningPopupsDisabled) {
+                                queryViewModel.updateWarningPopupsDisabled(false)
+                            } else {
+                                showWarningMuteConfirm = true
+                            }
+                        },
+                    ) {
+                        Text(if (queryViewModel.warningPopupsDisabled) "Turn on cost warnings" else "Mute cost warnings")
+                    }
+                }
+
+                HorizontalDivider()
+
+                Column {
                     Text("Blocked schemas", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     Row(
@@ -220,4 +250,35 @@ fun SettingsPanel(
             }
         },
     )
+
+    if (showWarningMuteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWarningMuteConfirm = false },
+            shape = RoundedCornerShape(4.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("Mute cost warnings?", style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Text(
+                    "Safe DB can stop popping up cost warnings for this session. The safeguards stay on: read-only checks, row limits, and timeouts still apply.",
+                )
+            },
+            confirmButton = {
+                PrimaryButton(
+                    onClick = {
+                        queryViewModel.updateWarningPopupsDisabled(true)
+                        showWarningMuteConfirm = false
+                    },
+                ) {
+                    Text("Mute warnings")
+                }
+            },
+            dismissButton = {
+                SecondaryButton(onClick = { showWarningMuteConfirm = false }) {
+                    Text("Keep warning me")
+                }
+            },
+        )
+    }
 }

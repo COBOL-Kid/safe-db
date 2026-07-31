@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -83,7 +82,6 @@ import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
-import com.safedb.ui.components.ToolbarTooltipIconButton
 import com.safedb.ui.components.PromptDialog
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
@@ -536,7 +534,6 @@ fun BuilderScreen(
 ) {
     var showCostGuardConfirm by remember { mutableStateOf(false) }
     var showSavePrompt by remember { mutableStateOf(false) }
-    var showWarningMuteConfirm by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
     var resultsHeight by remember { mutableFloatStateOf(240f) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
@@ -628,37 +625,6 @@ fun BuilderScreen(
         onCancel = { showSavePrompt = false },
     )
 
-    if (showWarningMuteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showWarningMuteConfirm = false },
-            shape = RoundedCornerShape(4.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text("Mute cost warnings?", style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Text(
-                    "Safe DB can stop popping up cost warnings for this session. The safeguards stay on: read-only checks, row limits, and timeouts still apply.",
-                )
-            },
-            confirmButton = {
-                PrimaryButton(
-                    onClick = {
-                        queryViewModel.updateWarningPopupsDisabled(true)
-                        showWarningMuteConfirm = false
-                    },
-                ) {
-                    Text("Mute warnings")
-                }
-            },
-            dismissButton = {
-                SecondaryButton(onClick = { showWarningMuteConfirm = false }) {
-                    Text("Keep warning me")
-                }
-            },
-        )
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -739,18 +705,6 @@ fun BuilderScreen(
                         Text("Clear")
                     }
                 }
-                ToolbarTooltipIconButton(
-                    label = if (queryViewModel.warningPopupsDisabled) "Warnings off" else "Warnings on",
-                    icon = Icons.Default.WarningAmber,
-                    onClick = {
-                        if (queryViewModel.warningPopupsDisabled) {
-                            queryViewModel.updateWarningPopupsDisabled(false)
-                        } else {
-                            showWarningMuteConfirm = true
-                        }
-                    },
-                    highlighted = !queryViewModel.warningPopupsDisabled,
-                )
                 PrimaryButton(
                     onClick = {
                         val connectionId = connection?.id

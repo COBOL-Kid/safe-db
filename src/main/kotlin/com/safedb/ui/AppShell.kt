@@ -105,6 +105,7 @@ fun AppShell(
     SettingsPanel(
         open = settingsOpen,
         viewModel = viewModel.settings,
+        queryViewModel = viewModel.query,
         onClose = appState::closeSettings,
     )
 
