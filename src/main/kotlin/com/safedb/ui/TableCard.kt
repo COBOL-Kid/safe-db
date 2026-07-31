@@ -461,7 +461,7 @@ internal fun tableColumnToggleState(selectedCount: Int, totalCount: Int): Toggle
 }
 
 @Composable
-private fun CompactSelectionIndicator(state: ToggleableState) {
+internal fun CompactSelectionIndicator(state: ToggleableState) {
     val selected = state != ToggleableState.Off
     Box(
         modifier = Modifier
