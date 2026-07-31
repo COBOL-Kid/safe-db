@@ -272,7 +272,7 @@ private fun SavedQueryCard(
 
 @Composable
 private fun ProtectionInfoCard() {
-    AppCard {
+    AppCard(hoverLift = false) {
         Column(modifier = Modifier.padding(24.dp)) {
             Text("How Safe-DB protects your database", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(16.dp))
