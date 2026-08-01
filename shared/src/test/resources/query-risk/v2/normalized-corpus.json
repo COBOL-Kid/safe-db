@@ -1,0 +1,83 @@
+{
+  "score_version": 2,
+  "cases": [
+    {
+      "id": "postgres-indexed-equality",
+      "dialect": "Postgres",
+      "predicate": "IndexedEquality",
+      "blocking_operation": false,
+      "limit": 100,
+      "expected_score": 0,
+      "expected_severity": "Minimal",
+      "expected_category_scores": {"Access":0,"Joins":0,"Operations":0,"Volume":0},
+      "expected_signal_codes": [],
+      "expected_gate_state": "Allowed"
+    },
+    {
+      "id": "mysql-unfiltered-medium-table",
+      "dialect": "MySql",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "expected_score": 2,
+      "expected_severity": "Minimal",
+      "expected_category_scores": {"Access":2,"Joins":0,"Operations":0,"Volume":0},
+      "expected_signal_codes": ["NoEffectiveRestriction"],
+      "expected_gate_state": "Allowed"
+    },
+    {
+      "id": "sqlserver-leading-wildcard-without-index",
+      "dialect": "Mssql",
+      "predicate": "BroadTextWithoutIndex",
+      "blocking_operation": false,
+      "limit": 100,
+      "expected_score": 5,
+      "expected_severity": "Elevated",
+      "expected_category_scores": {"Access":5,"Joins":0,"Operations":0,"Volume":0},
+      "expected_signal_codes": ["NoKnownCompatibleAccessPath","ScanProneTextPredicate"],
+      "expected_gate_state": "Allowed"
+    },
+    {
+      "id": "oracle-leading-wildcard-grouped-material-payload",
+      "dialect": "Oracle",
+      "predicate": "BroadTextWithoutIndex",
+      "blocking_operation": true,
+      "limit": 5000,
+      "expected_score": 7,
+      "expected_severity": "High",
+      "expected_category_scores": {"Access":5,"Joins":0,"Operations":3,"Volume":1},
+      "expected_signal_codes": ["NoKnownCompatibleAccessPath","ScanProneTextPredicate","LimitCannotBoundWork","MaterialProjectedPayload"],
+      "expected_gate_state": "Blocked"
+    },
+    {
+      "id": "small-table-suppresses-size-sensitive-access",
+      "dialect": "Postgres",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "size_class": "Small",
+      "confidence": "High",
+      "expected_score": 0,
+      "expected_severity": "Minimal",
+      "expected_category_scores": {"Access":0,"Joins":0,"Operations":0,"Volume":0},
+      "expected_signal_codes": [],
+      "expected_gate_state": "Allowed"
+    },
+    {
+      "id": "unknown-size-is-conservative-and-uncertain",
+      "dialect": "MySql",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "size_class": "Unknown",
+      "confidence": "Unknown",
+      "gate": "Cautious",
+      "expected_score": 2,
+      "expected_severity": "Minimal",
+      "expected_category_scores": {"Access":2,"Joins":0,"Operations":0,"Volume":0},
+      "expected_signal_codes": ["NoEffectiveRestriction"],
+      "expected_uncertainty_codes": ["table_size_unknown"],
+      "expected_gate_state": "Allowed"
+    }
+  ]
+}

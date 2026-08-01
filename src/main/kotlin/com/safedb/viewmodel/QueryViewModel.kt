@@ -31,6 +31,7 @@ import com.safedb.query.CANVAS_CARD_HEIGHT
 import com.safedb.query.CANVAS_CARD_WIDTH
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.QueryError
+import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryHydrationTarget
 import com.safedb.query.clampDimension
 import com.safedb.query.countFilterLeaves
@@ -75,11 +76,6 @@ data class BuilderQuerySample(
     val connectionId: String,
     val spec: QuerySpec,
     val result: QueryResult,
-)
-
-data class PendingCostGuard(
-    val request: QueryRunRequest,
-    val reason: String,
 )
 
 typealias NewFilterSpec = FilterSpec
@@ -131,21 +127,13 @@ class QueryViewModel(
         private set
     var error by mutableStateOf<String?>(null)
         private set
-    private var pendingCostGuardState by mutableStateOf<PendingCostGuard?>(null)
-    val pendingCostGuard: Boolean
-        get() = pendingCostGuardState != null
-    val pendingCostGuardReason: String?
-        get() = pendingCostGuardState?.reason
+    var riskEvaluation by mutableStateOf<QueryRiskEvaluation?>(null)
+        private set
     private var pendingRiskGateState by mutableStateOf(false)
     /** True while the latest settled query failure is a structured risk-gate block. */
     val pendingRiskGate: Boolean
         get() = pendingRiskGateState
-    /** Soft holds that should keep a query-backed recipe run pending for retry. */
-    val holdsPendingRecipe: Boolean
-        get() = pendingCostGuard || pendingRiskGate
     var hydrationWarning by mutableStateOf<String?>(null)
-        private set
-    var warningPopupsDisabled by mutableStateOf(false)
         private set
 
     val tableCount: Int get() = canvasTables.size
@@ -191,7 +179,7 @@ class QueryViewModel(
         resultSpec = null
         error = null
         running = false
-        pendingCostGuardState = null
+        riskEvaluation = null
         pendingRiskGateState = false
         hydrationWarning = null
         aliasCounter = 0
@@ -547,12 +535,12 @@ class QueryViewModel(
         queryLimit = parsed
     }
 
-    fun run(connectionId: String, force: Boolean = false) {
+    fun run(connectionId: String, onSettled: ((Boolean) -> Unit)? = null) {
         if (!canRun) return
-        run(QueryRunRequest(connectionId, spec, force))
+        run(QueryRunRequest(connectionId, spec), onSettled)
     }
 
-    private fun run(request: QueryRunRequest) {
+    private fun run(request: QueryRunRequest, onSettled: ((Boolean) -> Unit)? = null) {
         val executedSpec = request.spec
         val generation = ++runGeneration
         running = true
@@ -560,40 +548,26 @@ class QueryViewModel(
         results = null
         resultConnectionId = null
         resultSpec = null
-        pendingCostGuardState = null
+        riskEvaluation = null
         pendingRiskGateState = false
         scope.launch {
+            var succeeded = false
             try {
                 val completed = service.runQuery(request)
                 if (generation == runGeneration) {
-                    results = completed
+                    results = completed.queryResult
+                    riskEvaluation = completed.riskEvaluation
                     resultConnectionId = request.connectionId
                     resultSpec = executedSpec
+                    succeeded = true
                 }
             } catch (failure: QueryFailureException) {
                 if (generation != runGeneration) return@launch
                 val queryError = failure.queryError
                 if (queryError is QueryError.RiskGate) {
                     pendingRiskGateState = true
+                    riskEvaluation = queryError.evaluation
                     error = queryError.message
-                } else if (!request.force && queryError is QueryError.CostGuard) {
-                    if (warningPopupsDisabled) {
-                        try {
-                            val completed = service.runQuery(request.copy(force = true))
-                            if (generation == runGeneration) {
-                                results = completed
-                                resultConnectionId = request.connectionId
-                                resultSpec = executedSpec
-                            }
-                        } catch (forced: Exception) {
-                            if (generation == runGeneration) {
-                                error = forced.message ?: forced.toString()
-                            }
-                        }
-                    } else {
-                        pendingCostGuardState = PendingCostGuard(request, queryError.reason)
-                        error = queryError.message
-                    }
                 } else {
                     error = failure.message ?: failure.toString()
                 }
@@ -602,6 +576,7 @@ class QueryViewModel(
             } finally {
                 if (generation == runGeneration) {
                     running = false
+                    onSettled?.invoke(succeeded)
                 }
             }
         }
@@ -615,33 +590,24 @@ class QueryViewModel(
         return BuilderQuerySample(connectionId, executedSpec, result)
     }
 
-    fun confirmPendingCostGuard() {
-        val pending = pendingCostGuardState ?: return
-        run(pending.request.copy(force = true))
-    }
-
     fun dismissHydrationWarning() {
         hydrationWarning = null
     }
 
-    fun clearPendingCostGuard() {
-        invalidateSettledRunFailure()
-    }
-
     fun dismissError() {
-        clearPendingCostGuard()
+        invalidateSettledRunFailure()
     }
 
     /** Clears last-run failure state when the executable query draft changes. */
     private fun invalidateSettledRunFailure() {
-        if (error == null && pendingCostGuardState == null && !pendingRiskGateState) return
-        pendingCostGuardState = null
+        if (running) {
+            runGeneration += 1
+            running = false
+        }
+        if (error == null && !pendingRiskGateState && riskEvaluation == null) return
         pendingRiskGateState = false
+        riskEvaluation = null
         error = null
-    }
-
-    fun updateWarningPopupsDisabled(disabled: Boolean) {
-        warningPopupsDisabled = disabled
     }
 
     fun restoreFromSpec(spec: QuerySpec, schemaTables: List<TableInfo>) {

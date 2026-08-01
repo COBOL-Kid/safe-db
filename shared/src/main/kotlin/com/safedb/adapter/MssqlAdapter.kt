@@ -320,11 +320,14 @@ object MssqlAdapter {
             }
             if (!showplanRestored) {
                 return@use ExplainResult.Unavailable(
+                    com.safedb.model.PlanUnavailableReason.CleanupFailure,
                     "SQL Server plan session could not restore SHOWPLAN_XML OFF; the dedicated connection was discarded",
                 )
             }
-            val cost = parseShowplanCost(xml)
-            cost?.let { ExplainResult.Estimated(it) }
-                ?: ExplainResult.Unavailable("Could not parse EXPLAIN cost from SHOWPLAN_XML")
+            parseSqlServerPlan(xml)?.let(ExplainResult::Available)
+                ?: ExplainResult.Unavailable(
+                    com.safedb.model.PlanUnavailableReason.ParseFailure,
+                    "Could not normalize SQL Server SHOWPLAN XML",
+                )
         }
 }

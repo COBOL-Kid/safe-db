@@ -14,6 +14,10 @@ import com.safedb.model.IndexKey
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.Outcome
+import com.safedb.model.NormalizedQueryPlan
+import com.safedb.model.PlanAccessMethod
+import com.safedb.model.PlanOperationKind
+import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.SafeDbJson
 import com.safedb.model.Schema
 import com.safedb.model.Settings
@@ -23,7 +27,7 @@ import com.safedb.model.TableSizeClass
 import java.security.MessageDigest
 import kotlin.math.max
 
-const val QUERY_RISK_SCORE_VERSION: Int = 1
+const val QUERY_RISK_SCORE_VERSION: Int = 2
 
 enum class RiskCategory { Access, Joins, Operations, Volume }
 
@@ -44,7 +48,15 @@ enum class RiskSignalCode {
     PlanConfirmedJoinExpansion,
 }
 
-enum class SignalBasis { StaticSchema, PlanEvidence, OrganizationPolicy }
+enum class SignalBasis { StaticSchema, PlanEvidence }
+
+enum class AccessRiskKind { General, Text }
+
+sealed interface RiskTarget {
+    data class Access(val alias: String, val kind: AccessRiskKind = AccessRiskKind.General) : RiskTarget
+    data class Join(val aliases: Set<String>) : RiskTarget
+    data class Operation(val kind: PlanOperationKind, val aliases: Set<String>) : RiskTarget
+}
 
 data class RiskSubject(
     val tableAlias: String? = null,
@@ -69,7 +81,7 @@ data class RiskSignal(
     val points: Int,
     val basis: SignalBasis,
     val confidence: EvidenceConfidence,
-    val replacementKey: String? = null,
+    val target: RiskTarget? = null,
     val mandatoryBlockWhenGateEnabled: Boolean = false,
 )
 
@@ -112,25 +124,24 @@ data class QueryRiskDecision(
     val reasons: List<RiskDecisionReason>,
 )
 
-data class OrganizationRiskPolicy(
-    /** The most flexible personal choice the organization permits. */
-    val maximumFlexibility: QueryRiskGate = QueryRiskGate.Disabled,
-    val minimumGateByResource: Map<String, QueryRiskGate> = emptyMap(),
-    val blockedResources: Set<String> = emptySet(),
-    val requirePlanForResources: Set<String> = emptySet(),
-)
+enum class QueryPlanStatus { NotRequested, Available, Unavailable, Disabled }
 
 data class QueryRiskEvaluation(
-    val assessment: QueryRiskAssessment?,
+    val staticAssessment: QueryRiskAssessment?,
+    val finalAssessment: QueryRiskAssessment?,
+    val planStatus: QueryPlanStatus,
+    val planUnavailableReason: PlanUnavailableReason? = null,
     val decision: QueryRiskDecision,
-)
+) {
+    val assessment: QueryRiskAssessment?
+        get() = finalAssessment
+}
 
 fun evaluateQueryRisk(
     spec: QuerySpec,
     schema: Schema,
     settings: Settings,
     dialect: Dialect,
-    organizationPolicy: OrganizationRiskPolicy = OrganizationRiskPolicy(),
 ): Outcome<QueryRiskEvaluation> {
     val validated = when (val result = validateQuery(spec, schema, settings.blockedSchemas, dialect)) {
         is Outcome.Ok -> result.value.first
@@ -141,11 +152,12 @@ fun evaluateQueryRisk(
     } else {
         assessStaticQueryRisk(validated, schema, dialect)
     }
-    val resources = validated.spec().tables.mapTo(mutableSetOf()) { "${it.schema}.${it.name}" }
     return Outcome.ok(
         QueryRiskEvaluation(
-            assessment,
-            applyRiskGate(assessment, settings.queryRiskGate, organizationPolicy, resources),
+            staticAssessment = assessment,
+            finalAssessment = assessment,
+            planStatus = if (assessment == null) QueryPlanStatus.Disabled else QueryPlanStatus.NotRequested,
+            decision = applyRiskGate(assessment, settings.queryRiskGate),
         ),
     )
 }
@@ -169,30 +181,41 @@ fun assessStaticQueryRisk(
     val signals = mutableListOf<RiskSignal>()
     val uncertainties = mutableListOf<RiskUncertainty>()
     val predicate = analyzePredicate(spec.filters, spec.connectorOverrides)
+    if (predicate.constant == PredicateConstant.False) {
+        return buildAssessment(queryFingerprint(validated), emptyList(), emptyList())
+    }
     val leavesByAlias = predicate.leaves.groupBy { it.tableAlias }
-    val boundedAliases = mutableSetOf<String>()
+    val directlyBoundedAliases = mutableSetOf<String>()
 
     for ((alias, table) in tablesByAlias) {
         if (table == null) continue
         val subject = table.subject(alias)
         val leaves = leavesByAlias[alias].orEmpty()
-        if (table.tableSize.sizeClass != TableSizeClass.Small &&
-            (predicate.constant == PredicateConstant.True || predicate.constant == PredicateConstant.Empty)
-        ) {
+        if (table.tableSize.sizeClass == TableSizeClass.Unknown) {
+            uncertainties += RiskUncertainty(
+                "table_size_unknown",
+                subject,
+                table.tableSize.coverage.reasonCode ?: "table_size_metadata_unavailable",
+            )
+        }
+        val directlyRestricted = predicate.branches?.let { branches ->
+            branches.isNotEmpty() && branches.all { branch -> branch.any { it.tableAlias == alias } }
+        } == true
+        if (table.tableSize.sizeClass != TableSizeClass.Small && !directlyRestricted) {
             signals += RiskSignal(
                 RiskSignalCode.NoEffectiveRestriction,
                 RiskCategory.Access,
                 subject,
                 points = 2,
                 basis = SignalBasis.StaticSchema,
-                confidence = EvidenceConfidence.High,
-                replacementKey = "access:$alias",
+                confidence = tableRiskConfidence(table),
+                target = RiskTarget.Access(alias),
             )
         }
 
         if (leaves.isEmpty()) continue
         val path = analyzeAccessPaths(table, alias, predicate, dialect)
-        if (path.state == AccessPathState.Compatible) boundedAliases += alias
+        if (directlyRestricted && path.state == AccessPathState.Compatible) directlyBoundedAliases += alias
         if (path.state == AccessPathState.Unknown) {
             uncertainties += RiskUncertainty(
                 code = "index_compatibility_unknown",
@@ -206,8 +229,8 @@ fun assessStaticQueryRisk(
                 subject,
                 2,
                 SignalBasis.StaticSchema,
-                EvidenceConfidence.Medium,
-                replacementKey = "access:$alias",
+                tableRiskConfidence(table),
+                target = RiskTarget.Access(alias),
             )
             if (path.hasIncompatibleOrBranch) {
                 signals += RiskSignal(
@@ -216,8 +239,8 @@ fun assessStaticQueryRisk(
                     subject,
                     1,
                     SignalBasis.StaticSchema,
-                    EvidenceConfidence.Medium,
-                    replacementKey = "or:$alias",
+                    tableRiskConfidence(table),
+                    target = RiskTarget.Access(alias),
                 )
             }
         }
@@ -232,8 +255,8 @@ fun assessStaticQueryRisk(
                     table.subject(alias, broad.column),
                     3,
                     SignalBasis.StaticSchema,
-                    EvidenceConfidence.High,
-                    replacementKey = "text:$alias:${broad.column}",
+                    tableRiskConfidence(table),
+                    target = RiskTarget.Access(alias, AccessRiskKind.Text),
                 )
             }
         }
@@ -247,8 +270,8 @@ fun assessStaticQueryRisk(
                     table.subject(alias, negative.column),
                     1,
                     SignalBasis.StaticSchema,
-                    EvidenceConfidence.Medium,
-                    replacementKey = "negative:$alias:${negative.column}",
+                    tableRiskConfidence(table),
+                    target = RiskTarget.Access(alias),
                 )
             } else {
                 uncertainties += RiskUncertainty(
@@ -261,9 +284,15 @@ fun assessStaticQueryRisk(
     }
 
     addJoinSignals(spec, tablesByAlias, signals, uncertainties)
-    addOperationSignals(spec, tablesByAlias, leavesByAlias, boundedAliases, signals, uncertainties)
+    addOperationSignals(spec, tablesByAlias, leavesByAlias, directlyBoundedAliases, signals, uncertainties)
     addVolumeSignal(validated, tablesByAlias, signals)
     return buildAssessment(queryFingerprint(validated), signals, uncertainties)
+}
+
+private fun tableRiskConfidence(table: TableInfo): EvidenceConfidence = when (table.tableSize.sizeClass) {
+    TableSizeClass.Small -> EvidenceConfidence.High
+    TableSizeClass.Medium, TableSizeClass.Large -> table.tableSize.confidence
+    TableSizeClass.Unknown -> EvidenceConfidence.Unknown
 }
 
 internal fun buildAssessment(
@@ -304,20 +333,17 @@ fun severityForScore(score: Int): QueryRiskSeverity = when (score) {
 fun applyRiskGate(
     assessment: QueryRiskAssessment?,
     userSetting: QueryRiskGate,
-    organizationPolicy: OrganizationRiskPolicy = OrganizationRiskPolicy(),
-    resources: Set<String> = emptySet(),
     validationBlocked: Boolean = false,
-    policyBlocked: Boolean = resources.any(organizationPolicy.blockedResources::contains),
 ): QueryRiskDecision {
-    val effective = effectiveGate(userSetting, organizationPolicy, resources)
+    val effective = userSetting
     val fingerprint = assessment?.queryFingerprint.orEmpty()
-    if (validationBlocked || policyBlocked) {
+    if (validationBlocked) {
         return QueryRiskDecision(
             fingerprint,
             RiskGateState.Blocked,
             effective,
             blockingBand(effective),
-            listOf(RiskDecisionReason("policy_or_validation_block", "A validation or organization policy blocks this query.", true)),
+            listOf(RiskDecisionReason("validation_block", "Query validation blocks this query.", true)),
         )
     }
     if (effective == QueryRiskGate.Disabled) {
@@ -369,21 +395,6 @@ fun blockingBand(gate: QueryRiskGate): QueryRiskSeverity? = when (gate) {
     QueryRiskGate.Flexible -> QueryRiskSeverity.VeryHigh
     QueryRiskGate.Disabled -> null
 }
-
-fun effectiveGate(
-    userSetting: QueryRiskGate,
-    policy: OrganizationRiskPolicy,
-    resources: Set<String>,
-): QueryRiskGate {
-    var result = stricterGate(userSetting, policy.maximumFlexibility)
-    for (resource in resources) {
-        policy.minimumGateByResource[resource]?.let { result = stricterGate(result, it) }
-    }
-    return result
-}
-
-private fun stricterGate(first: QueryRiskGate, second: QueryRiskGate): QueryRiskGate =
-    if (first.ordinal <= second.ordinal) first else second
 
 private enum class PredicateConstant { True, False, Unknown, Empty }
 
@@ -629,7 +640,7 @@ private fun addJoinSignals(
     uncertainties: MutableList<RiskUncertainty>,
 ) {
     val relationships = spec.joins.groupBy { join -> setOf(join.leftAlias, join.rightAlias) }
-    repeat(max(0, relationships.size)) { index ->
+    repeat(max(0, spec.tables.map { it.alias }.distinct().size - 1)) { index ->
         signals += RiskSignal(
             RiskSignalCode.AdditionalJoinedRelation,
             RiskCategory.Joins,
@@ -644,42 +655,56 @@ private fun addJoinSignals(
         val secondAlias = aliases.drop(1).firstOrNull() ?: continue
         val first = tablesByAlias[firstAlias] ?: continue
         val second = tablesByAlias[secondAlias] ?: continue
-        val fkMatch = matchingForeignKey(firstAlias, first, secondAlias, second, joins) ?: continue
-        val referencingAlias = fkMatch.first
-        val referencingTable = tablesByAlias[referencingAlias] ?: continue
-        if (!referencingTable.indexMetadata.isComplete) {
+        val target = RiskTarget.Join(aliases)
+        val fkMetadataComplete = first.foreignKeyMetadata.isComplete && second.foreignKeyMetadata.isComplete
+        if (!fkMetadataComplete) {
             uncertainties += RiskUncertainty(
-                "join_index_metadata_unknown",
-                referencingTable.subject(referencingAlias),
-                referencingTable.indexMetadata.reasonCode ?: "index_metadata_unavailable",
-            )
-            continue
-        }
-        val supporting = referencingTable.indexes.any { index ->
-            index.capabilities.equality == true &&
-                index.isPartial == false &&
-                normalizedKeys(index).mapNotNull(IndexKey::column).take(fkMatch.second.columns.size) == fkMatch.second.columns
-        }
-        if (!supporting) {
-            signals += RiskSignal(
-                RiskSignalCode.ForeignKeyWithoutSupportingIndex,
-                RiskCategory.Joins,
-                referencingTable.subject(referencingAlias),
-                2,
-                SignalBasis.StaticSchema,
-                EvidenceConfidence.High,
+                "join_foreign_key_metadata_unknown",
+                RiskSubject(operation = "join ${aliases.sorted().joinToString("-")}"),
+                first.foreignKeyMetadata.reasonCode ?: second.foreignKeyMetadata.reasonCode
+                    ?: "foreign_key_metadata_unavailable",
             )
         }
-        val unique = listOf(firstAlias to first, secondAlias to second).any { (alias, table) ->
-            val joinedColumns = joins.mapNotNull { join ->
-                when (alias) {
-                    join.leftAlias -> join.leftColumn
-                    join.rightAlias -> join.rightColumn
-                    else -> null
+        val fkMatch = matchingForeignKey(firstAlias, first, secondAlias, second, joins)
+        if (fkMatch != null) {
+            val referencingAlias = fkMatch.first
+            val referencingTable = tablesByAlias[referencingAlias] ?: continue
+            if (!referencingTable.indexMetadata.isComplete) {
+                uncertainties += RiskUncertainty(
+                    "join_index_metadata_unknown",
+                    referencingTable.subject(referencingAlias),
+                    referencingTable.indexMetadata.reasonCode ?: "index_metadata_unavailable",
+                )
+            } else {
+                val supporting = referencingTable.indexes.any { index ->
+                    index.capabilities.equality == true &&
+                        index.isPartial == false &&
+                        normalizedKeys(index).take(fkMatch.second.columns.size).map(IndexKey::column) == fkMatch.second.columns
+                }
+                if (!supporting) {
+                    signals += RiskSignal(
+                        RiskSignalCode.ForeignKeyWithoutSupportingIndex,
+                        RiskCategory.Joins,
+                        referencingTable.subject(referencingAlias),
+                        2,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.High,
+                    )
                 }
             }
-            table.indexes.any { it.isUnique && normalizedKeys(it).mapNotNull(IndexKey::column).take(joinedColumns.size) == joinedColumns }
         }
+
+        val sides = listOf(firstAlias to first, secondAlias to second)
+        val uniquenessComplete = sides.all { (_, table) -> table.indexMetadata.isComplete }
+        if (!uniquenessComplete) {
+            uncertainties += RiskUncertainty(
+                "join_uniqueness_metadata_unknown",
+                RiskSubject(operation = "join ${aliases.sorted().joinToString("-")}"),
+                sides.firstOrNull { !it.second.indexMetadata.isComplete }?.second?.indexMetadata?.reasonCode
+                    ?: "index_metadata_unavailable",
+            )
+        }
+        val unique = sides.any { (alias, table) -> exactUniqueJoinKey(table, joinedColumns(alias, joins)) }
         if (!unique) {
             signals += RiskSignal(
                 RiskSignalCode.JoinExpansionPossible,
@@ -687,10 +712,28 @@ private fun addJoinSignals(
                 RiskSubject(operation = "join ${aliases.sorted().joinToString("-")}"),
                 1,
                 SignalBasis.StaticSchema,
-                EvidenceConfidence.Medium,
-                replacementKey = "join:${aliases.sorted().joinToString(":")}",
+                if (uniquenessComplete) EvidenceConfidence.High else EvidenceConfidence.Unknown,
+                target = target,
             )
         }
+    }
+}
+
+private fun joinedColumns(alias: String, joins: List<com.safedb.model.JoinSpec>): Set<String> = joins.mapNotNullTo(linkedSetOf()) { join ->
+    when (alias) {
+        join.leftAlias -> join.leftColumn
+        join.rightAlias -> join.rightColumn
+        else -> null
+    }
+}
+
+private fun exactUniqueJoinKey(table: TableInfo, joinedColumns: Set<String>): Boolean {
+    if (!table.indexMetadata.isComplete || joinedColumns.isEmpty()) return false
+    return table.indexes.any { index ->
+        val keys = normalizedKeys(index)
+        index.isUnique && index.isPartial == false &&
+            keys.isNotEmpty() && keys.none { it.expression || it.column == null } &&
+            keys.mapNotNull(IndexKey::column).toSet() == joinedColumns && keys.size == joinedColumns.size
     }
 }
 
@@ -725,7 +768,17 @@ private fun addOperationSignals(
     signals: MutableList<RiskSignal>,
     uncertainties: MutableList<RiskUncertainty>,
 ) {
-    var operations = spec.groups.size + if (spec.distinct && !distinctRedundant(spec)) 1 else 0
+    data class Operation(val kind: PlanOperationKind, val aliases: Set<String>, val compatible: Boolean = false)
+    val operations = mutableListOf<Operation>()
+    if (spec.groups.isNotEmpty()) {
+        operations += Operation(PlanOperationKind.Grouping, spec.groups.mapTo(linkedSetOf()) { it.tableAlias })
+    }
+    if (spec.distinct && !distinctRedundant(spec)) {
+        val aliases = spec.columns.mapTo(linkedSetOf()) { it.tableAlias }.ifEmpty {
+            spec.tables.mapTo(linkedSetOf()) { it.alias }
+        }
+        operations += Operation(PlanOperationKind.Distinct, aliases)
+    }
     if (spec.sorts.isNotEmpty()) {
         val sortAliases = spec.sorts.mapTo(linkedSetOf()) { it.tableAlias }
         val compatibility = if (sortAliases.size == 1) {
@@ -741,7 +794,7 @@ private fun addOperationSignals(
         }
         when (compatibility) {
             AccessPathState.Compatible -> Unit
-            AccessPathState.Incompatible -> operations++
+            AccessPathState.Incompatible -> operations += Operation(PlanOperationKind.Sort, sortAliases)
             AccessPathState.Unknown -> uncertainties += RiskUncertainty(
                 "sort_compatibility_unknown",
                 RiskSubject(operation = "ordered sort"),
@@ -749,29 +802,19 @@ private fun addOperationSignals(
             )
         }
     }
-    if (operations == 0) return
-    if (boundedAliases.isEmpty()) {
+    for (operation in operations) {
+        val bounded = operation.aliases.all { alias ->
+            alias in boundedAliases || tablesByAlias[alias]?.tableSize?.sizeClass == TableSizeClass.Small
+        }
         signals += RiskSignal(
-            RiskSignalCode.LimitCannotBoundWork,
+            if (bounded) RiskSignalCode.BoundedBlockingOperation else RiskSignalCode.LimitCannotBoundWork,
             RiskCategory.Operations,
-            RiskSubject(operation = "blocking operation"),
-            3,
+            RiskSubject(operation = operation.kind.name.lowercase()),
+            if (bounded) 1 else 3,
             SignalBasis.StaticSchema,
             EvidenceConfidence.Medium,
-            replacementKey = "operation:blocking",
+            target = RiskTarget.Operation(operation.kind, operation.aliases),
         )
-    } else {
-        repeat(operations) { index ->
-            signals += RiskSignal(
-                RiskSignalCode.BoundedBlockingOperation,
-                RiskCategory.Operations,
-                RiskSubject(operation = "blocking operation ${index + 1}"),
-                1,
-                SignalBasis.StaticSchema,
-                EvidenceConfidence.Medium,
-                replacementKey = "operation:bounded:$index",
-            )
-        }
     }
 }
 
@@ -798,7 +841,7 @@ private fun sortCompatibility(
         val sortPosition = keys.indexOfFirst { it.column == sorts.first().column }
         if (sortPosition < 0) continue
         val prefixConstrained = keys.take(sortPosition).all { key ->
-            key.column != null && leaves.any { it.column == key.column && it.op in equalityOps }
+            key.column != null && leaves.any { it.column == key.column && isPointConstraint(it) }
         }
         if (!prefixConstrained) continue
         val orderedKeys = keys.drop(sortPosition).take(sorts.size)
@@ -814,6 +857,12 @@ private fun sortCompatibility(
         if (forward || reverse) return AccessPathState.Compatible
     }
     return if (unknown) AccessPathState.Unknown else AccessPathState.Incompatible
+}
+
+private fun isPointConstraint(filter: com.safedb.model.FilterSpec): Boolean = when (filter.op) {
+    FilterOp.Eq, FilterOp.IsNull, FilterOp.IsEmpty -> true
+    FilterOp.In -> (filter.value as? FilterValue.ListValue)?.literals?.size == 1
+    else -> false
 }
 
 private fun SortDirection.reverse(): SortDirection = when (this) {
@@ -882,123 +931,222 @@ private fun signalMessage(signal: RiskSignal): String = when (signal.code) {
     RiskSignalCode.PlanConfirmedJoinExpansion -> "Plan evidence indicates high join expansion."
 }
 
-enum class PlanAccessMethod { BoundedLookup, BoundedRange, FullIndexScan, TableScan, Unknown, Other }
 enum class EstimatedRowBand { Low, Material, High }
 
-data class PlanAccessStep(
-    val replacementKey: String,
-    val subject: RiskSubject,
-    val method: PlanAccessMethod,
-    val estimatedRows: EstimatedRowBand? = null,
-    val confidentLargeCatalog: Boolean = false,
-    val specializedTextIndex: Boolean = false,
-)
-
-data class PlanJoinStep(
-    val replacementKey: String,
-    val subject: RiskSubject,
-    val estimatedRows: EstimatedRowBand? = null,
-    val highConfidence: Boolean = false,
-)
-
-data class PlanOperationStep(
-    val replacementKey: String,
-    val subject: RiskSubject,
-    val blockingOperationPresent: Boolean,
-    val estimatedRows: EstimatedRowBand? = null,
-)
-
-data class PlanEvidence(
-    val accessSteps: List<PlanAccessStep> = emptyList(),
-    val joins: List<PlanJoinStep> = emptyList(),
-    val operations: List<PlanOperationStep> = emptyList(),
-    val unavailableReasonCode: String? = null,
-)
+fun estimatedRowBand(rows: Long): EstimatedRowBand = when {
+    rows < 10_000 -> EstimatedRowBand.Low
+    rows < 100_000 -> EstimatedRowBand.Material
+    else -> EstimatedRowBand.High
+}
 
 fun refineRiskWithPlan(
     staticAssessment: QueryRiskAssessment,
-    planEvidence: PlanEvidence,
+    plan: NormalizedQueryPlan,
+    spec: QuerySpec,
+    schema: Schema,
 ): QueryRiskAssessment {
-    if (planEvidence.unavailableReasonCode != null) {
-        return staticAssessment.copy(
-            uncertainties = staticAssessment.uncertainties + RiskUncertainty(
-                "plan_unavailable",
-                RiskSubject(operation = "query plan"),
-                planEvidence.unavailableReasonCode,
-            ),
-        )
+    val tablesByAlias = spec.tables.associate { ref ->
+        ref.alias to schema.tables.firstOrNull { it.schema == ref.schema && it.name == ref.name }
     }
-    val replacements = mutableMapOf<String, RiskSignal?>()
+    val replacements = mutableMapOf<RiskTarget, RiskSignal?>()
     val uncertainties = staticAssessment.uncertainties.toMutableList()
-    for (step in planEvidence.accessSteps) {
-        if (step.specializedTextIndex) {
-            replacements[step.replacementKey] = RiskSignal(
-                RiskSignalCode.ScanProneTextPredicate,
-                RiskCategory.Access,
-                step.subject,
-                1,
-                SignalBasis.PlanEvidence,
-                EvidenceConfidence.High,
-                step.replacementKey,
+
+    fun replace(target: RiskTarget, signal: RiskSignal?) {
+        val existing = replacements[target]
+        if (target !in replacements || (signal != null && (existing == null || signal.points > existing.points))) {
+            replacements[target] = signal
+        }
+    }
+
+    for (step in plan.relations) {
+        val alias = resolvePlanAlias(step.alias, step.schema, step.table, spec)
+        if (alias == null) {
+            uncertainties += RiskUncertainty(
+                "plan_relation_unmapped",
+                RiskSubject(schema = step.schema, table = step.table, tableAlias = step.alias),
+                "ambiguous_or_unmapped_relation",
             )
             continue
         }
-        val replacement = when (step.method) {
-            PlanAccessMethod.BoundedLookup -> null
-            PlanAccessMethod.BoundedRange -> if (step.estimatedRows == EstimatedRowBand.Low) null else RiskSignal(
-                RiskSignalCode.NoKnownCompatibleAccessPath, RiskCategory.Access, step.subject, 1,
-                SignalBasis.PlanEvidence, EvidenceConfidence.Medium, step.replacementKey,
-            )
-            PlanAccessMethod.TableScan -> RiskSignal(
-                RiskSignalCode.PlanConfirmedLargeScan,
+        val table = tablesByAlias[alias]
+        val subject = table?.subject(alias) ?: RiskSubject(tableAlias = alias, schema = step.schema, table = step.table)
+        if (step.specializedTextEvidence) {
+            val textTarget = RiskTarget.Access(alias, AccessRiskKind.Text)
+            replace(textTarget, RiskSignal(
+                RiskSignalCode.ScanProneTextPredicate,
                 RiskCategory.Access,
-                step.subject,
-                4,
+                subject,
+                1,
                 SignalBasis.PlanEvidence,
                 EvidenceConfidence.High,
-                step.replacementKey,
-                mandatoryBlockWhenGateEnabled = step.estimatedRows == EstimatedRowBand.High && step.confidentLargeCatalog,
-            )
+                textTarget,
+            ))
+        }
+        val target = RiskTarget.Access(alias)
+        val band = step.estimatedRows?.let(::estimatedRowBand)
+        val replacement = when (step.method) {
+            PlanAccessMethod.BoundedLookup -> null
+            PlanAccessMethod.BoundedRange -> when (band) {
+                EstimatedRowBand.Low -> null
+                EstimatedRowBand.Material, EstimatedRowBand.High -> RiskSignal(
+                    RiskSignalCode.NoKnownCompatibleAccessPath, RiskCategory.Access, subject, 1,
+                    SignalBasis.PlanEvidence, EvidenceConfidence.High, target,
+                )
+                null -> {
+                    uncertainties += RiskUncertainty("plan_access_rows_unknown", subject, "missing_estimated_rows")
+                    continue
+                }
+            }
+            PlanAccessMethod.TableScan -> when (band) {
+                EstimatedRowBand.Low -> null
+                EstimatedRowBand.Material, EstimatedRowBand.High -> RiskSignal(
+                    RiskSignalCode.PlanConfirmedLargeScan,
+                    RiskCategory.Access,
+                    subject,
+                    4,
+                    SignalBasis.PlanEvidence,
+                    EvidenceConfidence.High,
+                    target,
+                    mandatoryBlockWhenGateEnabled = band == EstimatedRowBand.High && table.isConfidentLarge(),
+                )
+                null -> {
+                    uncertainties += RiskUncertainty("plan_access_rows_unknown", subject, "missing_estimated_rows")
+                    continue
+                }
+            }
             PlanAccessMethod.FullIndexScan -> continue
             PlanAccessMethod.Unknown, PlanAccessMethod.Other -> {
                 uncertainties += RiskUncertainty(
                     "plan_access_method_unknown",
-                    step.subject,
+                    subject,
                     step.method.name.lowercase(),
                 )
                 continue
             }
         }
-        replacements[step.replacementKey] = replacement
+        replace(target, replacement)
     }
-    for (step in planEvidence.operations) {
-        replacements[step.replacementKey] = when {
-            !step.blockingOperationPresent -> null
-            step.estimatedRows == EstimatedRowBand.Low -> RiskSignal(
-                RiskSignalCode.BoundedBlockingOperation, RiskCategory.Operations, step.subject, 1,
-                SignalBasis.PlanEvidence, EvidenceConfidence.High, step.replacementKey,
+
+    for (step in plan.blockingOperations) {
+        val aliases = resolvePlanAliases(step.aliases, spec)
+        if (step.aliases.isEmpty() || aliases.size != step.aliases.size) {
+            uncertainties += RiskUncertainty(
+                "plan_operation_unmapped",
+                RiskSubject(operation = step.kind.name.lowercase()),
+                "ambiguous_or_unmapped_operation_alias",
             )
-            else -> RiskSignal(
-                RiskSignalCode.LimitCannotBoundWork, RiskCategory.Operations, step.subject, 3,
-                SignalBasis.PlanEvidence, EvidenceConfidence.High, step.replacementKey,
-            )
+            continue
         }
+        val target = matchingOperationTarget(step.kind, aliases, staticAssessment.signals)
+        if (target == null) {
+            uncertainties += RiskUncertainty(
+                "plan_operation_unmapped",
+                RiskSubject(operation = step.kind.name.lowercase()),
+                "ambiguous_or_unmapped_operation",
+            )
+            continue
+        }
+        val band = step.estimatedRows?.let(::estimatedRowBand)
+        if (band == null) {
+            uncertainties += RiskUncertainty("plan_operation_rows_unknown", RiskSubject(operation = step.kind.name.lowercase()), "missing_estimated_rows")
+            continue
+        }
+        replace(target, RiskSignal(
+            if (band == EstimatedRowBand.Low) RiskSignalCode.BoundedBlockingOperation else RiskSignalCode.LimitCannotBoundWork,
+            RiskCategory.Operations,
+            RiskSubject(operation = step.kind.name.lowercase()),
+            if (band == EstimatedRowBand.Low) 1 else 3,
+            SignalBasis.PlanEvidence,
+            EvidenceConfidence.High,
+            target,
+        ))
     }
-    for (step in planEvidence.joins) {
-        if (step.estimatedRows == EstimatedRowBand.High && step.highConfidence) {
-            replacements[step.replacementKey] = RiskSignal(
+
+    for (step in plan.joins) {
+        val aliases = resolvePlanAliases(step.aliases, spec)
+        if (step.aliases.isEmpty() || aliases.size != step.aliases.size) {
+            uncertainties += RiskUncertainty("plan_join_unmapped", RiskSubject(operation = "join"), "ambiguous_or_unmapped_join_alias")
+            continue
+        }
+        val target = matchingJoinTarget(aliases, staticAssessment.signals)
+        if (target == null) {
+            uncertainties += RiskUncertainty("plan_join_unmapped", RiskSubject(operation = "join"), "ambiguous_or_unmapped_join")
+            continue
+        }
+        when (step.estimatedOutputRows?.let(::estimatedRowBand)) {
+            EstimatedRowBand.Low -> replace(target, null)
+            EstimatedRowBand.Material -> Unit
+            EstimatedRowBand.High -> replace(target, RiskSignal(
                 RiskSignalCode.PlanConfirmedJoinExpansion,
                 RiskCategory.Joins,
-                step.subject,
+                RiskSubject(operation = "join ${target.aliases.sorted().joinToString("-")}"),
                 3,
                 SignalBasis.PlanEvidence,
                 EvidenceConfidence.High,
-                step.replacementKey,
-                mandatoryBlockWhenGateEnabled = true,
-            )
+                target,
+                mandatoryBlockWhenGateEnabled = joinUniquenessProvesNeitherSideUnique(target.aliases, spec, tablesByAlias),
+            ))
+            null -> uncertainties += RiskUncertainty("plan_join_rows_unknown", RiskSubject(operation = "join"), "missing_estimated_rows")
         }
     }
-    val retained = staticAssessment.signals.filterNot { it.replacementKey in replacements }
+
+    val retained = staticAssessment.signals.filterNot { it.target in replacements }
     val active = retained + replacements.values.filterNotNull()
     return buildAssessment(staticAssessment.queryFingerprint, active, uncertainties)
+}
+
+fun preserveStaticRiskForUnavailablePlan(
+    staticAssessment: QueryRiskAssessment,
+    reason: PlanUnavailableReason,
+): QueryRiskAssessment = staticAssessment.copy(
+    uncertainties = staticAssessment.uncertainties + RiskUncertainty(
+        "plan_unavailable",
+        RiskSubject(operation = "query plan"),
+        reason.name,
+    ),
+)
+
+private fun resolvePlanAlias(alias: String?, schema: String?, table: String?, spec: QuerySpec): String? {
+    alias?.let { explicit -> spec.tables.singleOrNull { it.alias.equals(explicit, ignoreCase = true) }?.let { return it.alias } }
+    if (table == null) return null
+    val matches = spec.tables.filter { ref ->
+        ref.name.equals(table, ignoreCase = true) && (schema == null || ref.schema.equals(schema, ignoreCase = true))
+    }
+    return matches.singleOrNull()?.alias
+}
+
+private fun resolvePlanAliases(aliases: Set<String>, spec: QuerySpec): Set<String> = aliases.mapNotNullTo(linkedSetOf()) { value ->
+    resolvePlanAlias(value, null, value, spec)
+}
+
+private fun matchingOperationTarget(
+    kind: PlanOperationKind,
+    aliases: Set<String>,
+    signals: List<RiskSignal>,
+): RiskTarget.Operation? {
+    val candidates = signals.mapNotNull { it.target as? RiskTarget.Operation }.filter { it.kind == kind }.distinct()
+    return candidates.singleOrNull { it.aliases == aliases }
+}
+
+private fun matchingJoinTarget(aliases: Set<String>, signals: List<RiskSignal>): RiskTarget.Join? {
+    val candidates = signals.mapNotNull { it.target as? RiskTarget.Join }.distinct()
+    return candidates.singleOrNull { it.aliases == aliases }
+}
+
+private fun TableInfo?.isConfidentLarge(): Boolean = this != null &&
+    tableSize.sizeClass == TableSizeClass.Large && tableSize.coverage.isComplete &&
+    tableSize.confidence in setOf(EvidenceConfidence.Medium, EvidenceConfidence.High)
+
+private fun joinUniquenessProvesNeitherSideUnique(
+    aliases: Set<String>,
+    spec: QuerySpec,
+    tablesByAlias: Map<String, TableInfo?>,
+): Boolean {
+    if (aliases.size != 2) return false
+    val joins = spec.joins.filter { setOf(it.leftAlias, it.rightAlias) == aliases }
+    if (joins.isEmpty()) return false
+    return aliases.all { alias ->
+        val table = tablesByAlias[alias] ?: return false
+        table.indexMetadata.isComplete && !exactUniqueJoinKey(table, joinedColumns(alias, joins))
+    }
 }

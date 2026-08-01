@@ -313,9 +313,11 @@ object PgAdapter {
                 ps.executeQuery().use { rs ->
                     rs.next()
                     val planJson = rs.getString(1)
-                    val cost = parsePgExplainCost(planJson)
-                    cost?.let { ExplainResult.Estimated(it) }
-                        ?: ExplainResult.Unavailable("Could not parse EXPLAIN cost from PostgreSQL JSON plan")
+                    parsePostgresPlan(planJson)?.let(ExplainResult::Available)
+                        ?: ExplainResult.Unavailable(
+                            com.safedb.model.PlanUnavailableReason.ParseFailure,
+                            "Could not normalize PostgreSQL JSON plan",
+                        )
                 }
             }
         }

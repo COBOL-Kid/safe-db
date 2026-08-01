@@ -175,24 +175,6 @@ class SettingsViewModel(
         clearDefaultLocation(onSuccess)
     }
 
-    fun saveThresholds(thresholds: Map<Dialect, Double>, onSuccess: () -> Unit = {}) {
-        scope.launch {
-            _saveError.value = null
-            val invalid = thresholds.entries.firstOrNull { (_, value) -> value < 1.0 || value > 10_000_000.0 }
-            if (invalid != null) {
-                _saveError.value = "${dialectLabel(invalid.key)} threshold must be between 1 and 10,000,000"
-                return@launch
-            }
-            val updated = _settings.value.copy(
-                explainCostThresholds = thresholds,
-                explainCostThreshold = thresholds[Dialect.Postgres] ?: Settings.DEFAULT_COST_THRESHOLD,
-            )
-            if (save(updated)) {
-                onSuccess()
-            }
-        }
-    }
-
     fun clearSaveError() {
         _saveError.value = null
     }

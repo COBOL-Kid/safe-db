@@ -43,12 +43,12 @@ class SafeDbServicePostgresIntegrationTest {
             QueryRunRequest(
                 def.id,
                 IntegrationFixtures.customersQuery(schema, limit = 2, expectedSchema = "public"),
-                force = true,
             ),
         )
 
-        assertEquals(2, result.rowCount)
-        assertTrue(result.truncated)
+        assertEquals(2, result.queryResult.rowCount)
+        assertTrue(result.queryResult.truncated)
+        assertEquals(com.safedb.query.QueryPlanStatus.Available, result.riskEvaluation.planStatus)
         assertEquals(1, queryStore.listHistory().size)
     }
 }

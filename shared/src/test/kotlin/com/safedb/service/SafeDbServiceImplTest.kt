@@ -6,6 +6,7 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.ColumnCategory
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.FilterGroup
@@ -138,12 +139,14 @@ class SafeDbServiceImplTest {
             },
         )
 
-        val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
-        assertEquals(1, result.rowCount)
+        val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
+        assertEquals(1, result.queryResult.rowCount)
         assertEquals(1, queryStore.listHistory().size)
         val history = queryStore.listHistory().single()
         assertEquals("Delete me", history.connectionName)
-        assertEquals(1, history.riskScoreVersion)
+        assertEquals(2, history.riskScoreVersion)
+        assertEquals(history.riskStaticScore, history.riskFinalScore)
+        assertEquals("Available", history.riskPlanStatus)
         assertEquals("Allowed", history.riskGateState)
         assertTrue("NoEffectiveRestriction" in history.riskSignalCodes)
     }
@@ -206,7 +209,7 @@ class SafeDbServiceImplTest {
             adapterFactory = AdapterFactory { _, _ -> adapter },
         )
 
-        service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
+        service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
 
         assertEquals(1, adapter.introspectionCount)
         assertEquals(1, adapter.closeCount)
@@ -229,7 +232,7 @@ class SafeDbServiceImplTest {
         )
 
         val failure = assertFailsWith<IllegalStateException> {
-            service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
+            service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
         }
 
         assertEquals("metadata failed", failure.message)
@@ -260,13 +263,15 @@ class SafeDbServiceImplTest {
         )
 
         val failure = assertFailsWith<QueryFailureException> {
-            service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
+            service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
         }
 
         assertTrue(failure.message?.contains("execution failed") == true)
         assertEquals(1, closeCount)
         val history = queryStore.listHistory().single()
         assertTrue(assertNotNull(history.error).contains("execution failed"))
+        assertEquals(2, history.riskScoreVersion)
+        assertEquals("Allowed", history.riskGateState)
     }
 }
 
@@ -309,7 +314,7 @@ private fun sampleSchema() = Schema(
 
 private class StubRunner : QueryRunner {
     override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-        ExplainResult.Estimated(1.0)
+        availablePlan()
 
     override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> =
         Outcome.ok(
@@ -324,7 +329,7 @@ private class StubRunner : QueryRunner {
 }
 
 private class FailingRunner : QueryRunner {
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult = ExplainResult.Estimated(1.0)
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult = availablePlan()
 
     override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> =
         Outcome.err("execution failed")
@@ -348,7 +353,7 @@ private class FakeConnectedAdapter(
         return sampleSchema()
     }
 
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult = ExplainResult.Estimated(1.0)
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult = availablePlan()
 
     override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
         QueryResult(emptyList(), emptyList(), 0, false, emptyList())
@@ -357,6 +362,8 @@ private class FakeConnectedAdapter(
         closeCount += 1
     }
 }
+
+private fun availablePlan(): ExplainResult = ExplainResult.Available(NormalizedQueryPlan(rawOptimizerCost = 1.0))
 
 private fun sampleConnection() = ConnectionDef(
     id = "c1",

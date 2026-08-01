@@ -77,7 +77,6 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
             shouldCancelPendingRecipeOnQuerySettle(
                 running = viewModel.query.running,
                 hasError = viewModel.query.error != null,
-                holdsPendingRecipe = viewModel.query.holdsPendingRecipe,
             ) -> viewModel.cancelPendingRecipeRun()
         }
     }

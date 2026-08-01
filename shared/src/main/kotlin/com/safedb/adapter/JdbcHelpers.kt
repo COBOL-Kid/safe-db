@@ -286,30 +286,6 @@ fun <T> withQueryTimeout(connection: Connection, timeoutMs: Int, block: (Connect
     }
 }
 
-fun parseMysqlExplainCost(planJson: String): Double? {
-    val costValue = Regex("""\"query_cost\"\s*:\s*\"?([\d.]+)\"?|\"estimated_total_cost\"\s*:\s*([\d.]+)""")
-        .find(planJson) ?: return null
-    val raw = costValue.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: return null
-    return raw.toDoubleOrNull()
-}
-
-fun parseShowplanCost(xml: String): Double? {
-    for (marker in listOf("StatementSubTreeCost=\"", "StatementSubTree Cost=\"")) {
-        val start = xml.indexOf(marker)
-        if (start >= 0) {
-            val rest = xml.substring(start + marker.length)
-            val end = rest.indexOf('"')
-            if (end >= 0) return rest.substring(0, end).toDoubleOrNull()
-        }
-    }
-    return null
-}
-
-fun parsePgExplainCost(planJson: String): Double? {
-    val match = Regex(""""Total Cost"\s*:\s*([\d.]+)""").find(planJson)
-    return match?.groupValues?.get(1)?.toDoubleOrNull()
-}
-
 fun base64Cell(bytes: ByteArray): com.safedb.model.ResultCell =
     com.safedb.model.ResultCell.binary(bytes)
 

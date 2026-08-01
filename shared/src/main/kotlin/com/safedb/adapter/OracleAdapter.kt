@@ -310,14 +310,30 @@ object OracleAdapter {
             val explainSql = "EXPLAIN PLAN SET STATEMENT_ID = '$statementId' FOR ${compiled.sql}"
             prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Oracle).use { it.execute() }
             var cleanupFailure: Throwable? = null
-            val cost = try {
+            val planRows = try {
                 conn.prepareStatement(
-                    "SELECT MAX(cost) FROM plan_table WHERE statement_id = ? AND id = 0",
+                    """SELECT id, parent_id, operation, options, object_owner, object_name, object_alias, cardinality, cost
+                        FROM plan_table WHERE statement_id = ? ORDER BY id""".trimIndent(),
                 ).use { ps ->
                     ps.setString(1, statementId)
                     ps.executeQuery().use { rs ->
-                        rs.next()
-                        rs.getObject(1)?.let { (it as Number).toDouble() }
+                        buildList {
+                            while (rs.next()) {
+                                add(
+                                    OraclePlanRow(
+                                        id = rs.getInt(1),
+                                        parentId = rs.getObject(2)?.let { (it as Number).toInt() },
+                                        operation = rs.getString(3).orEmpty(),
+                                        options = rs.getString(4).orEmpty(),
+                                        owner = rs.getString(5),
+                                        objectName = rs.getString(6),
+                                        alias = rs.getString(7)?.substringBefore('@')?.trim('"'),
+                                        rows = rs.getObject(8)?.let { (it as Number).toLong() },
+                                        cost = rs.getObject(9)?.let { (it as Number).toDouble() },
+                                    ),
+                                )
+                            }
+                        }
                     }
                 }
             } finally {
@@ -330,11 +346,19 @@ object OracleAdapter {
             }
             if (cleanupFailure != null) {
                 ExplainResult.Unavailable(
+                    com.safedb.model.PlanUnavailableReason.CleanupFailure,
                     "Oracle PLAN_TABLE cleanup failed; plan evidence was discarded",
                 )
             } else {
-                cost?.let { ExplainResult.Estimated(it) }
-                    ?: ExplainResult.Unavailable("Could not parse EXPLAIN cost from PLAN_TABLE")
+                val normalized = normalizeOraclePlan(planRows)
+                if (normalized == null) {
+                    ExplainResult.Unavailable(
+                        com.safedb.model.PlanUnavailableReason.UnsupportedShape,
+                        "Oracle PLAN_TABLE returned no plan rows",
+                    )
+                } else {
+                    ExplainResult.Available(normalized)
+                }
             }
         }
     }

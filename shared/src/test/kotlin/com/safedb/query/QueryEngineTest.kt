@@ -9,6 +9,7 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.FilterGroup
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
@@ -857,7 +858,7 @@ class QueryEngineTest {
         val def = sampleConnection("c1")
         val spec = sampleSpec().copy(limit = 1)
         val runner = MockRunner(
-            explainResult = ExplainResult.Estimated(0.0),
+            explainResult = availablePlan(0.0),
             execute = Outcome.ok(
                 QueryResult(
                     columns = emptyList(),
@@ -869,7 +870,7 @@ class QueryEngineTest {
             ),
         )
 
-        val result = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings(), false)) {
+        val result = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings())) {
             is QueryCoreOutcome.Success -> outcome.result
             is QueryCoreOutcome.Failure -> error(outcome.error.message)
         }
@@ -883,9 +884,9 @@ class QueryEngineTest {
     fun runQueryCoreSuccessCarriesNormalizedHistorySpec() = runBlocking {
         val def = sampleConnection("c1")
         val spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
-        val runner = MockRunner(explainResult = ExplainResult.Estimated(0.0))
+        val runner = MockRunner(explainResult = availablePlan(0.0))
 
-        val success = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings(), false)) {
+        val success = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings())) {
             is QueryCoreOutcome.Success -> outcome
             is QueryCoreOutcome.Failure -> error(outcome.error.message)
         }
@@ -898,13 +899,10 @@ class QueryEngineTest {
     fun runQueryCoreDoesNotUseRawPlannerCostAsRiskInput() = runBlocking {
         val def = sampleConnection("c1")
         val spec = sampleSpec()
-        val settings = sampleSettings().copy(
-            explainCostThreshold = 1.0,
-            explainCostThresholds = mapOf(Dialect.Postgres to 1.0),
-        )
-        val runner = MockRunner(explainResult = ExplainResult.Estimated(5.0))
+        val settings = sampleSettings()
+        val runner = MockRunner(explainResult = availablePlan(5.0))
 
-        val success = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings, false)) {
+        val success = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings)) {
             is QueryCoreOutcome.Success -> outcome
             is QueryCoreOutcome.Failure -> error(outcome.error.message)
         }
@@ -918,9 +916,9 @@ class QueryEngineTest {
         val def = sampleConnection("c1")
         val spec = textFilterSpec(FilterOp.Contains, "term").copy(limit = MAX_LIMIT + 1)
         val settings = sampleSettings().copy(queryRiskGate = com.safedb.model.QueryRiskGate.Cautious)
-        val runner = MockRunner(explainResult = ExplainResult.Estimated(5.0))
+        val runner = MockRunner(explainResult = availablePlan(5.0))
 
-        val failure = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings, false)) {
+        val failure = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings)) {
             is QueryCoreOutcome.Success -> error("expected failure")
             is QueryCoreOutcome.Failure -> outcome.error
         }
@@ -930,16 +928,13 @@ class QueryEngineTest {
     }
 
     @Test
-    fun runQueryCoreAllowsForcedRetryAfterCostGuard() = runBlocking {
+    fun runQueryCoreIgnoresRawOptimizerCost() = runBlocking {
         val def = sampleConnection("c1")
         val spec = sampleSpec()
-        val settings = sampleSettings().copy(
-            explainCostThreshold = 1.0,
-            explainCostThresholds = mapOf(Dialect.Postgres to 1.0),
-        )
-        val runner = MockRunner(explainResult = ExplainResult.Estimated(5.0))
+        val settings = sampleSettings()
+        val runner = MockRunner(explainResult = availablePlan(5.0))
 
-        val result = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings, true)) {
+        val result = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings)) {
             is QueryCoreOutcome.Success -> outcome.result
             is QueryCoreOutcome.Failure -> error(outcome.error.message)
         }
@@ -1161,7 +1156,7 @@ class QueryEngineTest {
     }
 
     private class MockRunner(
-        private var explainResult: ExplainResult = ExplainResult.Estimated(0.0),
+        private var explainResult: ExplainResult = availablePlan(0.0),
         private var execute: Outcome<QueryResult> = Outcome.ok(
             QueryResult(
                 columns = emptyList(),
@@ -1182,6 +1177,9 @@ class QueryEngineTest {
         }
     }
 }
+
+private fun availablePlan(cost: Double): ExplainResult =
+    ExplainResult.Available(NormalizedQueryPlan(rawOptimizerCost = cost))
 
 private fun <T> Outcome<T>.unwrap(): T = when (this) {
     is Outcome.Ok -> value

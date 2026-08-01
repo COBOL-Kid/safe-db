@@ -20,7 +20,11 @@ import com.safedb.model.IndexInfo
 import com.safedb.model.IndexKey
 import com.safedb.model.LiteralKind
 import com.safedb.model.MetadataCoverage
+import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.Outcome
+import com.safedb.model.PlanAccessMethod
+import com.safedb.model.PlanRelationAccess
+import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
@@ -91,24 +95,20 @@ class QueryRiskTest {
                     2,
                     SignalBasis.StaticSchema,
                     EvidenceConfidence.Medium,
-                    "access:t0",
+                    RiskTarget.Access("t0"),
                 ),
             ),
             emptyList(),
         )
         val refined = refineRiskWithPlan(
             base,
-            PlanEvidence(
-                accessSteps = listOf(
-                    PlanAccessStep(
-                        "access:t0",
-                        RiskSubject(tableAlias = "t0", table = "orders"),
-                        PlanAccessMethod.TableScan,
-                        EstimatedRowBand.High,
-                        confidentLargeCatalog = true,
-                    ),
+            NormalizedQueryPlan(
+                relations = listOf(
+                    PlanRelationAccess(table = "orders", alias = "t0", method = PlanAccessMethod.TableScan, estimatedRows = 100_000),
                 ),
             ),
+            spec(),
+            Schema(listOf(table().copy(tableSize = TableSizeEstimate(TableSizeClass.Large, MetadataCoverage.complete(), EvidenceConfidence.High)))),
         )
 
         assertTrue(refined.signals.single().mandatoryBlockWhenGateEnabled)
@@ -387,6 +387,128 @@ class QueryRiskTest {
     }
 
     @Test
+    fun nonForeignKeyJoinStillScoresExpansion() {
+        val assessment = assess(
+            spec(
+                tables = listOf(TableRef("public", "orders", "t0"), TableRef("public", "items", "t1")),
+                joins = listOf(JoinSpec("t0", "id", "t1", "order_id")),
+            ),
+            listOf(
+                table(columns = listOf(column("id").copy(joinEligible = true)), indexes = listOf(index("orders_id", listOf(IndexKey("id"))))),
+                table("items", columns = listOf(column("id"), column("order_id").copy(joinEligible = true)), indexes = listOf(index("items_order", listOf(IndexKey("order_id"))))),
+            ),
+        )
+
+        assertTrue(assessment.signals.any { it.code == RiskSignalCode.JoinExpansionPossible })
+        assertEquals(1, assessment.signals.count { it.code == RiskSignalCode.AdditionalJoinedRelation })
+    }
+
+    @Test
+    fun uniquenessRequiresExactCompleteNonPartialKeySet() {
+        val query = spec(
+            tables = listOf(TableRef("public", "left_side", "t0"), TableRef("public", "right_side", "t1")),
+            columns = listOf(ColumnSel("t0", "id")),
+            joins = listOf(JoinSpec("t0", "id", "t1", "id")),
+        )
+        val longerPrefix = index("long_unique", listOf(IndexKey("id"), IndexKey("tenant_id")), unique = true)
+        val partial = index("partial_unique", listOf(IndexKey("id")), unique = true).copy(isPartial = true)
+        val expression = index("expression_unique", listOf(IndexKey(null, expression = true)), unique = true)
+        for (candidate in listOf(longerPrefix, partial, expression)) {
+            val assessment = assess(
+                query,
+                listOf(
+                    table("left_side", columns = listOf(column("id").copy(joinEligible = true), column("tenant_id")), indexes = listOf(candidate, index("left_join", listOf(IndexKey("id"))))),
+                    table("right_side", columns = listOf(column("id").copy(joinEligible = true)), indexes = listOf(index("right_join", listOf(IndexKey("id"))))),
+                ),
+            )
+            assertTrue(assessment.signals.any { it.code == RiskSignalCode.JoinExpansionPossible })
+        }
+    }
+
+    @Test
+    fun reorderedCompositeUniqueKeyExactlyMatchingJoinSetProvesUniqueness() {
+        val query = spec(
+            tables = listOf(TableRef("public", "left_side", "t0"), TableRef("public", "right_side", "t1")),
+            columns = listOf(ColumnSel("t0", "id")),
+            joins = listOf(
+                JoinSpec("t0", "id", "t1", "id"),
+                JoinSpec("t0", "tenant_id", "t1", "tenant_id"),
+            ),
+        )
+        val assessment = assess(
+            query,
+            listOf(
+                table("left_side", columns = listOf(column("id").copy(joinEligible = true), column("tenant_id").copy(joinEligible = true)), indexes = listOf(index("left_unique", listOf(IndexKey("tenant_id"), IndexKey("id")), unique = true), index("left_id", listOf(IndexKey("id"))))),
+                table("right_side", columns = listOf(column("id").copy(joinEligible = true), column("tenant_id").copy(joinEligible = true)), indexes = listOf(index("right_id", listOf(IndexKey("id"))), index("right_tenant", listOf(IndexKey("tenant_id"))))),
+            ),
+        )
+
+        assertFalse(assessment.signals.any { it.code == RiskSignalCode.JoinExpansionPossible })
+    }
+
+    @Test
+    fun joinedAliasesAreBoundedIndependently() {
+        val assessment = assess(
+            spec(
+                tables = listOf(TableRef("public", "orders", "t0"), TableRef("public", "items", "t1")),
+                joins = listOf(JoinSpec("t0", "id", "t1", "order_id")),
+                filters = group(leaf("t0", "id", FilterOp.Eq, "1")),
+            ),
+            listOf(
+                table(columns = listOf(column("id").copy(joinEligible = true))),
+                table("items", columns = listOf(column("id"), column("order_id").copy(joinEligible = true)), indexes = listOf(index("items_order", listOf(IndexKey("order_id"))))),
+            ),
+        )
+
+        val unrestricted = assessment.signals.filter { it.code == RiskSignalCode.NoEffectiveRestriction }
+        assertEquals(listOf("t1"), unrestricted.mapNotNull { it.subject.tableAlias })
+    }
+
+    @Test
+    fun startsWithAndMultiValueInCannotFixSortPrefixButSingleValueInCan() {
+        val composite = index("tenant_created", listOf(IndexKey("tenant_id", SortDirection.Asc), IndexKey("created_at", SortDirection.Asc)))
+        val source = table(columns = listOf(column("id"), column("tenant_id", ColumnCategory.Text), column("created_at", ColumnCategory.DateTime)), indexes = listOf(composite))
+        fun assessment(filter: FilterNode.Leaf) = assess(
+            spec(filters = group(filter), sorts = listOf(SortSpec("t0", "created_at", SortDirection.Asc))),
+            listOf(source),
+        )
+        val starts = assessment(leaf("t0", "tenant_id", FilterOp.StartsWith, "ac"))
+        val multi = assessment(listLeafValues("t0", "tenant_id", "a", "b"))
+        val single = assessment(listLeafValues("t0", "tenant_id", "a"))
+
+        assertTrue(starts.signals.any { it.category == RiskCategory.Operations })
+        assertTrue(multi.signals.any { it.category == RiskCategory.Operations })
+        assertFalse(single.signals.any { it.category == RiskCategory.Operations })
+    }
+
+    @Test
+    fun smallTablesSuppressSizeSensitiveSignalsAndUnknownSizeAddsUncertainty() {
+        val small = assess(spec(), listOf(table().copy(tableSize = TableSizeEstimate(TableSizeClass.Small, MetadataCoverage.complete(), EvidenceConfidence.High))))
+        val unknown = assess(spec(), listOf(table().copy(tableSize = TableSizeEstimate())))
+
+        assertFalse(small.signals.any { it.code == RiskSignalCode.NoEffectiveRestriction })
+        assertTrue(unknown.signals.any { it.code == RiskSignalCode.NoEffectiveRestriction && it.confidence == EvidenceConfidence.Unknown })
+        assertTrue(unknown.uncertainties.any { it.code == "table_size_unknown" })
+    }
+
+    @Test
+    fun knownMediumAndLargeTablesRetainEveryCatalogConfidenceLevel() {
+        for (size in listOf(TableSizeClass.Medium, TableSizeClass.Large)) {
+            for (confidence in EvidenceConfidence.entries) {
+                val assessment = assess(
+                    spec(),
+                    listOf(table().copy(tableSize = TableSizeEstimate(size, MetadataCoverage.complete(), confidence))),
+                )
+                assertEquals(
+                    confidence,
+                    assessment.signals.single { it.code == RiskSignalCode.NoEffectiveRestriction }.confidence,
+                    "$size $confidence",
+                )
+            }
+        }
+    }
+
+    @Test
     fun projectedPayloadIsScoredOnceFromExpandedProjectionAndLimit() {
         val binaryColumns = (1..6).map { column("blob_$it", ColumnCategory.Binary) }
         val assessment = assess(
@@ -403,45 +525,29 @@ class QueryRiskTest {
         val base = buildAssessment(
             "f",
             listOf(
-                RiskSignal(RiskSignalCode.NoKnownCompatibleAccessPath, RiskCategory.Access, RiskSubject(tableAlias = "t0"), 2, SignalBasis.StaticSchema, EvidenceConfidence.Medium, "access:t0"),
-                RiskSignal(RiskSignalCode.ScanProneTextPredicate, RiskCategory.Access, RiskSubject(tableAlias = "t1"), 3, SignalBasis.StaticSchema, EvidenceConfidence.High, "text:t1:notes"),
+                RiskSignal(RiskSignalCode.NoKnownCompatibleAccessPath, RiskCategory.Access, RiskSubject(tableAlias = "t0"), 2, SignalBasis.StaticSchema, EvidenceConfidence.Medium, RiskTarget.Access("t0")),
+                RiskSignal(RiskSignalCode.ScanProneTextPredicate, RiskCategory.Access, RiskSubject(tableAlias = "t1"), 3, SignalBasis.StaticSchema, EvidenceConfidence.High, RiskTarget.Access("t1", AccessRiskKind.Text)),
             ),
             emptyList(),
         )
         val refined = refineRiskWithPlan(
             base,
-            PlanEvidence(accessSteps = listOf(PlanAccessStep("access:t0", RiskSubject(tableAlias = "t0"), PlanAccessMethod.BoundedLookup))),
+            NormalizedQueryPlan(relations = listOf(PlanRelationAccess(table = "orders", alias = "t0", method = PlanAccessMethod.BoundedLookup, estimatedRows = 1))),
+            spec(),
+            Schema(listOf(table())),
         )
 
         assertEquals(listOf(RiskSignalCode.ScanProneTextPredicate), refined.signals.map(RiskSignal::code))
     }
 
     @Test
-    fun organizationPolicyResolvesToTheStricterEffectiveGateAndHardBlock() {
-        val policy = OrganizationRiskPolicy(
-            maximumFlexibility = QueryRiskGate.Standard,
-            minimumGateByResource = mapOf("public.audit" to QueryRiskGate.Cautious),
-            blockedResources = setOf("public.secrets"),
-        )
-
-        assertEquals(
-            QueryRiskGate.Cautious,
-            effectiveGate(QueryRiskGate.Flexible, policy, setOf("public.audit")),
-        )
-        assertEquals(
-            RiskGateState.Blocked,
-            applyRiskGate(assessmentWithScore(0), QueryRiskGate.Disabled, policy, setOf("public.secrets")).state,
-        )
-    }
-
-    @Test
     fun unavailablePlanKeepsStaticSignalsAndAddsNonScoringUncertainty() {
         val base = buildAssessment("f", listOf(signal(RiskCategory.Access, 2)), emptyList())
-        val refined = refineRiskWithPlan(base, PlanEvidence(unavailableReasonCode = "permission_denied"))
+        val refined = preserveStaticRiskForUnavailablePlan(base, PlanUnavailableReason.PermissionDenied)
 
         assertEquals(base.score, refined.score)
         assertEquals(base.signals, refined.signals)
-        assertTrue(refined.uncertainties.any { it.code == "plan_unavailable" && it.reasonCode == "permission_denied" })
+        assertTrue(refined.uncertainties.any { it.code == "plan_unavailable" && it.reasonCode == "PermissionDenied" })
     }
 
     private fun signal(category: RiskCategory, points: Int) = RiskSignal(
@@ -514,6 +620,16 @@ private fun listLeaf(alias: String, column: String, op: FilterOp): FilterNode.Le
         column = column,
         op = op,
         value = FilterValue.ListValue(emptyList()),
+    ),
+)
+
+private fun listLeafValues(alias: String, column: String, vararg values: String): FilterNode.Leaf = FilterNode.Leaf(
+    FilterSpec(
+        id = "$alias-$column-in",
+        tableAlias = alias,
+        column = column,
+        op = FilterOp.In,
+        value = FilterValue.ListValue(values.map { FilterLiteral(LiteralKind.Text, it) }),
     ),
 )
 

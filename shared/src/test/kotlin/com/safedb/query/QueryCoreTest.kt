@@ -8,6 +8,11 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.NormalizedQueryPlan
+import com.safedb.model.PlanAccessMethod
+import com.safedb.model.PlanRelationAccess
+import com.safedb.model.PlanUnavailableReason
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.FilterGroup
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
@@ -38,36 +43,34 @@ import kotlin.test.assertTrue
 
 class QueryCoreTest {
     @Test
-    fun unavailableExplainDoesNotBlockStaticRiskDecision() = runBlocking {
-        val runner = StubRunner(explainResult = ExplainResult.Unavailable("planner disabled"))
+    fun unavailableExplainUsesStaticRiskAndExecutesWhenAllowed() = runBlocking {
+        val runner = StubRunner(explainResult = ExplainResult.Unavailable(PlanUnavailableReason.PermissionDenied, "planner disabled"))
         val outcome = runQueryCore(
             runner,
             sampleConnection(),
             sampleSpec(),
             sampleSchema(),
             Settings.default(),
-            force = false,
         )
         assertTrue(outcome is QueryCoreOutcome.Success)
+        assertEquals(QueryPlanStatus.Unavailable, outcome.riskEvaluation.planStatus)
+        assertEquals(1, runner.explainCalls)
         assertEquals(1, runner.executeCalls)
     }
 
     @Test
-    fun unavailableExplainRunsWhenForced() = runBlocking {
-        val runner = StubRunner(
-            explainResult = ExplainResult.Unavailable("planner disabled"),
-            execute = Outcome.ok(sampleResult()),
-        )
+    fun disabledModeSkipsExplainAndExecutes() = runBlocking {
+        val runner = StubRunner()
         val outcome = runQueryCore(
             runner,
             sampleConnection(),
             sampleSpec(),
             sampleSchema(),
-            Settings.default(),
-            force = true,
+            Settings.default().copy(queryRiskGate = QueryRiskGate.Disabled),
         )
         assertTrue(outcome is QueryCoreOutcome.Success)
-        assertEquals(1, outcome.result.rowCount)
+        assertEquals(QueryPlanStatus.Disabled, outcome.riskEvaluation.planStatus)
+        assertEquals(0, runner.explainCalls)
         assertEquals(1, runner.executeCalls)
     }
 
@@ -82,49 +85,83 @@ class QueryCoreTest {
             sampleSpec(),
             sampleSchema(),
             Settings.default(),
-            force = true,
         )
         assertTrue(outcome is QueryCoreOutcome.Failure)
         assertTrue(outcome.error.message.contains("timeout"))
     }
 
     @Test
-    fun forceCannotBypassStructuredRiskGate() = runBlocking {
-        val runner = StubRunner(explainResult = ExplainResult.Estimated(500_000.0))
+    fun planRefinementBlocksBeforeExecution() = runBlocking {
+        val runner = StubRunner(
+            explainResult = ExplainResult.Available(
+                NormalizedQueryPlan(
+                    relations = listOf(PlanRelationAccess(table = "users", alias = "t0", method = PlanAccessMethod.TableScan, estimatedRows = 150_000)),
+                ),
+            ),
+        )
         val blocked = runQueryCore(
             runner,
             sampleConnection(),
-            riskySpec(),
-            sampleSchema(),
+            sampleSpec(),
+            sampleSchema(TableSizeClass.Large),
             Settings.default(),
-            force = false,
         )
         assertTrue(blocked is QueryCoreOutcome.Failure)
         assertTrue(blocked.error.error is QueryError.RiskGate)
-
-        val forced = runQueryCore(
-            runner,
-            sampleConnection(),
-            riskySpec(),
-            sampleSchema(),
-            Settings.default(),
-            force = true,
-        )
-        assertTrue(forced is QueryCoreOutcome.Failure)
-        assertTrue(forced.error.error is QueryError.RiskGate)
+        assertEquals(1, runner.explainCalls)
         assertEquals(0, runner.executeCalls)
     }
 
+    @Test
+    fun enabledRunExplainsExactlyOnceBeforeExecution() = runBlocking {
+        val runner = StubRunner()
+
+        val outcome = runQueryCore(runner, sampleConnection(), sampleSpec(), sampleSchema(), Settings.default())
+
+        assertTrue(outcome is QueryCoreOutcome.Success)
+        assertEquals(listOf("explain", "execute"), runner.calls)
+    }
+
+    @Test
+    fun thrownPlannerFailureFallsBackToStaticAssessment() = runBlocking {
+        val runner = object : QueryRunner {
+            var executeCalls = 0
+            override suspend fun explain(compiled: CompiledQuery): ExplainResult = error("planner offline")
+            override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> {
+                executeCalls++
+                return Outcome.ok(sampleResult())
+            }
+        }
+
+        val outcome = runQueryCore(runner, sampleConnection(), sampleSpec(), sampleSchema(), Settings.default())
+
+        assertTrue(outcome is QueryCoreOutcome.Success)
+        assertEquals(QueryPlanStatus.Unavailable, outcome.riskEvaluation.planStatus)
+        assertEquals(PlanUnavailableReason.ExecutionFailure, outcome.riskEvaluation.planUnavailableReason)
+        assertEquals(1, runner.executeCalls)
+    }
+
     private class StubRunner(
-        private val explainResult: ExplainResult = ExplainResult.Estimated(1.0),
+        private val explainResult: ExplainResult = ExplainResult.Available(
+            NormalizedQueryPlan(
+                relations = listOf(PlanRelationAccess(table = "users", alias = "t0", method = PlanAccessMethod.BoundedLookup, estimatedRows = 1)),
+            ),
+        ),
         private val execute: Outcome<QueryResult> = Outcome.ok(sampleResult()),
     ) : QueryRunner {
         var executeCalls = 0
+        var explainCalls = 0
+        val calls = mutableListOf<String>()
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult = explainResult
+        override suspend fun explain(compiled: CompiledQuery): ExplainResult {
+            explainCalls++
+            calls += "explain"
+            return explainResult
+        }
 
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> {
             executeCalls++
+            calls += "execute"
             return execute
         }
     }
@@ -170,7 +207,7 @@ private fun riskySpec() = sampleSpec().copy(
     limit = 5_000,
 )
 
-private fun sampleSchema() = Schema(
+private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Medium) = Schema(
     tables = listOf(
         TableInfo(
             schema = "public",
@@ -194,7 +231,7 @@ private fun sampleSchema() = Schema(
             indexes = emptyList(),
             indexMetadata = MetadataCoverage.complete(),
             foreignKeyMetadata = MetadataCoverage.complete(),
-            tableSize = TableSizeEstimate(TableSizeClass.Medium, MetadataCoverage.complete()),
+            tableSize = TableSizeEstimate(sizeClass, MetadataCoverage.complete(), com.safedb.model.EvidenceConfidence.High),
         ),
     ),
 )

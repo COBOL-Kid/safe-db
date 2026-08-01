@@ -8,18 +8,21 @@ import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
 import com.safedb.model.Settings
+import com.safedb.model.PlanUnavailableReason
+import kotlinx.coroutines.CancellationException
 
 const val DEFAULT_TIMEOUT_MS = 10_000
 
 data class QueryCoreError(
     val error: QueryError,
     val warnings: List<String> = emptyList(),
+    val riskEvaluation: QueryRiskEvaluation? = null,
 ) {
     constructor(
         message: String,
         warnings: List<String> = emptyList(),
         historySpec: QuerySpec? = null,
-    ) : this(QueryError.Execution(message, historySpec), warnings)
+    ) : this(QueryError.Execution(message, historySpec), warnings, null)
 
     val message: String
         get() = error.message
@@ -41,19 +44,13 @@ sealed class QueryError {
         override val historySpec: QuerySpec,
     ) : QueryError()
 
-    data class CostGuard(
-        val reason: String,
-        override val historySpec: QuerySpec,
-    ) : QueryError() {
-        override val message: String = "$reason. Confirm to run this query anyway."
-    }
-
     data class RiskGate(
-        val decision: QueryRiskDecision,
-        val assessment: QueryRiskAssessment,
+        val evaluation: QueryRiskEvaluation,
         override val historySpec: QuerySpec,
     ) : QueryError() {
-        override val message: String = decision.reasons
+        val decision: QueryRiskDecision get() = evaluation.decision
+        val assessment: QueryRiskAssessment get() = requireNotNull(evaluation.finalAssessment)
+        override val message: String = evaluation.decision.reasons
             .joinToString(separator = " ") { it.message }
             .ifEmpty { "The query risk gate blocks this query." }
     }
@@ -73,8 +70,7 @@ sealed class QueryCoreOutcome {
     data class Success(
         val result: QueryResult,
         val historySpec: QuerySpec,
-        val riskAssessment: QueryRiskAssessment?,
-        val riskDecision: QueryRiskDecision,
+        val riskEvaluation: QueryRiskEvaluation,
     ) : QueryCoreOutcome()
     data class Failure(val error: QueryCoreError) : QueryCoreOutcome()
 }
@@ -85,7 +81,6 @@ suspend fun runQueryCore(
     spec: QuerySpec,
     schema: Schema,
     settings: Settings,
-    force: Boolean,
 ): QueryCoreOutcome {
     val (validated, outcome) = when (
         val validation = validateQuery(spec, schema, settings.blockedSchemas, def.dialect)
@@ -97,23 +92,10 @@ suspend fun runQueryCore(
     }
     val normalizedSpec = validated.spec()
 
-    val assessment = if (settings.queryRiskGate == com.safedb.model.QueryRiskGate.Disabled) {
+    val staticAssessment = if (settings.queryRiskGate == com.safedb.model.QueryRiskGate.Disabled) {
         null
     } else {
         assessStaticQueryRisk(validated, schema, def.dialect)
-    }
-    val decision = applyRiskGate(
-        assessment = assessment,
-        userSetting = settings.queryRiskGate,
-        resources = normalizedSpec.tables.mapTo(mutableSetOf()) { "${it.schema}.${it.name}" },
-    )
-    if (decision.state != RiskGateState.Allowed) {
-        return QueryCoreOutcome.Failure(
-            QueryCoreError(
-                error = QueryError.RiskGate(decision, requireNotNull(assessment), normalizedSpec),
-                warnings = outcome.warnings,
-            ),
-        )
     }
 
     val compiled = when (val result = compileValidated(validated, def.dialect)) {
@@ -126,7 +108,58 @@ suspend fun runQueryCore(
         )
     }
 
-    return executeCompiled(runner, compiled, outcome, normalizedSpec, assessment, decision)
+    val evaluation = if (settings.queryRiskGate == com.safedb.model.QueryRiskGate.Disabled) {
+        QueryRiskEvaluation(
+            staticAssessment = null,
+            finalAssessment = null,
+            planStatus = QueryPlanStatus.Disabled,
+            decision = applyRiskGate(null, settings.queryRiskGate),
+        )
+    } else {
+        val baseline = requireNotNull(staticAssessment)
+        val explain = try {
+            runner.explain(compiled)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            ExplainResult.Unavailable(
+                PlanUnavailableReason.ExecutionFailure,
+                error.message ?: "Query plan assessment failed",
+            )
+        }
+        when (explain) {
+            is ExplainResult.Available -> {
+                val finalAssessment = refineRiskWithPlan(baseline, explain.plan, normalizedSpec, schema)
+                QueryRiskEvaluation(
+                    staticAssessment = baseline,
+                    finalAssessment = finalAssessment,
+                    planStatus = QueryPlanStatus.Available,
+                    decision = applyRiskGate(finalAssessment, settings.queryRiskGate),
+                )
+            }
+            is ExplainResult.Unavailable -> {
+                val finalAssessment = preserveStaticRiskForUnavailablePlan(baseline, explain.reasonCode)
+                QueryRiskEvaluation(
+                    staticAssessment = baseline,
+                    finalAssessment = finalAssessment,
+                    planStatus = QueryPlanStatus.Unavailable,
+                    planUnavailableReason = explain.reasonCode,
+                    decision = applyRiskGate(finalAssessment, settings.queryRiskGate),
+                )
+            }
+        }
+    }
+    if (evaluation.decision.state != RiskGateState.Allowed) {
+        return QueryCoreOutcome.Failure(
+            QueryCoreError(
+                error = QueryError.RiskGate(evaluation, normalizedSpec),
+                warnings = outcome.warnings,
+                riskEvaluation = evaluation,
+            ),
+        )
+    }
+
+    return executeCompiled(runner, compiled, outcome, normalizedSpec, evaluation)
 }
 
 private suspend fun executeCompiled(
@@ -134,8 +167,7 @@ private suspend fun executeCompiled(
     compiled: CompiledQuery,
     outcome: ValidationOutcome,
     normalizedSpec: QuerySpec,
-    assessment: QueryRiskAssessment?,
-    decision: QueryRiskDecision,
+    evaluation: QueryRiskEvaluation,
 ): QueryCoreOutcome {
     val warnings = outcome.warnings.toMutableList()
 
@@ -145,6 +177,7 @@ private suspend fun executeCompiled(
             QueryCoreError(
                 error = QueryError.Execution(execute.message, normalizedSpec),
                 warnings = warnings.toList(),
+                riskEvaluation = evaluation,
             ),
         )
     }
@@ -167,7 +200,6 @@ private suspend fun executeCompiled(
             warnings = mergedWarnings,
         ),
         historySpec = normalizedSpec,
-        riskAssessment = assessment,
-        riskDecision = decision,
+        riskEvaluation = evaluation,
     )
 }

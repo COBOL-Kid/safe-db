@@ -129,7 +129,7 @@ class SafeDbServiceImpl internal constructor(
         }
     }
 
-    override suspend fun runQuery(request: QueryRunRequest): QueryResult {
+    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
         val def = configStore.get(request.connectionId) ?: throw IllegalArgumentException("Connection not found")
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val settings = settingsStore.load()
@@ -142,7 +142,6 @@ class SafeDbServiceImpl internal constructor(
                     request.spec,
                     session.schema,
                     settings,
-                    request.force,
                 )
             ) {
                 is QueryCoreOutcome.Success -> {
@@ -152,10 +151,9 @@ class SafeDbServiceImpl internal constructor(
                         outcome.historySpec,
                         outcome.result,
                         null,
-                        outcome.riskAssessment,
-                        outcome.riskDecision,
+                        outcome.riskEvaluation,
                     )
-                    outcome.result
+                    QueryRunResult(outcome.result, outcome.riskEvaluation)
                 }
                 is QueryCoreOutcome.Failure -> {
                     recordHistory(
@@ -164,8 +162,7 @@ class SafeDbServiceImpl internal constructor(
                         outcome.error.historySpec ?: request.spec,
                         null,
                         outcome.error,
-                        (outcome.error.error as? com.safedb.query.QueryError.RiskGate)?.assessment,
-                        (outcome.error.error as? com.safedb.query.QueryError.RiskGate)?.decision,
+                        outcome.error.riskEvaluation,
                     )
                     throw QueryFailureException(outcome.error)
                 }
@@ -247,8 +244,7 @@ class SafeDbServiceImpl internal constructor(
         spec: QuerySpec,
         result: QueryResult?,
         error: com.safedb.query.QueryCoreError?,
-        riskAssessment: com.safedb.query.QueryRiskAssessment? = null,
-        riskDecision: com.safedb.query.QueryRiskDecision? = null,
+        riskEvaluation: com.safedb.query.QueryRiskEvaluation? = null,
     ) {
         runCatching {
             queryStore.addHistory(
@@ -261,10 +257,15 @@ class SafeDbServiceImpl internal constructor(
                     warnings = result?.warnings ?: error?.warnings.orEmpty(),
                     error = error?.message,
                     timestamp = Instant.now().epochSecond.toString(),
-                    riskScoreVersion = riskAssessment?.scoreVersion,
-                    riskSeverity = riskAssessment?.severity?.name,
-                    riskSignalCodes = riskAssessment?.signals.orEmpty().map { it.code.name }.distinct(),
-                    riskGateState = riskDecision?.state?.name,
+                    riskScoreVersion = riskEvaluation?.finalAssessment?.scoreVersion,
+                    riskStaticScore = riskEvaluation?.staticAssessment?.score,
+                    riskFinalScore = riskEvaluation?.finalAssessment?.score,
+                    riskSeverity = riskEvaluation?.finalAssessment?.severity?.name,
+                    riskSignalCodes = riskEvaluation?.finalAssessment?.signals.orEmpty().map { it.code.name }.distinct(),
+                    riskUncertaintyCodes = riskEvaluation?.finalAssessment?.uncertainties.orEmpty().map { it.code }.distinct(),
+                    riskPlanStatus = riskEvaluation?.planStatus?.name,
+                    riskPlanReason = riskEvaluation?.planUnavailableReason?.name,
+                    riskGateState = riskEvaluation?.decision?.state?.name,
                 ),
             )
         }

@@ -290,18 +290,18 @@ class ViewModelsTest {
     }
 
     @Test
-    fun settingsViewModelRejectsInvalidThreshold() = runTest(dispatcher) {
+    fun settingsViewModelPersistsRiskGateWithoutLegacyThresholds() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val scope = TestScope(dispatcher)
         val viewModel = SettingsViewModel(service, scope)
         viewModel.load()
         advanceUntilIdle()
 
-        viewModel.saveThresholds(mapOf(Dialect.Postgres to 0.5))
+        viewModel.setQueryRiskGate(com.safedb.model.QueryRiskGate.Flexible)
         advanceUntilIdle()
 
-        assertNull(service.savedSettings)
-        assertTrue(viewModel.saveError.value?.contains("PostgreSQL") == true)
+        assertEquals(com.safedb.model.QueryRiskGate.Flexible, service.savedSettings?.queryRiskGate)
+        assertNull(viewModel.saveError.value)
     }
 
     @Test
@@ -433,8 +433,8 @@ private class RecordingSafeDbService : SafeDbService {
         )
     }
 
-    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): QueryResult =
-        QueryResult(emptyList(), emptyList(), 0, false, emptyList())
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) =
+        queryRunResult(QueryResult(emptyList(), emptyList(), 0, false, emptyList()))
 
     override suspend fun listSavedQueries(): List<SavedQuery> =
         if (deletedSavedIds.isEmpty()) {

@@ -247,9 +247,11 @@ object MySqlAdapter {
                 ps.executeQuery().use { rs ->
                     rs.next()
                     val planJson = rs.getString(1)
-                    val cost = parseMysqlExplainCost(planJson)
-                    cost?.let { ExplainResult.Estimated(it) }
-                        ?: ExplainResult.Unavailable("Could not parse EXPLAIN cost from MySQL JSON plan")
+                    parseMySqlPlan(planJson)?.let(ExplainResult::Available)
+                        ?: ExplainResult.Unavailable(
+                            com.safedb.model.PlanUnavailableReason.ParseFailure,
+                            "Could not normalize MySQL JSON plan",
+                        )
                 }
             }
         }

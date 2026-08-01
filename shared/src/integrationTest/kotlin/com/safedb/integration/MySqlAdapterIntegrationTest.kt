@@ -67,7 +67,10 @@ class MySqlAdapterIntegrationTest {
                 is Outcome.Err -> error(compilation.message)
             }
             val explain = Adapter.explainWithTimeout(adapter, compiled)
-            assertTrue(explain is ExplainResult.Estimated || explain is ExplainResult.Unavailable)
+            val plan = assertIs<ExplainResult.Available>(explain).plan
+            val access = plan.relations.first { it.alias == "t0" }
+            assertTrue(access.estimatedRows != null)
+            assertTrue(access.method != com.safedb.model.PlanAccessMethod.Unknown)
             val result = adapter.executeQuery(compiled, timeoutMs = 10_000)
             assertTrue(result.rowCount > 0)
             assertTrue(result.columns.isNotEmpty())

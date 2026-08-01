@@ -35,7 +35,7 @@ import kotlin.test.assertEquals
 class QueryRiskCorpusTest {
     @Test
     fun versionedCrossDialectCorpusMatchesGoldenOutcomes() {
-        val resource = requireNotNull(javaClass.getResource("/query-risk/v1/normalized-corpus.json"))
+        val resource = requireNotNull(javaClass.getResource("/query-risk/v2/normalized-corpus.json"))
         val corpus = SafeDbJson.lenient.decodeFromString<RiskCorpus>(resource.readText())
         assertEquals(QUERY_RISK_SCORE_VERSION, corpus.scoreVersion)
 
@@ -46,11 +46,14 @@ class QueryRiskCorpusTest {
                 is Outcome.Err -> error("${case.id}: ${result.message}")
             }
             val assessment = assessStaticQueryRisk(validated, schema, case.dialect)
-            val decision = applyRiskGate(assessment, QueryRiskGate.Standard)
+            val decision = applyRiskGate(assessment, case.gate)
 
             assertEquals(case.expectedScore, assessment.score, case.id)
             assertEquals(case.expectedSeverity, assessment.severity, case.id)
-            assertEquals(case.expectedStandardState, decision.state, case.id)
+            assertEquals(case.expectedCategoryScores, assessment.categoryScores, case.id)
+            assertEquals(case.expectedSignalCodes, assessment.signals.map { it.code }.distinct(), case.id)
+            assertEquals(case.expectedUncertaintyCodes, assessment.uncertainties.map { it.code }.distinct(), case.id)
+            assertEquals(case.expectedGateState, decision.state, case.id)
         }
     }
 }
@@ -68,9 +71,15 @@ private data class RiskCorpusCase(
     val predicate: CorpusPredicate,
     @SerialName("blocking_operation") val blockingOperation: Boolean,
     val limit: Int,
+    @SerialName("size_class") val sizeClass: TableSizeClass = TableSizeClass.Medium,
+    val confidence: EvidenceConfidence = EvidenceConfidence.Medium,
+    val gate: QueryRiskGate = QueryRiskGate.Standard,
     @SerialName("expected_score") val expectedScore: Int,
     @SerialName("expected_severity") val expectedSeverity: QueryRiskSeverity,
-    @SerialName("expected_standard_state") val expectedStandardState: RiskGateState,
+    @SerialName("expected_category_scores") val expectedCategoryScores: Map<RiskCategory, Int>,
+    @SerialName("expected_signal_codes") val expectedSignalCodes: List<RiskSignalCode>,
+    @SerialName("expected_uncertainty_codes") val expectedUncertaintyCodes: List<String> = emptyList(),
+    @SerialName("expected_gate_state") val expectedGateState: RiskGateState,
 ) {
     fun fixture(): Pair<QuerySpec, Schema> {
         val notes = predicate == CorpusPredicate.BroadTextWithoutIndex
@@ -103,7 +112,8 @@ private data class RiskCorpusCase(
             indexes,
             indexMetadata = MetadataCoverage.complete(),
             foreignKeyMetadata = MetadataCoverage.complete(),
-            tableSize = TableSizeEstimate(TableSizeClass.Medium, MetadataCoverage.complete(), EvidenceConfidence.Medium),
+            tableSize = if (sizeClass == TableSizeClass.Unknown) TableSizeEstimate()
+            else TableSizeEstimate(sizeClass, MetadataCoverage.complete(), confidence),
         )
         val filters = when (predicate) {
             CorpusPredicate.None -> FilterGroup("root")

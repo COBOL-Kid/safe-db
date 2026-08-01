@@ -29,10 +29,20 @@ data class HistoryEntry(
     val timestamp: String,
     @SerialName("risk_score_version")
     val riskScoreVersion: Int? = null,
+    @SerialName("risk_static_score")
+    val riskStaticScore: Int? = null,
+    @SerialName("risk_final_score")
+    val riskFinalScore: Int? = null,
     @SerialName("risk_severity")
     val riskSeverity: String? = null,
     @SerialName("risk_signal_codes")
     val riskSignalCodes: List<String> = emptyList(),
+    @SerialName("risk_uncertainty_codes")
+    val riskUncertaintyCodes: List<String> = emptyList(),
+    @SerialName("risk_plan_status")
+    val riskPlanStatus: String? = null,
+    @SerialName("risk_plan_reason")
+    val riskPlanReason: String? = null,
     @SerialName("risk_gate_state")
     val riskGateState: String? = null,
 )

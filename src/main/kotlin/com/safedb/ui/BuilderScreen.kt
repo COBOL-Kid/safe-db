@@ -80,7 +80,8 @@ import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.MAX_LIMIT
 import com.safedb.query.QueryRiskAssessment
-import com.safedb.query.QueryRiskDecision
+import com.safedb.query.QueryRiskEvaluation
+import com.safedb.query.QueryPlanStatus
 import com.safedb.query.RiskGateState
 import com.safedb.query.blockingBand
 import com.safedb.query.evaluateQueryRisk
@@ -148,17 +149,25 @@ internal fun riskGateIndicatorText(gate: QueryRiskGate): String = when (gate) {
 }
 
 internal fun queryRiskIndicatorText(
-    assessment: QueryRiskAssessment?,
-    decision: QueryRiskDecision?,
+    preliminary: QueryRiskAssessment?,
+    evaluation: QueryRiskEvaluation?,
+    running: Boolean,
+    gate: QueryRiskGate,
+    validationError: String? = null,
 ): String = when {
-    decision == null || decision.state == RiskGateState.AssessmentPending ->
+    validationError != null -> "Query validation: $validationError"
+    gate == QueryRiskGate.Disabled -> "Query risk: Not required · Run enabled"
+    running ->
         "Assessing query risk · Run unavailable"
-    decision.effectiveGate == QueryRiskGate.Disabled ->
-        "Query risk: Not required · Run enabled"
-    assessment == null -> "Assessing query risk · Run unavailable"
-    decision.state == RiskGateState.Blocked ->
-        "Query risk: ${assessment.severity.label} · Run blocked"
-    else -> "Query risk: ${assessment.severity.label} · Run enabled"
+    evaluation?.decision?.state == RiskGateState.Blocked ->
+        "Query risk: ${evaluation.finalAssessment?.severity?.label} · Run blocked"
+    evaluation?.finalAssessment != null -> {
+        val finalAssessment = requireNotNull(evaluation.finalAssessment)
+        val refinement = if (evaluation.planStatus == QueryPlanStatus.Available) " · plan refined" else ""
+        "Query risk: ${finalAssessment.severity.label}$refinement · Run enabled"
+    }
+    preliminary != null -> "Preliminary query risk: ${preliminary.severity.label} · Run available"
+    else -> "Query risk: Ready to assess · Run enabled"
 }
 
 @Composable
@@ -541,18 +550,17 @@ fun BuilderScreen(
     var resizing by remember { mutableStateOf(false) }
     val limitChoices = BUILDER_LIMIT_CHOICES
     val schema = schemaViewModel.schema
-    val riskEvaluation = remember(queryViewModel.spec, schema, settings, connection?.dialect) {
+    val preliminaryRisk = remember(queryViewModel.spec, schema, settings, connection?.dialect) {
         if (schema == null || connection == null || queryViewModel.canvasTables.isEmpty()) {
             null
         } else {
-            when (val evaluated = evaluateQueryRisk(queryViewModel.spec, schema, settings, connection.dialect)) {
-                is Outcome.Ok -> evaluated.value
-                is Outcome.Err -> null
-            }
+            evaluateQueryRisk(queryViewModel.spec, schema, settings, connection.dialect)
         }
     }
-    val riskDecision = riskEvaluation?.decision
-    val riskAssessment = riskEvaluation?.assessment
+    val preliminaryEvaluation = (preliminaryRisk as? Outcome.Ok)?.value
+    val riskValidationError = (preliminaryRisk as? Outcome.Err)?.message
+    val finalRiskEvaluation = queryViewModel.riskEvaluation
+    val riskDecision = finalRiskEvaluation?.decision
 
     LaunchedEffect(connection?.id, preferredSchema) {
         val connectionId = connection?.id
@@ -637,7 +645,13 @@ fun BuilderScreen(
                     )
                     if (queryViewModel.canvasTables.isNotEmpty()) {
                         Text(
-                            queryRiskIndicatorText(riskAssessment, riskDecision),
+                            queryRiskIndicatorText(
+                                preliminaryEvaluation?.staticAssessment,
+                                finalRiskEvaluation,
+                                queryViewModel.running,
+                                settings.queryRiskGate,
+                                riskValidationError,
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (riskDecision?.state == RiskGateState.Blocked) {
                                 MaterialTheme.colorScheme.error
@@ -703,7 +717,7 @@ fun BuilderScreen(
                         }
                     },
                     enabled = queryViewModel.canRun &&
-                        riskDecision?.state == RiskGateState.Allowed &&
+                        riskValidationError == null &&
                         connection != null &&
                         schemaViewModel.schema != null &&
                         schemaViewModel.loadedConnectionId == connection.id &&
@@ -738,6 +752,14 @@ fun BuilderScreen(
             MessageBanner(
                 text = riskDecision.reasons.take(3).joinToString(" ") { it.message },
                 kind = BannerKind.ERROR,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+        }
+
+        if (finalRiskEvaluation?.planStatus == QueryPlanStatus.Unavailable) {
+            MessageBanner(
+                text = "Plan unavailable; static assessment used.",
+                kind = BannerKind.INFO,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
         }
