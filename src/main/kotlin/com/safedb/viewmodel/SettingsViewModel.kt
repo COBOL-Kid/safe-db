@@ -94,28 +94,6 @@ class SettingsViewModel(
         }
     }
 
-    fun addBlockedSchema(schema: String) {
-        val normalized = schema.trim().lowercase()
-        if (normalized.isEmpty()) return
-        scope.launch {
-            _saveError.value = null
-            val current = _settings.value.blockedSchemas
-            if (current.contains(normalized)) return@launch
-            save(_settings.value.copy(blockedSchemas = current + normalized))
-        }
-    }
-
-    fun removeBlockedSchema(schema: String) {
-        scope.launch {
-            _saveError.value = null
-            save(
-                _settings.value.copy(
-                    blockedSchemas = _settings.value.blockedSchemas.filterNot { it == schema },
-                ),
-            )
-        }
-    }
-
     fun clearSaveError() {
         _saveError.value = null
     }

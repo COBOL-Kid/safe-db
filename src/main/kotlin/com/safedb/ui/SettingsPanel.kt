@@ -3,9 +3,7 @@ package com.safedb.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,19 +11,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.safedb.ui.theme.DataMono
 import com.safedb.model.QueryRiskGate
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
@@ -44,11 +36,9 @@ fun SettingsPanel(
     val settings by viewModel.settings.collectAsState()
     val saveError by viewModel.saveError.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
-    var newSchema by remember { mutableStateOf("") }
 
     LaunchedEffect(open, settings) {
         if (open) {
-            newSchema = ""
             viewModel.clearSaveError()
             viewModel.clearLoadError()
         }
@@ -115,7 +105,7 @@ fun SettingsPanel(
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(
-                        "Controls which descriptive risk levels make Run unavailable. It does not replace read-only checks, schema blocks, row limits, or timeouts.",
+                        "Controls which descriptive risk levels make Run unavailable. It does not replace read-only checks, restricted schemas, row limits, or timeouts.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
@@ -145,58 +135,6 @@ fun SettingsPanel(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                }
-
-                HorizontalDivider()
-
-                Column {
-                    Text("Blocked schemas", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedTextField(
-                            value = newSchema,
-                            onValueChange = { newSchema = it },
-                            placeholder = { Text("schema name") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
-                        SecondaryButton(
-                            onClick = {
-                                viewModel.addBlockedSchema(newSchema)
-                                newSchema = ""
-                            },
-                        ) {
-                            Text("Add")
-                        }
-                    }
-                    if (settings.blockedSchemas.isEmpty()) {
-                        Text(
-                            "No custom blocked schemas.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier.padding(top = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            for (schema in settings.blockedSchemas) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(schema, style = DataMono, color = MaterialTheme.colorScheme.onSurface)
-                                    TextButton(onClick = { viewModel.removeBlockedSchema(schema) }) {
-                                        Text("Remove")
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         },
