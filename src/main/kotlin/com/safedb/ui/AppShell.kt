@@ -82,6 +82,7 @@ fun AppShell(
 ) {
     val route by appState.route.collectAsState()
     val settingsOpen by appState.settingsOpen.collectAsState()
+    val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val preferredSchema by appState.preferredSchema.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
@@ -107,7 +108,7 @@ fun AppShell(
     )
 
     SettingsPanel(
-        open = settingsOpen,
+        open = shouldShowSettingsPanel(settingsOpen, initialLoading),
         viewModel = viewModel.settings,
         connections = connections,
         onDefaultLocationChanged = { connectionId, schema ->
@@ -716,6 +717,9 @@ internal enum class SidebarUtilityItem {
     Settings,
     Theme,
 }
+
+internal fun shouldShowSettingsPanel(requested: Boolean, initialLoading: Boolean): Boolean =
+    requested && !initialLoading
 
 internal fun sidebarCompactUtilityItemsAtStep(step: Int): List<SidebarUtilityItem> =
     SidebarUtilityItem.entries.take(step.coerceIn(0, SidebarUtilityItem.entries.size))

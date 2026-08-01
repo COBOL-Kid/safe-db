@@ -255,6 +255,32 @@ class AppViewModelTest {
     }
 
     @Test
+    fun appLoadingWaitsForSettingsAndConnectionsBeforeBecomingReady() = runTest(dispatcher) {
+        val settingsGate = CompletableDeferred<Unit>()
+        val connectionsGate = CompletableDeferred<Unit>()
+        val viewModel = AppViewModel(
+            FakeSafeDbService(
+                settingsLoadGate = settingsGate,
+                connectionsLoadGate = connectionsGate,
+            ),
+            dispatcher,
+        )
+        runCurrent()
+
+        assertTrue(viewModel.initialLoading.value)
+
+        settingsGate.complete(Unit)
+        runCurrent()
+
+        assertTrue(viewModel.initialLoading.value)
+
+        connectionsGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.initialLoading.value)
+    }
+
+    @Test
     fun queryViewModelDiscardsAssessmentAndResultAfterDraftFingerprintChanges() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val started = CompletableDeferred<Unit>()
@@ -344,6 +370,7 @@ class AppViewModelTest {
         val service = FakeSafeDbService(confirmationRequired = true)
         val scope = TestScope(dispatcher)
         val query = QueryViewModel(service, scope)
+        query.onQueryRiskGateChanged(QueryRiskGate.Standard)
         query.addTable(sampleTable())
         var settled: Boolean? = null
 
@@ -356,6 +383,12 @@ class AppViewModelTest {
         assertNull(query.error)
         assertFalse(query.canRun)
         assertNull(settled)
+
+        query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+        assertEquals(service.requiredConfirmation, query.pendingConfirmation?.confirmation)
+        assertFalse(query.canRun)
+        query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+        assertEquals(service.requiredConfirmation, query.pendingConfirmation?.confirmation)
 
         query.confirmPendingExecution("c1")
         assertTrue(query.running)
@@ -440,6 +473,7 @@ class AppViewModelTest {
         val service = FakeSafeDbService(confirmationRequired = true)
         val viewModel = AppViewModel(service, dispatcher)
         advanceUntilIdle()
+        viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Standard)
         val connection = testConnection()
         val recipe = ExploreRecipe(
             id = "r-confirm", name = "Confirmed users", createdAt = "1", updatedAt = "1",
@@ -451,6 +485,11 @@ class AppViewModelTest {
 
         assertNotNull(viewModel.query.pendingConfirmation)
         assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
+
+        viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+        assertNotNull(viewModel.query.pendingConfirmation)
+        assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
+        viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Standard)
 
         viewModel.query.confirmPendingExecution("c1")
         advanceUntilIdle()
@@ -479,6 +518,13 @@ class AppViewModelTest {
         assertNull(viewModel.pendingRecipeRun.value)
         assertNotNull(viewModel.query.error)
         assertNull(viewModel.explore.value)
+
+        viewModel.query.onActiveConnectionChanged("c2")
+
+        assertFalse(viewModel.query.pendingRiskGate)
+        assertNull(viewModel.query.error)
+        assertNull(viewModel.query.riskEvaluation)
+        assertTrue(viewModel.query.canRun)
     }
 
     @Test
@@ -493,6 +539,11 @@ class AppViewModelTest {
 
         assertTrue(query.pendingRiskGate)
         assertNotNull(query.error)
+        assertFalse(query.canRun)
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+        assertEquals(1, service.queryAttempts)
 
         query.resizeTable("t0", width = 420f, height = 360f)
         assertTrue(query.pendingRiskGate)
@@ -507,6 +558,85 @@ class AppViewModelTest {
         assertFalse(query.pendingRiskGate)
         assertNull(query.error)
         assertTrue(query.canRun)
+    }
+
+    @Test
+    fun queryViewModelClearsASettledRiskBlockOnlyWhenTheGateChanges() = runTest(dispatcher) {
+        val service = FakeSafeDbService(
+            riskGateFirstRun = true,
+            successfulRiskGate = QueryRiskGate.Flexible,
+        )
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertTrue(query.pendingRiskGate)
+        assertFalse(query.canRun)
+
+        query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+        assertTrue(query.pendingRiskGate)
+        assertFalse(query.canRun)
+
+        query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+
+        assertFalse(query.pendingRiskGate)
+        assertNull(query.error)
+        assertNull(query.riskEvaluation)
+        assertTrue(query.canRun)
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertEquals(2, service.queryAttempts)
+        assertNotNull(query.results)
+        assertEquals(QueryRiskGate.Flexible, query.riskEvaluation?.decision?.effectiveGate)
+        assertNotNull(query.currentSample("c1"))
+
+        query.onQueryRiskGateChanged(QueryRiskGate.Cautious)
+
+        assertNull(query.riskEvaluation)
+        assertNotNull(query.currentSample("c1"))
+        assertTrue(query.canRun)
+    }
+
+    @Test
+    fun queryViewModelDiscardsAnInFlightRiskDecisionAfterTheGateChanges() = runTest(dispatcher) {
+        val runGate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val service = FakeSafeDbService(
+            riskGateFirstRun = true,
+            queryGate = runGate,
+            queryStarted = started,
+        )
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+        query.addTable(sampleTable())
+        var settled: Boolean? = null
+
+        query.run("c1") { settled = it }
+        scope.runCurrent()
+        assertTrue(started.isCompleted)
+
+        query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+
+        assertTrue(query.running)
+        assertFalse(query.canRun)
+
+        runGate.complete(Unit)
+        scope.advanceUntilIdle()
+
+        assertFalse(query.running)
+        assertFalse(query.pendingRiskGate)
+        assertNull(query.error)
+        assertNull(query.riskEvaluation)
+        assertNull(query.results)
+        assertTrue(query.canRun)
+        assertEquals(1, service.queryAttempts)
+        assertEquals(false, settled)
     }
 
     @Test
@@ -571,6 +701,9 @@ private class FakeSafeDbService(
     private val confirmationRequired: Boolean = false,
     private val queryGate: CompletableDeferred<Unit>? = null,
     private val queryStarted: CompletableDeferred<Unit>? = null,
+    private val settingsLoadGate: CompletableDeferred<Unit>? = null,
+    private val connectionsLoadGate: CompletableDeferred<Unit>? = null,
+    private val successfulRiskGate: QueryRiskGate = QueryRiskGate.Standard,
     private val schemaTables: List<TableInfo> = listOf(sampleTable()),
 ) : SafeDbService {
     var locked = false
@@ -589,7 +722,10 @@ private class FakeSafeDbService(
     override suspend fun testConnection(def: ConnectionDef, password: String): String = "ok"
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
-    override suspend fun listConnections(): List<ConnectionDef> = emptyList()
+    override suspend fun listConnections(): List<ConnectionDef> {
+        connectionsLoadGate?.await()
+        return emptyList()
+    }
     override suspend fun deleteConnection(id: String) = Unit
 
     override suspend fun lockCredentials() {
@@ -682,7 +818,13 @@ private class FakeSafeDbService(
                 staticAssessment = assessment,
                 finalAssessment = assessment,
                 planStatus = com.safedb.query.QueryPlanStatus.Available,
-                decision = QueryRiskDecision("allowed", RiskGateState.Allowed, QueryRiskGate.Standard, QueryRiskSeverity.High, emptyList()),
+                decision = QueryRiskDecision(
+                    "allowed",
+                    RiskGateState.Allowed,
+                    successfulRiskGate,
+                    QueryRiskSeverity.High,
+                    emptyList(),
+                ),
             ),
         )
     }
@@ -692,7 +834,10 @@ private class FakeSafeDbService(
     override suspend fun deleteSavedQuery(id: String) = Unit
     override suspend fun listHistory(): List<HistoryEntry> = emptyList()
     override suspend fun clearHistory() = Unit
-    override suspend fun getSettings(): Settings = Settings.default()
+    override suspend fun getSettings(): Settings {
+        settingsLoadGate?.await()
+        return Settings.default()
+    }
     override suspend fun saveSettings(settings: Settings) = Unit
 }
 

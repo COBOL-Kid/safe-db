@@ -65,4 +65,11 @@ class AppShellTransitionTest {
         assertEquals(listOf(1, 0), sidebarRevealSteps(from = 2, to = 0))
         assertEquals(emptyList(), sidebarRevealSteps(from = 4, to = 4))
     }
+
+    @Test
+    fun `settings requested during startup opens only after initial loading settles`() {
+        assertEquals(false, shouldShowSettingsPanel(requested = false, initialLoading = true))
+        assertEquals(false, shouldShowSettingsPanel(requested = true, initialLoading = true))
+        assertEquals(true, shouldShowSettingsPanel(requested = true, initialLoading = false))
+    }
 }

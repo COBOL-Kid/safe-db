@@ -19,6 +19,7 @@ import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.QueryResult
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
@@ -94,6 +95,7 @@ class QueryViewModel(
     private var activeRun: ActiveQueryRun? = null
     private var observedActiveConnection = false
     private var activeConnectionId: String? = null
+    private var observedQueryRiskGate: QueryRiskGate? = null
     private var riskEvaluationConnectionId: String? = null
 
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
@@ -160,6 +162,7 @@ class QueryViewModel(
         get() = canvasTables.isNotEmpty() &&
             distinctSortConflicts.isEmpty() &&
             !running &&
+            !pendingRiskGateState &&
             pendingConfirmation == null
     val filterCount: Int get() = countFilterLeaves(filters)
 
@@ -654,6 +657,32 @@ class QueryViewModel(
         riskEvaluationConnectionId = null
         error = null
         clearPendingConfirmation(settle = true)
+    }
+
+    /**
+     * Invalidates decisions made under a different descriptive risk gate. Hard plan-confirmation
+     * requirements remain valid and are rechecked by the service against the current gate.
+     */
+    fun onQueryRiskGateChanged(gate: QueryRiskGate) {
+        val previous = observedQueryRiskGate ?: riskEvaluation?.decision?.effectiveGate
+        observedQueryRiskGate = gate
+        if (previous == null || previous == gate) return
+
+        if (running) {
+            // The service snapshots settings before EXPLAIN/execution. Keep ownership until that
+            // call settles, but discard its old-policy completion and require a fresh Run.
+            runGeneration += 1
+            return
+        }
+        // A fast run may already have observed the newly persisted gate before this UI callback.
+        if (riskEvaluation?.decision?.effectiveGate == gate) return
+        if (pendingConfirmation != null) return
+
+        val wasRiskGateBlock = pendingRiskGateState
+        pendingRiskGateState = false
+        riskEvaluation = null
+        riskEvaluationConnectionId = null
+        if (wasRiskGateBlock) error = null
     }
 
     fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? =

@@ -223,10 +223,6 @@ class SettingsViewModel(
         _saveError.value = null
     }
 
-    fun clearLoadError() {
-        _loadError.value = null
-    }
-
     private fun mutateSettings(mutation: suspend () -> Unit) {
         scope.launch {
             settingsMutationMutex.withLock {

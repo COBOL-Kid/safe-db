@@ -80,7 +80,6 @@ fun SettingsPanel(
     LaunchedEffect(open) {
         if (open) {
             viewModel.clearSaveError()
-            viewModel.clearLoadError()
             newSchema = ""
             candidateConnectionId = settings.defaultConnectionId
             val candidateExists = connections.any { it.id == settings.defaultConnectionId }
