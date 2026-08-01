@@ -31,12 +31,17 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import com.safedb.model.TableInfo
 import com.safedb.model.qualifiedName
+import com.safedb.ui.components.MenuActionRow
+import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.InputShape
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.SchemaViewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 
@@ -47,8 +52,60 @@ fun SchemaBrowser(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(setOf<String>()) }
+    var schemaMenuOpen by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
+            Text(
+                "Schema",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                SecondaryButton(
+                    onClick = { schemaMenuOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = schemaViewModel.schemaOptions.isNotEmpty(),
+                ) {
+                    Text(schemaViewModel.selectedSchema ?: "All schemas", modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ExpandMore, contentDescription = null)
+                }
+                SafeDropdownMenu(
+                    expanded = schemaMenuOpen,
+                    onDismissRequest = { schemaMenuOpen = false },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    MenuActionRow(
+                        text = "All schemas",
+                        selected = schemaViewModel.selectedSchema == null,
+                        onClick = {
+                            schemaMenuOpen = false
+                            schemaViewModel.selectSchema(null)
+                        },
+                    )
+                    schemaViewModel.schemaOptions.forEach { schema ->
+                        MenuActionRow(
+                            text = schema,
+                            selected = schemaViewModel.selectedSchema == schema,
+                            onClick = {
+                                schemaMenuOpen = false
+                                schemaViewModel.selectSchema(schema)
+                            },
+                        )
+                    }
+                }
+            }
+            schemaViewModel.preferredSchemaWarning?.let { warning ->
+                Text(
+                    warning,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SafeDbTheme.colors.warning,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()

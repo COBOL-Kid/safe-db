@@ -79,7 +79,10 @@ class PostgresAdapterIntegrationTest {
             assertIs<ResultCell.TextCell>(result.rows.first()[0])
             assertTrue(result.rows.any { it[1] is ResultCell.Null })
             assertIs<ResultCell.TextCell>(result.rows.first()[2])
-            assertTrue(Adapter.explainWithTimeout(adapter, compiled) is ExplainResult.Estimated)
+            val plan = assertIs<ExplainResult.Available>(Adapter.explainWithTimeout(adapter, compiled)).plan
+            val access = plan.relations.first { it.alias == "t0" }
+            assertTrue(access.estimatedRows != null)
+            assertTrue(access.method != com.safedb.model.PlanAccessMethod.Unknown)
 
             val empty = adapter.executeQuery(
                 CompiledQuery(

@@ -102,7 +102,9 @@ class AppViewModel(
                 return@restoreQueryForConnection
             }
             _pendingRecipeRun.value = PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
-            query.run(connection.id)
+            query.run(connection.id) { succeeded ->
+                if (!succeeded) _pendingRecipeRun.value = null
+            }
         }
     }
 
@@ -151,3 +153,9 @@ data class PendingRecipeRun(
     val connectionId: String,
     val specHash: String,
 )
+
+/** Settle a pending recipe whenever its query fails; risk details remain visible in the builder. */
+internal fun shouldCancelPendingRecipeOnQuerySettle(
+    running: Boolean,
+    hasError: Boolean,
+): Boolean = !running && hasError

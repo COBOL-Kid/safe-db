@@ -3,6 +3,7 @@ package com.safedb.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
@@ -55,7 +56,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +67,6 @@ import com.safedb.AppRoute
 import com.safedb.AppState
 import com.safedb.model.QuerySpec
 import com.safedb.ui.components.CommandPalette
-import com.safedb.ui.components.Kbd
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import kotlinx.coroutines.delay
@@ -80,10 +82,13 @@ fun AppShell(
 ) {
     val route by appState.route.collectAsState()
     val settingsOpen by appState.settingsOpen.collectAsState()
+    val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
+    val preferredSchema by appState.preferredSchema.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
+    val connections by viewModel.connections.connections.collectAsState()
     val isDark = settings.theme == "dark"
-    val activeConnection = activeConnectionId?.let(viewModel.connections::connectionById)
+    val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
     var sidebarCollapsed by rememberSaveable { mutableStateOf(initialSidebarCollapsed) }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
@@ -103,8 +108,13 @@ fun AppShell(
     )
 
     SettingsPanel(
-        open = settingsOpen,
+        open = shouldShowSettingsPanel(settingsOpen, initialLoading),
         viewModel = viewModel.settings,
+        connections = connections,
+        onDefaultLocationChanged = { connectionId, schema ->
+            appState.activateDefaultConnection(connectionId, schema)
+        },
+        onDefaultLocationCleared = appState::clearDefaultConnection,
         onClose = appState::closeSettings,
     )
 
@@ -138,25 +148,34 @@ fun AppShell(
                     service = appState.service,
                     viewModel = viewModel.connections,
                     onActivate = { id ->
-                        appState.setActiveConnection(id)
+                        val defaultSchema = settings.defaultSchema
+                            .takeIf { settings.defaultConnectionId == id }
+                        appState.setActiveConnection(id, preferredSchema = defaultSchema)
                         appState.navigate(AppRoute.Builder)
+                    },
+                    onDeleted = { id ->
+                        appState.clearActiveConnectionIf(id)
+                        viewModel.settings.clearDefaultIfConnection(id)
                     },
                     onSaved = viewModel.connections::refresh,
                 )
                 AppRoute.Builder -> BuilderScreen(
                     connection = activeConnection,
-                    connections = viewModel.connections.connections.value,
+                    connections = connections,
                     queryViewModel = viewModel.query,
                     savedQueriesViewModel = viewModel.savedQueries,
                     recipesViewModel = viewModel.recipes,
                     schemaViewModel = viewModel.schema,
+                    preferredSchema = preferredSchema,
+                    settings = settings,
                     onOpenExplore = {
                         val connection = activeConnection
-                        val result = viewModel.query.results
-                        if (connection != null && result != null) {
-                            viewModel.openExplore(connection, viewModel.query.spec, result)
+                        val sample = viewModel.query.currentSample(connection?.id)
+                        if (connection != null && sample != null) {
+                            viewModel.openExplore(connection, sample.spec, sample.result)
                         }
                     },
+                    onOpenSettings = appState::openSettings,
                     onApplyRecipe = { recipe, targetConnection ->
                         if (recipe.querySpec != null) {
                             appState.setActiveConnection(targetConnection.id)
@@ -168,7 +187,6 @@ fun AppShell(
                             }
                         }
                     },
-                    onCancelQueryRun = viewModel::cancelPendingRecipeRun,
                 )
                 AppRoute.History -> HistoryScreen(
                     viewModel = viewModel,
@@ -200,8 +218,8 @@ private fun Sidebar(
         NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
         NavItem(AppRoute.History, "History", Icons.Outlined.History),
     )
-    // Keep the leading icon track expanded until the rail finishes shrinking. Switching both
-    // states together centers the compact buttons inside the still-wide rail and makes them jump.
+    // Keep the content mode stable while the rail changes width. This leaves a clean gap
+    // between the outgoing and incoming fade sequences instead of cross-fading both layouts.
     var widthCollapsed by remember { mutableStateOf(collapsed) }
     var layoutCollapsed by remember { mutableStateOf(collapsed) }
     val sidebarWidth by animateDpAsState(
@@ -210,6 +228,9 @@ private fun Sidebar(
         label = "sidebarWidth",
     )
     var revealStep by remember { mutableIntStateOf(if (collapsed) 0 else SidebarRevealAll) }
+    var compactRevealStep by remember {
+        mutableIntStateOf(if (collapsed) SidebarCompactRevealAll else 0)
+    }
     var revealInitialized by remember { mutableStateOf(false) }
 
     LaunchedEffect(collapsed) {
@@ -218,25 +239,54 @@ private fun Sidebar(
             widthCollapsed = collapsed
             layoutCollapsed = collapsed
             revealStep = if (collapsed) 0 else SidebarRevealAll
+            compactRevealStep = if (collapsed) SidebarCompactRevealAll else 0
             return@LaunchedEffect
         }
 
         if (collapsed) {
-            widthCollapsed = false
-            layoutCollapsed = false
-            for (step in revealStep downTo 0) {
-                revealStep = step
+            if (!layoutCollapsed) {
+                compactRevealStep = 0
+                val hadExpandedContent = revealStep > 0
+                for (step in sidebarRevealSteps(revealStep, 0)) {
+                    revealStep = step
+                    delay(SidebarRevealStaggerMillis.toLong())
+                }
+                if (hadExpandedContent) {
+                    delay((SidebarExpandedExitMillis - SidebarRevealStaggerMillis).toLong())
+                }
+
+                val widthWasExpanded = !widthCollapsed
+                widthCollapsed = true
+                if (widthWasExpanded) {
+                    delay(SidebarWidthAnimationMillis.toLong())
+                }
+                layoutCollapsed = true
+            }
+
+            for (step in sidebarRevealSteps(compactRevealStep, SidebarCompactRevealAll)) {
+                compactRevealStep = step
                 delay(SidebarRevealStaggerMillis.toLong())
             }
-            widthCollapsed = true
-            delay(SidebarWidthAnimationMillis.toLong())
-            layoutCollapsed = true
         } else {
-            layoutCollapsed = false
+            if (layoutCollapsed) {
+                val hadCompactContent = compactRevealStep > 0
+                for (step in sidebarRevealSteps(compactRevealStep, 0)) {
+                    compactRevealStep = step
+                    delay(SidebarRevealStaggerMillis.toLong())
+                }
+                if (hadCompactContent) {
+                    delay((SidebarUtilityFadeOutMillis - SidebarRevealStaggerMillis).toLong())
+                }
+                layoutCollapsed = false
+            }
+
+            val widthWasCollapsed = widthCollapsed
             widthCollapsed = false
-            revealStep = 0
-            delay(SidebarWidthAnimationMillis.toLong())
-            for (step in 1..SidebarRevealAll) {
+            if (widthWasCollapsed) {
+                delay(SidebarWidthAnimationMillis.toLong())
+            }
+
+            for (step in sidebarRevealSteps(revealStep, SidebarRevealAll)) {
                 revealStep = step
                 delay(SidebarRevealStaggerMillis.toLong())
             }
@@ -278,9 +328,10 @@ private fun Sidebar(
             SidebarUtilities(
                 collapsed = layoutCollapsed,
                 isDark = isDark,
-                commandVisible = revealStep >= SidebarRevealCommand,
                 statusVisible = revealStep >= SidebarRevealStatus,
-                utilityButtonsVisible = revealStep >= SidebarRevealUtilityButtons,
+                settingsVisible = revealStep >= SidebarRevealSettings,
+                themeVisible = revealStep >= SidebarRevealTheme,
+                compactRevealStep = compactRevealStep,
                 onOpenPalette = onOpenPalette,
                 onOpenSettings = onOpenSettings,
                 onToggleTheme = onToggleTheme,
@@ -361,9 +412,10 @@ private fun SidebarHeader(
 private fun SidebarUtilities(
     collapsed: Boolean,
     isDark: Boolean,
-    commandVisible: Boolean,
     statusVisible: Boolean,
-    utilityButtonsVisible: Boolean,
+    settingsVisible: Boolean,
+    themeVisible: Boolean,
+    compactRevealStep: Int,
     onOpenPalette: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleTheme: () -> Unit,
@@ -375,33 +427,55 @@ private fun SidebarUtilities(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (collapsed) {
-            SidebarIconButton(
-                icon = Icons.Filled.Search,
-                contentDescription = "Search commands",
-                onClick = onOpenPalette,
-            )
-            SidebarStatusIndicator()
-            SidebarIconButton(
-                icon = Icons.Filled.Settings,
-                contentDescription = "Settings",
-                onClick = onOpenSettings,
-            )
-            SidebarIconButton(
-                icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
-                contentDescription = "Toggle theme",
-                onClick = onToggleTheme,
-            )
-        } else {
-            AnimatedSidebarLabel(visible = commandVisible, modifier = Modifier.fillMaxWidth()) {
-                SidebarCommandButton(onClick = onOpenPalette)
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealCommand,
+                modifier = Modifier.size(32.dp),
+            ) { enabled ->
+                SidebarIconButton(
+                    icon = Icons.Filled.Search,
+                    contentDescription = "Search commands",
+                    enabled = enabled,
+                    onClick = onOpenPalette,
+                )
             }
-
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealStatus,
+                modifier = Modifier.size(32.dp),
+            ) {
+                SidebarStatusIndicator()
+            }
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealSettings,
+                modifier = Modifier.size(32.dp),
+            ) { enabled ->
+                SidebarIconButton(
+                    icon = Icons.Filled.Settings,
+                    contentDescription = "Settings",
+                    enabled = enabled,
+                    onClick = onOpenSettings,
+                )
+            }
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealTheme,
+                modifier = Modifier.size(32.dp),
+            ) { enabled ->
+                SidebarIconButton(
+                    icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                    contentDescription = "Toggle theme",
+                    enabled = enabled,
+                    onClick = onToggleTheme,
+                )
+            }
+        } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AnimatedSidebarLabel(visible = statusVisible, modifier = Modifier.weight(1f)) {
+                SidebarFade(
+                    visible = statusVisible,
+                    modifier = Modifier.weight(1f),
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -431,16 +505,26 @@ private fun SidebarUtilities(
                     }
                 }
 
-                AnimatedSidebarLabel(visible = utilityButtonsVisible) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SidebarFade(
+                        visible = settingsVisible,
+                        modifier = Modifier.size(32.dp),
+                    ) { enabled ->
                         SidebarIconButton(
                             icon = Icons.Filled.Settings,
                             contentDescription = "Settings",
+                            enabled = enabled,
                             onClick = onOpenSettings,
                         )
+                    }
+                    SidebarFade(
+                        visible = themeVisible,
+                        modifier = Modifier.size(32.dp),
+                    ) { enabled ->
                         SidebarIconButton(
                             icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
                             contentDescription = "Toggle theme",
+                            enabled = enabled,
                             onClick = onToggleTheme,
                         )
                     }
@@ -489,51 +573,17 @@ private fun SidebarStatusIndicator() {
 }
 
 @Composable
-private fun SidebarCommandButton(onClick: () -> Unit) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val hovered by interactionSource.collectIsHoveredAsState()
-    val c = SafeDbTheme.colors
-    val background by animateColorAsState(
-        if (hovered) c.navigationHover else c.navigationBackground,
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(2.dp))
-            .background(background)
-            .border(1.dp, c.navigationBorder, RoundedCornerShape(2.dp))
-            .hoverable(interactionSource)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Search commands…",
-            style = MaterialTheme.typography.labelSmall,
-            color = c.onNavigationMuted,
-            modifier = Modifier.weight(1f),
-        )
-        Kbd(
-            "\u2318K",
-            contentColor = c.onNavigationMuted,
-            borderColor = c.navigationBorder,
-        )
-    }
-}
-
-@Composable
 private fun SidebarIconButton(
     icon: ImageVector,
     contentDescription: String,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
     val c = SafeDbTheme.colors
     val background by animateColorAsState(
-        if (hovered) c.navigationHover else Color.Transparent,
+        if (enabled && hovered) c.navigationHover else Color.Transparent,
     )
 
     Box(
@@ -541,14 +591,14 @@ private fun SidebarIconButton(
             .size(32.dp)
             .clip(RoundedCornerShape(2.dp))
             .background(background)
-            .hoverable(interactionSource)
-            .clickable(onClick = onClick),
+            .hoverable(interactionSource, enabled = enabled)
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             icon,
             contentDescription = contentDescription,
-            tint = if (hovered) c.onNavigation else c.onNavigationMuted,
+            tint = if (enabled && hovered) c.onNavigation else c.onNavigationMuted,
             modifier = Modifier.size(18.dp),
         )
     }
@@ -633,6 +683,62 @@ private fun AnimatedSidebarLabel(
     }
 }
 
+@Composable
+private fun SidebarFade(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable (enabled: Boolean) -> Unit,
+) {
+    val opacity by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (visible) SidebarUtilityFadeInMillis else SidebarUtilityFadeOutMillis,
+        ),
+        label = "sidebarUtilityOpacity",
+    )
+    val semanticsModifier = if (visible) {
+        Modifier
+    } else {
+        Modifier.clearAndSetSemantics {}
+    }
+
+    Box(
+        modifier = modifier
+            .graphicsLayer { alpha = opacity }
+            .then(semanticsModifier),
+    ) {
+        content(visible)
+    }
+}
+
+internal enum class SidebarUtilityItem {
+    Command,
+    Status,
+    Settings,
+    Theme,
+}
+
+internal fun shouldShowSettingsPanel(requested: Boolean, initialLoading: Boolean): Boolean =
+    requested && !initialLoading
+
+internal fun sidebarCompactUtilityItemsAtStep(step: Int): List<SidebarUtilityItem> =
+    SidebarUtilityItem.entries.take(step.coerceIn(0, SidebarUtilityItem.entries.size))
+
+internal fun sidebarExpandedUtilityItemsAtStep(step: Int): List<SidebarUtilityItem> =
+    listOf(
+        SidebarUtilityItem.Status,
+        SidebarUtilityItem.Settings,
+        SidebarUtilityItem.Theme,
+    ).filterIndexed { index, _ ->
+        step >= SidebarRevealStatus + index
+    }
+
+internal fun sidebarRevealSteps(from: Int, to: Int): List<Int> = when {
+    from < to -> ((from + 1)..to).toList()
+    from > to -> ((from - 1) downTo to).toList()
+    else -> emptyList()
+}
+
 private data class NavItem(
     val route: AppRoute,
     val label: String,
@@ -644,9 +750,17 @@ private val CollapsedSidebarWidth = 72.dp
 private val SidebarHeaderHeight = 78.dp
 private const val SidebarWidthAnimationMillis = 240
 private const val SidebarRevealStaggerMillis = 55
+private const val SidebarExpandedExitMillis = 120
+private const val SidebarUtilityFadeInMillis = 120
+private const val SidebarUtilityFadeOutMillis = 80
 private const val SidebarRevealHeader = 1
 private const val SidebarRevealFirstNav = 2
-private const val SidebarRevealCommand = 6
-private const val SidebarRevealStatus = 7
-private const val SidebarRevealUtilityButtons = 8
-private const val SidebarRevealAll = SidebarRevealUtilityButtons
+private const val SidebarRevealStatus = 6
+private const val SidebarRevealSettings = 7
+private const val SidebarRevealTheme = 8
+private const val SidebarRevealAll = SidebarRevealTheme
+private const val SidebarCompactRevealCommand = 1
+private const val SidebarCompactRevealStatus = 2
+private const val SidebarCompactRevealSettings = 3
+private const val SidebarCompactRevealTheme = 4
+private const val SidebarCompactRevealAll = SidebarCompactRevealTheme

@@ -1,6 +1,9 @@
 package com.safedb.model
 
 sealed class ExplainResult {
-    data class Estimated(val cost: Double) : ExplainResult()
-    data class Unavailable(val reason: String) : ExplainResult()
+    data class Available(val plan: NormalizedQueryPlan) : ExplainResult()
+    data class Unavailable(
+        val reasonCode: PlanUnavailableReason,
+        val message: String,
+    ) : ExplainResult()
 }

@@ -7,6 +7,7 @@ import com.safedb.model.HistoryEntry
 import com.safedb.model.JoinSpec
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.ResultColumn
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
@@ -16,11 +17,13 @@ import com.safedb.model.ThemePalette
 import com.safedb.model.TransportSecurity
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
@@ -70,11 +73,44 @@ class ViewModelsTest {
         viewModel.load("c1")
         advanceUntilIdle()
         assertEquals("c1", viewModel.loadedConnectionId)
-        assertEquals(2, viewModel.tables.size)
+        assertEquals(3, viewModel.tables.size)
 
         viewModel.search = "order"
         assertEquals(1, viewModel.filteredTables.size)
         assertEquals("orders", viewModel.filteredTables.single().name)
+    }
+
+    @Test
+    fun schemaViewModelAppliesPreferredSchemaBeforeSearch() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SchemaViewModel(service, scope)
+
+        viewModel.load("c1", preferredSchema = "reporting")
+        advanceUntilIdle()
+
+        assertEquals(listOf("reporting", "safedb_test"), viewModel.schemaOptions)
+        assertEquals("reporting", viewModel.selectedSchema)
+        assertEquals(listOf("events"), viewModel.filteredTables.map { it.name })
+
+        viewModel.search = "event"
+        assertEquals(listOf("events"), viewModel.filteredTables.map { it.name })
+        viewModel.selectSchema(null)
+        assertEquals(listOf("events"), viewModel.filteredTables.map { it.name })
+    }
+
+    @Test
+    fun schemaViewModelFallsBackVisiblyWhenPreferredSchemaIsMissing() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SchemaViewModel(service, scope)
+
+        viewModel.load("c1", preferredSchema = "missing")
+        advanceUntilIdle()
+
+        assertNull(viewModel.selectedSchema)
+        assertTrue(viewModel.preferredSchemaWarning?.contains("missing") == true)
+        assertEquals(3, viewModel.filteredTables.size)
     }
 
     @Test
@@ -148,21 +184,137 @@ class ViewModelsTest {
         advanceUntilIdle()
         assertEquals("dark", viewModel.settings.value.theme)
         assertEquals(2, service.settingsSaveCount)
+
+        viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
+        advanceUntilIdle()
+        assertEquals(QueryRiskGate.Flexible, viewModel.settings.value.queryRiskGate)
+        assertEquals(QueryRiskGate.Flexible, service.savedSettings?.queryRiskGate)
+        assertEquals(3, service.settingsSaveCount)
     }
 
     @Test
-    fun settingsViewModelRejectsInvalidThreshold() = runTest(dispatcher) {
+    fun settingsViewModelSerializesMutationsWithoutLostUpdates() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val firstSaveStarted = CompletableDeferred<Unit>()
+        val saveGate = CompletableDeferred<Unit>()
+        service.settingsSaveStarted = firstSaveStarted
+        service.settingsSaveGate = saveGate
+        val viewModel = SettingsViewModel(service, TestScope(dispatcher))
+        viewModel.load()
+
+        viewModel.setDarkMode(true)
+        viewModel.setColorScheme(ThemePalette.Oxide)
+        viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
+        runCurrent()
+
+        assertTrue(firstSaveStarted.isCompleted)
+        assertEquals(1, service.settingsSaveCount)
+
+        saveGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("dark", viewModel.settings.value.theme)
+        assertEquals(ThemePalette.Oxide.id, viewModel.settings.value.colorScheme)
+        assertEquals(QueryRiskGate.Flexible, viewModel.settings.value.queryRiskGate)
+        assertEquals(viewModel.settings.value, service.savedSettings)
+        assertEquals(3, service.settingsSaveCount)
+    }
+
+    @Test
+    fun settingsViewModelLoadsSchemasAndSavesDefaultLocationAtomically() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val scope = TestScope(dispatcher)
         val viewModel = SettingsViewModel(service, scope)
         viewModel.load()
         advanceUntilIdle()
 
-        viewModel.saveThresholds(mapOf(Dialect.Postgres to 0.5))
+        viewModel.loadDefaultSchemaOptions("c1")
+        advanceUntilIdle()
+        assertEquals(listOf("reporting", "safedb_test"), viewModel.defaultSchemaOptions.value)
+        assertNull(viewModel.defaultSchemaError.value)
+
+        var saved = false
+        viewModel.saveDefaultLocation("c1", "reporting") { saved = true }
         advanceUntilIdle()
 
-        assertNull(service.savedSettings)
-        assertTrue(viewModel.saveError.value?.contains("PostgreSQL") == true)
+        assertTrue(saved)
+        assertEquals("c1", viewModel.settings.value.defaultConnectionId)
+        assertEquals("reporting", viewModel.settings.value.defaultSchema)
+        assertEquals("c1", service.savedSettings?.defaultConnectionId)
+        assertEquals("reporting", service.savedSettings?.defaultSchema)
+    }
+
+    @Test
+    fun settingsViewModelKeepsDefaultWhenSchemaLoadOrSaveFails() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SettingsViewModel(service, scope)
+        viewModel.load()
+        advanceUntilIdle()
+        viewModel.loadDefaultSchemaOptions("c1")
+        advanceUntilIdle()
+        viewModel.saveDefaultLocation("c1", "safedb_test")
+        advanceUntilIdle()
+
+        service.failSchemaLoad = true
+        viewModel.loadDefaultSchemaOptions("c2")
+        advanceUntilIdle()
+        assertTrue(viewModel.defaultSchemaError.value?.contains("schema load failed") == true)
+        assertTrue(viewModel.defaultSchemaOptions.value.isEmpty())
+        assertEquals("c1", viewModel.settings.value.defaultConnectionId)
+
+        service.failSchemaLoad = false
+        viewModel.loadDefaultSchemaOptions("c2")
+        advanceUntilIdle()
+        service.failSettingsSave = true
+        viewModel.saveDefaultLocation("c2", "reporting")
+        advanceUntilIdle()
+        assertEquals("c1", viewModel.settings.value.defaultConnectionId)
+        assertEquals("safedb_test", viewModel.settings.value.defaultSchema)
+    }
+
+    @Test
+    fun settingsViewModelIgnoresStaleSchemaResponses() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val first = CompletableDeferred<Schema>()
+        val second = CompletableDeferred<Schema>()
+        service.schemaResponses["c1"] = first
+        service.schemaResponses["c2"] = second
+        val viewModel = SettingsViewModel(service, TestScope(dispatcher))
+
+        viewModel.loadDefaultSchemaOptions("c1")
+        runCurrent()
+        viewModel.loadDefaultSchemaOptions("c2")
+        runCurrent()
+        second.complete(Schema(listOf(TableInfo("current", "events", emptyList(), emptyList()))))
+        runCurrent()
+        first.complete(Schema(listOf(TableInfo("stale", "events", emptyList(), emptyList()))))
+        advanceUntilIdle()
+
+        assertEquals(listOf("current"), viewModel.defaultSchemaOptions.value)
+        assertNull(viewModel.defaultSchemaError.value)
+    }
+
+    @Test
+    fun settingsViewModelClearsDefaultOnlyForMatchingDeletedConnection() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SettingsViewModel(service, scope)
+        viewModel.load()
+        advanceUntilIdle()
+        viewModel.loadDefaultSchemaOptions("c1")
+        advanceUntilIdle()
+        viewModel.saveDefaultLocation("c1", "safedb_test")
+        advanceUntilIdle()
+
+        viewModel.clearDefaultIfConnection("c2")
+        advanceUntilIdle()
+        assertEquals("c1", viewModel.settings.value.defaultConnectionId)
+
+        viewModel.clearDefaultIfConnection("c1")
+        advanceUntilIdle()
+        assertNull(viewModel.settings.value.defaultConnectionId)
+        assertNull(viewModel.settings.value.defaultSchema)
     }
 
     @Test
@@ -255,7 +407,11 @@ private class RecordingSafeDbService : SafeDbService {
     var failHistoryClear = false
     var failSavedMutation = false
     var failSettingsSave = false
+    var failSchemaLoad = false
+    val schemaResponses = mutableMapOf<String, CompletableDeferred<Schema>>()
     var settingsSaveCount = 0
+    var settingsSaveStarted: CompletableDeferred<Unit>? = null
+    var settingsSaveGate: CompletableDeferred<Unit>? = null
 
     private val connection = ConnectionDef(
         id = "c1",
@@ -280,15 +436,20 @@ private class RecordingSafeDbService : SafeDbService {
 
     override suspend fun lockCredentials() = Unit
 
-    override suspend fun getSchema(connectionId: String): Schema = Schema(
-        tables = listOf(
-            TableInfo("safedb_test", "customers", emptyList(), emptyList()),
-            TableInfo("safedb_test", "orders", emptyList(), emptyList()),
-        ),
-    )
+    override suspend fun getSchema(connectionId: String): Schema {
+        if (failSchemaLoad) error("schema load failed")
+        schemaResponses[connectionId]?.let { return it.await() }
+        return Schema(
+            tables = listOf(
+                TableInfo("safedb_test", "customers", emptyList(), emptyList()),
+                TableInfo("safedb_test", "orders", emptyList(), emptyList()),
+                TableInfo("reporting", "events", emptyList(), emptyList()),
+            ),
+        )
+    }
 
-    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): QueryResult =
-        QueryResult(emptyList(), emptyList(), 0, false, emptyList())
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) =
+        queryRunResult(QueryResult(emptyList(), emptyList(), 0, false, emptyList()))
 
     override suspend fun listSavedQueries(): List<SavedQuery> =
         if (deletedSavedIds.isEmpty()) {
@@ -319,6 +480,8 @@ private class RecordingSafeDbService : SafeDbService {
     override suspend fun saveSettings(settings: Settings) {
         if (failSettingsSave) error("settings save failed")
         settingsSaveCount += 1
+        settingsSaveStarted?.complete(Unit)
+        settingsSaveGate?.await()
         savedSettings = settings
     }
 }

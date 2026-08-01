@@ -175,8 +175,8 @@ private class FakeService(
     override suspend fun lockCredentials() {}
     override suspend fun getSchema(connectionId: String) = schema
 
-    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): QueryResult =
-        QueryResult(
+    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest): com.safedb.service.QueryRunResult {
+        val result = QueryResult(
             columns = listOf(
                 ResultColumn("t0__id", "bigint"),
                 ResultColumn("t0__customer_id", "bigint"),
@@ -197,6 +197,16 @@ private class FakeService(
             truncated = false,
             warnings = emptyList(),
         )
+        val dialect = connections.first { it.id == request.connectionId }.dialect
+        val evaluation = when (val risk = com.safedb.query.evaluateQueryRisk(request.spec, schema, settings, dialect)) {
+            is com.safedb.model.Outcome.Ok -> risk.value
+            is com.safedb.model.Outcome.Err -> error(risk.message)
+        }
+        return com.safedb.service.QueryRunResult(
+            result,
+            evaluation.copy(planStatus = com.safedb.query.QueryPlanStatus.Available),
+        )
+    }
 
     override suspend fun listSavedQueries() = listOf(
         SavedQuery("s1", "Pending orders by customer", "c1", sampleSpec, "1719400000"),
@@ -278,7 +288,7 @@ private fun renderExplore(
         limit = 100,
     )
     val sample = runBlocking {
-        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec))
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec)).queryResult
     }
     val viewModel = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     if (pivoted) {
@@ -438,7 +448,7 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
         columns = emptyList(), joins = emptyList(), filters = FilterGroup.empty(), limit = 100,
     )
     val sample = runBlocking {
-        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec))
+        service.runQuery(com.safedb.service.QueryRunRequest("c1", spec)).queryResult
     }
     val explore = ExploreViewModel(createExploreSession(service.connections.first(), spec, sample))
     val recipesViewModel = RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined))

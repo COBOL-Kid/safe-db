@@ -10,6 +10,8 @@ import com.zaxxer.hikari.HikariDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import java.sql.SQLException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -122,7 +124,21 @@ sealed class Adapter {
             withTimeout(INTROSPECTION_TIMEOUT_MS) { adapter.introspect() }
 
         suspend fun explainWithTimeout(adapter: Adapter, compiled: CompiledQuery): ExplainResult =
-            withTimeout(DEFAULT_TIMEOUT_MS.toLong()) { adapter.explain(compiled) }
+            try {
+                withTimeoutOrNull(DEFAULT_TIMEOUT_MS.toLong()) { adapter.explain(compiled) }
+                    ?: ExplainResult.Unavailable(
+                        com.safedb.model.PlanUnavailableReason.TimedOut,
+                        "Query plan assessment timed out",
+                    )
+            } catch (error: SQLException) {
+                val permissionDenied = error.message?.contains("permission", ignoreCase = true) == true ||
+                    error.message?.contains("denied", ignoreCase = true) == true
+                ExplainResult.Unavailable(
+                    if (permissionDenied) com.safedb.model.PlanUnavailableReason.PermissionDenied
+                    else com.safedb.model.PlanUnavailableReason.ExecutionFailure,
+                    error.message ?: "Query plan assessment failed",
+                )
+            }
     }
 
     fun close() {

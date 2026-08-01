@@ -107,9 +107,6 @@ internal fun validateLeaf(
                 ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' requires a value list")
             val list = expectList(value)
                 ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' expects a list of values")
-            if (list.isEmpty()) {
-                return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' has an empty value list")
-            }
             if (list.size > MAX_IN_LIST_SIZE) {
                 return Outcome.err(
                     "Filter on '${filter.tableAlias}.${filter.column}' has too many values (max $MAX_IN_LIST_SIZE)",

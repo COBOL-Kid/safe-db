@@ -22,6 +22,7 @@ import com.safedb.store.RecipeStore
 import com.safedb.store.SettingsStore
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 
 internal fun interface QuerySessionFactory {
     suspend fun open(def: ConnectionDef, password: String): QuerySession
@@ -129,7 +130,7 @@ class SafeDbServiceImpl internal constructor(
         }
     }
 
-    override suspend fun runQuery(request: QueryRunRequest): QueryResult {
+    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
         val def = configStore.get(request.connectionId) ?: throw IllegalArgumentException("Connection not found")
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val settings = settingsStore.load()
@@ -142,12 +143,19 @@ class SafeDbServiceImpl internal constructor(
                     request.spec,
                     session.schema,
                     settings,
-                    request.force,
+                    request.confirmation,
                 )
             ) {
                 is QueryCoreOutcome.Success -> {
-                    recordHistory(request.connectionId, def.name, outcome.historySpec, outcome.result, null)
-                    outcome.result
+                    recordHistory(
+                        request.connectionId,
+                        def.name,
+                        outcome.historySpec,
+                        outcome.result,
+                        null,
+                        outcome.riskEvaluation,
+                    )
+                    QueryRunResult(outcome.result, outcome.riskEvaluation)
                 }
                 is QueryCoreOutcome.Failure -> {
                     recordHistory(
@@ -156,6 +164,7 @@ class SafeDbServiceImpl internal constructor(
                         outcome.error.historySpec ?: request.spec,
                         null,
                         outcome.error,
+                        outcome.error.riskEvaluation,
                     )
                     throw QueryFailureException(outcome.error)
                 }
@@ -237,6 +246,7 @@ class SafeDbServiceImpl internal constructor(
         spec: QuerySpec,
         result: QueryResult?,
         error: com.safedb.query.QueryCoreError?,
+        riskEvaluation: com.safedb.query.QueryRiskEvaluation? = null,
     ) {
         runCatching {
             queryStore.addHistory(
@@ -249,6 +259,25 @@ class SafeDbServiceImpl internal constructor(
                     warnings = result?.warnings ?: error?.warnings.orEmpty(),
                     error = error?.message,
                     timestamp = Instant.now().epochSecond.toString(),
+                    riskScoreVersion = riskEvaluation?.finalAssessment?.scoreVersion,
+                    riskStaticScore = riskEvaluation?.staticAssessment?.score,
+                    riskFinalScore = riskEvaluation?.finalAssessment?.score,
+                    riskSeverity = riskEvaluation?.finalAssessment?.severity?.name,
+                    riskSignalCodes = riskEvaluation?.finalAssessment?.signals.orEmpty().map { it.code.name }.distinct(),
+                    riskUncertaintyCodes = riskEvaluation?.finalAssessment?.uncertainties.orEmpty().map { it.code }.distinct(),
+                    riskPlanStatus = riskEvaluation?.planStatus?.name,
+                    riskPlanReason = riskEvaluation?.planUnavailableReason?.name,
+                    riskGateState = riskEvaluation?.decision?.state?.name,
+                    riskOptimizerCost = riskEvaluation?.optimizerCost,
+                    riskConfirmationCodes = riskEvaluation?.confirmationRequirement
+                        ?.confirmation
+                        ?.reasonCodes
+                        .orEmpty()
+                        .map { it.name }
+                        .sorted(),
+                    riskConfirmationAccepted = riskEvaluation?.confirmationRequirement?.let {
+                        riskEvaluation.confirmationAccepted
+                    },
                 ),
             )
         }
@@ -259,10 +288,12 @@ class SafeDbServiceImpl internal constructor(
             adapter.explain(compiled)
 
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> =
-            runCatching { adapter.executeQuery(compiled, timeoutMs) }
-                .fold(
-                    onSuccess = { Outcome.ok(it) },
-                    onFailure = { Outcome.err(it.message ?: it.toString()) },
-                )
+            try {
+                Outcome.ok(adapter.executeQuery(compiled, timeoutMs))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Outcome.err(error.message ?: error.toString())
+            }
     }
 }

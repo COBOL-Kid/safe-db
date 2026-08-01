@@ -79,7 +79,7 @@ private fun ModeSegment(
         },
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -96,7 +96,7 @@ fun ColorSchemePicker(
     onSelect: (ThemePalette) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ThemePalette.entries.forEach { palette ->
             ColorSchemeRow(
                 palette = palette,
@@ -135,9 +135,9 @@ private fun ColorSchemeRow(
         border = BorderStroke(1.dp, borderColor),
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             ColorSchemeSwatch(palette, isDark)
             Column(modifier = Modifier.weight(1f)) {
@@ -178,37 +178,37 @@ private fun ColorSchemeSwatch(palette: ThemePalette, isDark: Boolean) {
     val colors = resolved.second
     Row(
         modifier = Modifier
-            .size(width = 64.dp, height = 42.dp)
+            .size(width = 54.dp, height = 34.dp)
             .background(colors.workspaceBackground, CardShape)
             .border(1.dp, material.outline, CardShape),
     ) {
         Box(
             modifier = Modifier
-                .size(width = 14.dp, height = 42.dp)
+                .size(width = 12.dp, height = 34.dp)
                 .background(colors.navigationBackground),
         )
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(5.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(7.dp)
+                    .height(6.dp)
                     .background(colors.workspaceHeader, ChipShape),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(15.dp)
+                        .height(12.dp)
                         .background(material.surface, ChipShape),
                 )
                 Box(
                     modifier = Modifier
-                        .size(width = 12.dp, height = 15.dp)
+                        .size(width = 10.dp, height = 12.dp)
                         .background(colors.actionPrimary, ChipShape),
                 )
             }

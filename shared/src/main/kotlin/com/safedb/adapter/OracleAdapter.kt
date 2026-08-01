@@ -6,6 +6,10 @@ import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
+import com.safedb.model.IndexCapabilities
+import com.safedb.model.IndexKey
+import com.safedb.model.SortDirection
+import com.safedb.model.EvidenceConfidence
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
@@ -65,19 +69,43 @@ object OracleAdapter {
             }
             val indexes = conn.metadataRows(
                 """
-                SELECT aic.table_owner, aic.table_name, aic.index_name, aic.column_name,
+                SELECT aic.table_owner, aic.table_name, aic.index_name, aic.column_name, aic.descend,
+                       aie.column_expression,
                        CASE WHEN ai.uniqueness = 'UNIQUE' THEN 1 ELSE 0 END AS is_unique,
                        CASE WHEN aic.index_name LIKE 'SYS_%' AND ai.uniqueness = 'UNIQUE' THEN 1 ELSE 0 END AS is_primary
                 FROM all_ind_columns aic
                 JOIN all_indexes ai ON aic.index_owner = ai.owner AND aic.index_name = ai.index_name
+                LEFT JOIN all_ind_expressions aie
+                  ON aie.index_owner = aic.index_owner
+                 AND aie.index_name = aic.index_name
+                 AND aie.table_owner = aic.table_owner
+                 AND aie.table_name = aic.table_name
+                 AND aie.column_position = aic.column_position
                 WHERE aic.table_owner NOT IN ($blocked)
                 ORDER BY aic.table_owner, aic.table_name, ai.uniqueness DESC, aic.index_name, aic.column_position
                 """.trimIndent(),
             ) { rs ->
                 MetadataIndex(
                     MetadataTableKey(readString(rs, "table_owner"), readString(rs, "table_name")),
-                    readString(rs, "index_name"), readString(rs, "column_name"), "NORMAL", true,
+                    readString(rs, "index_name"),
+                    readString(rs, "column_name").takeIf { rs.getString("column_expression") == null },
+                    "NORMAL", true,
                     rs.getInt("is_unique") == 1, rs.getInt("is_primary") == 1,
+                    direction = when (readString(rs, "descend")) {
+                        "ASC" -> SortDirection.Asc
+                        "DESC" -> SortDirection.Desc
+                        else -> null
+                    },
+                    capabilities = IndexCapabilities(
+                        equality = true,
+                        ordering = true,
+                        specializedText = null,
+                        expressionKeys = true,
+                        partialPredicate = false,
+                        includedColumns = false,
+                    ),
+                    partial = false,
+                    expression = rs.getString("column_expression") != null,
                 )
             }
             val foreignKeys = conn.metadataRows(
@@ -101,7 +129,15 @@ object OracleAdapter {
                     readString(rs, "referenced_column"),
                 )
             }
-            return assembleSchema(tables, columns, indexes, foreignKeys)
+            val tableSizes = runCatching {
+                conn.metadataRows(
+                    "SELECT owner, table_name, num_rows FROM all_tables WHERE owner NOT IN ($blocked)",
+                ) { rs ->
+                    MetadataTableKey(readString(rs, "owner"), readString(rs, "table_name")) to
+                        normalizeTableSize((rs.getObject("num_rows") as? Number)?.toDouble(), EvidenceConfidence.Low)
+                }.toMap()
+            }.getOrDefault(emptyMap())
+            return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }
 
@@ -136,11 +172,17 @@ object OracleAdapter {
         val indexMap = linkedMapOf<String, IndexInfo>()
         conn.prepareStatement(
             """
-            SELECT aic.index_name, aic.column_name,
+            SELECT aic.index_name, aic.column_name, aic.descend, aie.column_expression,
                    CASE WHEN ai.uniqueness = 'UNIQUE' THEN 1 ELSE 0 END AS is_unique,
                    CASE WHEN aic.index_name LIKE 'SYS_%' AND ai.uniqueness = 'UNIQUE' THEN 1 ELSE 0 END AS is_primary
             FROM all_ind_columns aic
             JOIN all_indexes ai ON aic.index_owner = ai.owner AND aic.index_name = ai.index_name
+            LEFT JOIN all_ind_expressions aie
+              ON aie.index_owner = aic.index_owner
+             AND aie.index_name = aic.index_name
+             AND aie.table_owner = aic.table_owner
+             AND aie.table_name = aic.table_name
+             AND aie.column_position = aic.column_position
             WHERE aic.table_owner = ? AND aic.table_name = ?
             ORDER BY ai.uniqueness DESC, aic.index_name, aic.column_position
             """.trimIndent(),
@@ -151,6 +193,7 @@ object OracleAdapter {
                 while (rs.next()) {
                     val indexName = readString(rs, "index_name")
                     val columnName = readString(rs, "column_name")
+                        .takeIf { rs.getString("column_expression") == null }
                     val isUnique = rs.getInt("is_unique") == 1
                     val isPrimary = rs.getInt("is_primary") == 1
                     val entry = indexMap.getOrPut(indexName) {
@@ -161,9 +204,29 @@ object OracleAdapter {
                             supportsEquality = true,
                             isUnique = isUnique,
                             isPrimary = isPrimary,
+                            capabilities = IndexCapabilities(
+                                equality = true,
+                                ordering = true,
+                                specializedText = null,
+                                expressionKeys = true,
+                                partialPredicate = false,
+                                includedColumns = false,
+                            ),
+                            isPartial = false,
                         )
                     }
-                    indexMap[indexName] = entry.copy(columns = entry.columns + columnName)
+                    indexMap[indexName] = entry.copy(
+                        columns = if (columnName == null) entry.columns else entry.columns + columnName,
+                        keys = entry.keys + IndexKey(
+                            columnName,
+                            when (readString(rs, "descend")) {
+                                "ASC" -> SortDirection.Asc
+                                "DESC" -> SortDirection.Desc
+                                else -> null
+                            },
+                            expression = columnName == null,
+                        ),
+                    )
                 }
             }
         }
@@ -246,21 +309,55 @@ object OracleAdapter {
         return dataSource.connection.use { conn ->
             val explainSql = "EXPLAIN PLAN SET STATEMENT_ID = '$statementId' FOR ${compiled.sql}"
             prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Oracle).use { it.execute() }
-            conn.prepareStatement(
-                "SELECT MAX(cost) FROM plan_table WHERE statement_id = ? AND id = 0",
-            ).use { ps ->
-                ps.setString(1, statementId)
-                ps.executeQuery().use { rs ->
-                    rs.next()
-                    val cost = rs.getObject(1)?.let { (it as Number).toDouble() }
-                    runCatching {
-                        conn.prepareStatement("DELETE FROM plan_table WHERE statement_id = ?").use {
-                            it.setString(1, statementId)
-                            it.execute()
+            var cleanupFailure: Throwable? = null
+            val planRows = try {
+                conn.prepareStatement(
+                    """SELECT id, parent_id, operation, options, object_owner, object_name, object_alias, cardinality, cost
+                        FROM plan_table WHERE statement_id = ? ORDER BY id""".trimIndent(),
+                ).use { ps ->
+                    ps.setString(1, statementId)
+                    ps.executeQuery().use { rs ->
+                        buildList {
+                            while (rs.next()) {
+                                add(
+                                    OraclePlanRow(
+                                        id = rs.getInt(1),
+                                        parentId = rs.getObject(2)?.let { (it as Number).toInt() },
+                                        operation = rs.getString(3).orEmpty(),
+                                        options = rs.getString(4).orEmpty(),
+                                        owner = rs.getString(5),
+                                        objectName = rs.getString(6),
+                                        alias = rs.getString(7)?.substringBefore('@')?.trim('"'),
+                                        rows = rs.getObject(8)?.let { (it as Number).toLong() },
+                                        cost = rs.getObject(9)?.let { (it as Number).toDouble() },
+                                    ),
+                                )
+                            }
                         }
                     }
-                    cost?.let { ExplainResult.Estimated(it) }
-                        ?: ExplainResult.Unavailable("Could not parse EXPLAIN cost from PLAN_TABLE")
+                }
+            } finally {
+                runCatching {
+                    conn.prepareStatement("DELETE FROM plan_table WHERE statement_id = ?").use {
+                        it.setString(1, statementId)
+                        it.execute()
+                    }
+                }.onFailure { cleanupFailure = it }
+            }
+            if (cleanupFailure != null) {
+                ExplainResult.Unavailable(
+                    com.safedb.model.PlanUnavailableReason.CleanupFailure,
+                    "Oracle PLAN_TABLE cleanup failed; plan evidence was discarded",
+                )
+            } else {
+                val normalized = normalizeOraclePlan(planRows)
+                if (normalized == null) {
+                    ExplainResult.Unavailable(
+                        com.safedb.model.PlanUnavailableReason.UnsupportedShape,
+                        "Oracle PLAN_TABLE returned no plan rows",
+                    )
+                } else {
+                    ExplainResult.Available(normalized)
                 }
             }
         }

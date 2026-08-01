@@ -10,11 +10,18 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.query.QueryCoreError
 import com.safedb.query.QueryError
+import com.safedb.query.QueryExecutionConfirmation
+import com.safedb.query.QueryRiskEvaluation
 
 data class QueryRunRequest(
     val connectionId: String,
     val spec: QuerySpec,
-    val force: Boolean = false,
+    val confirmation: QueryExecutionConfirmation? = null,
+)
+
+data class QueryRunResult(
+    val queryResult: QueryResult,
+    val riskEvaluation: QueryRiskEvaluation,
 )
 
 class QueryFailureException(
@@ -41,7 +48,7 @@ interface SafeDbService {
 
     suspend fun getSchema(connectionId: String): Schema
 
-    suspend fun runQuery(request: QueryRunRequest): QueryResult
+    suspend fun runQuery(request: QueryRunRequest): QueryRunResult
 
     suspend fun listSavedQueries(): List<SavedQuery>
 

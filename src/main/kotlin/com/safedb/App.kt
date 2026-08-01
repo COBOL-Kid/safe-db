@@ -31,6 +31,7 @@ import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.shouldCancelPendingRecipeOnQuerySettle
 import java.awt.Dimension
 import kotlinx.coroutines.runBlocking
 
@@ -44,10 +45,34 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
     val exploreViewModel by viewModel.explore.collectAsState()
     val pendingRecipeRun by viewModel.pendingRecipeRun.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
+    val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val useDarkTheme = settings.theme == "dark"
     val themePalette = settings.palette()
     var paletteOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(
+        initialLoading,
+        settings.defaultConnectionId,
+        settings.defaultSchema,
+        connections,
+    ) {
+        if (initialLoading) return@LaunchedEffect
+        val defaultLocation = resolveDefaultQueryLocation(settings, connections)
+        if (defaultLocation != null) {
+            appState.activateDefaultConnection(defaultLocation.connectionId, defaultLocation.schema)
+        } else {
+            appState.clearDefaultConnection()
+        }
+    }
+
+    LaunchedEffect(activeConnectionId) {
+        viewModel.query.onActiveConnectionChanged(activeConnectionId)
+    }
+
+    LaunchedEffect(settings.queryRiskGate) {
+        viewModel.query.onQueryRiskGateChanged(settings.queryRiskGate)
+    }
 
     LaunchedEffect(pendingRecipeRun, viewModel.query.results, viewModel.query.running, viewModel.query.error, activeConnectionId) {
         val pending = pendingRecipeRun ?: return@LaunchedEffect
@@ -57,7 +82,10 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
         when {
             activeConnection != null && sample != null -> viewModel.completePendingRecipeRun(activeConnection, sample.result, sample.spec)
             exploreSpecHash(viewModel.query.spec) != pending.specHash -> viewModel.cancelPendingRecipeRun()
-            !viewModel.query.running && viewModel.query.error != null && !viewModel.query.pendingCostGuard -> viewModel.cancelPendingRecipeRun()
+            shouldCancelPendingRecipeOnQuerySettle(
+                running = viewModel.query.running,
+                hasError = viewModel.query.error != null,
+            ) -> viewModel.cancelPendingRecipeRun()
         }
     }
 

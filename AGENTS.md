@@ -2,7 +2,7 @@
 
 ## Project
 
-safe-db is a root Gradle, Jetpack Compose Desktop application for safely exploring production databases. The desktop application is in `src/`; the `:shared` JVM module owns the domain model, query engine, JDBC adapters, persistence, credentials, and service layer. It supports PostgreSQL, MySQL, SQL Server, and Oracle.
+safe-db is a root Gradle, Jetpack Compose Desktop application for safely exploring production databases. The desktop application is in `src/`; the `:shared` JVM module owns the domain model, query engine and risk scoring, JDBC adapters, persistence, credentials, and service layer. It supports PostgreSQL, MySQL, SQL Server, and Oracle.
 
 ## Commands
 
@@ -22,7 +22,7 @@ Use the project wrapper, not a system Gradle installation. Do not run `./gradlew
 
 ## Verification
 
-- `check` currently enforces minimum unit discovery of 98 desktop and 248 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
+- `check` currently enforces minimum unit discovery of 133 desktop and 293 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
 - Kover line-coverage floors are 72% for desktop code and 66% for shared code. Stale incremental reports can be misleading, so use `--rerun-tasks --no-build-cache` for fresh coverage claims.
 - The integration source set is `shared/src/integrationTest/kotlin/`. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to make the corresponding engine mandatory; required suites must meet their discovery floor without skipped tests.
 - MySQL settings use `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, and `SAFEDB_TEST_MYSQL_DATABASE`; `SAFEDB_TEST_MYSQL_DOCKER` can select a Docker container. PostgreSQL uses the matching `SAFEDB_TEST_POSTGRES_*` names.
@@ -88,7 +88,7 @@ safe-db/
 │   │   ├── explore/                  # Pivot, Worksheet, Visualization, Recipes
 │   │   ├── model/                    # shared models and settings
 │   │   ├── persist/                  # atomic file persistence
-│   │   ├── query/                    # hydration, validation, compilation, execution
+│   │   ├── query/                    # hydration, validation, compilation, execution, risk scoring
 │   │   ├── secrets/                  # credential stores and session cache
 │   │   ├── service/                  # SafeDbService implementation
 │   │   ├── store/                    # connection, query, settings, recipe stores
@@ -105,10 +105,20 @@ safe-db/
 
 - Connections are persisted through `SafeDbService`; profile JSON never contains passwords. Empty passwords are valid credentials, particularly for local MySQL, and must remain `""` through form, service, and query paths.
 - The visual builder works from a typed Kotlin query IR. Preserve recursive filter connectors, schema-derived literal kinds, query hydration for old saved/history specs, and selected-column metadata for empty result sets where an adapter can infer it.
-- Query execution is read-only and guarded by blocked schemas, a default 100-row limit, a 5,000-row maximum, guidance above 1,000 rows, a 10-second timeout, and explicit confirmation when EXPLAIN is unavailable or above the per-dialect cost threshold.
+- Query execution is read-only and guarded by blocked schemas, a default 100-row limit, a 5,000-row maximum, guidance above 1,000 rows, a 10-second timeout, EXPLAIN-informed risk scoring, and explicit confirmation when plan evidence is unavailable or lacks a usable optimizer cost. Optimizer cost is recorded as evidence, not compared against a configurable threshold.
 - Explore operates on the immutable query sample. Pivot, Worksheet, and Visualization configurations may be saved/exported as Recipes, but recipe files must never include credentials or sample rows.
 - Use semantic Compose colors (`MaterialTheme.colorScheme` and `SafeDbTheme.colors`) rather than copying hex values into UI code. The selectable Control Blue, Signal Teal, Oxide, and Command Violet palettes live in `src/main/kotlin/com/safedb/ui/theme/`.
 - Keep default connection flows simple. Advanced settings are for technical users and should use direct SSL labels such as “SSL with hostname verification” and “SSL encrypt only (no cert check)”. Avoid security-state indicators that can be transiently misleading.
+
+### Query Risk Scoring
+
+- The canonical scorer is `shared/src/main/kotlin/com/safedb/query/QueryRisk.kt`; the execution sequence is in `QueryCore.kt`. Score version 2 evaluates static schema/query evidence first, then replaces matching signals with normalized `EXPLAIN` plan evidence where it can be mapped unambiguously. An unavailable plan preserves the static assessment and adds an uncertainty; it must not silently lower risk.
+- Score the four capped categories—Access (6), Joins (2), Operations (4), and Volume (2)—then calculate `dominant category + half of the remaining category total`. Severity bands are Minimal 0–2, Elevated 3–5, High 6–7, and Very high 8+. Preserve category caps, signal targets, confidence, and uncertainty records when changing rules; they make the resulting decision explainable.
+- The persisted default gate is `Standard`: Cautious blocks Elevated and above, Standard blocks High and above, and Flexible blocks Very high. `Disabled` turns off descriptive scoring only; validation plus plan availability/usable-cost confirmation still apply. Mandatory high-confidence plan findings can block whenever a descriptive gate is enabled, regardless of the numeric band.
+- A risk decision is query-fingerprint-scoped. A required plan confirmation is additionally scoped to the connection ID, credential fingerprint, query fingerprint, and exceptional plan condition; never reuse one after any of those inputs changes. Evaluate the risk gate before accepting a plan confirmation.
+- History records score version, static/final scores, severity, signals, uncertainties, plan status/reason, gate result, optimizer cost, and confirmation outcome. Keep this audit metadata compatible when evolving the model; `risk_optimizer_cost_threshold` is legacy read-only metadata from older history entries.
+- Treat scoring changes as safety-sensitive behavioral changes, not routine refactors. Before changing signal weights, category caps, severity bands, plan-replacement rules, or gate thresholds, identify affected corpus cases and execution paths; preserve conservative behavior for incomplete, ambiguous, or unavailable evidence. Do not weaken a block, discard an uncertainty, or change a confirmation scope without an explicit product/safety decision and regression coverage.
+- For changes to scoring or gating, update focused `QueryRiskTest`/`QueryCoreTest` coverage and the versioned normalized corpus at `shared/src/test/resources/query-risk/v2/normalized-corpus.json`. Change `QUERY_RISK_SCORE_VERSION` deliberately when semantics invalidate comparisons with prior scores, and keep the UI/view-model tests aligned with the chosen gate behavior.
 
 ## App Data And Credentials
 

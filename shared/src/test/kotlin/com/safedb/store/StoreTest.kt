@@ -12,6 +12,7 @@ import com.safedb.model.GroupConnector
 import com.safedb.model.HistoryEntry
 import com.safedb.model.LiteralKind
 import com.safedb.model.QuerySpec
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
@@ -24,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class StoreTest {
@@ -130,7 +132,7 @@ class StoreTest {
         val defaults = store.load()
         assertEquals("light", defaults.theme)
         assertEquals(ThemePalette.DEFAULT.id, defaults.colorScheme)
-        assertEquals(100_000.0, defaults.explainCostThreshold)
+        assertEquals(QueryRiskGate.Standard, defaults.queryRiskGate)
         assertTrue(defaults.blockedSchemas.isEmpty())
 
         Files.writeString(dir.resolve("settings.json"), """{"blocked_schemas":["audit"]}""")
@@ -138,7 +140,6 @@ class StoreTest {
         assertEquals(listOf("audit"), loaded.blockedSchemas)
         assertEquals("light", loaded.theme)
         assertEquals(ThemePalette.DEFAULT.id, loaded.colorScheme)
-        assertEquals(100_000.0, loaded.explainCostThreshold)
     }
 
     @Test
@@ -152,21 +153,67 @@ class StoreTest {
     }
 
     @Test
+    fun settingsStoreIgnoresAndRemovesLegacyExplainThresholds() {
+        val dir = tempDir()
+        val store = SettingsStore.new(dir)
+        Files.writeString(
+            dir.resolve("settings.json"),
+            """
+            {
+              "blocked_schemas": ["audit"],
+              "explain_cost_threshold": 42.0,
+              "explain_cost_thresholds": {
+                "Postgres": 10.0,
+                "MySql": 20.0
+              },
+              "theme": "dark"
+            }
+            """.trimIndent(),
+        )
+
+        val loaded = store.load()
+
+        assertEquals(listOf("audit"), loaded.blockedSchemas)
+        assertEquals("dark", loaded.theme)
+
+        store.save(loaded)
+        val persistedSettings = Files.readString(dir.resolve("settings.json"))
+        assertFalse(persistedSettings.contains("\"explain_cost_threshold\""))
+        assertFalse(persistedSettings.contains("\"explain_cost_thresholds\""))
+        assertEquals(loaded, store.load())
+    }
+
+    @Test
     fun settingsStoreSaveRoundTripsNonDefaultValues() {
         val dir = tempDir()
         val store = SettingsStore.new(dir)
         val saved = Settings(
             blockedSchemas = listOf("pg_catalog", "information_schema"),
-            explainCostThreshold = 42.5,
             theme = "dark",
             colorScheme = ThemePalette.Oxide.id,
+            queryRiskGate = QueryRiskGate.Flexible,
+            defaultConnectionId = "connection-1",
+            defaultSchema = "Reporting",
         )
         store.save(saved)
         val loaded = store.load()
         assertEquals(saved.blockedSchemas, loaded.blockedSchemas)
-        assertEquals(saved.explainCostThreshold, loaded.explainCostThreshold)
         assertEquals("dark", loaded.theme)
         assertEquals(ThemePalette.Oxide.id, loaded.colorScheme)
+        assertEquals(QueryRiskGate.Flexible, loaded.queryRiskGate)
+        assertEquals("connection-1", loaded.defaultConnectionId)
+        assertEquals("Reporting", loaded.defaultSchema)
+    }
+
+    @Test
+    fun settingsStoreLoadsLegacySettingsWithoutDefaultLocation() {
+        val dir = tempDir()
+        Files.writeString(dir.resolve("settings.json"), """{"theme":"dark"}""")
+
+        val settings = SettingsStore.new(dir).load()
+
+        assertNull(settings.defaultConnectionId)
+        assertNull(settings.defaultSchema)
     }
 
     @Test
@@ -184,9 +231,9 @@ class StoreTest {
     fun settingsStoreLoadReturnsDefaultsForMissingOrEmptyFile() {
         val dir = tempDir()
         val store = SettingsStore.new(dir)
-        assertEquals(100_000.0, store.load().explainCostThreshold)
+        assertEquals(Settings.default(), store.load())
         Files.writeString(dir.resolve("settings.json"), "   \n")
-        assertEquals(100_000.0, store.load().explainCostThreshold)
+        assertEquals(Settings.default(), store.load())
     }
 
     @Test
@@ -277,24 +324,34 @@ class StoreTest {
         assertEquals("Saved from existing data", queries.listSaved().single().name)
         assertEquals("Local PG", queries.listHistory().single().connectionName)
         assertEquals(listOf("audit"), settings.blockedSchemas)
-        assertEquals(42.0, settings.explainCostThreshold)
         assertEquals("dark", settings.theme)
     }
 
     @Test
-    fun normalizeSettingsLowerercasesBlockedSchemasAndClampsThreshold() {
+    fun normalizeSettingsRepairsBlockedSchemasAndTheme() {
         val normalized = normalizeSettings(
             Settings(
                 blockedSchemas = listOf("Audit", "audit"),
-                explainCostThreshold = 0.5,
                 theme = "dark",
                 colorScheme = " SIGNAL-TEAL ",
             ),
         )
         assertEquals(listOf("audit"), normalized.blockedSchemas)
-        assertEquals(1.0, normalized.explainCostThreshold)
         assertEquals("dark", normalized.theme)
         assertEquals(ThemePalette.SignalTeal.id, normalized.colorScheme)
+    }
+
+    @Test
+    fun normalizeSettingsTrimsDefaultLocationAndClearsOrphanedSchema() {
+        val normalized = normalizeSettings(
+            Settings(defaultConnectionId = " connection-1 ", defaultSchema = " Reporting "),
+        )
+        assertEquals("connection-1", normalized.defaultConnectionId)
+        assertEquals("Reporting", normalized.defaultSchema)
+
+        val orphaned = normalizeSettings(Settings(defaultSchema = "Reporting"))
+        assertNull(orphaned.defaultConnectionId)
+        assertNull(orphaned.defaultSchema)
     }
 
     @Test
