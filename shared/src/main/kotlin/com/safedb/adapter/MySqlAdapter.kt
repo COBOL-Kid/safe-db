@@ -6,12 +6,25 @@ import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
+import com.safedb.model.IndexCapabilities
+import com.safedb.model.SortDirection
+import com.safedb.model.EvidenceConfidence
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.model.markIndexedColumns
 import com.zaxxer.hikari.HikariDataSource
+
+internal fun mysqlIndexCapabilities(kind: String): IndexCapabilities = IndexCapabilities(
+    equality = kind in setOf("BTREE", "HASH"),
+    ordering = kind == "BTREE",
+    // Builder text predicates compile to LIKE, not MATCH ... AGAINST, so FULLTEXT is not compatible.
+    specializedText = false,
+    expressionKeys = true,
+    partialPredicate = false,
+    includedColumns = false,
+)
 
 object MySqlAdapter {
     fun test(dataSource: HikariDataSource): String =
@@ -43,7 +56,7 @@ object MySqlAdapter {
                 )
             }
             val indexes = conn.metadataRows(
-                "SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, COLUMN_NAME, INDEX_TYPE, " +
+                "SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, COLUMN_NAME, INDEX_TYPE, COLLATION, " +
                     "(NON_UNIQUE = 0) AS is_unique FROM information_schema.STATISTICS " +
                     "WHERE TABLE_SCHEMA NOT IN $excluded ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
             ) { rs ->
@@ -51,8 +64,16 @@ object MySqlAdapter {
                 val name = readString(rs, "INDEX_NAME")
                 MetadataIndex(
                     MetadataTableKey(readString(rs, "TABLE_SCHEMA"), readString(rs, "TABLE_NAME")),
-                    name, readString(rs, "COLUMN_NAME"), kind, kind in setOf("BTREE", "HASH"),
+                    name, rs.getString("COLUMN_NAME"), kind, kind in setOf("BTREE", "HASH"),
                     rs.getBoolean("is_unique"), name == "PRIMARY",
+                    direction = when (rs.getString("COLLATION")) {
+                        "A" -> SortDirection.Asc
+                        "D" -> SortDirection.Desc
+                        else -> null
+                    },
+                    capabilities = mysqlIndexCapabilities(kind),
+                    partial = false,
+                    expression = rs.getString("COLUMN_NAME") == null,
                 )
             }
             val foreignKeys = conn.metadataRows(
@@ -69,7 +90,16 @@ object MySqlAdapter {
                     readString(rs, "REFERENCED_COLUMN_NAME"),
                 )
             }
-            return assembleSchema(tables, columns, indexes, foreignKeys)
+            val tableSizes = runCatching {
+                conn.metadataRows(
+                    "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES " +
+                        "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN $excluded",
+                ) { rs ->
+                    MetadataTableKey(readString(rs, "TABLE_SCHEMA"), readString(rs, "TABLE_NAME")) to
+                        normalizeTableSize((rs.getObject("TABLE_ROWS") as? Number)?.toDouble(), EvidenceConfidence.Low)
+                }.toMap()
+            }.getOrDefault(emptyMap())
+            return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }
 
@@ -104,7 +134,7 @@ object MySqlAdapter {
         val indexMap = linkedMapOf<String, IndexInfo>()
         conn.prepareStatement(
             """
-            SELECT INDEX_NAME, COLUMN_NAME, INDEX_TYPE, (NON_UNIQUE = 0) AS is_unique
+            SELECT INDEX_NAME, COLUMN_NAME, INDEX_TYPE, COLLATION, (NON_UNIQUE = 0) AS is_unique
             FROM information_schema.STATISTICS
             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
             ORDER BY INDEX_NAME, SEQ_IN_INDEX
@@ -115,7 +145,7 @@ object MySqlAdapter {
             ps.executeQuery().use { rs ->
                 while (rs.next()) {
                     val indexName = readString(rs, "INDEX_NAME")
-                    val columnName = readString(rs, "COLUMN_NAME")
+                    val columnName = rs.getString("COLUMN_NAME")
                     val isUnique = rs.getBoolean("is_unique")
                     val indexType = readString(rs, "INDEX_TYPE")
                     val entry = indexMap.getOrPut(indexName) {
@@ -126,9 +156,23 @@ object MySqlAdapter {
                             supportsEquality = indexType in setOf("BTREE", "HASH"),
                             isUnique = isUnique,
                             isPrimary = indexName == "PRIMARY",
+                            capabilities = mysqlIndexCapabilities(indexType),
+                            isPartial = false,
                         )
                     }
-                    indexMap[indexName] = entry.copy(columns = entry.columns + columnName)
+                    val direction = when (rs.getString("COLLATION")) {
+                        "A" -> SortDirection.Asc
+                        "D" -> SortDirection.Desc
+                        else -> null
+                    }
+                    indexMap[indexName] = entry.copy(
+                        columns = if (columnName == null) entry.columns else entry.columns + columnName,
+                        keys = entry.keys + com.safedb.model.IndexKey(
+                            columnName,
+                            direction,
+                            expression = columnName == null,
+                        ),
+                    )
                 }
             }
         }

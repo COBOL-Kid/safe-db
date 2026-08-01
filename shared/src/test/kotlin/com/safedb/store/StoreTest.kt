@@ -12,6 +12,7 @@ import com.safedb.model.GroupConnector
 import com.safedb.model.HistoryEntry
 import com.safedb.model.LiteralKind
 import com.safedb.model.QuerySpec
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
@@ -131,6 +132,7 @@ class StoreTest {
         assertEquals("light", defaults.theme)
         assertEquals(ThemePalette.DEFAULT.id, defaults.colorScheme)
         assertEquals(100_000.0, defaults.explainCostThreshold)
+        assertEquals(QueryRiskGate.Standard, defaults.queryRiskGate)
         assertTrue(defaults.blockedSchemas.isEmpty())
 
         Files.writeString(dir.resolve("settings.json"), """{"blocked_schemas":["audit"]}""")
@@ -160,6 +162,7 @@ class StoreTest {
             explainCostThreshold = 42.5,
             theme = "dark",
             colorScheme = ThemePalette.Oxide.id,
+            queryRiskGate = QueryRiskGate.Flexible,
         )
         store.save(saved)
         val loaded = store.load()
@@ -167,6 +170,7 @@ class StoreTest {
         assertEquals(saved.explainCostThreshold, loaded.explainCostThreshold)
         assertEquals("dark", loaded.theme)
         assertEquals(ThemePalette.Oxide.id, loaded.colorScheme)
+        assertEquals(QueryRiskGate.Flexible, loaded.queryRiskGate)
     }
 
     @Test

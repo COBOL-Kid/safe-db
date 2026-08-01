@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -73,11 +72,19 @@ import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
 import com.safedb.model.GroupSpec
 import com.safedb.model.SavedQuery
+import com.safedb.model.Settings
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.MAX_LIMIT
+import com.safedb.query.QueryRiskAssessment
+import com.safedb.query.QueryRiskDecision
+import com.safedb.query.RiskGateState
+import com.safedb.query.blockingBand
+import com.safedb.query.evaluateQueryRisk
+import com.safedb.model.Outcome
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
@@ -99,12 +106,6 @@ private val QueryControlsVerticalPadding = 8.dp
 private val QueryControlsTableGap = 16.dp
 internal val QueryControlsCanvasInset =
     QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
-
-private data class CostGuardDialogCopy(
-    val title: String,
-    val message: String,
-    val confirmLabel: String,
-)
 
 internal enum class ResultsPaneMode {
     Normal,
@@ -140,6 +141,25 @@ internal fun sortOrderLabels(
 
 internal fun queryOptionEmptyLabel(labels: List<String>): String? =
     "None".takeIf { labels.isEmpty() }
+
+internal fun riskGateIndicatorText(gate: QueryRiskGate): String = when (gate) {
+    QueryRiskGate.Disabled -> "Risk gate: Off"
+    else -> "Risk gate: ${gate.name} · blocks ${blockingBand(gate)?.label} and above"
+}
+
+internal fun queryRiskIndicatorText(
+    assessment: QueryRiskAssessment?,
+    decision: QueryRiskDecision?,
+): String = when {
+    decision == null || decision.state == RiskGateState.AssessmentPending ->
+        "Assessing query risk · Run unavailable"
+    decision.effectiveGate == QueryRiskGate.Disabled ->
+        "Query risk: Not required · Run enabled"
+    assessment == null -> "Assessing query risk · Run unavailable"
+    decision.state == RiskGateState.Blocked ->
+        "Query risk: ${assessment.severity.label} · Run blocked"
+    else -> "Query risk: ${assessment.severity.label} · Run enabled"
+}
 
 @Composable
 private fun QueryOptionsCard(
@@ -465,24 +485,6 @@ private fun QueryOrderMoveAction(
     }
 }
 
-private fun costGuardDialogCopy(reason: String?): CostGuardDialogCopy {
-    val normalized = reason.orEmpty()
-    val highCost = normalized.contains("Estimated query cost exceeds threshold")
-    return if (highCost) {
-        CostGuardDialogCopy(
-            title = "This query may scan more data than expected",
-            message = "Safe DB estimated this query may be expensive. It will still be limited and stopped if it runs too long.",
-            confirmLabel = "Run with safeguards",
-        )
-    } else {
-        CostGuardDialogCopy(
-            title = "Safe DB could not preview this query",
-            message = "The database did not return a usable estimate. The query will still run with Safe DB protections: read-only access, a row limit, and a timeout.",
-            confirmLabel = "Run with safeguards",
-        )
-    }
-}
-
 @Composable
 private fun LimitChoiceChip(
     label: String,
@@ -525,24 +527,31 @@ fun BuilderScreen(
     savedQueriesViewModel: SavedQueriesViewModel,
     recipesViewModel: RecipesViewModel,
     schemaViewModel: SchemaViewModel,
+    settings: Settings,
     onOpenExplore: () -> Unit,
+    onOpenSettings: () -> Unit,
     onApplyRecipe: (ExploreRecipe, ConnectionDef) -> Unit,
-    onCancelQueryRun: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showCostGuardConfirm by remember { mutableStateOf(false) }
     var showSavePrompt by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
     var resultsHeight by remember { mutableFloatStateOf(240f) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
     val limitChoices = BUILDER_LIMIT_CHOICES
-
-    LaunchedEffect(queryViewModel.pendingCostGuard) {
-        if (queryViewModel.pendingCostGuard) {
-            showCostGuardConfirm = true
+    val schema = schemaViewModel.schema
+    val riskEvaluation = remember(queryViewModel.spec, schema, settings, connection?.dialect) {
+        if (schema == null || connection == null || queryViewModel.canvasTables.isEmpty()) {
+            null
+        } else {
+            when (val evaluated = evaluateQueryRisk(queryViewModel.spec, schema, settings, connection.dialect)) {
+                is Outcome.Ok -> evaluated.value
+                is Outcome.Err -> null
+            }
         }
     }
+    val riskDecision = riskEvaluation?.decision
+    val riskAssessment = riskEvaluation?.assessment
 
     LaunchedEffect(connection?.id) {
         val connectionId = connection?.id
@@ -554,49 +563,11 @@ fun BuilderScreen(
         }
     }
 
-    val costGuardCopy = costGuardDialogCopy(queryViewModel.pendingCostGuardReason)
-    val visibleQueryError = if (queryViewModel.pendingCostGuard) null else queryViewModel.error
+    val visibleQueryError = queryViewModel.error
     val savedQueryError by savedQueriesViewModel.error.collectAsState()
     val showLargeLimitGuidance = connection != null &&
         queryViewModel.canvasTables.isNotEmpty() &&
         queryViewModel.limit > LARGE_LIMIT_WARNING_THRESHOLD
-
-    if (showCostGuardConfirm) {
-        AlertDialog(
-            onDismissRequest = {
-                showCostGuardConfirm = false
-                queryViewModel.dismissError()
-                onCancelQueryRun()
-            },
-            shape = RoundedCornerShape(4.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text(costGuardCopy.title, style = MaterialTheme.typography.titleMedium) },
-            text = { Text(costGuardCopy.message) },
-            confirmButton = {
-                PrimaryButton(
-                    onClick = {
-                        showCostGuardConfirm = false
-                        queryViewModel.confirmPendingCostGuard()
-                    },
-                ) {
-                    Text(costGuardCopy.confirmLabel)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showCostGuardConfirm = false
-                        queryViewModel.dismissError()
-                        onCancelQueryRun()
-                    },
-                ) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
 
     PromptDialog(
         open = showSavePrompt,
@@ -658,6 +629,23 @@ fun BuilderScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        riskGateIndicatorText(settings.queryRiskGate),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SafeDbTheme.colors.actionPrimary,
+                        modifier = Modifier.clickable(onClick = onOpenSettings),
+                    )
+                    if (queryViewModel.canvasTables.isNotEmpty()) {
+                        Text(
+                            queryRiskIndicatorText(riskAssessment, riskDecision),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (riskDecision?.state == RiskGateState.Blocked) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                 }
             } else {
                 Text("Query Builder", style = MaterialTheme.typography.titleLarge)
@@ -715,6 +703,7 @@ fun BuilderScreen(
                         }
                     },
                     enabled = queryViewModel.canRun &&
+                        riskDecision?.state == RiskGateState.Allowed &&
                         connection != null &&
                         schemaViewModel.schema != null &&
                         schemaViewModel.loadedConnectionId == connection.id &&
@@ -742,6 +731,14 @@ fun BuilderScreen(
             MessageBanner(
                 text = "Large result limit. Higher limits are useful for reporting, but filters, selected columns, and indexed predicates make queries faster and easier to reuse.",
                 kind = BannerKind.INFO,
+            )
+        }
+
+        if (riskDecision?.state == RiskGateState.Blocked) {
+            MessageBanner(
+                text = riskDecision.reasons.take(3).joinToString(" ") { it.message },
+                kind = BannerKind.ERROR,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
         }
 

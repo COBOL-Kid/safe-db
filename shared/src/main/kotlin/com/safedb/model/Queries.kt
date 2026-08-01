@@ -27,4 +27,12 @@ data class HistoryEntry(
     val warnings: List<String>,
     val error: String? = null,
     val timestamp: String,
+    @SerialName("risk_score_version")
+    val riskScoreVersion: Int? = null,
+    @SerialName("risk_severity")
+    val riskSeverity: String? = null,
+    @SerialName("risk_signal_codes")
+    val riskSignalCodes: List<String> = emptyList(),
+    @SerialName("risk_gate_state")
+    val riskGateState: String? = null,
 )

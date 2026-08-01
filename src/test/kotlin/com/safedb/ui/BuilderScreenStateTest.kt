@@ -3,6 +3,11 @@ package com.safedb.ui
 import com.safedb.model.GroupSpec
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
+import com.safedb.model.QueryRiskGate
+import com.safedb.query.QueryRiskAssessment
+import com.safedb.query.QueryRiskDecision
+import com.safedb.query.QueryRiskSeverity
+import com.safedb.query.RiskGateState
 import androidx.compose.ui.unit.Density
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -79,5 +84,28 @@ class BuilderScreenStateTest {
         assertNull(queryOrderMoveTarget(index = 1, offset = 1, lastIndex = 1))
         assertEquals(1, queryOrderMoveTarget(index = 2, offset = -1, lastIndex = 2))
         assertNull(queryOrderMoveTarget(index = 0, offset = -1, lastIndex = 2))
+    }
+
+    @Test
+    fun riskGateIndicatorNamesEveryEffectiveSetting() {
+        assertEquals("Risk gate: Cautious · blocks Elevated concern and above", riskGateIndicatorText(QueryRiskGate.Cautious))
+        assertEquals("Risk gate: Standard · blocks High concern and above", riskGateIndicatorText(QueryRiskGate.Standard))
+        assertEquals("Risk gate: Flexible · blocks Very high concern and above", riskGateIndicatorText(QueryRiskGate.Flexible))
+        assertEquals("Risk gate: Off", riskGateIndicatorText(QueryRiskGate.Disabled))
+    }
+
+    @Test
+    fun queryRiskIndicatorKeepsSeveritySeparateFromGateDecision() {
+        val assessment = QueryRiskAssessment(1, "f", 6, QueryRiskSeverity.High, emptyMap(), emptyList(), emptyList())
+        val blocked = QueryRiskDecision("f", RiskGateState.Blocked, QueryRiskGate.Standard, QueryRiskSeverity.High, emptyList())
+        val allowed = blocked.copy(state = RiskGateState.Allowed, effectiveGate = QueryRiskGate.Flexible, blockingBand = QueryRiskSeverity.VeryHigh)
+
+        assertEquals("Query risk: High concern · Run blocked", queryRiskIndicatorText(assessment, blocked))
+        assertEquals("Query risk: High concern · Run enabled", queryRiskIndicatorText(assessment, allowed))
+        assertEquals("Assessing query risk · Run unavailable", queryRiskIndicatorText(null, null))
+        assertEquals(
+            "Query risk: Not required · Run enabled",
+            queryRiskIndicatorText(null, QueryRiskDecision("", RiskGateState.Allowed, QueryRiskGate.Disabled, null, emptyList())),
+        )
     }
 }

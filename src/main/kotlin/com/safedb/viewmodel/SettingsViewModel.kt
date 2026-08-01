@@ -2,6 +2,7 @@ package com.safedb.viewmodel
 
 import com.safedb.model.Dialect
 import com.safedb.model.Settings
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.ThemePalette
 import com.safedb.model.normalizeSettings
 import com.safedb.service.SafeDbService
@@ -64,6 +65,14 @@ class SettingsViewModel(
         scope.launch {
             _saveError.value = null
             save(_settings.value.copy(colorScheme = palette.id))
+        }
+    }
+
+    fun setQueryRiskGate(gate: QueryRiskGate) {
+        if (_settings.value.queryRiskGate == gate) return
+        scope.launch {
+            _saveError.value = null
+            save(_settings.value.copy(queryRiskGate = gate))
         }
     }
 

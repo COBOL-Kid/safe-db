@@ -107,7 +107,6 @@ fun AppShell(
     SettingsPanel(
         open = settingsOpen,
         viewModel = viewModel.settings,
-        queryViewModel = viewModel.query,
         onClose = appState::closeSettings,
     )
 
@@ -153,6 +152,7 @@ fun AppShell(
                     savedQueriesViewModel = viewModel.savedQueries,
                     recipesViewModel = viewModel.recipes,
                     schemaViewModel = viewModel.schema,
+                    settings = settings,
                     onOpenExplore = {
                         val connection = activeConnection
                         val result = viewModel.query.results
@@ -160,6 +160,7 @@ fun AppShell(
                             viewModel.openExplore(connection, viewModel.query.spec, result)
                         }
                     },
+                    onOpenSettings = appState::openSettings,
                     onApplyRecipe = { recipe, targetConnection ->
                         if (recipe.querySpec != null) {
                             appState.setActiveConnection(targetConnection.id)
@@ -171,7 +172,6 @@ fun AppShell(
                             }
                         }
                     },
-                    onCancelQueryRun = viewModel::cancelPendingRecipeRun,
                 )
                 AppRoute.History -> HistoryScreen(
                     viewModel = viewModel,

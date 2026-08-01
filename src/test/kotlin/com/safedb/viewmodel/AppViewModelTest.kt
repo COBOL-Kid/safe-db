@@ -16,9 +16,15 @@ import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.query.QueryError
+import com.safedb.query.QueryRiskAssessment
+import com.safedb.query.QueryRiskDecision
+import com.safedb.query.QueryRiskSeverity
+import com.safedb.query.RiskDecisionReason
+import com.safedb.query.RiskGateState
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
+import com.safedb.model.QueryRiskGate
 import com.safedb.service.SafeDbService
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
@@ -292,6 +298,13 @@ class AppViewModelTest {
         advanceUntilIdle()
         assertTrue(viewModel.query.pendingCostGuard)
         assertEquals("r2", viewModel.pendingRecipeRun.value?.recipe?.id)
+        assertFalse(
+            shouldCancelPendingRecipeOnQuerySettle(
+                running = viewModel.query.running,
+                hasError = viewModel.query.error != null,
+                holdsPendingRecipe = viewModel.query.holdsPendingRecipe,
+            ),
+        )
 
         viewModel.query.dismissError()
         viewModel.cancelPendingRecipeRun()
@@ -302,6 +315,102 @@ class AppViewModelTest {
         assertNull(viewModel.query.currentSample(connection.id))
         assertNull(viewModel.pendingRecipeRun.value)
         assertNull(viewModel.explore.value)
+    }
+
+    @Test
+    fun queryBackedRecipeSurvivesRiskGateAndCompletesAfterSuccessfulRerun() = runTest(dispatcher) {
+        val service = FakeSafeDbService(riskGateFirstRun = true)
+        val viewModel = AppViewModel(service, dispatcher)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r5", name = "Risk blocked", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.query.pendingRiskGate)
+        assertTrue(viewModel.query.holdsPendingRecipe)
+        assertEquals("r5", viewModel.pendingRecipeRun.value?.recipe?.id)
+        assertNotNull(viewModel.query.error)
+        assertFalse(
+            shouldCancelPendingRecipeOnQuerySettle(
+                running = viewModel.query.running,
+                hasError = viewModel.query.error != null,
+                holdsPendingRecipe = viewModel.query.holdsPendingRecipe,
+            ),
+        )
+
+        viewModel.query.run(connection.id)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.query.pendingRiskGate)
+        val sample = assertNotNull(viewModel.query.currentSample(connection.id))
+        viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+
+        assertNull(viewModel.pendingRecipeRun.value)
+        assertEquals("r5", viewModel.explore.value?.appliedRecipeId)
+    }
+
+    @Test
+    fun queryViewModelClearsSettledRiskGateFailureWhenExecutableQueryChanges() = runTest(dispatcher) {
+        val service = FakeSafeDbService(riskGateFirstRun = true)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertTrue(query.pendingRiskGate)
+        assertNotNull(query.error)
+        assertTrue(query.holdsPendingRecipe)
+
+        query.resizeTable("t0", width = 420f, height = 360f)
+        assertTrue(query.pendingRiskGate)
+        assertNotNull(query.error)
+
+        query.moveTable("t0", x = 80f, y = 40f)
+        assertTrue(query.pendingRiskGate)
+        assertNotNull(query.error)
+
+        query.setLimit(50)
+
+        assertFalse(query.pendingRiskGate)
+        assertNull(query.error)
+        assertFalse(query.holdsPendingRecipe)
+        assertTrue(query.canRun)
+    }
+
+    @Test
+    fun queryViewModelClearsSettledCostGuardFailureWhenExecutableQueryChanges() = runTest(dispatcher) {
+        val service = FakeSafeDbService(costGuardFirstRun = true)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+
+        assertTrue(query.pendingCostGuard)
+        assertNotNull(query.error)
+        assertTrue(query.holdsPendingRecipe)
+
+        query.toggleColumn("t0", "name")
+
+        assertFalse(query.pendingCostGuard)
+        assertNull(query.error)
+        assertFalse(query.holdsPendingRecipe)
+    }
+
+    @Test
+    fun shouldCancelPendingRecipeOnlyForHardQueryFailures() {
+        assertTrue(shouldCancelPendingRecipeOnQuerySettle(running = false, hasError = true, holdsPendingRecipe = false))
+        assertFalse(shouldCancelPendingRecipeOnQuerySettle(running = false, hasError = true, holdsPendingRecipe = true))
+        assertFalse(shouldCancelPendingRecipeOnQuerySettle(running = false, hasError = false, holdsPendingRecipe = false))
+        assertFalse(shouldCancelPendingRecipeOnQuerySettle(running = true, hasError = true, holdsPendingRecipe = false))
     }
 
     @Test
@@ -354,12 +463,14 @@ class AppViewModelTest {
 
 private class FakeSafeDbService(
     private val costGuardFirstRun: Boolean = false,
+    private val riskGateFirstRun: Boolean = false,
     private val queryGate: CompletableDeferred<Unit>? = null,
     private val queryStarted: CompletableDeferred<Unit>? = null,
     private val schemaTables: List<TableInfo> = listOf(sampleTable()),
 ) : SafeDbService {
     var locked = false
     val forceCalls = mutableListOf<Boolean>()
+    private var queryAttempts = 0
 
     override suspend fun testConnection(def: ConnectionDef, password: String): String = "ok"
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef = def
@@ -375,10 +486,34 @@ private class FakeSafeDbService(
 
     override suspend fun runQuery(request: QueryRunRequest): QueryResult {
         forceCalls.add(request.force)
+        queryAttempts += 1
         queryStarted?.complete(Unit)
         queryGate?.await()
         if (costGuardFirstRun && !request.force) {
             throw QueryFailureException(QueryError.CostGuard("EXPLAIN failed", request.spec))
+        }
+        if (riskGateFirstRun && queryAttempts == 1) {
+            throw QueryFailureException(
+                QueryError.RiskGate(
+                    decision = QueryRiskDecision(
+                        queryFingerprint = "blocked",
+                        state = RiskGateState.Blocked,
+                        effectiveGate = QueryRiskGate.Standard,
+                        blockingBand = QueryRiskSeverity.High,
+                        reasons = listOf(RiskDecisionReason("risk_gate", "The query risk gate blocks this query.")),
+                    ),
+                    assessment = QueryRiskAssessment(
+                        scoreVersion = 1,
+                        queryFingerprint = "blocked",
+                        score = 6,
+                        severity = QueryRiskSeverity.High,
+                        categoryScores = emptyMap(),
+                        signals = emptyList(),
+                        uncertainties = emptyList(),
+                    ),
+                    historySpec = request.spec,
+                ),
+            )
         }
         return QueryResult(
             columns = listOf(ResultColumn("name", "varchar")),

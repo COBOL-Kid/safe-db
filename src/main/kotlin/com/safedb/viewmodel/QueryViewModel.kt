@@ -136,6 +136,13 @@ class QueryViewModel(
         get() = pendingCostGuardState != null
     val pendingCostGuardReason: String?
         get() = pendingCostGuardState?.reason
+    private var pendingRiskGateState by mutableStateOf(false)
+    /** True while the latest settled query failure is a structured risk-gate block. */
+    val pendingRiskGate: Boolean
+        get() = pendingRiskGateState
+    /** Soft holds that should keep a query-backed recipe run pending for retry. */
+    val holdsPendingRecipe: Boolean
+        get() = pendingCostGuard || pendingRiskGate
     var hydrationWarning by mutableStateOf<String?>(null)
         private set
     var warningPopupsDisabled by mutableStateOf(false)
@@ -185,6 +192,7 @@ class QueryViewModel(
         error = null
         running = false
         pendingCostGuardState = null
+        pendingRiskGateState = false
         hydrationWarning = null
         aliasCounter = 0
         connectorOverrideState = emptyMap()
@@ -194,6 +202,7 @@ class QueryViewModel(
     }
 
     override fun addTable(tableInfo: TableInfo) {
+        invalidateSettledRunFailure()
         val alias = "t${aliasCounter++}"
         val offset = canvasTables.size * 30f
         canvasTables.add(
@@ -210,6 +219,8 @@ class QueryViewModel(
         get() = canvasTables.map { AliasRef(it.alias) }
 
     fun removeTable(alias: String) {
+        if (canvasTables.none { it.alias == alias }) return
+        invalidateSettledRunFailure()
         canvasTables.removeAll { it.alias == alias }
         selectedColumns = selectedColumns.filterNot { it.startsWith(columnKeyPrefix(alias)) }.toSet()
         joins.removeAll { it.leftAlias == alias || it.rightAlias == alias }
@@ -237,6 +248,7 @@ class QueryViewModel(
     }
 
     override fun toggleColumn(alias: String, column: String) {
+        invalidateSettledRunFailure()
         val key = columnKey(alias, column)
         val grouped = groups.any { it.tableAlias == alias && it.column == column }
         if (grouped && key in selectedColumns) {
@@ -271,12 +283,14 @@ class QueryViewModel(
     override fun addJoin(join: JoinSpec) {
         val exists = joins.any { it.matchesJoin(join) }
         if (!exists) {
+            invalidateSettledRunFailure()
             joins.add(join)
         }
     }
 
     fun removeJoin(index: Int) {
         if (index in joins.indices) {
+            invalidateSettledRunFailure()
             joins.removeAt(index)
         }
     }
@@ -284,11 +298,13 @@ class QueryViewModel(
     fun removeJoin(join: JoinSpec) {
         val index = joins.indexOfFirst { it.matchesJoin(join) }
         if (index >= 0) {
+            invalidateSettledRunFailure()
             joins.removeAt(index)
         }
     }
 
     fun addFilter(spec: NewFilterSpec) {
+        invalidateSettledRunFailure()
         filterGroupState = addFilterLeaf(filters, emptyList(), spec)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
@@ -309,6 +325,7 @@ class QueryViewModel(
 
     /** Cycles an ordered sort through ascending, descending, and removed. */
     fun cycleSort(tableAlias: String, columnName: String) {
+        invalidateSettledRunFailure()
         val existing = sorts.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
         sortState = when (existing?.direction) {
             null -> {
@@ -329,6 +346,7 @@ class QueryViewModel(
         filters.containsFilter(tableAlias, columnName)
 
     fun setSort(tableAlias: String, columnName: String, direction: SortDirection) {
+        invalidateSettledRunFailure()
         val existing = sortForColumn(tableAlias, columnName)
         sortState = if (existing == null) {
             if (groups.isNotEmpty()) addGroup(tableAlias, columnName)
@@ -341,6 +359,8 @@ class QueryViewModel(
     }
 
     fun clearSort(tableAlias: String, columnName: String) {
+        if (sortForColumn(tableAlias, columnName) == null) return
+        invalidateSettledRunFailure()
         sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
     }
 
@@ -353,14 +373,20 @@ class QueryViewModel(
     fun removeDistinctSortConflicts() {
         val conflictKeys = distinctSortConflicts
             .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+        if (conflictKeys.isEmpty()) return
+        invalidateSettledRunFailure()
         sortState = sorts.filterNot { (it.tableAlias to it.column) in conflictKeys }
     }
 
     fun moveSort(fromIndex: Int, toIndex: Int) {
-        sortState = sorts.moveItem(fromIndex, toIndex)
+        val moved = sorts.moveItem(fromIndex, toIndex)
+        if (moved === sorts) return
+        invalidateSettledRunFailure()
+        sortState = moved
     }
 
     fun toggleGroup(tableAlias: String, columnName: String) {
+        invalidateSettledRunFailure()
         if (groupForColumn(tableAlias, columnName) == null) {
             if (groups.isEmpty()) {
                 val existingSelections = selectedColumns
@@ -383,6 +409,8 @@ class QueryViewModel(
         groups.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
 
     fun clearGroup(tableAlias: String, columnName: String) {
+        if (groupForColumn(tableAlias, columnName) == null) return
+        invalidateSettledRunFailure()
         val clearsLastGroup = groups.size == 1
         val remainingGroups = groups.filterNot { it.tableAlias == tableAlias && it.column == columnName }
         groupState = remainingGroups
@@ -397,7 +425,10 @@ class QueryViewModel(
     }
 
     fun moveGroup(fromIndex: Int, toIndex: Int) {
-        groupState = groups.moveItem(fromIndex, toIndex)
+        val moved = groups.moveItem(fromIndex, toIndex)
+        if (moved === groups) return
+        invalidateSettledRunFailure()
+        groupState = moved
     }
 
     private fun addGroup(tableAlias: String, columnName: String) {
@@ -408,33 +439,41 @@ class QueryViewModel(
     }
 
     override fun setFilters(group: FilterGroup) {
+        invalidateSettledRunFailure()
         filterGroupState = ensureFilterNodeIds(group)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     override fun setSorts(sorts: List<SortSpec>) {
+        invalidateSettledRunFailure()
         sortState = sorts
     }
 
     override fun setGroups(groups: List<GroupSpec>) {
+        invalidateSettledRunFailure()
         groupState = groups.distinctBy { it.tableAlias to it.column }
     }
 
     override fun setDistinct(distinct: Boolean) {
+        if (distinctState == distinct) return
+        invalidateSettledRunFailure()
         distinctState = distinct
     }
 
     fun addFilterToGroup(groupPath: List<Int>, spec: NewFilterSpec) {
+        invalidateSettledRunFailure()
         filterGroupState = addFilterLeaf(filters, groupPath, spec)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun addGroupToGroup(groupPath: List<Int>, connector: GroupConnector) {
+        invalidateSettledRunFailure()
         filterGroupState = addFilterGroup(filters, groupPath, connector)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun updateFilter(path: List<Int>, spec: NewFilterSpec) {
+        invalidateSettledRunFailure()
         val existingId = filterLeafIdAtPath(filters, path)
         val specWithId = spec.copy(id = existingId ?: spec.id.ifEmpty { newNodeId() })
         filterGroupState = updateFilterNode(filters, path, FilterNode.Leaf(specWithId))
@@ -442,6 +481,7 @@ class QueryViewModel(
     }
 
     fun setGroupConnector(path: List<Int>, connector: GroupConnector) {
+        invalidateSettledRunFailure()
         filterGroupState = if (path.isEmpty()) {
             filters.copy(connector = connector)
         } else {
@@ -456,6 +496,7 @@ class QueryViewModel(
     }
 
     override fun setConnectorOverrides(map: Map<String, GroupConnector>) {
+        invalidateSettledRunFailure()
         connectorOverrideState = rebuildConnectorOverrides(filters, map)
     }
 
@@ -482,6 +523,8 @@ class QueryViewModel(
         } else {
             next[key] = connector
         }
+        if (next == connectorOverrides) return
+        invalidateSettledRunFailure()
         connectorOverrideState = next
     }
 
@@ -492,12 +535,16 @@ class QueryViewModel(
 
     fun removeFilterNode(path: List<Int>) {
         if (path.isEmpty()) return
+        invalidateSettledRunFailure()
         filterGroupState = removeFilterNode(filters, path)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     override fun setLimit(limit: Int) {
-        queryLimit = parseLimit(limit)
+        val parsed = parseLimit(limit)
+        if (queryLimit == parsed) return
+        invalidateSettledRunFailure()
+        queryLimit = parsed
     }
 
     fun run(connectionId: String, force: Boolean = false) {
@@ -514,6 +561,7 @@ class QueryViewModel(
         resultConnectionId = null
         resultSpec = null
         pendingCostGuardState = null
+        pendingRiskGateState = false
         scope.launch {
             try {
                 val completed = service.runQuery(request)
@@ -525,7 +573,10 @@ class QueryViewModel(
             } catch (failure: QueryFailureException) {
                 if (generation != runGeneration) return@launch
                 val queryError = failure.queryError
-                if (!request.force && queryError is QueryError.CostGuard) {
+                if (queryError is QueryError.RiskGate) {
+                    pendingRiskGateState = true
+                    error = queryError.message
+                } else if (!request.force && queryError is QueryError.CostGuard) {
                     if (warningPopupsDisabled) {
                         try {
                             val completed = service.runQuery(request.copy(force = true))
@@ -574,12 +625,19 @@ class QueryViewModel(
     }
 
     fun clearPendingCostGuard() {
-        pendingCostGuardState = null
-        error = null
+        invalidateSettledRunFailure()
     }
 
     fun dismissError() {
         clearPendingCostGuard()
+    }
+
+    /** Clears last-run failure state when the executable query draft changes. */
+    private fun invalidateSettledRunFailure() {
+        if (error == null && pendingCostGuardState == null && !pendingRiskGateState) return
+        pendingCostGuardState = null
+        pendingRiskGateState = false
+        error = null
     }
 
     fun updateWarningPopupsDisabled(disabled: Boolean) {

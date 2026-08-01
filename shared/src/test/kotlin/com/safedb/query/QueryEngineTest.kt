@@ -362,7 +362,7 @@ class QueryEngineTest {
     }
 
     @Test
-    fun validateRejectsInWithEmptyList() {
+    fun validateAndCompileEmptyInAsAlwaysFalse() {
         val spec = sampleSpec().copy(
             filters = sampleSpec().filters.copy(
                 children = sampleSpec().filters.children + FilterNode.Leaf(
@@ -370,8 +370,9 @@ class QueryEngineTest {
                 ),
             ),
         )
-        val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
-        assertTrue(err.contains("empty value list"))
+        val normalized = validate(spec, sampleSchema(), emptyList()).unwrap().first
+        val compiled = compile(normalized, Dialect.Postgres).unwrap()
+        assertTrue(compiled.sql.contains("1=0"))
     }
 
     @Test
@@ -894,7 +895,7 @@ class QueryEngineTest {
     }
 
     @Test
-    fun runQueryCoreBlocksWhenCostExceedsThreshold() = runBlocking {
+    fun runQueryCoreDoesNotUseRawPlannerCostAsRiskInput() = runBlocking {
         val def = sampleConnection("c1")
         val spec = sampleSpec()
         val settings = sampleSettings().copy(
@@ -903,24 +904,20 @@ class QueryEngineTest {
         )
         val runner = MockRunner(explainResult = ExplainResult.Estimated(5.0))
 
-        val failure = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings, false)) {
-            is QueryCoreOutcome.Success -> error("expected failure")
-            is QueryCoreOutcome.Failure -> outcome.error
+        val success = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings, false)) {
+            is QueryCoreOutcome.Success -> outcome
+            is QueryCoreOutcome.Failure -> error(outcome.error.message)
         }
 
-        assertTrue(failure.error is QueryError.CostGuard)
-        assertTrue(failure.warnings.any { it.contains("exceeds threshold") })
-        assertEquals(100, failure.historySpec?.limit)
+        assertEquals(100, success.historySpec.limit)
+        assertEquals(1, runner.executeCalls)
     }
 
     @Test
-    fun runQueryCoreCostGuardCarriesNormalizedHistorySpec() = runBlocking {
+    fun runQueryCoreRiskGateCarriesNormalizedHistorySpec() = runBlocking {
         val def = sampleConnection("c1")
-        val spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
-        val settings = sampleSettings().copy(
-            explainCostThreshold = 1.0,
-            explainCostThresholds = mapOf(Dialect.Postgres to 1.0),
-        )
+        val spec = textFilterSpec(FilterOp.Contains, "term").copy(limit = MAX_LIMIT + 1)
+        val settings = sampleSettings().copy(queryRiskGate = com.safedb.model.QueryRiskGate.Cautious)
         val runner = MockRunner(explainResult = ExplainResult.Estimated(5.0))
 
         val failure = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings, false)) {
@@ -928,6 +925,7 @@ class QueryEngineTest {
             is QueryCoreOutcome.Failure -> outcome.error
         }
 
+        assertTrue(failure.error is QueryError.RiskGate)
         assertEquals(MAX_LIMIT, failure.historySpec?.limit)
     }
 

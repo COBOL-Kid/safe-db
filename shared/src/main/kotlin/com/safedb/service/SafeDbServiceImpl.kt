@@ -146,7 +146,15 @@ class SafeDbServiceImpl internal constructor(
                 )
             ) {
                 is QueryCoreOutcome.Success -> {
-                    recordHistory(request.connectionId, def.name, outcome.historySpec, outcome.result, null)
+                    recordHistory(
+                        request.connectionId,
+                        def.name,
+                        outcome.historySpec,
+                        outcome.result,
+                        null,
+                        outcome.riskAssessment,
+                        outcome.riskDecision,
+                    )
                     outcome.result
                 }
                 is QueryCoreOutcome.Failure -> {
@@ -156,6 +164,8 @@ class SafeDbServiceImpl internal constructor(
                         outcome.error.historySpec ?: request.spec,
                         null,
                         outcome.error,
+                        (outcome.error.error as? com.safedb.query.QueryError.RiskGate)?.assessment,
+                        (outcome.error.error as? com.safedb.query.QueryError.RiskGate)?.decision,
                     )
                     throw QueryFailureException(outcome.error)
                 }
@@ -237,6 +247,8 @@ class SafeDbServiceImpl internal constructor(
         spec: QuerySpec,
         result: QueryResult?,
         error: com.safedb.query.QueryCoreError?,
+        riskAssessment: com.safedb.query.QueryRiskAssessment? = null,
+        riskDecision: com.safedb.query.QueryRiskDecision? = null,
     ) {
         runCatching {
             queryStore.addHistory(
@@ -249,6 +261,10 @@ class SafeDbServiceImpl internal constructor(
                     warnings = result?.warnings ?: error?.warnings.orEmpty(),
                     error = error?.message,
                     timestamp = Instant.now().epochSecond.toString(),
+                    riskScoreVersion = riskAssessment?.scoreVersion,
+                    riskSeverity = riskAssessment?.severity?.name,
+                    riskSignalCodes = riskAssessment?.signals.orEmpty().map { it.code.name }.distinct(),
+                    riskGateState = riskDecision?.state?.name,
                 ),
             )
         }

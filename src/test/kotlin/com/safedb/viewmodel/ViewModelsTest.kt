@@ -7,6 +7,7 @@ import com.safedb.model.HistoryEntry
 import com.safedb.model.JoinSpec
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.ResultColumn
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
@@ -148,6 +149,12 @@ class ViewModelsTest {
         advanceUntilIdle()
         assertEquals("dark", viewModel.settings.value.theme)
         assertEquals(2, service.settingsSaveCount)
+
+        viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
+        advanceUntilIdle()
+        assertEquals(QueryRiskGate.Flexible, viewModel.settings.value.queryRiskGate)
+        assertEquals(QueryRiskGate.Flexible, service.savedSettings?.queryRiskGate)
+        assertEquals(3, service.settingsSaveCount)
     }
 
     @Test

@@ -141,7 +141,11 @@ class SafeDbServiceImplTest {
         val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec(), force = true))
         assertEquals(1, result.rowCount)
         assertEquals(1, queryStore.listHistory().size)
-        assertEquals("Delete me", queryStore.listHistory().single().connectionName)
+        val history = queryStore.listHistory().single()
+        assertEquals("Delete me", history.connectionName)
+        assertEquals(1, history.riskScoreVersion)
+        assertEquals("Allowed", history.riskGateState)
+        assertTrue("NoEffectiveRestriction" in history.riskSignalCodes)
     }
 
     @Test

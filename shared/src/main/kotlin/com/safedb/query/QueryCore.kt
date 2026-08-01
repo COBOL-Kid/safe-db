@@ -48,6 +48,16 @@ sealed class QueryError {
         override val message: String = "$reason. Confirm to run this query anyway."
     }
 
+    data class RiskGate(
+        val decision: QueryRiskDecision,
+        val assessment: QueryRiskAssessment,
+        override val historySpec: QuerySpec,
+    ) : QueryError() {
+        override val message: String = decision.reasons
+            .joinToString(separator = " ") { it.message }
+            .ifEmpty { "The query risk gate blocks this query." }
+    }
+
     data class Execution(
         override val message: String,
         override val historySpec: QuerySpec? = null,
@@ -60,7 +70,12 @@ interface QueryRunner {
 }
 
 sealed class QueryCoreOutcome {
-    data class Success(val result: QueryResult, val historySpec: QuerySpec) : QueryCoreOutcome()
+    data class Success(
+        val result: QueryResult,
+        val historySpec: QuerySpec,
+        val riskAssessment: QueryRiskAssessment?,
+        val riskDecision: QueryRiskDecision,
+    ) : QueryCoreOutcome()
     data class Failure(val error: QueryCoreError) : QueryCoreOutcome()
 }
 
@@ -82,6 +97,25 @@ suspend fun runQueryCore(
     }
     val normalizedSpec = validated.spec()
 
+    val assessment = if (settings.queryRiskGate == com.safedb.model.QueryRiskGate.Disabled) {
+        null
+    } else {
+        assessStaticQueryRisk(validated, schema, def.dialect)
+    }
+    val decision = applyRiskGate(
+        assessment = assessment,
+        userSetting = settings.queryRiskGate,
+        resources = normalizedSpec.tables.mapTo(mutableSetOf()) { "${it.schema}.${it.name}" },
+    )
+    if (decision.state != RiskGateState.Allowed) {
+        return QueryCoreOutcome.Failure(
+            QueryCoreError(
+                error = QueryError.RiskGate(decision, requireNotNull(assessment), normalizedSpec),
+                warnings = outcome.warnings,
+            ),
+        )
+    }
+
     val compiled = when (val result = compileValidated(validated, def.dialect)) {
         is Outcome.Ok -> result.value
         is Outcome.Err -> return QueryCoreOutcome.Failure(
@@ -92,7 +126,7 @@ suspend fun runQueryCore(
         )
     }
 
-    return executeCompiled(runner, compiled, outcome, normalizedSpec, def, settings, force)
+    return executeCompiled(runner, compiled, outcome, normalizedSpec, assessment, decision)
 }
 
 private suspend fun executeCompiled(
@@ -100,48 +134,10 @@ private suspend fun executeCompiled(
     compiled: CompiledQuery,
     outcome: ValidationOutcome,
     normalizedSpec: QuerySpec,
-    def: ConnectionDef,
-    settings: Settings,
-    force: Boolean,
+    assessment: QueryRiskAssessment?,
+    decision: QueryRiskDecision,
 ): QueryCoreOutcome {
     val warnings = outcome.warnings.toMutableList()
-
-    val explainResult = try {
-        runner.explain(compiled)
-    } catch (error: Exception) {
-        ExplainResult.Unavailable("EXPLAIN failed: $error")
-    }
-
-    val (explainFailed, overCost) = when (explainResult) {
-        is ExplainResult.Estimated -> {
-            val threshold = settings.costThreshold(def.dialect)
-            val over = explainResult.cost > threshold
-            if (over) {
-                warnings.add(
-                    "Estimated query cost (${"%.0f".format(explainResult.cost)}) exceeds threshold (${"%.0f".format(threshold)}) — this may be slow",
-                )
-            }
-            false to over
-        }
-        is ExplainResult.Unavailable -> {
-            warnings.add(explainResult.reason)
-            true to false
-        }
-    }
-
-    if ((explainFailed || overCost) && !force) {
-        val reason = when {
-            explainFailed && overCost -> "EXPLAIN failed and estimated cost exceeds threshold"
-            explainFailed -> "EXPLAIN failed"
-            else -> "Estimated query cost exceeds threshold"
-        }
-        return QueryCoreOutcome.Failure(
-            QueryCoreError(
-                error = QueryError.CostGuard(reason, normalizedSpec),
-                warnings = warnings.toList(),
-            ),
-        )
-    }
 
     val result = when (val execute = runner.executeQuery(compiled, DEFAULT_TIMEOUT_MS)) {
         is Outcome.Ok -> execute.value
@@ -171,5 +167,7 @@ private suspend fun executeCompiled(
             warnings = mergedWarnings,
         ),
         historySpec = normalizedSpec,
+        riskAssessment = assessment,
+        riskDecision = decision,
     )
 }

@@ -14,6 +14,8 @@ data class Settings(
     val theme: String = DEFAULT_THEME,
     @SerialName("color_scheme")
     val colorScheme: String = ThemePalette.DEFAULT.id,
+    @SerialName("query_risk_gate")
+    val queryRiskGate: QueryRiskGate = QueryRiskGate.Standard,
 ) {
     fun costThreshold(dialect: Dialect): Double =
         explainCostThresholds[dialect] ?: explainCostThreshold
@@ -60,5 +62,14 @@ fun normalizeSettings(settings: Settings): Settings {
         explainCostThresholds = explainCostThresholds,
         theme = theme,
         colorScheme = colorScheme,
+        queryRiskGate = settings.queryRiskGate,
     )
+}
+
+@Serializable
+enum class QueryRiskGate {
+    Cautious,
+    Standard,
+    Flexible,
+    Disabled,
 }

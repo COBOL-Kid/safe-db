@@ -31,6 +31,7 @@ import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.shouldCancelPendingRecipeOnQuerySettle
 import java.awt.Dimension
 import kotlinx.coroutines.runBlocking
 
@@ -57,7 +58,11 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
         when {
             activeConnection != null && sample != null -> viewModel.completePendingRecipeRun(activeConnection, sample.result, sample.spec)
             exploreSpecHash(viewModel.query.spec) != pending.specHash -> viewModel.cancelPendingRecipeRun()
-            !viewModel.query.running && viewModel.query.error != null && !viewModel.query.pendingCostGuard -> viewModel.cancelPendingRecipeRun()
+            shouldCancelPendingRecipeOnQuerySettle(
+                running = viewModel.query.running,
+                hasError = viewModel.query.error != null,
+                holdsPendingRecipe = viewModel.query.holdsPendingRecipe,
+            ) -> viewModel.cancelPendingRecipeRun()
         }
     }
 

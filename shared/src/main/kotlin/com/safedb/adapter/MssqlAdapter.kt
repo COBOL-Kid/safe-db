@@ -6,6 +6,10 @@ import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
+import com.safedb.model.IndexCapabilities
+import com.safedb.model.IndexKey
+import com.safedb.model.SortDirection
+import com.safedb.model.EvidenceConfidence
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
@@ -45,20 +49,33 @@ object MssqlAdapter {
             val indexes = conn.metadataRows(
                 """
                 SELECT s.name AS table_schema, t.name AS table_name, i.name AS index_name,
-                       c.name AS column_name, i.is_unique, i.is_primary_key
+                       c.name AS column_name, i.is_unique, i.is_primary_key, i.has_filter,
+                       ic.is_descending_key, ic.is_included_column
                 FROM sys.indexes i
                 JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
                 JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
                 JOIN sys.tables t ON i.object_id = t.object_id
                 JOIN sys.schemas s ON t.schema_id = s.schema_id
-                WHERE s.name NOT IN $excluded AND ic.is_included_column = 0
-                ORDER BY s.name, t.name, i.is_primary_key DESC, i.name, ic.key_ordinal
+                WHERE s.name NOT IN $excluded
+                ORDER BY s.name, t.name, i.is_primary_key DESC, i.name,
+                         ic.is_included_column, ic.key_ordinal, ic.index_column_id
                 """.trimIndent(),
             ) { rs ->
                 MetadataIndex(
                     MetadataTableKey(readString(rs, "table_schema"), readString(rs, "table_name")),
                     readString(rs, "index_name"), readString(rs, "column_name"), "BTREE", true,
                     rs.getBoolean("is_unique"), rs.getBoolean("is_primary_key"),
+                    direction = if (rs.getBoolean("is_descending_key")) SortDirection.Desc else SortDirection.Asc,
+                    included = rs.getBoolean("is_included_column"),
+                    capabilities = IndexCapabilities(
+                        equality = true,
+                        ordering = true,
+                        specializedText = false,
+                        expressionKeys = false,
+                        partialPredicate = true,
+                        includedColumns = true,
+                    ),
+                    partial = rs.getBoolean("has_filter"),
                 )
             }
             val foreignKeys = conn.metadataRows(
@@ -86,7 +103,22 @@ object MssqlAdapter {
                     readString(rs, "referenced_column"),
                 )
             }
-            return assembleSchema(tables, columns, indexes, foreignKeys)
+            val tableSizes = runCatching {
+                conn.metadataRows(
+                    """
+                    SELECT s.name AS table_schema, t.name AS table_name, SUM(p.row_count) AS row_count
+                    FROM sys.tables t
+                    JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    JOIN sys.dm_db_partition_stats p ON p.object_id = t.object_id AND p.index_id IN (0, 1)
+                    WHERE s.name NOT IN $excluded
+                    GROUP BY s.name, t.name
+                    """.trimIndent(),
+                ) { rs ->
+                    MetadataTableKey(readString(rs, "table_schema"), readString(rs, "table_name")) to
+                        normalizeTableSize((rs.getObject("row_count") as? Number)?.toDouble(), EvidenceConfidence.Medium)
+                }.toMap()
+            }.getOrDefault(emptyMap())
+            return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }
 
@@ -124,14 +156,17 @@ object MssqlAdapter {
             SELECT i.name AS index_name,
                    c.name AS column_name,
                    i.is_unique,
-                   i.is_primary_key
+                   i.is_primary_key,
+                   i.has_filter,
+                   ic.is_descending_key,
+                   ic.is_included_column
             FROM sys.indexes i
             JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
             JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
             JOIN sys.tables t ON i.object_id = t.object_id
             JOIN sys.schemas s ON t.schema_id = s.schema_id
-            WHERE s.name = ? AND t.name = ? AND ic.is_included_column = 0
-            ORDER BY i.is_primary_key DESC, i.name, ic.key_ordinal
+            WHERE s.name = ? AND t.name = ?
+            ORDER BY i.is_primary_key DESC, i.name, ic.is_included_column, ic.key_ordinal, ic.index_column_id
             """.trimIndent(),
         ).use { ps ->
             ps.setString(1, schema)
@@ -150,9 +185,29 @@ object MssqlAdapter {
                             supportsEquality = true,
                             isUnique = isUnique,
                             isPrimary = isPrimary,
+                            capabilities = IndexCapabilities(
+                                equality = true,
+                                ordering = true,
+                                specializedText = false,
+                                expressionKeys = false,
+                                partialPredicate = true,
+                                includedColumns = true,
+                            ),
+                            isPartial = rs.getBoolean("has_filter"),
                         )
                     }
-                    indexMap[indexName] = entry.copy(columns = entry.columns + columnName)
+                    val included = rs.getBoolean("is_included_column")
+                    indexMap[indexName] = if (included) {
+                        entry.copy(includedColumns = entry.includedColumns + columnName)
+                    } else {
+                        entry.copy(
+                            columns = entry.columns + columnName,
+                            keys = entry.keys + IndexKey(
+                                columnName,
+                                if (rs.getBoolean("is_descending_key")) SortDirection.Desc else SortDirection.Asc,
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -243,6 +298,7 @@ object MssqlAdapter {
     fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult =
         dataSource.connection.use { conn ->
             conn.createStatement().use { it.execute("SET SHOWPLAN_XML ON") }
+            var showplanRestored = false
             val xml = try {
                 prepareStatement(conn, compiled, Dialect.Mssql).use { ps ->
                     ps.executeQuery().use { rs ->
@@ -255,10 +311,17 @@ object MssqlAdapter {
                 }
             } finally {
                 repeat(3) {
-                    if (runCatching { conn.createStatement().use { it.execute("SET SHOWPLAN_XML OFF") } }.isSuccess) {
-                        return@repeat
+                    if (!showplanRestored) {
+                        showplanRestored = runCatching {
+                            conn.createStatement().use { it.execute("SET SHOWPLAN_XML OFF") }
+                        }.isSuccess
                     }
                 }
+            }
+            if (!showplanRestored) {
+                return@use ExplainResult.Unavailable(
+                    "SQL Server plan session could not restore SHOWPLAN_XML OFF; the dedicated connection was discarded",
+                )
             }
             val cost = parseShowplanCost(xml)
             cost?.let { ExplainResult.Estimated(it) }

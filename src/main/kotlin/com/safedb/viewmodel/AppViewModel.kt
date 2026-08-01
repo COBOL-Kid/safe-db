@@ -151,3 +151,10 @@ data class PendingRecipeRun(
     val connectionId: String,
     val specHash: String,
 )
+
+/** Keep a recipe pending across soft holds (cost confirmation / risk-gate block) so retry can finish it. */
+internal fun shouldCancelPendingRecipeOnQuerySettle(
+    running: Boolean,
+    hasError: Boolean,
+    holdsPendingRecipe: Boolean,
+): Boolean = !running && hasError && !holdsPendingRecipe
