@@ -15,7 +15,11 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
+import com.safedb.query.QueryConfirmationCondition
+import com.safedb.query.QueryConfirmationReasonCode
+import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.QueryError
+import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.QueryRiskAssessment
 import com.safedb.query.QueryRiskDecision
 import com.safedb.query.QueryRiskSeverity
@@ -231,6 +235,16 @@ class AppViewModelTest {
         assertTrue(started.isCompleted)
 
         query.clear()
+        assertTrue(query.running)
+        query.addTable(sampleTable())
+        query.run("c1")
+        scope.runCurrent()
+
+        assertEquals(1, service.queryAttempts)
+        assertFalse(query.canRun)
+        query.clear()
+        assertTrue(query.running)
+
         gate.complete(Unit)
         scope.advanceUntilIdle()
 
@@ -248,19 +262,154 @@ class AppViewModelTest {
         val scope = TestScope(dispatcher)
         val query = QueryViewModel(service, scope)
         query.addTable(sampleTable())
+        var settled: Boolean? = null
 
-        query.run("c1")
+        query.run("c1") { settled = it }
         scope.runCurrent()
         assertTrue(started.isCompleted)
 
         query.setLimit(50)
+        assertTrue(query.running)
+        assertFalse(query.canRun)
+        query.run("c1")
+        scope.runCurrent()
+
+        assertEquals(1, service.queryAttempts)
+        assertNull(settled)
+
         gate.complete(Unit)
         scope.advanceUntilIdle()
 
         assertFalse(query.running)
+        assertEquals(false, settled)
         assertNull(query.results)
         assertNull(query.riskEvaluation)
         assertEquals(50, query.limit)
+    }
+
+    @Test
+    fun queryViewModelKeepsRunOwnedUntilItSettlesButDropsItAfterConnectionSwitch() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val service = FakeSafeDbService(queryGate = gate, queryStarted = started)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+        var settled: Boolean? = null
+
+        query.run("c1") { settled = it }
+        scope.runCurrent()
+        assertTrue(started.isCompleted)
+
+        query.onActiveConnectionChanged("c2")
+
+        assertTrue(query.running)
+        assertFalse(query.canRun)
+        assertNull(query.currentSample("c1"))
+        assertNull(query.currentSample("c2"))
+        assertNull(query.riskEvaluationFor("c2"))
+
+        gate.complete(Unit)
+        scope.advanceUntilIdle()
+
+        assertFalse(query.running)
+        assertEquals(false, settled)
+        assertNull(query.results)
+        assertNull(query.riskEvaluation)
+        assertEquals(1, service.queryAttempts)
+    }
+
+    @Test
+    fun queryViewModelClearsSettledSampleAndAssessmentWhenConnectionChanges() = runTest(dispatcher) {
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(FakeSafeDbService(), scope)
+        query.addTable(sampleTable())
+
+        query.run("c1")
+        scope.advanceUntilIdle()
+        assertNotNull(query.currentSample("c1"))
+        assertNotNull(query.riskEvaluationFor("c1"))
+
+        query.onActiveConnectionChanged("c2")
+
+        assertNull(query.results)
+        assertNull(query.currentSample("c1"))
+        assertNull(query.currentSample("c2"))
+        assertNull(query.riskEvaluationFor("c1"))
+        assertNull(query.riskEvaluationFor("c2"))
+    }
+
+    @Test
+    fun queryViewModelRetriesOnlyWithThePendingScopedConfirmation() = runTest(dispatcher) {
+        val service = FakeSafeDbService(confirmationRequired = true)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+        var settled: Boolean? = null
+
+        query.run("c1") { settled = it }
+        scope.advanceUntilIdle()
+
+        assertEquals(service.requiredConfirmation, query.pendingConfirmation?.confirmation)
+        assertEquals(listOf("Query plan assessment is unavailable."), query.pendingConfirmationReasons)
+        assertEquals("Query plan assessment is unavailable.", query.pendingConfirmationReason)
+        assertNull(query.error)
+        assertFalse(query.canRun)
+        assertNull(settled)
+
+        query.confirmPendingExecution("c1")
+        assertTrue(query.running)
+        scope.advanceUntilIdle()
+
+        assertEquals(2, service.queryAttempts)
+        assertEquals(service.requiredConfirmation, service.queryRequests.last().confirmation)
+        assertNull(query.pendingConfirmation)
+        assertNotNull(query.results)
+        assertEquals(true, settled)
+    }
+
+    @Test
+    fun queryViewModelDraftEditInvalidatesPendingConfirmation() = runTest(dispatcher) {
+        val service = FakeSafeDbService(confirmationRequired = true)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+        var settled: Boolean? = null
+
+        query.run("c1") { settled = it }
+        scope.advanceUntilIdle()
+        assertNotNull(query.pendingConfirmation)
+
+        query.setLimit(50)
+        query.confirmPendingExecution("c1")
+        scope.advanceUntilIdle()
+
+        assertNull(query.pendingConfirmation)
+        assertNull(query.error)
+        assertEquals(false, settled)
+        assertEquals(1, service.queryAttempts)
+        assertTrue(query.canRun)
+    }
+
+    @Test
+    fun queryViewModelCannotConfirmForAHiddenConnection() = runTest(dispatcher) {
+        val service = FakeSafeDbService(confirmationRequired = true)
+        val scope = TestScope(dispatcher)
+        val query = QueryViewModel(service, scope)
+        query.addTable(sampleTable())
+        var settled: Boolean? = null
+
+        query.run("c1") { settled = it }
+        scope.advanceUntilIdle()
+        assertNotNull(query.pendingConfirmation)
+
+        query.confirmPendingExecution("c2")
+        scope.advanceUntilIdle()
+
+        assertNull(query.pendingConfirmation)
+        assertEquals(false, settled)
+        assertEquals(1, service.queryAttempts)
+        assertTrue(query.canRun)
     }
 
     @Test
@@ -284,6 +433,32 @@ class AppViewModelTest {
 
         assertNull(viewModel.pendingRecipeRun.value)
         assertEquals("r1", viewModel.explore.value?.appliedRecipeId)
+    }
+
+    @Test
+    fun queryBackedRecipeRemainsPendingAcrossConfirmation() = runTest(dispatcher) {
+        val service = FakeSafeDbService(confirmationRequired = true)
+        val viewModel = AppViewModel(service, dispatcher)
+        advanceUntilIdle()
+        val connection = testConnection()
+        val recipe = ExploreRecipe(
+            id = "r-confirm", name = "Confirmed users", createdAt = "1", updatedAt = "1",
+            defaultMode = ExploreMode.Pivot, pivot = ExploreConfig(), querySpec = sampleSpec(),
+        )
+
+        viewModel.runRecipe(connection, recipe)
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.query.pendingConfirmation)
+        assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
+
+        viewModel.query.confirmPendingExecution("c1")
+        advanceUntilIdle()
+
+        assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
+        val sample = assertNotNull(viewModel.query.currentSample(connection.id))
+        viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+        assertEquals("r-confirm", viewModel.explore.value?.appliedRecipeId)
     }
 
     @Test
@@ -393,6 +568,7 @@ class AppViewModelTest {
 
 private class FakeSafeDbService(
     private val riskGateFirstRun: Boolean = false,
+    private val confirmationRequired: Boolean = false,
     private val queryGate: CompletableDeferred<Unit>? = null,
     private val queryStarted: CompletableDeferred<Unit>? = null,
     private val schemaTables: List<TableInfo> = listOf(sampleTable()),
@@ -400,6 +576,15 @@ private class FakeSafeDbService(
     var locked = false
     var queryAttempts = 0
         private set
+    val queryRequests = mutableListOf<QueryRunRequest>()
+    val requiredConfirmation = QueryExecutionConfirmation(
+        connectionId = "c1",
+        connectionFingerprint = "connection-fingerprint",
+        queryFingerprint = "confirmable",
+        conditions = setOf(
+            QueryConfirmationCondition(QueryConfirmationReasonCode.PlanUnavailable, "TimedOut"),
+        ),
+    )
 
     override suspend fun testConnection(def: ConnectionDef, password: String): String = "ok"
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef = def
@@ -415,6 +600,7 @@ private class FakeSafeDbService(
 
     override suspend fun runQuery(request: QueryRunRequest): com.safedb.service.QueryRunResult {
         queryAttempts += 1
+        queryRequests += request
         queryStarted?.complete(Unit)
         queryGate?.await()
         if (riskGateFirstRun && queryAttempts == 1) {
@@ -442,6 +628,42 @@ private class FakeSafeDbService(
                         planStatus = com.safedb.query.QueryPlanStatus.Available,
                         decision = decision,
                     ),
+                    historySpec = request.spec,
+                ),
+            )
+        }
+        if (confirmationRequired && request.confirmation != requiredConfirmation) {
+            val assessment = QueryRiskAssessment(
+                scoreVersion = 2,
+                queryFingerprint = "confirmable",
+                score = 0,
+                severity = QueryRiskSeverity.Minimal,
+                categoryScores = emptyMap(),
+                signals = emptyList(),
+                uncertainties = emptyList(),
+            )
+            val reason = RiskDecisionReason(
+                code = "plan_unavailable",
+                message = "Query plan assessment is unavailable.",
+            )
+            val requirement = QueryConfirmationRequirement(requiredConfirmation, listOf(reason))
+            val decision = QueryRiskDecision(
+                queryFingerprint = "confirmable",
+                state = RiskGateState.ConfirmationRequired,
+                effectiveGate = QueryRiskGate.Standard,
+                blockingBand = QueryRiskSeverity.High,
+                reasons = listOf(reason),
+            )
+            throw QueryFailureException(
+                QueryError.ConfirmationRequired(
+                    evaluation = com.safedb.query.QueryRiskEvaluation(
+                        staticAssessment = assessment,
+                        finalAssessment = assessment,
+                        planStatus = com.safedb.query.QueryPlanStatus.Unavailable,
+                        decision = decision,
+                        confirmationRequirement = requirement,
+                    ),
+                    requirement = requirement,
                     historySpec = request.spec,
                 ),
             )

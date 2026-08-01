@@ -928,19 +928,23 @@ class QueryEngineTest {
     }
 
     @Test
-    fun runQueryCoreIgnoresRawOptimizerCost() = runBlocking {
+    fun runQueryCoreEnforcesRawOptimizerCostThreshold() = runBlocking {
         val def = sampleConnection("c1")
         val spec = sampleSpec()
-        val settings = sampleSettings()
+        val settings = sampleSettings().copy(
+            explainCostThresholds = Settings.defaultDialectThresholds().toMutableMap().apply {
+                this[Dialect.Postgres] = 4.0
+            },
+        )
         val runner = MockRunner(explainResult = availablePlan(5.0))
 
-        val result = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings)) {
-            is QueryCoreOutcome.Success -> outcome.result
-            is QueryCoreOutcome.Failure -> error(outcome.error.message)
+        val failure = when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), settings)) {
+            is QueryCoreOutcome.Success -> error("expected confirmation requirement")
+            is QueryCoreOutcome.Failure -> outcome.error
         }
 
-        assertEquals(0, result.rowCount)
-        assertEquals(1, runner.executeCalls)
+        assertTrue(failure.error is QueryError.ConfirmationRequired)
+        assertEquals(0, runner.executeCalls)
     }
 
     @Test

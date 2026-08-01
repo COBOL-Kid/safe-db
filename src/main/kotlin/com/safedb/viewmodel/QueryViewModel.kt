@@ -30,6 +30,7 @@ import com.safedb.query.AliasRef
 import com.safedb.query.CANVAS_CARD_HEIGHT
 import com.safedb.query.CANVAS_CARD_WIDTH
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.QueryError
 import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryHydrationTarget
@@ -60,6 +61,7 @@ import com.safedb.query.MAX_TABLE_HEIGHT
 import com.safedb.query.MAX_TABLE_WIDTH
 import com.safedb.query.MIN_TABLE_HEIGHT
 import com.safedb.query.MIN_TABLE_WIDTH
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -80,12 +82,19 @@ data class BuilderQuerySample(
 
 typealias NewFilterSpec = FilterSpec
 
+/** Ownership token retained until the service call settles; blocking JDBC work may not cancel promptly. */
+private class ActiveQueryRun
+
 class QueryViewModel(
     private val service: SafeDbService,
     private val scope: CoroutineScope,
 ) : QueryHydrationTarget {
     private var aliasCounter = 0
     private var runGeneration = 0
+    private var activeRun: ActiveQueryRun? = null
+    private var observedActiveConnection = false
+    private var activeConnectionId: String? = null
+    private var riskEvaluationConnectionId: String? = null
 
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
     var selectedColumns by mutableStateOf(setOf<String>())
@@ -133,6 +142,14 @@ class QueryViewModel(
     /** True while the latest settled query failure is a structured risk-gate block. */
     val pendingRiskGate: Boolean
         get() = pendingRiskGateState
+    private var pendingConfirmationRequest: QueryRunRequest? = null
+    private var pendingConfirmationOnSettled: ((Boolean) -> Unit)? = null
+    var pendingConfirmation by mutableStateOf<QueryConfirmationRequirement?>(null)
+        private set
+    val pendingConfirmationReasons: List<String>
+        get() = pendingConfirmation?.reasons.orEmpty().map { it.message }
+    val pendingConfirmationReason: String?
+        get() = pendingConfirmationReasons.joinToString(separator = " ").ifBlank { null }
     var hydrationWarning by mutableStateOf<String?>(null)
         private set
 
@@ -140,7 +157,10 @@ class QueryViewModel(
     val distinctSortConflicts: List<SortSpec>
         get() = distinctSortProjectionConflicts(spec)
     val canRun: Boolean
-        get() = canvasTables.isNotEmpty() && distinctSortConflicts.isEmpty() && !running
+        get() = canvasTables.isNotEmpty() &&
+            distinctSortConflicts.isEmpty() &&
+            !running &&
+            pendingConfirmation == null
     val filterCount: Int get() = countFilterLeaves(filters)
 
     val spec: QuerySpec
@@ -178,8 +198,8 @@ class QueryViewModel(
         resultConnectionId = null
         resultSpec = null
         error = null
-        running = false
         riskEvaluation = null
+        riskEvaluationConnectionId = null
         pendingRiskGateState = false
         hydrationWarning = null
         aliasCounter = 0
@@ -187,6 +207,7 @@ class QueryViewModel(
         sortState = emptyList()
         groupState = emptyList()
         requestedFilterFocusIdState = null
+        clearPendingConfirmation(settle = true)
     }
 
     override fun addTable(tableInfo: TableInfo) {
@@ -541,22 +562,30 @@ class QueryViewModel(
     }
 
     private fun run(request: QueryRunRequest, onSettled: ((Boolean) -> Unit)? = null) {
+        if (activeRun != null) return
+        observedActiveConnection = true
+        activeConnectionId = request.connectionId
         val executedSpec = request.spec
         val generation = ++runGeneration
+        val run = ActiveQueryRun()
+        activeRun = run
         running = true
         error = null
         results = null
         resultConnectionId = null
         resultSpec = null
         riskEvaluation = null
+        riskEvaluationConnectionId = null
         pendingRiskGateState = false
         scope.launch {
             var succeeded = false
+            var awaitingConfirmation = false
             try {
                 val completed = service.runQuery(request)
                 if (generation == runGeneration) {
                     results = completed.queryResult
                     riskEvaluation = completed.riskEvaluation
+                    riskEvaluationConnectionId = request.connectionId
                     resultConnectionId = request.connectionId
                     resultSpec = executedSpec
                     succeeded = true
@@ -564,23 +593,71 @@ class QueryViewModel(
             } catch (failure: QueryFailureException) {
                 if (generation != runGeneration) return@launch
                 val queryError = failure.queryError
-                if (queryError is QueryError.RiskGate) {
-                    pendingRiskGateState = true
-                    riskEvaluation = queryError.evaluation
-                    error = queryError.message
-                } else {
-                    error = failure.message ?: failure.toString()
+                when (queryError) {
+                    is QueryError.RiskGate -> {
+                        pendingRiskGateState = true
+                        riskEvaluation = queryError.evaluation
+                        riskEvaluationConnectionId = request.connectionId
+                        error = queryError.message
+                    }
+                    is QueryError.ConfirmationRequired -> {
+                        awaitingConfirmation = true
+                        pendingConfirmationRequest = request
+                        pendingConfirmationOnSettled = onSettled
+                        pendingConfirmation = queryError.requirement
+                        riskEvaluation = queryError.evaluation
+                        riskEvaluationConnectionId = request.connectionId
+                    }
+                    else -> error = failure.message ?: failure.toString()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (generation == runGeneration) error = e.message ?: e.toString()
             } finally {
-                if (generation == runGeneration) {
+                if (activeRun === run) {
+                    activeRun = null
                     running = false
-                    onSettled?.invoke(succeeded)
+                    if (!awaitingConfirmation) onSettled?.invoke(succeeded)
                 }
             }
         }
     }
+
+    fun confirmPendingExecution(connectionId: String) {
+        if (running || activeRun != null) return
+        val request = pendingConfirmationRequest ?: return
+        val requirement = pendingConfirmation ?: return
+        val onSettled = pendingConfirmationOnSettled
+        if (request.connectionId != connectionId || request.spec != spec) {
+            clearPendingConfirmation(settle = true)
+            return
+        }
+        clearPendingConfirmation(settle = false)
+        run(request.copy(confirmation = requirement.confirmation), onSettled)
+    }
+
+    /**
+     * Drops state scoped to the previously visible database. An in-flight operation keeps
+     * [running] true until it actually settles, preventing a second concurrent JDBC operation.
+     */
+    fun onActiveConnectionChanged(connectionId: String?) {
+        if (observedActiveConnection && activeConnectionId == connectionId) return
+        observedActiveConnection = true
+        activeConnectionId = connectionId
+        if (running) runGeneration += 1
+        results = null
+        resultConnectionId = null
+        resultSpec = null
+        pendingRiskGateState = false
+        riskEvaluation = null
+        riskEvaluationConnectionId = null
+        error = null
+        clearPendingConfirmation(settle = true)
+    }
+
+    fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? =
+        riskEvaluation.takeIf { connectionId != null && connectionId == riskEvaluationConnectionId }
 
     fun currentSample(connectionId: String?): BuilderQuerySample? {
         if (connectionId == null || resultConnectionId != connectionId) return null
@@ -602,12 +679,26 @@ class QueryViewModel(
     private fun invalidateSettledRunFailure() {
         if (running) {
             runGeneration += 1
-            running = false
         }
-        if (error == null && !pendingRiskGateState && riskEvaluation == null) return
+        if (
+            error == null &&
+            !pendingRiskGateState &&
+            riskEvaluation == null &&
+            pendingConfirmation == null
+        ) return
         pendingRiskGateState = false
         riskEvaluation = null
+        riskEvaluationConnectionId = null
         error = null
+        clearPendingConfirmation(settle = true)
+    }
+
+    private fun clearPendingConfirmation(settle: Boolean) {
+        val onSettled = pendingConfirmationOnSettled
+        pendingConfirmationRequest = null
+        pendingConfirmationOnSettled = null
+        pendingConfirmation = null
+        if (settle) onSettled?.invoke(false)
     }
 
     fun restoreFromSpec(spec: QuerySpec, schemaTables: List<TableInfo>) {

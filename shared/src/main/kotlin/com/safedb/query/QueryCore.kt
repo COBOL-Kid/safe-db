@@ -55,6 +55,16 @@ sealed class QueryError {
             .ifEmpty { "The query risk gate blocks this query." }
     }
 
+    data class ConfirmationRequired(
+        val evaluation: QueryRiskEvaluation,
+        val requirement: QueryConfirmationRequirement,
+        override val historySpec: QuerySpec,
+    ) : QueryError() {
+        override val message: String = requirement.reasons
+            .joinToString(separator = " ") { it.message }
+            .ifEmpty { "Confirm to run this query with the remaining safeguards." }
+    }
+
     data class Execution(
         override val message: String,
         override val historySpec: QuerySpec? = null,
@@ -81,6 +91,7 @@ suspend fun runQueryCore(
     spec: QuerySpec,
     schema: Schema,
     settings: Settings,
+    confirmation: QueryExecutionConfirmation? = null,
 ): QueryCoreOutcome {
     val (validated, outcome) = when (
         val validation = validateQuery(spec, schema, settings.blockedSchemas, def.dialect)
@@ -108,51 +119,85 @@ suspend fun runQueryCore(
         )
     }
 
-    val evaluation = if (settings.queryRiskGate == com.safedb.model.QueryRiskGate.Disabled) {
-        QueryRiskEvaluation(
-            staticAssessment = null,
-            finalAssessment = null,
-            planStatus = QueryPlanStatus.Disabled,
-            decision = applyRiskGate(null, settings.queryRiskGate),
+    // EXPLAIN availability and optimizer cost are hard execution safeguards. They remain active
+    // when descriptive query-risk scoring is disabled.
+    val explain = try {
+        runner.explain(compiled)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        ExplainResult.Unavailable(
+            PlanUnavailableReason.ExecutionFailure,
+            error.message ?: "Query plan assessment failed",
         )
-    } else {
-        val baseline = requireNotNull(staticAssessment)
-        val explain = try {
-            runner.explain(compiled)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            ExplainResult.Unavailable(
-                PlanUnavailableReason.ExecutionFailure,
-                error.message ?: "Query plan assessment failed",
+    }
+    val fingerprint = staticAssessment?.queryFingerprint ?: queryFingerprint(validated)
+    val optimizerCostThreshold = settings.costThreshold(def.dialect)
+    val baseEvaluation = when (explain) {
+        is ExplainResult.Available -> {
+            val optimizerCost = explain.plan.rawOptimizerCost
+            val finalAssessment = staticAssessment?.let { baseline ->
+                refineRiskWithPlan(baseline, explain.plan, normalizedSpec, schema)
+            }
+            QueryRiskEvaluation(
+                staticAssessment = staticAssessment,
+                finalAssessment = finalAssessment,
+                planStatus = if (optimizerCost.isUsableOptimizerCost()) {
+                    QueryPlanStatus.Available
+                } else {
+                    QueryPlanStatus.Incomplete
+                },
+                decision = applyRiskGate(finalAssessment, settings.queryRiskGate)
+                    .copy(queryFingerprint = fingerprint),
+                optimizerCost = optimizerCost?.takeIf(Double::isFinite)?.takeIf { it >= 0.0 },
+                optimizerCostThreshold = optimizerCostThreshold,
             )
         }
-        when (explain) {
-            is ExplainResult.Available -> {
-                val finalAssessment = refineRiskWithPlan(baseline, explain.plan, normalizedSpec, schema)
-                QueryRiskEvaluation(
-                    staticAssessment = baseline,
-                    finalAssessment = finalAssessment,
-                    planStatus = QueryPlanStatus.Available,
-                    decision = applyRiskGate(finalAssessment, settings.queryRiskGate),
-                )
+        is ExplainResult.Unavailable -> {
+            val finalAssessment = staticAssessment?.let { baseline ->
+                preserveStaticRiskForUnavailablePlan(baseline, explain.reasonCode)
             }
-            is ExplainResult.Unavailable -> {
-                val finalAssessment = preserveStaticRiskForUnavailablePlan(baseline, explain.reasonCode)
-                QueryRiskEvaluation(
-                    staticAssessment = baseline,
-                    finalAssessment = finalAssessment,
-                    planStatus = QueryPlanStatus.Unavailable,
-                    planUnavailableReason = explain.reasonCode,
-                    decision = applyRiskGate(finalAssessment, settings.queryRiskGate),
-                )
-            }
+            QueryRiskEvaluation(
+                staticAssessment = staticAssessment,
+                finalAssessment = finalAssessment,
+                planStatus = QueryPlanStatus.Unavailable,
+                planUnavailableReason = explain.reasonCode,
+                decision = applyRiskGate(finalAssessment, settings.queryRiskGate)
+                    .copy(queryFingerprint = fingerprint),
+                optimizerCostThreshold = optimizerCostThreshold,
+            )
         }
     }
-    if (evaluation.decision.state != RiskGateState.Allowed) {
+    if (baseEvaluation.decision.state != RiskGateState.Allowed) {
         return QueryCoreOutcome.Failure(
             QueryCoreError(
-                error = QueryError.RiskGate(evaluation, normalizedSpec),
+                error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
+                warnings = outcome.warnings,
+                riskEvaluation = baseEvaluation,
+            ),
+        )
+    }
+
+    val requirement = confirmationRequirement(def, fingerprint, explain, optimizerCostThreshold)
+    val confirmationAccepted = requirement != null && confirmation == requirement.confirmation
+    val evaluation = when {
+        requirement == null -> baseEvaluation
+        confirmationAccepted -> baseEvaluation.copy(
+            confirmationRequirement = requirement,
+            confirmationAccepted = true,
+        )
+        else -> baseEvaluation.copy(
+            decision = baseEvaluation.decision.copy(
+                state = RiskGateState.ConfirmationRequired,
+                reasons = requirement.reasons,
+            ),
+            confirmationRequirement = requirement,
+        )
+    }
+    if (requirement != null && !confirmationAccepted) {
+        return QueryCoreOutcome.Failure(
+            QueryCoreError(
+                error = QueryError.ConfirmationRequired(evaluation, requirement, normalizedSpec),
                 warnings = outcome.warnings,
                 riskEvaluation = evaluation,
             ),
@@ -161,6 +206,54 @@ suspend fun runQueryCore(
 
     return executeCompiled(runner, compiled, outcome, normalizedSpec, evaluation)
 }
+
+private fun confirmationRequirement(
+    def: ConnectionDef,
+    queryFingerprint: String,
+    explain: ExplainResult,
+    optimizerCostThreshold: Double,
+): QueryConfirmationRequirement? {
+    val (condition, reason) = when (explain) {
+        is ExplainResult.Unavailable -> QueryConfirmationCondition(
+            QueryConfirmationReasonCode.PlanUnavailable,
+            explain.reasonCode.name,
+        ) to RiskDecisionReason(
+            code = "plan_unavailable",
+            message = "Query plan assessment is unavailable: ${explain.message}. Confirm to run with read-only, row-limit, and timeout safeguards.",
+        )
+        is ExplainResult.Available -> {
+            val cost = explain.plan.rawOptimizerCost?.takeIf(Double::isFinite)?.takeIf { it >= 0.0 }
+            when {
+                cost == null -> QueryConfirmationCondition(
+                    QueryConfirmationReasonCode.OptimizerCostUnavailable,
+                    def.dialect.name,
+                ) to RiskDecisionReason(
+                    code = "optimizer_cost_unavailable",
+                    message = "The query plan did not provide a valid optimizer cost. Confirm to run with read-only, row-limit, and timeout safeguards.",
+                )
+                cost > optimizerCostThreshold -> QueryConfirmationCondition(
+                    QueryConfirmationReasonCode.OptimizerCostExceeded,
+                    "${def.dialect.name}:${optimizerCostThreshold.toBits()}",
+                ) to RiskDecisionReason(
+                    code = "optimizer_cost_exceeded",
+                    message = "Estimated query cost (${"%.0f".format(cost)}) exceeds the ${def.dialect.name} threshold (${"%.0f".format(optimizerCostThreshold)}). Confirm to run with read-only, row-limit, and timeout safeguards.",
+                )
+                else -> return null
+            }
+        }
+    }
+    return QueryConfirmationRequirement(
+        confirmation = QueryExecutionConfirmation(
+            connectionId = def.id,
+            connectionFingerprint = def.credentialFingerprint(),
+            queryFingerprint = queryFingerprint,
+            conditions = setOf(condition),
+        ),
+        reasons = listOf(reason),
+    )
+}
+
+private fun Double?.isUsableOptimizerCost(): Boolean = this != null && isFinite() && this >= 0.0
 
 private suspend fun executeCompiled(
     runner: QueryRunner,

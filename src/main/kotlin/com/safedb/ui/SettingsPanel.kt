@@ -5,15 +5,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -22,28 +22,35 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
+import com.safedb.model.Dialect
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.Settings
+import com.safedb.ui.components.ColorSchemePicker
+import com.safedb.ui.components.MenuActionRow
+import com.safedb.ui.components.ModeToggle
+import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
-import com.safedb.ui.components.ColorSchemePicker
-import com.safedb.ui.components.ModeToggle
-import com.safedb.ui.components.MenuActionRow
-import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.theme.DataMono
 import com.safedb.viewmodel.SettingsViewModel
 
 @Composable
@@ -67,11 +74,14 @@ fun SettingsPanel(
     var candidateConnectionId by remember { mutableStateOf<String?>(null) }
     var databaseMenuOpen by remember { mutableStateOf(false) }
     var schemaMenuOpen by remember { mutableStateOf(false) }
+    var newSchema by remember { mutableStateOf("") }
+    val thresholdInputs = remember { mutableStateMapOf<Dialect, String>() }
 
     LaunchedEffect(open) {
         if (open) {
             viewModel.clearSaveError()
             viewModel.clearLoadError()
+            newSchema = ""
             candidateConnectionId = settings.defaultConnectionId
             val candidateExists = connections.any { it.id == settings.defaultConnectionId }
             val defaultConnectionId = settings.defaultConnectionId
@@ -82,6 +92,17 @@ fun SettingsPanel(
             }
         }
     }
+
+    LaunchedEffect(open, settings.explainCostThreshold, settings.explainCostThresholds) {
+        if (open) {
+            for (dialect in Dialect.entries) {
+                thresholdInputs[dialect] = settings.costThreshold(dialect).asThresholdInput()
+            }
+        }
+    }
+
+    val thresholdInputsReady = Dialect.entries.all { it in thresholdInputs }
+    val parsedThresholds = thresholdInputs.toCostThresholds()
 
     val candidateConnection = connections.firstOrNull { it.id == candidateConnectionId }
     val databaseLabel = when {
@@ -283,6 +304,71 @@ fun SettingsPanel(
                 HorizontalDivider()
 
                 Column {
+                    Text("Blocked schemas", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Queries that reference these schemas are blocked before EXPLAIN or execution.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 3.dp, bottom = 8.dp),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = newSchema,
+                            onValueChange = { newSchema = it },
+                            placeholder = { Text("schema name") },
+                            singleLine = true,
+                            textStyle = DataMono,
+                            modifier = Modifier.weight(1f),
+                        )
+                        SecondaryButton(
+                            onClick = {
+                                viewModel.addBlockedSchema(newSchema)
+                                newSchema = ""
+                            },
+                            enabled = newSchema.isNotBlank(),
+                        ) {
+                            Text("Add")
+                        }
+                    }
+                    if (settings.blockedSchemas.isEmpty()) {
+                        Text(
+                            "No custom blocked schemas.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier.padding(top = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            for (schema in settings.blockedSchemas) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        schema,
+                                        style = DataMono,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    TextButton(onClick = { viewModel.removeBlockedSchema(schema) }) {
+                                        Text("Remove")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                Column {
                     Text(
                         "Query risk gate",
                         style = MaterialTheme.typography.titleSmall,
@@ -319,6 +405,61 @@ fun SettingsPanel(
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
+
+                HorizontalDivider()
+
+                Column {
+                    Text(
+                        "EXPLAIN cost thresholds",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        "Queries above the threshold for their database require explicit confirmation. Optimizer cost units differ by database.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 3.dp, bottom = 8.dp),
+                    )
+                    for (dialect in Dialect.entries) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                SettingsViewModel.dialectLabel(dialect),
+                                modifier = Modifier.weight(0.4f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            OutlinedTextField(
+                                value = thresholdInputs[dialect].orEmpty(),
+                                onValueChange = { thresholdInputs[dialect] = it },
+                                singleLine = true,
+                                textStyle = DataMono,
+                                modifier = Modifier.weight(0.6f),
+                            )
+                        }
+                    }
+                    PrimaryButton(
+                        onClick = {
+                            parsedThresholds?.let { viewModel.saveThresholds(it) }
+                        },
+                        enabled = parsedThresholds != null,
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Text("Save thresholds")
+                    }
+                    if (thresholdInputsReady && parsedThresholds == null) {
+                        Text(
+                            "Enter a value from 1 to 10,000,000 for every database.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
                 }
                 if (settingsScrollState.maxValue > 0) {
                     VerticalScrollbar(
@@ -337,4 +478,19 @@ fun SettingsPanel(
             }
         },
     )
+}
+
+private fun Double.asThresholdInput(): String =
+    if (this == toLong().toDouble()) toLong().toString() else toString()
+
+private fun Map<Dialect, String>.toCostThresholds(): Map<Dialect, Double>? {
+    val parsed = LinkedHashMap<Dialect, Double>()
+    for (dialect in Dialect.entries) {
+        val value = get(dialect)?.trim()?.toDoubleOrNull() ?: return null
+        if (!value.isFinite() || value !in Settings.MIN_COST_THRESHOLD..Settings.MAX_COST_THRESHOLD) {
+            return null
+        }
+        parsed[dialect] = value
+    }
+    return parsed
 }

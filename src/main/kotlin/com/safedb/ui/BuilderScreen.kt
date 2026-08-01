@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -82,6 +83,8 @@ import com.safedb.query.MAX_LIMIT
 import com.safedb.query.QueryRiskAssessment
 import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryPlanStatus
+import com.safedb.query.QueryConfirmationReasonCode
+import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.RiskGateState
 import com.safedb.query.blockingBand
 import com.safedb.query.evaluateQueryRisk
@@ -156,11 +159,21 @@ internal fun queryRiskIndicatorText(
     validationError: String? = null,
 ): String = when {
     validationError != null -> "Query validation: $validationError"
-    gate == QueryRiskGate.Disabled -> "Query risk: Not required · Run enabled"
     running ->
         "Assessing query risk · Run unavailable"
+    evaluation?.decision?.state == RiskGateState.ConfirmationRequired ->
+        "Query plan safeguard: Confirmation required · Run unavailable"
     evaluation?.decision?.state == RiskGateState.Blocked ->
         "Query risk: ${evaluation.finalAssessment?.severity?.label} · Run blocked"
+    evaluation?.confirmationAccepted == true -> {
+        val severity = evaluation.finalAssessment?.severity?.label
+        if (severity == null) {
+            "Query risk: Not required · plan safeguard confirmed · Run enabled"
+        } else {
+            "Query risk: $severity · plan safeguard confirmed · Run enabled"
+        }
+    }
+    gate == QueryRiskGate.Disabled -> "Query risk: Not required · Run enabled"
     evaluation?.finalAssessment != null -> {
         val finalAssessment = requireNotNull(evaluation.finalAssessment)
         val refinement = if (evaluation.planStatus == QueryPlanStatus.Available) " · plan refined" else ""
@@ -168,6 +181,53 @@ internal fun queryRiskIndicatorText(
     }
     preliminary != null -> "Preliminary query risk: ${preliminary.severity.label} · Run available"
     else -> "Query risk: Ready to assess · Run enabled"
+}
+
+internal data class QueryConfirmationDialogCopy(
+    val title: String,
+    val message: String,
+    val confirmLabel: String,
+)
+
+internal fun queryConfirmationDialogCopy(requirement: QueryConfirmationRequirement): QueryConfirmationDialogCopy {
+    val reasonCodes = requirement.confirmation.reasonCodes
+    val title = when {
+        QueryConfirmationReasonCode.PlanUnavailable in reasonCodes -> "Query plan unavailable"
+        QueryConfirmationReasonCode.OptimizerCostUnavailable in reasonCodes -> "Optimizer cost unavailable"
+        QueryConfirmationReasonCode.OptimizerCostExceeded in reasonCodes -> "Optimizer cost exceeds threshold"
+        else -> "Confirm query execution"
+    }
+    return QueryConfirmationDialogCopy(
+        title = title,
+        message = requirement.reasons.joinToString(separator = " ") { it.message },
+        confirmLabel = "Run with safeguards",
+    )
+}
+
+internal fun planSafeguardBannerText(evaluation: QueryRiskEvaluation?): String? {
+    evaluation ?: return null
+    if (QueryConfirmationReasonCode.OptimizerCostExceeded in
+        evaluation.confirmationRequirement?.confirmation?.reasonCodes.orEmpty()
+    ) {
+        return if (evaluation.confirmationAccepted) {
+            "Optimizer cost threshold exceeded; execution was explicitly confirmed."
+        } else {
+            "Optimizer cost threshold exceeded; explicit confirmation is required."
+        }
+    }
+    return when (evaluation.planStatus) {
+        QueryPlanStatus.Unavailable -> when {
+            evaluation.confirmationAccepted -> "Plan unavailable; execution was explicitly confirmed."
+            evaluation.confirmationRequirement != null -> "Plan unavailable; explicit confirmation is required."
+            else -> "Plan unavailable; static assessment used."
+        }
+        QueryPlanStatus.Incomplete -> when {
+            evaluation.confirmationAccepted -> "Optimizer cost unavailable; execution was explicitly confirmed."
+            evaluation.confirmationRequirement != null -> "Optimizer cost unavailable; explicit confirmation is required."
+            else -> "Optimizer cost unavailable."
+        }
+        else -> null
+    }
 }
 
 @Composable
@@ -559,8 +619,12 @@ fun BuilderScreen(
     }
     val preliminaryEvaluation = (preliminaryRisk as? Outcome.Ok)?.value
     val riskValidationError = (preliminaryRisk as? Outcome.Err)?.message
-    val finalRiskEvaluation = queryViewModel.riskEvaluation
+    val currentSample = queryViewModel.currentSample(connection?.id)
+    val finalRiskEvaluation = queryViewModel.riskEvaluationFor(connection?.id)
     val riskDecision = finalRiskEvaluation?.decision
+    val pendingConfirmation = queryViewModel.pendingConfirmation?.takeIf {
+        it.confirmation.connectionId == connection?.id
+    }
 
     LaunchedEffect(connection?.id, preferredSchema) {
         val connectionId = connection?.id
@@ -576,6 +640,38 @@ fun BuilderScreen(
     val showLargeLimitGuidance = connection != null &&
         queryViewModel.canvasTables.isNotEmpty() &&
         queryViewModel.limit > LARGE_LIMIT_WARNING_THRESHOLD
+
+    if (pendingConfirmation != null) {
+        val copy = queryConfirmationDialogCopy(pendingConfirmation)
+        AlertDialog(
+            onDismissRequest = queryViewModel::dismissError,
+            shape = RoundedCornerShape(4.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text(copy.title, style = MaterialTheme.typography.titleMedium) },
+            text = { Text(copy.message) },
+            confirmButton = {
+                PrimaryButton(
+                    onClick = {
+                        val connectionId = connection?.id
+                        if (connectionId == null) {
+                            queryViewModel.dismissError()
+                        } else {
+                            queryViewModel.confirmPendingExecution(connectionId)
+                        }
+                    },
+                ) {
+                    Text(copy.confirmLabel)
+                }
+            },
+            dismissButton = {
+                SecondaryButton(onClick = queryViewModel::dismissError) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 
     PromptDialog(
         open = showSavePrompt,
@@ -653,10 +749,10 @@ fun BuilderScreen(
                                 riskValidationError,
                             ),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (riskDecision?.state == RiskGateState.Blocked) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                            color = when (riskDecision?.state) {
+                                RiskGateState.Blocked -> MaterialTheme.colorScheme.error
+                                RiskGateState.ConfirmationRequired -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         )
                     }
@@ -756,10 +852,14 @@ fun BuilderScreen(
             )
         }
 
-        if (finalRiskEvaluation?.planStatus == QueryPlanStatus.Unavailable) {
+        planSafeguardBannerText(finalRiskEvaluation)?.let { message ->
             MessageBanner(
-                text = "Plan unavailable; static assessment used.",
-                kind = BannerKind.INFO,
+                text = message,
+                kind = if (riskDecision?.state == RiskGateState.ConfirmationRequired) {
+                    BannerKind.WARNING
+                } else {
+                    BannerKind.INFO
+                },
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
         }
@@ -938,7 +1038,7 @@ fun BuilderScreen(
                             }
                         }
 
-                        queryViewModel.results?.let { result ->
+                        currentSample?.result?.let { result ->
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()

@@ -1,16 +1,19 @@
 package com.safedb.viewmodel
 
 import com.safedb.model.Dialect
-import com.safedb.model.Settings
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.Settings
 import com.safedb.model.ThemePalette
 import com.safedb.model.normalizeSettings
 import com.safedb.service.SafeDbService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class SettingsViewModel(
     private val service: SafeDbService,
@@ -18,6 +21,7 @@ class SettingsViewModel(
 ) {
     private var defaultSchemaRequestGeneration = 0
     private var defaultSchemaConnectionId: String? = null
+    private val settingsMutationMutex = Mutex()
 
     private val _settings = MutableStateFlow(Settings.default())
     val settings: StateFlow<Settings> = _settings.asStateFlow()
@@ -46,11 +50,13 @@ class SettingsViewModel(
     val palette: ThemePalette
         get() = _settings.value.palette()
 
-    suspend fun load() {
+    suspend fun load() = settingsMutationMutex.withLock {
         _loading.value = true
         _loadError.value = null
         try {
             _settings.value = service.getSettings()
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             _loadError.value = error.message ?: error.toString()
         } finally {
@@ -64,27 +70,63 @@ class SettingsViewModel(
 
     fun setDarkMode(isDark: Boolean) {
         val next = if (isDark) "dark" else Settings.DEFAULT_THEME
-        if (_settings.value.theme == next) return
-        scope.launch {
-            _saveError.value = null
-            val updated = _settings.value.copy(theme = next)
-            save(updated)
+        mutateSettings {
+            if (_settings.value.theme == next) return@mutateSettings
+            save(_settings.value.copy(theme = next))
         }
     }
 
     fun setColorScheme(palette: ThemePalette) {
-        if (_settings.value.palette() == palette) return
-        scope.launch {
-            _saveError.value = null
+        mutateSettings {
+            if (_settings.value.palette() == palette) return@mutateSettings
             save(_settings.value.copy(colorScheme = palette.id))
         }
     }
 
     fun setQueryRiskGate(gate: QueryRiskGate) {
-        if (_settings.value.queryRiskGate == gate) return
-        scope.launch {
-            _saveError.value = null
+        mutateSettings {
+            if (_settings.value.queryRiskGate == gate) return@mutateSettings
             save(_settings.value.copy(queryRiskGate = gate))
+        }
+    }
+
+    fun saveThresholds(thresholds: Map<Dialect, Double>, onSuccess: () -> Unit = {}) {
+        mutateSettings {
+            val updatedThresholds = Dialect.entries.associateWith { dialect ->
+                thresholds[dialect] ?: _settings.value.costThreshold(dialect)
+            }
+            val invalid = updatedThresholds.entries.firstOrNull { (_, value) ->
+                !value.isFinite() || value !in Settings.MIN_COST_THRESHOLD..Settings.MAX_COST_THRESHOLD
+            }
+            if (invalid != null) {
+                _saveError.value =
+                    "${dialectLabel(invalid.key)} threshold must be between 1 and 10,000,000"
+                return@mutateSettings
+            }
+            val updated = _settings.value.copy(
+                explainCostThresholds = updatedThresholds,
+                explainCostThreshold = updatedThresholds.getValue(Dialect.Postgres),
+            )
+            if (save(updated)) onSuccess()
+        }
+    }
+
+    fun addBlockedSchema(schema: String) {
+        val normalized = schema.trim().lowercase()
+        if (normalized.isEmpty()) return
+        mutateSettings {
+            val current = _settings.value.blockedSchemas
+            if (normalized in current) return@mutateSettings
+            save(_settings.value.copy(blockedSchemas = current + normalized))
+        }
+    }
+
+    fun removeBlockedSchema(schema: String) {
+        val normalized = schema.trim().lowercase()
+        mutateSettings {
+            val current = _settings.value.blockedSchemas
+            if (normalized !in current) return@mutateSettings
+            save(_settings.value.copy(blockedSchemas = current - normalized))
         }
     }
 
@@ -133,17 +175,16 @@ class SettingsViewModel(
         schema: String,
         onSuccess: () -> Unit = {},
     ) {
-        scope.launch {
-            _saveError.value = null
+        mutateSettings {
             val normalizedConnectionId = connectionId.trim()
             val normalizedSchema = schema.trim()
-            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty()) return@launch
+            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty()) return@mutateSettings
             if (
                 defaultSchemaConnectionId != normalizedConnectionId ||
                 normalizedSchema !in _defaultSchemaOptions.value
             ) {
                 _saveError.value = "Select a schema loaded from the chosen database."
-                return@launch
+                return@mutateSettings
             }
             if (save(
                     _settings.value.copy(
@@ -158,11 +199,10 @@ class SettingsViewModel(
     }
 
     fun clearDefaultLocation(onSuccess: () -> Unit = {}) {
-        scope.launch {
-            _saveError.value = null
+        mutateSettings {
             if (_settings.value.defaultConnectionId == null && _settings.value.defaultSchema == null) {
                 onSuccess()
-                return@launch
+                return@mutateSettings
             }
             if (save(_settings.value.copy(defaultConnectionId = null, defaultSchema = null))) {
                 onSuccess()
@@ -171,8 +211,12 @@ class SettingsViewModel(
     }
 
     fun clearDefaultIfConnection(connectionId: String, onSuccess: () -> Unit = {}) {
-        if (_settings.value.defaultConnectionId != connectionId) return
-        clearDefaultLocation(onSuccess)
+        mutateSettings {
+            if (_settings.value.defaultConnectionId != connectionId) return@mutateSettings
+            if (save(_settings.value.copy(defaultConnectionId = null, defaultSchema = null))) {
+                onSuccess()
+            }
+        }
     }
 
     fun clearSaveError() {
@@ -183,12 +227,23 @@ class SettingsViewModel(
         _loadError.value = null
     }
 
+    private fun mutateSettings(mutation: suspend () -> Unit) {
+        scope.launch {
+            settingsMutationMutex.withLock {
+                _saveError.value = null
+                mutation()
+            }
+        }
+    }
+
     private suspend fun save(settings: Settings): Boolean {
         val normalized = normalizeSettings(settings)
         return try {
             service.saveSettings(normalized)
             _settings.value = normalized
             true
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             _saveError.value = error.message ?: error.toString()
             false

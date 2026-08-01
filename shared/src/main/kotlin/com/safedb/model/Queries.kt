@@ -45,4 +45,12 @@ data class HistoryEntry(
     val riskPlanReason: String? = null,
     @SerialName("risk_gate_state")
     val riskGateState: String? = null,
+    @SerialName("risk_optimizer_cost")
+    val riskOptimizerCost: Double? = null,
+    @SerialName("risk_optimizer_cost_threshold")
+    val riskOptimizerCostThreshold: Double? = null,
+    @SerialName("risk_confirmation_codes")
+    val riskConfirmationCodes: List<String> = emptyList(),
+    @SerialName("risk_confirmation_accepted")
+    val riskConfirmationAccepted: Boolean? = null,
 )

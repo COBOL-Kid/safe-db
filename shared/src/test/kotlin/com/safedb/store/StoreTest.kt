@@ -133,6 +133,8 @@ class StoreTest {
         assertEquals("light", defaults.theme)
         assertEquals(ThemePalette.DEFAULT.id, defaults.colorScheme)
         assertEquals(QueryRiskGate.Standard, defaults.queryRiskGate)
+        assertEquals(Settings.DEFAULT_COST_THRESHOLD, defaults.explainCostThreshold)
+        assertEquals(Settings.defaultDialectThresholds(), defaults.explainCostThresholds)
         assertTrue(defaults.blockedSchemas.isEmpty())
 
         Files.writeString(dir.resolve("settings.json"), """{"blocked_schemas":["audit"]}""")
@@ -140,6 +142,7 @@ class StoreTest {
         assertEquals(listOf("audit"), loaded.blockedSchemas)
         assertEquals("light", loaded.theme)
         assertEquals(ThemePalette.DEFAULT.id, loaded.colorScheme)
+        assertEquals(Settings.DEFAULT_COST_THRESHOLD, loaded.costThreshold(Dialect.Postgres))
     }
 
     @Test
@@ -153,11 +156,36 @@ class StoreTest {
     }
 
     @Test
+    fun settingsStoreMigratesLegacyScalarThresholdToEveryDialect() {
+        val dir = tempDir()
+        val store = SettingsStore.new(dir)
+        Files.writeString(dir.resolve("settings.json"), """{"explain_cost_threshold":42.0}""")
+
+        val loaded = store.load()
+
+        assertEquals(42.0, loaded.explainCostThreshold)
+        assertTrue(Dialect.entries.all { loaded.costThreshold(it) == 42.0 })
+
+        store.save(loaded)
+        val persistedSettings = Files.readString(dir.resolve("settings.json"))
+        assertTrue(persistedSettings.contains("\"explain_cost_threshold\":"))
+        assertTrue(persistedSettings.contains("\"explain_cost_thresholds\":"))
+        assertTrue(Dialect.entries.all { store.load().costThreshold(it) == 42.0 })
+    }
+
+    @Test
     fun settingsStoreSaveRoundTripsNonDefaultValues() {
         val dir = tempDir()
         val store = SettingsStore.new(dir)
         val saved = Settings(
             blockedSchemas = listOf("pg_catalog", "information_schema"),
+            explainCostThreshold = 42.5,
+            explainCostThresholds = mapOf(
+                Dialect.Postgres to 42.5,
+                Dialect.MySql to 75.0,
+                Dialect.Mssql to 125.0,
+                Dialect.Oracle to 250.0,
+            ),
             theme = "dark",
             colorScheme = ThemePalette.Oxide.id,
             queryRiskGate = QueryRiskGate.Flexible,
@@ -167,6 +195,8 @@ class StoreTest {
         store.save(saved)
         val loaded = store.load()
         assertEquals(saved.blockedSchemas, loaded.blockedSchemas)
+        assertEquals(saved.explainCostThreshold, loaded.explainCostThreshold)
+        assertEquals(saved.explainCostThresholds, loaded.explainCostThresholds)
         assertEquals("dark", loaded.theme)
         assertEquals(ThemePalette.Oxide.id, loaded.colorScheme)
         assertEquals(QueryRiskGate.Flexible, loaded.queryRiskGate)
@@ -293,22 +323,37 @@ class StoreTest {
         assertEquals("Saved from existing data", queries.listSaved().single().name)
         assertEquals("Local PG", queries.listHistory().single().connectionName)
         assertEquals(listOf("audit"), settings.blockedSchemas)
+        assertEquals(42.0, settings.explainCostThreshold)
+        assertTrue(Dialect.entries.all { settings.costThreshold(it) == 42.0 })
         assertEquals("dark", settings.theme)
-
-        SettingsStore.new(dir).save(settings)
-        assertFalse(Files.readString(dir.resolve("settings.json")).contains("explain_cost_threshold"))
     }
 
     @Test
-    fun normalizeSettingsLowercasesBlockedSchemasAndNormalizesTheme() {
+    fun normalizeSettingsRepairsBlockedSchemasThresholdsAndTheme() {
         val normalized = normalizeSettings(
             Settings(
                 blockedSchemas = listOf("Audit", "audit"),
+                explainCostThreshold = 0.5,
+                explainCostThresholds = mapOf(
+                    Dialect.Postgres to 0.5,
+                    Dialect.MySql to 20_000_000.0,
+                ),
                 theme = "dark",
                 colorScheme = " SIGNAL-TEAL ",
             ),
         )
         assertEquals(listOf("audit"), normalized.blockedSchemas)
+        assertEquals(Settings.MIN_COST_THRESHOLD, normalized.explainCostThreshold)
+        assertEquals(Settings.MIN_COST_THRESHOLD, normalized.costThreshold(Dialect.Postgres))
+        assertEquals(Settings.MAX_COST_THRESHOLD, normalized.costThreshold(Dialect.MySql))
+        assertEquals(Settings.MIN_COST_THRESHOLD, normalized.costThreshold(Dialect.Mssql))
+        assertEquals(Settings.MIN_COST_THRESHOLD, normalized.costThreshold(Dialect.Oracle))
+        assertEquals(
+            Settings.DEFAULT_COST_THRESHOLD,
+            Settings(
+                explainCostThresholds = mapOf(Dialect.Postgres to Double.NaN),
+            ).costThreshold(Dialect.Postgres),
+        )
         assertEquals("dark", normalized.theme)
         assertEquals(ThemePalette.SignalTeal.id, normalized.colorScheme)
     }

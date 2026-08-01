@@ -193,6 +193,75 @@ class ViewModelsTest {
     }
 
     @Test
+    fun settingsViewModelPersistsThresholdsAndBlockedSchemas() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val scope = TestScope(dispatcher)
+        val viewModel = SettingsViewModel(service, scope)
+        viewModel.load()
+        advanceUntilIdle()
+
+        val thresholds = mapOf(
+            Dialect.Postgres to 10.0,
+            Dialect.MySql to 20.0,
+            Dialect.Mssql to 30.0,
+            Dialect.Oracle to 40.0,
+        )
+        var thresholdsSaved = false
+        viewModel.saveThresholds(thresholds) { thresholdsSaved = true }
+        advanceUntilIdle()
+
+        assertTrue(thresholdsSaved)
+        assertEquals(thresholds, viewModel.settings.value.explainCostThresholds)
+        assertEquals(thresholds, service.savedSettings?.explainCostThresholds)
+
+        viewModel.addBlockedSchema(" Audit ")
+        advanceUntilIdle()
+        assertEquals(listOf("audit"), viewModel.settings.value.blockedSchemas)
+
+        viewModel.addBlockedSchema("AUDIT")
+        advanceUntilIdle()
+        assertEquals(2, service.settingsSaveCount)
+
+        viewModel.removeBlockedSchema(" AUDIT ")
+        advanceUntilIdle()
+        assertTrue(viewModel.settings.value.blockedSchemas.isEmpty())
+        assertEquals(3, service.settingsSaveCount)
+    }
+
+    @Test
+    fun settingsViewModelSerializesSafeguardMutationsWithoutLostUpdates() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val firstSaveStarted = CompletableDeferred<Unit>()
+        val saveGate = CompletableDeferred<Unit>()
+        service.settingsSaveStarted = firstSaveStarted
+        service.settingsSaveGate = saveGate
+        val viewModel = SettingsViewModel(service, TestScope(dispatcher))
+        viewModel.load()
+
+        val thresholds = mapOf(
+            Dialect.Postgres to 10.0,
+            Dialect.MySql to 20.0,
+            Dialect.Mssql to 30.0,
+            Dialect.Oracle to 40.0,
+        )
+        viewModel.addBlockedSchema("audit")
+        viewModel.addBlockedSchema("private")
+        viewModel.saveThresholds(thresholds)
+        runCurrent()
+
+        assertTrue(firstSaveStarted.isCompleted)
+        assertEquals(1, service.settingsSaveCount)
+
+        saveGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf("audit", "private"), viewModel.settings.value.blockedSchemas)
+        assertEquals(thresholds, viewModel.settings.value.explainCostThresholds)
+        assertEquals(viewModel.settings.value, service.savedSettings)
+        assertEquals(3, service.settingsSaveCount)
+    }
+
+    @Test
     fun settingsViewModelLoadsSchemasAndSavesDefaultLocationAtomically() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val scope = TestScope(dispatcher)
@@ -290,18 +359,18 @@ class ViewModelsTest {
     }
 
     @Test
-    fun settingsViewModelPersistsRiskGateWithoutLegacyThresholds() = runTest(dispatcher) {
+    fun settingsViewModelRejectsInvalidThresholds() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val scope = TestScope(dispatcher)
         val viewModel = SettingsViewModel(service, scope)
         viewModel.load()
         advanceUntilIdle()
 
-        viewModel.setQueryRiskGate(com.safedb.model.QueryRiskGate.Flexible)
+        viewModel.saveThresholds(mapOf(Dialect.Postgres to Double.NaN))
         advanceUntilIdle()
 
-        assertEquals(com.safedb.model.QueryRiskGate.Flexible, service.savedSettings?.queryRiskGate)
-        assertNull(viewModel.saveError.value)
+        assertNull(service.savedSettings)
+        assertTrue(viewModel.saveError.value?.contains("PostgreSQL") == true)
     }
 
     @Test
@@ -397,6 +466,8 @@ private class RecordingSafeDbService : SafeDbService {
     var failSchemaLoad = false
     val schemaResponses = mutableMapOf<String, CompletableDeferred<Schema>>()
     var settingsSaveCount = 0
+    var settingsSaveStarted: CompletableDeferred<Unit>? = null
+    var settingsSaveGate: CompletableDeferred<Unit>? = null
 
     private val connection = ConnectionDef(
         id = "c1",
@@ -465,6 +536,8 @@ private class RecordingSafeDbService : SafeDbService {
     override suspend fun saveSettings(settings: Settings) {
         if (failSettingsSave) error("settings save failed")
         settingsSaveCount += 1
+        settingsSaveStarted?.complete(Unit)
+        settingsSaveGate?.await()
         savedSettings = settings
     }
 }

@@ -10,11 +10,13 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.query.QueryCoreError
 import com.safedb.query.QueryError
+import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.QueryRiskEvaluation
 
 data class QueryRunRequest(
     val connectionId: String,
     val spec: QuerySpec,
+    val confirmation: QueryExecutionConfirmation? = null,
 )
 
 data class QueryRunResult(

@@ -22,6 +22,7 @@ import com.safedb.store.RecipeStore
 import com.safedb.store.SettingsStore
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 
 internal fun interface QuerySessionFactory {
     suspend fun open(def: ConnectionDef, password: String): QuerySession
@@ -142,6 +143,7 @@ class SafeDbServiceImpl internal constructor(
                     request.spec,
                     session.schema,
                     settings,
+                    request.confirmation,
                 )
             ) {
                 is QueryCoreOutcome.Success -> {
@@ -266,6 +268,17 @@ class SafeDbServiceImpl internal constructor(
                     riskPlanStatus = riskEvaluation?.planStatus?.name,
                     riskPlanReason = riskEvaluation?.planUnavailableReason?.name,
                     riskGateState = riskEvaluation?.decision?.state?.name,
+                    riskOptimizerCost = riskEvaluation?.optimizerCost,
+                    riskOptimizerCostThreshold = riskEvaluation?.optimizerCostThreshold,
+                    riskConfirmationCodes = riskEvaluation?.confirmationRequirement
+                        ?.confirmation
+                        ?.reasonCodes
+                        .orEmpty()
+                        .map { it.name }
+                        .sorted(),
+                    riskConfirmationAccepted = riskEvaluation?.confirmationRequirement?.let {
+                        riskEvaluation.confirmationAccepted
+                    },
                 ),
             )
         }
@@ -276,10 +289,12 @@ class SafeDbServiceImpl internal constructor(
             adapter.explain(compiled)
 
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> =
-            runCatching { adapter.executeQuery(compiled, timeoutMs) }
-                .fold(
-                    onSuccess = { Outcome.ok(it) },
-                    onFailure = { Outcome.err(it.message ?: it.toString()) },
-                )
+            try {
+                Outcome.ok(adapter.executeQuery(compiled, timeoutMs))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Outcome.err(error.message ?: error.toString())
+            }
     }
 }

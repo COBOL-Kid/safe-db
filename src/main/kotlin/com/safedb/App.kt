@@ -66,6 +66,10 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
         }
     }
 
+    LaunchedEffect(activeConnectionId) {
+        viewModel.query.onActiveConnectionChanged(activeConnectionId)
+    }
+
     LaunchedEffect(pendingRecipeRun, viewModel.query.results, viewModel.query.running, viewModel.query.error, activeConnectionId) {
         val pending = pendingRecipeRun ?: return@LaunchedEffect
         if (viewModel.cancelPendingRecipeRunIfConnectionChanged(activeConnectionId)) return@LaunchedEffect

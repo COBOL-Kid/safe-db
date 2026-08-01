@@ -169,9 +169,9 @@ fun AppShell(
                     settings = settings,
                     onOpenExplore = {
                         val connection = activeConnection
-                        val result = viewModel.query.results
-                        if (connection != null && result != null) {
-                            viewModel.openExplore(connection, viewModel.query.spec, result)
+                        val sample = viewModel.query.currentSample(connection?.id)
+                        if (connection != null && sample != null) {
+                            viewModel.openExplore(connection, sample.spec, sample.result)
                         }
                     },
                     onOpenSettings = appState::openSettings,

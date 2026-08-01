@@ -7,6 +7,7 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
 import com.safedb.model.NormalizedQueryPlan
+import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.ColumnCategory
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.FilterGroup
@@ -21,6 +22,7 @@ import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.TransportSecurity
 import com.safedb.query.QueryRunner
+import com.safedb.query.QueryError
 import com.safedb.secrets.DisabledMemoryStore
 import com.safedb.secrets.CredentialStore
 import com.safedb.secrets.CredentialSession
@@ -29,12 +31,15 @@ import com.safedb.store.ConfigStore
 import com.safedb.store.QueryStore
 import com.safedb.store.SettingsStore
 import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SafeDbServiceImplTest {
@@ -148,7 +153,79 @@ class SafeDbServiceImplTest {
         assertEquals(history.riskStaticScore, history.riskFinalScore)
         assertEquals("Available", history.riskPlanStatus)
         assertEquals("Allowed", history.riskGateState)
+        assertEquals(1.0, history.riskOptimizerCost)
+        assertEquals(100_000.0, history.riskOptimizerCostThreshold)
+        assertTrue(history.riskConfirmationCodes.isEmpty())
+        assertNull(history.riskConfirmationAccepted)
         assertTrue("NoEffectiveRestriction" in history.riskSignalCodes)
+    }
+
+    @Test
+    fun runQueryRecordsRequiredAndAcceptedPlanConfirmation() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val runner = UnavailablePlanRunner()
+        val spec = sampleQuerySpec()
+        val service = SafeDbServiceImpl(
+            configStore = configStore,
+            queryStore = queryStore,
+            settingsStore = SettingsStore.new(dir),
+            querySessionFactory = QuerySessionFactory { _, _ -> QuerySession(sampleSchema(), runner) },
+        )
+
+        val failure = assertFailsWith<QueryFailureException> {
+            service.runQuery(QueryRunRequest("c1", spec))
+        }
+        val confirmationError = assertIs<QueryError.ConfirmationRequired>(failure.queryError)
+
+        service.runQuery(
+            QueryRunRequest(
+                "c1",
+                spec,
+                confirmationError.requirement.confirmation,
+            ),
+        )
+
+        val history = queryStore.listHistory()
+        assertEquals(2, history.size)
+        val required = history.single { it.error != null }
+        val accepted = history.single { it.error == null }
+        assertEquals("ConfirmationRequired", required.riskGateState)
+        assertEquals(listOf("PlanUnavailable"), required.riskConfirmationCodes)
+        assertEquals(false, required.riskConfirmationAccepted)
+        assertEquals("Allowed", accepted.riskGateState)
+        assertEquals(listOf("PlanUnavailable"), accepted.riskConfirmationCodes)
+        assertEquals(true, accepted.riskConfirmationAccepted)
+        assertEquals(1, runner.executeCalls)
+    }
+
+    @Test
+    fun cancelledAdapterExecutionPropagatesClosesSessionAndWritesNoHistory() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        val adapter = FakeConnectedAdapter(executionFailure = CancellationException("cancelled"))
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val service = SafeDbServiceImpl(
+            configStore = configStore,
+            queryStore = queryStore,
+            settingsStore = SettingsStore.new(dir),
+            querySessionFactory = null,
+            adapterFactory = AdapterFactory { _, _ -> adapter },
+        )
+
+        assertFailsWith<CancellationException> {
+            service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
+        }
+
+        assertEquals(1, adapter.closeCount)
+        assertTrue(queryStore.listHistory().isEmpty())
     }
 
     @Test
@@ -335,8 +412,21 @@ private class FailingRunner : QueryRunner {
         Outcome.err("execution failed")
 }
 
+private class UnavailablePlanRunner : QueryRunner {
+    var executeCalls = 0
+
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+        ExplainResult.Unavailable(PlanUnavailableReason.PermissionDenied, "planner denied")
+
+    override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> {
+        executeCalls += 1
+        return Outcome.ok(QueryResult(emptyList(), emptyList(), 0, false, emptyList()))
+    }
+}
+
 private class FakeConnectedAdapter(
     private val introspectionFailure: Throwable? = null,
+    private val executionFailure: Throwable? = null,
 ) : ConnectedAdapter {
     var closeCount = 0
     var introspectionCount = 0
@@ -355,8 +445,10 @@ private class FakeConnectedAdapter(
 
     override suspend fun explain(compiled: CompiledQuery): ExplainResult = availablePlan()
 
-    override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-        QueryResult(emptyList(), emptyList(), 0, false, emptyList())
+    override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult {
+        executionFailure?.let { throw it }
+        return QueryResult(emptyList(), emptyList(), 0, false, emptyList())
+    }
 
     override fun close() {
         closeCount += 1

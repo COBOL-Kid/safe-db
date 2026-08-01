@@ -108,7 +108,7 @@ data class QueryRiskAssessment(
     val uncertainties: List<RiskUncertainty>,
 )
 
-enum class RiskGateState { Allowed, AssessmentPending, Blocked }
+enum class RiskGateState { Allowed, AssessmentPending, ConfirmationRequired, Blocked }
 
 data class RiskDecisionReason(
     val code: String,
@@ -124,7 +124,35 @@ data class QueryRiskDecision(
     val reasons: List<RiskDecisionReason>,
 )
 
-enum class QueryPlanStatus { NotRequested, Available, Unavailable, Disabled }
+enum class QueryConfirmationReasonCode {
+    PlanUnavailable,
+    OptimizerCostUnavailable,
+    OptimizerCostExceeded,
+}
+
+data class QueryConfirmationCondition(
+    val reasonCode: QueryConfirmationReasonCode,
+    /** Stable condition identity, excluding optimizer observations that may vary between retries. */
+    val conditionKey: String,
+)
+
+/** An acknowledgement scoped to the exact connection, query, and exceptional plan conditions. */
+data class QueryExecutionConfirmation(
+    val connectionId: String,
+    val connectionFingerprint: String,
+    val queryFingerprint: String,
+    val conditions: Set<QueryConfirmationCondition>,
+) {
+    val reasonCodes: Set<QueryConfirmationReasonCode>
+        get() = conditions.mapTo(linkedSetOf(), QueryConfirmationCondition::reasonCode)
+}
+
+data class QueryConfirmationRequirement(
+    val confirmation: QueryExecutionConfirmation,
+    val reasons: List<RiskDecisionReason>,
+)
+
+enum class QueryPlanStatus { NotRequested, Available, Incomplete, Unavailable, Disabled }
 
 data class QueryRiskEvaluation(
     val staticAssessment: QueryRiskAssessment?,
@@ -132,6 +160,10 @@ data class QueryRiskEvaluation(
     val planStatus: QueryPlanStatus,
     val planUnavailableReason: PlanUnavailableReason? = null,
     val decision: QueryRiskDecision,
+    val optimizerCost: Double? = null,
+    val optimizerCostThreshold: Double? = null,
+    val confirmationRequirement: QueryConfirmationRequirement? = null,
+    val confirmationAccepted: Boolean = false,
 ) {
     val assessment: QueryRiskAssessment?
         get() = finalAssessment
