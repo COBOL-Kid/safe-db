@@ -1,6 +1,6 @@
 # safe-db
 
-Desktop app for safely exploring production databases. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN cost warnings.
+Desktop app for safely exploring production databases. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN-informed risk scoring.
 
 safe-db is a **Jetpack Compose Desktop** app with a Kotlin/JDBC backend. The Gradle project lives at the repository root.
 
@@ -44,9 +44,9 @@ The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. I
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
 - **Explore modes** — analyze the current immutable result sample as a nested pivot, worksheet, or visualization. Worksheet mode adds direct sort/group/filter controls, row and group formulas, summaries, and window calculations such as running totals, previous values, percentages, and ranks. Visualization offers templates and editable field shelves for bar, line, scatter, histogram, and KPI charts, with contributing-row drill-through plus PNG and chart-data CSV exports.
 - **Explore recipes** — save any combination of Pivot, Worksheet, and Visualization configurations, optionally with the Builder query, then reuse locally or share through versioned `.safedb-recipe.json` files.
-- **Safety rails** — read-only `SELECT` queries, default 100 rows with fixed choices up to an interactive max of 5,000, guidance above 1,000 rows, 10 s timeout, custom blocked schemas, filter literal type validation, and a cost-preview guard.
+- **Safety rails** — read-only `SELECT` queries, default 100 rows with fixed choices up to an interactive max of 5,000, guidance above 1,000 rows, 10 s timeout, restricted schemas, filter literal type validation, and EXPLAIN-informed risk scoring.
 - **Saved queries and history** — persisted through the Kotlin stores in the app data directory; timestamps are Unix-seconds strings.
-- **Settings** — theme, `explain_cost_threshold`, and `blocked_schemas`.
+- **Settings** — default query location, appearance, and query-risk gate.
 
 ## Supported Databases
 
@@ -123,7 +123,7 @@ Existing `connections.json`, `settings.json`, `saved_queries.json`, `query_histo
 
 The builder sends a structured query IR to the Kotlin query engine. The engine validates table/column references, blocked schemas, join eligibility, filter depth, literal types, and row limits before compiling dialect-specific SQL with bound parameters. The default row limit is 100, the builder offers fixed choices up to an interactive max of 5,000, and limits above 1,000 add guidance about filters, selected columns, and indexed predicates instead of blocking reporting-oriented work.
 
-EXPLAIN runs against the post-validation SQL. If EXPLAIN fails or the estimated cost exceeds the configured threshold, the first run is blocked and the UI asks for explicit confirmation. Forced retries still run with the same row limit and timeout.
+EXPLAIN runs against the post-validation SQL and refines the query-risk calculation with plan evidence. If the plan is unavailable or does not provide a usable optimizer cost, the first run is blocked and the UI asks for explicit confirmation. Confirmed retries still run with the same row limit and timeout.
 
 ## Project Layout
 

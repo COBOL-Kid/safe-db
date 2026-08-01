@@ -127,7 +127,6 @@ data class QueryRiskDecision(
 enum class QueryConfirmationReasonCode {
     PlanUnavailable,
     OptimizerCostUnavailable,
-    OptimizerCostExceeded,
 }
 
 data class QueryConfirmationCondition(
@@ -161,7 +160,6 @@ data class QueryRiskEvaluation(
     val planUnavailableReason: PlanUnavailableReason? = null,
     val decision: QueryRiskDecision,
     val optimizerCost: Double? = null,
-    val optimizerCostThreshold: Double? = null,
     val confirmationRequirement: QueryConfirmationRequirement? = null,
     val confirmationAccepted: Boolean = false,
 ) {

@@ -119,8 +119,8 @@ suspend fun runQueryCore(
         )
     }
 
-    // EXPLAIN availability and optimizer cost are hard execution safeguards. They remain active
-    // when descriptive query-risk scoring is disabled.
+    // EXPLAIN plan evidence refines query-risk scoring. Plan availability and a usable optimizer
+    // cost remain execution safeguards even when descriptive query-risk scoring is disabled.
     val explain = try {
         runner.explain(compiled)
     } catch (error: CancellationException) {
@@ -132,7 +132,6 @@ suspend fun runQueryCore(
         )
     }
     val fingerprint = staticAssessment?.queryFingerprint ?: queryFingerprint(validated)
-    val optimizerCostThreshold = settings.costThreshold(def.dialect)
     val baseEvaluation = when (explain) {
         is ExplainResult.Available -> {
             val optimizerCost = explain.plan.rawOptimizerCost
@@ -150,7 +149,6 @@ suspend fun runQueryCore(
                 decision = applyRiskGate(finalAssessment, settings.queryRiskGate)
                     .copy(queryFingerprint = fingerprint),
                 optimizerCost = optimizerCost?.takeIf(Double::isFinite)?.takeIf { it >= 0.0 },
-                optimizerCostThreshold = optimizerCostThreshold,
             )
         }
         is ExplainResult.Unavailable -> {
@@ -164,7 +162,6 @@ suspend fun runQueryCore(
                 planUnavailableReason = explain.reasonCode,
                 decision = applyRiskGate(finalAssessment, settings.queryRiskGate)
                     .copy(queryFingerprint = fingerprint),
-                optimizerCostThreshold = optimizerCostThreshold,
             )
         }
     }
@@ -178,7 +175,7 @@ suspend fun runQueryCore(
         )
     }
 
-    val requirement = confirmationRequirement(def, fingerprint, explain, optimizerCostThreshold)
+    val requirement = confirmationRequirement(def, fingerprint, explain)
     val confirmationAccepted = requirement != null && confirmation == requirement.confirmation
     val evaluation = when {
         requirement == null -> baseEvaluation
@@ -211,7 +208,6 @@ private fun confirmationRequirement(
     def: ConnectionDef,
     queryFingerprint: String,
     explain: ExplainResult,
-    optimizerCostThreshold: Double,
 ): QueryConfirmationRequirement? {
     val (condition, reason) = when (explain) {
         is ExplainResult.Unavailable -> QueryConfirmationCondition(
@@ -230,13 +226,6 @@ private fun confirmationRequirement(
                 ) to RiskDecisionReason(
                     code = "optimizer_cost_unavailable",
                     message = "The query plan did not provide a valid optimizer cost. Confirm to run with read-only, row-limit, and timeout safeguards.",
-                )
-                cost > optimizerCostThreshold -> QueryConfirmationCondition(
-                    QueryConfirmationReasonCode.OptimizerCostExceeded,
-                    "${def.dialect.name}:${optimizerCostThreshold.toBits()}",
-                ) to RiskDecisionReason(
-                    code = "optimizer_cost_exceeded",
-                    message = "Estimated query cost (${"%.0f".format(cost)}) exceeds the ${def.dialect.name} threshold (${"%.0f".format(optimizerCostThreshold)}). Confirm to run with read-only, row-limit, and timeout safeguards.",
                 )
                 else -> return null
             }

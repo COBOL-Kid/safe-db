@@ -1,6 +1,5 @@
 package com.safedb.viewmodel
 
-import com.safedb.model.Dialect
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.Settings
 import com.safedb.model.ThemePalette
@@ -87,46 +86,6 @@ class SettingsViewModel(
         mutateSettings {
             if (_settings.value.queryRiskGate == gate) return@mutateSettings
             save(_settings.value.copy(queryRiskGate = gate))
-        }
-    }
-
-    fun saveThresholds(thresholds: Map<Dialect, Double>, onSuccess: () -> Unit = {}) {
-        mutateSettings {
-            val updatedThresholds = Dialect.entries.associateWith { dialect ->
-                thresholds[dialect] ?: _settings.value.costThreshold(dialect)
-            }
-            val invalid = updatedThresholds.entries.firstOrNull { (_, value) ->
-                !value.isFinite() || value !in Settings.MIN_COST_THRESHOLD..Settings.MAX_COST_THRESHOLD
-            }
-            if (invalid != null) {
-                _saveError.value =
-                    "${dialectLabel(invalid.key)} threshold must be between 1 and 10,000,000"
-                return@mutateSettings
-            }
-            val updated = _settings.value.copy(
-                explainCostThresholds = updatedThresholds,
-                explainCostThreshold = updatedThresholds.getValue(Dialect.Postgres),
-            )
-            if (save(updated)) onSuccess()
-        }
-    }
-
-    fun addBlockedSchema(schema: String) {
-        val normalized = schema.trim().lowercase()
-        if (normalized.isEmpty()) return
-        mutateSettings {
-            val current = _settings.value.blockedSchemas
-            if (normalized in current) return@mutateSettings
-            save(_settings.value.copy(blockedSchemas = current + normalized))
-        }
-    }
-
-    fun removeBlockedSchema(schema: String) {
-        val normalized = schema.trim().lowercase()
-        mutateSettings {
-            val current = _settings.value.blockedSchemas
-            if (normalized !in current) return@mutateSettings
-            save(_settings.value.copy(blockedSchemas = current - normalized))
         }
     }
 
@@ -246,13 +205,4 @@ class SettingsViewModel(
         }
     }
 
-    companion object {
-        fun dialectLabel(dialect: Dialect): String =
-            when (dialect) {
-                Dialect.Postgres -> "PostgreSQL"
-                Dialect.MySql -> "MySQL"
-                Dialect.Mssql -> "SQL Server"
-                Dialect.Oracle -> "Oracle"
-            }
-    }
 }

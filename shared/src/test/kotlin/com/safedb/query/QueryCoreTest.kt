@@ -121,97 +121,38 @@ class QueryCoreTest {
     }
 
     @Test
-    fun disabledRiskModeStillRequiresConfirmationAboveCostThreshold() = runBlocking {
+    fun highOptimizerCostDoesNotRequireConfirmation() = runBlocking {
         val runner = StubRunner(
-            explainResult = ExplainResult.Available(NormalizedQueryPlan(rawOptimizerCost = 101.0)),
-        )
-        val settings = Settings.default().copy(
-            queryRiskGate = QueryRiskGate.Disabled,
-            explainCostThresholds = Settings.defaultDialectThresholds().toMutableMap().apply {
-                this[Dialect.Postgres] = 100.0
-            },
-        )
-
-        val outcome = runQueryCore(runner, sampleConnection(), sampleSpec(), sampleSchema(), settings)
-
-        val error = assertIs<QueryError.ConfirmationRequired>(
-            assertIs<QueryCoreOutcome.Failure>(outcome).error.error,
-        )
-        assertNull(error.evaluation.finalAssessment)
-        assertEquals(
-            setOf(QueryConfirmationReasonCode.OptimizerCostExceeded),
-            error.requirement.confirmation.reasonCodes,
-        )
-        assertEquals(0, runner.executeCalls)
-    }
-
-    @Test
-    fun optimizerCostAboveDialectThresholdRequiresConfirmation() = runBlocking {
-        val runner = StubRunner(
-            explainResult = ExplainResult.Available(NormalizedQueryPlan(rawOptimizerCost = 101.0)),
-        )
-        val settings = Settings.default().copy(
-            explainCostThresholds = Settings.defaultDialectThresholds().toMutableMap().apply {
-                this[Dialect.Postgres] = 100.0
-            },
+            explainResult = ExplainResult.Available(
+                NormalizedQueryPlan(
+                    relations = listOf(
+                        PlanRelationAccess(
+                            table = "users",
+                            alias = "t0",
+                            method = PlanAccessMethod.BoundedLookup,
+                            estimatedRows = 1,
+                        ),
+                    ),
+                    rawOptimizerCost = Double.MAX_VALUE,
+                ),
+            ),
         )
 
-        val first = runQueryCore(runner, sampleConnection(), sampleSpec(), sampleSchema(), settings)
-
-        val failure = assertIs<QueryCoreOutcome.Failure>(first)
-        val confirmationError = assertIs<QueryError.ConfirmationRequired>(failure.error.error)
-        assertEquals(
-            setOf(QueryConfirmationReasonCode.OptimizerCostExceeded),
-            confirmationError.requirement.confirmation.reasonCodes,
-        )
-        assertEquals(0, runner.executeCalls)
-
-        val confirmed = runQueryCore(
+        val outcome = runQueryCore(
             runner,
             sampleConnection(),
             sampleSpec(),
             sampleSchema(),
-            settings,
-            confirmationError.requirement.confirmation,
+            Settings.default(),
         )
-
-        assertIs<QueryCoreOutcome.Success>(confirmed)
-        assertEquals(1, runner.executeCalls)
-
-        val changedThreshold = settings.copy(
-            explainCostThresholds = settings.explainCostThresholds.toMutableMap().apply {
-                this[Dialect.Postgres] = 50.0
-            },
-        )
-        val staleConfirmation = runQueryCore(
-            runner,
-            sampleConnection(),
-            sampleSpec(),
-            sampleSchema(),
-            changedThreshold,
-            confirmationError.requirement.confirmation,
-        )
-        assertIs<QueryError.ConfirmationRequired>(
-            assertIs<QueryCoreOutcome.Failure>(staleConfirmation).error.error,
-        )
-    }
-
-    @Test
-    fun optimizerCostEqualToDialectThresholdExecutesWithoutConfirmation() = runBlocking {
-        val runner = StubRunner(
-            explainResult = ExplainResult.Available(NormalizedQueryPlan(rawOptimizerCost = 100.0)),
-        )
-        val settings = Settings.default().copy(
-            explainCostThresholds = Settings.defaultDialectThresholds().toMutableMap().apply {
-                this[Dialect.Postgres] = 100.0
-            },
-        )
-
-        val outcome = runQueryCore(runner, sampleConnection(), sampleSpec(), sampleSchema(), settings)
 
         val success = assertIs<QueryCoreOutcome.Success>(outcome)
+        assertEquals(QueryPlanStatus.Available, success.riskEvaluation.planStatus)
+        assertEquals(Double.MAX_VALUE, success.riskEvaluation.optimizerCost)
+        assertTrue(success.riskEvaluation.finalAssessment != null)
         assertFalse(success.riskEvaluation.confirmationAccepted)
         assertNull(success.riskEvaluation.confirmationRequirement)
+        assertEquals(1, runner.explainCalls)
         assertEquals(1, runner.executeCalls)
     }
 

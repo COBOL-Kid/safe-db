@@ -269,7 +269,6 @@ class SafeDbServiceImpl internal constructor(
                     riskPlanReason = riskEvaluation?.planUnavailableReason?.name,
                     riskGateState = riskEvaluation?.decision?.state?.name,
                     riskOptimizerCost = riskEvaluation?.optimizerCost,
-                    riskOptimizerCostThreshold = riskEvaluation?.optimizerCostThreshold,
                     riskConfirmationCodes = riskEvaluation?.confirmationRequirement
                         ?.confirmation
                         ?.reasonCodes

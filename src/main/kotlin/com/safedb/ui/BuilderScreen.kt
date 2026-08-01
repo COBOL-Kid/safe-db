@@ -194,7 +194,6 @@ internal fun queryConfirmationDialogCopy(requirement: QueryConfirmationRequireme
     val title = when {
         QueryConfirmationReasonCode.PlanUnavailable in reasonCodes -> "Query plan unavailable"
         QueryConfirmationReasonCode.OptimizerCostUnavailable in reasonCodes -> "Optimizer cost unavailable"
-        QueryConfirmationReasonCode.OptimizerCostExceeded in reasonCodes -> "Optimizer cost exceeds threshold"
         else -> "Confirm query execution"
     }
     return QueryConfirmationDialogCopy(
@@ -206,15 +205,6 @@ internal fun queryConfirmationDialogCopy(requirement: QueryConfirmationRequireme
 
 internal fun planSafeguardBannerText(evaluation: QueryRiskEvaluation?): String? {
     evaluation ?: return null
-    if (QueryConfirmationReasonCode.OptimizerCostExceeded in
-        evaluation.confirmationRequirement?.confirmation?.reasonCodes.orEmpty()
-    ) {
-        return if (evaluation.confirmationAccepted) {
-            "Optimizer cost threshold exceeded; execution was explicitly confirmed."
-        } else {
-            "Optimizer cost threshold exceeded; explicit confirmation is required."
-        }
-    }
     return when (evaluation.planStatus) {
         QueryPlanStatus.Unavailable -> when {
             evaluation.confirmationAccepted -> "Plan unavailable; execution was explicitly confirmed."

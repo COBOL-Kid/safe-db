@@ -105,7 +105,7 @@ safe-db/
 
 - Connections are persisted through `SafeDbService`; profile JSON never contains passwords. Empty passwords are valid credentials, particularly for local MySQL, and must remain `""` through form, service, and query paths.
 - The visual builder works from a typed Kotlin query IR. Preserve recursive filter connectors, schema-derived literal kinds, query hydration for old saved/history specs, and selected-column metadata for empty result sets where an adapter can infer it.
-- Query execution is read-only and guarded by blocked schemas, a default 100-row limit, a 5,000-row maximum, guidance above 1,000 rows, a 10-second timeout, and explicit confirmation when EXPLAIN is unavailable or above the per-dialect cost threshold.
+- Query execution is read-only and guarded by blocked schemas, a default 100-row limit, a 5,000-row maximum, guidance above 1,000 rows, a 10-second timeout, EXPLAIN-informed risk scoring, and explicit confirmation when plan evidence is unavailable or lacks a usable optimizer cost.
 - Explore operates on the immutable query sample. Pivot, Worksheet, and Visualization configurations may be saved/exported as Recipes, but recipe files must never include credentials or sample rows.
 - Use semantic Compose colors (`MaterialTheme.colorScheme` and `SafeDbTheme.colors`) rather than copying hex values into UI code. The selectable Control Blue, Signal Teal, Oxide, and Command Violet palettes live in `src/main/kotlin/com/safedb/ui/theme/`.
 - Keep default connection flows simple. Advanced settings are for technical users and should use direct SSL labels such as “SSL with hostname verification” and “SSL encrypt only (no cert check)”. Avoid security-state indicators that can be transiently misleading.

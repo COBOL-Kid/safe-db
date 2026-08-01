@@ -47,6 +47,7 @@ data class HistoryEntry(
     val riskGateState: String? = null,
     @SerialName("risk_optimizer_cost")
     val riskOptimizerCost: Double? = null,
+    /** Legacy audit metadata retained when older history entries are loaded. */
     @SerialName("risk_optimizer_cost_threshold")
     val riskOptimizerCostThreshold: Double? = null,
     @SerialName("risk_confirmation_codes")

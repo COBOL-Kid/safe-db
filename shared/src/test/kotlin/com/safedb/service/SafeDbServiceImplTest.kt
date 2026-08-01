@@ -154,7 +154,7 @@ class SafeDbServiceImplTest {
         assertEquals("Available", history.riskPlanStatus)
         assertEquals("Allowed", history.riskGateState)
         assertEquals(1.0, history.riskOptimizerCost)
-        assertEquals(100_000.0, history.riskOptimizerCostThreshold)
+        assertNull(history.riskOptimizerCostThreshold)
         assertTrue(history.riskConfirmationCodes.isEmpty())
         assertNull(history.riskConfirmationAccepted)
         assertTrue("NoEffectiveRestriction" in history.riskSignalCodes)

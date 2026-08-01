@@ -193,43 +193,7 @@ class ViewModelsTest {
     }
 
     @Test
-    fun settingsViewModelPersistsThresholdsAndBlockedSchemas() = runTest(dispatcher) {
-        val service = RecordingSafeDbService()
-        val scope = TestScope(dispatcher)
-        val viewModel = SettingsViewModel(service, scope)
-        viewModel.load()
-        advanceUntilIdle()
-
-        val thresholds = mapOf(
-            Dialect.Postgres to 10.0,
-            Dialect.MySql to 20.0,
-            Dialect.Mssql to 30.0,
-            Dialect.Oracle to 40.0,
-        )
-        var thresholdsSaved = false
-        viewModel.saveThresholds(thresholds) { thresholdsSaved = true }
-        advanceUntilIdle()
-
-        assertTrue(thresholdsSaved)
-        assertEquals(thresholds, viewModel.settings.value.explainCostThresholds)
-        assertEquals(thresholds, service.savedSettings?.explainCostThresholds)
-
-        viewModel.addBlockedSchema(" Audit ")
-        advanceUntilIdle()
-        assertEquals(listOf("audit"), viewModel.settings.value.blockedSchemas)
-
-        viewModel.addBlockedSchema("AUDIT")
-        advanceUntilIdle()
-        assertEquals(2, service.settingsSaveCount)
-
-        viewModel.removeBlockedSchema(" AUDIT ")
-        advanceUntilIdle()
-        assertTrue(viewModel.settings.value.blockedSchemas.isEmpty())
-        assertEquals(3, service.settingsSaveCount)
-    }
-
-    @Test
-    fun settingsViewModelSerializesSafeguardMutationsWithoutLostUpdates() = runTest(dispatcher) {
+    fun settingsViewModelSerializesMutationsWithoutLostUpdates() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val firstSaveStarted = CompletableDeferred<Unit>()
         val saveGate = CompletableDeferred<Unit>()
@@ -238,15 +202,9 @@ class ViewModelsTest {
         val viewModel = SettingsViewModel(service, TestScope(dispatcher))
         viewModel.load()
 
-        val thresholds = mapOf(
-            Dialect.Postgres to 10.0,
-            Dialect.MySql to 20.0,
-            Dialect.Mssql to 30.0,
-            Dialect.Oracle to 40.0,
-        )
-        viewModel.addBlockedSchema("audit")
-        viewModel.addBlockedSchema("private")
-        viewModel.saveThresholds(thresholds)
+        viewModel.setDarkMode(true)
+        viewModel.setColorScheme(ThemePalette.Oxide)
+        viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
         runCurrent()
 
         assertTrue(firstSaveStarted.isCompleted)
@@ -255,8 +213,9 @@ class ViewModelsTest {
         saveGate.complete(Unit)
         advanceUntilIdle()
 
-        assertEquals(listOf("audit", "private"), viewModel.settings.value.blockedSchemas)
-        assertEquals(thresholds, viewModel.settings.value.explainCostThresholds)
+        assertEquals("dark", viewModel.settings.value.theme)
+        assertEquals(ThemePalette.Oxide.id, viewModel.settings.value.colorScheme)
+        assertEquals(QueryRiskGate.Flexible, viewModel.settings.value.queryRiskGate)
         assertEquals(viewModel.settings.value, service.savedSettings)
         assertEquals(3, service.settingsSaveCount)
     }
@@ -356,21 +315,6 @@ class ViewModelsTest {
         advanceUntilIdle()
         assertNull(viewModel.settings.value.defaultConnectionId)
         assertNull(viewModel.settings.value.defaultSchema)
-    }
-
-    @Test
-    fun settingsViewModelRejectsInvalidThresholds() = runTest(dispatcher) {
-        val service = RecordingSafeDbService()
-        val scope = TestScope(dispatcher)
-        val viewModel = SettingsViewModel(service, scope)
-        viewModel.load()
-        advanceUntilIdle()
-
-        viewModel.saveThresholds(mapOf(Dialect.Postgres to Double.NaN))
-        advanceUntilIdle()
-
-        assertNull(service.savedSettings)
-        assertTrue(viewModel.saveError.value?.contains("PostgreSQL") == true)
     }
 
     @Test
