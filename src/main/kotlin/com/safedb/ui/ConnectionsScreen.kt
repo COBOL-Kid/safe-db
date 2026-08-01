@@ -53,6 +53,7 @@ fun ConnectionsScreen(
     service: com.safedb.service.SafeDbService,
     viewModel: ConnectionsViewModel,
     onActivate: (String) -> Unit,
+    onDeleted: (String) -> Unit,
     onSaved: () -> Unit,
 ) {
     val connections by viewModel.connections.collectAsState()
@@ -68,7 +69,9 @@ fun ConnectionsScreen(
         message = pendingDelete?.let { "Delete connection \"${it.name}\"? This cannot be undone." } ?: "",
         destructive = true,
         onConfirm = {
-            pendingDelete?.let { viewModel.delete(it.id) }
+            pendingDelete?.let { connection ->
+                viewModel.delete(connection.id) { onDeleted(connection.id) }
+            }
             pendingDelete = null
         },
         onCancel = { pendingDelete = null },

@@ -83,9 +83,11 @@ fun AppShell(
     val route by appState.route.collectAsState()
     val settingsOpen by appState.settingsOpen.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
+    val preferredSchema by appState.preferredSchema.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
+    val connections by viewModel.connections.connections.collectAsState()
     val isDark = settings.theme == "dark"
-    val activeConnection = activeConnectionId?.let(viewModel.connections::connectionById)
+    val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
     var sidebarCollapsed by rememberSaveable { mutableStateOf(initialSidebarCollapsed) }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
@@ -107,6 +109,11 @@ fun AppShell(
     SettingsPanel(
         open = settingsOpen,
         viewModel = viewModel.settings,
+        connections = connections,
+        onDefaultLocationChanged = { connectionId, schema ->
+            appState.activateDefaultConnection(connectionId, schema)
+        },
+        onDefaultLocationCleared = appState::clearDefaultConnection,
         onClose = appState::closeSettings,
     )
 
@@ -140,18 +147,25 @@ fun AppShell(
                     service = appState.service,
                     viewModel = viewModel.connections,
                     onActivate = { id ->
-                        appState.setActiveConnection(id)
+                        val defaultSchema = settings.defaultSchema
+                            .takeIf { settings.defaultConnectionId == id }
+                        appState.setActiveConnection(id, preferredSchema = defaultSchema)
                         appState.navigate(AppRoute.Builder)
+                    },
+                    onDeleted = { id ->
+                        appState.clearActiveConnectionIf(id)
+                        viewModel.settings.clearDefaultIfConnection(id)
                     },
                     onSaved = viewModel.connections::refresh,
                 )
                 AppRoute.Builder -> BuilderScreen(
                     connection = activeConnection,
-                    connections = viewModel.connections.connections.value,
+                    connections = connections,
                     queryViewModel = viewModel.query,
                     savedQueriesViewModel = viewModel.savedQueries,
                     recipesViewModel = viewModel.recipes,
                     schemaViewModel = viewModel.schema,
+                    preferredSchema = preferredSchema,
                     settings = settings,
                     onOpenExplore = {
                         val connection = activeConnection

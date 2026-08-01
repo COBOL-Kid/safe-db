@@ -25,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class StoreTest {
@@ -163,6 +164,8 @@ class StoreTest {
             theme = "dark",
             colorScheme = ThemePalette.Oxide.id,
             queryRiskGate = QueryRiskGate.Flexible,
+            defaultConnectionId = "connection-1",
+            defaultSchema = "Reporting",
         )
         store.save(saved)
         val loaded = store.load()
@@ -171,6 +174,19 @@ class StoreTest {
         assertEquals("dark", loaded.theme)
         assertEquals(ThemePalette.Oxide.id, loaded.colorScheme)
         assertEquals(QueryRiskGate.Flexible, loaded.queryRiskGate)
+        assertEquals("connection-1", loaded.defaultConnectionId)
+        assertEquals("Reporting", loaded.defaultSchema)
+    }
+
+    @Test
+    fun settingsStoreLoadsLegacySettingsWithoutDefaultLocation() {
+        val dir = tempDir()
+        Files.writeString(dir.resolve("settings.json"), """{"theme":"dark"}""")
+
+        val settings = SettingsStore.new(dir).load()
+
+        assertNull(settings.defaultConnectionId)
+        assertNull(settings.defaultSchema)
     }
 
     @Test
@@ -299,6 +315,19 @@ class StoreTest {
         assertEquals(1.0, normalized.explainCostThreshold)
         assertEquals("dark", normalized.theme)
         assertEquals(ThemePalette.SignalTeal.id, normalized.colorScheme)
+    }
+
+    @Test
+    fun normalizeSettingsTrimsDefaultLocationAndClearsOrphanedSchema() {
+        val normalized = normalizeSettings(
+            Settings(defaultConnectionId = " connection-1 ", defaultSchema = " Reporting "),
+        )
+        assertEquals("connection-1", normalized.defaultConnectionId)
+        assertEquals("Reporting", normalized.defaultSchema)
+
+        val orphaned = normalizeSettings(Settings(defaultSchema = "Reporting"))
+        assertNull(orphaned.defaultConnectionId)
+        assertNull(orphaned.defaultSchema)
     }
 
     @Test

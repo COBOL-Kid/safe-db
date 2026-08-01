@@ -16,6 +16,10 @@ data class Settings(
     val colorScheme: String = ThemePalette.DEFAULT.id,
     @SerialName("query_risk_gate")
     val queryRiskGate: QueryRiskGate = QueryRiskGate.Standard,
+    @SerialName("default_connection_id")
+    val defaultConnectionId: String? = null,
+    @SerialName("default_schema")
+    val defaultSchema: String? = null,
 ) {
     fun costThreshold(dialect: Dialect): Double =
         explainCostThresholds[dialect] ?: explainCostThreshold
@@ -55,6 +59,12 @@ fun normalizeSettings(settings: Settings): Settings {
 
     val theme = if (settings.theme == "dark") "dark" else Settings.DEFAULT_THEME
     val colorScheme = settings.palette().id
+    val defaultConnectionId = settings.defaultConnectionId?.trim()?.takeIf { it.isNotEmpty() }
+    val defaultSchema = if (defaultConnectionId == null) {
+        null
+    } else {
+        settings.defaultSchema?.trim()?.takeIf { it.isNotEmpty() }
+    }
 
     return settings.copy(
         blockedSchemas = blockedSchemas,
@@ -63,6 +73,8 @@ fun normalizeSettings(settings: Settings): Settings {
         theme = theme,
         colorScheme = colorScheme,
         queryRiskGate = settings.queryRiskGate,
+        defaultConnectionId = defaultConnectionId,
+        defaultSchema = defaultSchema,
     )
 }
 

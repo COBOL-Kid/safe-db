@@ -527,6 +527,7 @@ fun BuilderScreen(
     savedQueriesViewModel: SavedQueriesViewModel,
     recipesViewModel: RecipesViewModel,
     schemaViewModel: SchemaViewModel,
+    preferredSchema: String?,
     settings: Settings,
     onOpenExplore: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -553,13 +554,12 @@ fun BuilderScreen(
     val riskDecision = riskEvaluation?.decision
     val riskAssessment = riskEvaluation?.assessment
 
-    LaunchedEffect(connection?.id) {
+    LaunchedEffect(connection?.id, preferredSchema) {
         val connectionId = connection?.id
-        if (connectionId != null &&
-            schemaViewModel.loadedConnectionId != connectionId &&
-            !schemaViewModel.loading
-        ) {
-            schemaViewModel.load(connectionId)
+        if (connectionId == null) {
+            schemaViewModel.clear()
+        } else {
+            schemaViewModel.load(connectionId, preferredSchema = preferredSchema)
         }
     }
 

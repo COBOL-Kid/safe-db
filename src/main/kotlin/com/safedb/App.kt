@@ -45,10 +45,26 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
     val exploreViewModel by viewModel.explore.collectAsState()
     val pendingRecipeRun by viewModel.pendingRecipeRun.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
+    val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val useDarkTheme = settings.theme == "dark"
     val themePalette = settings.palette()
     var paletteOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(
+        initialLoading,
+        settings.defaultConnectionId,
+        settings.defaultSchema,
+        connections,
+    ) {
+        if (initialLoading) return@LaunchedEffect
+        val defaultLocation = resolveDefaultQueryLocation(settings, connections)
+        if (defaultLocation != null) {
+            appState.activateDefaultConnection(defaultLocation.connectionId, defaultLocation.schema)
+        } else {
+            appState.clearDefaultConnection()
+        }
+    }
 
     LaunchedEffect(pendingRecipeRun, viewModel.query.results, viewModel.query.running, viewModel.query.error, activeConnectionId) {
         val pending = pendingRecipeRun ?: return@LaunchedEffect

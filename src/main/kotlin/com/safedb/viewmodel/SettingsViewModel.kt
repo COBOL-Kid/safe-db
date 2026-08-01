@@ -16,6 +16,9 @@ class SettingsViewModel(
     private val service: SafeDbService,
     private val scope: CoroutineScope,
 ) {
+    private var defaultSchemaRequestGeneration = 0
+    private var defaultSchemaConnectionId: String? = null
+
     private val _settings = MutableStateFlow(Settings.default())
     val settings: StateFlow<Settings> = _settings.asStateFlow()
 
@@ -27,6 +30,15 @@ class SettingsViewModel(
 
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError.asStateFlow()
+
+    private val _defaultSchemaOptions = MutableStateFlow<List<String>>(emptyList())
+    val defaultSchemaOptions: StateFlow<List<String>> = _defaultSchemaOptions.asStateFlow()
+
+    private val _defaultSchemaLoading = MutableStateFlow(false)
+    val defaultSchemaLoading: StateFlow<Boolean> = _defaultSchemaLoading.asStateFlow()
+
+    private val _defaultSchemaError = MutableStateFlow<String?>(null)
+    val defaultSchemaError: StateFlow<String?> = _defaultSchemaError.asStateFlow()
 
     val isDark: Boolean
         get() = _settings.value.theme == "dark"
@@ -74,6 +86,93 @@ class SettingsViewModel(
             _saveError.value = null
             save(_settings.value.copy(queryRiskGate = gate))
         }
+    }
+
+    fun loadDefaultSchemaOptions(connectionId: String) {
+        val generation = ++defaultSchemaRequestGeneration
+        scope.launch {
+            if (generation != defaultSchemaRequestGeneration) return@launch
+            _defaultSchemaLoading.value = true
+            _defaultSchemaError.value = null
+            _defaultSchemaOptions.value = emptyList()
+            defaultSchemaConnectionId = null
+            try {
+                val schemas = service.getSchema(connectionId).tables
+                    .asSequence()
+                    .map { it.schema }
+                    .distinct()
+                    .sortedWith(String.CASE_INSENSITIVE_ORDER)
+                    .toList()
+                if (generation != defaultSchemaRequestGeneration) return@launch
+                _defaultSchemaOptions.value = schemas
+                defaultSchemaConnectionId = connectionId
+                if (schemas.isEmpty()) {
+                    _defaultSchemaError.value = "No schemas containing visible tables were found."
+                }
+            } catch (error: Exception) {
+                if (generation != defaultSchemaRequestGeneration) return@launch
+                _defaultSchemaError.value = error.message ?: error.toString()
+            } finally {
+                if (generation == defaultSchemaRequestGeneration) {
+                    _defaultSchemaLoading.value = false
+                }
+            }
+        }
+    }
+
+    fun clearDefaultSchemaOptions() {
+        defaultSchemaRequestGeneration += 1
+        _defaultSchemaOptions.value = emptyList()
+        defaultSchemaConnectionId = null
+        _defaultSchemaLoading.value = false
+        _defaultSchemaError.value = null
+    }
+
+    fun saveDefaultLocation(
+        connectionId: String,
+        schema: String,
+        onSuccess: () -> Unit = {},
+    ) {
+        scope.launch {
+            _saveError.value = null
+            val normalizedConnectionId = connectionId.trim()
+            val normalizedSchema = schema.trim()
+            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty()) return@launch
+            if (
+                defaultSchemaConnectionId != normalizedConnectionId ||
+                normalizedSchema !in _defaultSchemaOptions.value
+            ) {
+                _saveError.value = "Select a schema loaded from the chosen database."
+                return@launch
+            }
+            if (save(
+                    _settings.value.copy(
+                        defaultConnectionId = normalizedConnectionId,
+                        defaultSchema = normalizedSchema,
+                    ),
+                )
+            ) {
+                onSuccess()
+            }
+        }
+    }
+
+    fun clearDefaultLocation(onSuccess: () -> Unit = {}) {
+        scope.launch {
+            _saveError.value = null
+            if (_settings.value.defaultConnectionId == null && _settings.value.defaultSchema == null) {
+                onSuccess()
+                return@launch
+            }
+            if (save(_settings.value.copy(defaultConnectionId = null, defaultSchema = null))) {
+                onSuccess()
+            }
+        }
+    }
+
+    fun clearDefaultIfConnection(connectionId: String, onSuccess: () -> Unit = {}) {
+        if (_settings.value.defaultConnectionId != connectionId) return
+        clearDefaultLocation(onSuccess)
     }
 
     fun saveThresholds(thresholds: Map<Dialect, Double>, onSuccess: () -> Unit = {}) {
