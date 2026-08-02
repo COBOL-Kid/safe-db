@@ -260,6 +260,7 @@ private fun QueryOptionsCard(
     tableNamesByAlias: Map<String, String>,
     modifier: Modifier = Modifier,
 ) {
+    val distinctInteractionSource = remember { MutableInteractionSource() }
     val groupLabels = groupingOrderLabels(groups, tableNamesByAlias)
     val sortLabels = sorts.map { sort ->
         "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
@@ -316,6 +317,8 @@ private fun QueryOptionsCard(
                     .padding(top = 5.dp)
                     .toggleable(
                         value = distinct,
+                        interactionSource = distinctInteractionSource,
+                        indication = null,
                         role = Role.Checkbox,
                         onValueChange = onDistinctChange,
                     ),
