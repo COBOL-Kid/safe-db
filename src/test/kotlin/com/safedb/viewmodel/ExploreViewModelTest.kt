@@ -13,8 +13,10 @@ import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.RecipeField
 import com.safedb.explore.WorksheetCalculation
+import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetGroup
+import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.ChartType
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
@@ -203,6 +205,31 @@ class ExploreViewModelTest {
         assertTrue(path.readText().contains("Double"))
         viewModel.selectMode(ExploreMode.Pivot)
         assertEquals(listOf("t0__status"), viewModel.config.rowDimensions.map { it.column })
+    }
+
+    @Test
+    fun worksheetCsvUsesVisibleColumnLayoutOrderAndOriginalCellIndexes() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Worksheet)
+        viewModel.updateWorksheet {
+            it.copy(calculations = listOf(WorksheetCalculation.RowFormula("double", "Double", "[t0__amount] * 2")))
+        }
+        viewModel.updateWorksheetColumnLayout(
+            listOf(
+                WorksheetColumnLayout(WorksheetValueRef.Calculation("double")),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__amount")),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__id"), visible = false),
+            ),
+        )
+        val path = createTempFile(suffix = ".csv")
+
+        viewModel.saveWorksheetCsv(path)
+
+        assertEquals(
+            "Double,amount\r\n200.0,100\r\n400.0,200\r\n600.0,300\r\n",
+            path.readText(),
+        )
     }
 
     @Test

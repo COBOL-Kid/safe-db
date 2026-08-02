@@ -72,6 +72,10 @@ class ExploreRecipesTest {
             pivot = ExploreConfig(rowDimensions = listOf(PivotDimension("old"))),
             worksheet = WorksheetConfig(
                 groups = listOf(WorksheetGroup("g", "old")),
+                columnLayout = listOf(
+                    WorksheetColumnLayout(WorksheetValueRef.Column("old"), visible = false),
+                    WorksheetColumnLayout(WorksheetValueRef.Calculation("calc")),
+                ),
                 calculations = listOf(
                     WorksheetCalculation.RowFormula("calc", "Calc", "[old] + 1"),
                     WorksheetCalculation.GroupFormula("group", "Group", "[sum] / [count]", groupColumn = "old_group"),
@@ -88,6 +92,8 @@ class ExploreRecipesTest {
 
         assertEquals("new", mapped.pivot?.rowDimensions?.single()?.column)
         assertEquals("new", mapped.worksheet?.groups?.single()?.column)
+        assertEquals(WorksheetValueRef.Column("new"), mapped.worksheet?.columnLayout?.first()?.ref)
+        assertEquals(WorksheetValueRef.Calculation("calc"), mapped.worksheet?.columnLayout?.last()?.ref)
         val calculations = mapped.worksheet!!.calculations
         assertEquals("[new] + 1", (calculations[0] as WorksheetCalculation.RowFormula).formula)
         assertEquals("[sum] / [count]", (calculations[1] as WorksheetCalculation.GroupFormula).formula)

@@ -3,6 +3,7 @@ package com.safedb.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,18 +24,24 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.GroupWork
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -46,12 +54,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -64,6 +78,7 @@ import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.SortDir
 import com.safedb.explore.WorksheetAggregateFn
 import com.safedb.explore.WorksheetCalculation
+import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetDisplayColumn
 import com.safedb.explore.WorksheetFilter
@@ -78,12 +93,16 @@ import com.safedb.explore.WorksheetWindowFn
 import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.evaluatePivotFormula
 import com.safedb.explore.pivotCellKey
+import com.safedb.explore.moveWorksheetColumn
+import com.safedb.explore.resolveWorksheetColumnLayout
+import com.safedb.explore.toWorksheetColumnLayout
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
 import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SectionLabel
 import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.components.SecondaryButton
@@ -99,6 +118,7 @@ internal fun ExploreWorksheet(
     config: WorksheetConfig,
     preview: WorksheetPreview,
     onConfigChange: (WorksheetConfig) -> Unit,
+    onColumnLayoutChange: (List<WorksheetColumnLayout>) -> Unit,
     onToggleGroup: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -182,6 +202,7 @@ internal fun ExploreWorksheet(
             WorksheetTable(
                 config = config,
                 preview = preview,
+                onColumnLayoutChange = onColumnLayoutChange,
                 onSort = { ref -> onConfigChange(config.copy(sorts = cycleSort(config.sorts, ref))) },
                 onGroup = { column -> editingGroup = column },
                 onFilter = { column -> editingFilter = column },
@@ -196,7 +217,16 @@ internal fun ExploreWorksheet(
                 calculations = config.calculations,
                 onAdd = { addingCalculation = true },
                 onEdit = { editingCalculation = it },
-                onRemove = { calculation -> onConfigChange(config.copy(calculations = config.calculations - calculation)) },
+                onRemove = { calculation ->
+                    onConfigChange(
+                        config.copy(
+                            calculations = config.calculations - calculation,
+                            columnLayout = config.columnLayout.filterNot {
+                                it.ref == WorksheetValueRef.Calculation(calculation.id)
+                            },
+                        ),
+                    )
+                },
                 onCollapse = { railVisible = false },
                 modifier = Modifier.width(300.dp).fillMaxHeight(),
             )
@@ -214,6 +244,7 @@ internal fun ExploreWorksheet(
 private fun WorksheetTable(
     config: WorksheetConfig,
     preview: WorksheetPreview,
+    onColumnLayoutChange: (List<WorksheetColumnLayout>) -> Unit,
     onSort: (WorksheetValueRef) -> Unit,
     onGroup: (String) -> Unit,
     onFilter: (String) -> Unit,
@@ -221,72 +252,124 @@ private fun WorksheetTable(
     modifier: Modifier,
 ) {
     val scroll = rememberScrollState()
-    val widths = preview.columns.associate { it.id to if (it.calculationId == null) 176 else 196 }
-    val tableWidth = preview.columns.sumOf { widths.getValue(it.id) }.coerceAtLeast(1)
-    Box(modifier = modifier.horizontalScroll(scroll)) {
-        Column(modifier = Modifier.width(tableWidth.dp).fillMaxHeight()) {
-            Row(modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)) {
-                preview.columns.forEach { column ->
-                    WorksheetHeader(
-                        column = column,
-                        width = widths.getValue(column.id),
-                        sortIndex = config.sorts.indexOfFirst { it.target == column.valueRef() },
-                        sort = config.sorts.firstOrNull { it.target == column.valueRef() },
-                        grouped = column.sourceColumn?.let { source -> config.groups.any { it.column == source } } == true,
-                        filtered = column.sourceColumn?.let { source -> config.filters.any { it.column == source } } == true,
-                        onSort = { onSort(column.valueRef()) },
-                        onGroup = column.sourceColumn?.let { { onGroup(it) } },
-                        onFilter = column.sourceColumn?.let { { onFilter(it) } },
-                    )
-                }
+    val resolvedColumns = resolveWorksheetColumnLayout(preview.columns, config.columnLayout)
+    val visibleColumns = resolvedColumns.filter { it.visible }
+    val widths = visibleColumns.associate { it.column.id to if (it.column.calculationId == null) 176 else 196 }
+    val tableWidth = visibleColumns.sumOf { widths.getValue(it.column.id) }.coerceAtLeast(1)
+
+    Column(modifier = modifier) {
+        WorksheetColumnMenu(
+            columns = resolvedColumns,
+            naturalColumns = preview.columns,
+            onLayoutChange = onColumnLayoutChange,
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        if (visibleColumns.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "All worksheet columns are hidden. Use Columns to show one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            if (preview.rows.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No rows match the worksheet filters.", style = MaterialTheme.typography.bodySmall)
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(preview.rows, key = { _, row -> "${row.kind}:${row.pathKey}" }) { index, row ->
-                        val background = when {
-                            row.kind != WorksheetRowKind.Detail -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-                            index % 2 == 1 -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f)
-                            else -> MaterialTheme.colorScheme.surface
+        } else {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth().horizontalScroll(scroll)) {
+                Column(modifier = Modifier.width(tableWidth.dp).fillMaxHeight()) {
+                    Row(modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                        visibleColumns.forEachIndexed { visibleIndex, resolved ->
+                            val column = resolved.column
+                            WorksheetHeader(
+                                column = column,
+                                width = widths.getValue(column.id),
+                                sortIndex = config.sorts.indexOfFirst { it.target == column.valueRef },
+                                sort = config.sorts.firstOrNull { it.target == column.valueRef },
+                                grouped = column.sourceColumn?.let { source -> config.groups.any { it.column == source } } == true,
+                                filtered = column.sourceColumn?.let { source -> config.filters.any { it.column == source } } == true,
+                                canMoveLeft = visibleIndex > 0,
+                                canMoveRight = visibleIndex < visibleColumns.lastIndex,
+                                onSort = { onSort(column.valueRef) },
+                                onGroup = column.sourceColumn?.let { { onGroup(it) } },
+                                onFilter = column.sourceColumn?.let { { onFilter(it) } },
+                                onHide = {
+                                    onColumnLayoutChange(
+                                        setWorksheetColumnVisibility(
+                                            resolvedColumns.toWorksheetColumnLayout(),
+                                            column.valueRef,
+                                            visible = false,
+                                        ),
+                                    )
+                                },
+                                onMoveLeft = {
+                                    onColumnLayoutChange(
+                                        moveVisibleWorksheetColumn(
+                                            resolvedColumns.toWorksheetColumnLayout(),
+                                            visibleIndex,
+                                            visibleIndex - 1,
+                                        ),
+                                    )
+                                },
+                                onMoveRight = {
+                                    onColumnLayoutChange(
+                                        moveVisibleWorksheetColumn(
+                                            resolvedColumns.toWorksheetColumnLayout(),
+                                            visibleIndex,
+                                            visibleIndex + 1,
+                                        ),
+                                    )
+                                },
+                            )
                         }
-                        Row(modifier = Modifier.background(background)) {
-                            preview.columns.forEachIndexed { columnIndex, column ->
-                                val cell = row.cells[columnIndex]
-                                Box(
-                                    modifier = Modifier
-                                        .width(widths.getValue(column.id).dp)
-                                        .height(34.dp)
-                                        .then(
-                                            if (row.kind == WorksheetRowKind.Group && columnIndex == 0) {
-                                                Modifier.clickable { onToggleGroup(row.pathKey) }
-                                            } else Modifier
-                                        )
-                                        .padding(horizontal = 10.dp),
-                                    contentAlignment = if (cell.value is ResultCell.IntegerCell || cell.value is ResultCell.FloatCell) Alignment.CenterEnd else Alignment.CenterStart,
-                                ) {
-                                    if (row.kind == WorksheetRowKind.Group && columnIndex == 0) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Spacer(Modifier.width((row.depth * 12).dp))
-                                            Icon(
-                                                if (row.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.ChevronRight,
-                                                contentDescription = if (row.expanded) "Collapse group" else "Expand group",
-                                                modifier = Modifier.size(17.dp),
-                                            )
-                                            Text(row.label.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (preview.rows.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No rows match the worksheet filters.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            itemsIndexed(preview.rows, key = { _, row -> "${row.kind}:${row.pathKey}" }) { index, row ->
+                                val background = when {
+                                    row.kind != WorksheetRowKind.Detail -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                    index % 2 == 1 -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f)
+                                    else -> MaterialTheme.colorScheme.surface
+                                }
+                                Row(modifier = Modifier.background(background)) {
+                                    visibleColumns.forEachIndexed { visibleIndex, resolved ->
+                                        val column = resolved.column
+                                        val cell = row.cells[resolved.sourceIndex]
+                                        Box(
+                                            modifier = Modifier
+                                                .width(widths.getValue(column.id).dp)
+                                                .height(34.dp)
+                                                .then(
+                                                    if (row.kind == WorksheetRowKind.Group && visibleIndex == 0) {
+                                                        Modifier.clickable { onToggleGroup(row.pathKey) }
+                                                    } else Modifier
+                                                )
+                                                .padding(horizontal = 10.dp),
+                                            contentAlignment = if (cell.value is ResultCell.IntegerCell || cell.value is ResultCell.FloatCell) Alignment.CenterEnd else Alignment.CenterStart,
+                                        ) {
+                                            if (row.kind == WorksheetRowKind.Group && visibleIndex == 0) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Spacer(Modifier.width((row.depth * 12).dp))
+                                                    Icon(
+                                                        if (row.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.ChevronRight,
+                                                        contentDescription = if (row.expanded) "Collapse group" else "Expand group",
+                                                        modifier = Modifier.size(17.dp),
+                                                    )
+                                                    Text(row.label.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                                                }
+                                            } else if (row.kind == WorksheetRowKind.GrandTotal && visibleIndex == 0) {
+                                                Text("Grand total", fontWeight = FontWeight.SemiBold)
+                                            } else {
+                                                WorksheetCellText(cell.value, cell.error, column.numberFormat)
+                                            }
                                         }
-                                    } else if (row.kind == WorksheetRowKind.GrandTotal && columnIndex == 0) {
-                                        Text("Grand total", fontWeight = FontWeight.SemiBold)
-                                    } else {
-                                        WorksheetCellText(cell.value, cell.error, column.numberFormat)
                                     }
                                 }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                             }
                         }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                     }
                 }
             }
@@ -295,6 +378,153 @@ private fun WorksheetTable(
 }
 
 @Composable
+private fun WorksheetColumnMenu(
+    columns: List<com.safedb.explore.ResolvedWorksheetColumn>,
+    naturalColumns: List<WorksheetDisplayColumn>,
+    onLayoutChange: (List<WorksheetColumnLayout>) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var draggedIndex by remember { mutableStateOf<Int?>(null) }
+    var draggedLayout by remember { mutableStateOf<List<WorksheetColumnLayout>>(emptyList()) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val dragStepPx = with(LocalDensity.current) { 36.dp.toPx() }
+    val hiddenCount = columns.count { !it.visible }
+    val naturalRefs = naturalColumns.map { it.valueRef }
+    val currentRefs = columns.map { it.column.valueRef }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            TextButton(onClick = { expanded = true }) {
+                Icon(Icons.Default.ViewColumn, contentDescription = null, modifier = Modifier.size(17.dp))
+                Text(
+                    if (hiddenCount == 0) "Columns" else "Columns · $hiddenCount hidden",
+                    modifier = Modifier.padding(start = 5.dp),
+                )
+            }
+            SafeDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                minWidth = 330.dp,
+            ) {
+                Column(modifier = Modifier.widthIn(min = 330.dp).heightIn(max = 440.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Worksheet columns", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        TextButton(
+                            onClick = {
+                                onLayoutChange(columns.map { WorksheetColumnLayout(it.column.valueRef, visible = true) })
+                            },
+                            enabled = hiddenCount > 0,
+                        ) { Text("Show all") }
+                        TextButton(
+                            onClick = {
+                                val visibility = columns.associate { it.column.valueRef to it.visible }
+                                onLayoutChange(naturalColumns.map { column ->
+                                    WorksheetColumnLayout(column.valueRef, visibility[column.valueRef] ?: true)
+                                })
+                            },
+                            enabled = currentRefs != naturalRefs,
+                        ) { Text("Reset order") }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        columns.forEachIndexed { index, resolved ->
+                            val column = resolved.column
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Default.DragHandle,
+                                    contentDescription = "Drag to reorder ${column.label}",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp).pointerInput(index, columns.size) {
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                draggedIndex = index
+                                                draggedLayout = columns.toWorksheetColumnLayout()
+                                                dragOffset = 0f
+                                            },
+                                            onDragEnd = { draggedIndex = null; draggedLayout = emptyList(); dragOffset = 0f },
+                                            onDragCancel = { draggedIndex = null; draggedLayout = emptyList(); dragOffset = 0f },
+                                            onDrag = { change, amount ->
+                                                change.consume()
+                                                dragOffset += amount.y
+                                                var current = draggedIndex ?: return@detectDragGestures
+                                                while (dragOffset >= dragStepPx && current < columns.lastIndex) {
+                                                    draggedLayout = moveWorksheetColumn(draggedLayout, current, current + 1)
+                                                    onLayoutChange(draggedLayout)
+                                                    current += 1
+                                                    draggedIndex = current
+                                                    dragOffset -= dragStepPx
+                                                }
+                                                while (dragOffset <= -dragStepPx && current > 0) {
+                                                    draggedLayout = moveWorksheetColumn(draggedLayout, current, current - 1)
+                                                    onLayoutChange(draggedLayout)
+                                                    current -= 1
+                                                    draggedIndex = current
+                                                    dragOffset += dragStepPx
+                                                }
+                                            },
+                                        )
+                                    },
+                                )
+                                Checkbox(
+                                    checked = resolved.visible,
+                                    onCheckedChange = { visible ->
+                                        onLayoutChange(columns.map {
+                                            WorksheetColumnLayout(
+                                                it.column.valueRef,
+                                                if (it.column.valueRef == column.valueRef) visible else it.visible,
+                                            )
+                                        })
+                                    },
+                                    modifier = Modifier.size(34.dp),
+                                )
+                                Column(modifier = Modifier.weight(1f).padding(horizontal = 5.dp)) {
+                                    Text(column.label, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        column.dataType,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onLayoutChange(moveWorksheetColumn(columns.toWorksheetColumnLayout(), index, index - 1)) },
+                                    enabled = index > 0,
+                                    modifier = Modifier.size(30.dp),
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Move ${column.label} left", modifier = Modifier.size(17.dp))
+                                }
+                                IconButton(
+                                    onClick = { onLayoutChange(moveWorksheetColumn(columns.toWorksheetColumnLayout(), index, index + 1)) },
+                                    enabled = index < columns.lastIndex,
+                                    modifier = Modifier.size(30.dp),
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Move ${column.label} right", modifier = Modifier.size(17.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Text(
+            "Drag or use arrows to set the table and CSV order.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun WorksheetHeader(
     column: WorksheetDisplayColumn,
     width: Int,
@@ -302,12 +532,61 @@ private fun WorksheetHeader(
     sort: WorksheetSort?,
     grouped: Boolean,
     filtered: Boolean,
+    canMoveLeft: Boolean,
+    canMoveRight: Boolean,
     onSort: () -> Unit,
     onGroup: (() -> Unit)?,
     onFilter: (() -> Unit)?,
+    onHide: () -> Unit,
+    onMoveLeft: () -> Unit,
+    onMoveRight: () -> Unit,
 ) {
-    Column(modifier = Modifier.width(width.dp).padding(horizontal = 8.dp, vertical = 5.dp)) {
-        Text(column.label, style = DataMono.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Column(
+        modifier = Modifier
+            .width(width.dp)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                column.label,
+                style = DataMono.copy(fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(
+                onClick = onHide,
+                modifier = Modifier.size(24.dp).pointerHoverIcon(PointerIcon.Hand),
+            ) {
+                Icon(
+                    Icons.Default.VisibilityOff,
+                    contentDescription = "Hide ${column.label}",
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+            IconButton(
+                onClick = onMoveLeft,
+                enabled = canMoveLeft,
+                modifier = Modifier.size(24.dp).pointerHoverIcon(if (canMoveLeft) PointerIcon.Hand else PointerIcon.Default),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = "Move ${column.label} left",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            IconButton(
+                onClick = onMoveRight,
+                enabled = canMoveRight,
+                modifier = Modifier.size(24.dp).pointerHoverIcon(if (canMoveRight) PointerIcon.Hand else PointerIcon.Default),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Move ${column.label} right",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
         Text(column.dataType, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         Row(verticalAlignment = Alignment.CenterVertically) {
             HeaderAction(
@@ -634,8 +913,6 @@ private fun groupColumn(calculation: WorksheetCalculation?): String? = when (cal
     is WorksheetCalculation.Window -> calculation.groupColumn
     else -> null
 }
-
-private fun WorksheetDisplayColumn.valueRef(): WorksheetValueRef = sourceColumn?.let(WorksheetValueRef::Column) ?: WorksheetValueRef.Calculation(requireNotNull(calculationId))
 
 private fun cycleSort(sorts: List<WorksheetSort>, target: WorksheetValueRef): List<WorksheetSort> {
     val existing = sorts.firstOrNull { it.target == target }

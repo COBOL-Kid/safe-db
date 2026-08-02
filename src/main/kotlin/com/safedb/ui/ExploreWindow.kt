@@ -180,10 +180,14 @@ fun ExploreWindowContent(
                         config = viewModel.worksheetConfig,
                         preview = viewModel.worksheetPreview,
                         onConfigChange = { next -> viewModel.updateWorksheet { next } },
+                        onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
                         onToggleGroup = viewModel::toggleWorksheetGroup,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
-                    ExploreExportBar(viewModel, enabled = !viewModel.worksheetPreviewState.loading) {
+                    ExploreExportBar(
+                        viewModel,
+                        enabled = !viewModel.worksheetPreviewState.loading && viewModel.hasVisibleWorksheetColumns(),
+                    ) {
                         chooseCsvFile("${session.connectionLabel}-worksheet")?.let(viewModel::saveWorksheetCsv)
                     }
                 }

@@ -21,6 +21,7 @@ import com.safedb.explore.ShowAsMode
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.WorksheetAggregateFn
 import com.safedb.explore.WorksheetCalculation
+import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetGroup
 import com.safedb.explore.WorksheetSort
@@ -338,6 +339,11 @@ private fun renderExplore(
             WorksheetConfig(
                 groups = listOf(WorksheetGroup("status", "t0__status", "Status")),
                 sorts = listOf(WorksheetSort(WorksheetValueRef.Column("t0__placed_at"), SortDir.Asc)),
+                columnLayout = listOf(
+                    WorksheetColumnLayout(WorksheetValueRef.Calculation("dollars")),
+                    WorksheetColumnLayout(WorksheetValueRef.Column("t0__status")),
+                    WorksheetColumnLayout(WorksheetValueRef.Column("t0__total_cents"), visible = false),
+                ),
                 calculations = listOf(
                     WorksheetCalculation.RowFormula("dollars", "Order value", "[t0__total_cents] / 100"),
                     WorksheetCalculation.Aggregate("revenue", "Group revenue", WorksheetAggregateFn.Sum, "t0__total_cents", "t0__status"),

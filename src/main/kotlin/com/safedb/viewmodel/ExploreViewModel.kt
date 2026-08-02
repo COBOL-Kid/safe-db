@@ -11,6 +11,7 @@ import com.safedb.explore.ExploreSession
 import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationPreview
@@ -19,6 +20,7 @@ import com.safedb.explore.applyWorksheet
 import com.safedb.explore.applyVisualization
 import com.safedb.explore.remapRecipe
 import com.safedb.explore.resolveRecipeFields
+import com.safedb.explore.resolveWorksheetColumnLayout
 import com.safedb.explore.withoutTransientState
 import com.safedb.explore.exploreSpecHash
 import com.safedb.explore.pivotCellKey
@@ -104,6 +106,14 @@ class ExploreViewModel(
         refreshMode(ExploreMode.Worksheet)
         clearExportMessages()
     }
+
+    fun updateWorksheetColumnLayout(layout: List<WorksheetColumnLayout>) {
+        workspace = workspace.copy(worksheet = workspace.worksheet.copy(columnLayout = layout))
+        clearExportMessages()
+    }
+
+    fun hasVisibleWorksheetColumns(): Boolean =
+        resolveWorksheetColumnLayout(worksheetPreview.columns, worksheetConfig.columnLayout).any { it.visible }
 
     fun updateVisualization(block: (VisualizationConfig) -> VisualizationConfig) {
         workspace = workspace.copy(visualization = block(workspace.visualization))
@@ -341,12 +351,23 @@ class ExploreViewModel(
     }
 
     fun saveWorksheetCsv(path: Path) {
+        val visibleColumns = resolveWorksheetColumnLayout(worksheetPreview.columns, worksheetConfig.columnLayout)
+            .filter { it.visible }
+        if (visibleColumns.isEmpty()) {
+            exportMessage = null
+            exportError = "Show at least one worksheet column before exporting."
+            return
+        }
         val rows = worksheetPreview.rows.map { row ->
-            row.cells.map { cell -> cell.error?.let { ResultCell.text("Error: $it") } ?: cell.value }
+            visibleColumns.map { resolved ->
+                row.cells[resolved.sourceIndex].let { cell ->
+                    cell.error?.let { ResultCell.text("Error: $it") } ?: cell.value
+                }
+            }
         }
         saveResultCsv(
             QueryResult(
-                columns = worksheetPreview.columns.map { com.safedb.model.ResultColumn(it.label, it.dataType) },
+                columns = visibleColumns.map { com.safedb.model.ResultColumn(it.column.label, it.column.dataType) },
                 rows = rows,
                 rowCount = rows.size,
                 truncated = session.sample.truncated,

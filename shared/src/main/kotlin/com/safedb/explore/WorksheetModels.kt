@@ -23,7 +23,14 @@ data class WorksheetConfig(
     val sorts: List<WorksheetSort> = emptyList(),
     val filters: List<WorksheetFilter> = emptyList(),
     val calculations: List<WorksheetCalculation> = emptyList(),
+    val columnLayout: List<WorksheetColumnLayout> = emptyList(),
     val collapsedGroupPaths: Set<String> = emptySet(),
+)
+
+@Serializable
+data class WorksheetColumnLayout(
+    val ref: WorksheetValueRef,
+    val visible: Boolean = true,
 )
 
 @Serializable
@@ -171,7 +178,52 @@ data class WorksheetDisplayColumn(
     val sourceColumn: String? = null,
     val calculationId: String? = null,
     val numberFormat: PivotNumberFormat? = null,
+) {
+    val valueRef: WorksheetValueRef
+        get() = sourceColumn?.let(WorksheetValueRef::Column)
+            ?: WorksheetValueRef.Calculation(requireNotNull(calculationId))
+}
+
+data class ResolvedWorksheetColumn(
+    val sourceIndex: Int,
+    val column: WorksheetDisplayColumn,
+    val visible: Boolean,
 )
+
+fun resolveWorksheetColumnLayout(
+    columns: List<WorksheetDisplayColumn>,
+    layout: List<WorksheetColumnLayout>,
+): List<ResolvedWorksheetColumn> {
+    val available = columns.mapIndexed { index, column -> column.valueRef to (index to column) }.toMap()
+    val configuredVisibility = layout.distinctBy { it.ref }.associate { it.ref to it.visible }
+    val seen = mutableSetOf<WorksheetValueRef>()
+    val resolved = buildList {
+        layout.forEach { configured ->
+            val (index, column) = available[configured.ref] ?: return@forEach
+            if (seen.add(configured.ref)) {
+                add(ResolvedWorksheetColumn(index, column, configured.visible))
+            }
+        }
+        columns.forEachIndexed { index, column ->
+            if (seen.add(column.valueRef)) {
+                add(ResolvedWorksheetColumn(index, column, configuredVisibility[column.valueRef] ?: true))
+            }
+        }
+    }
+    return resolved
+}
+
+fun List<ResolvedWorksheetColumn>.toWorksheetColumnLayout(): List<WorksheetColumnLayout> =
+    map { resolved -> WorksheetColumnLayout(resolved.column.valueRef, resolved.visible) }
+
+fun moveWorksheetColumn(
+    layout: List<WorksheetColumnLayout>,
+    fromIndex: Int,
+    toIndex: Int,
+): List<WorksheetColumnLayout> {
+    if (fromIndex !in layout.indices || toIndex !in layout.indices || fromIndex == toIndex) return layout
+    return layout.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+}
 
 data class WorksheetDisplayRow(
     val kind: WorksheetRowKind,
