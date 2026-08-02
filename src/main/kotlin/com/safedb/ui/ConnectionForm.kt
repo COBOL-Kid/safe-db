@@ -74,6 +74,18 @@ private val TRANSPORT_OPTIONS = listOf(
     FormTransportOption(TransportSecurityMode.Disabled, "Disabled"),
 )
 
+private val CompactFieldHeight = 56.dp
+
+@Composable
+private fun CompactFieldLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium)
+}
+
+@Composable
+private fun CompactFieldPlaceholder(text: String) {
+    Text(text, style = MaterialTheme.typography.bodyMedium)
+}
+
 @Composable
 fun ConnectionForm(
     service: SafeDbService,
@@ -226,9 +238,10 @@ private fun ConnectionStringInput(form: ConnectionFormState) {
                     form.connectionString = it
                     form.resetResultState()
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).height(CompactFieldHeight),
                 singleLine = true,
-                placeholder = { Text("postgresql://readonly:password@host:5432/database") },
+                textStyle = MaterialTheme.typography.bodyMedium,
+                placeholder = { CompactFieldPlaceholder("postgresql://readonly:password@host:5432/database") },
                 isError = form.parseError != null,
             )
             PrimaryButton(onClick = form::applyParsedInput) { Text("Apply") }
@@ -257,13 +270,14 @@ private fun OrDetailsDivider() {
 
 @Composable
 private fun MainConnectionFields(form: ConnectionFormState) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
             value = form.name,
             onValueChange = form::updateName,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Name") },
-            placeholder = { Text("e.g. Production Replica") },
+            modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            label = { CompactFieldLabel("Name") },
+            placeholder = { CompactFieldPlaceholder("e.g. Production Replica") },
             singleLine = true,
         )
         Text("Database type", style = MaterialTheme.typography.labelLarge)
@@ -284,16 +298,18 @@ private fun MainConnectionFields(form: ConnectionFormState) {
             OutlinedTextField(
                 value = form.host,
                 onValueChange = form::handleHostInput,
-                modifier = Modifier.weight(2f),
-                label = { Text("Host") },
-                placeholder = { Text("e.g. replica.internal.acme.io") },
+                modifier = Modifier.weight(2f).height(CompactFieldHeight),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { CompactFieldLabel("Host") },
+                placeholder = { CompactFieldPlaceholder("e.g. replica.internal.acme.io") },
                 singleLine = true,
             )
             OutlinedTextField(
                 value = form.port.toString().takeUnless { form.port == 0 } ?: "",
                 onValueChange = form::handlePortInput,
-                modifier = Modifier.weight(1f),
-                label = { Text("Port") },
+                modifier = Modifier.weight(1f).height(CompactFieldHeight),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { CompactFieldLabel("Port") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
@@ -301,18 +317,20 @@ private fun MainConnectionFields(form: ConnectionFormState) {
         OutlinedTextField(
             value = form.database,
             onValueChange = form::updateDatabase,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Database") },
-            placeholder = { Text("e.g. acme_prod") },
+            modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            label = { CompactFieldLabel("Database") },
+            placeholder = { CompactFieldPlaceholder("e.g. acme_prod") },
             singleLine = true,
         )
         ResponsiveFieldRow {
             OutlinedTextField(
                 value = form.username,
                 onValueChange = form::updateUsername,
-                modifier = Modifier.weight(1f),
-                label = { Text("Username") },
-                placeholder = { Text("e.g. readonly") },
+                modifier = Modifier.weight(1f).height(CompactFieldHeight),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { CompactFieldLabel("Username") },
+                placeholder = { CompactFieldPlaceholder("e.g. readonly") },
                 singleLine = true,
             )
             Box(Modifier.weight(1f)) { PasswordField(form) }
@@ -323,23 +341,17 @@ private fun MainConnectionFields(form: ConnectionFormState) {
 @Composable
 private fun PasswordField(form: ConnectionFormState) {
     if (form.isEditing && !form.passwordChangeEnabled) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Password", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Surface(
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(3.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Saved password", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    PlainTextAction("Change", onClick = form::enablePasswordChange)
-                }
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            OutlinedTextField(
+                value = "Saved password",
+                onValueChange = {},
+                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+                readOnly = true,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { CompactFieldLabel("Password") },
+                trailingIcon = { PlainTextAction("Change", onClick = form::enablePasswordChange) },
+            )
             if (form.credentialMaterialChanged()) {
                 Text(
                     "Re-enter or change the saved password for connection or driver parameter changes.",
@@ -353,9 +365,10 @@ private fun PasswordField(form: ConnectionFormState) {
             OutlinedTextField(
                 value = form.password,
                 onValueChange = form::updatePassword,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Password") },
-                placeholder = { Text("Enter password") },
+                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { CompactFieldLabel("Password") },
+                placeholder = { CompactFieldPlaceholder("Enter password") },
                 singleLine = true,
                 visualTransformation = if (form.showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
@@ -375,7 +388,7 @@ private fun PasswordField(form: ConnectionFormState) {
 
 @Composable
 private fun AdvancedConnectionFields(form: ConnectionFormState) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Advanced settings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         TransportSecurityDropdown(form)
         if (form.transportMode == TransportSecurityMode.VerifyCa) {
@@ -383,7 +396,8 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
                 value = form.caPem,
                 onValueChange = form::updateCaPem,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("CA certificate (PEM)") },
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { CompactFieldLabel("CA certificate (PEM)") },
                 minLines = 3,
             )
         }
@@ -391,8 +405,9 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
             OutlinedTextField(
                 value = form.oracleWalletLocation,
                 onValueChange = form::updateOracleWallet,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Oracle wallet location") },
+                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                label = { CompactFieldLabel("Oracle wallet location") },
                 singleLine = true,
             )
         }
@@ -425,7 +440,7 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
         Text("Transport security", style = MaterialTheme.typography.labelLarge)
         Box {
             Surface(
-                modifier = Modifier.fillMaxWidth().height(52.dp).clickable { expanded = true },
+                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight).clickable { expanded = true },
                 shape = RoundedCornerShape(3.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 color = MaterialTheme.colorScheme.surface,
@@ -466,16 +481,18 @@ private fun DriverPropertyRow(
                 OutlinedTextField(
                     value = property.name,
                     onValueChange = { form.updateDriverPropertyName(index, it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Parameter") },
+                    modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    label = { CompactFieldLabel("Parameter") },
                     singleLine = true,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = property.value,
                         onValueChange = { form.updateDriverPropertyValue(index, it) },
-                        modifier = Modifier.weight(1f),
-                        label = { Text("Value") },
+                        modifier = Modifier.weight(1f).height(CompactFieldHeight),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        label = { CompactFieldLabel("Value") },
                         singleLine = true,
                     )
                     ParameterDeleteButton { form.removeDriverProperty(index) }
@@ -486,15 +503,17 @@ private fun DriverPropertyRow(
                 OutlinedTextField(
                     value = property.name,
                     onValueChange = { form.updateDriverPropertyName(index, it) },
-                    modifier = Modifier.weight(1f),
-                    label = { Text("Parameter") },
+                    modifier = Modifier.weight(1f).height(CompactFieldHeight),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    label = { CompactFieldLabel("Parameter") },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = property.value,
                     onValueChange = { form.updateDriverPropertyValue(index, it) },
-                    modifier = Modifier.weight(1f),
-                    label = { Text("Value") },
+                    modifier = Modifier.weight(1f).height(CompactFieldHeight),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    label = { CompactFieldLabel("Value") },
                     singleLine = true,
                 )
                 ParameterDeleteButton { form.removeDriverProperty(index) }

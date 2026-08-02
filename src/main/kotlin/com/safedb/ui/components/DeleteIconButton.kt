@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 fun DeleteIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    iconModifier: Modifier = Modifier,
     icon: ImageVector = Icons.Filled.Delete,
     contentDescription: String = "Delete",
 ) {
@@ -37,6 +38,6 @@ fun DeleteIconButton(
         onClick = onClick,
         modifier = modifier.hoverable(interactionSource),
     ) {
-        Icon(icon, contentDescription = contentDescription, tint = tint)
+        Icon(icon, contentDescription = contentDescription, tint = tint, modifier = iconModifier)
     }
 }

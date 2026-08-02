@@ -250,7 +250,10 @@ private fun ConnectionCard(
                         )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     androidx.compose.material3.IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Filled.Settings,
@@ -259,7 +262,11 @@ private fun ConnectionCard(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    DeleteIconButton(onClick = onDelete)
+                    DeleteIconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(32.dp),
+                        iconModifier = Modifier.size(18.dp),
+                    )
                 }
             }
 
