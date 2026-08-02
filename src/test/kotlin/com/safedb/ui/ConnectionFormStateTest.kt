@@ -1,146 +1,108 @@
 package com.safedb.ui
 
-import com.safedb.connection.DatabaseLocation
+import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.DriverProperty
+import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ConnectionFormStateTest {
     @Test
-    fun localGuidedSetupSendsDisabledTransport() {
+    fun newFormUsesStableIdAndLocalTransportDefaults() {
         val state = ConnectionFormState()
+        val first = state.buildDef()
+        val second = state.buildDef()
 
-        state.choosePath(EntryPath.Guided)
-        state.applyLocationPreset(DatabaseLocation.Local)
-
-        assertEquals(FormStep.Credentials, state.formStep)
+        assertEquals(first.id, second.id)
         assertEquals(TransportSecurityMode.Disabled, state.transportMode)
     }
 
     @Test
-    fun cloudGuidedSetupSendsVerifyIdentityTransport() {
+    fun remoteHostAutomaticallyUsesVerifiedTransportUntilManuallyOverridden() {
         val state = ConnectionFormState()
-
-        state.choosePath(EntryPath.Guided)
-        state.applyLocationPreset(DatabaseLocation.Cloud)
-
-        assertEquals(TransportSecurityMode.VerifyIdentity, state.transportMode)
-    }
-
-    @Test
-    fun cloudHostChangedToLocalhostResyncsToDisabled() {
-        val state = ConnectionFormState()
-        state.choosePath(EntryPath.Guided)
-        state.applyLocationPreset(DatabaseLocation.Cloud)
-
-        state.handleHostInput("localhost")
-
-        assertEquals(DatabaseLocation.Local, state.location)
-        assertEquals(TransportSecurityMode.Disabled, state.transportMode)
-    }
-
-    @Test
-    fun localHostChangedToRemoteResyncsToVerifyIdentity() {
-        val state = ConnectionFormState()
-        state.choosePath(EntryPath.Guided)
-        state.applyLocationPreset(DatabaseLocation.Local)
 
         state.handleHostInput("db.example.com")
-
-        assertEquals(DatabaseLocation.Cloud, state.location)
         assertEquals(TransportSecurityMode.VerifyIdentity, state.transportMode)
-    }
 
-    @Test
-    fun organizationHostEditsPreserveOrganizationContext() {
-        val state = ConnectionFormState()
-        state.choosePath(EntryPath.Guided)
-        state.applyLocationPreset(DatabaseLocation.Organization)
-
+        state.changeTransportMode(TransportSecurityMode.EncryptOnly)
         state.handleHostInput("localhost")
-
-        assertEquals(DatabaseLocation.Organization, state.location)
-        assertEquals(TransportSecurityMode.VerifyIdentity, state.transportMode)
-    }
-
-    @Test
-    fun manualTransportOverridePreventsAutomaticResync() {
-        val state = ConnectionFormState()
-        state.choosePath(EntryPath.Guided)
-        state.applyLocationPreset(DatabaseLocation.Cloud)
-
-        state.transportMode = TransportSecurityMode.EncryptOnly
-        state.markTransportManual()
-        state.handleHostInput("localhost")
-
-        assertEquals(DatabaseLocation.Cloud, state.location)
         assertEquals(TransportSecurityMode.EncryptOnly, state.transportMode)
-        assertTrue(state.transportOverridden)
     }
 
     @Test
-    fun parsedRemoteConnectionChangedToLocalhostResyncsToLocalDefaults() {
+    fun applyConnectionStringPopulatesFieldsAndSafeDriverProperties() {
         val state = ConnectionFormState()
-        state.connectionString = "postgresql://user:secret@db.example.com:5432/demo"
+        state.connectionString =
+            "postgresql://user:secret@db.example.com:5432/app?sslmode=verify-full&currentSchema=reporting"
+
         state.applyParsedInput()
 
-        state.handleHostInput("localhost")
-
-        assertEquals(DatabaseLocation.Local, state.location)
-        assertEquals(TransportSecurityMode.Disabled, state.transportMode)
+        assertEquals("db.example.com", state.host)
+        assertEquals("app", state.database)
+        assertEquals("user", state.username)
+        assertEquals("secret", state.password)
+        assertEquals("currentSchema", state.driverProperties.single().name)
+        assertEquals("reporting", state.driverProperties.single().value)
+        assertFalse(state.connectionString.contains("secret"))
     }
 
     @Test
-    fun changingPathClearsParsedPasswordAndRawString() {
-        val state = ConnectionFormState()
-        state.connectionString = "mysql://user:secret@localhost:3306/demo"
-        state.applyParsedInput()
+    fun editFormPreservesIdAndNeverPreloadsPassword() {
+        val original = sampleConnection()
+        val state = ConnectionFormState(original)
 
-        state.resetToChoose()
-
+        assertEquals(original.id, state.buildDef().id)
         assertEquals("", state.password)
-        assertEquals("", state.connectionString)
-        assertFalse(state.parsedFromString)
+        assertFalse(state.passwordChangeEnabled)
+        assertNull(state.passwordForOperation())
+        assertTrue(state.connectionString.contains("readonly@"))
     }
 
     @Test
-    fun parsingSecondStringWithoutPasswordClearsPreviousPassword() {
-        val state = ConnectionFormState()
-        state.connectionString = "postgresql://user:secret@localhost:5432/demo"
-        state.applyParsedInput()
+    fun nameOnlyEditKeepsSavedPassword() {
+        val state = ConnectionFormState(sampleConnection())
 
-        state.connectionString = "postgresql://user@localhost:5432/demo"
-        state.applyParsedInput()
+        state.updateName("Renamed")
 
-        assertEquals("", state.password)
+        assertFalse(state.credentialMaterialChanged())
+        assertNull(state.validateForm())
+        assertNull(state.passwordForOperation())
     }
 
     @Test
-    fun oracleWalletEditsMarkTransportManualAndSurviveHostBoundaryEdits() {
-        val state = ConnectionFormState()
-        state.connectionString = "jdbc:oracle:thin:user/secret@tcps:db.example.com:1522/service?wallet_location=/wallets/team"
-        state.applyParsedInput()
+    fun endpointOrPropertyEditRequiresExplicitPasswordChange() {
+        val state = ConnectionFormState(sampleConnection())
+        state.handleHostInput("other.example.com")
 
-        state.handleOracleWalletInput("/wallets/other")
-        state.handleHostInput("localhost")
+        assertTrue(state.credentialMaterialChanged())
+        assertTrue(state.validateForm()!!.contains("password"))
 
-        assertTrue(state.transportOverridden)
-        assertEquals("/wallets/other", state.oracleWalletLocation)
-        assertEquals(TransportSecurityMode.VerifyIdentity, state.transportMode)
+        state.enablePasswordChange()
+        assertNull(state.validateForm())
+        assertEquals("", state.passwordForOperation())
     }
 
     @Test
-    fun caTroubleshootingSwitchesToVerifyCaAndPreservesPem() {
-        val state = ConnectionFormState()
+    fun driverPropertyOperationsAffectBuiltDefinitionAndFingerprint() {
+        val state = ConnectionFormState(sampleConnection())
+        val originalFingerprint = state.original!!.credentialFingerprint()
 
-        state.applyTroubleshootingCa("-----BEGIN CERTIFICATE-----")
+        state.addDriverProperty()
+        state.updateDriverPropertyName(1, "currentSchema")
+        state.updateDriverPropertyValue(1, "analytics")
+        state.enablePasswordChange()
 
-        assertEquals(TransportSecurityMode.VerifyCa, state.transportMode)
-        assertEquals("-----BEGIN CERTIFICATE-----", state.caPem)
-        assertTrue(state.transportOverridden)
+        assertEquals(2, state.buildDef().driverProperties.size)
+        assertNotEquals(originalFingerprint, state.buildDef().credentialFingerprint())
+
+        state.removeDriverProperty(1)
+        assertEquals(1, state.buildDef().driverProperties.size)
     }
 
     @Test
@@ -151,4 +113,87 @@ class ConnectionFormStateTest {
 
         assertEquals(3306, state.port)
     }
+
+    @Test
+    fun manuallyEnteredPortSurvivesDialectChange() {
+        val state = ConnectionFormState()
+        state.handlePortInput("15432")
+
+        state.selectDialect(Dialect.MySql)
+
+        assertEquals(15432, state.port)
+    }
+
+    @Test
+    fun applyingStringWithoutPasswordClearsNewConnectionPassword() {
+        val state = ConnectionFormState()
+        state.updatePassword("old")
+        state.connectionString = "postgresql://user@localhost/db"
+
+        state.applyParsedInput()
+
+        assertEquals("", state.password)
+        assertTrue(state.passwordChangeEnabled)
+    }
+
+    @Test
+    fun applyingPasswordFreeStringToEditDoesNotPretendCredentialWasLoaded() {
+        val state = ConnectionFormState(sampleConnection())
+        state.connectionString = "postgresql://readonly@db.example.com/app"
+
+        state.applyParsedInput()
+
+        assertFalse(state.passwordChangeEnabled)
+        assertNull(state.passwordForOperation())
+    }
+
+    @Test
+    fun duplicateDriverPropertyNamesFailValidationIgnoringCase() {
+        val state = ConnectionFormState()
+        state.updateDatabase("app")
+        state.updateUsername("readonly")
+        state.addDriverProperty()
+        state.updateDriverPropertyName(0, "currentSchema")
+        state.addDriverProperty()
+        state.updateDriverPropertyName(1, "CURRENTSCHEMA")
+
+        assertTrue(state.validateForm()!!.contains("unique"))
+    }
+
+    @Test
+    fun secretLikeDriverPropertyFailsValidation() {
+        val state = ConnectionFormState()
+        state.updateDatabase("app")
+        state.updateUsername("readonly")
+        state.addDriverProperty()
+        state.updateDriverPropertyName(0, "clientSecret")
+
+        assertTrue(state.validateForm()!!.contains("secret"))
+    }
+
+    @Test
+    fun oracleVerifiedTransportRequiresWallet() {
+        val state = ConnectionFormState()
+        state.selectDialect(Dialect.Oracle)
+        state.updateDatabase("service")
+        state.updateUsername("readonly")
+        state.changeTransportMode(TransportSecurityMode.VerifyIdentity)
+
+        assertTrue(state.validateForm()!!.contains("wallet"))
+
+        state.updateOracleWallet("/wallet")
+        assertNull(state.validateForm())
+    }
+
+    private fun sampleConnection() = ConnectionDef(
+        id = "c1",
+        name = "Production Replica",
+        dialect = Dialect.Postgres,
+        host = "db.example.com",
+        port = 5432,
+        database = "app",
+        username = "readonly",
+        transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+        driverProperties = listOf(DriverProperty("applicationName", "Safe-DB")),
+    )
 }

@@ -1,68 +1,70 @@
 package com.safedb.ui
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.safedb.connection.ConnectionStringParseError
 import com.safedb.connection.DIALECTS
-import com.safedb.connection.DatabaseLocation
+import com.safedb.connection.formatConnectionString
 import com.safedb.connection.inferLocation
-import com.safedb.connection.isLocalHost
 import com.safedb.connection.parseConnectionString
 import com.safedb.connection.transportPresetForLocation
+import com.safedb.model.CURRENT_CONNECTION_VERSION
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.DriverProperty
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.model.validateDriverProperties
 import java.util.UUID
 
-enum class EntryPath {
-    Unset,
-    String,
-    Guided,
-}
+data class DriverPropertyDraft(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "",
+    val value: String = "",
+)
 
-enum class FormStep {
-    Choose,
-    StringInput,
-    Location,
-    Credentials,
-}
+class ConnectionFormState(
+    val original: ConnectionDef? = null,
+) {
+    val connectionId: String = original?.id ?: UUID.randomUUID().toString()
+    val isEditing: Boolean = original != null
 
-class ConnectionFormState {
-    var entryPath by mutableStateOf(EntryPath.Unset)
-        private set
-    var formStep by mutableStateOf(FormStep.Choose)
-        private set
-    var location by mutableStateOf<DatabaseLocation?>(null)
-        private set
-    var parsedFromString by mutableStateOf(false)
-        private set
-    var connectionString by mutableStateOf("")
+    var connectionString by mutableStateOf(original?.let(::formatConnectionString).orEmpty())
     var parseError by mutableStateOf<String?>(null)
         private set
     var parseWarnings by mutableStateOf<List<String>>(emptyList())
         private set
-    var transportOverridden by mutableStateOf(false)
+    var transportOverridden by mutableStateOf(original != null)
         private set
-    var portIsAuto by mutableStateOf(true)
+    private var portIsAuto by mutableStateOf(original == null)
+
+    var name by mutableStateOf(original?.name.orEmpty())
+    var dialect by mutableStateOf(original?.dialect ?: Dialect.Postgres)
+        private set
+    var host by mutableStateOf(original?.host ?: "localhost")
+        private set
+    var port by mutableStateOf(original?.port ?: 5432)
+        private set
+    var database by mutableStateOf(original?.database.orEmpty())
+    var username by mutableStateOf(original?.username.orEmpty())
+    var password by mutableStateOf("")
+    var passwordChangeEnabled by mutableStateOf(original == null)
+        private set
+    var showPassword by mutableStateOf(false)
+    var transportMode by mutableStateOf(
+        original?.transportSecurity?.mode ?: TransportSecurityMode.Disabled,
+    )
+    var caPem by mutableStateOf(original?.transportSecurity?.caPem.orEmpty())
+    var oracleWalletLocation by mutableStateOf(
+        original?.transportSecurity?.oracleWalletLocation.orEmpty(),
+    )
         private set
 
-    var name by mutableStateOf("")
-    var dialect by mutableStateOf(Dialect.Postgres)
-        private set
-    var host by mutableStateOf("localhost")
-        private set
-    var port by mutableStateOf(5432)
-        private set
-    var database by mutableStateOf("")
-    var username by mutableStateOf("")
-    var password by mutableStateOf("")
-    var showPassword by mutableStateOf(false)
-    var transportMode by mutableStateOf(TransportSecurityMode.VerifyIdentity)
-    var caPem by mutableStateOf("")
-    var oracleWalletLocation by mutableStateOf("")
-        private set
+    val driverProperties = mutableStateListOf<DriverPropertyDraft>().apply {
+        addAll(original?.driverProperties.orEmpty().map { DriverPropertyDraft(name = it.name, value = it.value) })
+    }
 
     var testing by mutableStateOf(false)
     var saving by mutableStateOf(false)
@@ -70,100 +72,57 @@ class ConnectionFormState {
     var testError by mutableStateOf<String?>(null)
     var formError by mutableStateOf<String?>(null)
 
+    init {
+        if (original == null) applyRecommendedTransport()
+    }
+
     fun resetResultState() {
         testResult = null
         testError = null
         formError = null
     }
 
-    fun clearConnectionStringState() {
-        connectionString = ""
+    fun applyParsedInput() {
         parseError = null
         parseWarnings = emptyList()
-        parsedFromString = false
+        resetResultState()
+        try {
+            val parsed = parseConnectionString(connectionString)
+            dialect = parsed.dialect
+            host = parsed.host
+            port = parsed.port
+            portIsAuto = true
+            database = parsed.database
+            username = parsed.username
+            if (parsed.password != null || !isEditing) {
+                password = parsed.password.orEmpty()
+                passwordChangeEnabled = true
+            }
+            applyTransportSecurity(parsed.transportSecurity)
+            transportOverridden = false
+            driverProperties.clear()
+            driverProperties.addAll(parsed.driverProperties.map { DriverPropertyDraft(name = it.name, value = it.value) })
+            parseWarnings = parsed.warnings
+            connectionString = parsed.sanitizedInput
+        } catch (error: ConnectionStringParseError) {
+            parseError = error.message
+        } catch (_: Exception) {
+            parseError = "This connection string could not be parsed."
+        }
     }
 
-    fun resetToChoose() {
-        entryPath = EntryPath.Unset
-        formStep = FormStep.Choose
+    fun enablePasswordChange() {
         password = ""
+        passwordChangeEnabled = true
         showPassword = false
-        clearConnectionStringState()
         resetResultState()
     }
 
-    fun choosePath(path: EntryPath) {
-        entryPath = path
-        formStep = if (path == EntryPath.String) FormStep.StringInput else FormStep.Location
-        resetResultState()
-    }
-
-    fun switchToGuided() {
-        entryPath = EntryPath.Guided
-        formStep = FormStep.Location
-        clearConnectionStringState()
-    }
-
-    fun switchToString() {
-        entryPath = EntryPath.String
-        formStep = FormStep.StringInput
-        parseError = null
-    }
-
-    fun applyTransportSecurity(security: TransportSecurity) {
-        transportMode = security.mode
-        caPem = security.caPem.orEmpty()
-        oracleWalletLocation = security.oracleWalletLocation.orEmpty()
-    }
-
-    fun isRemoteHost(value: String): Boolean =
-        value.trim().isNotEmpty() && !isLocalHost(value)
-
-    fun recommendedLocationForCurrentHost(): DatabaseLocation =
-        if (isRemoteHost(host)) DatabaseLocation.Cloud else DatabaseLocation.Local
-
-    fun applyLocationPreset(nextLocation: DatabaseLocation) {
-        val presetLocation =
-            if (nextLocation == DatabaseLocation.Local && isRemoteHost(host)) {
-                recommendedLocationForCurrentHost()
-            } else {
-                nextLocation
-            }
-        location = presetLocation
-        transportOverridden = false
-        applyTransportSecurity(transportPresetForLocation(presetLocation))
-        formStep = FormStep.Credentials
-        resetResultState()
-    }
-
-    fun reapplyRecommendedSettings() {
-        val currentLocation = location ?: return
-        val presetLocation =
-            if (currentLocation == DatabaseLocation.Organization) {
-                currentLocation
-            } else {
-                recommendedLocationForCurrentHost()
-            }
-        location = presetLocation
-        transportOverridden = false
-        applyTransportSecurity(transportPresetForLocation(presetLocation))
-        resetResultState()
-    }
-
-    fun markTransportManual() {
-        transportOverridden = true
-        resetResultState()
-    }
-
-    fun applyTroubleshootingCa(value: String) {
-        caPem = value
-        transportMode = TransportSecurityMode.VerifyCa
-        transportOverridden = true
-    }
-
-    fun handleOracleWalletInput(value: String) {
-        oracleWalletLocation = value
-        transportOverridden = true
+    fun keepSavedPassword() {
+        if (!isEditing) return
+        password = ""
+        passwordChangeEnabled = false
+        showPassword = false
         resetResultState()
     }
 
@@ -179,68 +138,95 @@ class ConnectionFormState {
     }
 
     fun handlePortInput(value: String) {
-        port = value.toIntOrNull() ?: port
+        port = value.toIntOrNull() ?: 0
         portIsAuto = false
         resetResultState()
     }
 
-    fun handleHostInput(nextHost: String) {
-        host = nextHost
-        if (!transportOverridden && location != null && location != DatabaseLocation.Organization) {
-            val nextLocation = inferLocation(nextHost)
-            if (nextLocation != location) {
-                location = nextLocation
-                applyTransportSecurity(transportPresetForLocation(nextLocation))
-            }
-        }
+    fun handleHostInput(value: String) {
+        host = value
+        if (!transportOverridden) applyRecommendedTransport()
         resetResultState()
     }
 
-    fun applyParsedInput() {
-        parseError = null
-        parseWarnings = emptyList()
+    fun changeTransportMode(value: TransportSecurityMode) {
+        transportMode = value
+        transportOverridden = true
         resetResultState()
+    }
 
-        try {
-            val parsed = parseConnectionString(connectionString)
-            parsedFromString = true
-            dialect = parsed.dialect
-            host = parsed.host
-            port = parsed.port
-            portIsAuto = true
-            database = parsed.database
-            username = parsed.username
-            password = parsed.password.orEmpty()
-            applyTransportSecurity(parsed.transportSecurity)
-            transportOverridden = false
-            location = parsed.inferredLocation
-            parseWarnings = parsed.warnings
-            connectionString = parsed.sanitizedInput
-            formStep = FormStep.Credentials
-        } catch (error: ConnectionStringParseError) {
-            parseError = error.message
-        } catch (_: Exception) {
-            parseError = "This connection string could not be parsed."
+    fun applyTransportSecurity(security: TransportSecurity) {
+        transportMode = security.mode
+        caPem = security.caPem.orEmpty()
+        oracleWalletLocation = security.oracleWalletLocation.orEmpty()
+    }
+
+    private fun applyRecommendedTransport() {
+        applyTransportSecurity(transportPresetForLocation(inferLocation(host)))
+    }
+
+    fun updateOracleWallet(value: String) {
+        oracleWalletLocation = value
+        transportOverridden = true
+        resetResultState()
+    }
+
+    fun updateCaPem(value: String) {
+        caPem = value
+        transportOverridden = true
+        resetResultState()
+    }
+
+    fun addDriverProperty() {
+        if (driverProperties.size < com.safedb.model.MAX_DRIVER_PROPERTIES) {
+            driverProperties += DriverPropertyDraft()
+            resetResultState()
         }
     }
 
-    fun buildDef(): ConnectionDef =
-        ConnectionDef(
-            version = 2,
-            id = UUID.randomUUID().toString(),
-            name = name.trim().ifEmpty { "$dialect $host:$port" },
-            dialect = dialect,
-            host = host.trim(),
-            port = port,
-            database = database.trim(),
-            username = username.trim(),
-            transportSecurity = TransportSecurity(
-                mode = transportMode,
-                caPem = caPem.trim().ifEmpty { null },
-                oracleWalletLocation = oracleWalletLocation.trim().ifEmpty { null },
-                legacyImplicit = false,
-            ),
-        )
+    fun updateDriverPropertyName(index: Int, value: String) {
+        driverProperties[index] = driverProperties[index].copy(name = value)
+        resetResultState()
+    }
+
+    fun updateDriverPropertyValue(index: Int, value: String) {
+        driverProperties[index] = driverProperties[index].copy(value = value)
+        resetResultState()
+    }
+
+    fun removeDriverProperty(index: Int) {
+        driverProperties.removeAt(index)
+        resetResultState()
+    }
+
+    fun buildDef(): ConnectionDef = ConnectionDef(
+        version = CURRENT_CONNECTION_VERSION,
+        id = connectionId,
+        name = name.trim().ifEmpty { "$dialect ${host.trim()}:$port" },
+        dialect = dialect,
+        host = host.trim(),
+        port = port,
+        database = database.trim(),
+        username = username.trim(),
+        transportSecurity = TransportSecurity(
+            mode = transportMode,
+            caPem = caPem.trim().ifEmpty { null },
+            oracleWalletLocation = oracleWalletLocation.trim().ifEmpty { null },
+            legacyImplicit = false,
+        ),
+        driverProperties = driverProperties.map { DriverProperty(it.name.trim(), it.value) },
+    )
+
+    fun credentialMaterialChanged(): Boolean =
+        original?.credentialFingerprint()?.let { it != buildDef().credentialFingerprint() } ?: true
+
+    fun passwordForOperation(): String? =
+        if (!isEditing || passwordChangeEnabled) password else null
+
+    fun driverPropertyError(): String? = validateDriverProperties(
+        dialect,
+        driverProperties.map { DriverProperty(it.name.trim(), it.value) },
+    ).exceptionOrNull()?.message
 
     fun validateForm(): String? {
         if (host.trim().isEmpty()) return "Host is required"
@@ -253,7 +239,16 @@ class ConnectionFormState {
         ) {
             return "Oracle TCPS requires a wallet location"
         }
+        driverPropertyError()?.let { return it }
+        if (isEditing && credentialMaterialChanged() && !passwordChangeEnabled) {
+            return "Connection or driver parameter changes require the saved password to be changed or re-entered"
+        }
         return null
+    }
+
+    fun updateName(value: String) {
+        name = value
+        resetResultState()
     }
 
     fun updateDatabase(value: String) {
@@ -268,11 +263,6 @@ class ConnectionFormState {
 
     fun updatePassword(value: String) {
         password = value
-        resetResultState()
-    }
-
-    fun updateName(value: String) {
-        name = value
         resetResultState()
     }
 }

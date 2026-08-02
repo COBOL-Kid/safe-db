@@ -409,6 +409,37 @@ class StoreTest {
             migrated.transportSecurity,
         )
         assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
+        assertEquals(emptyList(), migrated.driverProperties)
+        assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
+    }
+
+    @Test
+    fun configStoreMigratesV2ConnectionsWithEmptyDriverProperties() {
+        val dir = tempDir()
+        Files.writeString(
+            dir.resolve("connections.json"),
+            """
+            [
+              {
+                "version": 2,
+                "id": "v2",
+                "name": "Existing Postgres",
+                "dialect": "Postgres",
+                "host": "localhost",
+                "port": 5432,
+                "database": "demo",
+                "username": "readonly",
+                "transport_security": {"mode": "Disabled"}
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        val migrated = ConfigStore.new(dir).list().single()
+
+        assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
+        assertEquals(emptyList(), migrated.driverProperties)
+        assertTrue(Files.readString(dir.resolve("connections.json")).contains("\"driver_properties\""))
         assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
     }
 

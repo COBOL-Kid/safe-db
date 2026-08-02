@@ -47,6 +47,37 @@ class TypesTest {
         val second = sampleConnection().credentialFingerprint()
         assertEquals(first, second)
     }
+
+    @Test
+    fun driverPropertiesAreValidatedAndCannotStoreSecretsOrManagedSettings() {
+        val base = sampleConnection()
+
+        assertFailsWith<IllegalArgumentException> {
+            base.copy(driverProperties = listOf(DriverProperty("accessToken", "secret"))).validate().getOrThrow()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            base.copy(driverProperties = listOf(DriverProperty("sslMode", "disable"))).validate().getOrThrow()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            base.copy(
+                driverProperties = listOf(DriverProperty("currentSchema", "a"), DriverProperty("CURRENTSCHEMA", "b")),
+            ).validate().getOrThrow()
+        }
+        assertTrue(base.copy(driverProperties = listOf(DriverProperty("currentSchema", ""))).validate().isSuccess)
+    }
+
+    @Test
+    fun driverPropertyOrderDoesNotChangeFingerprintButValuesDo() {
+        val base = sampleConnection()
+        val first = base.copy(
+            driverProperties = listOf(DriverProperty("currentSchema", "reporting"), DriverProperty("ApplicationName", "Safe-DB")),
+        )
+        val reordered = first.copy(driverProperties = first.driverProperties.reversed())
+        val changed = first.copy(driverProperties = listOf(DriverProperty("currentSchema", "analytics")))
+
+        assertEquals(first.credentialFingerprint(), reordered.credentialFingerprint())
+        assertNotEquals(first.credentialFingerprint(), changed.credentialFingerprint())
+    }
 }
 
 private fun sampleConnection() = ConnectionDef(

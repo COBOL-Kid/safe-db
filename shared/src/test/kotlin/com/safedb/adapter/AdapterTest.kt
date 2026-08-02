@@ -4,6 +4,7 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
+import com.safedb.model.DriverProperty
 import com.safedb.model.ResultCell
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
@@ -134,6 +135,22 @@ class AdapterTest {
         ).dataSourceProperties
         assertEquals("true", encryptOnly.getProperty("encrypt"))
         assertEquals("true", encryptOnly.getProperty("trustServerCertificate"))
+    }
+
+    @Test
+    fun datasourceReceivesCustomDriverPropertiesAndManagedSecurityWins() {
+        val config = createDataSourceConfig(
+            connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
+                driverProperties = listOf(
+                    DriverProperty("applicationName", "Enterprise Reporting"),
+                    DriverProperty("encrypt", "false"),
+                ),
+            ),
+            "pw",
+        )
+
+        assertEquals("Enterprise Reporting", config.dataSourceProperties.getProperty("applicationName"))
+        assertEquals("true", config.dataSourceProperties.getProperty("encrypt"))
     }
 
     @Test

@@ -92,25 +92,32 @@ class ConfigStore private constructor(
     }
 }
 
-/**
- * Pre-transport-security profiles omitted `transport_security` from JSON.
- * Upgrade them to plaintext-compatible settings so local databases keep working.
- */
+/** Upgrade older profiles while preserving plaintext-compatible local transport defaults. */
 internal fun migrateLegacyConnection(value: JsonElement): Pair<JsonElement, Boolean> {
     val objectValue = value as? JsonObject ?: return value to false
-    if ("transport_security" in objectValue) {
+    val needsTransport = "transport_security" !in objectValue
+    val needsDriverProperties = "driver_properties" !in objectValue
+    val needsVersion = objectValue["version"]?.let { element ->
+        (element as? JsonPrimitive)?.content?.toIntOrNull() != CURRENT_CONNECTION_VERSION
+    } ?: true
+    if (!needsTransport && !needsDriverProperties && !needsVersion) {
         return value to false
     }
     val migrated = JsonObject(
         objectValue.toMutableMap().apply {
             put("version", JsonPrimitive(CURRENT_CONNECTION_VERSION))
-            put(
-                "transport_security",
-                buildJsonObject {
-                    put("mode", JsonPrimitive(TransportSecurityMode.Disabled.name))
-                    put("legacy_implicit", JsonPrimitive(true))
-                },
-            )
+            if (needsTransport) {
+                put(
+                    "transport_security",
+                    buildJsonObject {
+                        put("mode", JsonPrimitive(TransportSecurityMode.Disabled.name))
+                        put("legacy_implicit", JsonPrimitive(true))
+                    },
+                )
+            }
+            if (needsDriverProperties) {
+                put("driver_properties", kotlinx.serialization.json.JsonArray(emptyList()))
+            }
         },
     )
     return migrated to true

@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,13 +56,17 @@ fun ConnectionsScreen(
     viewModel: ConnectionsViewModel,
     onActivate: (String) -> Unit,
     onDeleted: (String) -> Unit,
+    onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
+    initialCreating: Boolean = false,
+    initialEditingConnection: ConnectionDef? = null,
 ) {
     val connections by viewModel.connections.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
     val deleteError by viewModel.deleteError.collectAsState()
-    var showConnectionForm by remember { mutableStateOf(false) }
+    var showConnectionForm by remember { mutableStateOf(initialCreating) }
+    var editingConnection by remember { mutableStateOf(initialEditingConnection) }
     var pendingDelete by remember { mutableStateOf<ConnectionDef?>(null) }
 
     ConfirmDialog(
@@ -87,15 +93,37 @@ fun ConnectionsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text("Connections", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Manage your database connections.",
+                    when {
+                        editingConnection != null -> "Edit Connection"
+                        showConnectionForm -> "New Connection"
+                        else -> "Connections"
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    when {
+                        editingConnection != null -> "Update connection details and driver properties."
+                        showConnectionForm -> "Connect to a database. Credentials are stored in your OS keychain."
+                        else -> "Manage your database connections."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            if (!showConnectionForm) {
+            if (showConnectionForm || editingConnection != null) {
+                Text(
+                    "Cancel",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = SafeDbTheme.colors.actionPrimary,
+                    modifier = Modifier.clickable {
+                        showConnectionForm = false
+                        editingConnection = null
+                    }.padding(8.dp),
+                )
+            } else {
                 PrimaryButton(onClick = { showConnectionForm = true }) {
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text("Add Connection", modifier = Modifier.padding(start = 8.dp))
@@ -106,20 +134,24 @@ fun ConnectionsScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         when {
-            showConnectionForm -> Box(
+            showConnectionForm || editingConnection != null -> Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(32.dp),
+                    .padding(24.dp),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 ConnectionForm(
                     service = service,
-                    onSaved = {
+                    existingConnection = editingConnection,
+                    onSaved = { saved, credentialMaterialChanged ->
+                        if (editingConnection != null && credentialMaterialChanged) {
+                            onConnectionChanged(saved.id)
+                        }
                         showConnectionForm = false
+                        editingConnection = null
                         onSaved()
                     },
-                    onCancel = { showConnectionForm = false },
-                    modifier = Modifier.widthIn(max = 720.dp),
+                    modifier = Modifier.widthIn(max = 1_020.dp),
                 )
             }
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -162,6 +194,7 @@ fun ConnectionsScreen(
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
                                 connection = connection,
+                                onEdit = { editingConnection = connection },
                                 onDelete = { pendingDelete = connection },
                                 onOpen = { onActivate(connection.id) },
                             )
@@ -176,6 +209,7 @@ fun ConnectionsScreen(
 @Composable
 private fun ConnectionCard(
     connection: ConnectionDef,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     onOpen: () -> Unit,
 ) {
@@ -186,7 +220,7 @@ private fun ConnectionCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         modifier = Modifier.size(30.dp),
                         shape = MaterialTheme.shapes.small,
@@ -201,8 +235,14 @@ private fun ConnectionCard(
                             )
                         }
                     }
-                    Column {
-                        Text(connection.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            connection.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         Text(
                             dialectLabel(connection.dialect),
                             style = MaterialTheme.typography.labelSmall,
@@ -210,7 +250,17 @@ private fun ConnectionCard(
                         )
                     }
                 }
-                DeleteIconButton(onClick = onDelete)
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    androidx.compose.material3.IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = "Edit ${connection.name}",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    DeleteIconButton(onClick = onDelete)
+                }
             }
 
             Spacer(Modifier.height(12.dp))

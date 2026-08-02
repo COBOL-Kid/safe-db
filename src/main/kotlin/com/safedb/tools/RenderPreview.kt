@@ -40,6 +40,7 @@ import com.safedb.explore.VisualizationSortTarget
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.DriverProperty
 import com.safedb.model.FilterGroup
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterOp
@@ -90,6 +91,10 @@ private class FakeService(
         ConnectionDef(
             id = "c1", name = "Production Replica", dialect = Dialect.Postgres,
             host = "replica.internal.acme.io", port = 5432, database = "acme_prod", username = "readonly",
+            driverProperties = listOf(
+                DriverProperty("currentSchema", "reporting"),
+                DriverProperty("applicationName", "Safe-DB"),
+            ),
         ),
         ConnectionDef(
             id = "c2", name = "Local MySQL", dialect = Dialect.MySql,
@@ -170,7 +175,7 @@ private class FakeService(
         limit = 100,
     )
 
-    override suspend fun testConnection(def: ConnectionDef, password: String) = "ok"
+    override suspend fun testConnection(def: ConnectionDef, password: String?) = "ok"
     override suspend fun createConnection(def: ConnectionDef, password: String) = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) {}
     override suspend fun listConnections() = connections
@@ -237,6 +242,10 @@ internal fun render(
     isDark: Boolean,
     palette: ThemePalette = ThemePalette.DEFAULT,
     sidebarCollapsed: Boolean = false,
+    newConnectionPreview: Boolean = false,
+    editConnectionPreview: ConnectionDef? = null,
+    width: Int = 1280,
+    height: Int = 832,
     prepare: (AppState, AppViewModel) -> Unit,
 ) {
     val service = FakeService(
@@ -251,7 +260,7 @@ internal fun render(
     prepare(appState, viewModel)
     Thread.sleep(700)
 
-    ImageComposeScene(width = 1280, height = 832, density = Density(1f)) {
+    ImageComposeScene(width = width, height = height, density = Density(1f)) {
         SafeDbTheme(isDark = isDark, palette = palette) {
             androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
                 AppShell(
@@ -260,6 +269,8 @@ internal fun render(
                     paletteOpen = false,
                     onPaletteOpenChange = {},
                     initialSidebarCollapsed = sidebarCollapsed,
+                    newConnectionPreview = newConnectionPreview,
+                    editConnectionPreview = editConnectionPreview,
                 )
             }
         }
@@ -514,6 +525,29 @@ fun main() {
         render("home-$suffix", dark) { _, _ -> }
 
         render("connections-$suffix", dark) { state, _ ->
+            state.navigate(AppRoute.Connections)
+        }
+
+        render("connections-new-$suffix", dark, newConnectionPreview = true) { state, _ ->
+            state.navigate(AppRoute.Connections)
+        }
+
+        render(
+            "connections-new-narrow-$suffix",
+            dark,
+            newConnectionPreview = true,
+            width = 840,
+            height = 900,
+        ) { state, _ ->
+            state.navigate(AppRoute.Connections)
+        }
+
+        val editPreviewService = FakeService()
+        render(
+            "connections-edit-$suffix",
+            dark,
+            editConnectionPreview = editPreviewService.connections.first(),
+        ) { state, _ ->
             state.navigate(AppRoute.Connections)
         }
 

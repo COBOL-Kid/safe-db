@@ -1,6 +1,9 @@
 package com.safedb.connection
 
 import com.safedb.model.Dialect
+import com.safedb.model.ConnectionDef
+import com.safedb.model.DriverProperty
+import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,6 +27,28 @@ class ParseConnectionStringTest {
         assertEquals(DatabaseLocation.Cloud, parsed.inferredLocation)
         assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
         assertFalse(parsed.sanitizedInput.contains("p%40ss"))
+    }
+
+    @Test
+    fun importsSafePostgresExtrasAndDropsSensitiveValuesFromSanitizedInput() {
+        val parsed = parseConnectionString(
+            "postgresql://u:p@host/db?sslmode=verify-full&currentSchema=reporting&apiToken=do-not-store",
+        )
+
+        assertEquals(listOf(DriverProperty("currentSchema", "reporting")), parsed.driverProperties)
+        assertTrue(parsed.warnings.single().contains("apiToken"))
+        assertFalse(parsed.sanitizedInput.contains("do-not-store"))
+        assertFalse(parsed.sanitizedInput.contains(":p@"))
+    }
+
+    @Test
+    fun duplicateExtrasUseLastValueWithWarning() {
+        val parsed = parseConnectionString(
+            "postgresql://u@host/db?currentSchema=one&CURRENTSCHEMA=two",
+        )
+
+        assertEquals(listOf(DriverProperty("CURRENTSCHEMA", "two")), parsed.driverProperties)
+        assertTrue(parsed.warnings.single().contains("last value"))
     }
 
     @Test
@@ -70,6 +95,15 @@ class ParseConnectionStringTest {
         assertEquals("", parsed.password)
         assertEquals(DatabaseLocation.Local, parsed.inferredLocation)
         assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
+    }
+
+    @Test
+    fun importsSafeMySqlDriverProperties() {
+        val parsed = parseConnectionString(
+            "jdbc:mysql://host:3306/db?sslMode=VERIFY_IDENTITY&serverTimezone=UTC",
+        )
+
+        assertEquals(listOf(DriverProperty("serverTimezone", "UTC")), parsed.driverProperties)
     }
 
     @Test
@@ -137,6 +171,16 @@ class ParseConnectionStringTest {
     }
 
     @Test
+    fun importsSafeSqlServerPropertiesButKeepsSecurityManaged() {
+        val parsed = parseConnectionString(
+            "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;applicationName=Reporting",
+        )
+
+        assertEquals(listOf(DriverProperty("applicationName", "Reporting")), parsed.driverProperties)
+        assertFalse(parsed.driverProperties.any { it.name.equals("encrypt", ignoreCase = true) })
+    }
+
+    @Test
     fun defaultsSqlServerJdbcLocalhostConnectionsWithoutEncryptToDisabledTransport() {
         val parsed = parseConnectionString(
             "jdbc:sqlserver://localhost:1433;databaseName=db;user=u;password=p",
@@ -197,6 +241,39 @@ class ParseConnectionStringTest {
         assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
         assertEquals("/path/to/wallet", parsed.transportSecurity.oracleWalletLocation)
         assertEquals(emptyList(), parsed.warnings)
+    }
+
+    @Test
+    fun importsSafeOracleQueryProperties() {
+        val parsed = parseConnectionString(
+            "jdbc:oracle:thin:@//host:1521/svc?defaultRowPrefetch=50&apiToken=do-not-store",
+        )
+
+        assertEquals(listOf(DriverProperty("defaultRowPrefetch", "50")), parsed.driverProperties)
+        assertFalse(parsed.sanitizedInput.contains("do-not-store"))
+        assertTrue(parsed.warnings.single().contains("apiToken"))
+    }
+
+    @Test
+    fun formatsCanonicalPasswordFreeConnectionStringsWithEncodedProperties() {
+        val def = ConnectionDef(
+            id = "c1",
+            name = "Test",
+            dialect = Dialect.Postgres,
+            host = "db.example.com",
+            port = 5432,
+            database = "analytics db",
+            username = "read only",
+            transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+            driverProperties = listOf(DriverProperty("currentSchema", "team reports")),
+        )
+
+        val formatted = formatConnectionString(def)
+
+        assertTrue(formatted.contains("read%20only@"))
+        assertTrue(formatted.contains("analytics%20db"))
+        assertTrue(formatted.contains("currentSchema=team%20reports"))
+        assertFalse(formatted.contains("password"))
     }
 
     @Test
