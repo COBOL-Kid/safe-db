@@ -340,6 +340,7 @@ private fun renderExplore(
                 groups = listOf(WorksheetGroup("status", "t0__status", "Status")),
                 sorts = listOf(WorksheetSort(WorksheetValueRef.Column("t0__placed_at"), SortDir.Asc)),
                 columnLayout = listOf(
+                    WorksheetColumnLayout(WorksheetValueRef.Calculation("revenue")),
                     WorksheetColumnLayout(WorksheetValueRef.Calculation("dollars")),
                     WorksheetColumnLayout(WorksheetValueRef.Column("t0__status")),
                     WorksheetColumnLayout(WorksheetValueRef.Column("t0__total_cents"), visible = false),

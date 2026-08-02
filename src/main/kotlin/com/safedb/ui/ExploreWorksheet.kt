@@ -86,6 +86,7 @@ import com.safedb.explore.WorksheetFilterOp
 import com.safedb.explore.WorksheetGrain
 import com.safedb.explore.WorksheetGroup
 import com.safedb.explore.WorksheetPreview
+import com.safedb.explore.WorksheetProjectedRow
 import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.WorksheetSort
 import com.safedb.explore.WorksheetValueRef
@@ -94,7 +95,7 @@ import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.evaluatePivotFormula
 import com.safedb.explore.pivotCellKey
 import com.safedb.explore.moveWorksheetColumn
-import com.safedb.explore.resolveWorksheetColumnLayout
+import com.safedb.explore.projectWorksheetTable
 import com.safedb.explore.toWorksheetColumnLayout
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
@@ -111,6 +112,8 @@ import com.safedb.ui.theme.SafeDbTheme
 import java.text.DecimalFormat
 import java.util.Currency
 import java.util.UUID
+
+private const val WorksheetGroupColumnWidth = 220
 
 @Composable
 internal fun ExploreWorksheet(
@@ -252,10 +255,14 @@ private fun WorksheetTable(
     modifier: Modifier,
 ) {
     val scroll = rememberScrollState()
-    val resolvedColumns = resolveWorksheetColumnLayout(preview.columns, config.columnLayout)
-    val visibleColumns = resolvedColumns.filter { it.visible }
-    val widths = visibleColumns.associate { it.column.id to if (it.column.calculationId == null) 176 else 196 }
-    val tableWidth = visibleColumns.sumOf { widths.getValue(it.column.id) }.coerceAtLeast(1)
+    val projection = remember(preview, config.columnLayout) {
+        projectWorksheetTable(preview, config.columnLayout)
+    }
+    val resolvedColumns = projection.resolvedColumns
+    val visibleColumns = projection.columns
+    val widths = visibleColumns.associate { it.id to if (it.calculationId == null) 176 else 196 }
+    val groupColumnWidth = if (projection.hasRowLabels) WorksheetGroupColumnWidth else 0
+    val tableWidth = (visibleColumns.sumOf { widths.getValue(it.id) } + groupColumnWidth).coerceAtLeast(1)
 
     Column(modifier = modifier) {
         WorksheetColumnMenu(
@@ -276,8 +283,10 @@ private fun WorksheetTable(
             Box(modifier = Modifier.weight(1f).fillMaxWidth().horizontalScroll(scroll)) {
                 Column(modifier = Modifier.width(tableWidth.dp).fillMaxHeight()) {
                     Row(modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)) {
-                        visibleColumns.forEachIndexed { visibleIndex, resolved ->
-                            val column = resolved.column
+                        if (projection.hasRowLabels) {
+                            WorksheetGroupHeader()
+                        }
+                        visibleColumns.forEachIndexed { visibleIndex, column ->
                             WorksheetHeader(
                                 column = column,
                                 width = widths.getValue(column.id),
@@ -327,43 +336,26 @@ private fun WorksheetTable(
                         }
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            itemsIndexed(preview.rows, key = { _, row -> "${row.kind}:${row.pathKey}" }) { index, row ->
+                            itemsIndexed(projection.rows, key = { _, row -> "${row.kind}:${row.pathKey}" }) { index, row ->
                                 val background = when {
                                     row.kind != WorksheetRowKind.Detail -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
                                     index % 2 == 1 -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f)
                                     else -> MaterialTheme.colorScheme.surface
                                 }
                                 Row(modifier = Modifier.background(background)) {
-                                    visibleColumns.forEachIndexed { visibleIndex, resolved ->
-                                        val column = resolved.column
-                                        val cell = row.cells[resolved.sourceIndex]
+                                    if (projection.hasRowLabels) {
+                                        WorksheetGroupCell(row, onToggleGroup)
+                                    }
+                                    visibleColumns.forEachIndexed { visibleIndex, column ->
+                                        val cell = row.cells[visibleIndex]
                                         Box(
                                             modifier = Modifier
                                                 .width(widths.getValue(column.id).dp)
                                                 .height(34.dp)
-                                                .then(
-                                                    if (row.kind == WorksheetRowKind.Group && visibleIndex == 0) {
-                                                        Modifier.clickable { onToggleGroup(row.pathKey) }
-                                                    } else Modifier
-                                                )
                                                 .padding(horizontal = 10.dp),
                                             contentAlignment = if (cell.value is ResultCell.IntegerCell || cell.value is ResultCell.FloatCell) Alignment.CenterEnd else Alignment.CenterStart,
                                         ) {
-                                            if (row.kind == WorksheetRowKind.Group && visibleIndex == 0) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Spacer(Modifier.width((row.depth * 12).dp))
-                                                    Icon(
-                                                        if (row.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.ChevronRight,
-                                                        contentDescription = if (row.expanded) "Collapse group" else "Expand group",
-                                                        modifier = Modifier.size(17.dp),
-                                                    )
-                                                    Text(row.label.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                                                }
-                                            } else if (row.kind == WorksheetRowKind.GrandTotal && visibleIndex == 0) {
-                                                Text("Grand total", fontWeight = FontWeight.SemiBold)
-                                            } else {
-                                                WorksheetCellText(cell.value, cell.error, column.numberFormat)
-                                            }
+                                            WorksheetCellText(cell.value, cell.error, column.numberFormat)
                                         }
                                     }
                                 }
@@ -373,6 +365,65 @@ private fun WorksheetTable(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WorksheetGroupHeader() {
+    Column(
+        modifier = Modifier
+            .width(WorksheetGroupColumnWidth.dp)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+    ) {
+        Text("Group", style = DataMono.copy(fontWeight = FontWeight.Medium))
+        Text(
+            "worksheet hierarchy",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun WorksheetGroupCell(
+    row: WorksheetProjectedRow,
+    onToggleGroup: (String) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .width(WorksheetGroupColumnWidth.dp)
+            .height(34.dp)
+            .then(
+                if (row.kind == WorksheetRowKind.Group) {
+                    Modifier.clickable { onToggleGroup(row.pathKey) }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        when (row.kind) {
+            WorksheetRowKind.Detail -> Unit
+            WorksheetRowKind.Group -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.width((row.depth * 12).dp))
+                Icon(
+                    if (row.expanded) Icons.Default.KeyboardArrowDown else Icons.Default.ChevronRight,
+                    contentDescription = if (row.expanded) "Collapse group" else "Expand group",
+                    modifier = Modifier.size(17.dp),
+                )
+                Text(
+                    row.rowLabel.orEmpty(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            WorksheetRowKind.GrandTotal -> Text(
+                row.rowLabel ?: "Grand total",
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }

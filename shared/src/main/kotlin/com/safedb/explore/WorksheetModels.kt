@@ -195,7 +195,6 @@ fun resolveWorksheetColumnLayout(
     layout: List<WorksheetColumnLayout>,
 ): List<ResolvedWorksheetColumn> {
     val available = columns.mapIndexed { index, column -> column.valueRef to (index to column) }.toMap()
-    val configuredVisibility = layout.distinctBy { it.ref }.associate { it.ref to it.visible }
     val seen = mutableSetOf<WorksheetValueRef>()
     val resolved = buildList {
         layout.forEach { configured ->
@@ -206,7 +205,7 @@ fun resolveWorksheetColumnLayout(
         }
         columns.forEachIndexed { index, column ->
             if (seen.add(column.valueRef)) {
-                add(ResolvedWorksheetColumn(index, column, configuredVisibility[column.valueRef] ?: true))
+                add(ResolvedWorksheetColumn(index, column, visible = true))
             }
         }
     }
@@ -244,6 +243,52 @@ enum class WorksheetRowKind {
     Detail,
     Group,
     GrandTotal,
+}
+
+data class WorksheetTableProjection(
+    val resolvedColumns: List<ResolvedWorksheetColumn>,
+    val columns: List<WorksheetDisplayColumn>,
+    val rows: List<WorksheetProjectedRow>,
+    val hasRowLabels: Boolean,
+)
+
+data class WorksheetProjectedRow(
+    val kind: WorksheetRowKind,
+    val depth: Int,
+    val pathKey: String,
+    val rowLabel: String?,
+    val expanded: Boolean,
+    val cells: List<WorksheetCell>,
+    val sourceRowIndex: Int?,
+)
+
+fun projectWorksheetTable(
+    preview: WorksheetPreview,
+    layout: List<WorksheetColumnLayout>,
+): WorksheetTableProjection {
+    val resolvedColumns = resolveWorksheetColumnLayout(preview.columns, layout)
+    val visibleColumns = resolvedColumns.filter { it.visible }
+    val rows = preview.rows.map { row ->
+        WorksheetProjectedRow(
+            kind = row.kind,
+            depth = row.depth,
+            pathKey = row.pathKey,
+            rowLabel = when (row.kind) {
+                WorksheetRowKind.Detail -> null
+                WorksheetRowKind.Group -> row.label
+                WorksheetRowKind.GrandTotal -> row.label ?: "Grand total"
+            },
+            expanded = row.expanded,
+            cells = visibleColumns.map { resolved -> row.cells[resolved.sourceIndex] },
+            sourceRowIndex = row.sourceRowIndex,
+        )
+    }
+    return WorksheetTableProjection(
+        resolvedColumns = resolvedColumns,
+        columns = visibleColumns.map { it.column },
+        rows = rows,
+        hasRowLabels = rows.any { it.kind != WorksheetRowKind.Detail },
+    )
 }
 
 @Serializable
