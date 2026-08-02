@@ -1,6 +1,8 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -22,7 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -123,6 +127,7 @@ internal fun ExploreWorksheet(
     onConfigChange: (WorksheetConfig) -> Unit,
     onColumnLayoutChange: (List<WorksheetColumnLayout>) -> Unit,
     onToggleGroup: (String) -> Unit,
+    railFooter: @Composable (collapsed: Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var railVisible by remember { mutableStateOf(true) }
@@ -216,27 +221,34 @@ internal fun ExploreWorksheet(
 
         if (railVisible) {
             HorizontalDivider(modifier = Modifier.width(1.dp).fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant)
-            CalculationRail(
-                calculations = config.calculations,
-                onAdd = { addingCalculation = true },
-                onEdit = { editingCalculation = it },
-                onRemove = { calculation ->
-                    onConfigChange(
-                        config.copy(
-                            calculations = config.calculations - calculation,
-                            columnLayout = config.columnLayout.filterNot {
-                                it.ref == WorksheetValueRef.Calculation(calculation.id)
-                            },
-                        ),
-                    )
-                },
-                onCollapse = { railVisible = false },
-                modifier = Modifier.width(300.dp).fillMaxHeight(),
-            )
+            Column(modifier = Modifier.width(300.dp).fillMaxHeight()) {
+                CalculationRail(
+                    calculations = config.calculations,
+                    onAdd = { addingCalculation = true },
+                    onEdit = { editingCalculation = it },
+                    onRemove = { calculation ->
+                        onConfigChange(
+                            config.copy(
+                                calculations = config.calculations - calculation,
+                                columnLayout = config.columnLayout.filterNot {
+                                    it.ref == WorksheetValueRef.Calculation(calculation.id)
+                                },
+                            ),
+                        )
+                    },
+                    onCollapse = { railVisible = false },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+                railFooter(false)
+            }
         } else {
             Surface(color = MaterialTheme.colorScheme.surface) {
-                IconButton(onClick = { railVisible = true }) {
-                    Icon(Icons.Default.Calculate, contentDescription = "Show calculations")
+                Column(modifier = Modifier.fillMaxHeight()) {
+                    IconButton(onClick = { railVisible = true }) {
+                        Icon(Icons.Default.Calculate, contentDescription = "Show calculations")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    railFooter(true)
                 }
             }
         }
@@ -255,6 +267,7 @@ private fun WorksheetTable(
     modifier: Modifier,
 ) {
     val scroll = rememberScrollState()
+    val verticalScroll = rememberLazyListState()
     val projection = remember(preview, config.columnLayout) {
         projectWorksheetTable(preview, config.columnLayout)
     }
@@ -280,8 +293,14 @@ private fun WorksheetTable(
                 )
             }
         } else {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth().horizontalScroll(scroll)) {
-                Column(modifier = Modifier.width(tableWidth.dp).fillMaxHeight()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(end = 8.dp)
+                        .horizontalScroll(scroll)
+                        .width(tableWidth.dp),
+                ) {
                     Row(modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)) {
                         if (projection.hasRowLabels) {
                             WorksheetGroupHeader()
@@ -335,7 +354,7 @@ private fun WorksheetTable(
                             Text("No rows match the worksheet filters.", style = MaterialTheme.typography.bodySmall)
                         }
                     } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(state = verticalScroll, modifier = Modifier.fillMaxSize()) {
                             itemsIndexed(projection.rows, key = { _, row -> "${row.kind}:${row.pathKey}" }) { index, row ->
                                 val background = when {
                                     row.kind != WorksheetRowKind.Detail -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
@@ -364,7 +383,15 @@ private fun WorksheetTable(
                         }
                     }
                 }
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(verticalScroll),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = 4.dp),
+                )
             }
+            HorizontalScrollbar(
+                adapter = rememberScrollbarAdapter(scroll),
+                modifier = Modifier.fillMaxWidth().padding(end = 8.dp, bottom = 4.dp),
+            )
         }
     }
 }

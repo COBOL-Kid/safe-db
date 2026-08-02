@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.ExploreMode
@@ -174,23 +176,34 @@ fun ExploreWindowContent(
                         }
                     }
                 }
-                ExploreMode.Worksheet -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    ExploreWorksheet(
-                        sample = session.sample,
-                        config = viewModel.worksheetConfig,
-                        preview = viewModel.worksheetPreview,
-                        onConfigChange = { next -> viewModel.updateWorksheet { next } },
-                        onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
-                        onToggleGroup = viewModel::toggleWorksheetGroup,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
-                    ExploreExportBar(
-                        viewModel,
-                        enabled = !viewModel.worksheetPreviewState.loading && viewModel.hasVisibleWorksheetColumns(),
-                    ) {
-                        chooseCsvFile("${session.connectionLabel}-worksheet")?.let(viewModel::saveWorksheetCsv)
-                    }
-                }
+                ExploreMode.Worksheet -> ExploreWorksheet(
+                    sample = session.sample,
+                    config = viewModel.worksheetConfig,
+                    preview = viewModel.worksheetPreview,
+                    onConfigChange = { next -> viewModel.updateWorksheet { next } },
+                    onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
+                    onToggleGroup = viewModel::toggleWorksheetGroup,
+                    railFooter = { collapsed ->
+                        val enabled = !viewModel.worksheetPreviewState.loading && viewModel.hasVisibleWorksheetColumns()
+                        val export: () -> Unit = export@{
+                            val path = chooseCsvFile("${session.connectionLabel}-worksheet") ?: return@export
+                            viewModel.saveWorksheetCsv(path)
+                        }
+                        if (collapsed) {
+                            IconButton(onClick = export, enabled = enabled && !viewModel.exporting) {
+                                Icon(Icons.Default.Download, contentDescription = "Export CSV")
+                            }
+                        } else {
+                            ExploreExportBar(
+                                viewModel,
+                                enabled = enabled,
+                                verticalPadding = 4.dp,
+                                onExport = export,
+                            )
+                        }
+                    },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
                 ExploreMode.Visualization -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         VisualizationConfigPanel(
@@ -205,41 +218,43 @@ fun ExploreWindowContent(
                             modifier = Modifier.width(320.dp).fillMaxHeight(),
                         )
                         Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
-                        Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
-                            viewModel.visualizationPreview.warnings.firstOrNull()?.let { warning ->
-                                MessageBanner(
-                                    text = warning,
-                                    kind = BannerKind.WARNING,
+                        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+                                viewModel.visualizationPreview.warnings.firstOrNull()?.let { warning ->
+                                    MessageBanner(
+                                        text = warning,
+                                        kind = BannerKind.WARNING,
+                                    )
+                                }
+                                VisualizationChart(
+                                    preview = viewModel.visualizationPreview,
+                                    config = viewModel.visualizationConfig,
+                                    sampleRowCount = session.sample.rowCount,
+                                    sampleTruncated = session.sample.truncated,
+                                    onMarkClick = { markId ->
+                                        if (!viewModel.visualizationPreviewState.loading) {
+                                            drillResult = viewModel.sourceRowsForVisualizationMark(markId)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
                                 )
                             }
-                            VisualizationChart(
-                                preview = viewModel.visualizationPreview,
-                                config = viewModel.visualizationConfig,
-                                sampleRowCount = session.sample.rowCount,
-                                sampleTruncated = session.sample.truncated,
-                                onMarkClick = { markId ->
-                                    if (!viewModel.visualizationPreviewState.loading) {
-                                        drillResult = viewModel.sourceRowsForVisualizationMark(markId)
+                            val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                            val themePalette = SafeDbTheme.palette
+                            VisualizationExportBar(
+                                viewModel = viewModel,
+                                enabled = viewModel.visualizationPreview.ready && !viewModel.visualizationPreviewState.loading,
+                                onExportCsv = {
+                                    chooseExportFile("${session.connectionLabel}-chart-data", "csv")?.let(viewModel::saveVisualizationCsv)
+                                },
+                                onExportPng = {
+                                    chooseExportFile("${session.connectionLabel}-chart", "png")?.let {
+                                        viewModel.saveVisualizationPng(it, isDark, themePalette)
                                     }
                                 },
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
                             )
                         }
                     }
-                    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-                    val themePalette = SafeDbTheme.palette
-                    VisualizationExportBar(
-                        viewModel = viewModel,
-                        enabled = viewModel.visualizationPreview.ready && !viewModel.visualizationPreviewState.loading,
-                        onExportCsv = {
-                            chooseExportFile("${session.connectionLabel}-chart-data", "csv")?.let(viewModel::saveVisualizationCsv)
-                        },
-                        onExportPng = {
-                            chooseExportFile("${session.connectionLabel}-chart", "png")?.let {
-                                viewModel.saveVisualizationPng(it, isDark, themePalette)
-                            }
-                        },
-                    )
                 }
             }
         }
@@ -282,8 +297,13 @@ private fun ExploreSampleWarnings(truncated: Boolean, stale: Boolean, sampleRefr
 }
 
 @Composable
-private fun ExploreExportBar(viewModel: ExploreViewModel, enabled: Boolean, onExport: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun ExploreExportBar(
+    viewModel: ExploreViewModel,
+    enabled: Boolean,
+    verticalPadding: Dp = 12.dp,
+    onExport: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding), verticalAlignment = Alignment.CenterVertically) {
         viewModel.exportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         viewModel.exportError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         Box(modifier = Modifier.weight(1f))
