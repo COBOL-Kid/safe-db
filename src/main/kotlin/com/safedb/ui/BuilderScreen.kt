@@ -40,14 +40,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -63,16 +69,19 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.SchemaSelectionIntent
 import com.safedb.model.ConnectionDef
 import com.safedb.model.GroupSpec
+import com.safedb.model.JoinSpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
 import com.safedb.model.QueryRiskGate
@@ -109,8 +118,15 @@ internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_T
 private val QueryControlsMaxHeight = 208.dp
 private val QueryControlsVerticalPadding = 8.dp
 private val QueryControlsTableGap = 16.dp
+private val JoinItemsMaxHeight = 88.dp
 internal val QueryControlsCanvasInset =
     QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
+
+internal fun queryControlsCanvasInset(measuredContentHeight: Dp) =
+    maxOf(
+        QueryControlsCanvasInset,
+        QueryControlsVerticalPadding + measuredContentHeight + QueryControlsTableGap,
+    )
 
 internal enum class ResultsPaneMode {
     Normal,
@@ -142,6 +158,15 @@ internal fun sortOrderLabels(
 ): List<String> = sorts.map { sort ->
     val column = "${tableNamesByAlias[sort.tableAlias] ?: sort.tableAlias}.${sort.column}"
     "$column ${if (sort.direction == SortDirection.Asc) "ascending" else "descending"}"
+}
+
+internal fun joinLabel(
+    join: JoinSpec,
+    tableNamesByAlias: Map<String, String>,
+): String {
+    val leftName = tableNamesByAlias[join.leftAlias] ?: join.leftAlias
+    val rightName = tableNamesByAlias[join.rightAlias] ?: join.rightAlias
+    return "join: $leftName.${join.leftColumn} = $rightName.${join.rightColumn}"
 }
 
 internal fun queryOptionEmptyLabel(labels: List<String>): String? =
@@ -326,6 +351,68 @@ private fun QueryOptionsCard(
                 warningIndices = distinctSortConflictIndices,
                 separated = true,
             )
+        }
+    }
+}
+
+@Composable
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+private fun JoinItems(
+    joins: List<JoinSpec>,
+    tableNamesByAlias: Map<String, String>,
+    onRemove: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .heightIn(max = JoinItemsMaxHeight)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        joins.forEachIndexed { index, join ->
+            val label = joinLabel(join, tableNamesByAlias)
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                tooltip = { PlainTooltip { Text(label) } },
+                state = rememberTooltipState(),
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f),
+                    shape = ChipShape,
+                    tonalElevation = 0.dp,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 8.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clickable(
+                                    role = Role.Button,
+                                    onClick = { onRemove(index) },
+                                )
+                                .pointerHoverIcon(PointerIcon.Hand),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Remove $label",
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -603,6 +690,8 @@ internal fun BuilderScreen(
     var resultsHeight by remember { mutableFloatStateOf(240f) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
+    var queryControlsHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
     val limitChoices = BUILDER_LIMIT_CHOICES
     val schema = schemaViewModel.schema
     val preliminaryRisk = remember(queryViewModel.spec, schema, settings, connection?.dialect) {
@@ -942,46 +1031,6 @@ internal fun BuilderScreen(
                                 }
                             }
 
-                            if (queryViewModel.joins.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    queryViewModel.joins.forEachIndexed { index, join ->
-                                        val leftName = queryViewModel.canvasTables
-                                            .find { it.alias == join.leftAlias }?.tableInfo?.name ?: join.leftAlias
-                                        val rightName = queryViewModel.canvasTables
-                                            .find { it.alias == join.rightAlias }?.tableInfo?.name ?: join.rightAlias
-                                        Surface(
-                                            color = SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f),
-                                            shape = RoundedCornerShape(50),
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Text(
-                                                    "join: $leftName.${join.leftColumn} = $rightName.${join.rightColumn}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                )
-                                                IconButton(
-                                                    onClick = { queryViewModel.removeJoin(index) },
-                                                    modifier = Modifier.size(28.dp),
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.Close,
-                                                        contentDescription = "Remove join",
-                                                        modifier = Modifier.size(16.dp),
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -997,47 +1046,70 @@ internal fun BuilderScreen(
                                 } else {
                                     Canvas(
                                         queryViewModel = queryViewModel,
-                                        contentTopInset = QueryControlsCanvasInset,
+                                        contentTopInset = queryControlsCanvasInset(
+                                            with(density) { queryControlsHeightPx.toDp() },
+                                        ),
                                         modifier = Modifier.fillMaxSize(),
                                     )
-                                    Row(
+                                    Box(
                                         modifier = Modifier
                                             .align(Alignment.TopCenter)
                                             .fillMaxWidth()
                                             .padding(
-                                                horizontal = 16.dp,
-                                                vertical = QueryControlsVerticalPadding,
+                                                start = 16.dp,
+                                                top = QueryControlsVerticalPadding,
+                                                end = 16.dp,
                                             ),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        verticalAlignment = Alignment.Top,
                                     ) {
-                                        Box(modifier = Modifier.weight(1f)) {
-                                            if (queryViewModel.filterCount > 0) {
-                                                FilterBuilder(
-                                                    queryViewModel = queryViewModel,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .heightIn(max = QueryControlsMaxHeight)
-                                                        .verticalScroll(rememberScrollState())
-                                                        .horizontalScroll(rememberScrollState()),
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .onSizeChanged { queryControlsHeightPx = it.height },
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            verticalAlignment = Alignment.Top,
+                                        ) {
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                if (queryViewModel.filterCount > 0) {
+                                                    FilterBuilder(
+                                                        queryViewModel = queryViewModel,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .heightIn(max = QueryControlsMaxHeight)
+                                                            .verticalScroll(rememberScrollState())
+                                                            .horizontalScroll(rememberScrollState()),
+                                                    )
+                                                }
+                                            }
+                                            val tableNamesByAlias = queryViewModel.canvasTables.associate {
+                                                it.alias to it.tableInfo.name
+                                            }
+                                            Column(
+                                                modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                QueryOptionsCard(
+                                                    distinct = queryViewModel.distinct,
+                                                    onDistinctChange = queryViewModel::setDistinct,
+                                                    groups = queryViewModel.groups,
+                                                    sorts = queryViewModel.sorts,
+                                                    distinctSortConflicts = queryViewModel.distinctSortConflicts,
+                                                    onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
+                                                    onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
+                                                    onMoveGroup = queryViewModel::moveGroup,
+                                                    onMoveSort = queryViewModel::moveSort,
+                                                    tableNamesByAlias = tableNamesByAlias,
+                                                    modifier = Modifier.fillMaxWidth(),
                                                 )
+                                                if (queryViewModel.joins.isNotEmpty()) {
+                                                    JoinItems(
+                                                        joins = queryViewModel.joins,
+                                                        tableNamesByAlias = tableNamesByAlias,
+                                                        onRemove = queryViewModel::removeJoin,
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                    )
+                                                }
                                             }
                                         }
-                                        QueryOptionsCard(
-                                            distinct = queryViewModel.distinct,
-                                            onDistinctChange = queryViewModel::setDistinct,
-                                            groups = queryViewModel.groups,
-                                            sorts = queryViewModel.sorts,
-                                            distinctSortConflicts = queryViewModel.distinctSortConflicts,
-                                            onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
-                                            onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
-                                            onMoveGroup = queryViewModel::moveGroup,
-                                            onMoveSort = queryViewModel::moveSort,
-                                            tableNamesByAlias = queryViewModel.canvasTables.associate {
-                                                it.alias to it.tableInfo.name
-                                            },
-                                            modifier = Modifier.widthIn(min = 208.dp, max = 256.dp),
-                                        )
                                     }
                                 }
                             }

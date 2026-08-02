@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import com.safedb.model.GroupSpec
+import com.safedb.model.JoinSpec
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.QueryRiskGate
@@ -16,6 +17,7 @@ import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -71,6 +73,24 @@ class BuilderScreenStateTest {
     }
 
     @Test
+    fun joinLabelResolvesKnownTableNamesAndKeepsUnknownAliases() {
+        assertEquals(
+            "join: orders.customer_id = customers.id",
+            joinLabel(
+                JoinSpec("t0", "customer_id", "t1", "id"),
+                mapOf("t0" to "orders", "t1" to "customers"),
+            ),
+        )
+        assertEquals(
+            "join: orders.customer_id = missing.id",
+            joinLabel(
+                JoinSpec("t0", "customer_id", "missing", "id"),
+                mapOf("t0" to "orders"),
+            ),
+        )
+    }
+
+    @Test
     fun queryOptionsShowNoneOnlyForEmptySections() {
         assertEquals("None", queryOptionEmptyLabel(emptyList()))
         assertNull(queryOptionEmptyLabel(listOf("orders.status")))
@@ -83,6 +103,12 @@ class BuilderScreenStateTest {
         assertEquals(464f, insetPx)
         assertEquals(464f, canvasDisplayY(tableY = 0f, contentTopInsetPx = insetPx))
         assertEquals(494f, canvasDisplayY(tableY = 30f, contentTopInsetPx = insetPx))
+    }
+
+    @Test
+    fun queryControlsCanvasInsetKeepsBaselineAndExpandsForTallerOverlays() {
+        assertEquals(QueryControlsCanvasInset, queryControlsCanvasInset(120.dp))
+        assertEquals(324.dp, queryControlsCanvasInset(300.dp))
     }
 
     @Test

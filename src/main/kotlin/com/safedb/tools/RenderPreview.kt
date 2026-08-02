@@ -554,8 +554,13 @@ fun main() {
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
+                    vm.query.addTable(vm.schema.tables[2])
                     vm.query.addJoin(JoinSpec("t0", "customer_id", "t1", "id"))
+                    vm.query.addJoin(JoinSpec("t0", "id", "t2", "id"))
+                    vm.query.addJoin(JoinSpec("t1", "id", "t2", "id"))
+                    vm.query.addJoin(JoinSpec("t0", "customer_id", "t2", "id"))
                     vm.query.moveTable("t1", 360f, 28f)
+                    vm.query.moveTable("t2", 720f, 28f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")
