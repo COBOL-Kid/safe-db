@@ -34,6 +34,9 @@ class SettingsViewModel(
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError.asStateFlow()
 
+    private val _schemaHistoryError = MutableStateFlow<String?>(null)
+    val schemaHistoryError: StateFlow<String?> = _schemaHistoryError.asStateFlow()
+
     private val _defaultSchemaOptions = MutableStateFlow<List<String>>(emptyList())
     val defaultSchemaOptions: StateFlow<List<String>> = _defaultSchemaOptions.asStateFlow()
 
@@ -169,10 +172,47 @@ class SettingsViewModel(
         }
     }
 
+    fun rememberLastSchema(connectionId: String, schema: String) {
+        mutateSchemaHistory {
+            val normalizedConnectionId = connectionId.trim()
+            val normalizedSchema = schema.trim()
+            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty()) return@mutateSchemaHistory null
+            if (_settings.value.lastSelectedSchemas[normalizedConnectionId] == normalizedSchema) {
+                return@mutateSchemaHistory null
+            }
+            _settings.value.copy(
+                lastSelectedSchemas = _settings.value.lastSelectedSchemas +
+                    (normalizedConnectionId to normalizedSchema),
+            )
+        }
+    }
+
+    fun forgetLastSchema(connectionId: String) {
+        mutateSchemaHistory {
+            val normalizedConnectionId = connectionId.trim()
+            if (normalizedConnectionId !in _settings.value.lastSelectedSchemas) return@mutateSchemaHistory null
+            _settings.value.copy(
+                lastSelectedSchemas = _settings.value.lastSelectedSchemas - normalizedConnectionId,
+            )
+        }
+    }
+
     fun clearDefaultIfConnection(connectionId: String, onSuccess: () -> Unit = {}) {
         mutateSettings {
-            if (_settings.value.defaultConnectionId != connectionId) return@mutateSettings
-            if (save(_settings.value.copy(defaultConnectionId = null, defaultSchema = null))) {
+            val clearsDefault = _settings.value.defaultConnectionId == connectionId
+            val clearsHistory = connectionId in _settings.value.lastSelectedSchemas
+            if (!clearsDefault && !clearsHistory) {
+                onSuccess()
+                return@mutateSettings
+            }
+            if (save(
+                    _settings.value.copy(
+                        defaultConnectionId = if (clearsDefault) null else _settings.value.defaultConnectionId,
+                        defaultSchema = if (clearsDefault) null else _settings.value.defaultSchema,
+                        lastSelectedSchemas = _settings.value.lastSelectedSchemas - connectionId,
+                    ),
+                )
+            ) {
                 onSuccess()
             }
         }
@@ -182,11 +222,33 @@ class SettingsViewModel(
         _saveError.value = null
     }
 
+    fun clearSchemaHistoryError() {
+        _schemaHistoryError.value = null
+    }
+
     private fun mutateSettings(mutation: suspend () -> Unit) {
         scope.launch {
             settingsMutationMutex.withLock {
                 _saveError.value = null
                 mutation()
+            }
+        }
+    }
+
+    private fun mutateSchemaHistory(mutation: () -> Settings?) {
+        scope.launch {
+            settingsMutationMutex.withLock {
+                _schemaHistoryError.value = null
+                val next = mutation() ?: return@withLock
+                val normalized = normalizeSettings(next)
+                try {
+                    service.saveSettings(normalized)
+                    _settings.value = normalized
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    _schemaHistoryError.value = error.message ?: error.toString()
+                }
             }
         }
     }

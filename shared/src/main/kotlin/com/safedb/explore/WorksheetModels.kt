@@ -23,7 +23,14 @@ data class WorksheetConfig(
     val sorts: List<WorksheetSort> = emptyList(),
     val filters: List<WorksheetFilter> = emptyList(),
     val calculations: List<WorksheetCalculation> = emptyList(),
+    val columnLayout: List<WorksheetColumnLayout> = emptyList(),
     val collapsedGroupPaths: Set<String> = emptySet(),
+)
+
+@Serializable
+data class WorksheetColumnLayout(
+    val ref: WorksheetValueRef,
+    val visible: Boolean = true,
 )
 
 @Serializable
@@ -171,7 +178,51 @@ data class WorksheetDisplayColumn(
     val sourceColumn: String? = null,
     val calculationId: String? = null,
     val numberFormat: PivotNumberFormat? = null,
+) {
+    val valueRef: WorksheetValueRef
+        get() = sourceColumn?.let(WorksheetValueRef::Column)
+            ?: WorksheetValueRef.Calculation(requireNotNull(calculationId))
+}
+
+data class ResolvedWorksheetColumn(
+    val sourceIndex: Int,
+    val column: WorksheetDisplayColumn,
+    val visible: Boolean,
 )
+
+fun resolveWorksheetColumnLayout(
+    columns: List<WorksheetDisplayColumn>,
+    layout: List<WorksheetColumnLayout>,
+): List<ResolvedWorksheetColumn> {
+    val available = columns.mapIndexed { index, column -> column.valueRef to (index to column) }.toMap()
+    val seen = mutableSetOf<WorksheetValueRef>()
+    val resolved = buildList {
+        layout.forEach { configured ->
+            val (index, column) = available[configured.ref] ?: return@forEach
+            if (seen.add(configured.ref)) {
+                add(ResolvedWorksheetColumn(index, column, configured.visible))
+            }
+        }
+        columns.forEachIndexed { index, column ->
+            if (seen.add(column.valueRef)) {
+                add(ResolvedWorksheetColumn(index, column, visible = true))
+            }
+        }
+    }
+    return resolved
+}
+
+fun List<ResolvedWorksheetColumn>.toWorksheetColumnLayout(): List<WorksheetColumnLayout> =
+    map { resolved -> WorksheetColumnLayout(resolved.column.valueRef, resolved.visible) }
+
+fun moveWorksheetColumn(
+    layout: List<WorksheetColumnLayout>,
+    fromIndex: Int,
+    toIndex: Int,
+): List<WorksheetColumnLayout> {
+    if (fromIndex !in layout.indices || toIndex !in layout.indices || fromIndex == toIndex) return layout
+    return layout.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+}
 
 data class WorksheetDisplayRow(
     val kind: WorksheetRowKind,
@@ -192,6 +243,52 @@ enum class WorksheetRowKind {
     Detail,
     Group,
     GrandTotal,
+}
+
+data class WorksheetTableProjection(
+    val resolvedColumns: List<ResolvedWorksheetColumn>,
+    val columns: List<WorksheetDisplayColumn>,
+    val rows: List<WorksheetProjectedRow>,
+    val hasRowLabels: Boolean,
+)
+
+data class WorksheetProjectedRow(
+    val kind: WorksheetRowKind,
+    val depth: Int,
+    val pathKey: String,
+    val rowLabel: String?,
+    val expanded: Boolean,
+    val cells: List<WorksheetCell>,
+    val sourceRowIndex: Int?,
+)
+
+fun projectWorksheetTable(
+    preview: WorksheetPreview,
+    layout: List<WorksheetColumnLayout>,
+): WorksheetTableProjection {
+    val resolvedColumns = resolveWorksheetColumnLayout(preview.columns, layout)
+    val visibleColumns = resolvedColumns.filter { it.visible }
+    val rows = preview.rows.map { row ->
+        WorksheetProjectedRow(
+            kind = row.kind,
+            depth = row.depth,
+            pathKey = row.pathKey,
+            rowLabel = when (row.kind) {
+                WorksheetRowKind.Detail -> null
+                WorksheetRowKind.Group -> row.label
+                WorksheetRowKind.GrandTotal -> row.label ?: "Grand total"
+            },
+            expanded = row.expanded,
+            cells = visibleColumns.map { resolved -> row.cells[resolved.sourceIndex] },
+            sourceRowIndex = row.sourceRowIndex,
+        )
+    }
+    return WorksheetTableProjection(
+        resolvedColumns = resolvedColumns,
+        columns = visibleColumns.map { it.column },
+        rows = rows,
+        hasRowLabels = rows.any { it.kind != WorksheetRowKind.Detail },
+    )
 }
 
 @Serializable

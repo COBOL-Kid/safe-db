@@ -51,12 +51,7 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
     val themePalette = settings.palette()
     var paletteOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(
-        initialLoading,
-        settings.defaultConnectionId,
-        settings.defaultSchema,
-        connections,
-    ) {
+    LaunchedEffect(initialLoading) {
         if (initialLoading) return@LaunchedEffect
         val defaultLocation = resolveDefaultQueryLocation(settings, connections)
         if (defaultLocation != null) {
@@ -168,7 +163,11 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
                             recipesViewModel = viewModel.recipes,
                             connections = connections,
                             onRunRecipe = { recipe, connection ->
-                                appState.setActiveConnection(connection.id)
+                                appState.setActiveConnection(
+                                    connection.id,
+                                    recipe.querySpec?.let(::resolveQuerySchemaSelection)
+                                        ?: resolveConnectionSchemaSelection(connection.id, settings),
+                                )
                                 viewModel.closeExplore()
                                 viewModel.runRecipe(connection, recipe)
                             },

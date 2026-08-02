@@ -5,6 +5,8 @@ import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.RecipeField
 import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetColumnLayout
+import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.ChartType
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.VisualizationConfig
@@ -28,6 +30,7 @@ class RecipeStoreTest {
         store.save(recipe.copy(name = "Revenue updated", updatedAt = "2"))
 
         assertEquals("Revenue updated", store.list().single().name)
+        assertEquals(false, store.list().single().worksheet?.columnLayout?.single()?.visible)
         store.delete("r1")
         assertTrue(store.list().isEmpty())
     }
@@ -100,12 +103,14 @@ class RecipeStoreTest {
               "createdAt": "1",
               "updatedAt": "1",
               "defaultMode": "Visualization",
-              "visualization": {"schemaVersion": 1}
+              "visualization": {"schemaVersion": 1},
+              "worksheet": {"schemaVersion": 1}
             }
         """.trimIndent()
         val imported = store.importJson(placeholder, "2")
         assertEquals(ChartType.Auto, imported.visualization?.chartType)
         assertFalse(imported.visualization?.isConfigured() ?: true)
+        assertTrue(imported.worksheet?.columnLayout?.isEmpty() == true)
     }
 
     private fun recipe(id: String, name: String) = ExploreRecipe(
@@ -115,7 +120,9 @@ class RecipeStoreTest {
         updatedAt = "1",
         defaultMode = ExploreMode.Pivot,
         pivot = ExploreConfig(),
-        worksheet = WorksheetConfig(),
+        worksheet = WorksheetConfig(
+            columnLayout = listOf(WorksheetColumnLayout(WorksheetValueRef.Column("amount"), visible = false)),
+        ),
         requiredFields = listOf(RecipeField("amount", "Amount", "decimal")),
     )
 }

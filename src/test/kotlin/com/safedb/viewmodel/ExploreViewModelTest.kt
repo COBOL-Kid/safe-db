@@ -12,9 +12,12 @@ import com.safedb.explore.MeasureFn
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.RecipeField
+import com.safedb.explore.WorksheetAggregateFn
 import com.safedb.explore.WorksheetCalculation
+import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetGroup
+import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.ChartType
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
@@ -206,6 +209,78 @@ class ExploreViewModelTest {
     }
 
     @Test
+    fun worksheetCsvUsesVisibleColumnLayoutOrderAndOriginalCellIndexes() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Worksheet)
+        viewModel.updateWorksheet {
+            it.copy(calculations = listOf(WorksheetCalculation.RowFormula("double", "Double", "[t0__amount] * 2")))
+        }
+        viewModel.updateWorksheetColumnLayout(
+            listOf(
+                WorksheetColumnLayout(WorksheetValueRef.Calculation("double")),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__amount")),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__id"), visible = false),
+            ),
+        )
+        val path = createTempFile(suffix = ".csv")
+
+        viewModel.saveWorksheetCsv(path)
+
+        assertEquals(
+            "Double,amount\r\n200.0,100\r\n400.0,200\r\n600.0,300\r\n",
+            path.readText(),
+        )
+    }
+
+    @Test
+    fun groupedWorksheetCsvKeepsHierarchySeparateFromFirstCalculation() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Worksheet)
+        viewModel.updateWorksheet {
+            it.copy(
+                groups = listOf(
+                    WorksheetGroup("status", "t0__status", "Status"),
+                    WorksheetGroup("id", "t0__id", "ID"),
+                ),
+                calculations = listOf(
+                    WorksheetCalculation.Aggregate(
+                        id = "revenue",
+                        label = "Revenue",
+                        fn = WorksheetAggregateFn.Sum,
+                        sourceColumn = "t0__amount",
+                    ),
+                ),
+                columnLayout = listOf(
+                    WorksheetColumnLayout(WorksheetValueRef.Calculation("revenue")),
+                    WorksheetColumnLayout(WorksheetValueRef.Column("t0__id"), visible = false),
+                    WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false),
+                    WorksheetColumnLayout(WorksheetValueRef.Column("t0__amount"), visible = false),
+                ),
+            )
+        }
+        val path = createTempFile(suffix = ".csv")
+
+        viewModel.saveWorksheetCsv(path)
+
+        assertEquals(
+            """
+            Group,Revenue
+            Status: pending,300.0
+            ID: 1,100.0
+            ,
+            ID: 2,200.0
+            ,
+            Status: shipped,300.0
+            ID: 3,300.0
+            ,
+            Grand total,600.0
+            """.trimIndent().replace("\n", "\r\n") + "\r\n",
+            path.readText(),
+        )
+    }
+
+    @Test
     fun recipeAppliesSelectedModesTracksDirtyAndCanClearIdentity() {
         val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
         viewModel.updateConfig { it.copy(showSubtotals = false) }
@@ -233,6 +308,20 @@ class ExploreViewModelTest {
         assertTrue(viewModel.recipeDirty())
         viewModel.clearAppliedRecipe()
         assertEquals(null, viewModel.appliedRecipeId)
+    }
+
+    @Test
+    fun worksheetDefaultCheckIncludesPersistentLayoutButIgnoresCollapsedGroups() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        assertTrue(viewModel.isDefaultWorksheet())
+
+        viewModel.updateWorksheetColumnLayout(
+            listOf(WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false)),
+        )
+        assertFalse(viewModel.isDefaultWorksheet())
+
+        viewModel.updateWorksheet { WorksheetConfig(collapsedGroupPaths = setOf("pending")) }
+        assertTrue(viewModel.isDefaultWorksheet())
     }
 
     @Test

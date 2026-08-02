@@ -6,6 +6,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.SchemaSelectionIntent
+import com.safedb.SchemaSelectionSource
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.NumberFormatKind
@@ -19,6 +21,7 @@ import com.safedb.explore.ShowAsMode
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.WorksheetAggregateFn
 import com.safedb.explore.WorksheetCalculation
+import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetGroup
 import com.safedb.explore.WorksheetSort
@@ -336,6 +339,12 @@ private fun renderExplore(
             WorksheetConfig(
                 groups = listOf(WorksheetGroup("status", "t0__status", "Status")),
                 sorts = listOf(WorksheetSort(WorksheetValueRef.Column("t0__placed_at"), SortDir.Asc)),
+                columnLayout = listOf(
+                    WorksheetColumnLayout(WorksheetValueRef.Calculation("revenue")),
+                    WorksheetColumnLayout(WorksheetValueRef.Calculation("dollars")),
+                    WorksheetColumnLayout(WorksheetValueRef.Column("t0__status")),
+                    WorksheetColumnLayout(WorksheetValueRef.Column("t0__total_cents"), visible = false),
+                ),
                 calculations = listOf(
                     WorksheetCalculation.RowFormula("dollars", "Order value", "[t0__total_cents] / 100"),
                     WorksheetCalculation.Aggregate("revenue", "Group revenue", WorksheetAggregateFn.Sum, "t0__total_cents", "t0__status"),
@@ -509,9 +518,10 @@ fun main() {
         }
 
         render("builder-$suffix", dark) { state, vm ->
-            state.setActiveConnection("c1")
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
             state.navigate(AppRoute.Builder)
-            vm.schema.load("c1") { loaded ->
+            vm.schema.load("c1", selection = selection) { loaded ->
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
@@ -544,14 +554,20 @@ fun main() {
         }
 
         render("builder-collapsed-$suffix", dark, sidebarCollapsed = true) { state, vm ->
-            state.setActiveConnection("c1")
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
             state.navigate(AppRoute.Builder)
-            vm.schema.load("c1") { loaded ->
+            vm.schema.load("c1", selection = selection) { loaded ->
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
+                    vm.query.addTable(vm.schema.tables[2])
                     vm.query.addJoin(JoinSpec("t0", "customer_id", "t1", "id"))
+                    vm.query.addJoin(JoinSpec("t0", "id", "t2", "id"))
+                    vm.query.addJoin(JoinSpec("t1", "id", "t2", "id"))
+                    vm.query.addJoin(JoinSpec("t0", "customer_id", "t2", "id"))
                     vm.query.moveTable("t1", 360f, 28f)
+                    vm.query.moveTable("t2", 720f, 28f)
                     vm.query.toggleColumn("t0", "id")
                     vm.query.toggleColumn("t0", "status")
                     vm.query.toggleColumn("t0", "total_cents")

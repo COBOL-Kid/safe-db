@@ -11,6 +11,7 @@ import com.safedb.explore.ExploreSession
 import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationPreview
@@ -19,6 +20,8 @@ import com.safedb.explore.applyWorksheet
 import com.safedb.explore.applyVisualization
 import com.safedb.explore.remapRecipe
 import com.safedb.explore.resolveRecipeFields
+import com.safedb.explore.projectWorksheetTable
+import com.safedb.explore.resolveWorksheetColumnLayout
 import com.safedb.explore.withoutTransientState
 import com.safedb.explore.exploreSpecHash
 import com.safedb.explore.pivotCellKey
@@ -105,6 +108,14 @@ class ExploreViewModel(
         clearExportMessages()
     }
 
+    fun updateWorksheetColumnLayout(layout: List<WorksheetColumnLayout>) {
+        workspace = workspace.copy(worksheet = workspace.worksheet.copy(columnLayout = layout))
+        clearExportMessages()
+    }
+
+    fun hasVisibleWorksheetColumns(): Boolean =
+        resolveWorksheetColumnLayout(worksheetPreview.columns, worksheetConfig.columnLayout).any { it.visible }
+
     fun updateVisualization(block: (VisualizationConfig) -> VisualizationConfig) {
         workspace = workspace.copy(visualization = block(workspace.visualization))
         refreshMode(ExploreMode.Visualization)
@@ -130,6 +141,8 @@ class ExploreViewModel(
     }
 
     fun isDefaultConfig(): Boolean = workspace.pivot.withoutTransientState() == defaultConfig.withoutTransientState()
+
+    fun isDefaultWorksheet(): Boolean = workspace.worksheet.withoutTransientState() == WorksheetConfig()
 
     fun isDefaultVisualization(): Boolean = workspace.visualization == VisualizationConfig()
 
@@ -341,12 +354,32 @@ class ExploreViewModel(
     }
 
     fun saveWorksheetCsv(path: Path) {
-        val rows = worksheetPreview.rows.map { row ->
-            row.cells.map { cell -> cell.error?.let { ResultCell.text("Error: $it") } ?: cell.value }
+        val projection = projectWorksheetTable(worksheetPreview, worksheetConfig.columnLayout)
+        if (projection.columns.isEmpty()) {
+            exportMessage = null
+            exportError = "Show at least one worksheet column before exporting."
+            return
+        }
+        val rows = projection.rows.map { row ->
+            buildList {
+                if (projection.hasRowLabels) {
+                    add(row.rowLabel?.let(ResultCell::text) ?: ResultCell.Null)
+                }
+                row.cells.forEach { cell ->
+                    add(cell.error?.let { ResultCell.text("Error: $it") } ?: cell.value)
+                }
+            }
         }
         saveResultCsv(
             QueryResult(
-                columns = worksheetPreview.columns.map { com.safedb.model.ResultColumn(it.label, it.dataType) },
+                columns = buildList {
+                    if (projection.hasRowLabels) {
+                        add(com.safedb.model.ResultColumn("Group", "text"))
+                    }
+                    projection.columns.mapTo(this) {
+                        com.safedb.model.ResultColumn(it.label, it.dataType)
+                    }
+                },
                 rows = rows,
                 rowCount = rows.size,
                 truncated = session.sample.truncated,

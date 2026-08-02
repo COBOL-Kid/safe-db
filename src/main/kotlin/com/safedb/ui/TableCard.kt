@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -113,6 +114,7 @@ fun TableCard(
     val joinTargetColor = SafeDbTheme.colors.accentContainer
     val selectedColumnCount = table.columns.count { queryViewModel.isColumnSelected(alias, it.name) }
     val tableSelectionState = tableColumnToggleState(selectedColumnCount, table.columns.size)
+    val headerSelectionInteractionSource = remember { MutableInteractionSource() }
 
     Surface(
         modifier = modifier
@@ -139,6 +141,8 @@ fun TableCard(
                         .width(19.dp)
                         .fillMaxHeight()
                         .clickable(
+                            interactionSource = headerSelectionInteractionSource,
+                            indication = null,
                             enabled = table.columns.isNotEmpty(),
                             onClick = { queryViewModel.toggleAllColumns(alias) },
                         )
@@ -217,6 +221,12 @@ fun TableCard(
                         val sort = queryViewModel.sortForColumn(alias, column.name)
                         val sortIndex = queryViewModel.sorts.indexOf(sort)
                         val columnHovered = hoveredColumn == column.name
+                        val columnSelectionInteractionSource = remember(alias, column.name) {
+                            MutableInteractionSource()
+                        }
+                        val joinTargetInteractionSource = remember(alias, column.name, "join-target") {
+                            MutableInteractionSource()
+                        }
                         val joinTarget = highlightJoinTargets != null &&
                             column.isIndexed &&
                             !(highlightJoinTargets.first == alias && highlightJoinTargets.second == column.name)
@@ -227,7 +237,11 @@ fun TableCard(
                                 .height((CANVAS_ROW_HEIGHT - 1f).dp)
                                 .then(
                                     if (joinTarget && joinDragActive) {
-                                        Modifier.clickable { onJoinTargetClick(alias, column.name) }
+                                        Modifier.clickable(
+                                            interactionSource = joinTargetInteractionSource,
+                                            indication = null,
+                                            onClick = { onJoinTargetClick(alias, column.name) },
+                                        )
                                     } else {
                                         Modifier
                                     },
@@ -250,13 +264,17 @@ fun TableCard(
                             Row(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clickable {
-                                        if (joinTarget && joinDragActive) {
-                                            onJoinTargetClick(alias, column.name)
-                                        } else {
-                                            queryViewModel.toggleColumn(alias, column.name)
-                                        }
-                                    },
+                                    .clickable(
+                                        interactionSource = columnSelectionInteractionSource,
+                                        indication = null,
+                                        onClick = {
+                                            if (joinTarget && joinDragActive) {
+                                                onJoinTargetClick(alias, column.name)
+                                            } else {
+                                                queryViewModel.toggleColumn(alias, column.name)
+                                            }
+                                        },
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 CompactSelectionIndicator(

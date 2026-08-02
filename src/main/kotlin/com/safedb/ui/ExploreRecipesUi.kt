@@ -156,9 +156,8 @@ internal fun ExploreRecipeActions(
             recipes = recipes,
             recipesViewModel = recipesViewModel,
             onApply = { recipe ->
-                val worksheetDirty = explore.worksheetConfig.groups.isNotEmpty() || explore.worksheetConfig.sorts.isNotEmpty() || explore.worksheetConfig.filters.isNotEmpty() || explore.worksheetConfig.calculations.isNotEmpty()
                 if (recipe.querySpec != null || explore.recipeDirty() || explore.isDirty() ||
-                    explore.isDefaultVisualization().not() || worksheetDirty
+                    explore.isDefaultVisualization().not() || explore.isDefaultWorksheet().not()
                 ) {
                     pendingApply = recipe
                 } else {

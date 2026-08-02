@@ -1,5 +1,7 @@
 package com.safedb.viewmodel
 
+import com.safedb.SchemaSelectionIntent
+import com.safedb.SchemaSelectionSource
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
@@ -74,7 +76,10 @@ class ViewModelsTest {
         advanceUntilIdle()
         assertEquals("c1", viewModel.loadedConnectionId)
         assertEquals(3, viewModel.tables.size)
+        assertNull(viewModel.selectedSchema)
+        assertTrue(viewModel.filteredTables.isEmpty())
 
+        viewModel.selectSchema("safedb_test")
         viewModel.search = "order"
         assertEquals(1, viewModel.filteredTables.size)
         assertEquals("orders", viewModel.filteredTables.single().name)
@@ -86,7 +91,10 @@ class ViewModelsTest {
         val scope = TestScope(dispatcher)
         val viewModel = SchemaViewModel(service, scope)
 
-        viewModel.load("c1", preferredSchema = "reporting")
+        viewModel.load(
+            "c1",
+            selection = SchemaSelectionIntent("reporting", SchemaSelectionSource.ConnectionHistory),
+        )
         advanceUntilIdle()
 
         assertEquals(listOf("reporting", "safedb_test"), viewModel.schemaOptions)
@@ -96,7 +104,7 @@ class ViewModelsTest {
         viewModel.search = "event"
         assertEquals(listOf("events"), viewModel.filteredTables.map { it.name })
         viewModel.selectSchema(null)
-        assertEquals(listOf("events"), viewModel.filteredTables.map { it.name })
+        assertTrue(viewModel.filteredTables.isEmpty())
     }
 
     @Test
@@ -105,12 +113,18 @@ class ViewModelsTest {
         val scope = TestScope(dispatcher)
         val viewModel = SchemaViewModel(service, scope)
 
-        viewModel.load("c1", preferredSchema = "missing")
+        var unavailable: SchemaSelectionIntent? = null
+        viewModel.load(
+            "c1",
+            selection = SchemaSelectionIntent("missing", SchemaSelectionSource.ConnectionHistory),
+            onUnavailableSelection = { unavailable = it },
+        )
         advanceUntilIdle()
 
         assertNull(viewModel.selectedSchema)
         assertTrue(viewModel.preferredSchemaWarning?.contains("missing") == true)
-        assertEquals(3, viewModel.filteredTables.size)
+        assertTrue(viewModel.filteredTables.isEmpty())
+        assertEquals(SchemaSelectionSource.ConnectionHistory, unavailable?.source)
     }
 
     @Test
@@ -245,6 +259,42 @@ class ViewModelsTest {
     }
 
     @Test
+    fun settingsViewModelPersistsIndependentPerConnectionSchemaHistory() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val viewModel = SettingsViewModel(service, TestScope(dispatcher))
+        viewModel.load()
+        advanceUntilIdle()
+
+        viewModel.rememberLastSchema(" c1 ", " reporting ")
+        viewModel.rememberLastSchema("c2", "analytics")
+        advanceUntilIdle()
+
+        assertEquals(
+            mapOf("c1" to "reporting", "c2" to "analytics"),
+            viewModel.settings.value.lastSelectedSchemas,
+        )
+        assertEquals(viewModel.settings.value.lastSelectedSchemas, service.savedSettings?.lastSelectedSchemas)
+        assertNull(viewModel.schemaHistoryError.value)
+    }
+
+    @Test
+    fun settingsViewModelKeepsLastPersistedHistoryWhenSaveFails() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val viewModel = SettingsViewModel(service, TestScope(dispatcher))
+        viewModel.load()
+        advanceUntilIdle()
+        viewModel.rememberLastSchema("c1", "reporting")
+        advanceUntilIdle()
+
+        service.failSettingsSave = true
+        viewModel.rememberLastSchema("c1", "analytics")
+        advanceUntilIdle()
+
+        assertEquals(mapOf("c1" to "reporting"), viewModel.settings.value.lastSelectedSchemas)
+        assertEquals("settings save failed", viewModel.schemaHistoryError.value)
+    }
+
+    @Test
     fun settingsViewModelKeepsDefaultWhenSchemaLoadOrSaveFails() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val scope = TestScope(dispatcher)
@@ -305,16 +355,20 @@ class ViewModelsTest {
         viewModel.loadDefaultSchemaOptions("c1")
         advanceUntilIdle()
         viewModel.saveDefaultLocation("c1", "safedb_test")
+        viewModel.rememberLastSchema("c1", "reporting")
+        viewModel.rememberLastSchema("c2", "analytics")
         advanceUntilIdle()
 
         viewModel.clearDefaultIfConnection("c2")
         advanceUntilIdle()
         assertEquals("c1", viewModel.settings.value.defaultConnectionId)
+        assertEquals(mapOf("c1" to "reporting"), viewModel.settings.value.lastSelectedSchemas)
 
         viewModel.clearDefaultIfConnection("c1")
         advanceUntilIdle()
         assertNull(viewModel.settings.value.defaultConnectionId)
         assertNull(viewModel.settings.value.defaultSchema)
+        assertTrue(viewModel.settings.value.lastSelectedSchemas.isEmpty())
     }
 
     @Test

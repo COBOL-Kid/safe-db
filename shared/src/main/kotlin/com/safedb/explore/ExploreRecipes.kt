@@ -111,6 +111,7 @@ private fun WorksheetConfig.mapColumnReferences(transform: (String) -> String): 
     groups = groups.map { it.copy(column = transform(it.column)) },
     sorts = sorts.map { sort -> sort.copy(target = sort.target.mapColumnReferences(transform)) },
     filters = filters.map { it.copy(column = transform(it.column)) },
+    columnLayout = columnLayout.map { entry -> entry.copy(ref = entry.ref.mapColumnReferences(transform)) },
     calculations = calculations.map { calculation ->
         when (calculation) {
             is WorksheetCalculation.RowFormula -> calculation.copy(formula = mapFormulaReferences(calculation.formula, transform))

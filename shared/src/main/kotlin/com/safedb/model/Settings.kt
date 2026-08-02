@@ -16,6 +16,8 @@ data class Settings(
     val defaultConnectionId: String? = null,
     @SerialName("default_schema")
     val defaultSchema: String? = null,
+    @SerialName("last_selected_schemas")
+    val lastSelectedSchemas: Map<String, String> = emptyMap(),
 ) {
     fun palette(): ThemePalette = ThemePalette.fromId(colorScheme)
 
@@ -44,6 +46,19 @@ fun normalizeSettings(settings: Settings): Settings {
     } else {
         settings.defaultSchema?.trim()?.takeIf { it.isNotEmpty() }
     }
+    val lastSelectedSchemas = settings.lastSelectedSchemas
+        .asSequence()
+        .mapNotNull { (connectionId, schema) ->
+            val normalizedConnectionId = connectionId.trim()
+            val normalizedSchema = schema.trim()
+            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty()) {
+                null
+            } else {
+                normalizedConnectionId to normalizedSchema
+            }
+        }
+        .sortedBy { it.first }
+        .toMap(LinkedHashMap())
 
     return settings.copy(
         blockedSchemas = blockedSchemas,
@@ -52,6 +67,7 @@ fun normalizeSettings(settings: Settings): Settings {
         queryRiskGate = settings.queryRiskGate,
         defaultConnectionId = defaultConnectionId,
         defaultSchema = defaultSchema,
+        lastSelectedSchemas = lastSelectedSchemas,
     )
 }
 

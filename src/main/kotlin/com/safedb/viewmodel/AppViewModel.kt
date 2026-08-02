@@ -1,5 +1,7 @@
 package com.safedb.viewmodel
 
+import com.safedb.SchemaSelectionIntent
+import com.safedb.resolveQuerySchemaSelection
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QueryResult
 import com.safedb.model.HistoryEntry
@@ -60,13 +62,14 @@ class AppViewModel(
         }
     }
 
-    fun restoreQueryForConnection(
+    internal fun restoreQueryForConnection(
         connectionId: String,
         spec: QuerySpec,
+        selection: SchemaSelectionIntent = resolveQuerySchemaSelection(spec),
         onComplete: (Boolean) -> Unit = {},
     ) {
         schema.clear()
-        schema.load(connectionId) { loaded ->
+        schema.load(connectionId, selection = selection) { loaded ->
             if (loaded) {
                 query.restoreFromSpec(spec, schema.tables)
             }
