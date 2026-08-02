@@ -176,34 +176,38 @@ fun ExploreWindowContent(
                         }
                     }
                 }
-                ExploreMode.Worksheet -> ExploreWorksheet(
-                    sample = session.sample,
-                    config = viewModel.worksheetConfig,
-                    preview = viewModel.worksheetPreview,
-                    onConfigChange = { next -> viewModel.updateWorksheet { next } },
-                    onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
-                    onToggleGroup = viewModel::toggleWorksheetGroup,
-                    railFooter = { collapsed ->
-                        val enabled = !viewModel.worksheetPreviewState.loading && viewModel.hasVisibleWorksheetColumns()
-                        val export: () -> Unit = export@{
-                            val path = chooseCsvFile("${session.connectionLabel}-worksheet") ?: return@export
-                            viewModel.saveWorksheetCsv(path)
-                        }
-                        if (collapsed) {
-                            IconButton(onClick = export, enabled = enabled && !viewModel.exporting) {
-                                Icon(Icons.Default.Download, contentDescription = "Export CSV")
+                ExploreMode.Worksheet -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    ExploreWorksheet(
+                        sample = session.sample,
+                        config = viewModel.worksheetConfig,
+                        preview = viewModel.worksheetPreview,
+                        onConfigChange = { next -> viewModel.updateWorksheet { next } },
+                        onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
+                        onToggleGroup = viewModel::toggleWorksheetGroup,
+                        railFooter = { collapsed ->
+                            val enabled = !viewModel.worksheetPreviewState.loading && viewModel.hasVisibleWorksheetColumns()
+                            val export: () -> Unit = export@{
+                                val path = chooseCsvFile("${session.connectionLabel}-worksheet") ?: return@export
+                                viewModel.saveWorksheetCsv(path)
                             }
-                        } else {
-                            ExploreExportBar(
-                                viewModel,
-                                enabled = enabled,
-                                verticalPadding = 4.dp,
-                                onExport = export,
-                            )
-                        }
-                    },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
+                            if (collapsed) {
+                                IconButton(onClick = export, enabled = enabled && !viewModel.exporting) {
+                                    Icon(Icons.Default.Download, contentDescription = "Export CSV")
+                                }
+                            } else {
+                                ExploreExportBar(
+                                    viewModel,
+                                    enabled = enabled,
+                                    verticalPadding = 4.dp,
+                                    showStatus = false,
+                                    onExport = export,
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                    ExploreExportStatus(viewModel)
+                }
                 ExploreMode.Visualization -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         VisualizationConfigPanel(
@@ -301,19 +305,47 @@ private fun ExploreExportBar(
     viewModel: ExploreViewModel,
     enabled: Boolean,
     verticalPadding: Dp = 12.dp,
+    showStatus: Boolean = true,
     onExport: () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding), verticalAlignment = Alignment.CenterVertically) {
-        viewModel.exportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        viewModel.exportError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        if (showStatus) {
+            viewModel.exportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            viewModel.exportError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        }
         Box(modifier = Modifier.weight(1f))
-        if (viewModel.exportMessage != null || viewModel.exportError != null) SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
-        if (viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+        if (showStatus && (viewModel.exportMessage != null || viewModel.exportError != null)) {
+            SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
+        }
+        if (showStatus && viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
         PrimaryButton(
             modifier = Modifier.padding(start = 8.dp),
             onClick = onExport,
             enabled = enabled && !viewModel.exporting,
         ) { Text("Export CSV") }
+    }
+}
+
+@Composable
+private fun ExploreExportStatus(viewModel: ExploreViewModel) {
+    if (viewModel.exportMessage == null && viewModel.exportError == null && !viewModel.exporting) return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        viewModel.exportMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        viewModel.exportError?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        if (viewModel.exporting) {
+            Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+        }
+        Box(modifier = Modifier.weight(1f))
+        if (viewModel.exportMessage != null || viewModel.exportError != null) {
+            SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
+        }
     }
 }
 

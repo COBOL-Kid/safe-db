@@ -142,6 +142,8 @@ class ExploreViewModel(
 
     fun isDefaultConfig(): Boolean = workspace.pivot.withoutTransientState() == defaultConfig.withoutTransientState()
 
+    fun isDefaultWorksheet(): Boolean = workspace.worksheet.withoutTransientState() == WorksheetConfig()
+
     fun isDefaultVisualization(): Boolean = workspace.visualization == VisualizationConfig()
 
     fun isDirty(): Boolean = !isDefaultConfig()

@@ -311,6 +311,20 @@ class ExploreViewModelTest {
     }
 
     @Test
+    fun worksheetDefaultCheckIncludesPersistentLayoutButIgnoresCollapsedGroups() {
+        val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        assertTrue(viewModel.isDefaultWorksheet())
+
+        viewModel.updateWorksheetColumnLayout(
+            listOf(WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false)),
+        )
+        assertFalse(viewModel.isDefaultWorksheet())
+
+        viewModel.updateWorksheet { WorksheetConfig(collapsedGroupPaths = setOf("pending")) }
+        assertTrue(viewModel.isDefaultWorksheet())
+    }
+
+    @Test
     fun unresolvedRecipeWaitsForManualMapping() {
         val viewModel = ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
         val recipe = ExploreRecipe(
