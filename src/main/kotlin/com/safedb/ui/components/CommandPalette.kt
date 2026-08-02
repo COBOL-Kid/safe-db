@@ -74,6 +74,7 @@ fun CommandPalette(
     var selectedIndex by remember { mutableIntStateOf(0) }
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
+    val settings by viewModel.settings.settings.collectAsState()
 
     val commands =
         buildList {
@@ -142,7 +143,10 @@ fun CommandPalette(
                         hint = "${connection.dialect} · ${connection.database}",
                         icon = Icons.Filled.Link,
                     ) {
-                        appState.setActiveConnection(connection.id)
+                        appState.setActiveConnection(
+                            connection.id,
+                            com.safedb.resolveConnectionSchemaSelection(connection.id, settings),
+                        )
                         appState.navigate(AppRoute.Builder)
                         onDismiss()
                     },

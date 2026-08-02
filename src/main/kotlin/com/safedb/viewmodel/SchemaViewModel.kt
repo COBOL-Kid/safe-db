@@ -3,6 +3,8 @@ package com.safedb.viewmodel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.safedb.SchemaSelectionIntent
+import com.safedb.SchemaSelectionSource
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.service.SafeDbService
@@ -42,20 +44,22 @@ class SchemaViewModel(
 
     val filteredTables: List<TableInfo>
         get() {
+            val selected = selectedSchema ?: return emptyList()
             val query = search.trim().lowercase()
             return tables.filter { table ->
-                (selectedSchema == null || table.schema == selectedSchema) &&
+                table.schema == selected &&
                     (query.isEmpty() || table.name.lowercase().contains(query))
             }
         }
 
-    fun load(
+    internal fun load(
         connectionId: String,
-        preferredSchema: String? = null,
+        selection: SchemaSelectionIntent = SchemaSelectionIntent.Unselected,
+        onUnavailableSelection: ((SchemaSelectionIntent) -> Unit)? = null,
         onComplete: ((Boolean) -> Unit)? = null,
     ) {
         if (loadedConnectionId == connectionId && schema != null) {
-            applyPreferredSchema(preferredSchema)
+            applySelection(selection, onUnavailableSelection)
             onComplete?.invoke(true)
             return
         }
@@ -76,7 +80,7 @@ class SchemaViewModel(
                 }
                 schema = loaded
                 loadedConnectionId = connectionId
-                applyPreferredSchema(preferredSchema)
+                applySelection(selection, onUnavailableSelection)
                 onComplete?.invoke(true)
             } catch (e: Exception) {
                 if (generation != requestGeneration) {
@@ -110,12 +114,28 @@ class SchemaViewModel(
         search = ""
     }
 
-    private fun applyPreferredSchema(preferredSchema: String?) {
-        selectedSchema = preferredSchema?.takeIf { it in schemaOptions }
-        preferredSchemaWarning = if (preferredSchema != null && selectedSchema == null) {
-            "Default schema \"$preferredSchema\" is unavailable. Showing all schemas."
-        } else {
-            null
+    private fun applySelection(
+        selection: SchemaSelectionIntent,
+        onUnavailableSelection: ((SchemaSelectionIntent) -> Unit)?,
+    ) {
+        val requestedSchema = selection.schema
+        selectedSchema = requestedSchema?.takeIf { it in schemaOptions }
+        if (requestedSchema == null || selectedSchema != null) {
+            preferredSchemaWarning = null
+            return
         }
+
+        preferredSchemaWarning = when (selection.source) {
+            SchemaSelectionSource.StartupDefault ->
+                "Default schema \"$requestedSchema\" is unavailable. Select a schema or update Settings."
+            SchemaSelectionSource.ConnectionHistory ->
+                "Previously selected schema \"$requestedSchema\" is unavailable. Select another schema."
+            SchemaSelectionSource.RestoredQuery ->
+                "Query schema \"$requestedSchema\" is unavailable. Select another schema."
+            SchemaSelectionSource.User ->
+                "Schema \"$requestedSchema\" is unavailable. Select another schema."
+            null -> null
+        }
+        onUnavailableSelection?.invoke(selection)
     }
 }

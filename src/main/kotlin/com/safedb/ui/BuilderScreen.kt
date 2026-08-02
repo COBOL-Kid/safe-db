@@ -70,6 +70,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.safedb.SchemaSelectionIntent
 import com.safedb.model.ConnectionDef
 import com.safedb.model.GroupSpec
 import com.safedb.model.SavedQuery
@@ -579,15 +580,19 @@ private fun LimitChoiceChip(
 }
 
 @Composable
-fun BuilderScreen(
+internal fun BuilderScreen(
     connection: ConnectionDef?,
     connections: List<ConnectionDef>,
     queryViewModel: QueryViewModel,
     savedQueriesViewModel: SavedQueriesViewModel,
     recipesViewModel: RecipesViewModel,
     schemaViewModel: SchemaViewModel,
-    preferredSchema: String?,
+    schemaSelection: SchemaSelectionIntent,
+    schemaHistoryError: String?,
     settings: Settings,
+    onSchemaSelected: (String) -> Unit,
+    onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
+    onDismissSchemaHistoryError: () -> Unit,
     onOpenExplore: () -> Unit,
     onOpenSettings: () -> Unit,
     onApplyRecipe: (ExploreRecipe, ConnectionDef) -> Unit,
@@ -616,12 +621,16 @@ fun BuilderScreen(
         it.confirmation.connectionId == connection?.id
     }
 
-    LaunchedEffect(connection?.id, preferredSchema) {
+    LaunchedEffect(connection?.id, schemaSelection) {
         val connectionId = connection?.id
         if (connectionId == null) {
             schemaViewModel.clear()
         } else {
-            schemaViewModel.load(connectionId, preferredSchema = preferredSchema)
+            schemaViewModel.load(
+                connectionId,
+                selection = schemaSelection,
+                onUnavailableSelection = onUnavailableSchemaSelection,
+            )
         }
     }
 
@@ -862,6 +871,18 @@ fun BuilderScreen(
             )
         }
 
+        schemaHistoryError?.let { error ->
+            MessageBanner(
+                text = "Could not remember the selected schema: $error",
+                kind = BannerKind.WARNING,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            ) {
+                SecondaryButton(onClick = onDismissSchemaHistoryError) {
+                    Text("Dismiss")
+                }
+            }
+        }
+
         if (connection == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -883,6 +904,7 @@ fun BuilderScreen(
                     SchemaBrowser(
                         schemaViewModel = schemaViewModel,
                         onAddTable = { queryViewModel.addTable(it) },
+                        onSchemaSelected = onSchemaSelected,
                     )
                 }
                 Box(

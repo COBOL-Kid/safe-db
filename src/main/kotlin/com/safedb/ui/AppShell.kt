@@ -84,16 +84,18 @@ fun AppShell(
     val settingsOpen by appState.settingsOpen.collectAsState()
     val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
-    val preferredSchema by appState.preferredSchema.collectAsState()
+    val schemaSelection by appState.schemaSelection.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
+    val schemaHistoryError by viewModel.settings.schemaHistoryError.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
     val isDark = settings.theme == "dark"
     val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
     var sidebarCollapsed by rememberSaveable { mutableStateOf(initialSidebarCollapsed) }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
-        appState.setActiveConnection(connectionId)
-        viewModel.restoreQueryForConnection(connectionId, spec) { restored ->
+        val restoredSelection = com.safedb.resolveQuerySchemaSelection(spec)
+        appState.setActiveConnection(connectionId, restoredSelection)
+        viewModel.restoreQueryForConnection(connectionId, spec, restoredSelection) { restored ->
             if (restored) {
                 appState.navigate(AppRoute.Builder)
             }
@@ -148,9 +150,10 @@ fun AppShell(
                     service = appState.service,
                     viewModel = viewModel.connections,
                     onActivate = { id ->
-                        val defaultSchema = settings.defaultSchema
-                            .takeIf { settings.defaultConnectionId == id }
-                        appState.setActiveConnection(id, preferredSchema = defaultSchema)
+                        appState.setActiveConnection(
+                            id,
+                            com.safedb.resolveConnectionSchemaSelection(id, settings),
+                        )
                         appState.navigate(AppRoute.Builder)
                     },
                     onDeleted = { id ->
@@ -166,8 +169,21 @@ fun AppShell(
                     savedQueriesViewModel = viewModel.savedQueries,
                     recipesViewModel = viewModel.recipes,
                     schemaViewModel = viewModel.schema,
-                    preferredSchema = preferredSchema,
+                    schemaSelection = schemaSelection,
+                    schemaHistoryError = schemaHistoryError,
                     settings = settings,
+                    onSchemaSelected = { schema ->
+                        val connectionId = activeConnection?.id ?: return@BuilderScreen
+                        appState.setActiveSchema(schema)
+                        viewModel.settings.rememberLastSchema(connectionId, schema)
+                    },
+                    onUnavailableSchemaSelection = { selection ->
+                        val connectionId = activeConnection?.id ?: return@BuilderScreen
+                        if (selection.source == com.safedb.SchemaSelectionSource.ConnectionHistory) {
+                            viewModel.settings.forgetLastSchema(connectionId)
+                        }
+                    },
+                    onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
                     onOpenExplore = {
                         val connection = activeConnection
                         val sample = viewModel.query.currentSample(connection?.id)
@@ -177,8 +193,12 @@ fun AppShell(
                     },
                     onOpenSettings = appState::openSettings,
                     onApplyRecipe = { recipe, targetConnection ->
-                        if (recipe.querySpec != null) {
-                            appState.setActiveConnection(targetConnection.id)
+                        val querySpec = recipe.querySpec
+                        if (querySpec != null) {
+                            appState.setActiveConnection(
+                                targetConnection.id,
+                                com.safedb.resolveQuerySchemaSelection(querySpec),
+                            )
                             viewModel.runRecipe(targetConnection, recipe)
                         } else {
                             val sample = viewModel.query.currentSample(targetConnection.id)

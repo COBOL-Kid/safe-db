@@ -194,6 +194,10 @@ class StoreTest {
             queryRiskGate = QueryRiskGate.Flexible,
             defaultConnectionId = "connection-1",
             defaultSchema = "Reporting",
+            lastSelectedSchemas = mapOf(
+                "connection-1" to "Operational",
+                "connection-2" to "Analytics",
+            ),
         )
         store.save(saved)
         val loaded = store.load()
@@ -203,6 +207,7 @@ class StoreTest {
         assertEquals(QueryRiskGate.Flexible, loaded.queryRiskGate)
         assertEquals("connection-1", loaded.defaultConnectionId)
         assertEquals("Reporting", loaded.defaultSchema)
+        assertEquals(saved.lastSelectedSchemas, loaded.lastSelectedSchemas)
     }
 
     @Test
@@ -214,6 +219,7 @@ class StoreTest {
 
         assertNull(settings.defaultConnectionId)
         assertNull(settings.defaultSchema)
+        assertTrue(settings.lastSelectedSchemas.isEmpty())
     }
 
     @Test
@@ -352,6 +358,26 @@ class StoreTest {
         val orphaned = normalizeSettings(Settings(defaultSchema = "Reporting"))
         assertNull(orphaned.defaultConnectionId)
         assertNull(orphaned.defaultSchema)
+    }
+
+    @Test
+    fun normalizeSettingsRepairsAndOrdersSchemaHistory() {
+        val normalized = normalizeSettings(
+            Settings(
+                lastSelectedSchemas = linkedMapOf(
+                    " connection-2 " to " Analytics ",
+                    "" to "ignored",
+                    "connection-1" to " Reporting ",
+                    "connection-3" to "   ",
+                ),
+            ),
+        )
+
+        assertEquals(
+            linkedMapOf("connection-1" to "Reporting", "connection-2" to "Analytics"),
+            normalized.lastSelectedSchemas,
+        )
+        assertEquals(listOf("connection-1", "connection-2"), normalized.lastSelectedSchemas.keys.toList())
     }
 
     @Test

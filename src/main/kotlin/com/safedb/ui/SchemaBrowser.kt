@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.filled.Search
 fun SchemaBrowser(
     schemaViewModel: SchemaViewModel,
     onAddTable: ((TableInfo) -> Unit)? = null,
+    onSchemaSelected: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(setOf<String>()) }
@@ -62,28 +64,20 @@ fun SchemaBrowser(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 6.dp),
             )
-            Box(modifier = Modifier.fillMaxWidth()) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 SecondaryButton(
                     onClick = { schemaMenuOpen = true },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = schemaViewModel.schemaOptions.isNotEmpty(),
                 ) {
-                    Text(schemaViewModel.selectedSchema ?: "All schemas", modifier = Modifier.weight(1f))
+                    Text(schemaViewModel.selectedSchema ?: "Select schema", modifier = Modifier.weight(1f))
                     Icon(Icons.Default.ExpandMore, contentDescription = null)
                 }
                 SafeDropdownMenu(
                     expanded = schemaMenuOpen,
                     onDismissRequest = { schemaMenuOpen = false },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.width(maxWidth),
                 ) {
-                    MenuActionRow(
-                        text = "All schemas",
-                        selected = schemaViewModel.selectedSchema == null,
-                        onClick = {
-                            schemaMenuOpen = false
-                            schemaViewModel.selectSchema(null)
-                        },
-                    )
                     schemaViewModel.schemaOptions.forEach { schema ->
                         MenuActionRow(
                             text = schema,
@@ -91,6 +85,7 @@ fun SchemaBrowser(
                             onClick = {
                                 schemaMenuOpen = false
                                 schemaViewModel.selectSchema(schema)
+                                onSchemaSelected(schema)
                             },
                         )
                     }
@@ -125,6 +120,7 @@ fun SchemaBrowser(
             BasicTextField(
                 value = schemaViewModel.search,
                 onValueChange = { schemaViewModel.search = it },
+                enabled = schemaViewModel.selectedSchema != null && !schemaViewModel.loading,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
@@ -177,6 +173,21 @@ fun SchemaBrowser(
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
+                }
+            }
+            schemaViewModel.selectedSchema == null -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (schemaViewModel.schemaOptions.isEmpty()) {
+                            "No schemas containing visible tables were found."
+                        } else {
+                            "Select a schema to view tables."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
             schemaViewModel.filteredTables.isEmpty() -> {

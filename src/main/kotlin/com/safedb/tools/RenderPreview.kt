@@ -6,6 +6,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.SchemaSelectionIntent
+import com.safedb.SchemaSelectionSource
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.NumberFormatKind
@@ -509,9 +511,10 @@ fun main() {
         }
 
         render("builder-$suffix", dark) { state, vm ->
-            state.setActiveConnection("c1")
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
             state.navigate(AppRoute.Builder)
-            vm.schema.load("c1") { loaded ->
+            vm.schema.load("c1", selection = selection) { loaded ->
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
@@ -544,9 +547,10 @@ fun main() {
         }
 
         render("builder-collapsed-$suffix", dark, sidebarCollapsed = true) { state, vm ->
-            state.setActiveConnection("c1")
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
             state.navigate(AppRoute.Builder)
-            vm.schema.load("c1") { loaded ->
+            vm.schema.load("c1", selection = selection) { loaded ->
                 if (loaded) {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])

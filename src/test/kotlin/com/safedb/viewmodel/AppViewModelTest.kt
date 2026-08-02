@@ -81,6 +81,33 @@ class AppViewModelTest {
         assertEquals("users", viewModel.query.spec.tables.single().name)
         assertEquals(25, viewModel.query.limit)
         assertNull(viewModel.query.hydrationWarning)
+        assertEquals("public", viewModel.schema.selectedSchema)
+        assertEquals(0, service.settingsSaveCount)
+    }
+
+    @Test
+    fun restoreCrossSchemaQuerySelectsFirstSchemaAndHydratesAllTables() = runTest(dispatcher) {
+        val service = FakeSafeDbService(
+            schemaTables = listOf(
+                sampleTable(),
+                TableInfo("reporting", "orders", emptyList(), emptyList()),
+            ),
+        )
+        val viewModel = AppViewModel(service, dispatcher)
+        advanceUntilIdle()
+        val spec = sampleSpec().copy(
+            tables = listOf(
+                TableRef("reporting", "orders", "t0"),
+                TableRef("public", "users", "t1"),
+            ),
+        )
+
+        viewModel.restoreQueryForConnection("c1", spec)
+        advanceUntilIdle()
+
+        assertEquals("reporting", viewModel.schema.selectedSchema)
+        assertEquals(listOf("orders", "users"), viewModel.query.spec.tables.map { it.name })
+        assertEquals(0, service.settingsSaveCount)
     }
 
     @Test
@@ -709,6 +736,8 @@ private class FakeSafeDbService(
     var locked = false
     var queryAttempts = 0
         private set
+    var settingsSaveCount = 0
+        private set
     val queryRequests = mutableListOf<QueryRunRequest>()
     val requiredConfirmation = QueryExecutionConfirmation(
         connectionId = "c1",
@@ -838,7 +867,9 @@ private class FakeSafeDbService(
         settingsLoadGate?.await()
         return Settings.default()
     }
-    override suspend fun saveSettings(settings: Settings) = Unit
+    override suspend fun saveSettings(settings: Settings) {
+        settingsSaveCount += 1
+    }
 }
 
 private fun sampleTable() = TableInfo(
