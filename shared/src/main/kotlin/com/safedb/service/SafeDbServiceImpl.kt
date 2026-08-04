@@ -81,9 +81,17 @@ class SafeDbServiceImpl internal constructor(
         recipeStore: RecipeStore? = null,
     ) : this(configStore, queryStore, settingsStore, null, DefaultAdapterFactory, recipeStore)
 
-    override suspend fun testConnection(def: ConnectionDef, password: String): String {
+    override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         def.validate().getOrThrow()
-        val adapter = adapterFactory.connect(def, password)
+        val resolvedPassword = password ?: run {
+            val previous = configStore.get(def.id)
+                ?: throw IllegalArgumentException("A password is required for a new connection")
+            if (previous.credentialFingerprint() != def.credentialFingerprint()) {
+                throw IllegalArgumentException("Connection changes require the password to be re-entered before testing")
+            }
+            SecretsManager.passwordForDefinition(previous).getOrThrow()
+        }
+        val adapter = adapterFactory.connect(def, resolvedPassword)
         return try {
             adapter.test()
         } finally {

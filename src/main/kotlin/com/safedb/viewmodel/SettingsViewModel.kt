@@ -218,6 +218,23 @@ class SettingsViewModel(
         }
     }
 
+    fun clearSchemaSelectionsForConnection(connectionId: String) {
+        mutateSettings {
+            val clearsDefaultSchema = _settings.value.defaultConnectionId == connectionId
+            val clearsHistory = connectionId in _settings.value.lastSelectedSchemas
+            if (!clearsDefaultSchema && !clearsHistory) return@mutateSettings
+            if (save(
+                    _settings.value.copy(
+                        defaultSchema = if (clearsDefaultSchema) null else _settings.value.defaultSchema,
+                        lastSelectedSchemas = _settings.value.lastSelectedSchemas - connectionId,
+                    ),
+                )
+            ) {
+                if (clearsDefaultSchema) clearDefaultSchemaOptions()
+            }
+        }
+    }
+
     fun clearSaveError() {
         _saveError.value = null
     }

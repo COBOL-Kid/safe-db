@@ -6,6 +6,7 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.DriverProperty
 import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.ColumnCategory
@@ -120,6 +121,53 @@ class SafeDbServiceImplTest {
             assertFailsWith<IllegalArgumentException> {
                 service.updateConnection(sampleConnection().copy(host = "db.example.com"), password = null)
             }
+        }
+    }
+
+    @Test
+    fun updateConnectionRequiresPasswordWhenDriverPropertiesChange() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val service = SafeDbServiceImpl(
+            configStore = configStore,
+            queryStore = QueryStore.new(dir),
+            settingsStore = SettingsStore.new(dir),
+        )
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+
+        assertFailsWith<IllegalArgumentException> {
+            service.updateConnection(
+                sampleConnection().copy(driverProperties = listOf(DriverProperty("currentSchema", "reporting"))),
+                password = null,
+            )
+        }
+    }
+
+    @Test
+    fun testConnectionReusesStoredPasswordOnlyForMatchingFingerprint() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "stored-secret").getOrThrow()
+        var connectedPassword: String? = null
+        val service = SafeDbServiceImpl(
+            configStore = configStore,
+            queryStore = QueryStore.new(dir),
+            settingsStore = SettingsStore.new(dir),
+            querySessionFactory = null,
+            adapterFactory = AdapterFactory { _, password ->
+                connectedPassword = password
+                FakeConnectedAdapter()
+            },
+        )
+
+        assertEquals("ok", service.testConnection(sampleConnection().copy(name = "Renamed"), null))
+        assertEquals("stored-secret", connectedPassword)
+        assertFailsWith<IllegalArgumentException> {
+            service.testConnection(sampleConnection().copy(host = "other.example.com"), null)
         }
     }
 

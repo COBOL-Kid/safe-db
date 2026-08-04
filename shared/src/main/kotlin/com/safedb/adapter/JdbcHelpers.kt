@@ -72,6 +72,9 @@ internal fun createDataSourceConfig(
     config.minimumIdle = 0
     config.connectionTimeout = CONNECT_TIMEOUT_MS
     config.isReadOnly = true
+    def.driverProperties.forEach { property ->
+        config.addDataSourceProperty(property.name, property.value)
+    }
     when (def.dialect) {
         Dialect.Postgres -> applyPostgresSsl(config, def, registerTemporaryFile)
         Dialect.MySql -> applyMySqlSsl(config, def, registerTemporaryFile)

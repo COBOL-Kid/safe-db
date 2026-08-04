@@ -63,6 +63,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.safedb.model.ConnectionDef
 import com.safedb.AppRoute
 import com.safedb.AppState
 import com.safedb.model.QuerySpec
@@ -79,6 +80,8 @@ fun AppShell(
     onPaletteOpenChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     initialSidebarCollapsed: Boolean = false,
+    newConnectionPreview: Boolean = false,
+    editConnectionPreview: ConnectionDef? = null,
 ) {
     val route by appState.route.collectAsState()
     val settingsOpen by appState.settingsOpen.collectAsState()
@@ -160,7 +163,14 @@ fun AppShell(
                         appState.clearActiveConnectionIf(id)
                         viewModel.settings.clearDefaultIfConnection(id)
                     },
+                    onConnectionChanged = { id ->
+                        appState.clearActiveConnectionIf(id)
+                        viewModel.schema.invalidateConnection(id)
+                        viewModel.settings.clearSchemaSelectionsForConnection(id)
+                    },
                     onSaved = viewModel.connections::refresh,
+                    initialCreating = newConnectionPreview,
+                    initialEditingConnection = editConnectionPreview,
                 )
                 AppRoute.Builder -> BuilderScreen(
                     connection = activeConnection,

@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
@@ -115,6 +114,3 @@ internal fun migrateLegacyConnection(value: JsonElement): Pair<JsonElement, Bool
     )
     return migrated to true
 }
-
-internal fun migrationBackupPath(path: Path): Path =
-    path.resolveSibling("${path.fileName.toString().substringBeforeLast('.')}.migration.bak")

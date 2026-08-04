@@ -1,5 +1,10 @@
 package com.safedb.secrets
 
+import com.safedb.adapter.SERVICE_NAME
+import com.safedb.model.ConnectionDef
+import com.safedb.model.Dialect
+import com.safedb.model.TransportSecurity
+import com.safedb.model.TransportSecurityMode
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -69,5 +74,28 @@ class SecretsTest {
         assertFalse(CredentialSession.containsForTest(id))
         assertEquals("secret", SecretsManager.getPassword(id).getOrThrow())
         assertTrue(CredentialSession.containsForTest(id))
+    }
+
+    @Test
+    fun definitionsWithoutDriverPropertiesKeepTheReleasedCredentialFingerprint() {
+        val store = DisabledMemoryStore()
+        SecretsManager.useStoreForTest(store)
+        val def = ConnectionDef(
+            id = "legacy-bound",
+            name = "Existing connection",
+            dialect = Dialect.Postgres,
+            host = "localhost",
+            port = 5432,
+            database = "demo",
+            username = "readonly",
+            transportSecurity = TransportSecurity(mode = TransportSecurityMode.Disabled),
+        )
+        store.setPassword(
+            SERVICE_NAME,
+            def.id,
+            """{"version":1,"fingerprint":"47fb4c855ff6cdfd0c27ba503e4065d373ba402cfc96f402d4110e68cc2cc9fd","password":"stored-secret"}""",
+        )
+
+        assertEquals("stored-secret", SecretsManager.passwordForDefinition(def).getOrThrow())
     }
 }

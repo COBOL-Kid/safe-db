@@ -160,6 +160,9 @@ internal fun upgradeEntryToV3(value: JsonElement): Pair<JsonElement, Boolean> {
     return updated to true
 }
 
+internal fun migrationBackupPath(path: Path): Path =
+    path.resolveSibling("${path.fileName.toString().substringBeforeLast('.')}.migration.bak")
+
 internal fun ensureGroupIds(group: JsonElement): JsonElement {
     val objectValue = group.asObjectOrNull() ?: return group
     val updated = objectValue.toMutableMap()

@@ -748,7 +748,7 @@ private class FakeSafeDbService(
         ),
     )
 
-    override suspend fun testConnection(def: ConnectionDef, password: String): String = "ok"
+    override suspend fun testConnection(def: ConnectionDef, password: String?): String = "ok"
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun listConnections(): List<ConnectionDef> {

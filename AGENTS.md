@@ -22,11 +22,11 @@ Use the project wrapper, not a system Gradle installation. Do not run `./gradlew
 
 ## Verification
 
-- `check` currently enforces minimum unit discovery of 133 desktop and 293 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
+- `check` currently enforces minimum unit discovery of 154 desktop and 315 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
 - Kover line-coverage floors are 72% for desktop code and 66% for shared code. Stale incremental reports can be misleading, so use `--rerun-tasks --no-build-cache` for fresh coverage claims.
 - The integration source set is `shared/src/integrationTest/kotlin/`. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to make the corresponding engine mandatory; required suites must meet their discovery floor without skipped tests.
 - MySQL settings use `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, and `SAFEDB_TEST_MYSQL_DATABASE`; `SAFEDB_TEST_MYSQL_DOCKER` can select a Docker container. PostgreSQL uses the matching `SAFEDB_TEST_POSTGRES_*` names.
-- The preview renderer currently writes 28 PNGs: 10 main-app images at 1280×832 and 18 Explore/recipe images at 1120×760, in light and dark modes.
+- The preview renderer currently writes 34 PNGs: 14 main-app images at 1280×832, 2 narrow connection-form images at 840×900, and 18 Explore/recipe images at 1120×760, in light and dark modes.
 - `.github/workflows/compose.yml` runs the unit/coverage gate plus required static-MySQL integration on selected application/build changes. `.github/workflows/durability.yml` runs each Monday at 09:00 UTC and on demand, covering three-platform unit checks, required PostgreSQL and generated-MySQL integration, previews, and Linux packaging.
 
 ## Tech Stack

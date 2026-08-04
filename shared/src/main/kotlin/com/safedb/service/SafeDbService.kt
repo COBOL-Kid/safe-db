@@ -34,7 +34,7 @@ internal fun QueryFailureException(coreError: QueryCoreError): QueryFailureExcep
 
 /** Desktop service surface used by the Compose UI. */
 interface SafeDbService {
-    suspend fun testConnection(def: ConnectionDef, password: String): String
+    suspend fun testConnection(def: ConnectionDef, password: String?): String
 
     suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef
 

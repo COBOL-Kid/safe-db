@@ -250,7 +250,7 @@ class StoreTest {
             """
             [
               {
-                "version": 2,
+                "version": 1,
                 "id": "c1",
                 "name": "Local PG",
                 "dialect": "Postgres",
@@ -261,7 +261,8 @@ class StoreTest {
                 "transport_security": {
                   "mode": "Disabled",
                   "legacy_implicit": true
-                }
+                },
+                "driver_properties": []
               }
             ]
             """.trimIndent(),
@@ -401,14 +402,14 @@ class StoreTest {
             """.trimIndent(),
         )
 
-        val store = ConfigStore.new(dir)
-        val migrated = store.list().single()
+        val migrated = ConfigStore.new(dir).list().single()
 
         assertEquals(
             TransportSecurity(mode = TransportSecurityMode.Disabled, legacyImplicit = true),
             migrated.transportSecurity,
         )
         assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
+        assertEquals(emptyList(), migrated.driverProperties)
         assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
     }
 

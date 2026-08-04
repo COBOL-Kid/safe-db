@@ -90,7 +90,7 @@ private class RecipeFakeService(private val fail: Boolean = false) : SafeDbServi
         recipes += imported
         return imported
     }
-    override suspend fun testConnection(def: ConnectionDef, password: String) = "ok"
+    override suspend fun testConnection(def: ConnectionDef, password: String?) = "ok"
     override suspend fun createConnection(def: ConnectionDef, password: String) = def
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
     override suspend fun listConnections() = emptyList<ConnectionDef>()
