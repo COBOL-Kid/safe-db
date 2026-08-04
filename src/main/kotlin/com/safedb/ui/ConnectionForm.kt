@@ -74,7 +74,9 @@ private val TRANSPORT_OPTIONS = listOf(
     FormTransportOption(TransportSecurityMode.Disabled, "Disabled"),
 )
 
-private val CompactFieldHeight = 56.dp
+// Leave a little vertical headroom beyond Material's 56 dp minimum. An exact
+// 56 dp constraint can clip glyph descenders on scaled desktop displays.
+private val CompactFieldHeight = 60.dp
 
 @Composable
 private fun CompactFieldLabel(text: String) {
