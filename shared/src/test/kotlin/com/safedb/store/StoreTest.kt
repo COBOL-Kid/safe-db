@@ -382,16 +382,35 @@ class StoreTest {
     }
 
     @Test
-    fun configStorePersistsTheInitialVersionOneProfileLayout() {
+    fun configStoreMigratesLegacyConnectionsMissingTransportSecurity() {
         val dir = tempDir()
-        val store = ConfigStore.new(dir)
-        store.save(sampleConnection("c1"))
+        Files.writeString(
+            dir.resolve("connections.json"),
+            """
+            [
+              {
+                "version": 1,
+                "id": "legacy",
+                "name": "Legacy MySQL",
+                "dialect": "MySql",
+                "host": "localhost",
+                "port": 3306,
+                "database": "safedb_test",
+                "username": "root"
+              }
+            ]
+            """.trimIndent(),
+        )
 
-        val persisted = Files.readString(dir.resolve("connections.json"))
-        assertEquals(CURRENT_CONNECTION_VERSION, store.list().single().version)
-        assertTrue(persisted.contains("\"version\": 1"))
-        assertTrue(persisted.contains("\"driver_properties\": []"))
-        assertFalse(Files.exists(dir.resolve("connections.migration.bak")))
+        val migrated = ConfigStore.new(dir).list().single()
+
+        assertEquals(
+            TransportSecurity(mode = TransportSecurityMode.Disabled, legacyImplicit = true),
+            migrated.transportSecurity,
+        )
+        assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
+        assertEquals(emptyList(), migrated.driverProperties)
+        assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
     }
 
     @Test

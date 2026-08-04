@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
 
-const val CURRENT_CONNECTION_VERSION = 1
+const val CURRENT_CONNECTION_VERSION = 2
 const val MAX_DRIVER_PROPERTIES = 50
 const val MAX_DRIVER_PROPERTY_NAME_LENGTH = 128
 const val MAX_DRIVER_PROPERTY_VALUE_LENGTH = 4_096
@@ -181,13 +181,28 @@ data class ConnectionDef(
     @SerialName("driver_properties") val driverProperties: List<DriverProperty> = emptyList(),
 ) {
     fun credentialFingerprint(): String {
-        val canonicalProperties = driverProperties.sortedWith(
-            compareBy<DriverProperty> { it.name.lowercase() }.thenBy { it.name }.thenBy { it.value },
-        )
-        val material = Json.encodeToString(
-            FingerprintMaterial.serializer(),
-            FingerprintMaterial(dialect, host, port, database, username, transportSecurity, canonicalProperties),
-        )
+        val material = if (driverProperties.isEmpty()) {
+            Json.encodeToString(
+                LegacyFingerprintMaterial.serializer(),
+                LegacyFingerprintMaterial(dialect, host, port, database, username, transportSecurity),
+            )
+        } else {
+            val canonicalProperties = driverProperties.sortedWith(
+                compareBy<DriverProperty> { it.name.lowercase() }.thenBy { it.name }.thenBy { it.value },
+            )
+            Json.encodeToString(
+                DriverPropertyFingerprintMaterial.serializer(),
+                DriverPropertyFingerprintMaterial(
+                    dialect,
+                    host,
+                    port,
+                    database,
+                    username,
+                    transportSecurity,
+                    canonicalProperties,
+                ),
+            )
+        }
         val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
     }
@@ -214,7 +229,17 @@ data class ConnectionDef(
 }
 
 @Serializable
-private data class FingerprintMaterial(
+private data class LegacyFingerprintMaterial(
+    val dialect: Dialect,
+    val host: String,
+    val port: Int,
+    val database: String,
+    val username: String,
+    @SerialName("transport_security") val transportSecurity: TransportSecurity,
+)
+
+@Serializable
+private data class DriverPropertyFingerprintMaterial(
     val dialect: Dialect,
     val host: String,
     val port: Int,

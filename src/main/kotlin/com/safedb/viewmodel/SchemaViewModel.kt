@@ -16,6 +16,7 @@ class SchemaViewModel(
     private val scope: CoroutineScope,
 ) {
     private var requestGeneration = 0
+    private var requestedConnectionId: String? = null
 
     var schema by mutableStateOf<Schema?>(null)
         private set
@@ -64,6 +65,7 @@ class SchemaViewModel(
             return
         }
         val generation = ++requestGeneration
+        requestedConnectionId = connectionId
         selectedSchema = null
         preferredSchemaWarning = null
         search = ""
@@ -93,6 +95,7 @@ class SchemaViewModel(
             } finally {
                 if (generation == requestGeneration) {
                     loading = false
+                    requestedConnectionId = null
                 }
             }
         }
@@ -105,6 +108,7 @@ class SchemaViewModel(
 
     fun clear() {
         requestGeneration += 1
+        requestedConnectionId = null
         loading = false
         schema = null
         loadedConnectionId = null
@@ -112,6 +116,11 @@ class SchemaViewModel(
         preferredSchemaWarning = null
         error = null
         search = ""
+    }
+
+    fun invalidateConnection(connectionId: String) {
+        if (loadedConnectionId != connectionId && requestedConnectionId != connectionId) return
+        clear()
     }
 
     private fun applySelection(

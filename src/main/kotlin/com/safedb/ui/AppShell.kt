@@ -165,6 +165,7 @@ fun AppShell(
                     },
                     onConnectionChanged = { id ->
                         appState.clearActiveConnectionIf(id)
+                        viewModel.schema.invalidateConnection(id)
                         viewModel.settings.clearSchemaSelectionsForConnection(id)
                     },
                     onSaved = viewModel.connections::refresh,

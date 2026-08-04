@@ -42,6 +42,29 @@ class ParseConnectionStringTest {
     }
 
     @Test
+    fun encodedDelimitersCannotSplitSensitiveValuesIntoPersistableProperties() {
+        val parsed = parseConnectionString(
+            "postgresql://u@host/db?apiToken=first%26second%3Dsecret",
+        )
+
+        assertEquals(emptyList(), parsed.driverProperties)
+        assertTrue(parsed.warnings.single().contains("apiToken"))
+        assertFalse(parsed.sanitizedInput.contains("first"))
+        assertFalse(parsed.sanitizedInput.contains("second"))
+        assertFalse(parsed.sanitizedInput.contains("secret"))
+    }
+
+    @Test
+    fun encodedDelimitersRemainInsideSafeDriverPropertyValues() {
+        val parsed = parseConnectionString(
+            "postgresql://u@host/db?applicationName=R%26D%3Dreporting",
+        )
+
+        assertEquals(listOf(DriverProperty("applicationName", "R&D=reporting")), parsed.driverProperties)
+        assertTrue(parsed.sanitizedInput.contains("applicationName=R%26D%3Dreporting"))
+    }
+
+    @Test
     fun duplicateExtrasUseLastValueWithWarning() {
         val parsed = parseConnectionString(
             "postgresql://u@host/db?currentSchema=one&CURRENTSCHEMA=two",

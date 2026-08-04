@@ -86,6 +86,25 @@ class ViewModelsTest {
     }
 
     @Test
+    fun schemaViewModelReloadsAnInvalidatedConnection() = runTest(dispatcher) {
+        val service = RecordingSafeDbService()
+        val viewModel = SchemaViewModel(service, TestScope(dispatcher))
+
+        viewModel.load("c1")
+        advanceUntilIdle()
+        assertEquals(1, service.schemaLoadCount)
+
+        viewModel.invalidateConnection("c1")
+        assertNull(viewModel.schema)
+        assertNull(viewModel.loadedConnectionId)
+
+        viewModel.load("c1")
+        advanceUntilIdle()
+        assertEquals(2, service.schemaLoadCount)
+        assertEquals("c1", viewModel.loadedConnectionId)
+    }
+
+    @Test
     fun schemaViewModelAppliesPreferredSchemaBeforeSearch() = runTest(dispatcher) {
         val service = RecordingSafeDbService()
         val scope = TestScope(dispatcher)
@@ -462,6 +481,7 @@ private class RecordingSafeDbService : SafeDbService {
     var failSavedMutation = false
     var failSettingsSave = false
     var failSchemaLoad = false
+    var schemaLoadCount = 0
     val schemaResponses = mutableMapOf<String, CompletableDeferred<Schema>>()
     var settingsSaveCount = 0
     var settingsSaveStarted: CompletableDeferred<Unit>? = null
@@ -491,6 +511,7 @@ private class RecordingSafeDbService : SafeDbService {
     override suspend fun lockCredentials() = Unit
 
     override suspend fun getSchema(connectionId: String): Schema {
+        schemaLoadCount += 1
         if (failSchemaLoad) error("schema load failed")
         schemaResponses[connectionId]?.let { return it.await() }
         return Schema(

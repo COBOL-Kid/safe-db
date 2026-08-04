@@ -116,8 +116,8 @@ private fun parsePostgresUri(raw: String): ParsedConnection {
         dialect = Dialect.Postgres,
         host = url.host,
         port = parsePort(url, Dialect.Postgres),
-        database = pathnameDatabase(url.path),
-        username = decodeComponent(url.userInfo?.substringBefore(':')),
+        database = pathnameDatabase(url.rawPath),
+        username = decodeComponent(url.rawUserInfo?.substringBefore(':')),
         password = passwordFromUrl(raw, url),
         transport = postgresTransport(sslmode, url.host),
         driverProperties = extracted.properties,
@@ -144,8 +144,8 @@ private fun parseMysqlUri(raw: String): ParsedConnection {
         dialect = Dialect.MySql,
         host = url.host,
         port = parsePort(url, Dialect.MySql),
-        database = pathnameDatabase(url.path),
-        username = decodeComponent(url.userInfo?.substringBefore(':')),
+        database = pathnameDatabase(url.rawPath),
+        username = decodeComponent(url.rawUserInfo?.substringBefore(':')),
         password = passwordFromUrl(raw, url),
         transport = mysqlTransport(sslMode, url.host),
         driverProperties = extracted.properties,
@@ -267,7 +267,7 @@ private fun parseOracle(raw: String): ParsedConnection {
         dialect = Dialect.Oracle,
         host = pseudoUrl.host,
         port = parsePort(pseudoUrl, Dialect.Oracle),
-        database = pathnameDatabase(pseudoUrl.path),
+        database = pathnameDatabase(pseudoUrl.rawPath),
         username = decodeComponent(username),
         password = password?.let { decodeComponent(it) },
         transport = MutableTransport(
@@ -284,10 +284,10 @@ private data class ParsedUrl(
     val scheme: String,
     val host: String,
     val port: Int,
-    val path: String,
-    val userInfo: String?,
-    val query: String?,
-    val fragment: String?,
+    val rawPath: String,
+    val rawUserInfo: String?,
+    val rawQuery: String?,
+    val rawFragment: String?,
     val raw: String,
 )
 
@@ -305,10 +305,10 @@ private fun parseUrl(raw: String, label: String): ParsedUrl {
         scheme = uri.scheme.orEmpty(),
         host = host,
         port = uri.port,
-        path = uri.path.orEmpty(),
-        userInfo = uri.userInfo,
-        query = uri.query,
-        fragment = uri.fragment,
+        rawPath = uri.rawPath.orEmpty(),
+        rawUserInfo = uri.rawUserInfo,
+        rawQuery = uri.rawQuery,
+        rawFragment = uri.rawFragment,
         raw = raw,
     )
 }
@@ -364,23 +364,21 @@ private fun lowercaseParam(url: ParsedUrl, key: String): String? =
     paramValue(url, key)?.lowercase()
 
 private fun paramValue(url: ParsedUrl, key: String): String? {
-    val query = url.query ?: return null
-    return query.split('&')
-        .mapNotNull { part ->
-            val eqIndex = part.indexOf('=')
-            if (eqIndex < 0) return@mapNotNull null
-            val candidate = part.substring(0, eqIndex)
-            if (candidate.equals(key, ignoreCase = true)) {
-                decodeComponent(part.substring(eqIndex + 1))
-            } else {
-                null
-            }
+    val query = url.rawQuery ?: return null
+    return query.split('&').mapNotNull { part ->
+        val eqIndex = part.indexOf('=')
+        if (eqIndex < 0) return@mapNotNull null
+        val candidate = decodeComponent(part.substring(0, eqIndex))
+        if (candidate.equals(key, ignoreCase = true)) {
+            decodeComponent(part.substring(eqIndex + 1))
+        } else {
+            null
         }
-        .firstOrNull()
+    }.firstOrNull()
 }
 
 private fun urlQueryPairs(url: ParsedUrl): List<Pair<String, String>> =
-    url.query.orEmpty().split('&')
+    url.rawQuery.orEmpty().split('&')
         .filter(String::isNotEmpty)
         .map { part ->
             val eqIndex = part.indexOf('=')
@@ -599,15 +597,15 @@ private fun parseSqlServerHost(value: String): Pair<String, Int?> {
 }
 
 private fun sanitizeUrlPassword(url: ParsedUrl): String {
-    val user = url.userInfo?.substringBefore(':')
+    val user = url.rawUserInfo?.substringBefore(':')
     val authorityPrefix = user?.let { "${encodeComponent(decodeComponent(it))}@" }.orEmpty()
     val portPart = if (url.port != -1) ":${url.port}" else ""
     val safeQuery = urlQueryPairs(url)
         .filterNot { (name, _) -> isSensitiveDriverPropertyName(name) }
         .joinToString("&") { (name, value) -> "${encodeComponent(name)}=${encodeComponent(value)}" }
     val queryPart = safeQuery.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
-    val refPart = url.fragment?.let { "#$it" }.orEmpty()
-    return "${url.scheme}://$authorityPrefix${url.host}$portPart${url.path}$queryPart$refPart"
+    val refPart = url.rawFragment?.let { "#$it" }.orEmpty()
+    return "${url.scheme}://$authorityPrefix${url.host}$portPart${url.rawPath}$queryPart$refPart"
 }
 
 private fun passwordFromUrl(raw: String, url: ParsedUrl): String? {
@@ -623,7 +621,7 @@ private fun passwordFromUrl(raw: String, url: ParsedUrl): String? {
     if (atIndex < 0) return null
     val auth = authority.substring(0, atIndex)
     if (!auth.contains(':')) return null
-    val password = url.userInfo?.substringAfter(':').orEmpty()
+    val password = url.rawUserInfo?.substringAfter(':').orEmpty()
     return decodeComponent(password)
 }
 
