@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
 
-const val CURRENT_CONNECTION_VERSION = 3
+const val CURRENT_CONNECTION_VERSION = 1
 const val MAX_DRIVER_PROPERTIES = 50
 const val MAX_DRIVER_PROPERTY_NAME_LENGTH = 128
 const val MAX_DRIVER_PROPERTY_VALUE_LENGTH = 4_096
@@ -66,6 +66,11 @@ private val SENSITIVE_DRIVER_PROPERTY_FRAGMENTS = listOf(
     "apikey",
 )
 
+private val SENSITIVE_DRIVER_PROPERTY_NAMES = setOf(
+    // Microsoft JDBC's deprecated Azure Key Vault client-secret property does not contain a generic secret fragment.
+    "keyvaultproviderclientkey",
+)
+
 private val COMMON_RESERVED_DRIVER_PROPERTIES = setOf(
     "url",
     "jdbcurl",
@@ -108,7 +113,8 @@ private fun normalizedDriverPropertyName(name: String): String =
 
 fun isSensitiveDriverPropertyName(name: String): Boolean {
     val normalized = normalizedDriverPropertyName(name)
-    return SENSITIVE_DRIVER_PROPERTY_FRAGMENTS.any(normalized::contains)
+    return normalized in SENSITIVE_DRIVER_PROPERTY_NAMES ||
+        SENSITIVE_DRIVER_PROPERTY_FRAGMENTS.any(normalized::contains)
 }
 
 fun isReservedDriverPropertyName(dialect: Dialect, name: String): Boolean {

@@ -10,7 +10,6 @@ import com.safedb.connection.formatConnectionString
 import com.safedb.connection.inferLocation
 import com.safedb.connection.parseConnectionString
 import com.safedb.connection.transportPresetForLocation
-import com.safedb.model.CURRENT_CONNECTION_VERSION
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
@@ -93,7 +92,9 @@ class ConnectionFormState(
             port = parsed.port
             portIsAuto = true
             database = parsed.database
-            username = parsed.username
+            if (parsed.username.isNotEmpty() || !isEditing) {
+                username = parsed.username
+            }
             if (parsed.password != null || !isEditing) {
                 password = parsed.password.orEmpty()
                 passwordChangeEnabled = true
@@ -200,7 +201,6 @@ class ConnectionFormState(
     }
 
     fun buildDef(): ConnectionDef = ConnectionDef(
-        version = CURRENT_CONNECTION_VERSION,
         id = connectionId,
         name = name.trim().ifEmpty { "$dialect ${host.trim()}:$port" },
         dialect = dialect,

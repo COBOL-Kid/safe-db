@@ -250,7 +250,7 @@ class StoreTest {
             """
             [
               {
-                "version": 2,
+                "version": 1,
                 "id": "c1",
                 "name": "Local PG",
                 "dialect": "Postgres",
@@ -261,7 +261,8 @@ class StoreTest {
                 "transport_security": {
                   "mode": "Disabled",
                   "legacy_implicit": true
-                }
+                },
+                "driver_properties": []
               }
             ]
             """.trimIndent(),
@@ -381,66 +382,16 @@ class StoreTest {
     }
 
     @Test
-    fun configStoreMigratesLegacyConnectionsMissingTransportSecurity() {
+    fun configStorePersistsTheInitialVersionOneProfileLayout() {
         val dir = tempDir()
-        Files.writeString(
-            dir.resolve("connections.json"),
-            """
-            [
-              {
-                "version": 1,
-                "id": "legacy",
-                "name": "Legacy MySQL",
-                "dialect": "MySql",
-                "host": "localhost",
-                "port": 3306,
-                "database": "safedb_test",
-                "username": "root"
-              }
-            ]
-            """.trimIndent(),
-        )
-
         val store = ConfigStore.new(dir)
-        val migrated = store.list().single()
+        store.save(sampleConnection("c1"))
 
-        assertEquals(
-            TransportSecurity(mode = TransportSecurityMode.Disabled, legacyImplicit = true),
-            migrated.transportSecurity,
-        )
-        assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
-        assertEquals(emptyList(), migrated.driverProperties)
-        assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
-    }
-
-    @Test
-    fun configStoreMigratesV2ConnectionsWithEmptyDriverProperties() {
-        val dir = tempDir()
-        Files.writeString(
-            dir.resolve("connections.json"),
-            """
-            [
-              {
-                "version": 2,
-                "id": "v2",
-                "name": "Existing Postgres",
-                "dialect": "Postgres",
-                "host": "localhost",
-                "port": 5432,
-                "database": "demo",
-                "username": "readonly",
-                "transport_security": {"mode": "Disabled"}
-              }
-            ]
-            """.trimIndent(),
-        )
-
-        val migrated = ConfigStore.new(dir).list().single()
-
-        assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
-        assertEquals(emptyList(), migrated.driverProperties)
-        assertTrue(Files.readString(dir.resolve("connections.json")).contains("\"driver_properties\""))
-        assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
+        val persisted = Files.readString(dir.resolve("connections.json"))
+        assertEquals(CURRENT_CONNECTION_VERSION, store.list().single().version)
+        assertTrue(persisted.contains("\"version\": 1"))
+        assertTrue(persisted.contains("\"driver_properties\": []"))
+        assertFalse(Files.exists(dir.resolve("connections.migration.bak")))
     }
 
     @Test

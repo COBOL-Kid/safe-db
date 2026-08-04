@@ -445,35 +445,75 @@ private fun splitSemicolonRecords(raw: String): List<String> {
     val records = mutableListOf<String>()
     var current = StringBuilder()
     var quote: Char? = null
-    var braceDepth = 0
+    var inBracedValue = false
+    var atValueStart = false
+    var seenEquals = false
+    var index = 0
 
-    for (char in raw) {
+    while (index < raw.length) {
+        val char = raw[index]
         if (quote != null) {
             current.append(char)
             if (char == quote) quote = null
+            index += 1
             continue
         }
+
+        if (inBracedValue) {
+            current.append(char)
+            if (char == '}') {
+                if (index + 1 < raw.length && raw[index + 1] == '}') {
+                    current.append('}')
+                    index += 2
+                    continue
+                }
+                inBracedValue = false
+            }
+            index += 1
+            continue
+        }
+
+        if (atValueStart) {
+            if (char.isWhitespace()) {
+                current.append(char)
+                index += 1
+                continue
+            }
+            atValueStart = false
+            if (char == '{') {
+                inBracedValue = true
+                current.append(char)
+                index += 1
+                continue
+            }
+        }
+
         if (char == '\'' || char == '"') {
             quote = char
             current.append(char)
+            index += 1
             continue
         }
-        if (char == '{') {
-            braceDepth += 1
+
+        if (char == '=' && !seenEquals) {
+            seenEquals = true
+            atValueStart = true
             current.append(char)
+            index += 1
             continue
         }
-        if (char == '}') {
-            braceDepth = maxOf(0, braceDepth - 1)
-            current.append(char)
-            continue
-        }
-        if (char == ';' && braceDepth == 0) {
+
+        if (char == ';') {
             records.add(current.toString())
             current = StringBuilder()
+            atValueStart = false
+            seenEquals = false
+            index += 1
             continue
         }
+
         current.append(char)
+        index += 1
     }
 
     if (current.isNotEmpty()) records.add(current.toString())
@@ -520,7 +560,9 @@ private val SQL_SERVER_MANAGED_KEYS = setOf(
 )
 
 private fun unwrapValue(value: String): String {
-    if (value.startsWith('{') && value.endsWith('}')) return value.substring(1, value.length - 1)
+    if (value.startsWith('{') && value.endsWith('}')) {
+        return value.substring(1, value.length - 1).replace("}}", "}")
+    }
     if (
         (value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith('\'') && value.endsWith('\''))
@@ -611,7 +653,7 @@ private fun sanitizeOracleInput(raw: String): String {
     val slashIndex = auth.indexOf('/')
     if (slashIndex < 0) return sanitizeSensitiveQueryProperties(raw)
 
-    return sanitizeSensitiveQueryProperties("${prefix}${auth.substring(0, slashIndex)}/${rest.substring(atIndex)}")
+    return sanitizeSensitiveQueryProperties(prefix + rest.substring(atIndex))
 }
 
 private fun sanitizeSensitiveQueryProperties(raw: String): String {
@@ -648,6 +690,9 @@ private fun decodeComponent(value: String?): String {
 private fun encodeComponent(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 
+private fun encodeSqlServerPropertyValue(value: String): String =
+    "{${value.replace("}", "}}")}}"
+
 fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
     val properties = def.driverProperties.joinToString("&") {
         "${encodeComponent(it.name)}=${encodeComponent(it.value)}"
@@ -680,12 +725,12 @@ fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
                 TransportSecurityMode.EncryptOnly -> listOf("encrypt=true", "trustServerCertificate=true")
                 TransportSecurityMode.Disabled -> listOf("encrypt=false", "trustServerCertificate=true")
             }
-            val extra = def.driverProperties.map { "${it.name}=${it.value}" }
+            val extra = def.driverProperties.map { "${it.name}=${encodeSqlServerPropertyValue(it.value)}" }
             (
                 listOf(
                     "jdbc:sqlserver://${def.host}:${def.port}",
-                    "databaseName=${def.database}",
-                    "user=${def.username}",
+                    "databaseName=${encodeSqlServerPropertyValue(def.database)}",
+                    "user=${encodeSqlServerPropertyValue(def.username)}",
                 ) + security + extra
                 ).joinToString(";")
         }
@@ -696,7 +741,7 @@ fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
                 .orEmpty()
             val query = listOf(wallet, properties).filter(String::isNotEmpty).joinToString("&")
             val suffix = query.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
-            "jdbc:oracle:thin:${encodeComponent(def.username)}/$protocol${def.host}:${def.port}/${encodeComponent(def.database)}$suffix"
+            "jdbc:oracle:thin:$protocol${def.host}:${def.port}/${encodeComponent(def.database)}$suffix"
         }
     }
 }

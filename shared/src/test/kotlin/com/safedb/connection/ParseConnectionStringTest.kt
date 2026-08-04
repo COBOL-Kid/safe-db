@@ -173,11 +173,14 @@ class ParseConnectionStringTest {
     @Test
     fun importsSafeSqlServerPropertiesButKeepsSecurityManaged() {
         val parsed = parseConnectionString(
-            "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;applicationName=Reporting",
+            "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;" +
+                "applicationName=Reporting;keyVaultProviderClientKey={do-not;store}",
         )
 
         assertEquals(listOf(DriverProperty("applicationName", "Reporting")), parsed.driverProperties)
         assertFalse(parsed.driverProperties.any { it.name.equals("encrypt", ignoreCase = true) })
+        assertTrue(parsed.warnings.single().contains("keyVaultProviderClientKey"))
+        assertFalse(parsed.sanitizedInput.contains("do-not"))
     }
 
     @Test
@@ -277,6 +280,55 @@ class ParseConnectionStringTest {
     }
 
     @Test
+    fun sqlServerFormattingRoundTripsEscapedValues() {
+        val def = ConnectionDef(
+            id = "c1",
+            name = "Test",
+            dialect = Dialect.Mssql,
+            host = "db.example.com",
+            port = 1433,
+            database = "analytics; archive",
+            username = "read only",
+            transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+            driverProperties = listOf(
+                DriverProperty("applicationName", "North; {Ops} ; reporting"),
+            ),
+        )
+
+        val formatted = formatConnectionString(def)
+        val parsed = parseConnectionString(formatted)
+
+        assertTrue(formatted.contains("databaseName={analytics; archive}"))
+        assertTrue(formatted.contains("applicationName={North; {Ops}} ; reporting}"))
+        assertEquals(def.database, parsed.database)
+        assertEquals(def.username, parsed.username)
+        assertEquals(def.driverProperties, parsed.driverProperties)
+        assertEquals(def.transportSecurity.mode, parsed.transportSecurity.mode)
+        assertEquals(null, parsed.password)
+    }
+
+    @Test
+    fun oracleFormattingOmitsTheEntireCredentialPair() {
+        val def = ConnectionDef(
+            id = "c1",
+            name = "Test",
+            dialect = Dialect.Oracle,
+            host = "db.example.com",
+            port = 1521,
+            database = "service",
+            username = "readonly",
+            transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
+        )
+
+        val formatted = formatConnectionString(def)
+        val parsed = parseConnectionString(formatted)
+
+        assertEquals("jdbc:oracle:thin:@//db.example.com:1521/service", formatted)
+        assertEquals("", parsed.username)
+        assertEquals(null, parsed.password)
+    }
+
+    @Test
     fun parsesOracleUserPasswordEasyConnectAndSanitizesPassword() {
         val parsed = parseConnectionString("jdbc:oracle:thin:user/p%40ss@//host:1521/svc")
 
@@ -287,7 +339,7 @@ class ParseConnectionStringTest {
         assertEquals("user", parsed.username)
         assertEquals("p@ss", parsed.password)
         assertEquals(TransportSecurityMode.Disabled, parsed.transportSecurity.mode)
-        assertEquals("jdbc:oracle:thin:user/@//host:1521/svc", parsed.sanitizedInput)
+        assertEquals("jdbc:oracle:thin:@//host:1521/svc", parsed.sanitizedInput)
     }
 
     @Test
@@ -301,7 +353,7 @@ class ParseConnectionStringTest {
         assertEquals("user", parsed.username)
         assertEquals("p@ss", parsed.password)
         assertEquals(TransportSecurityMode.Disabled, parsed.transportSecurity.mode)
-        assertEquals("jdbc:oracle:thin:user/@//host:1521/svc", parsed.sanitizedInput)
+        assertEquals("jdbc:oracle:thin:@//host:1521/svc", parsed.sanitizedInput)
     }
 
     @Test
@@ -319,7 +371,7 @@ class ParseConnectionStringTest {
         assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
         assertEquals("/wallets/team@example", parsed.transportSecurity.oracleWalletLocation)
         assertEquals(
-            "jdbc:oracle:thin:user/@tcps:host:1521/svc?wallet_location=/wallets/team@example",
+            "jdbc:oracle:thin:@tcps:host:1521/svc?wallet_location=/wallets/team@example",
             parsed.sanitizedInput,
         )
     }

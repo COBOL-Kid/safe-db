@@ -56,6 +56,12 @@ class TypesTest {
             base.copy(driverProperties = listOf(DriverProperty("accessToken", "secret"))).validate().getOrThrow()
         }
         assertFailsWith<IllegalArgumentException> {
+            base.copy(
+                dialect = Dialect.Mssql,
+                driverProperties = listOf(DriverProperty("keyVaultProviderClientKey", "client-secret")),
+            ).validate().getOrThrow()
+        }
+        assertFailsWith<IllegalArgumentException> {
             base.copy(driverProperties = listOf(DriverProperty("sslMode", "disable"))).validate().getOrThrow()
         }
         assertFailsWith<IllegalArgumentException> {
@@ -64,6 +70,12 @@ class TypesTest {
             ).validate().getOrThrow()
         }
         assertTrue(base.copy(driverProperties = listOf(DriverProperty("currentSchema", ""))).validate().isSuccess)
+        assertTrue(
+            base.copy(
+                dialect = Dialect.Mssql,
+                driverProperties = listOf(DriverProperty("clientKey", "/certificates/client-key.pem")),
+            ).validate().isSuccess,
+        )
     }
 
     @Test

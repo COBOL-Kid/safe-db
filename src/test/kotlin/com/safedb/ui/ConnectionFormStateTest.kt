@@ -148,6 +148,26 @@ class ConnectionFormStateTest {
     }
 
     @Test
+    fun applyingGeneratedOracleStringKeepsTheSavedUsernameAndPassword() {
+        val original = sampleConnection().copy(
+            dialect = Dialect.Oracle,
+            port = 1521,
+            database = "service",
+            transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
+            driverProperties = emptyList(),
+        )
+        val state = ConnectionFormState(original)
+
+        state.applyParsedInput()
+
+        assertEquals("readonly", state.username)
+        assertFalse(state.passwordChangeEnabled)
+        assertNull(state.passwordForOperation())
+        assertFalse(state.credentialMaterialChanged())
+        assertNull(state.validateForm())
+    }
+
+    @Test
     fun duplicateDriverPropertyNamesFailValidationIgnoringCase() {
         val state = ConnectionFormState()
         state.updateDatabase("app")
