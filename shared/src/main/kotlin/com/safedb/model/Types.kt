@@ -21,7 +21,6 @@ enum class TransportSecurityMode {
 @Serializable
 data class TransportSecurity(
     val mode: TransportSecurityMode = TransportSecurityMode.VerifyIdentity,
-    @SerialName("ca_pem") val caPem: String? = null,
     @SerialName("oracle_wallet_location") val oracleWalletLocation: String? = null,
     @SerialName("legacy_implicit") val legacyImplicit: Boolean = false,
 )

@@ -31,14 +31,12 @@ fun transportPresetForLocation(location: DatabaseLocation): TransportSecurity =
     if (location == DatabaseLocation.Local) {
         TransportSecurity(
             mode = TransportSecurityMode.Disabled,
-            caPem = null,
             oracleWalletLocation = null,
             legacyImplicit = false,
         )
     } else {
         TransportSecurity(
             mode = TransportSecurityMode.VerifyIdentity,
-            caPem = null,
             oracleWalletLocation = null,
             legacyImplicit = false,
         )

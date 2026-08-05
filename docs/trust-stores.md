@@ -34,7 +34,7 @@ Provision the file so only the safe-db user and administrators can read it. On m
 
 ## Trust precedence
 
-For verified PostgreSQL, MySQL, and SQL Server connections, a connection-specific CA PEM overrides the launch-profile PKCS12 store. With no connection CA, the launch profile is used. With no launch profile, MySQL and SQL Server use the bundled JVM trust store; PostgreSQL uses pgjdbc's standard certificate locations and preserves its standard client-certificate loading. Oracle remains wallet-based.
+For verified PostgreSQL, MySQL, and SQL Server connections, launch-profile JSON is the only custom trust-store configuration path. With no launch profile, MySQL and SQL Server use the bundled JVM trust store; PostgreSQL uses pgjdbc's standard certificate locations and preserves its standard client-certificate loading. Saved database connections cannot override this trust configuration. Oracle remains wallet-based.
 
 The password is retrieved only during startup and is never logged or placed in process arguments or environment variables. MySQL and SQL Server consume the standard JSSE trust-store properties. PostgreSQL receives a temporary PEM containing only the trusted certificates, allowing pgjdbc to retain its normal client-certificate handling. The resolved password remains in JVM memory for the life of the process.
 

@@ -133,11 +133,13 @@ class ParseConnectionStringTest {
     }
 
     @Test
-    fun warnsForMySqlCaPathsThatCannotBeReadFromBrowser() {
+    fun directsMySqlCaPathsToLaunchProfileJson() {
         val parsed = parseConnectionString("jdbc:mysql://host:3306/db?ssl_ca=/tmp/ca.pem")
 
         assertEquals(
-            listOf("A CA path was included in the URL. Paste the PEM certificate after parsing."),
+            listOf(
+                "A CA path was included in the URL and was not imported. Configure custom trust through launch-profile JSON."
+            ),
             parsed.warnings,
         )
     }

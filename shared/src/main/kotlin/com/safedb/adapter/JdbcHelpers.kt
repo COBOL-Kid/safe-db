@@ -8,22 +8,12 @@ import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurityMode
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
-import java.io.ByteArrayInputStream
-import java.io.File
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
-import java.security.KeyStore
-import java.security.SecureRandom
-import java.security.cert.CertificateFactory
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Types
 import java.util.Base64
-import java.util.Collections
-import java.util.WeakHashMap
 
 const val DEFAULT_TIMEOUT_MS = 10_000
 const val CONNECT_TIMEOUT_MS = 10_000L
@@ -38,47 +28,14 @@ fun buildJdbcUrl(def: ConnectionDef): String =
         Dialect.Oracle -> buildOracleUrl(def)
     }
 
-fun createDataSource(def: ConnectionDef, password: String): HikariDataSource {
-    val temporaryFiles = mutableListOf<Path>()
-    val dataSource =
-        createWithTemporaryTlsFileCleanup(temporaryFiles) {
-            HikariDataSource(
-                createDataSourceConfig(
-                    def,
-                    password,
-                    registerTemporaryFile = { temporaryFiles.add(it.toPath()) },
-                )
-            )
-        }
-    if (temporaryFiles.isNotEmpty()) temporaryTlsFiles[dataSource] = temporaryFiles
-    return dataSource
-}
+fun createDataSource(def: ConnectionDef, password: String): HikariDataSource =
+    HikariDataSource(createDataSourceConfig(def, password))
 
-internal fun <T> createWithTemporaryTlsFileCleanup(temporaryFiles: List<Path>, create: () -> T): T =
-    try {
-        create()
-    } catch (error: Throwable) {
-        temporaryFiles.forEach { path -> runCatching { Files.deleteIfExists(path) } }
-        throw error
-    }
-
-private val temporaryTlsFiles =
-    Collections.synchronizedMap(WeakHashMap<HikariDataSource, List<Path>>())
-
-fun closeDataSource(dataSource: HikariDataSource) {
-    try {
-        dataSource.close()
-    } finally {
-        temporaryTlsFiles.remove(dataSource).orEmpty().forEach {
-            runCatching { Files.deleteIfExists(it) }
-        }
-    }
-}
+fun closeDataSource(dataSource: HikariDataSource) = dataSource.close()
 
 internal fun createDataSourceConfig(
     def: ConnectionDef,
     password: String,
-    registerTemporaryFile: (File) -> Unit = {},
     launchProfilePostgresRootCert: String? = System.getProperty(POSTGRES_LAUNCH_ROOT_CERT_PROPERTY),
 ): HikariConfig {
     val config = HikariConfig()
@@ -93,10 +50,9 @@ internal fun createDataSourceConfig(
         config.addDataSourceProperty(property.name, property.value)
     }
     when (def.dialect) {
-        Dialect.Postgres ->
-            applyPostgresSsl(config, def, registerTemporaryFile, launchProfilePostgresRootCert)
-        Dialect.MySql -> applyMySqlSsl(config, def, registerTemporaryFile)
-        Dialect.Mssql -> applyMssqlSsl(config, def, registerTemporaryFile)
+        Dialect.Postgres -> applyPostgresSsl(config, def, launchProfilePostgresRootCert)
+        Dialect.MySql -> Unit
+        Dialect.Mssql -> applyMssqlSsl(config, def)
         Dialect.Oracle -> applyOracleSsl(config, def)
     }
     return config
@@ -117,18 +73,12 @@ private fun buildPostgresUrl(def: ConnectionDef): String {
 private fun applyPostgresSsl(
     config: HikariConfig,
     def: ConnectionDef,
-    registerTemporaryFile: (File) -> Unit,
     launchProfileRootCert: String?,
 ) {
     when (def.transportSecurity.mode) {
         TransportSecurityMode.VerifyIdentity,
         TransportSecurityMode.VerifyCa -> {
-            val ca = def.transportSecurity.caPem
-            if (ca != null) {
-                val file = writeTempPem(ca, "pg-ca")
-                registerTemporaryFile(file)
-                config.addDataSourceProperty("sslrootcert", file.absolutePath)
-            } else if (!launchProfileRootCert.isNullOrBlank()) {
+            if (!launchProfileRootCert.isNullOrBlank()) {
                 // Keep pgjdbc's LibPQFactory so its standard client certificate and key locations
                 // still work.
                 config.addDataSourceProperty("sslrootcert", launchProfileRootCert)
@@ -154,38 +104,19 @@ private fun buildMySqlUrl(def: ConnectionDef): String {
     return "jdbc:mysql://${def.host}:${def.port}/${def.database}?${params.joinToString("&")}"
 }
 
-private fun applyMySqlSsl(
-    config: HikariConfig,
-    def: ConnectionDef,
-    registerTemporaryFile: (File) -> Unit,
-) {
-    def.transportSecurity.caPem?.let { ca ->
-        val file = writeTempPem(ca, "mysql-ca")
-        registerTemporaryFile(file)
-        config.addDataSourceProperty("trustCertificateKeyStoreUrl", "file:${file.absolutePath}")
-        config.addDataSourceProperty("trustCertificateKeyStoreType", "PEM")
-    }
-}
-
 private fun buildMssqlUrl(def: ConnectionDef): String =
     "jdbc:sqlserver://${def.host}:${def.port};databaseName=${def.database};applicationName=$SERVICE_NAME"
 
-private fun applyMssqlSsl(
-    config: HikariConfig,
-    def: ConnectionDef,
-    registerTemporaryFile: (File) -> Unit,
-) {
+private fun applyMssqlSsl(config: HikariConfig, def: ConnectionDef) {
     when (def.transportSecurity.mode) {
         TransportSecurityMode.VerifyIdentity -> {
             config.addDataSourceProperty("encrypt", "true")
             config.addDataSourceProperty("trustServerCertificate", "false")
             config.addDataSourceProperty("hostNameInCertificate", def.host)
-            applyMssqlCa(config, def, registerTemporaryFile)
         }
         TransportSecurityMode.VerifyCa -> {
             config.addDataSourceProperty("encrypt", "true")
             config.addDataSourceProperty("trustServerCertificate", "false")
-            applyMssqlCa(config, def, registerTemporaryFile)
         }
         TransportSecurityMode.EncryptOnly -> {
             config.addDataSourceProperty("encrypt", "true")
@@ -196,64 +127,6 @@ private fun applyMssqlSsl(
             config.addDataSourceProperty("trustServerCertificate", "true")
         }
     }
-}
-
-private fun applyMssqlCa(
-    config: HikariConfig,
-    def: ConnectionDef,
-    registerTemporaryFile: (File) -> Unit,
-) {
-    def.transportSecurity.caPem?.let { ca ->
-        val trustStore = writeTempPkcs12TrustStore(ca)
-        registerTemporaryFile(trustStore.file)
-        config.addDataSourceProperty("trustStore", trustStore.file.absolutePath)
-        config.addDataSourceProperty("trustStoreType", "PKCS12")
-        config.addDataSourceProperty("trustStorePassword", trustStore.password)
-    }
-}
-
-private data class TemporaryTrustStore(val file: File, val password: String)
-
-private val trustStorePasswordRandom = SecureRandom()
-
-private fun writeTempPkcs12TrustStore(caPem: String): TemporaryTrustStore {
-    val certificates =
-        try {
-            ByteArrayInputStream(caPem.toByteArray(StandardCharsets.UTF_8)).use {
-                CertificateFactory.getInstance("X.509").generateCertificates(it).toList()
-            }
-        } catch (error: Exception) {
-            throw IllegalArgumentException(
-                "SQL Server CA certificate must contain valid X.509 PEM",
-                error,
-            )
-        }
-    if (certificates.isEmpty()) {
-        throw IllegalArgumentException("SQL Server CA certificate must contain valid X.509 PEM")
-    }
-
-    val passwordBytes = ByteArray(24).also(trustStorePasswordRandom::nextBytes)
-    val password =
-        try {
-            Base64.getUrlEncoder().withoutPadding().encodeToString(passwordBytes)
-        } finally {
-            passwordBytes.fill(0)
-        }
-    val passwordChars = password.toCharArray()
-    val file = Files.createTempFile("mssql-ca", ".p12").toFile()
-    try {
-        val keyStore = KeyStore.getInstance("PKCS12").apply { load(null, passwordChars) }
-        certificates.forEachIndexed { index, certificate ->
-            keyStore.setCertificateEntry("safedb-ca-${index + 1}", certificate)
-        }
-        Files.newOutputStream(file.toPath()).use { keyStore.store(it, passwordChars) }
-    } catch (error: Exception) {
-        runCatching { Files.deleteIfExists(file.toPath()) }
-        throw IllegalArgumentException("SQL Server CA certificate could not be prepared", error)
-    } finally {
-        passwordChars.fill('\u0000')
-    }
-    return TemporaryTrustStore(file, password)
 }
 
 private fun buildOracleUrl(def: ConnectionDef): String {
@@ -285,12 +158,6 @@ private fun applyOracleSsl(config: HikariConfig, def: ConnectionDef) {
             config.addDataSourceProperty("oracle.net.ssl_server_dn_match", "false")
         TransportSecurityMode.Disabled -> Unit
     }
-}
-
-private fun writeTempPem(pem: String, prefix: String): File {
-    val file = Files.createTempFile(prefix, ".pem").toFile()
-    file.writeText(pem)
-    return file
 }
 
 fun decodeQueryResult(

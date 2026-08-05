@@ -30,7 +30,6 @@ class ConnectionStringParseError(message: String) : Exception(message)
 
 private data class MutableTransport(
     var mode: TransportSecurityMode,
-    var caPem: String? = null,
     var oracleWalletLocation: String? = null,
 )
 
@@ -101,7 +100,6 @@ private fun baseResult(
         transportSecurity =
             TransportSecurity(
                 mode = transport.mode,
-                caPem = transport.caPem,
                 oracleWalletLocation = transport.oracleWalletLocation,
                 legacyImplicit = false,
             ),
@@ -449,7 +447,9 @@ private fun extractDriverProperties(
 
 private fun sslCaWarnings(url: ParsedUrl): List<String> =
     if (paramValue(url, "ssl-ca") != null || paramValue(url, "ssl_ca") != null) {
-        listOf("A CA path was included in the URL. Paste the PEM certificate after parsing.")
+        listOf(
+            "A CA path was included in the URL and was not imported. Configure custom trust through launch-profile JSON."
+        )
     } else {
         emptyList()
     }

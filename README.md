@@ -39,7 +39,7 @@ The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. I
 
 ## Features
 
-- **Connections** — save named profiles; passwords are stored in the OS credential store when available, never in profile JSON. Advanced settings expose explicit TLS verification modes, optional connection-specific CA certificates, and Oracle wallet configuration.
+- **Connections** — save named profiles; passwords are stored in the OS credential store when available, never in profile JSON. Advanced settings expose explicit SSL verification modes, Oracle wallet configuration, and optional JDBC driver parameters.
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out.
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
 - **Explore modes** — analyze the current immutable result sample as a nested pivot, worksheet, or visualization. Worksheet mode adds direct sort/group/filter controls, row and group formulas, summaries, and window calculations such as running totals, previous values, percentages, and ranks. Visualization offers templates and editable field shelves for bar, line, scatter, histogram, and KPI charts, with contributing-row drill-through plus PNG and chart-data CSV exports.
@@ -52,9 +52,9 @@ The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. I
 
 | Database | Driver | Notes |
 | --- | --- | --- |
-| PostgreSQL | JDBC | Verified TLS preserves pgjdbc's standard trust and client-certificate behavior unless a connection CA or launch profile is selected. |
+| PostgreSQL | JDBC | Verified TLS preserves pgjdbc's standard trust and client-certificate behavior unless a launch profile is selected. |
 | MySQL | JDBC | Uses read-only transactions for non-locking reads where supported. |
-| SQL Server | JDBC | Certificate verification supports the JVM/launch-profile trust store or a connection-specific CA. |
+| SQL Server | JDBC | Certificate verification uses the JVM or launch-profile trust store. |
 | Oracle | JDBC | Verified TCPS uses an Oracle wallet; external launch-profile trust stores do not replace it. |
 
 ## Prerequisites
@@ -106,7 +106,7 @@ Set `SAFEDB_KEYCHAIN_BACKEND=disabled` for in-memory credentials in debug or CI.
 
 ## External Trust Stores
 
-Managed installations can select an external PKCS12 trust store at startup without adding trust-store settings to saved database connections. Passwords are resolved from the platform credential store or a protected file, not JSON, command-line arguments, or environment variables. A connection-specific CA takes precedence. Without a launch profile, MySQL and SQL Server use the bundled JVM trust store, while PostgreSQL retains pgjdbc's standard trust and client-certificate behavior; Oracle remains wallet-based. See [External trust stores](docs/trust-stores.md) for the launch-profile schema, provisioning guidance, and managed-launch examples.
+Managed installations can select an external PKCS12 trust store only through launch-profile JSON at startup; trust-store settings are never added to saved database connections. Passwords are resolved from the platform credential store or a protected file, not JSON, command-line arguments, or environment variables. Without a launch profile, MySQL and SQL Server use the bundled JVM trust store, while PostgreSQL retains pgjdbc's standard trust and client-certificate behavior; Oracle remains wallet-based. See [External trust stores](docs/trust-stores.md) for the launch-profile schema, provisioning guidance, and managed-launch examples.
 
 ## Data Directory
 
