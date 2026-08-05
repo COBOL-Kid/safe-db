@@ -66,10 +66,11 @@ compose.desktop {
         mainClass = "com.safedb.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Deb, TargetFormat.AppImage, TargetFormat.Rpm)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             appResourcesRootDir.set(layout.projectDirectory.dir("packaging/resources"))
             packageName = "safe-db"
-            packageVersion = "0.1.0"
+            // The macOS jpackage tool rejects installer versions whose major component is zero.
+            packageVersion = "1.0.0"
             vendor = "safe-db"
             description = "Safely explore production databases"
         }
@@ -86,8 +87,8 @@ val verifyUnitTestDiscovery = tasks.register<VerifyUnitTestDiscovery>("verifyUni
     dependsOn(tasks.test, ":shared:test")
     desktopResults.set(layout.buildDirectory.dir("test-results/test"))
     sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-    minimumDesktopTests.set(159)
-    minimumSharedTests.set(334)
+    minimumDesktopTests.set(160)
+    minimumSharedTests.set(341)
 }
 
 val verifyCoverageRatchet = tasks.register<VerifyCoverageRatchet>("verifyCoverageRatchet") {

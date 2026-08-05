@@ -2,12 +2,12 @@
 
 ## Project
 
-safe-db is a root Gradle, Jetpack Compose Desktop application for safely exploring production databases. The desktop application is in `src/`; the `:shared` JVM module owns the domain model, query engine and risk scoring, JDBC adapters, persistence, credentials, and service layer. It supports PostgreSQL, MySQL, SQL Server, and Oracle.
+safe-db is a root Gradle, Jetpack Compose Desktop application for safely exploring production databases on macOS and Windows. The desktop application is in `src/`; the `:shared` JVM module owns the domain model, query engine and risk scoring, JDBC adapters, persistence, credentials, and service layer. It supports PostgreSQL, MySQL, SQL Server, and Oracle.
 
 ## Commands
 
 - `./gradlew help` — validate root Gradle configuration; run this first after changing root build logic or `buildSrc/`.
-- `./gradlew run` — start the desktop app; it requires a graphical display.
+- `./gradlew run` — start the desktop app on macOS or Windows; it requires a graphical display.
 - `./gradlew check` — fast verification gate: desktop and shared unit tests, JUnit-XML discovery verification, and Kover ratchets. No database is required.
 - `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` — fresh coverage proof after broad Kotlin/build changes. Run the cache-reuse check separately if it matters.
 - `./gradlew integrationTest` — run the tagged `:shared` JDBC integration suite. It is environment-gated and may skip locally when no selected fixture is available.
@@ -16,18 +16,18 @@ safe-db is a root Gradle, Jetpack Compose Desktop application for safely explori
 - `./gradlew seedMysql` — create the default generated MySQL fixture (50,000 orders).
 - `./gradlew seedMysql -PseedMysqlArgs="--orders 20000"` — pass seeder arguments through Gradle.
 - `scripts/seed_mysql.sh --static` — load the smaller checked-in MySQL fixture.
-- `./gradlew packageDistributionForCurrentOS` — build the configured Compose distribution. The current target formats are Linux Deb, AppImage, and RPM; do not assume packaging is configured for macOS or Windows.
+- `./gradlew packageDistributionForCurrentOS` — build the configured Compose distribution on a supported native host: unsigned DMG on macOS or MSI on Windows. Do not assume cross-platform installer builds are supported.
 
 Use the project wrapper, not a system Gradle installation. Do not run `./gradlew run` concurrently with daemon-less builds that would contend for `build/`.
 
 ## Verification
 
-- `check` currently enforces minimum unit discovery of 159 desktop and 334 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
+- `check` currently enforces minimum unit discovery of 160 desktop and 341 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
 - Kover line-coverage floors are 72% for desktop code and 66% for shared code. Stale incremental reports can be misleading, so use `--rerun-tasks --no-build-cache` for fresh coverage claims.
 - The integration source set is `shared/src/integrationTest/kotlin/`. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to make the corresponding engine mandatory; required suites must meet their discovery floor without skipped tests.
 - MySQL settings use `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, and `SAFEDB_TEST_MYSQL_DATABASE`; `SAFEDB_TEST_MYSQL_DOCKER` can select a Docker container. PostgreSQL uses the matching `SAFEDB_TEST_POSTGRES_*` names.
 - The preview renderer currently writes 34 PNGs: 14 main-app images at 1280×832, 2 narrow connection-form images at 840×900, and 18 Explore/recipe images at 1120×760, in light and dark modes.
-- `.github/workflows/compose.yml` runs the unit/coverage gate plus required static-MySQL integration on selected application/build changes. `.github/workflows/durability.yml` runs each Monday at 09:00 UTC and on demand, covering three-platform unit checks, required PostgreSQL and generated-MySQL integration, previews, and Linux packaging.
+- `.github/workflows/compose.yml` runs the unit/coverage gate plus required static-MySQL integration on selected application/build changes. `.github/workflows/durability.yml` runs each Monday at 09:00 UTC and on demand, covering macOS and Windows unit checks, Ubuntu-hosted PostgreSQL and generated-MySQL integration plus previews, and native DMG/MSI build validation.
 
 ## Tech Stack
 
@@ -35,7 +35,7 @@ Use the project wrapper, not a system Gradle installation. Do not run `./gradlew
 - Kotlin `2.4.10`
 - Gradle wrapper `9.6.1` with `jvmToolchain(25)`
 - JDBC via HikariCP and dialect adapters in `shared/`
-- Credentials through Java keyring-backed platform stores where available; `disabled` is in-memory only
+- Credentials through macOS Keychain or Windows Credential Manager; `disabled` is in-memory only
 
 ## Lint / Typecheck
 
@@ -64,7 +64,7 @@ SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integr
 - MySQL integration is relevant only for `shared/`, build logic, Gradle and wrapper files, scripts, and `testdata_mysql.sql`; it is skipped for `src/`-only, PostgreSQL-fixture-only, and Compose-workflow-only changes.
 - Eligible same-repository pull requests run MySQL integration automatically. Forks require both GitHub approval for the external workflow and the exact maintainer-applied `ci:integration` label. The label controls MySQL eligibility only and must be created outside the workflow.
 - Workflow-only changes run the separate Workflow lint workflow.
-- Durability runs Mondays at 09:00 UTC and manually: fresh cross-platform `check`, required PostgreSQL and generated MySQL integration, preview validation, and Linux packaging.
+- Durability runs Mondays at 09:00 UTC and manually: fresh macOS/Windows `check`, Ubuntu-hosted required PostgreSQL and generated MySQL integration plus preview validation, and unsigned DMG/MSI validation on native runners.
 - Dependency submission is not a pull-request check; for public repositories it runs on selected dependency-file updates to trusted `main` or by manual dispatch. Dependabot checks Gradle and GitHub Actions monthly, grouping minor and patch updates.
 
 Smoke tests that need a real database should use the app or seeder directly. The MySQL seeder skips unrelated app state by default and streams generated SQL into the target database.
@@ -98,7 +98,7 @@ safe-db/
 │   └── src/integrationTest/kotlin/    # live JDBC integration tests
 ├── buildSrc/                          # Gradle verification tasks
 ├── docs/trust-stores.md               # managed launch-profile provisioning and trust precedence
-├── packaging/resources/               # Linux packages plus cross-platform managed-launch examples
+├── packaging/resources/               # macOS/Windows distribution and managed-launch resources
 ├── scripts/seed_mysql.sh              # root MySQL seeder wrapper
 ├── testdata_mysql.sql                 # static MySQL fixture
 └── testdata_postgres.sql              # PostgreSQL fixture
@@ -133,9 +133,10 @@ safe-db/
 
 ## App Data And Credentials
 
-- State is stored in `com.safedb.app`: `$XDG_DATA_HOME/com.safedb.app/` when set, otherwise `~/.local/share/com.safedb.app/` on Linux; `~/Library/Application Support/com.safedb.app/` on macOS; and `%APPDATA%\\com.safedb.app\\` on Windows.
+- State is stored in `com.safedb.app`: `~/Library/Application Support/com.safedb.app/` on macOS and `%APPDATA%\\com.safedb.app\\` on Windows.
 - The persisted files are `connections.json`, `settings.json`, `saved_queries.json`, `query_history.json`, and `explore_recipes.json`.
-- `SAFEDB_KEYCHAIN_BACKEND=auto` chooses the platform credential backend; on Linux it uses keyutils when available and otherwise falls back to in-memory credentials. `SAFEDB_KEYCHAIN_BACKEND=disabled` is in-memory only and appropriate for tests/CI, so passwords do not survive restart.
+- `SAFEDB_KEYCHAIN_BACKEND=auto` chooses macOS Keychain or Windows Credential Manager. `SAFEDB_KEYCHAIN_BACKEND=disabled` is in-memory only and appropriate for tests/CI, so passwords do not survive restart.
+- Any operating system other than macOS or Windows must be rejected before launch-profile, credential-store, or data-directory initialization.
 - **Test Connection** uses the form password without writing the keyring; **Save Connection** writes the selected credential backend. Query and schema operations then use the in-process `CredentialSession` cache after the first unlock.
 
 ## Working Conventions

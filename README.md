@@ -1,6 +1,6 @@
 # safe-db
 
-Desktop app for safely exploring production databases. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN-informed risk scoring.
+Desktop app for safely exploring production databases on macOS and Windows. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN-informed risk scoring.
 
 safe-db is a **Jetpack Compose Desktop** app with a Kotlin/JDBC backend. The Gradle project lives at the repository root.
 
@@ -18,7 +18,7 @@ safe-db is a **Jetpack Compose Desktop** app with a Kotlin/JDBC backend. The Gra
 ./gradlew integrationTest               # optional seeded MySQL/PostgreSQL contracts
 ./gradlew renderPreview                 # headless UI previews in /tmp/safedb-preview
 ./gradlew seedMysql                     # generated local MySQL fixture
-./gradlew packageDistributionForCurrentOS
+./gradlew packageDistributionForCurrentOS # unsigned DMG on macOS or MSI on Windows
 ```
 
 The root seed wrapper is still available:
@@ -35,7 +35,7 @@ MySQL integration is limited to changes under `shared/`, `buildSrc/`, `gradle/`,
 
 Before public launch, maintainers must create the exact `ci:integration` label and configure GitHub Actions to require approval for all external contributors. The workflow file does not create the label or enable that repository setting. Compose checks also support merge queues through `merge_group`, and the separate Workflow lint workflow validates workflow-only changes.
 
-The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. It reruns `check` on Linux, macOS, and Windows; requires PostgreSQL and generated-fixture MySQL integration; validates UI previews; and builds the Linux package. Dependency submission is not a pull-request check: when the repository is public, it runs for selected dependency-file updates on trusted `main` or by manual dispatch. Dependabot checks Gradle and GitHub Actions monthly and groups minor and patch updates.
+The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. It reruns `check` on macOS and Windows; uses Ubuntu for required PostgreSQL and generated-fixture MySQL integration plus headless UI preview validation; and builds nonempty unsigned DMG and MSI artifacts on their native runners. Dependency submission is not a pull-request check: when the repository is public, it runs for selected dependency-file updates on trusted `main` or by manual dispatch. Dependabot checks Gradle and GitHub Actions monthly and groups minor and patch updates.
 
 ## Features
 
@@ -101,9 +101,6 @@ Set `SAFEDB_KEYCHAIN_BACKEND=disabled` for in-memory credentials in debug or CI.
 | --- | --- |
 | macOS | Keychain-backed Java credential store |
 | Windows | Credential Manager-backed Java credential store |
-| Linux | Kernel keyutils when available |
-
-On Linux hosts where the Java keyring delegate is unavailable, the app falls back to the in-memory `disabled` backend rather than writing a credential file. Saved connection profiles remain on disk, but passwords must be re-entered after restart.
 
 **Test Connection** uses the password from the form only and does not touch the keyring. **Save Connection** stores the password in the selected credential backend. After the first unlock, builder and query paths reuse an in-process credential session so repeated schema loads and queries do not re-hit the OS store.
 
@@ -117,7 +114,6 @@ The app stores JSON state under `com.safedb.app`:
 
 | OS | Path |
 | --- | --- |
-| Linux | `$XDG_DATA_HOME/com.safedb.app/` when set; otherwise `~/.local/share/com.safedb.app/` |
 | macOS | `~/Library/Application Support/com.safedb.app/` |
 | Windows | `%APPDATA%\com.safedb.app\` |
 

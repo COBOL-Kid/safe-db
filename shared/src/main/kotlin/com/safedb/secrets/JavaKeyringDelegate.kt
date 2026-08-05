@@ -1,5 +1,7 @@
 package com.safedb.secrets
 
+import com.safedb.platform.DesktopPlatform
+
 internal class JavaKeyringDelegate(private val keyring: Any) : CredentialStore {
     private val setPassword = keyring.javaClass.getMethod(
         "setPassword",
@@ -40,4 +42,10 @@ internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
 }.getOrNull()
 
 /** A strict startup path for operational secrets; unlike connection credentials, it must not fall back. */
-internal fun createStrictPlatformCredentialStoreOrNull(): CredentialStore? = createJavaKeyringDelegateOrNull()
+internal fun createStrictPlatformCredentialStoreOrNull(
+    platform: DesktopPlatform = DesktopPlatform.current(),
+): CredentialStore? = when (platform) {
+    DesktopPlatform.MacOs,
+    DesktopPlatform.Windows,
+    -> createJavaKeyringDelegateOrNull()
+}

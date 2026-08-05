@@ -191,11 +191,7 @@ private class SeedMysql(rawArgs: List<String>) {
             println("-> keeping safe-db connections and query history (pass --reset-state to wipe)")
             return
         }
-        val dataDir = safeDbAppDataDir()
-        if (dataDir == null) {
-            println("-> skipping safe-db app state reset (unknown platform)")
-            return
-        }
+        val dataDir = safeDbAppDataDirForStateReset() ?: return
         if (!dataDir.exists()) {
             println("-> no safe-db app data at $dataDir; skipping connection/history reset")
             return

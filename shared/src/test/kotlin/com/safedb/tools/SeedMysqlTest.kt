@@ -1,7 +1,9 @@
 package com.safedb.tools
 
+import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.io.BufferedWriter
 import java.io.StringWriter
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -77,6 +79,50 @@ class SeedMysqlTest {
         assertEquals("maria", parseMysqlContainerLine("maria\tmariadb:11"))
         assertNull(parseMysqlContainerLine("cache\tredis:7"))
         assertNull(parseMysqlContainerLine("invalid"))
+    }
+
+    @Test
+    fun resolvesOnlySupportedPlatformAppDataDirectories() {
+        assertEquals(
+            Path.of("/Users/test/Library/Application Support/com.safedb.app"),
+            safeDbAppDataDir(SeedMysqlPlatformEnvironment("Darwin", "/Users/test")),
+        )
+        assertEquals(
+            Path.of("C:/Users/test/AppData/Roaming/com.safedb.app"),
+            safeDbAppDataDir(
+                SeedMysqlPlatformEnvironment(
+                    "Windows 11",
+                    "C:/Users/test",
+                    appData = "C:/Users/test/AppData/Roaming",
+                ),
+            ),
+        )
+        assertNull(safeDbAppDataDir(SeedMysqlPlatformEnvironment("Windows 11", "C:/Users/test")))
+    }
+
+    @Test
+    fun linuxAppDataLookupReportsUnsupportedPlatform() {
+        val error = assertFailsWith<UnsupportedDesktopPlatformException> {
+            safeDbAppDataDir(SeedMysqlPlatformEnvironment("Linux", "/home/test"))
+        }
+
+        assertEquals(
+            "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
+            error.message,
+        )
+
+        var resetMessage = ""
+        assertNull(
+            safeDbAppDataDirForStateReset(
+                environment = SeedMysqlPlatformEnvironment("Linux", "/home/test"),
+                report = { resetMessage = it },
+            ),
+        )
+        assertEquals(
+            "-> skipping safe-db app state reset " +
+                "(unsupported operating system 'Linux'; supported platforms are macOS and Windows)",
+            resetMessage,
+        )
     }
 
     private fun generate(options: GeneratorOptions): String {

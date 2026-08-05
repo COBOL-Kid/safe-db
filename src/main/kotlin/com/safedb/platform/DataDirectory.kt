@@ -14,51 +14,26 @@ object DataDirectory {
     }
 
     internal fun baseDir(environment: PlatformEnvironment = PlatformEnvironment.current()): Path =
-        when (currentOs(environment.osName)) {
-            Os.Windows -> {
+        when (DesktopPlatform.resolve(environment.osName)) {
+            DesktopPlatform.Windows -> {
                 val appData = environment.appData
                 require(!appData.isNullOrBlank()) { "APPDATA is not set" }
                 Path.of(appData)
             }
-            Os.MacOs -> Path.of(environment.userHome, "Library", "Application Support")
-            Os.Linux -> {
-                val xdg = environment.xdgDataHome
-                if (!xdg.isNullOrBlank()) {
-                    Path.of(xdg)
-                } else {
-                    Path.of(environment.userHome, ".local", "share")
-                }
-            }
+            DesktopPlatform.MacOs -> Path.of(environment.userHome, "Library", "Application Support")
         }
-
-    private fun currentOs(osName: String): Os {
-        val name = osName.lowercase()
-        return when {
-            name.contains("mac") || name.contains("darwin") -> Os.MacOs
-            name.contains("win") -> Os.Windows
-            else -> Os.Linux
-        }
-    }
-
-    private enum class Os {
-        Linux,
-        MacOs,
-        Windows,
-    }
 }
 
 internal data class PlatformEnvironment(
     val osName: String,
     val userHome: String,
     val appData: String? = null,
-    val xdgDataHome: String? = null,
 ) {
     companion object {
         fun current(): PlatformEnvironment = PlatformEnvironment(
-            osName = System.getProperty("os.name"),
-            userHome = System.getProperty("user.home"),
+            osName = System.getProperty("os.name").orEmpty(),
+            userHome = System.getProperty("user.home").orEmpty(),
             appData = System.getenv("APPDATA"),
-            xdgDataHome = System.getenv("XDG_DATA_HOME"),
         )
     }
 }

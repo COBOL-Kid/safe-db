@@ -2,7 +2,9 @@ package com.safedb
 
 import com.safedb.launch.LaunchProfileBootstrap
 import com.safedb.launch.LaunchProfileException
+import com.safedb.platform.DesktopPlatform
 import com.safedb.platform.LegacyDataImport
+import com.safedb.platform.UnsupportedDesktopPlatformException
 import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbServiceImpl
 import com.safedb.store.ConfigStore
@@ -12,13 +14,14 @@ import com.safedb.store.SettingsStore
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
+    val platform = requireSupportedDesktopPlatform()
     try {
         LaunchProfileBootstrap.configure(args)
     } catch (error: LaunchProfileException) {
         System.err.println("safe-db: ${error.message}")
         exitProcess(2)
     }
-    SecretsManager.initStore()
+    SecretsManager.initStore(platform = platform)
     val dataDir = LegacyDataImport.resolveDataDir()
     val service = SafeDbServiceImpl(
         configStore = ConfigStore.new(dataDir),
@@ -27,4 +30,15 @@ fun main(args: Array<String>) {
         recipeStore = RecipeStore.new(dataDir),
     )
     runApp(AppState(service))
+}
+
+internal fun requireSupportedDesktopPlatform(
+    osName: String = System.getProperty("os.name").orEmpty(),
+    reportError: (String) -> Unit = System.err::println,
+    exit: (Int) -> Nothing = ::exitProcess,
+): DesktopPlatform = try {
+    DesktopPlatform.resolve(osName)
+} catch (error: UnsupportedDesktopPlatformException) {
+    reportError("safe-db: ${error.message}")
+    exit(2)
 }

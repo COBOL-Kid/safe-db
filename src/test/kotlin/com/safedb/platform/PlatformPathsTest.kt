@@ -8,14 +8,13 @@ import kotlin.test.assertFailsWith
 
 class PlatformPathsTest {
     @Test
-    fun resolvesLinuxXdgAndFallbackPaths() {
+    fun rejectsUnsupportedPlatformBeforeResolvingADataPath() {
+        val error = assertFailsWith<UnsupportedDesktopPlatformException> {
+            DataDirectory.baseDir(PlatformEnvironment("Linux", "/home/test"))
+        }
         assertEquals(
-            Path.of("/var/app-data"),
-            DataDirectory.baseDir(PlatformEnvironment("Linux", "/home/test", xdgDataHome = "/var/app-data")),
-        )
-        assertEquals(
-            Path.of("/home/test/.local/share"),
-            DataDirectory.baseDir(PlatformEnvironment("Linux", "/home/test")),
+            "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
+            error.message,
         )
     }
 
@@ -24,6 +23,10 @@ class PlatformPathsTest {
         assertEquals(
             Path.of("/Users/test/Library/Application Support"),
             DataDirectory.baseDir(PlatformEnvironment("Mac OS X", "/Users/test")),
+        )
+        assertEquals(
+            Path.of("/Users/test/Library/Application Support"),
+            DataDirectory.baseDir(PlatformEnvironment("Darwin", "/Users/test")),
         )
         assertEquals(
             Path.of("C:/Users/test/AppData/Roaming"),
