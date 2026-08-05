@@ -60,7 +60,6 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
     var showPassword by mutableStateOf(false)
     var transportMode by
         mutableStateOf(original?.transportSecurity?.mode ?: TransportSecurityMode.Disabled)
-    var caPem by mutableStateOf(original?.transportSecurity?.caPem.orEmpty())
     var oracleWalletLocation by
         mutableStateOf(original?.transportSecurity?.oracleWalletLocation.orEmpty())
         private set
@@ -179,7 +178,6 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
 
     fun applyTransportSecurity(security: TransportSecurity) {
         transportMode = security.mode
-        caPem = security.caPem.orEmpty()
         oracleWalletLocation = security.oracleWalletLocation.orEmpty()
     }
 
@@ -190,13 +188,6 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
     fun updateOracleWallet(value: String) {
         if (value != oracleWalletLocation) transportSettingsChanged = true
         oracleWalletLocation = value
-        transportOverridden = true
-        resetResultState()
-    }
-
-    fun updateCaPem(value: String) {
-        if (value != caPem) transportSettingsChanged = true
-        caPem = value
         transportOverridden = true
         resetResultState()
     }
@@ -225,14 +216,6 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
 
     fun buildDef(): ConnectionDef {
         val preserveLoadedTransport = original != null && !transportSettingsChanged
-        val persistedCa =
-            if (preserveLoadedTransport) {
-                original.transportSecurity.caPem
-            } else if (supportsConnectionCa(dialect, transportMode)) {
-                caPem.trim().ifEmpty { null }
-            } else {
-                null
-            }
         val persistedWallet =
             if (preserveLoadedTransport) {
                 original.transportSecurity.oracleWalletLocation
@@ -254,7 +237,6 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
             transportSecurity =
                 TransportSecurity(
                     mode = transportMode,
-                    caPem = persistedCa,
                     oracleWalletLocation = persistedWallet,
                     legacyImplicit = false,
                 ),

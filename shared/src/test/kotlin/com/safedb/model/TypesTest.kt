@@ -8,6 +8,19 @@ import kotlin.test.assertTrue
 
 class TypesTest {
     @Test
+    fun transportSecurityIgnoresRemovedConnectionCaJson() {
+        val decoded =
+            SafeDbJson.lenient.decodeFromString(
+                TransportSecurity.serializer(),
+                """{"mode":"VerifyIdentity","ca_pem":"legacy-ca"}""",
+            )
+
+        assertEquals(TransportSecurity(TransportSecurityMode.VerifyIdentity), decoded)
+        val encoded = SafeDbJson.store.encodeToString(TransportSecurity.serializer(), decoded)
+        assertTrue("ca_pem" !in encoded)
+    }
+
+    @Test
     fun validateRejectsBlankFields() {
         val base = sampleConnection()
         assertFailsWith<IllegalArgumentException> { base.copy(id = " ").validate().getOrThrow() }

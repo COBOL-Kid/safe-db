@@ -512,29 +512,33 @@ class AppViewModelTest {
         runTest(dispatcher) {
             val service = FakeSafeDbService()
             val viewModel = AppViewModel(service, dispatcher)
-            advanceUntilIdle()
-            val connection = testConnection()
-            val recipe =
-                ExploreRecipe(
-                    id = "r1",
-                    name = "Users pivot",
-                    createdAt = "1",
-                    updatedAt = "1",
-                    defaultMode = ExploreMode.Pivot,
-                    pivot = ExploreConfig(),
-                    querySpec = sampleSpec(),
-                )
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                val recipe =
+                    ExploreRecipe(
+                        id = "r1",
+                        name = "Users pivot",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
 
-            viewModel.runRecipe(connection, recipe)
-            advanceUntilIdle()
+                viewModel.runRecipe(connection, recipe)
+                advanceUntilIdle()
 
-            val pending = viewModel.pendingRecipeRun.value
-            assertEquals("r1", pending?.recipe?.id)
-            val sample = assertNotNull(viewModel.query.currentSample(connection.id))
-            viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+                val pending = viewModel.pendingRecipeRun.value
+                assertEquals("r1", pending?.recipe?.id)
+                val sample = assertNotNull(viewModel.query.currentSample(connection.id))
+                viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
 
-            assertNull(viewModel.pendingRecipeRun.value)
-            assertEquals("r1", viewModel.explore.value?.appliedRecipeId)
+                assertNull(viewModel.pendingRecipeRun.value)
+                assertEquals("r1", viewModel.explore.value?.appliedRecipeId)
+            } finally {
+                viewModel.close()
+            }
         }
 
     @Test
@@ -542,38 +546,42 @@ class AppViewModelTest {
         runTest(dispatcher) {
             val service = FakeSafeDbService(confirmationRequired = true)
             val viewModel = AppViewModel(service, dispatcher)
-            advanceUntilIdle()
-            viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Standard)
-            val connection = testConnection()
-            val recipe =
-                ExploreRecipe(
-                    id = "r-confirm",
-                    name = "Confirmed users",
-                    createdAt = "1",
-                    updatedAt = "1",
-                    defaultMode = ExploreMode.Pivot,
-                    pivot = ExploreConfig(),
-                    querySpec = sampleSpec(),
-                )
+            try {
+                advanceUntilIdle()
+                viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+                val connection = testConnection()
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-confirm",
+                        name = "Confirmed users",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
 
-            viewModel.runRecipe(connection, recipe)
-            advanceUntilIdle()
+                viewModel.runRecipe(connection, recipe)
+                advanceUntilIdle()
 
-            assertNotNull(viewModel.query.pendingConfirmation)
-            assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
+                assertNotNull(viewModel.query.pendingConfirmation)
+                assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
 
-            viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
-            assertNotNull(viewModel.query.pendingConfirmation)
-            assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
-            viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+                viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+                assertNotNull(viewModel.query.pendingConfirmation)
+                assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
+                viewModel.query.onQueryRiskGateChanged(QueryRiskGate.Standard)
 
-            viewModel.query.confirmPendingExecution("c1")
-            advanceUntilIdle()
+                viewModel.query.confirmPendingExecution("c1")
+                advanceUntilIdle()
 
-            assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
-            val sample = assertNotNull(viewModel.query.currentSample(connection.id))
-            viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
-            assertEquals("r-confirm", viewModel.explore.value?.appliedRecipeId)
+                assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
+                val sample = assertNotNull(viewModel.query.currentSample(connection.id))
+                viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+                assertEquals("r-confirm", viewModel.explore.value?.appliedRecipeId)
+            } finally {
+                viewModel.close()
+            }
         }
 
     @Test

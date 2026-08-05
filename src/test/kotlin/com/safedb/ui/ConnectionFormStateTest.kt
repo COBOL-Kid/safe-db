@@ -42,13 +42,39 @@ class ConnectionFormStateTest {
         )
         val recommended = transportOptionsFor(Dialect.Postgres).first()
         assertTrue(recommended.recommended)
-        assertEquals("Verify certificate and hostname", recommended.label)
-        assertTrue(recommended.description.contains("checks the database hostname"))
+        assertEquals("SSL with hostname verification", recommended.label)
+        assertTrue(recommended.description.contains("verifies the database hostname"))
+        assertEquals(
+            "SSL certificate verification only (no hostname check)",
+            transportOptionsFor(Dialect.MySql)
+                .first { it.value == TransportSecurityMode.VerifyCa }
+                .label,
+        )
+        assertEquals(
+            "SSL encrypt only (no cert check)",
+            transportOptionsFor(Dialect.Mssql)
+                .first { it.value == TransportSecurityMode.EncryptOnly }
+                .label,
+        )
+        assertEquals(
+            "SSL disabled (unencrypted)",
+            transportOptionsFor(Dialect.Postgres)
+                .first { it.value == TransportSecurityMode.Disabled }
+                .label,
+        )
+        assertEquals(
+            listOf(
+                "TCPS with server identity verification",
+                "TCPS certificate verification only (no identity check)",
+                "TCPS disabled (unencrypted TCP)",
+            ),
+            transportOptionsFor(Dialect.Oracle).map { it.label },
+        )
         assertTrue(
             transportOptionsFor(Dialect.Mssql)
                 .first { it.value == TransportSecurityMode.EncryptOnly }
                 .description
-                .contains("does not verify")
+                .contains("without validating the server certificate")
         )
     }
 
@@ -59,8 +85,7 @@ class ConnectionFormStateTest {
                 sampleConnection()
                     .copy(
                         dialect = Dialect.Mssql,
-                        transportSecurity =
-                            TransportSecurity(TransportSecurityMode.VerifyCa, caPem = "ca"),
+                        transportSecurity = TransportSecurity(TransportSecurityMode.VerifyCa),
                     )
             )
         assertEquals(
@@ -68,7 +93,6 @@ class ConnectionFormStateTest {
             displayedTransportMode(sqlServer.dialect, sqlServer.transportMode),
         )
         assertEquals(TransportSecurityMode.VerifyCa, sqlServer.buildDef().transportSecurity.mode)
-        assertEquals("ca", sqlServer.buildDef().transportSecurity.caPem)
 
         val oracle =
             ConnectionFormState(
@@ -90,20 +114,13 @@ class ConnectionFormStateTest {
     }
 
     @Test
-    fun connectionCaAndOracleWalletPersistOnlyWhenApplicable() {
+    fun oracleWalletPersistsOnlyWhenApplicable() {
         val state = ConnectionFormState()
         state.handleHostInput("db.example.com")
-        state.updateCaPem("  ca-pem  ")
-        assertEquals("ca-pem", state.buildDef().transportSecurity.caPem)
-
-        state.changeTransportMode(TransportSecurityMode.EncryptOnly)
-        assertNull(state.buildDef().transportSecurity.caPem)
-
         state.selectDialect(Dialect.Oracle)
-        assertEquals(TransportSecurityMode.VerifyCa, state.transportMode)
+        assertEquals(TransportSecurityMode.VerifyIdentity, state.transportMode)
         state.updateOracleWallet("  /wallet  ")
         val oracle = state.buildDef().transportSecurity
-        assertNull(oracle.caPem)
         assertEquals("/wallet", oracle.oracleWalletLocation)
 
         state.changeTransportMode(TransportSecurityMode.Disabled)
@@ -111,14 +128,13 @@ class ConnectionFormStateTest {
     }
 
     @Test
-    fun loadingProfileDoesNotRewriteLegacyHiddenTransportFields() {
+    fun loadingProfileDoesNotRewriteLegacyHiddenWallet() {
         val original =
             sampleConnection()
                 .copy(
                     transportSecurity =
                         TransportSecurity(
                             TransportSecurityMode.EncryptOnly,
-                            caPem = "legacy-unused-ca",
                             oracleWalletLocation = "/legacy-unused-wallet",
                         )
                 )
@@ -127,7 +143,6 @@ class ConnectionFormStateTest {
         assertEquals(original.transportSecurity, state.buildDef().transportSecurity)
 
         state.changeTransportMode(TransportSecurityMode.Disabled)
-        assertNull(state.buildDef().transportSecurity.caPem)
         assertNull(state.buildDef().transportSecurity.oracleWalletLocation)
     }
 

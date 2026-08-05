@@ -22,9 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -408,66 +410,69 @@ private fun PasswordField(form: ConnectionFormState) {
 
 @Composable
 private fun AdvancedConnectionFields(form: ConnectionFormState) {
+    var expanded by remember(form.connectionId) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            "Advanced settings",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        TransportSecurityDropdown(form)
-        if (supportsConnectionCa(form.dialect, form.transportMode)) {
-            OutlinedTextField(
-                value = form.caPem,
-                onValueChange = form::updateCaPem,
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodyMedium,
-                label = { CompactFieldLabel("Connection-specific CA certificate (PEM, optional)") },
-                minLines = 3,
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector =
+                    if (expanded) Icons.Filled.KeyboardArrowDown
+                    else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription =
+                    if (expanded) "Collapse advanced settings" else "Expand advanced settings",
+                modifier = Modifier.size(20.dp),
             )
             Text(
-                "Leave blank to use the launch-profile trust store or the JDBC driver's default trust configuration.",
+                "Advanced settings",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        if (expanded) {
+            TransportSecurityDropdown(form)
+            if (
+                form.dialect == Dialect.Oracle &&
+                    form.transportMode != TransportSecurityMode.Disabled
+            ) {
+                OutlinedTextField(
+                    value = form.oracleWalletLocation,
+                    onValueChange = form::updateOracleWallet,
+                    modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    label = { CompactFieldLabel("Oracle wallet location") },
+                    singleLine = true,
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Driver parameters",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Optional JDBC driver properties",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        if (
-            form.dialect == Dialect.Oracle && form.transportMode != TransportSecurityMode.Disabled
-        ) {
-            OutlinedTextField(
-                value = form.oracleWalletLocation,
-                onValueChange = form::updateOracleWallet,
-                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight),
-                textStyle = MaterialTheme.typography.bodyMedium,
-                label = { CompactFieldLabel("Oracle wallet location") },
-                singleLine = true,
+            form.driverProperties.forEachIndexed { index, property ->
+                DriverPropertyRow(form, index, property)
+            }
+            form.driverPropertyError()?.let { error ->
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            PlainTextAction(
+                text = "Add parameter",
+                icon = Icons.Filled.Add,
+                onClick = form::addDriverProperty,
             )
         }
-        Spacer(Modifier.height(2.dp))
-        Text(
-            "Driver parameters",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            "Optional JDBC driver properties",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        form.driverProperties.forEachIndexed { index, property ->
-            DriverPropertyRow(form, index, property)
-        }
-        form.driverPropertyError()?.let { error ->
-            Text(
-                error,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        PlainTextAction(
-            text = "Add parameter",
-            icon = Icons.Filled.Add,
-            onClick = form::addDriverProperty,
-        )
     }
 }
 
@@ -497,7 +502,9 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
                     Text(
                         if (selected.recommended) "${selected.label} (recommended)"
                         else selected.label,
+                        modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
                     )
                     Icon(
                         Icons.Filled.ArrowDropDown,

@@ -13,39 +13,45 @@ internal data class TransportSecurityOption(
 private val VERIFY_IDENTITY =
     TransportSecurityOption(
         TransportSecurityMode.VerifyIdentity,
-        "Verify certificate and hostname",
-        "Encrypts traffic, validates the certificate chain, and checks the database hostname.",
+        "SSL with hostname verification",
+        "Encrypts traffic, validates the certificate chain, and verifies the database hostname.",
         recommended = true,
     )
 private val VERIFY_CA =
     TransportSecurityOption(
         TransportSecurityMode.VerifyCa,
-        "Verify certificate only",
-        "Encrypts traffic and validates the certificate chain without checking the database hostname.",
+        "SSL certificate verification only (no hostname check)",
+        "Encrypts traffic and validates the certificate chain without verifying the database hostname.",
     )
 private val ENCRYPT_ONLY =
     TransportSecurityOption(
         TransportSecurityMode.EncryptOnly,
-        "Encrypt only - certificate not verified",
-        "Encrypts traffic but does not verify the server certificate. Use only for legacy compatibility.",
+        "SSL encrypt only (no cert check)",
+        "Encrypts traffic without validating the server certificate or database hostname.",
     )
 private val DISABLED =
     TransportSecurityOption(
         TransportSecurityMode.Disabled,
-        "No encryption",
-        "Sends database traffic without TLS. Use only for a trusted local connection.",
+        "SSL disabled (unencrypted)",
+        "Disables SSL; database traffic is not encrypted and the server identity is not verified.",
     )
 private val ORACLE_VERIFY_IDENTITY =
     VERIFY_IDENTITY.copy(
-        label = "TCPS: verify certificate and server identity",
+        label = "TCPS with server identity verification",
         description =
-            "Uses the Oracle wallet to validate trust and checks the database server identity.",
+            "Encrypts traffic, uses the Oracle wallet to validate the certificate chain, and verifies the database server identity.",
     )
 private val ORACLE_VERIFY_CA =
     VERIFY_CA.copy(
-        label = "TCPS: verify certificate only",
+        label = "TCPS certificate verification only (no identity check)",
         description =
-            "Uses the Oracle wallet to validate trust without checking the database server identity.",
+            "Encrypts traffic and uses the Oracle wallet to validate the certificate chain without verifying the database server identity.",
+    )
+private val ORACLE_DISABLED =
+    DISABLED.copy(
+        label = "TCPS disabled (unencrypted TCP)",
+        description =
+            "Disables TCPS; database traffic uses unencrypted TCP and the server identity is not verified.",
     )
 
 internal fun transportOptionsFor(dialect: Dialect): List<TransportSecurityOption> =
@@ -53,7 +59,7 @@ internal fun transportOptionsFor(dialect: Dialect): List<TransportSecurityOption
         Dialect.Postgres,
         Dialect.MySql -> listOf(VERIFY_IDENTITY, VERIFY_CA, ENCRYPT_ONLY, DISABLED)
         Dialect.Mssql -> listOf(VERIFY_IDENTITY, ENCRYPT_ONLY, DISABLED)
-        Dialect.Oracle -> listOf(ORACLE_VERIFY_IDENTITY, ORACLE_VERIFY_CA, DISABLED)
+        Dialect.Oracle -> listOf(ORACLE_VERIFY_IDENTITY, ORACLE_VERIFY_CA, ORACLE_DISABLED)
     }
 
 internal fun displayedTransportMode(
@@ -72,12 +78,6 @@ internal fun normalizedTransportMode(
     dialect: Dialect,
     mode: TransportSecurityMode,
 ): TransportSecurityMode = displayedTransportMode(dialect, mode)
-
-internal fun isCertificateVerifying(mode: TransportSecurityMode): Boolean =
-    mode == TransportSecurityMode.VerifyIdentity || mode == TransportSecurityMode.VerifyCa
-
-internal fun supportsConnectionCa(dialect: Dialect, mode: TransportSecurityMode): Boolean =
-    dialect != Dialect.Oracle && isCertificateVerifying(mode)
 
 internal fun transportCompatibilityWarning(dialect: Dialect, mode: TransportSecurityMode): String? =
     when {
