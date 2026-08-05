@@ -1,5 +1,6 @@
 package com.safedb.adapter
 
+import com.safedb.launch.POSTGRES_LAUNCH_ROOT_CERT_PROPERTY
 import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
@@ -39,7 +40,13 @@ fun buildJdbcUrl(def: ConnectionDef): String = when (def.dialect) {
 fun createDataSource(def: ConnectionDef, password: String): HikariDataSource {
     val temporaryFiles = mutableListOf<Path>()
     val dataSource = createWithTemporaryTlsFileCleanup(temporaryFiles) {
-        HikariDataSource(createDataSourceConfig(def, password) { temporaryFiles.add(it.toPath()) })
+        HikariDataSource(
+            createDataSourceConfig(
+                def,
+                password,
+                registerTemporaryFile = { temporaryFiles.add(it.toPath()) },
+            ),
+        )
     }
     if (temporaryFiles.isNotEmpty()) temporaryTlsFiles[dataSource] = temporaryFiles
     return dataSource
@@ -68,6 +75,7 @@ internal fun createDataSourceConfig(
     def: ConnectionDef,
     password: String,
     registerTemporaryFile: (File) -> Unit = {},
+    launchProfilePostgresRootCert: String? = System.getProperty(POSTGRES_LAUNCH_ROOT_CERT_PROPERTY),
 ): HikariConfig {
     val config = HikariConfig()
     config.jdbcUrl = buildJdbcUrl(def)
@@ -81,7 +89,7 @@ internal fun createDataSourceConfig(
         config.addDataSourceProperty(property.name, property.value)
     }
     when (def.dialect) {
-        Dialect.Postgres -> applyPostgresSsl(config, def, registerTemporaryFile)
+        Dialect.Postgres -> applyPostgresSsl(config, def, registerTemporaryFile, launchProfilePostgresRootCert)
         Dialect.MySql -> applyMySqlSsl(config, def, registerTemporaryFile)
         Dialect.Mssql -> applyMssqlSsl(config, def, registerTemporaryFile)
         Dialect.Oracle -> applyOracleSsl(config, def)
@@ -100,7 +108,12 @@ private fun buildPostgresUrl(def: ConnectionDef): String {
     return "$base?sslmode=$sslMode"
 }
 
-private fun applyPostgresSsl(config: HikariConfig, def: ConnectionDef, registerTemporaryFile: (File) -> Unit) {
+private fun applyPostgresSsl(
+    config: HikariConfig,
+    def: ConnectionDef,
+    registerTemporaryFile: (File) -> Unit,
+    launchProfileRootCert: String?,
+) {
     when (def.transportSecurity.mode) {
         TransportSecurityMode.VerifyIdentity, TransportSecurityMode.VerifyCa -> {
             val ca = def.transportSecurity.caPem
@@ -108,11 +121,9 @@ private fun applyPostgresSsl(config: HikariConfig, def: ConnectionDef, registerT
                 val file = writeTempPem(ca, "pg-ca")
                 registerTemporaryFile(file)
                 config.addDataSourceProperty("sslrootcert", file.absolutePath)
-            } else {
-                config.addDataSourceProperty(
-                    "sslfactory",
-                    "org.postgresql.ssl.DefaultJavaSSLFactory",
-                )
+            } else if (!launchProfileRootCert.isNullOrBlank()) {
+                // Keep pgjdbc's LibPQFactory so its standard client certificate and key locations still work.
+                config.addDataSourceProperty("sslrootcert", launchProfileRootCert)
             }
         }
         TransportSecurityMode.EncryptOnly, TransportSecurityMode.Disabled -> Unit

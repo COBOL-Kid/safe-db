@@ -4,6 +4,7 @@ import com.safedb.secrets.CredentialStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.KeyStore
+import java.security.cert.CertificateFactory
 import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 import kotlin.test.Test
@@ -36,6 +37,13 @@ class LaunchProfileTest {
         assertEquals(trustStore.toString(), properties["javax.net.ssl.trustStore"])
         assertEquals("PKCS12", properties["javax.net.ssl.trustStoreType"])
         assertEquals(password, properties["javax.net.ssl.trustStorePassword"])
+        val postgresRootCert = Path.of(properties.getValue(POSTGRES_LAUNCH_ROOT_CERT_PROPERTY))
+        assertTrue(Files.isRegularFile(postgresRootCert))
+        assertTrue(Files.readString(postgresRootCert).contains("-----BEGIN CERTIFICATE-----"))
+        Files.newInputStream(postgresRootCert).use {
+            assertEquals(1, CertificateFactory.getInstance("X.509").generateCertificates(it).size)
+        }
+        Files.deleteIfExists(postgresRootCert)
     }
 
     @Test

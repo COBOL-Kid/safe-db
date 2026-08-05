@@ -12,7 +12,7 @@ safe-db --launch-profile /absolute/path/to/production.json
 
 Examples are included in the packaged application resources under `trust-profiles/`. An active profile and all files it references must live outside the application installation so installer upgrades do not replace environment-specific configuration.
 
-When no launch profile is selected, safe-db uses the bundled JVM's normal certificates. When a profile is selected, any missing or invalid profile, password source, or PKCS12 file stops startup; safe-db never silently changes trust policy.
+When no launch profile is selected, MySQL and SQL Server use the bundled JVM's normal certificates, while PostgreSQL keeps pgjdbc's standard trust and client-certificate behavior. When a profile is selected, any missing or invalid profile, password source, or PKCS12 file stops startup; safe-db never silently changes trust policy.
 
 ## Managed Linux desktop launch
 
@@ -41,9 +41,9 @@ Provision the file so only the safe-db user and administrators can read it. On P
 
 ## Trust precedence
 
-For verified PostgreSQL, MySQL, and SQL Server connections, a connection-specific CA PEM overrides the launch-profile PKCS12 store. With no connection CA, the launch profile is used; with no launch profile, the bundled JVM trust store is used. Oracle remains wallet-based.
+For verified PostgreSQL, MySQL, and SQL Server connections, a connection-specific CA PEM overrides the launch-profile PKCS12 store. With no connection CA, the launch profile is used. With no launch profile, MySQL and SQL Server use the bundled JVM trust store; PostgreSQL uses pgjdbc's standard certificate locations and preserves its standard client-certificate loading. Oracle remains wallet-based.
 
-The password is retrieved only during startup and is never logged or placed in process arguments or environment variables. JDBC drivers consume the standard JSSE trust-store properties, so the resolved value remains in JVM memory for the life of the process.
+The password is retrieved only during startup and is never logged or placed in process arguments or environment variables. MySQL and SQL Server consume the standard JSSE trust-store properties. PostgreSQL receives a temporary PEM containing only the trusted certificates, allowing pgjdbc to retain its normal client-certificate handling. The resolved password remains in JVM memory for the life of the process.
 
 ## Creating the trust store
 

@@ -10,8 +10,12 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.KeyStore
+import java.security.cert.Certificate
+import java.util.Base64
 
 const val TRUST_STORE_CREDENTIAL_SERVICE = "com.safedb.app.trust-store"
+// Internal bridge for pgjdbc, whose native SSL factory consumes PEM roots rather than the JSSE PKCS12 setting.
+internal const val POSTGRES_LAUNCH_ROOT_CERT_PROPERTY = "com.safedb.launch.postgresSslRootCert"
 
 private const val MAX_PASSWORD_BYTES = 4_096
 private const val MAX_PROFILE_BYTES = 65_536
@@ -77,10 +81,17 @@ object LaunchProfileBootstrap {
         val password = resolvePassword(profile.trustStore.password, credentialStoreFactory)
         val passwordChars = password.toCharArray()
         try {
-            validateTrustStore(trustStorePath, passwordChars)
-            propertySetter("javax.net.ssl.trustStore", trustStorePath.toString())
-            propertySetter("javax.net.ssl.trustStoreType", "PKCS12")
-            propertySetter("javax.net.ssl.trustStorePassword", password)
+            val postgresRootCert = writePostgresRootCert(loadTrustedCertificates(trustStorePath, passwordChars))
+            try {
+                propertySetter("javax.net.ssl.trustStore", trustStorePath.toString())
+                propertySetter("javax.net.ssl.trustStoreType", "PKCS12")
+                propertySetter("javax.net.ssl.trustStorePassword", password)
+                propertySetter(POSTGRES_LAUNCH_ROOT_CERT_PROPERTY, postgresRootCert.toString())
+                postgresRootCert.toFile().deleteOnExit()
+            } catch (error: Exception) {
+                runCatching { Files.deleteIfExists(postgresRootCert) }
+                throw LaunchProfileException("Launch-profile trust configuration could not be applied", error)
+            }
         } finally {
             passwordChars.fill('\u0000')
         }
@@ -164,17 +175,45 @@ object LaunchProfileBootstrap {
         }
     }
 
-    private fun validateTrustStore(path: Path, password: CharArray) {
+    private fun loadTrustedCertificates(path: Path, password: CharArray): List<Certificate> {
         val keyStore = KeyStore.getInstance("PKCS12")
         try {
             Files.newInputStream(path).use { keyStore.load(it, password) }
         } catch (error: Exception) {
             throw LaunchProfileException("PKCS12 trust store could not be opened", error)
         }
-        val containsTrustedCertificate = keyStore.aliases().asSequence().any(keyStore::isCertificateEntry)
-        if (!containsTrustedCertificate) {
+        val trustedCertificates = keyStore.aliases().asSequence()
+            .filter(keyStore::isCertificateEntry)
+            .mapNotNull(keyStore::getCertificate)
+            .toList()
+        if (trustedCertificates.isEmpty()) {
             throw LaunchProfileException("PKCS12 trust store contains no trusted certificates")
         }
+        return trustedCertificates
+    }
+
+    private fun writePostgresRootCert(certificates: List<Certificate>): Path {
+        val pem = try {
+            certificates.joinToString(separator = "\n", postfix = "\n") { certificate ->
+                val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte()))
+                    .encodeToString(certificate.encoded)
+                "-----BEGIN CERTIFICATE-----\n$encoded\n-----END CERTIFICATE-----"
+            }
+        } catch (error: Exception) {
+            throw LaunchProfileException("PKCS12 trusted certificates could not be prepared for PostgreSQL", error)
+        }
+        val path = try {
+            Files.createTempFile("safedb-launch-roots", ".pem")
+        } catch (error: Exception) {
+            throw LaunchProfileException("PostgreSQL launch-profile root certificate file could not be created", error)
+        }
+        try {
+            Files.writeString(path, pem, StandardCharsets.US_ASCII)
+        } catch (error: Exception) {
+            runCatching { Files.deleteIfExists(path) }
+            throw LaunchProfileException("PostgreSQL launch-profile root certificate file could not be written", error)
+        }
+        return path
     }
 
     private fun requireAbsoluteRegularFile(raw: String, label: String): Path {

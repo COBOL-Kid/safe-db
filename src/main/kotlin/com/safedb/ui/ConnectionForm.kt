@@ -391,7 +391,7 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
                 minLines = 3,
             )
             Text(
-                "Leave blank to use the launch-profile trust store or the bundled runtime certificates.",
+                "Leave blank to use the launch-profile trust store or the JDBC driver's default trust configuration.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

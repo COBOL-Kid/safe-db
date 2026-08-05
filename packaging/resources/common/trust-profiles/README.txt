@@ -23,7 +23,8 @@ managed account (normally mode 0600 on POSIX, or a limited Windows ACL).
 
 Startup fails rather than falling back when a selected profile or password
 source is unavailable. With no --launch-profile option, safe-db uses the
-bundled JVM trust store.
+normal JDBC driver trust defaults. PostgreSQL retains pgjdbc's standard trust
+and client-certificate behavior.
 
 Managed Linux desktop launch
 ----------------------------

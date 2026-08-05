@@ -142,11 +142,11 @@ class AdapterTest {
     }
 
     @Test
-    fun postgresVerifiedModesUseJvmTrustOnlyWithoutConnectionCa() {
+    fun postgresVerifiedModesPreservePgjdbcDefaultsWithoutConfiguredCa() {
         for (mode in listOf(TransportSecurityMode.VerifyIdentity, TransportSecurityMode.VerifyCa)) {
             val properties = createDataSourceConfig(connection(Dialect.Postgres, 5432, mode), "pw")
                 .dataSourceProperties
-            assertEquals("org.postgresql.ssl.DefaultJavaSSLFactory", properties.getProperty("sslfactory"))
+            assertNull(properties.getProperty("sslfactory"))
             assertNull(properties.getProperty("sslrootcert"))
         }
         for (mode in listOf(TransportSecurityMode.EncryptOnly, TransportSecurityMode.Disabled)) {
@@ -157,18 +157,43 @@ class AdapterTest {
     }
 
     @Test
-    fun postgresConnectionCaOverridesJvmTrustFactory() {
+    fun postgresLaunchProfileTrustUsesRootCertWithoutReplacingPgjdbcFactory() {
+        val launchRootCert = Files.createTempFile("safedb-launch-root", ".pem")
+        try {
+            val properties = createDataSourceConfig(
+                connection(Dialect.Postgres, 5432, TransportSecurityMode.VerifyIdentity),
+                "pw",
+                launchProfilePostgresRootCert = launchRootCert.toString(),
+            ).dataSourceProperties
+
+            assertNull(properties.getProperty("sslfactory"))
+            assertEquals(launchRootCert.toString(), properties.getProperty("sslrootcert"))
+        } finally {
+            Files.deleteIfExists(launchRootCert)
+        }
+    }
+
+    @Test
+    fun postgresConnectionCaOverridesLaunchProfileTrust() {
         val temporaryFiles = mutableListOf<java.io.File>()
+        val launchRootCert = Files.createTempFile("safedb-launch-root", ".pem")
         try {
             val def = connection(Dialect.Postgres, 5432, TransportSecurityMode.VerifyIdentity).copy(
                 transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity, caPem = "test-ca"),
             )
-            val properties = createDataSourceConfig(def, "pw", temporaryFiles::add).dataSourceProperties
+            val properties = createDataSourceConfig(
+                def,
+                "pw",
+                temporaryFiles::add,
+                launchProfilePostgresRootCert = launchRootCert.toString(),
+            ).dataSourceProperties
 
             assertNull(properties.getProperty("sslfactory"))
+            assertTrue(properties.getProperty("sslrootcert") != launchRootCert.toString())
             assertEquals("test-ca", java.io.File(properties.getProperty("sslrootcert")).readText())
         } finally {
             temporaryFiles.forEach(java.io.File::delete)
+            Files.deleteIfExists(launchRootCert)
         }
     }
 
