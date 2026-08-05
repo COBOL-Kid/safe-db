@@ -1,18 +1,45 @@
 package com.safedb.tools
 
+import com.safedb.platform.DesktopPlatform
+import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.writeText
 
-internal fun safeDbAppDataDir(): Path? {
-    val os = System.getProperty("os.name").lowercase()
-    val home = System.getProperty("user.home")
-    return when {
-        os.contains("mac") || os.contains("darwin") -> Path.of(home, "Library", "Application Support", "com.safedb.app")
-        os.contains("win") -> System.getenv("APPDATA")?.let { Path.of(it, "com.safedb.app") }
-        os.contains("linux") -> Path.of(System.getenv("XDG_DATA_HOME") ?: "$home/.local/share", "com.safedb.app")
-        else -> null
+internal fun safeDbAppDataDir(
+    environment: SeedMysqlPlatformEnvironment = SeedMysqlPlatformEnvironment.current(),
+): Path? = when (DesktopPlatform.resolve(environment.osName)) {
+    DesktopPlatform.MacOs ->
+        Path.of(environment.userHome, "Library", "Application Support", "com.safedb.app")
+    DesktopPlatform.Windows ->
+        environment.appData?.takeIf(String::isNotBlank)?.let { Path.of(it, "com.safedb.app") }
+}
+
+internal fun safeDbAppDataDirForStateReset(
+    environment: SeedMysqlPlatformEnvironment = SeedMysqlPlatformEnvironment.current(),
+    report: (String) -> Unit = ::println,
+): Path? = try {
+    safeDbAppDataDir(environment) ?: run {
+        report("-> skipping safe-db app state reset (APPDATA is not set)")
+        null
+    }
+} catch (error: UnsupportedDesktopPlatformException) {
+    report("-> skipping safe-db app state reset (${error.message})")
+    null
+}
+
+internal data class SeedMysqlPlatformEnvironment(
+    val osName: String,
+    val userHome: String,
+    val appData: String? = null,
+) {
+    companion object {
+        fun current(): SeedMysqlPlatformEnvironment = SeedMysqlPlatformEnvironment(
+            osName = System.getProperty("os.name").orEmpty(),
+            userHome = System.getProperty("user.home").orEmpty(),
+            appData = System.getenv("APPDATA"),
+        )
     }
 }
 

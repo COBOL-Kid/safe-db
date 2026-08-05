@@ -2,6 +2,7 @@ package com.safedb.secrets
 
 import com.safedb.adapter.SERVICE_NAME
 import com.safedb.model.ConnectionDef
+import com.safedb.platform.DesktopPlatform
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -38,44 +39,46 @@ object SecretsManager {
         if (raw.isNullOrBlank()) return RequestedBackend.Auto
         return when (raw.lowercase()) {
             "disabled" -> RequestedBackend.Disabled
-            "protected" -> if (isMacOs()) RequestedBackend.Protected else RequestedBackend.Auto
+            "protected" -> RequestedBackend.Protected
             "auto", "" -> RequestedBackend.Auto
             "keychain", "legacy" -> RequestedBackend.Auto
             else -> RequestedBackend.Auto
         }
     }
 
-    fun initStore(envValue: String? = System.getenv(ENV_BACKEND)) {
+    fun initStore(
+        envValue: String? = System.getenv(ENV_BACKEND),
+        platform: DesktopPlatform? = null,
+    ) {
+        initStore(envValue) { platform ?: DesktopPlatform.current() }
+    }
+
+    internal fun initStoreForOsName(envValue: String?, osName: String) {
+        initStore(envValue) { DesktopPlatform.resolve(osName) }
+    }
+
+    private fun initStore(envValue: String?, platformResolver: () -> DesktopPlatform) {
         storeReadCountForTest = 0
         activeStore = when (parseRequestedBackendFrom(envValue)) {
             RequestedBackend.Disabled -> {
                 println("WARN: $ENV_BACKEND=disabled: credentials are held in process memory only")
                 DisabledMemoryStore()
             }
-            RequestedBackend.Protected -> MacCredentialStore.createOrFallback()
-            RequestedBackend.Auto -> selectAutoStore()
+            RequestedBackend.Protected,
+            RequestedBackend.Auto,
+            -> selectStore(platformResolver())
         }
         activeLabel = when (activeStore) {
             is DisabledMemoryStore -> "disabled"
             is MacCredentialStore -> "protected"
             is WindowsCredentialStore -> "windows"
-            is LinuxCredentialStore -> if ((activeStore as LinuxCredentialStore).usesMemoryFallback) {
-                "disabled"
-            } else {
-                "linux-keyutils"
-            }
             else -> "unknown"
         }
     }
 
-    private fun selectAutoStore(): CredentialStore = when {
-        isMacOs() -> MacCredentialStore.createOrFallback()
-        isWindows() -> WindowsCredentialStore.createOrFallback()
-        isLinux() -> LinuxCredentialStore.createOrFallback()
-        else -> {
-            println("WARN: unknown OS; using disabled in-memory credential store")
-            DisabledMemoryStore()
-        }
+    private fun selectStore(platform: DesktopPlatform): CredentialStore = when (platform) {
+        DesktopPlatform.MacOs -> MacCredentialStore.createOrFallback()
+        DesktopPlatform.Windows -> WindowsCredentialStore.createOrFallback()
     }
 
     fun passwordForConnection(connectionId: String): Result<String> {
@@ -170,10 +173,6 @@ object SecretsManager {
         activeStore = store
         activeLabel = "test"
     }
-
-    private fun isMacOs(): Boolean = System.getProperty("os.name").lowercase().contains("mac")
-    private fun isWindows(): Boolean = System.getProperty("os.name").lowercase().contains("win")
-    private fun isLinux(): Boolean = System.getProperty("os.name").lowercase().contains("linux")
 }
 
 private fun <T> Result<T>.mapError(transform: (Throwable) -> String): Result<T> =
