@@ -11,47 +11,46 @@ import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
 import com.safedb.model.HistoryEntry
 import com.safedb.model.LiteralKind
-import com.safedb.model.QuerySpec
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
+import com.safedb.model.ThemePalette
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
-import com.safedb.model.ThemePalette
 import com.safedb.model.normalizeSettings
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class StoreTest {
     private fun tempDir() = Files.createTempDirectory("safedb-store-test")
 
-    private fun sampleConnection(id: String) = ConnectionDef(
-        id = id,
-        name = "Conn $id",
-        dialect = Dialect.Postgres,
-        host = "localhost",
-        port = 5432,
-        database = "demo",
-        username = "readonly",
-        transportSecurity = TransportSecurity(),
-    )
+    private fun sampleConnection(id: String) =
+        ConnectionDef(
+            id = id,
+            name = "Conn $id",
+            dialect = Dialect.Postgres,
+            host = "localhost",
+            port = 5432,
+            database = "demo",
+            username = "readonly",
+            transportSecurity = TransportSecurity(),
+        )
 
-    private fun sampleSpec() = QuerySpec(
-        tables = listOf(TableRef("public", "users", "t0")),
-        columns = emptyList(),
-        joins = emptyList(),
-        filters = FilterGroup(
-            connector = GroupConnector.And,
-            children = emptyList(),
-        ),
-        limit = 100,
-    )
+    private fun sampleSpec() =
+        QuerySpec(
+            tables = listOf(TableRef("public", "users", "t0")),
+            columns = emptyList(),
+            joins = emptyList(),
+            filters = FilterGroup(connector = GroupConnector.And, children = emptyList()),
+            limit = 100,
+        )
 
     @Test
     fun configStoreRoundTripsConnections() {
@@ -105,7 +104,7 @@ class StoreTest {
                     rowCount = i,
                     warnings = emptyList(),
                     timestamp = i.toString(),
-                ),
+                )
             )
         }
         val history = store.listHistory()
@@ -119,7 +118,7 @@ class StoreTest {
         val dir = tempDir()
         val store = QueryStore.new(dir)
         store.addHistory(
-            HistoryEntry("h1", "c1", "Conn", sampleSpec(), 1, emptyList(), timestamp = "1"),
+            HistoryEntry("h1", "c1", "Conn", sampleSpec(), 1, emptyList(), timestamp = "1")
         )
         store.clearHistory()
         assertTrue(store.listHistory().isEmpty())
@@ -168,7 +167,8 @@ class StoreTest {
               },
               "theme": "dark"
             }
-            """.trimIndent(),
+            """
+                .trimIndent(),
         )
 
         val loaded = store.load()
@@ -187,18 +187,17 @@ class StoreTest {
     fun settingsStoreSaveRoundTripsNonDefaultValues() {
         val dir = tempDir()
         val store = SettingsStore.new(dir)
-        val saved = Settings(
-            blockedSchemas = listOf("pg_catalog", "information_schema"),
-            theme = "dark",
-            colorScheme = ThemePalette.Oxide.id,
-            queryRiskGate = QueryRiskGate.Flexible,
-            defaultConnectionId = "connection-1",
-            defaultSchema = "Reporting",
-            lastSelectedSchemas = mapOf(
-                "connection-1" to "Operational",
-                "connection-2" to "Analytics",
-            ),
-        )
+        val saved =
+            Settings(
+                blockedSchemas = listOf("pg_catalog", "information_schema"),
+                theme = "dark",
+                colorScheme = ThemePalette.Oxide.id,
+                queryRiskGate = QueryRiskGate.Flexible,
+                defaultConnectionId = "connection-1",
+                defaultSchema = "Reporting",
+                lastSelectedSchemas =
+                    mapOf("connection-1" to "Operational", "connection-2" to "Analytics"),
+            )
         store.save(saved)
         val loaded = store.load()
         assertEquals(saved.blockedSchemas, loaded.blockedSchemas)
@@ -265,9 +264,11 @@ class StoreTest {
                 "driver_properties": []
               }
             ]
-            """.trimIndent(),
+            """
+                .trimIndent(),
         )
-        val specJson = """
+        val specJson =
+            """
             {
               "tables": [{"schema": "public", "name": "users", "alias": "t0"}],
               "columns": [{"table_alias": "t0", "column": "name"}],
@@ -277,7 +278,8 @@ class StoreTest {
               "schema_version": 3,
               "connector_overrides": {}
             }
-        """.trimIndent()
+            """
+                .trimIndent()
         Files.writeString(
             dir.resolve("saved_queries.json"),
             """
@@ -290,7 +292,8 @@ class StoreTest {
                 "created_at": "1710000000"
               }
             ]
-            """.trimIndent(),
+            """
+                .trimIndent(),
         )
         Files.writeString(
             dir.resolve("query_history.json"),
@@ -306,7 +309,8 @@ class StoreTest {
                 "timestamp": "1710000001"
               }
             ]
-            """.trimIndent(),
+            """
+                .trimIndent(),
         )
         Files.writeString(
             dir.resolve("settings.json"),
@@ -316,7 +320,8 @@ class StoreTest {
               "explain_cost_threshold": 42.0,
               "theme": "dark"
             }
-            """.trimIndent(),
+            """
+                .trimIndent(),
         )
 
         val connections = ConfigStore.new(dir).list()
@@ -336,13 +341,14 @@ class StoreTest {
 
     @Test
     fun normalizeSettingsRepairsBlockedSchemasAndTheme() {
-        val normalized = normalizeSettings(
-            Settings(
-                blockedSchemas = listOf("Audit", "audit"),
-                theme = "dark",
-                colorScheme = " SIGNAL-TEAL ",
-            ),
-        )
+        val normalized =
+            normalizeSettings(
+                Settings(
+                    blockedSchemas = listOf("Audit", "audit"),
+                    theme = "dark",
+                    colorScheme = " SIGNAL-TEAL ",
+                )
+            )
         assertEquals(listOf("audit"), normalized.blockedSchemas)
         assertEquals("dark", normalized.theme)
         assertEquals(ThemePalette.SignalTeal.id, normalized.colorScheme)
@@ -350,9 +356,10 @@ class StoreTest {
 
     @Test
     fun normalizeSettingsTrimsDefaultLocationAndClearsOrphanedSchema() {
-        val normalized = normalizeSettings(
-            Settings(defaultConnectionId = " connection-1 ", defaultSchema = " Reporting "),
-        )
+        val normalized =
+            normalizeSettings(
+                Settings(defaultConnectionId = " connection-1 ", defaultSchema = " Reporting ")
+            )
         assertEquals("connection-1", normalized.defaultConnectionId)
         assertEquals("Reporting", normalized.defaultSchema)
 
@@ -363,22 +370,27 @@ class StoreTest {
 
     @Test
     fun normalizeSettingsRepairsAndOrdersSchemaHistory() {
-        val normalized = normalizeSettings(
-            Settings(
-                lastSelectedSchemas = linkedMapOf(
-                    " connection-2 " to " Analytics ",
-                    "" to "ignored",
-                    "connection-1" to " Reporting ",
-                    "connection-3" to "   ",
-                ),
-            ),
-        )
+        val normalized =
+            normalizeSettings(
+                Settings(
+                    lastSelectedSchemas =
+                        linkedMapOf(
+                            " connection-2 " to " Analytics ",
+                            "" to "ignored",
+                            "connection-1" to " Reporting ",
+                            "connection-3" to "   ",
+                        )
+                )
+            )
 
         assertEquals(
             linkedMapOf("connection-1" to "Reporting", "connection-2" to "Analytics"),
             normalized.lastSelectedSchemas,
         )
-        assertEquals(listOf("connection-1", "connection-2"), normalized.lastSelectedSchemas.keys.toList())
+        assertEquals(
+            listOf("connection-1", "connection-2"),
+            normalized.lastSelectedSchemas.keys.toList(),
+        )
     }
 
     @Test
@@ -399,7 +411,8 @@ class StoreTest {
                 "username": "root"
               }
             ]
-            """.trimIndent(),
+            """
+                .trimIndent(),
         )
 
         val migrated = ConfigStore.new(dir).list().single()
@@ -416,7 +429,8 @@ class StoreTest {
     @Test
     fun queryStoreMigratesV1SavedQueries() {
         val dir = tempDir()
-        val v1 = """
+        val v1 =
+            """
             [
               {
                 "id": "q1",
@@ -435,7 +449,8 @@ class StoreTest {
                 "created_at": "1"
               }
             ]
-        """.trimIndent()
+            """
+                .trimIndent()
         Files.writeString(dir.resolve("saved_queries.json"), v1)
         val store = QueryStore.new(dir)
         val saved = store.listSaved()
@@ -470,9 +485,7 @@ class StoreTest {
         val path = dir.resolve("saved_queries.json")
         Files.writeString(path, "not-json")
 
-        val failure = assertFailsWith<IllegalStateException> {
-            QueryStore.new(dir).listSaved()
-        }
+        val failure = assertFailsWith<IllegalStateException> { QueryStore.new(dir).listSaved() }
 
         assertTrue(failure.message?.contains("saved_queries.json was corrupt") == true)
         assertFalse(Files.exists(path))
@@ -487,13 +500,15 @@ class StoreTest {
     @Test
     fun queryStoreDropsMalformedEntriesButPreservesValidOnes() {
         val dir = tempDir()
-        val validSpec = """
+        val validSpec =
+            """
             {
               "tables": [], "columns": [], "joins": [],
               "filters": {"id":"root", "connector":"And", "children":[]},
               "limit":100, "schema_version":3, "connector_overrides":{}
             }
-        """.trimIndent()
+            """
+                .trimIndent()
         Files.writeString(
             dir.resolve("saved_queries.json"),
             """
@@ -501,7 +516,8 @@ class StoreTest {
               {"id":"good", "name":"Good", "connection_id":"c1", "spec":$validSpec, "created_at":"1"},
               {"id":42, "broken":true}
             ]
-            """.trimIndent(),
+            """
+                .trimIndent(),
         )
 
         assertEquals(listOf("good"), QueryStore.new(dir).listSaved().map { it.id })

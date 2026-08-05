@@ -16,10 +16,11 @@ class FilterTreeOpsTest {
     @Test
     fun idsAreDeterministicWhenFactoryIsInjected() {
         val ids = ArrayDeque(listOf("root", "leaf"))
-        val identified = ensureFilterNodeIds(
-            FilterGroup(children = listOf(FilterNode.Leaf(filter(alias = "t0")))),
-            ids::removeFirst,
-        )
+        val identified =
+            ensureFilterNodeIds(
+                FilterGroup(children = listOf(FilterNode.Leaf(filter(alias = "t0")))),
+                ids::removeFirst,
+            )
 
         assertEquals("root", identified.id)
         assertEquals("leaf", (identified.children.single() as FilterNode.Leaf).spec.id)
@@ -27,18 +28,20 @@ class FilterTreeOpsTest {
 
     @Test
     fun nestedRemovalAndAliasPruningDropEmptyGroups() {
-        val nested = FilterGroup(
-            id = "root",
-            children = listOf(
-                FilterNode.Leaf(filter("keep", "t0")),
-                FilterNode.Group(
-                    FilterGroup(
-                        id = "group",
-                        children = listOf(FilterNode.Leaf(filter("drop", "t1"))),
+        val nested =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(
+                        FilterNode.Leaf(filter("keep", "t0")),
+                        FilterNode.Group(
+                            FilterGroup(
+                                id = "group",
+                                children = listOf(FilterNode.Leaf(filter("drop", "t1"))),
+                            )
+                        ),
                     ),
-                ),
-            ),
-        )
+            )
 
         assertEquals(1, countFilterLeaves(removeFilterNode(nested, listOf(1, 0))))
         val pruned = pruneFiltersForAlias(nested, "t1")
@@ -48,14 +51,16 @@ class FilterTreeOpsTest {
 
     @Test
     fun rebuildingOverridesRemovesMissingAndDefaultConnectors() {
-        val tree = FilterGroup(
-            id = "root",
-            connector = GroupConnector.And,
-            children = listOf(
-                FilterNode.Leaf(filter("first", "t0")),
-                FilterNode.Leaf(filter("second", "t0")),
-            ),
-        )
+        val tree =
+            FilterGroup(
+                id = "root",
+                connector = GroupConnector.And,
+                children =
+                    listOf(
+                        FilterNode.Leaf(filter("first", "t0")),
+                        FilterNode.Leaf(filter("second", "t0")),
+                    ),
+            )
 
         assertEquals(
             mapOf("second" to GroupConnector.Or),
@@ -75,11 +80,12 @@ class FilterTreeOpsTest {
         )
     }
 
-    private fun filter(id: String = "", alias: String) = FilterSpec(
-        id = id,
-        tableAlias = alias,
-        column = "id",
-        op = FilterOp.Eq,
-        value = FilterValue.Single(FilterLiteral(LiteralKind.Int, "1")),
-    )
+    private fun filter(id: String = "", alias: String) =
+        FilterSpec(
+            id = id,
+            tableAlias = alias,
+            column = "id",
+            op = FilterOp.Eq,
+            value = FilterValue.Single(FilterLiteral(LiteralKind.Int, "1")),
+        )
 }

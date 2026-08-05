@@ -39,10 +39,7 @@ class AppShellTransitionTest {
     @Test
     fun `expanded controls reveal without the command field`() {
         assertEquals(emptyList(), sidebarExpandedUtilityItemsAtStep(5))
-        assertEquals(
-            listOf(SidebarUtilityItem.Status),
-            sidebarExpandedUtilityItemsAtStep(6),
-        )
+        assertEquals(listOf(SidebarUtilityItem.Status), sidebarExpandedUtilityItemsAtStep(6))
         assertEquals(
             listOf(
                 SidebarUtilityItem.Status,

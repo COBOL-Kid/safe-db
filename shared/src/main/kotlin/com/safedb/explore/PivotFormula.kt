@@ -3,20 +3,14 @@ package com.safedb.explore
 import java.math.BigDecimal
 import java.math.MathContext
 
-data class FormulaResult(
-    val value: BigDecimal?,
-    val error: String? = null,
-)
+data class FormulaResult(val value: BigDecimal?, val error: String? = null)
 
-fun evaluatePivotFormula(
-    formula: String,
-    values: Map<String, BigDecimal?>,
-): FormulaResult = runCatching {
-    PivotFormulaParser(formula, values).parse()
-}.fold(
-    onSuccess = { FormulaResult(it) },
-    onFailure = { FormulaResult(null, it.message ?: "Invalid formula") },
-)
+fun evaluatePivotFormula(formula: String, values: Map<String, BigDecimal?>): FormulaResult =
+    runCatching { PivotFormulaParser(formula, values).parse() }
+        .fold(
+            onSuccess = { FormulaResult(it) },
+            onFailure = { FormulaResult(null, it.message ?: "Invalid formula") },
+        )
 
 private class PivotFormulaParser(
     private val source: String,
@@ -27,7 +21,9 @@ private class PivotFormulaParser(
     fun parse(): BigDecimal? {
         val value = parseExpression()
         skipWhitespace()
-        require(offset == source.length) { "Unexpected '${source[offset]}' at position ${offset + 1}" }
+        require(offset == source.length) {
+            "Unexpected '${source[offset]}' at position ${offset + 1}"
+        }
         return value
     }
 
@@ -35,11 +31,12 @@ private class PivotFormulaParser(
         var value = parseTerm()
         while (true) {
             skipWhitespace()
-            value = when {
-                consume('+') -> combine(value, parseTerm(), BigDecimal::add)
-                consume('-') -> combine(value, parseTerm(), BigDecimal::subtract)
-                else -> return value
-            }
+            value =
+                when {
+                    consume('+') -> combine(value, parseTerm(), BigDecimal::add)
+                    consume('-') -> combine(value, parseTerm(), BigDecimal::subtract)
+                    else -> return value
+                }
         }
     }
 
@@ -47,17 +44,19 @@ private class PivotFormulaParser(
         var value = parseFactor()
         while (true) {
             skipWhitespace()
-            value = when {
-                consume('*') -> combine(value, parseFactor(), BigDecimal::multiply)
-                consume('/') -> {
-                    val right = parseFactor()
-                    if (right != null && right.compareTo(BigDecimal.ZERO) == 0) {
-                        throw IllegalArgumentException("Division by zero")
+            value =
+                when {
+                    consume('*') -> combine(value, parseFactor(), BigDecimal::multiply)
+                    consume('/') -> {
+                        val right = parseFactor()
+                        if (right != null && right.compareTo(BigDecimal.ZERO) == 0) {
+                            throw IllegalArgumentException("Division by zero")
+                        }
+                        if (value == null || right == null) null
+                        else value.divide(right, MathContext.DECIMAL128)
                     }
-                    if (value == null || right == null) null else value.divide(right, MathContext.DECIMAL128)
+                    else -> return value
                 }
-                else -> return value
-            }
         }
     }
 
@@ -100,7 +99,9 @@ private class PivotFormulaParser(
                 break
             }
         }
-        require(offset > start) { "Expected a number, measure reference, or '(' at position ${offset + 1}" }
+        require(offset > start) {
+            "Expected a number, measure reference, or '(' at position ${offset + 1}"
+        }
         return source.substring(start, offset).toBigDecimalOrNull()
             ?: throw IllegalArgumentException("Invalid number at position ${start + 1}")
     }

@@ -28,10 +28,7 @@ data class WorksheetConfig(
 )
 
 @Serializable
-data class WorksheetColumnLayout(
-    val ref: WorksheetValueRef,
-    val visible: Boolean = true,
-)
+data class WorksheetColumnLayout(val ref: WorksheetValueRef, val visible: Boolean = true)
 
 @Serializable
 data class WorksheetGroup(
@@ -42,16 +39,11 @@ data class WorksheetGroup(
 )
 
 @Serializable
-data class WorksheetSort(
-    val target: WorksheetValueRef,
-    val dir: SortDir = SortDir.Asc,
-)
+data class WorksheetSort(val target: WorksheetValueRef, val dir: SortDir = SortDir.Asc)
 
 @Serializable
 sealed class WorksheetValueRef {
-    @Serializable
-    @SerialName("Column")
-    data class Column(val column: String) : WorksheetValueRef()
+    @Serializable @SerialName("Column") data class Column(val column: String) : WorksheetValueRef()
 
     @Serializable
     @SerialName("Calculation")
@@ -180,8 +172,9 @@ data class WorksheetDisplayColumn(
     val numberFormat: PivotNumberFormat? = null,
 ) {
     val valueRef: WorksheetValueRef
-        get() = sourceColumn?.let(WorksheetValueRef::Column)
-            ?: WorksheetValueRef.Calculation(requireNotNull(calculationId))
+        get() =
+            sourceColumn?.let(WorksheetValueRef::Column)
+                ?: WorksheetValueRef.Calculation(requireNotNull(calculationId))
 }
 
 data class ResolvedWorksheetColumn(
@@ -194,7 +187,8 @@ fun resolveWorksheetColumnLayout(
     columns: List<WorksheetDisplayColumn>,
     layout: List<WorksheetColumnLayout>,
 ): List<ResolvedWorksheetColumn> {
-    val available = columns.mapIndexed { index, column -> column.valueRef to (index to column) }.toMap()
+    val available =
+        columns.mapIndexed { index, column -> column.valueRef to (index to column) }.toMap()
     val seen = mutableSetOf<WorksheetValueRef>()
     val resolved = buildList {
         layout.forEach { configured ->
@@ -213,14 +207,17 @@ fun resolveWorksheetColumnLayout(
 }
 
 fun List<ResolvedWorksheetColumn>.toWorksheetColumnLayout(): List<WorksheetColumnLayout> =
-    map { resolved -> WorksheetColumnLayout(resolved.column.valueRef, resolved.visible) }
+    map { resolved ->
+        WorksheetColumnLayout(resolved.column.valueRef, resolved.visible)
+    }
 
 fun moveWorksheetColumn(
     layout: List<WorksheetColumnLayout>,
     fromIndex: Int,
     toIndex: Int,
 ): List<WorksheetColumnLayout> {
-    if (fromIndex !in layout.indices || toIndex !in layout.indices || fromIndex == toIndex) return layout
+    if (fromIndex !in layout.indices || toIndex !in layout.indices || fromIndex == toIndex)
+        return layout
     return layout.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
 }
 
@@ -234,10 +231,7 @@ data class WorksheetDisplayRow(
     val sourceRowIndex: Int? = null,
 )
 
-data class WorksheetCell(
-    val value: ResultCell = ResultCell.Null,
-    val error: String? = null,
-)
+data class WorksheetCell(val value: ResultCell = ResultCell.Null, val error: String? = null)
 
 enum class WorksheetRowKind {
     Detail,
@@ -268,21 +262,23 @@ fun projectWorksheetTable(
 ): WorksheetTableProjection {
     val resolvedColumns = resolveWorksheetColumnLayout(preview.columns, layout)
     val visibleColumns = resolvedColumns.filter { it.visible }
-    val rows = preview.rows.map { row ->
-        WorksheetProjectedRow(
-            kind = row.kind,
-            depth = row.depth,
-            pathKey = row.pathKey,
-            rowLabel = when (row.kind) {
-                WorksheetRowKind.Detail -> null
-                WorksheetRowKind.Group -> row.label
-                WorksheetRowKind.GrandTotal -> row.label ?: "Grand total"
-            },
-            expanded = row.expanded,
-            cells = visibleColumns.map { resolved -> row.cells[resolved.sourceIndex] },
-            sourceRowIndex = row.sourceRowIndex,
-        )
-    }
+    val rows =
+        preview.rows.map { row ->
+            WorksheetProjectedRow(
+                kind = row.kind,
+                depth = row.depth,
+                pathKey = row.pathKey,
+                rowLabel =
+                    when (row.kind) {
+                        WorksheetRowKind.Detail -> null
+                        WorksheetRowKind.Group -> row.label
+                        WorksheetRowKind.GrandTotal -> row.label ?: "Grand total"
+                    },
+                expanded = row.expanded,
+                cells = visibleColumns.map { resolved -> row.cells[resolved.sourceIndex] },
+                sourceRowIndex = row.sourceRowIndex,
+            )
+        }
     return WorksheetTableProjection(
         resolvedColumns = resolvedColumns,
         columns = visibleColumns.map { it.column },
@@ -330,7 +326,9 @@ data class ExploreRecipe(
         }
 
     fun validate(): ExploreRecipe {
-        require(schemaVersion == EXPLORE_RECIPE_SCHEMA_VERSION) { "Unsupported recipe version $schemaVersion" }
+        require(schemaVersion == EXPLORE_RECIPE_SCHEMA_VERSION) {
+            "Unsupported recipe version $schemaVersion"
+        }
         require(name.isNotBlank()) { "Recipe name is required" }
         require(includedModes.isNotEmpty()) { "Recipe must include at least one Explore mode" }
         require(defaultMode in includedModes) { "Recipe default mode must be included" }
@@ -339,17 +337,13 @@ data class ExploreRecipe(
     }
 }
 
-data class RecipeFieldMapping(
-    val resolved: Map<String, String>,
-    val unresolved: List<RecipeField>,
-)
+data class RecipeFieldMapping(val resolved: Map<String, String>, val unresolved: List<RecipeField>)
 
-fun ExploreConfig.withoutTransientState(): ExploreConfig = copy(
-    collapsedRowPaths = emptySet(),
-    collapsedColumnPaths = emptySet(),
-)
+fun ExploreConfig.withoutTransientState(): ExploreConfig =
+    copy(collapsedRowPaths = emptySet(), collapsedColumnPaths = emptySet())
 
-fun WorksheetConfig.withoutTransientState(): WorksheetConfig = copy(collapsedGroupPaths = emptySet())
+fun WorksheetConfig.withoutTransientState(): WorksheetConfig =
+    copy(collapsedGroupPaths = emptySet())
 
 fun recipeFields(
     sample: QueryResult,
@@ -361,19 +355,22 @@ fun recipeFields(
     val referenced = recipeColumnReferences(pivot, worksheet, visualization)
     val labels = displayColumnLabels(sample.columns, spec.tables)
     val tableByAlias = spec.tables.associate { it.alias to it.name }
-    return sample.columns.filter { it.name in referenced }.map { column ->
-        val alias = column.name.substringBefore("__", missingDelimiterValue = "")
-        RecipeField(
-            column = column.name,
-            label = labels[column.name] ?: displayColumnLabel(column.name),
-            dataType = column.dataType,
-            sourceTable = tableByAlias[alias],
-        )
-    }
+    return sample.columns
+        .filter { it.name in referenced }
+        .map { column ->
+            val alias = column.name.substringBefore("__", missingDelimiterValue = "")
+            RecipeField(
+                column = column.name,
+                label = labels[column.name] ?: displayColumnLabel(column.name),
+                dataType = column.dataType,
+                sourceTable = tableByAlias[alias],
+            )
+        }
 }
 
-fun formulaReferences(formula: String): Set<String> = Regex("\\[([^]]+)]")
-    .findAll(formula)
-    .map { it.groupValues[1].trim() }
-    .filter { it.isNotEmpty() }
-    .toSet()
+fun formulaReferences(formula: String): Set<String> =
+    Regex("\\[([^]]+)]")
+        .findAll(formula)
+        .map { it.groupValues[1].trim() }
+        .filter { it.isNotEmpty() }
+        .toSet()

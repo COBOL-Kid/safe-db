@@ -1,7 +1,6 @@
 package com.safedb.ui
 
 import com.safedb.explore.DateGroupUnit
-import com.safedb.explore.ExploreConfig
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.PivotGrouping
@@ -27,42 +26,54 @@ class ExploreTemplatesTest {
     @Test
     fun trendTemplateRequiresDateAndNumericColumns() {
         val fields = sampleFields()
-        val missingDate = resolveExploreTemplate(
-            ExploreBuiltinTemplateId.TrendOverTime,
-            sample(),
-            fields.filterNot { it.column == "created_at" },
-        )
+        val missingDate =
+            resolveExploreTemplate(
+                ExploreBuiltinTemplateId.TrendOverTime,
+                sample(),
+                fields.filterNot { it.column == "created_at" },
+            )
         assertIs<ExploreTemplateBuildResult.Unavailable>(missingDate)
 
-        val ready = assertIs<ExploreTemplateBuildResult.Ready>(
-            resolveExploreTemplate(ExploreBuiltinTemplateId.TrendOverTime, sample(), fields),
+        val ready =
+            assertIs<ExploreTemplateBuildResult.Ready>(
+                resolveExploreTemplate(ExploreBuiltinTemplateId.TrendOverTime, sample(), fields)
+            )
+        assertEquals(
+            PivotGrouping.Date(DateGroupUnit.Month),
+            ready.config.rowDimensions.single().grouping,
         )
-        assertEquals(PivotGrouping.Date(DateGroupUnit.Month), ready.config.rowDimensions.single().grouping)
         assertEquals(MeasureFn.Sum, ready.config.measures.single().fn)
         assertEquals("amount", ready.config.measures.single().sourceColumn)
     }
 
     @Test
     fun compareTemplateNeedsTwoGroupableFields() {
-        val unavailable = resolveExploreTemplate(
-            ExploreBuiltinTemplateId.CompareCategories,
-            sample(),
-            sampleFields().filter { it.column == "status" },
-        )
+        val unavailable =
+            resolveExploreTemplate(
+                ExploreBuiltinTemplateId.CompareCategories,
+                sample(),
+                sampleFields().filter { it.column == "status" },
+            )
         assertIs<ExploreTemplateBuildResult.Unavailable>(unavailable)
 
-        val ready = assertIs<ExploreTemplateBuildResult.Ready>(
-            resolveExploreTemplate(ExploreBuiltinTemplateId.CompareCategories, sample(), sampleFields()),
-        )
+        val ready =
+            assertIs<ExploreTemplateBuildResult.Ready>(
+                resolveExploreTemplate(
+                    ExploreBuiltinTemplateId.CompareCategories,
+                    sample(),
+                    sampleFields(),
+                )
+            )
         assertEquals("status", ready.config.rowDimensions.single().column)
         assertEquals("region", ready.config.effectiveColumnDimensions.single().column)
     }
 
     @Test
     fun topNTemplateAddsTopFilter() {
-        val ready = assertIs<ExploreTemplateBuildResult.Ready>(
-            resolveExploreTemplate(ExploreBuiltinTemplateId.TopN, sample(), sampleFields()),
-        )
+        val ready =
+            assertIs<ExploreTemplateBuildResult.Ready>(
+                resolveExploreTemplate(ExploreBuiltinTemplateId.TopN, sample(), sampleFields())
+            )
         val filter = ready.config.filters.single() as PivotFilter.Value
         assertEquals(ValueFilterOp.Top, filter.op)
         assertEquals(10, filter.count)
@@ -78,19 +89,22 @@ class ExploreTemplatesTest {
         assertTrue(breakdown.available)
     }
 
-    private fun sample(): QueryResult = QueryResult(
-        columns = listOf(
-            ResultColumn("id", "bigint"),
-            ResultColumn("status", "varchar"),
-            ResultColumn("region", "varchar"),
-            ResultColumn("created_at", "datetime"),
-            ResultColumn("amount", "decimal"),
-        ),
-        rows = emptyList(),
-        rowCount = 0,
-        truncated = false,
-        warnings = emptyList(),
-    )
+    private fun sample(): QueryResult =
+        QueryResult(
+            columns =
+                listOf(
+                    ResultColumn("id", "bigint"),
+                    ResultColumn("status", "varchar"),
+                    ResultColumn("region", "varchar"),
+                    ResultColumn("created_at", "datetime"),
+                    ResultColumn("amount", "decimal"),
+                ),
+            rows = emptyList(),
+            rowCount = 0,
+            truncated = false,
+            warnings = emptyList(),
+        )
 
-    private fun sampleFields(): List<ExploreFieldOption> = buildExploreFieldOptions(sample(), emptyList())
+    private fun sampleFields(): List<ExploreFieldOption> =
+        buildExploreFieldOptions(sample(), emptyList())
 }

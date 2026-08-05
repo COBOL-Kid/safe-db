@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -63,9 +62,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.safedb.model.ConnectionDef
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
 import com.safedb.ui.components.CommandPalette
 import com.safedb.ui.theme.SafeDbTheme
@@ -136,95 +135,103 @@ fun AppShell(
         )
 
         Surface(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
+            modifier = Modifier.weight(1f).fillMaxHeight(),
             color = SafeDbTheme.colors.workspaceBackground,
         ) {
             when (route) {
-                AppRoute.Home -> HomeScreen(
-                    viewModel = viewModel,
-                    onNavigate = appState::navigate,
-                    onOpenSavedQuery = { savedQuery ->
-                        restoreQuery(savedQuery.connectionId, savedQuery.spec)
-                    },
-                )
-                AppRoute.Connections -> ConnectionsScreen(
-                    service = appState.service,
-                    viewModel = viewModel.connections,
-                    onActivate = { id ->
-                        appState.setActiveConnection(
-                            id,
-                            com.safedb.resolveConnectionSchemaSelection(id, settings),
-                        )
-                        appState.navigate(AppRoute.Builder)
-                    },
-                    onDeleted = { id ->
-                        appState.clearActiveConnectionIf(id)
-                        viewModel.settings.clearDefaultIfConnection(id)
-                    },
-                    onConnectionChanged = { id ->
-                        appState.clearActiveConnectionIf(id)
-                        viewModel.schema.invalidateConnection(id)
-                        viewModel.settings.clearSchemaSelectionsForConnection(id)
-                    },
-                    onSaved = viewModel.connections::refresh,
-                    initialCreating = newConnectionPreview,
-                    initialEditingConnection = editConnectionPreview,
-                )
-                AppRoute.Builder -> BuilderScreen(
-                    connection = activeConnection,
-                    connections = connections,
-                    queryViewModel = viewModel.query,
-                    savedQueriesViewModel = viewModel.savedQueries,
-                    recipesViewModel = viewModel.recipes,
-                    schemaViewModel = viewModel.schema,
-                    schemaSelection = schemaSelection,
-                    schemaHistoryError = schemaHistoryError,
-                    settings = settings,
-                    onSchemaSelected = { schema ->
-                        val connectionId = activeConnection?.id ?: return@BuilderScreen
-                        appState.setActiveSchema(schema)
-                        viewModel.settings.rememberLastSchema(connectionId, schema)
-                    },
-                    onUnavailableSchemaSelection = { selection ->
-                        val connectionId = activeConnection?.id ?: return@BuilderScreen
-                        if (selection.source == com.safedb.SchemaSelectionSource.ConnectionHistory) {
-                            viewModel.settings.forgetLastSchema(connectionId)
-                        }
-                    },
-                    onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
-                    onOpenExplore = {
-                        val connection = activeConnection
-                        val sample = viewModel.query.currentSample(connection?.id)
-                        if (connection != null && sample != null) {
-                            viewModel.openExplore(connection, sample.spec, sample.result)
-                        }
-                    },
-                    onOpenSettings = appState::openSettings,
-                    onApplyRecipe = { recipe, targetConnection ->
-                        val querySpec = recipe.querySpec
-                        if (querySpec != null) {
+                AppRoute.Home ->
+                    HomeScreen(
+                        viewModel = viewModel,
+                        onNavigate = appState::navigate,
+                        onOpenSavedQuery = { savedQuery ->
+                            restoreQuery(savedQuery.connectionId, savedQuery.spec)
+                        },
+                    )
+                AppRoute.Connections ->
+                    ConnectionsScreen(
+                        service = appState.service,
+                        viewModel = viewModel.connections,
+                        onActivate = { id ->
                             appState.setActiveConnection(
-                                targetConnection.id,
-                                com.safedb.resolveQuerySchemaSelection(querySpec),
+                                id,
+                                com.safedb.resolveConnectionSchemaSelection(id, settings),
                             )
-                            viewModel.runRecipe(targetConnection, recipe)
-                        } else {
-                            val sample = viewModel.query.currentSample(targetConnection.id)
-                            if (sample != null) {
-                                viewModel.openExploreRecipe(targetConnection, sample.spec, sample.result, recipe)
+                            appState.navigate(AppRoute.Builder)
+                        },
+                        onDeleted = { id ->
+                            appState.clearActiveConnectionIf(id)
+                            viewModel.settings.clearDefaultIfConnection(id)
+                        },
+                        onConnectionChanged = { id ->
+                            appState.clearActiveConnectionIf(id)
+                            viewModel.schema.invalidateConnection(id)
+                            viewModel.settings.clearSchemaSelectionsForConnection(id)
+                        },
+                        onSaved = viewModel.connections::refresh,
+                        initialCreating = newConnectionPreview,
+                        initialEditingConnection = editConnectionPreview,
+                    )
+                AppRoute.Builder ->
+                    BuilderScreen(
+                        connection = activeConnection,
+                        connections = connections,
+                        queryViewModel = viewModel.query,
+                        savedQueriesViewModel = viewModel.savedQueries,
+                        recipesViewModel = viewModel.recipes,
+                        schemaViewModel = viewModel.schema,
+                        schemaSelection = schemaSelection,
+                        schemaHistoryError = schemaHistoryError,
+                        settings = settings,
+                        onSchemaSelected = { schema ->
+                            val connectionId = activeConnection?.id ?: return@BuilderScreen
+                            appState.setActiveSchema(schema)
+                            viewModel.settings.rememberLastSchema(connectionId, schema)
+                        },
+                        onUnavailableSchemaSelection = { selection ->
+                            val connectionId = activeConnection?.id ?: return@BuilderScreen
+                            if (
+                                selection.source ==
+                                    com.safedb.SchemaSelectionSource.ConnectionHistory
+                            ) {
+                                viewModel.settings.forgetLastSchema(connectionId)
                             }
-                        }
-                    },
-                )
-                AppRoute.History -> HistoryScreen(
-                    viewModel = viewModel,
-                    onRerun = { entry ->
-                        restoreQuery(entry.connectionId, entry.spec)
-                    },
-                    onNavigate = appState::navigate,
-                )
+                        },
+                        onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
+                        onOpenExplore = {
+                            val connection = activeConnection
+                            val sample = viewModel.query.currentSample(connection?.id)
+                            if (connection != null && sample != null) {
+                                viewModel.openExplore(connection, sample.spec, sample.result)
+                            }
+                        },
+                        onOpenSettings = appState::openSettings,
+                        onApplyRecipe = { recipe, targetConnection ->
+                            val querySpec = recipe.querySpec
+                            if (querySpec != null) {
+                                appState.setActiveConnection(
+                                    targetConnection.id,
+                                    com.safedb.resolveQuerySchemaSelection(querySpec),
+                                )
+                                viewModel.runRecipe(targetConnection, recipe)
+                            } else {
+                                val sample = viewModel.query.currentSample(targetConnection.id)
+                                if (sample != null) {
+                                    viewModel.openExploreRecipe(
+                                        targetConnection,
+                                        sample.spec,
+                                        sample.result,
+                                        recipe,
+                                    )
+                                }
+                            }
+                        },
+                    )
+                AppRoute.History ->
+                    HistoryScreen(
+                        viewModel = viewModel,
+                        onRerun = { entry -> restoreQuery(entry.connectionId, entry.spec) },
+                        onNavigate = appState::navigate,
+                    )
             }
         }
     }
@@ -242,21 +249,23 @@ private fun Sidebar(
     onToggleTheme: () -> Unit,
 ) {
     val c = SafeDbTheme.colors
-    val navItems = listOf(
-        NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
-        NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
-        NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
-        NavItem(AppRoute.History, "History", Icons.Outlined.History),
-    )
+    val navItems =
+        listOf(
+            NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
+            NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
+            NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
+            NavItem(AppRoute.History, "History", Icons.Outlined.History),
+        )
     // Keep the content mode stable while the rail changes width. This leaves a clean gap
     // between the outgoing and incoming fade sequences instead of cross-fading both layouts.
     var widthCollapsed by remember { mutableStateOf(collapsed) }
     var layoutCollapsed by remember { mutableStateOf(collapsed) }
-    val sidebarWidth by animateDpAsState(
-        targetValue = if (widthCollapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
-        animationSpec = tween(durationMillis = SidebarWidthAnimationMillis),
-        label = "sidebarWidth",
-    )
+    val sidebarWidth by
+        animateDpAsState(
+            targetValue = if (widthCollapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
+            animationSpec = tween(durationMillis = SidebarWidthAnimationMillis),
+            label = "sidebarWidth",
+        )
     var revealStep by remember { mutableIntStateOf(if (collapsed) 0 else SidebarRevealAll) }
     var compactRevealStep by remember {
         mutableIntStateOf(if (collapsed) SidebarCompactRevealAll else 0)
@@ -325,11 +334,10 @@ private fun Sidebar(
 
     Row(modifier = Modifier.fillMaxHeight()) {
         Column(
-            modifier = Modifier
-                .width(sidebarWidth)
-                .fillMaxHeight()
-                .background(c.navigationBackground),
-            horizontalAlignment = if (layoutCollapsed) Alignment.CenterHorizontally else Alignment.Start,
+            modifier =
+                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground),
+            horizontalAlignment =
+                if (layoutCollapsed) Alignment.CenterHorizontally else Alignment.Start,
         ) {
             SidebarHeader(
                 collapsed = layoutCollapsed,
@@ -338,9 +346,7 @@ private fun Sidebar(
             )
 
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 horizontalAlignment = Alignment.Start,
             ) {
@@ -368,12 +374,7 @@ private fun Sidebar(
             )
         }
 
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .fillMaxHeight()
-                .background(c.navigationBorder),
-        )
+        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(c.navigationBorder))
     }
 }
 
@@ -386,11 +387,11 @@ private fun SidebarHeader(
     val c = SafeDbTheme.colors
     if (collapsed) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(SidebarHeaderHeight)
-                .clickable(onClick = onToggleCollapsed)
-                .semantics { contentDescription = "Expand sidebar" },
+            modifier =
+                Modifier.fillMaxWidth()
+                    .height(SidebarHeaderHeight)
+                    .clickable(onClick = onToggleCollapsed)
+                    .semantics { contentDescription = "Expand sidebar" },
             contentAlignment = Alignment.Center,
         ) {
             LogoMark()
@@ -398,18 +399,13 @@ private fun SidebarHeader(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
                 tint = c.onNavigationMuted,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 4.dp)
-                    .size(14.dp),
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp).size(14.dp),
             )
         }
     } else {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(SidebarHeaderHeight)
-                .padding(horizontal = 16.dp),
+            modifier =
+                Modifier.fillMaxWidth().height(SidebarHeaderHeight).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -502,22 +498,17 @@ private fun SidebarUtilities(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SidebarFade(
-                    visible = statusVisible,
-                    modifier = Modifier.weight(1f),
-                ) {
+                SidebarFade(visible = statusVisible, modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 4.dp),
                     ) {
                         Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(SafeDbTheme.colors.success),
+                            modifier =
+                                Modifier.size(7.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(SafeDbTheme.colors.success)
                         )
                         Column {
                             Text(
@@ -536,10 +527,8 @@ private fun SidebarUtilities(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    SidebarFade(
-                        visible = settingsVisible,
-                        modifier = Modifier.size(32.dp),
-                    ) { enabled ->
+                    SidebarFade(visible = settingsVisible, modifier = Modifier.size(32.dp)) {
+                        enabled ->
                         SidebarIconButton(
                             icon = Icons.Filled.Settings,
                             contentDescription = "Settings",
@@ -547,10 +536,8 @@ private fun SidebarUtilities(
                             onClick = onOpenSettings,
                         )
                     }
-                    SidebarFade(
-                        visible = themeVisible,
-                        modifier = Modifier.size(32.dp),
-                    ) { enabled ->
+                    SidebarFade(visible = themeVisible, modifier = Modifier.size(32.dp)) { enabled
+                        ->
                         SidebarIconButton(
                             icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
                             contentDescription = "Toggle theme",
@@ -568,10 +555,7 @@ private fun SidebarUtilities(
 private fun LogoMark() {
     val c = SafeDbTheme.colors
     Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(c.actionPrimary),
+        modifier = Modifier.size(34.dp).clip(RoundedCornerShape(2.dp)).background(c.actionPrimary),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -587,18 +571,13 @@ private fun LogoMark() {
 private fun SidebarStatusIndicator() {
     val c = SafeDbTheme.colors
     Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .semantics { contentDescription = "Safe Read Mode" },
+        modifier =
+            Modifier.size(32.dp).clip(RoundedCornerShape(2.dp)).semantics {
+                contentDescription = "Safe Read Mode"
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(RoundedCornerShape(50))
-                .background(c.success),
-        )
+        Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(c.success))
     }
 }
 
@@ -612,17 +591,16 @@ private fun SidebarIconButton(
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
     val c = SafeDbTheme.colors
-    val background by animateColorAsState(
-        if (enabled && hovered) c.navigationHover else Color.Transparent,
-    )
+    val background by
+        animateColorAsState(if (enabled && hovered) c.navigationHover else Color.Transparent)
 
     Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(background)
-            .hoverable(interactionSource, enabled = enabled)
-            .clickable(enabled = enabled, onClick = onClick),
+        modifier =
+            Modifier.size(32.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(background)
+                .hoverable(interactionSource, enabled = enabled)
+                .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -646,37 +624,39 @@ private fun NavButton(
     val hovered by interactionSource.collectIsHoveredAsState()
 
     val c = SafeDbTheme.colors
-    val background by animateColorAsState(
-        when {
-            selected -> c.navigationSelected
-            hovered -> c.navigationHover
-            else -> Color.Transparent
-        },
-    )
-    val content by animateColorAsState(
-        when {
-            selected -> c.actionPrimary
-            hovered -> c.onNavigation
-            else -> c.onNavigationMuted
-        },
-    )
+    val background by
+        animateColorAsState(
+            when {
+                selected -> c.navigationSelected
+                hovered -> c.navigationHover
+                else -> Color.Transparent
+            }
+        )
+    val content by
+        animateColorAsState(
+            when {
+                selected -> c.actionPrimary
+                hovered -> c.onNavigation
+                else -> c.onNavigationMuted
+            }
+        )
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .background(background)
-            .hoverable(interactionSource)
-            .clickable(onClick = onClick)
-            .padding(end = 12.dp),
+        modifier =
+            Modifier.fillMaxWidth()
+                .height(44.dp)
+                .background(background)
+                .hoverable(interactionSource)
+                .clickable(onClick = onClick)
+                .padding(end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start,
     ) {
         Box(
-            modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .background(if (selected) c.actionPrimary else Color.Transparent),
+            modifier =
+                Modifier.width(3.dp)
+                    .fillMaxHeight()
+                    .background(if (selected) c.actionPrimary else Color.Transparent)
         )
         Spacer(Modifier.width(9.dp))
         Icon(
@@ -719,24 +699,24 @@ private fun SidebarFade(
     modifier: Modifier = Modifier,
     content: @Composable (enabled: Boolean) -> Unit,
 ) {
-    val opacity by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (visible) SidebarUtilityFadeInMillis else SidebarUtilityFadeOutMillis,
-        ),
-        label = "sidebarUtilityOpacity",
-    )
-    val semanticsModifier = if (visible) {
-        Modifier
-    } else {
-        Modifier.clearAndSetSemantics {}
-    }
+    val opacity by
+        animateFloatAsState(
+            targetValue = if (visible) 1f else 0f,
+            animationSpec =
+                tween(
+                    durationMillis =
+                        if (visible) SidebarUtilityFadeInMillis else SidebarUtilityFadeOutMillis
+                ),
+            label = "sidebarUtilityOpacity",
+        )
+    val semanticsModifier =
+        if (visible) {
+            Modifier
+        } else {
+            Modifier.clearAndSetSemantics {}
+        }
 
-    Box(
-        modifier = modifier
-            .graphicsLayer { alpha = opacity }
-            .then(semanticsModifier),
-    ) {
+    Box(modifier = modifier.graphicsLayer { alpha = opacity }.then(semanticsModifier)) {
         content(visible)
     }
 }
@@ -755,25 +735,17 @@ internal fun sidebarCompactUtilityItemsAtStep(step: Int): List<SidebarUtilityIte
     SidebarUtilityItem.entries.take(step.coerceIn(0, SidebarUtilityItem.entries.size))
 
 internal fun sidebarExpandedUtilityItemsAtStep(step: Int): List<SidebarUtilityItem> =
-    listOf(
-        SidebarUtilityItem.Status,
-        SidebarUtilityItem.Settings,
-        SidebarUtilityItem.Theme,
-    ).filterIndexed { index, _ ->
-        step >= SidebarRevealStatus + index
+    listOf(SidebarUtilityItem.Status, SidebarUtilityItem.Settings, SidebarUtilityItem.Theme)
+        .filterIndexed { index, _ -> step >= SidebarRevealStatus + index }
+
+internal fun sidebarRevealSteps(from: Int, to: Int): List<Int> =
+    when {
+        from < to -> ((from + 1)..to).toList()
+        from > to -> ((from - 1) downTo to).toList()
+        else -> emptyList()
     }
 
-internal fun sidebarRevealSteps(from: Int, to: Int): List<Int> = when {
-    from < to -> ((from + 1)..to).toList()
-    from > to -> ((from - 1) downTo to).toList()
-    else -> emptyList()
-}
-
-private data class NavItem(
-    val route: AppRoute,
-    val label: String,
-    val icon: ImageVector,
-)
+private data class NavItem(val route: AppRoute, val label: String, val icon: ImageVector)
 
 private val ExpandedSidebarWidth = 232.dp
 private val CollapsedSidebarWidth = 72.dp

@@ -31,16 +31,20 @@ import com.safedb.query.AliasRef
 import com.safedb.query.CANVAS_CARD_HEIGHT
 import com.safedb.query.CANVAS_CARD_WIDTH
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.MAX_TABLE_HEIGHT
+import com.safedb.query.MAX_TABLE_WIDTH
+import com.safedb.query.MIN_TABLE_HEIGHT
+import com.safedb.query.MIN_TABLE_WIDTH
 import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.QueryError
-import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryHydrationTarget
-import com.safedb.query.clampDimension
-import com.safedb.query.countFilterLeaves
+import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.addFilterGroup
 import com.safedb.query.addFilterLeaf
+import com.safedb.query.clampDimension
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
+import com.safedb.query.countFilterLeaves
 import com.safedb.query.distinctSortProjectionConflicts
 import com.safedb.query.ensureFilterNodeIds
 import com.safedb.query.filterGroupAtPath
@@ -58,10 +62,6 @@ import com.safedb.query.updateFilterNode
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
-import com.safedb.query.MAX_TABLE_HEIGHT
-import com.safedb.query.MAX_TABLE_WIDTH
-import com.safedb.query.MIN_TABLE_HEIGHT
-import com.safedb.query.MIN_TABLE_WIDTH
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -83,13 +83,14 @@ data class BuilderQuerySample(
 
 typealias NewFilterSpec = FilterSpec
 
-/** Ownership token retained until the service call settles; blocking JDBC work may not cancel promptly. */
+/**
+ * Ownership token retained until the service call settles; blocking JDBC work may not cancel
+ * promptly.
+ */
 private class ActiveQueryRun
 
-class QueryViewModel(
-    private val service: SafeDbService,
-    private val scope: CoroutineScope,
-) : QueryHydrationTarget {
+class QueryViewModel(private val service: SafeDbService, private val scope: CoroutineScope) :
+    QueryHydrationTarget {
     private var aliasCounter = 0
     private var runGeneration = 0
     private var activeRun: ActiveQueryRun? = null
@@ -101,27 +102,34 @@ class QueryViewModel(
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
     var selectedColumns by mutableStateOf(setOf<String>())
         private set
+
     val joins: SnapshotStateList<JoinSpec> = mutableStateListOf()
     private var filterGroupState by mutableStateOf(FilterGroup.empty())
     val filters: FilterGroup
         get() = filterGroupState
+
     private var queryLimit by mutableIntStateOf(DEFAULT_LIMIT)
     val limit: Int
         get() = queryLimit
+
     private var distinctState by mutableStateOf(false)
     val distinct: Boolean
         get() = distinctState
+
     private var connectorOverrideState by mutableStateOf(mapOf<String, GroupConnector>())
     val connectorOverrides: Map<String, GroupConnector>
         get() = connectorOverrideState
+
     private var sortState by mutableStateOf(emptyList<SortSpec>())
     /** Ordered builder-level sorts; the first one is the primary ordering. */
     val sorts: List<SortSpec>
         get() = sortState
+
     private var groupState by mutableStateOf(emptyList<GroupSpec>())
     /** Ordered builder-level groups; the first one is the primary grouping. */
     val groups: List<GroupSpec>
         get() = groupState
+
     private var requestedFilterFocusIdState by mutableStateOf<String?>(null)
     val requestedFilterFocusId: String?
         get() = requestedFilterFocusIdState
@@ -132,39 +140,53 @@ class QueryViewModel(
 
     var results by mutableStateOf<QueryResult?>(null)
         private set
+
     private var resultConnectionId by mutableStateOf<String?>(null)
     private var resultSpec by mutableStateOf<QuerySpec?>(null)
     var running by mutableStateOf(false)
         private set
+
     var error by mutableStateOf<String?>(null)
         private set
+
     var riskEvaluation by mutableStateOf<QueryRiskEvaluation?>(null)
         private set
+
     private var pendingRiskGateState by mutableStateOf(false)
     /** True while the latest settled query failure is a structured risk-gate block. */
     val pendingRiskGate: Boolean
         get() = pendingRiskGateState
+
     private var pendingConfirmationRequest: QueryRunRequest? = null
     private var pendingConfirmationOnSettled: ((Boolean) -> Unit)? = null
     var pendingConfirmation by mutableStateOf<QueryConfirmationRequirement?>(null)
         private set
+
     val pendingConfirmationReasons: List<String>
         get() = pendingConfirmation?.reasons.orEmpty().map { it.message }
+
     val pendingConfirmationReason: String?
         get() = pendingConfirmationReasons.joinToString(separator = " ").ifBlank { null }
+
     var hydrationWarning by mutableStateOf<String?>(null)
         private set
 
-    val tableCount: Int get() = canvasTables.size
+    val tableCount: Int
+        get() = canvasTables.size
+
     val distinctSortConflicts: List<SortSpec>
         get() = distinctSortProjectionConflicts(spec)
+
     val canRun: Boolean
-        get() = canvasTables.isNotEmpty() &&
-            distinctSortConflicts.isEmpty() &&
-            !running &&
-            !pendingRiskGateState &&
-            pendingConfirmation == null
-    val filterCount: Int get() = countFilterLeaves(filters)
+        get() =
+            canvasTables.isNotEmpty() &&
+                distinctSortConflicts.isEmpty() &&
+                !running &&
+                !pendingRiskGateState &&
+                pendingConfirmation == null
+
+    val filterCount: Int
+        get() = countFilterLeaves(filters)
 
     val spec: QuerySpec
         get() {
@@ -218,12 +240,7 @@ class QueryViewModel(
         val alias = "t${aliasCounter++}"
         val offset = canvasTables.size * 30f
         canvasTables.add(
-            CanvasTable(
-                tableInfo = tableInfo,
-                alias = alias,
-                x = 40f + offset,
-                y = offset,
-            ),
+            CanvasTable(tableInfo = tableInfo, alias = alias, x = 40f + offset, y = offset)
         )
     }
 
@@ -234,7 +251,8 @@ class QueryViewModel(
         if (canvasTables.none { it.alias == alias }) return
         invalidateSettledRunFailure()
         canvasTables.removeAll { it.alias == alias }
-        selectedColumns = selectedColumns.filterNot { it.startsWith(columnKeyPrefix(alias)) }.toSet()
+        selectedColumns =
+            selectedColumns.filterNot { it.startsWith(columnKeyPrefix(alias)) }.toSet()
         joins.removeAll { it.leftAlias == alias || it.rightAlias == alias }
         filterGroupState = pruneFiltersForAlias(filters, alias)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
@@ -253,10 +271,11 @@ class QueryViewModel(
         val index = canvasTables.indexOfFirst { it.alias == alias }
         if (index < 0) return
         val current = canvasTables[index]
-        canvasTables[index] = current.copy(
-            width = clampDimension(width, MIN_TABLE_WIDTH, MAX_TABLE_WIDTH),
-            height = clampDimension(height, MIN_TABLE_HEIGHT, MAX_TABLE_HEIGHT),
-        )
+        canvasTables[index] =
+            current.copy(
+                width = clampDimension(width, MIN_TABLE_WIDTH, MAX_TABLE_WIDTH),
+                height = clampDimension(height, MIN_TABLE_HEIGHT, MAX_TABLE_HEIGHT),
+            )
     }
 
     override fun toggleColumn(alias: String, column: String) {
@@ -268,11 +287,12 @@ class QueryViewModel(
             selectedColumns = selectedColumns - key
             return
         }
-        selectedColumns = if (selectedColumns.contains(key)) {
-            selectedColumns - key
-        } else {
-            selectedColumns + key
-        }
+        selectedColumns =
+            if (selectedColumns.contains(key)) {
+                selectedColumns - key
+            } else {
+                selectedColumns + key
+            }
         if (groups.isNotEmpty() && selectedColumns.contains(key)) {
             addGroup(alias, column)
         }
@@ -321,16 +341,20 @@ class QueryViewModel(
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
-    /** Adds a type-aware filter for the exact canvas column and focuses its value when available. */
+    /**
+     * Adds a type-aware filter for the exact canvas column and focuses its value when available.
+     */
     fun addFilterForColumn(
         tableAlias: String,
         columnName: String,
         dataType: String,
         op: FilterOp = FilterOp.Eq,
     ) {
-        val filter = defaultFilterForColumn(tableAlias, columnName, dataType).let { default ->
-            if (op == default.op) default else default.copy(op = op, value = defaultValueFor(op, dataType))
-        }
+        val filter =
+            defaultFilterForColumn(tableAlias, columnName, dataType).let { default ->
+                if (op == default.op) default
+                else default.copy(op = op, value = defaultValueFor(op, dataType))
+            }
         addFilter(filter)
         requestedFilterFocusIdState = filter.id.takeIf { hasTextValueInput(op, dataType) }
     }
@@ -339,20 +363,26 @@ class QueryViewModel(
     fun cycleSort(tableAlias: String, columnName: String) {
         invalidateSettledRunFailure()
         val existing = sorts.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
-        sortState = when (existing?.direction) {
-            null -> {
-                if (groups.isNotEmpty()) addGroup(tableAlias, columnName)
-                sorts + SortSpec(tableAlias, columnName, SortDirection.Asc)
+        sortState =
+            when (existing?.direction) {
+                null -> {
+                    if (groups.isNotEmpty()) addGroup(tableAlias, columnName)
+                    sorts + SortSpec(tableAlias, columnName, SortDirection.Asc)
+                }
+                SortDirection.Asc ->
+                    sorts.map {
+                        if (it.tableAlias == tableAlias && it.column == columnName)
+                            it.copy(direction = SortDirection.Desc)
+                        else it
+                    }
+                SortDirection.Desc ->
+                    sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
             }
-            SortDirection.Asc -> sorts.map {
-                if (it.tableAlias == tableAlias && it.column == columnName) it.copy(direction = SortDirection.Desc) else it
-            }
-            SortDirection.Desc -> sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
-        }
     }
 
-    fun sortForColumn(tableAlias: String, columnName: String): SortSpec? =
-        sorts.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
+    fun sortForColumn(tableAlias: String, columnName: String): SortSpec? = sorts.firstOrNull {
+        it.tableAlias == tableAlias && it.column == columnName
+    }
 
     fun hasFilterForColumn(tableAlias: String, columnName: String): Boolean =
         filters.containsFilter(tableAlias, columnName)
@@ -360,14 +390,17 @@ class QueryViewModel(
     fun setSort(tableAlias: String, columnName: String, direction: SortDirection) {
         invalidateSettledRunFailure()
         val existing = sortForColumn(tableAlias, columnName)
-        sortState = if (existing == null) {
-            if (groups.isNotEmpty()) addGroup(tableAlias, columnName)
-            sorts + SortSpec(tableAlias, columnName, direction)
-        } else {
-            sorts.map { sort ->
-                if (sort.tableAlias == tableAlias && sort.column == columnName) sort.copy(direction = direction) else sort
+        sortState =
+            if (existing == null) {
+                if (groups.isNotEmpty()) addGroup(tableAlias, columnName)
+                sorts + SortSpec(tableAlias, columnName, direction)
+            } else {
+                sorts.map { sort ->
+                    if (sort.tableAlias == tableAlias && sort.column == columnName)
+                        sort.copy(direction = direction)
+                    else sort
+                }
             }
-        }
     }
 
     fun clearSort(tableAlias: String, columnName: String) {
@@ -377,14 +410,12 @@ class QueryViewModel(
     }
 
     fun selectDistinctSortColumns() {
-        distinctSortConflicts.forEach { sort ->
-            toggleColumn(sort.tableAlias, sort.column)
-        }
+        distinctSortConflicts.forEach { sort -> toggleColumn(sort.tableAlias, sort.column) }
     }
 
     fun removeDistinctSortConflicts() {
-        val conflictKeys = distinctSortConflicts
-            .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+        val conflictKeys =
+            distinctSortConflicts.mapTo(mutableSetOf()) { it.tableAlias to it.column }
         if (conflictKeys.isEmpty()) return
         invalidateSettledRunFailure()
         sortState = sorts.filterNot { (it.tableAlias to it.column) in conflictKeys }
@@ -401,13 +432,16 @@ class QueryViewModel(
         invalidateSettledRunFailure()
         if (groupForColumn(tableAlias, columnName) == null) {
             if (groups.isEmpty()) {
-                val existingSelections = selectedColumns
-                    .map(::parseColumnKey)
-                    .filterNot { (alias, column) -> alias == tableAlias && column == columnName }
-                    .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
-                groupState = listOf(GroupSpec(tableAlias, columnName)) + existingSelections.map { (alias, column) ->
-                    GroupSpec(alias, column)
-                }
+                val existingSelections =
+                    selectedColumns
+                        .map(::parseColumnKey)
+                        .filterNot { (alias, column) ->
+                            alias == tableAlias && column == columnName
+                        }
+                        .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+                groupState =
+                    listOf(GroupSpec(tableAlias, columnName)) +
+                        existingSelections.map { (alias, column) -> GroupSpec(alias, column) }
                 selectedColumns = selectedColumns + columnKey(tableAlias, columnName)
             } else {
                 addGroup(tableAlias, columnName)
@@ -417,14 +451,17 @@ class QueryViewModel(
         }
     }
 
-    fun groupForColumn(tableAlias: String, columnName: String): GroupSpec? =
-        groups.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
+    fun groupForColumn(tableAlias: String, columnName: String): GroupSpec? = groups.firstOrNull {
+        it.tableAlias == tableAlias && it.column == columnName
+    }
 
     fun clearGroup(tableAlias: String, columnName: String) {
         if (groupForColumn(tableAlias, columnName) == null) return
         invalidateSettledRunFailure()
         val clearsLastGroup = groups.size == 1
-        val remainingGroups = groups.filterNot { it.tableAlias == tableAlias && it.column == columnName }
+        val remainingGroups = groups.filterNot {
+            it.tableAlias == tableAlias && it.column == columnName
+        }
         groupState = remainingGroups
         if (!clearsLastGroup) {
             selectedColumns = selectedColumns - columnKey(tableAlias, columnName)
@@ -494,16 +531,21 @@ class QueryViewModel(
 
     fun setGroupConnector(path: List<Int>, connector: GroupConnector) {
         invalidateSettledRunFailure()
-        filterGroupState = if (path.isEmpty()) {
-            filters.copy(connector = connector)
-        } else {
-            val group = filterGroupAtPath(filters, path)
-            if (group != null) {
-                updateFilterNode(filters, path, FilterNode.Group(group.copy(connector = connector)))
+        filterGroupState =
+            if (path.isEmpty()) {
+                filters.copy(connector = connector)
             } else {
-                filters
+                val group = filterGroupAtPath(filters, path)
+                if (group != null) {
+                    updateFilterNode(
+                        filters,
+                        path,
+                        FilterNode.Group(group.copy(connector = connector)),
+                    )
+                } else {
+                    filters
+                }
             }
-        }
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides, path)
     }
 
@@ -518,7 +560,9 @@ class QueryViewModel(
         if (path.isEmpty()) return filters.connector
         val key = pathKey(path)
         if (key != null) {
-            connectorOverrides[key]?.let { return it }
+            connectorOverrides[key]?.let {
+                return it
+            }
         }
         val parent = filterGroupAtPath(filters, path.dropLast(1))
         return parent?.connector ?: GroupConnector.And
@@ -542,7 +586,10 @@ class QueryViewModel(
 
     fun toggleChildConnector(path: List<Int>) {
         val current = getConnectorForChild(path)
-        setChildConnector(path, if (current == GroupConnector.And) GroupConnector.Or else GroupConnector.And)
+        setChildConnector(
+            path,
+            if (current == GroupConnector.And) GroupConnector.Or else GroupConnector.And,
+        )
     }
 
     fun removeFilterNode(path: List<Int>) {
@@ -641,8 +688,8 @@ class QueryViewModel(
     }
 
     /**
-     * Drops state scoped to the previously visible database. An in-flight operation keeps
-     * [running] true until it actually settles, preventing a second concurrent JDBC operation.
+     * Drops state scoped to the previously visible database. An in-flight operation keeps [running]
+     * true until it actually settles, preventing a second concurrent JDBC operation.
      */
     fun onActiveConnectionChanged(connectionId: String?) {
         if (observedActiveConnection && activeConnectionId == connectionId) return
@@ -685,8 +732,9 @@ class QueryViewModel(
         if (wasRiskGateBlock) error = null
     }
 
-    fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? =
-        riskEvaluation.takeIf { connectionId != null && connectionId == riskEvaluationConnectionId }
+    fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? = riskEvaluation.takeIf {
+        connectionId != null && connectionId == riskEvaluationConnectionId
+    }
 
     fun currentSample(connectionId: String?): BuilderQuerySample? {
         if (connectionId == null || resultConnectionId != connectionId) return null
@@ -711,10 +759,11 @@ class QueryViewModel(
         }
         if (
             error == null &&
-            !pendingRiskGateState &&
-            riskEvaluation == null &&
-            pendingConfirmation == null
-        ) return
+                !pendingRiskGateState &&
+                riskEvaluation == null &&
+                pendingConfirmation == null
+        )
+            return
         pendingRiskGateState = false
         riskEvaluation = null
         riskEvaluationConnectionId = null
@@ -736,7 +785,11 @@ class QueryViewModel(
     }
 
     companion object {
-        fun defaultFilterForColumn(tableAlias: String, columnName: String, dataType: String): FilterSpec {
+        fun defaultFilterForColumn(
+            tableAlias: String,
+            columnName: String,
+            dataType: String,
+        ): FilterSpec {
             val op = FilterOp.Eq
             val value = defaultValueFor(op, dataType)
             return FilterSpec(
@@ -760,30 +813,36 @@ private fun defaultValueFor(op: FilterOp, dataType: String): FilterValue? {
     }
 }
 
-private fun hasTextValueInput(op: FilterOp, dataType: String): Boolean = when (op.valueKind()) {
-    ValueKind.None -> false
-    ValueKind.Single -> literalKindForColumn(dataType) != LiteralKind.Bool
-    ValueKind.Pair, ValueKind.List -> true
-}
-
-private fun FilterGroup.containsFilter(tableAlias: String, columnName: String): Boolean = children.any { child ->
-    when (child) {
-        is FilterNode.Leaf -> child.spec.tableAlias == tableAlias && child.spec.column == columnName
-        is FilterNode.Group -> child.group.containsFilter(tableAlias, columnName)
+private fun hasTextValueInput(op: FilterOp, dataType: String): Boolean =
+    when (op.valueKind()) {
+        ValueKind.None -> false
+        ValueKind.Single -> literalKindForColumn(dataType) != LiteralKind.Bool
+        ValueKind.Pair,
+        ValueKind.List -> true
     }
-}
+
+private fun FilterGroup.containsFilter(tableAlias: String, columnName: String): Boolean =
+    children.any { child ->
+        when (child) {
+            is FilterNode.Leaf ->
+                child.spec.tableAlias == tableAlias && child.spec.column == columnName
+            is FilterNode.Group -> child.group.containsFilter(tableAlias, columnName)
+        }
+    }
 
 internal fun JoinSpec.matchesJoin(other: JoinSpec): Boolean =
-    (leftAlias == other.leftAlias && leftColumn == other.leftColumn &&
-        rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
-        (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
-            rightAlias == other.leftAlias && rightColumn == other.leftColumn)
+    (leftAlias == other.leftAlias &&
+        leftColumn == other.leftColumn &&
+        rightAlias == other.rightAlias &&
+        rightColumn == other.rightColumn) ||
+        (leftAlias == other.rightAlias &&
+            leftColumn == other.rightColumn &&
+            rightAlias == other.leftAlias &&
+            rightColumn == other.leftColumn)
 
 private fun <T> List<T>.moveItem(fromIndex: Int, toIndex: Int): List<T> {
     if (fromIndex !in indices || toIndex !in indices || fromIndex == toIndex) return this
-    return toMutableList().apply {
-        add(toIndex, removeAt(fromIndex))
-    }
+    return toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
 }
 
 private fun newNodeId(): String = java.util.UUID.randomUUID().toString()

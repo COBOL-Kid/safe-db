@@ -27,11 +27,12 @@ private fun String.csvEscaped(): String {
     return "\"" + replace("\"", "\"\"") + "\""
 }
 
-private fun cellToCsvValue(cell: ResultCell): String = when (cell) {
-    is ResultCell.Null -> ""
-    is ResultCell.BoolCell -> cell.value.toString()
-    is ResultCell.IntegerCell -> cell.value.toString()
-    is ResultCell.FloatCell -> cell.value.toString()
-    is ResultCell.TextCell -> cell.value.text
-    is ResultCell.BinaryCell -> cell.value.base64
-}
+private fun cellToCsvValue(cell: ResultCell): String =
+    when (cell) {
+        is ResultCell.Null -> ""
+        is ResultCell.BoolCell -> cell.value.toString()
+        is ResultCell.IntegerCell -> cell.value.toString()
+        is ResultCell.FloatCell -> cell.value.toString()
+        is ResultCell.TextCell -> cell.value.text
+        is ResultCell.BinaryCell -> cell.value.base64
+    }

@@ -17,12 +17,17 @@ internal fun moveVisibleWorksheetColumn(
     toVisibleIndex: Int,
 ): List<WorksheetColumnLayout> {
     val visibleSlots = layout.indices.filter { layout[it].visible }
-    if (fromVisibleIndex !in visibleSlots.indices || toVisibleIndex !in visibleSlots.indices || fromVisibleIndex == toVisibleIndex) {
+    if (
+        fromVisibleIndex !in visibleSlots.indices ||
+            toVisibleIndex !in visibleSlots.indices ||
+            fromVisibleIndex == toVisibleIndex
+    ) {
         return layout
     }
-    val reordered = visibleSlots.map(layout::get).toMutableList().apply {
-        add(toVisibleIndex, removeAt(fromVisibleIndex))
-    }
+    val reordered =
+        visibleSlots.map(layout::get).toMutableList().apply {
+            add(toVisibleIndex, removeAt(fromVisibleIndex))
+        }
     return layout.toMutableList().apply {
         visibleSlots.forEachIndexed { index, slot -> this[slot] = reordered[index] }
     }

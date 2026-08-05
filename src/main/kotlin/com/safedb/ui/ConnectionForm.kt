@@ -97,7 +97,8 @@ fun ConnectionForm(
         form.testError = null
         scope.launch {
             try {
-                form.testResult = service.testConnection(form.buildDef(), form.passwordForOperation())
+                form.testResult =
+                    service.testConnection(form.buildDef(), form.passwordForOperation())
             } catch (error: Exception) {
                 form.testError = error.message ?: error.toString()
             } finally {
@@ -117,9 +118,10 @@ fun ConnectionForm(
         scope.launch {
             try {
                 val def = form.buildDef()
-                val credentialMaterialChanged = form.original?.credentialFingerprint()
-                    ?.let { it != def.credentialFingerprint() }
-                    ?: true
+                val credentialMaterialChanged =
+                    form.original?.credentialFingerprint()?.let {
+                        it != def.credentialFingerprint()
+                    } ?: true
                 if (form.isEditing) {
                     service.updateConnection(def, form.passwordForOperation())
                 } else {
@@ -146,10 +148,7 @@ fun ConnectionForm(
     ) {
         Column(Modifier.fillMaxSize()) {
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
+                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 ConnectionStringInput(form)
@@ -179,7 +178,9 @@ fun ConnectionForm(
                 form.parseWarnings.forEach { warning ->
                     MessageBanner(text = warning, kind = BannerKind.WARNING)
                 }
-                form.testResult?.let { MessageBanner(text = "Connected - $it", kind = BannerKind.SUCCESS) }
+                form.testResult?.let {
+                    MessageBanner(text = "Connected - $it", kind = BannerKind.SUCCESS)
+                }
                 form.testError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
                 form.formError?.let { MessageBanner(text = it, kind = BannerKind.ERROR) }
             }
@@ -197,7 +198,10 @@ fun ConnectionForm(
                     }
                     Text(if (form.testing) "Testing..." else "Test Connection")
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     PrimaryButton(onClick = ::handleSave, enabled = !form.testing && !form.saving) {
                         if (form.saving) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -208,7 +212,7 @@ fun ConnectionForm(
                                 form.saving -> "Saving..."
                                 form.isEditing -> "Save Changes"
                                 else -> "Save Connection"
-                            },
+                            }
                         )
                     }
                 }
@@ -220,8 +224,15 @@ fun ConnectionForm(
 @Composable
 private fun ConnectionStringInput(form: ConnectionFormState) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Connection string", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "Connection string",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             OutlinedTextField(
                 value = form.connectionString,
                 onValueChange = {
@@ -231,7 +242,9 @@ private fun ConnectionStringInput(form: ConnectionFormState) {
                 modifier = Modifier.weight(1f).height(CompactFieldHeight),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
-                placeholder = { CompactFieldPlaceholder("postgresql://readonly:password@host:5432/database") },
+                placeholder = {
+                    CompactFieldPlaceholder("postgresql://readonly:password@host:5432/database")
+                },
                 isError = form.parseError != null,
             )
             PrimaryButton(onClick = form::applyParsedInput) { Text("Apply") }
@@ -241,13 +254,22 @@ private fun ConnectionStringInput(form: ConnectionFormState) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        form.parseError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        form.parseError?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 
 @Composable
 private fun OrDetailsDivider() {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
         Text(
             "or enter connection details",
@@ -360,12 +382,20 @@ private fun PasswordField(form: ConnectionFormState) {
                 label = { CompactFieldLabel("Password") },
                 placeholder = { CompactFieldPlaceholder("Enter password") },
                 singleLine = true,
-                visualTransformation = if (form.showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                visualTransformation =
+                    if (form.showPassword) VisualTransformation.None
+                    else PasswordVisualTransformation(),
                 trailingIcon = {
                     Icon(
-                        imageVector = if (form.showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (form.showPassword) "Hide password" else "Show password",
-                        modifier = Modifier.size(18.dp).clickable { form.showPassword = !form.showPassword },
+                        imageVector =
+                            if (form.showPassword) Icons.Filled.VisibilityOff
+                            else Icons.Filled.Visibility,
+                        contentDescription =
+                            if (form.showPassword) "Hide password" else "Show password",
+                        modifier =
+                            Modifier.size(18.dp).clickable {
+                                form.showPassword = !form.showPassword
+                            },
                     )
                 },
             )
@@ -379,7 +409,11 @@ private fun PasswordField(form: ConnectionFormState) {
 @Composable
 private fun AdvancedConnectionFields(form: ConnectionFormState) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Advanced settings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Advanced settings",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
         TransportSecurityDropdown(form)
         if (supportsConnectionCa(form.dialect, form.transportMode)) {
             OutlinedTextField(
@@ -396,7 +430,9 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (form.dialect == Dialect.Oracle && form.transportMode != TransportSecurityMode.Disabled) {
+        if (
+            form.dialect == Dialect.Oracle && form.transportMode != TransportSecurityMode.Disabled
+        ) {
             OutlinedTextField(
                 value = form.oracleWalletLocation,
                 onValueChange = form::updateOracleWallet,
@@ -407,7 +443,11 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
             )
         }
         Spacer(Modifier.height(2.dp))
-        Text("Driver parameters", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Driver parameters",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
         Text(
             "Optional JDBC driver properties",
             style = MaterialTheme.typography.bodySmall,
@@ -417,7 +457,11 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
             DriverPropertyRow(form, index, property)
         }
         form.driverPropertyError()?.let { error ->
-            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(
+                error,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         PlainTextAction(
             text = "Add parameter",
@@ -437,7 +481,10 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
         Text("Transport security", style = MaterialTheme.typography.labelLarge)
         Box {
             Surface(
-                modifier = Modifier.fillMaxWidth().height(CompactFieldHeight).clickable { expanded = true },
+                modifier =
+                    Modifier.fillMaxWidth().height(CompactFieldHeight).clickable {
+                        expanded = true
+                    },
                 shape = RoundedCornerShape(3.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 color = MaterialTheme.colorScheme.surface,
@@ -448,16 +495,25 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (selected.recommended) "${selected.label} (recommended)" else selected.label,
+                        if (selected.recommended) "${selected.label} (recommended)"
+                        else selected.label,
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose transport security")
+                    Icon(
+                        Icons.Filled.ArrowDropDown,
+                        contentDescription = "Choose transport security",
+                    )
                 }
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
                     DropdownMenuItem(
-                        text = { Text(if (option.recommended) "${option.label} (recommended)" else option.label) },
+                        text = {
+                            Text(
+                                if (option.recommended) "${option.label} (recommended)"
+                                else option.label
+                            )
+                        },
                         onClick = {
                             form.changeTransportMode(option.value)
                             expanded = false
@@ -469,11 +525,15 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
         Text(
             selected.description,
             style = MaterialTheme.typography.bodySmall,
-            color = if (displayedMode == TransportSecurityMode.EncryptOnly || displayedMode == TransportSecurityMode.Disabled) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
+            color =
+                if (
+                    displayedMode == TransportSecurityMode.EncryptOnly ||
+                        displayedMode == TransportSecurityMode.Disabled
+                ) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
         )
     }
 }
@@ -508,7 +568,10 @@ private fun DriverPropertyRow(
                 }
             }
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 OutlinedTextField(
                     value = property.name,
                     onValueChange = { form.updateDriverPropertyName(index, it) },
@@ -547,15 +610,26 @@ private fun ParameterDeleteButton(onClick: () -> Unit) {
 }
 
 @Composable
-private fun ResponsiveFieldRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+private fun ResponsiveFieldRow(
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
+) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth < 430.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // The approved narrow state stacks controls; callers use only fields with fill behavior.
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
+                // The approved narrow state stacks controls; callers use only fields with fill
+                // behavior.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    content = content,
+                )
             }
         } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                content = content,
+            )
         }
     }
 }
@@ -570,11 +644,12 @@ private fun SegmentButton(
     val action = com.safedb.ui.theme.SafeDbTheme.colors.actionPrimary
     val shape = RoundedCornerShape(3.dp)
     Box(
-        modifier = modifier
-            .background(if (selected) action.copy(alpha = 0.08f) else Color.Transparent, shape)
-            .border(1.dp, if (selected) action else MaterialTheme.colorScheme.outline, shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+        modifier =
+            modifier
+                .background(if (selected) action.copy(alpha = 0.08f) else Color.Transparent, shape)
+                .border(1.dp, if (selected) action else MaterialTheme.colorScheme.outline, shape)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -592,7 +667,8 @@ private fun PlainTextAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     Row(
-        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 6.dp),
+        modifier =
+            Modifier.clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

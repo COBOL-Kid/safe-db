@@ -8,10 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class ConnectionsViewModel(
-    private val service: SafeDbService,
-    private val scope: CoroutineScope,
-) {
+class ConnectionsViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
     private val _connections = MutableStateFlow<List<ConnectionDef>>(emptyList())
     val connections: StateFlow<List<ConnectionDef>> = _connections.asStateFlow()
 
@@ -60,6 +57,5 @@ class ConnectionsViewModel(
     fun connectionName(id: String): String =
         _connections.value.firstOrNull { it.id == id }?.name ?: "Unknown"
 
-    fun connectionById(id: String): ConnectionDef? =
-        _connections.value.firstOrNull { it.id == id }
+    fun connectionById(id: String): ConnectionDef? = _connections.value.firstOrNull { it.id == id }
 }

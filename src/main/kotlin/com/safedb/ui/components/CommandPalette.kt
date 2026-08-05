@@ -76,105 +76,126 @@ fun CommandPalette(
     val connections by viewModel.connections.connections.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
 
-    val commands =
-        buildList {
+    val commands = buildList {
+        add(
+            PaletteCommand("nav-home", "Go to Home", "Home page", Icons.Filled.Home) {
+                appState.navigate(AppRoute.Home)
+                onDismiss()
+            }
+        )
+        add(
+            PaletteCommand(
+                "nav-connections",
+                "Go to Connections",
+                "Manage connections",
+                Icons.Filled.Link,
+            ) {
+                appState.navigate(AppRoute.Connections)
+                onDismiss()
+            }
+        )
+        add(
+            PaletteCommand(
+                "nav-builder",
+                "Go to Query Builder",
+                "Build queries",
+                Icons.Filled.Build,
+            ) {
+                appState.navigate(AppRoute.Builder)
+                onDismiss()
+            }
+        )
+        add(
+            PaletteCommand("nav-history", "Go to History", "Recent queries", Icons.Filled.History) {
+                appState.navigate(AppRoute.History)
+                onDismiss()
+            }
+        )
+        add(
+            PaletteCommand(
+                "lock-credentials",
+                "Lock credentials",
+                "Clear unlocked passwords",
+                Icons.Filled.Lock,
+            ) {
+                viewModel.lockCredentials()
+                onDismiss()
+            }
+        )
+        val runConnectionId = activeConnectionId
+        val schemaMatchesConnection =
+            runConnectionId != null &&
+                viewModel.schema.schema != null &&
+                viewModel.schema.loadedConnectionId == runConnectionId
+        if (runConnectionId != null && schemaMatchesConnection && viewModel.query.canRun) {
             add(
-                PaletteCommand("nav-home", "Go to Home", "Home page", Icons.Filled.Home) {
-                    appState.navigate(AppRoute.Home)
-                    onDismiss()
-                },
-            )
-            add(
-                PaletteCommand("nav-connections", "Go to Connections", "Manage connections", Icons.Filled.Link) {
-                    appState.navigate(AppRoute.Connections)
-                    onDismiss()
-                },
-            )
-            add(
-                PaletteCommand("nav-builder", "Go to Query Builder", "Build queries", Icons.Filled.Build) {
-                    appState.navigate(AppRoute.Builder)
-                    onDismiss()
-                },
-            )
-            add(
-                PaletteCommand("nav-history", "Go to History", "Recent queries", Icons.Filled.History) {
-                    appState.navigate(AppRoute.History)
-                    onDismiss()
-                },
-            )
-            add(
-                PaletteCommand("lock-credentials", "Lock credentials", "Clear unlocked passwords", Icons.Filled.Lock) {
-                    viewModel.lockCredentials()
-                    onDismiss()
-                },
-            )
-            val runConnectionId = activeConnectionId
-            val schemaMatchesConnection =
-                runConnectionId != null &&
-                    viewModel.schema.schema != null &&
-                    viewModel.schema.loadedConnectionId == runConnectionId
-            if (runConnectionId != null && schemaMatchesConnection && viewModel.query.canRun) {
-                add(
-                    PaletteCommand("run-query", "Run Query", "Execute current query", Icons.Filled.PlayArrow) {
-                        if (
-                            viewModel.schema.schema != null &&
+                PaletteCommand(
+                    "run-query",
+                    "Run Query",
+                    "Execute current query",
+                    Icons.Filled.PlayArrow,
+                ) {
+                    if (
+                        viewModel.schema.schema != null &&
                             viewModel.schema.loadedConnectionId == runConnectionId
-                        ) {
-                            viewModel.query.run(runConnectionId)
-                            appState.navigate(AppRoute.Builder)
-                            onDismiss()
-                        }
-                    },
-                )
-            }
-            if (viewModel.query.canvasTables.isNotEmpty()) {
-                add(
-                    PaletteCommand("clear-canvas", "Clear Canvas", "Remove all tables", Icons.Filled.Delete) {
-                        viewModel.query.clear()
-                        onDismiss()
-                    },
-                )
-            }
-            for (connection in connections) {
-                add(
-                    PaletteCommand(
-                        id = "conn-${connection.id}",
-                        label = "Explore: ${connection.name}",
-                        hint = "${connection.dialect} · ${connection.database}",
-                        icon = Icons.Filled.Link,
                     ) {
-                        appState.setActiveConnection(
-                            connection.id,
-                            com.safedb.resolveConnectionSchemaSelection(connection.id, settings),
-                        )
+                        viewModel.query.run(runConnectionId)
                         appState.navigate(AppRoute.Builder)
                         onDismiss()
-                    },
-                )
-            }
+                    }
+                }
+            )
         }
-
-    val filtered = remember(search, commands) {
-        val query = search.trim().lowercase()
-        if (query.isEmpty()) {
-            commands
-        } else {
-            commands.filter { cmd ->
-                cmd.label.lowercase().contains(query) || cmd.hint.lowercase().contains(query)
-            }
+        if (viewModel.query.canvasTables.isNotEmpty()) {
+            add(
+                PaletteCommand(
+                    "clear-canvas",
+                    "Clear Canvas",
+                    "Remove all tables",
+                    Icons.Filled.Delete,
+                ) {
+                    viewModel.query.clear()
+                    onDismiss()
+                }
+            )
+        }
+        for (connection in connections) {
+            add(
+                PaletteCommand(
+                    id = "conn-${connection.id}",
+                    label = "Explore: ${connection.name}",
+                    hint = "${connection.dialect} · ${connection.database}",
+                    icon = Icons.Filled.Link,
+                ) {
+                    appState.setActiveConnection(
+                        connection.id,
+                        com.safedb.resolveConnectionSchemaSelection(connection.id, settings),
+                    )
+                    appState.navigate(AppRoute.Builder)
+                    onDismiss()
+                }
+            )
         }
     }
 
-    LaunchedEffect(filtered.size) {
-        selectedIndex = 0
-    }
+    val filtered =
+        remember(search, commands) {
+            val query = search.trim().lowercase()
+            if (query.isEmpty()) {
+                commands
+            } else {
+                commands.filter { cmd ->
+                    cmd.label.lowercase().contains(query) || cmd.hint.lowercase().contains(query)
+                }
+            }
+        }
+
+    LaunchedEffect(filtered.size) { selectedIndex = 0 }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier
-                .widthIn(max = 560.dp)
-                .fillMaxWidth()
-                .onPreviewKeyEvent { event ->
+            modifier =
+                Modifier.widthIn(max = 560.dp).fillMaxWidth().onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when (event.key) {
                         Key.Escape -> {
@@ -207,50 +228,45 @@ fun CommandPalette(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
             Column {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                     TextField(
                         value = search,
                         onValueChange = { search = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = {
-                            Text(
-                                "Type a command...",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                            Text("Type a command...", style = MaterialTheme.typography.bodyMedium)
                         },
                         leadingIcon = {
                             Icon(
                                 Icons.Filled.Search,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                tint =
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.size(18.dp),
                             )
                         },
                         singleLine = true,
                         shape = InputShape,
                         textStyle = MaterialTheme.typography.bodyMedium,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent,
-                        ),
+                        colors =
+                            TextFieldDefaults.colors(
+                                focusedContainerColor =
+                                    MaterialTheme.colorScheme.surfaceContainerLow,
+                                unfocusedContainerColor =
+                                    MaterialTheme.colorScheme.surfaceContainerLow,
+                                disabledContainerColor =
+                                    MaterialTheme.colorScheme.surfaceContainerLow,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                            ),
                     )
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 320.dp)
-                        .padding(8.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).padding(8.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     if (filtered.isEmpty()) {
@@ -258,10 +274,11 @@ fun CommandPalette(
                             Text(
                                 "No commands found",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 28.dp),
+                                color =
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 28.dp),
                             )
                         }
                     } else {
@@ -271,11 +288,7 @@ fun CommandPalette(
                                 supportingText = cmd.hint,
                                 selected = index == selectedIndex,
                                 onClick = { cmd.action() },
-                                leading = {
-                                    CommandIconBox(
-                                        icon = cmd.icon,
-                                    )
-                                },
+                                leading = { CommandIconBox(icon = cmd.icon) },
                             )
                         }
                     }
@@ -284,9 +297,7 @@ fun CommandPalette(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -319,10 +330,7 @@ private fun CommandIconBox(icon: ImageVector) {
 }
 
 @Composable
-private fun ShortcutHint(
-    key: String,
-    label: String,
-) {
+private fun ShortcutHint(key: String, label: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),

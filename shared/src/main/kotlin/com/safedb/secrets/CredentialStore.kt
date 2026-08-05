@@ -2,8 +2,11 @@ package com.safedb.secrets
 
 interface CredentialStore {
     fun setPassword(service: String, account: String, password: String)
+
     fun getPassword(service: String, account: String): String?
+
     fun deletePassword(service: String, account: String)
+
     fun vendor(): String
 }
 

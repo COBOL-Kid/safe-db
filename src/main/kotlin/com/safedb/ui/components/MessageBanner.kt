@@ -14,7 +14,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.SafeDbTheme
 
-enum class BannerKind { INFO, SUCCESS, WARNING, ERROR }
+enum class BannerKind {
+    INFO,
+    SUCCESS,
+    WARNING,
+    ERROR,
+}
 
 @Composable
 fun MessageBanner(
@@ -62,11 +67,7 @@ fun MessageBannerColumn(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = text,
-                color = content,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            Text(text = text, color = content, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

@@ -29,11 +29,19 @@ class LaunchProfileTest {
         val directory = Files.createTempDirectory("safedb-launch-profile")
         val password = "  trust password  "
         val passwordFile = directory.resolve("password.txt").apply { writeText("$password\r\n") }
-        val trustStore = createTrustStore(directory.resolve("roots.p12"), password, withCertificate = true)
-        val profile = writeProfile(directory, trustStore, """{"source":"file","path":"${jsonPath(passwordFile)}"}""")
+        val trustStore =
+            createTrustStore(directory.resolve("roots.p12"), password, withCertificate = true)
+        val profile =
+            writeProfile(
+                directory,
+                trustStore,
+                """{"source":"file","path":"${jsonPath(passwordFile)}"}""",
+            )
         val properties = mutableMapOf<String, String>()
 
-        assertTrue(configure(arrayOf("--launch-profile", profile.toString()), properties = properties))
+        assertTrue(
+            configure(arrayOf("--launch-profile", profile.toString()), properties = properties)
+        )
         assertEquals(trustStore.toString(), properties["javax.net.ssl.trustStore"])
         assertEquals("PKCS12", properties["javax.net.ssl.trustStoreType"])
         assertEquals(password, properties["javax.net.ssl.trustStorePassword"])
@@ -49,22 +57,28 @@ class LaunchProfileTest {
     @Test
     fun credentialStoreProfileUsesFixedServiceAndReference() {
         val directory = Files.createTempDirectory("safedb-launch-profile")
-        val trustStore = createTrustStore(directory.resolve("roots.p12"), "vault-secret", withCertificate = true)
-        val profile = writeProfile(
-            directory,
-            trustStore,
-            """{"source":"credentialStore","reference":"production-roots"}""",
-        )
+        val trustStore =
+            createTrustStore(directory.resolve("roots.p12"), "vault-secret", withCertificate = true)
+        val profile =
+            writeProfile(
+                directory,
+                trustStore,
+                """{"source":"credentialStore","reference":"production-roots"}""",
+            )
         val calls = mutableListOf<Pair<String, String>>()
-        val store = object : CredentialStore {
-            override fun getPassword(service: String, account: String): String? {
-                calls += service to account
-                return "vault-secret"
+        val store =
+            object : CredentialStore {
+                override fun getPassword(service: String, account: String): String? {
+                    calls += service to account
+                    return "vault-secret"
+                }
+
+                override fun setPassword(service: String, account: String, password: String) = Unit
+
+                override fun deletePassword(service: String, account: String) = Unit
+
+                override fun vendor(): String = "test"
             }
-            override fun setPassword(service: String, account: String, password: String) = Unit
-            override fun deletePassword(service: String, account: String) = Unit
-            override fun vendor(): String = "test"
-        }
 
         assertTrue(configure(arrayOf("--launch-profile", profile.toString()), store = store))
         assertEquals(listOf(TRUST_STORE_CREDENTIAL_SERVICE to "production-roots"), calls)
@@ -73,49 +87,62 @@ class LaunchProfileTest {
     @Test
     fun credentialStoreNeverFallsBackWhenBackendOrEntryIsMissing() {
         val directory = Files.createTempDirectory("safedb-launch-profile")
-        val trustStore = createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)
-        val profile = writeProfile(
-            directory,
-            trustStore,
-            """{"source":"credentialStore","reference":"missing"}""",
-        )
+        val trustStore =
+            createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)
+        val profile =
+            writeProfile(
+                directory,
+                trustStore,
+                """{"source":"credentialStore","reference":"missing"}""",
+            )
 
         assertTrue(
             assertFailsWith<LaunchProfileException> {
-                configure(arrayOf("--launch-profile", profile.toString()), store = null)
-            }.message!!.contains("unavailable"),
+                    configure(arrayOf("--launch-profile", profile.toString()), store = null)
+                }
+                .message!!
+                .contains("unavailable")
         )
-        val emptyStore = object : CredentialStore {
-            override fun getPassword(service: String, account: String): String? = null
-            override fun setPassword(service: String, account: String, password: String) = Unit
-            override fun deletePassword(service: String, account: String) = Unit
-            override fun vendor(): String = "test"
-        }
+        val emptyStore =
+            object : CredentialStore {
+                override fun getPassword(service: String, account: String): String? = null
+
+                override fun setPassword(service: String, account: String, password: String) = Unit
+
+                override fun deletePassword(service: String, account: String) = Unit
+
+                override fun vendor(): String = "test"
+            }
         assertTrue(
             assertFailsWith<LaunchProfileException> {
-                configure(arrayOf("--launch-profile", profile.toString()), store = emptyStore)
-            }.message!!.contains("not found"),
+                    configure(arrayOf("--launch-profile", profile.toString()), store = emptyStore)
+                }
+                .message!!
+                .contains("not found")
         )
     }
 
     @Test
     fun profileSchemaAndPasswordSourceAreStrict() {
         val directory = Files.createTempDirectory("safedb-launch-profile")
-        val trustStore = createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)
-        val unknownField = directory.resolve("unknown.json").apply {
-            writeText(
-                """{"schemaVersion":1,"extra":true,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":{"source":"file","path":"x"}}}""",
-            )
-        }
+        val trustStore =
+            createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)
+        val unknownField =
+            directory.resolve("unknown.json").apply {
+                writeText(
+                    """{"schemaVersion":1,"extra":true,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":{"source":"file","path":"x"}}}"""
+                )
+            }
         assertFailsWith<LaunchProfileException> {
             configure(arrayOf("--launch-profile", unknownField.toString()))
         }
 
-        val mixedSource = writeProfile(
-            directory,
-            trustStore,
-            """{"source":"credentialStore","reference":"roots","path":"/secret"}""",
-        )
+        val mixedSource =
+            writeProfile(
+                directory,
+                trustStore,
+                """{"source":"credentialStore","reference":"roots","path":"/secret"}""",
+            )
         assertFailsWith<LaunchProfileException> {
             configure(arrayOf("--launch-profile", mixedSource.toString()))
         }
@@ -128,11 +155,12 @@ class LaunchProfileTest {
         }
 
         val directory = Files.createTempDirectory("safedb-launch-profile")
-        val profile = directory.resolve("profile.json").apply {
-            writeText(
-                """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"relative.p12","password":{"source":"file","path":"relative.txt"}}}""",
-            )
-        }
+        val profile =
+            directory.resolve("profile.json").apply {
+                writeText(
+                    """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"relative.p12","password":{"source":"file","path":"relative.txt"}}}"""
+                )
+            }
         assertFailsWith<LaunchProfileException> {
             configure(arrayOf("--launch-profile", profile.toString()))
         }
@@ -141,13 +169,15 @@ class LaunchProfileTest {
     @Test
     fun oversizedLaunchProfileIsRejectedBeforeJsonParsing() {
         val directory = Files.createTempDirectory("safedb-launch-profile")
-        val profile = directory.resolve("oversized.json").apply {
-            writeBytes(ByteArray(65_537) { ' '.code.toByte() })
-        }
+        val profile =
+            directory.resolve("oversized.json").apply {
+                writeBytes(ByteArray(65_537) { ' '.code.toByte() })
+            }
 
-        val error = assertFailsWith<LaunchProfileException> {
-            configure(arrayOf("--launch-profile", profile.toString()))
-        }
+        val error =
+            assertFailsWith<LaunchProfileException> {
+                configure(arrayOf("--launch-profile", profile.toString()))
+            }
 
         assertEquals("Launch profile is too large", error.message)
     }
@@ -155,20 +185,30 @@ class LaunchProfileTest {
     @Test
     fun passwordFileRejectsMalformedOrMultilineContentWithoutLeakingIt() {
         val directory = Files.createTempDirectory("safedb-launch-profile")
-        val trustStore = createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)
-        val multiline = directory.resolve("password.txt").apply { writeText("top-secret\nsecond-line") }
-        val profile = writeProfile(directory, trustStore, """{"source":"file","path":"${jsonPath(multiline)}"}""")
+        val trustStore =
+            createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)
+        val multiline =
+            directory.resolve("password.txt").apply { writeText("top-secret\nsecond-line") }
+        val profile =
+            writeProfile(
+                directory,
+                trustStore,
+                """{"source":"file","path":"${jsonPath(multiline)}"}""",
+            )
 
-        val error = assertFailsWith<LaunchProfileException> {
-            configure(arrayOf("--launch-profile", profile.toString()))
-        }
+        val error =
+            assertFailsWith<LaunchProfileException> {
+                configure(arrayOf("--launch-profile", profile.toString()))
+            }
         assertFalse(error.message.orEmpty().contains("top-secret"))
 
         multiline.writeBytes(byteArrayOf(0xC3.toByte(), 0x28))
         assertTrue(
             assertFailsWith<LaunchProfileException> {
-                configure(arrayOf("--launch-profile", profile.toString()))
-            }.message!!.contains("UTF-8"),
+                    configure(arrayOf("--launch-profile", profile.toString()))
+                }
+                .message!!
+                .contains("UTF-8")
         )
     }
 
@@ -176,8 +216,14 @@ class LaunchProfileTest {
     fun wrongPasswordAndEmptyTrustStoreFailBeforePropertiesAreChanged() {
         val directory = Files.createTempDirectory("safedb-launch-profile")
         val passwordFile = directory.resolve("password.txt").apply { writeText("wrong") }
-        val trustStore = createTrustStore(directory.resolve("roots.p12"), "right", withCertificate = true)
-        val profile = writeProfile(directory, trustStore, """{"source":"file","path":"${jsonPath(passwordFile)}"}""")
+        val trustStore =
+            createTrustStore(directory.resolve("roots.p12"), "right", withCertificate = true)
+        val profile =
+            writeProfile(
+                directory,
+                trustStore,
+                """{"source":"file","path":"${jsonPath(passwordFile)}"}""",
+            )
         val properties = mutableMapOf<String, String>()
 
         assertFailsWith<LaunchProfileException> {
@@ -189,8 +235,13 @@ class LaunchProfileTest {
         createTrustStore(trustStore, "right", withCertificate = false)
         assertTrue(
             assertFailsWith<LaunchProfileException> {
-                configure(arrayOf("--launch-profile", profile.toString()), properties = properties)
-            }.message!!.contains("no trusted certificates"),
+                    configure(
+                        arrayOf("--launch-profile", profile.toString()),
+                        properties = properties,
+                    )
+                }
+                .message!!
+                .contains("no trusted certificates")
         )
         assertTrue(properties.isEmpty())
     }
@@ -199,16 +250,17 @@ class LaunchProfileTest {
         args: Array<String>,
         store: CredentialStore? = null,
         properties: MutableMap<String, String> = mutableMapOf(),
-    ): Boolean = LaunchProfileBootstrap.configure(
-        args = args,
-        credentialStoreFactory = { store },
-        propertySetter = properties::put,
-    )
+    ): Boolean =
+        LaunchProfileBootstrap.configure(
+            args = args,
+            credentialStoreFactory = { store },
+            propertySetter = properties::put,
+        )
 
     private fun writeProfile(directory: Path, trustStore: Path, password: String): Path =
         directory.resolve("profile-${System.nanoTime()}.json").apply {
             writeText(
-                """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":$password}}""",
+                """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":$password}}"""
             )
         }
 
@@ -216,9 +268,10 @@ class LaunchProfileTest {
         val store = KeyStore.getInstance("PKCS12").apply { load(null, password.toCharArray()) }
         if (withCertificate) {
             val bundled = KeyStore.getInstance(KeyStore.getDefaultType())
-            Files.newInputStream(Path.of(System.getProperty("java.home"), "lib", "security", "cacerts")).use {
-                bundled.load(it, "changeit".toCharArray())
-            }
+            Files.newInputStream(
+                    Path.of(System.getProperty("java.home"), "lib", "security", "cacerts")
+                )
+                .use { bundled.load(it, "changeit".toCharArray()) }
             val alias = bundled.aliases().asSequence().first { bundled.getCertificate(it) != null }
             store.setCertificateEntry("test-root", bundled.getCertificate(alias))
         }

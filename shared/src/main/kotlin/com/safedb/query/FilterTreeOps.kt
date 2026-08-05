@@ -26,7 +26,8 @@ fun addFilterLeaf(
     val index = path.first()
     val child = group.children.getOrNull(index) as? FilterNode.Group ?: return group
     val children = group.children.toMutableList()
-    children[index] = FilterNode.Group(addFilterLeaf(child.group, path.drop(1), identified, idFactory))
+    children[index] =
+        FilterNode.Group(addFilterLeaf(child.group, path.drop(1), identified, idFactory))
     return group.copy(children = children)
 }
 
@@ -38,15 +39,16 @@ fun addFilterGroup(
 ): FilterGroup {
     if (path.isEmpty()) {
         return group.copy(
-            children = group.children + FilterNode.Group(
-                FilterGroup(id = idFactory(), connector = connector),
-            ),
+            children =
+                group.children +
+                    FilterNode.Group(FilterGroup(id = idFactory(), connector = connector))
         )
     }
     val index = path.first()
     val child = group.children.getOrNull(index) as? FilterNode.Group ?: return group
     val children = group.children.toMutableList()
-    children[index] = FilterNode.Group(addFilterGroup(child.group, path.drop(1), connector, idFactory))
+    children[index] =
+        FilterNode.Group(addFilterGroup(child.group, path.drop(1), connector, idFactory))
     return group.copy(children = children)
 }
 
@@ -69,7 +71,9 @@ fun removeFilterNode(group: FilterGroup, path: List<Int>): FilterGroup {
     val index = path.first()
     if (index !in group.children.indices) return group
     if (path.size == 1) {
-        return group.copy(children = group.children.filterIndexed { childIndex, _ -> childIndex != index })
+        return group.copy(
+            children = group.children.filterIndexed { childIndex, _ -> childIndex != index }
+        )
     }
     val child = group.children[index] as? FilterNode.Group ?: return group
     val children = group.children.toMutableList()
@@ -79,15 +83,16 @@ fun removeFilterNode(group: FilterGroup, path: List<Int>): FilterGroup {
 
 fun pruneFiltersForAlias(group: FilterGroup, alias: String): FilterGroup =
     group.copy(
-        children = group.children.mapNotNull { child ->
-            when (child) {
-                is FilterNode.Leaf -> child.takeUnless { it.spec.tableAlias == alias }
-                is FilterNode.Group -> {
-                    val pruned = pruneFiltersForAlias(child.group, alias)
-                    FilterNode.Group(pruned).takeIf { pruned.children.isNotEmpty() }
+        children =
+            group.children.mapNotNull { child ->
+                when (child) {
+                    is FilterNode.Leaf -> child.takeUnless { it.spec.tableAlias == alias }
+                    is FilterNode.Group -> {
+                        val pruned = pruneFiltersForAlias(child.group, alias)
+                        FilterNode.Group(pruned).takeIf { pruned.children.isNotEmpty() }
+                    }
                 }
             }
-        },
     )
 
 fun filterNodeIdAtPath(group: FilterGroup, path: List<Int>): String? {
@@ -114,14 +119,18 @@ fun ensureFilterNodeIds(
 ): FilterGroup =
     group.copy(
         id = group.id.ifEmpty(idFactory),
-        children = group.children.map { child ->
-            when (child) {
-                is FilterNode.Leaf -> FilterNode.Leaf(
-                    child.spec.takeIf { it.id.isNotEmpty() } ?: child.spec.copy(id = idFactory()),
-                )
-                is FilterNode.Group -> FilterNode.Group(ensureFilterNodeIds(child.group, idFactory))
-            }
-        },
+        children =
+            group.children.map { child ->
+                when (child) {
+                    is FilterNode.Leaf ->
+                        FilterNode.Leaf(
+                            child.spec.takeIf { it.id.isNotEmpty() }
+                                ?: child.spec.copy(id = idFactory())
+                        )
+                    is FilterNode.Group ->
+                        FilterNode.Group(ensureFilterNodeIds(child.group, idFactory))
+                }
+            },
     )
 
 fun rebuildConnectorOverrides(
@@ -134,10 +143,11 @@ fun rebuildConnectorOverrides(
 
     fun visit(parent: FilterGroup) {
         parent.children.forEachIndexed { index, child ->
-            val id = when (child) {
-                is FilterNode.Leaf -> child.spec.id
-                is FilterNode.Group -> child.group.id
-            }
+            val id =
+                when (child) {
+                    is FilterNode.Leaf -> child.spec.id
+                    is FilterNode.Group -> child.group.id
+                }
             if (index > 0 && id.isNotEmpty()) {
                 eligibleIds += id
                 parents[id] = parent
@@ -150,6 +160,8 @@ fun rebuildConnectorOverrides(
     val modifiedGroup = modifiedGroupPath?.let { filterGroupAtPath(group, it) }
     return overrides.filter { (id, connector) ->
         id in eligibleIds &&
-            (modifiedGroup == null || parents[id]?.let { it.id != modifiedGroup.id || it.connector != connector } != false)
+            (modifiedGroup == null ||
+                parents[id]?.let { it.id != modifiedGroup.id || it.connector != connector } !=
+                    false)
     }
 }

@@ -31,7 +31,12 @@ data class PlanJoinEvidence(
     val estimatedOutputRows: Long? = null,
 )
 
-enum class PlanOperationKind { Sort, Grouping, Distinct, Other }
+enum class PlanOperationKind {
+    Sort,
+    Grouping,
+    Distinct,
+    Other,
+}
 
 data class PlanBlockingOperation(
     val kind: PlanOperationKind,

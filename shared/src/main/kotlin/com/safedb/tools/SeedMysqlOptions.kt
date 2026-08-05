@@ -41,17 +41,22 @@ internal fun parseArgs(args: List<String>): SeedOptions {
             return args[index]
         }
         when (arg) {
-            "-h", "--help" -> help = true
+            "-h",
+            "--help" -> help = true
             "--static" -> static = true
             "--generated" -> static = false
             "--reset" -> reset = true
             "--reset-state" -> resetState = true
             "--orders" -> generator = generator.copy(orders = parsePositiveInt(nextValue(), arg))
-            "--customers" -> generator = generator.copy(customers = parsePositiveInt(nextValue(), arg))
-            "--products" -> generator = generator.copy(products = parsePositiveInt(nextValue(), arg))
-            "--categories" -> generator = generator.copy(categories = parsePositiveInt(nextValue(), arg))
+            "--customers" ->
+                generator = generator.copy(customers = parsePositiveInt(nextValue(), arg))
+            "--products" ->
+                generator = generator.copy(products = parsePositiveInt(nextValue(), arg))
+            "--categories" ->
+                generator = generator.copy(categories = parsePositiveInt(nextValue(), arg))
             "--seed" -> generator = generator.copy(seed = parsePositiveInt(nextValue(), arg))
-            "--batch-size" -> generator = generator.copy(batchSize = parsePositiveInt(nextValue(), arg))
+            "--batch-size" ->
+                generator = generator.copy(batchSize = parsePositiveInt(nextValue(), arg))
             "--" -> {
                 if (index + 1 < args.size) {
                     val nested = parseArgs(args.drop(index + 1))
@@ -79,7 +84,8 @@ internal fun parseArgs(args: List<String>): SeedOptions {
 private fun parsePositiveInt(raw: String, label: String): Int {
     if (!raw.all { it in '0'..'9' }) throw UsageError("$label must be a positive integer")
     val value = raw.toLongOrNull() ?: throw UsageError("$label must be a positive safe integer")
-    if (value < 1 || value > Int.MAX_VALUE) throw UsageError("$label must be a positive safe integer")
+    if (value < 1 || value > Int.MAX_VALUE)
+        throw UsageError("$label must be a positive safe integer")
     return value.toInt()
 }
 
@@ -117,7 +123,9 @@ internal fun printUsage(out: java.io.PrintStream) {
           SAFEDB_TEST_MYSQL_DATABASE  safedb_test
           SAFEDB_TEST_MYSQL_DOCKER    pin a container name
 
-        """.trimIndent(),
+        """
+            .trimIndent()
     )
 }
+
 internal class UsageError(message: String) : RuntimeException(message)

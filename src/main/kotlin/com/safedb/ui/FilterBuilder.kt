@@ -5,10 +5,7 @@ import androidx.compose.ui.Modifier
 import com.safedb.viewmodel.QueryViewModel
 
 @Composable
-fun FilterBuilder(
-    queryViewModel: QueryViewModel,
-    modifier: Modifier = Modifier,
-) {
+fun FilterBuilder(queryViewModel: QueryViewModel, modifier: Modifier = Modifier) {
     FilterGroupCard(
         queryViewModel = queryViewModel,
         group = queryViewModel.filters,

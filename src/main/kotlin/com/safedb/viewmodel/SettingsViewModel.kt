@@ -14,10 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class SettingsViewModel(
-    private val service: SafeDbService,
-    private val scope: CoroutineScope,
-) {
+class SettingsViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
     private var defaultSchemaRequestGeneration = 0
     private var defaultSchemaConnectionId: String? = null
     private val settingsMutationMutex = Mutex()
@@ -101,12 +98,15 @@ class SettingsViewModel(
             _defaultSchemaOptions.value = emptyList()
             defaultSchemaConnectionId = null
             try {
-                val schemas = service.getSchema(connectionId).tables
-                    .asSequence()
-                    .map { it.schema }
-                    .distinct()
-                    .sortedWith(String.CASE_INSENSITIVE_ORDER)
-                    .toList()
+                val schemas =
+                    service
+                        .getSchema(connectionId)
+                        .tables
+                        .asSequence()
+                        .map { it.schema }
+                        .distinct()
+                        .sortedWith(String.CASE_INSENSITIVE_ORDER)
+                        .toList()
                 if (generation != defaultSchemaRequestGeneration) return@launch
                 _defaultSchemaOptions.value = schemas
                 defaultSchemaConnectionId = connectionId
@@ -132,27 +132,25 @@ class SettingsViewModel(
         _defaultSchemaError.value = null
     }
 
-    fun saveDefaultLocation(
-        connectionId: String,
-        schema: String,
-        onSuccess: () -> Unit = {},
-    ) {
+    fun saveDefaultLocation(connectionId: String, schema: String, onSuccess: () -> Unit = {}) {
         mutateSettings {
             val normalizedConnectionId = connectionId.trim()
             val normalizedSchema = schema.trim()
-            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty()) return@mutateSettings
+            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty())
+                return@mutateSettings
             if (
                 defaultSchemaConnectionId != normalizedConnectionId ||
-                normalizedSchema !in _defaultSchemaOptions.value
+                    normalizedSchema !in _defaultSchemaOptions.value
             ) {
                 _saveError.value = "Select a schema loaded from the chosen database."
                 return@mutateSettings
             }
-            if (save(
+            if (
+                save(
                     _settings.value.copy(
                         defaultConnectionId = normalizedConnectionId,
                         defaultSchema = normalizedSchema,
-                    ),
+                    )
                 )
             ) {
                 onSuccess()
@@ -162,7 +160,9 @@ class SettingsViewModel(
 
     fun clearDefaultLocation(onSuccess: () -> Unit = {}) {
         mutateSettings {
-            if (_settings.value.defaultConnectionId == null && _settings.value.defaultSchema == null) {
+            if (
+                _settings.value.defaultConnectionId == null && _settings.value.defaultSchema == null
+            ) {
                 onSuccess()
                 return@mutateSettings
             }
@@ -176,13 +176,15 @@ class SettingsViewModel(
         mutateSchemaHistory {
             val normalizedConnectionId = connectionId.trim()
             val normalizedSchema = schema.trim()
-            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty()) return@mutateSchemaHistory null
+            if (normalizedConnectionId.isEmpty() || normalizedSchema.isEmpty())
+                return@mutateSchemaHistory null
             if (_settings.value.lastSelectedSchemas[normalizedConnectionId] == normalizedSchema) {
                 return@mutateSchemaHistory null
             }
             _settings.value.copy(
-                lastSelectedSchemas = _settings.value.lastSelectedSchemas +
-                    (normalizedConnectionId to normalizedSchema),
+                lastSelectedSchemas =
+                    _settings.value.lastSelectedSchemas +
+                        (normalizedConnectionId to normalizedSchema)
             )
         }
     }
@@ -190,9 +192,10 @@ class SettingsViewModel(
     fun forgetLastSchema(connectionId: String) {
         mutateSchemaHistory {
             val normalizedConnectionId = connectionId.trim()
-            if (normalizedConnectionId !in _settings.value.lastSelectedSchemas) return@mutateSchemaHistory null
+            if (normalizedConnectionId !in _settings.value.lastSelectedSchemas)
+                return@mutateSchemaHistory null
             _settings.value.copy(
-                lastSelectedSchemas = _settings.value.lastSelectedSchemas - normalizedConnectionId,
+                lastSelectedSchemas = _settings.value.lastSelectedSchemas - normalizedConnectionId
             )
         }
     }
@@ -205,12 +208,14 @@ class SettingsViewModel(
                 onSuccess()
                 return@mutateSettings
             }
-            if (save(
+            if (
+                save(
                     _settings.value.copy(
-                        defaultConnectionId = if (clearsDefault) null else _settings.value.defaultConnectionId,
+                        defaultConnectionId =
+                            if (clearsDefault) null else _settings.value.defaultConnectionId,
                         defaultSchema = if (clearsDefault) null else _settings.value.defaultSchema,
                         lastSelectedSchemas = _settings.value.lastSelectedSchemas - connectionId,
-                    ),
+                    )
                 )
             ) {
                 onSuccess()
@@ -223,11 +228,13 @@ class SettingsViewModel(
             val clearsDefaultSchema = _settings.value.defaultConnectionId == connectionId
             val clearsHistory = connectionId in _settings.value.lastSelectedSchemas
             if (!clearsDefaultSchema && !clearsHistory) return@mutateSettings
-            if (save(
+            if (
+                save(
                     _settings.value.copy(
-                        defaultSchema = if (clearsDefaultSchema) null else _settings.value.defaultSchema,
+                        defaultSchema =
+                            if (clearsDefaultSchema) null else _settings.value.defaultSchema,
                         lastSelectedSchemas = _settings.value.lastSelectedSchemas - connectionId,
-                    ),
+                    )
                 )
             ) {
                 if (clearsDefaultSchema) clearDefaultSchemaOptions()
@@ -283,5 +290,4 @@ class SettingsViewModel(
             false
         }
     }
-
 }

@@ -10,20 +10,27 @@ import kotlin.test.assertTrue
 class ResultsTableLayoutTest {
     @Test
     fun buildsStableColumnLayoutsFromResultColumns() {
-        val result = QueryResult(
-            columns = listOf(
-                ResultColumn("t0__id", "bigint"),
-                ResultColumn("t0__customer_name", "varchar"),
-                ResultColumn("plain_total", "decimal"),
-            ),
-            rows = listOf(
-                listOf(ResultCell.IntegerCell(1), ResultCell.text("Ada Lovelace"), ResultCell.FloatCell(42.5)),
-                listOf(ResultCell.IntegerCell(200), ResultCell.text("Grace Hopper")),
-            ),
-            rowCount = 2,
-            truncated = false,
-            warnings = emptyList(),
-        )
+        val result =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__id", "bigint"),
+                        ResultColumn("t0__customer_name", "varchar"),
+                        ResultColumn("plain_total", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.IntegerCell(1),
+                            ResultCell.text("Ada Lovelace"),
+                            ResultCell.FloatCell(42.5),
+                        ),
+                        listOf(ResultCell.IntegerCell(200), ResultCell.text("Grace Hopper")),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
 
         val columns = buildResultTableColumns(result)
 
@@ -37,10 +44,7 @@ class ResultsTableLayoutTest {
     @Test
     fun clampsColumnWidthsToReadableBounds() {
         val narrow = resultColumnWidthDp("id", listOf(ResultCell.IntegerCell(1)))
-        val wide = resultColumnWidthDp(
-            "description",
-            listOf(ResultCell.text("x".repeat(500))),
-        )
+        val wide = resultColumnWidthDp("description", listOf(ResultCell.text("x".repeat(500))))
 
         assertEquals(72, narrow)
         assertEquals(280, wide)

@@ -49,24 +49,53 @@ class QueryPlanRefinementTest {
         assertTrue(refineAccess(PlanAccessMethod.TableScan, 20).signals.isEmpty())
         assertEquals(4, refineAccess(PlanAccessMethod.TableScan, 25_000).signals.single().points)
 
-        val high = refineAccess(PlanAccessMethod.TableScan, 150_000, TableSizeClass.Large, EvidenceConfidence.Medium)
+        val high =
+            refineAccess(
+                PlanAccessMethod.TableScan,
+                150_000,
+                TableSizeClass.Large,
+                EvidenceConfidence.Medium,
+            )
         assertTrue(high.signals.single().mandatoryBlockWhenGateEnabled)
     }
 
     @Test
     fun specializedTextEvidenceReplacesBroadTextWithOnePoint() {
         val target = RiskTarget.Access("t0", AccessRiskKind.Text)
-        val base = buildAssessment(
-            "f",
-            listOf(RiskSignal(RiskSignalCode.ScanProneTextPredicate, RiskCategory.Access, RiskSubject(tableAlias = "t0"), 3, SignalBasis.StaticSchema, EvidenceConfidence.High, target)),
-            emptyList(),
-        )
-        val refined = refineRiskWithPlan(
-            base,
-            NormalizedQueryPlan(relations = listOf(PlanRelationAccess(table = "orders", alias = "t0", method = PlanAccessMethod.BoundedRange, estimatedRows = 5, specializedTextEvidence = true))),
-            oneTableSpec(),
-            Schema(listOf(table("orders"))),
-        )
+        val base =
+            buildAssessment(
+                "f",
+                listOf(
+                    RiskSignal(
+                        RiskSignalCode.ScanProneTextPredicate,
+                        RiskCategory.Access,
+                        RiskSubject(tableAlias = "t0"),
+                        3,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.High,
+                        target,
+                    )
+                ),
+                emptyList(),
+            )
+        val refined =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0",
+                                method = PlanAccessMethod.BoundedRange,
+                                estimatedRows = 5,
+                                specializedTextEvidence = true,
+                            )
+                        )
+                ),
+                oneTableSpec(),
+                Schema(listOf(table("orders"))),
+            )
 
         assertEquals(1, refined.signals.single { it.target == target }.points)
     }
@@ -74,23 +103,42 @@ class QueryPlanRefinementTest {
     @Test
     fun unknownAccessAndMissingOperationRowsPreserveStaticSignalsAndAddUncertainty() {
         val operationTarget = RiskTarget.Operation(PlanOperationKind.Sort, setOf("t0"))
-        val base = buildAssessment(
-            "f",
-            listOf(
-                genericAccessSignal(),
-                RiskSignal(RiskSignalCode.LimitCannotBoundWork, RiskCategory.Operations, RiskSubject(operation = "sort"), 3, SignalBasis.StaticSchema, EvidenceConfidence.Medium, operationTarget),
-            ),
-            emptyList(),
-        )
-        val refined = refineRiskWithPlan(
-            base,
-            NormalizedQueryPlan(
-                relations = listOf(PlanRelationAccess(table = "orders", alias = "t0", method = PlanAccessMethod.Unknown, estimatedRows = 10)),
-                blockingOperations = listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0"), null)),
-            ),
-            oneTableSpec(),
-            Schema(listOf(table("orders"))),
-        )
+        val base =
+            buildAssessment(
+                "f",
+                listOf(
+                    genericAccessSignal(),
+                    RiskSignal(
+                        RiskSignalCode.LimitCannotBoundWork,
+                        RiskCategory.Operations,
+                        RiskSubject(operation = "sort"),
+                        3,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.Medium,
+                        operationTarget,
+                    ),
+                ),
+                emptyList(),
+            )
+        val refined =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0",
+                                method = PlanAccessMethod.Unknown,
+                                estimatedRows = 10,
+                            )
+                        ),
+                    blockingOperations =
+                        listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0"), null)),
+                ),
+                oneTableSpec(),
+                Schema(listOf(table("orders"))),
+            )
 
         assertEquals(base.signals, refined.signals)
         assertTrue(refined.uncertainties.any { it.code == "plan_access_method_unknown" })
@@ -101,37 +149,60 @@ class QueryPlanRefinementTest {
     fun planRowsRefineBlockingOperationsAndJoinExpansionBySemanticTarget() {
         val operationTarget = RiskTarget.Operation(PlanOperationKind.Sort, setOf("t0", "t1"))
         val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
-        val base = buildAssessment(
-            "f",
-            listOf(
-                RiskSignal(RiskSignalCode.LimitCannotBoundWork, RiskCategory.Operations, RiskSubject(operation = "sort"), 3, SignalBasis.StaticSchema, EvidenceConfidence.Medium, operationTarget),
-                RiskSignal(RiskSignalCode.JoinExpansionPossible, RiskCategory.Joins, RiskSubject(operation = "join"), 1, SignalBasis.StaticSchema, EvidenceConfidence.High, joinTarget),
-            ),
-            emptyList(),
-        )
+        val base =
+            buildAssessment(
+                "f",
+                listOf(
+                    RiskSignal(
+                        RiskSignalCode.LimitCannotBoundWork,
+                        RiskCategory.Operations,
+                        RiskSubject(operation = "sort"),
+                        3,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.Medium,
+                        operationTarget,
+                    ),
+                    RiskSignal(
+                        RiskSignalCode.JoinExpansionPossible,
+                        RiskCategory.Joins,
+                        RiskSubject(operation = "join"),
+                        1,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.High,
+                        joinTarget,
+                    ),
+                ),
+                emptyList(),
+            )
         val spec = twoTableSpec()
         val schema = Schema(listOf(table("orders"), table("items")))
-        val low = refineRiskWithPlan(
-            base,
-            NormalizedQueryPlan(
-                joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 50)),
-                blockingOperations = listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50)),
-            ),
-            spec,
-            schema,
-        )
+        val low =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 50)),
+                    blockingOperations =
+                        listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50)),
+                ),
+                spec,
+                schema,
+            )
         assertFalse(low.signals.any { it.target == joinTarget })
         assertEquals(1, low.signals.single { it.target == operationTarget }.points)
 
-        val high = refineRiskWithPlan(
-            base,
-            NormalizedQueryPlan(
-                joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 150_000)),
-                blockingOperations = listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 25_000)),
-            ),
-            spec,
-            schema,
-        )
+        val high =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 150_000)),
+                    blockingOperations =
+                        listOf(
+                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 25_000)
+                        ),
+                ),
+                spec,
+                schema,
+            )
         assertEquals(3, high.signals.single { it.target == operationTarget }.points)
         assertTrue(high.signals.single { it.target == joinTarget }.mandatoryBlockWhenGateEnabled)
     }
@@ -141,57 +212,73 @@ class QueryPlanRefinementTest {
         rows: Long,
         size: TableSizeClass = TableSizeClass.Medium,
         confidence: EvidenceConfidence = EvidenceConfidence.Medium,
-    ): QueryRiskAssessment = refineRiskWithPlan(
-        buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
-        NormalizedQueryPlan(relations = listOf(PlanRelationAccess(table = "orders", alias = "t0", method = method, estimatedRows = rows))),
-        oneTableSpec(),
-        Schema(listOf(table("orders", size, confidence))),
-    )
+    ): QueryRiskAssessment =
+        refineRiskWithPlan(
+            buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
+            NormalizedQueryPlan(
+                relations =
+                    listOf(
+                        PlanRelationAccess(
+                            table = "orders",
+                            alias = "t0",
+                            method = method,
+                            estimatedRows = rows,
+                        )
+                    )
+            ),
+            oneTableSpec(),
+            Schema(listOf(table("orders", size, confidence))),
+        )
 }
 
-private fun genericAccessSignal() = RiskSignal(
-    RiskSignalCode.NoKnownCompatibleAccessPath,
-    RiskCategory.Access,
-    RiskSubject(tableAlias = "t0", table = "orders"),
-    2,
-    SignalBasis.StaticSchema,
-    EvidenceConfidence.Medium,
-    RiskTarget.Access("t0"),
-)
+private fun genericAccessSignal() =
+    RiskSignal(
+        RiskSignalCode.NoKnownCompatibleAccessPath,
+        RiskCategory.Access,
+        RiskSubject(tableAlias = "t0", table = "orders"),
+        2,
+        SignalBasis.StaticSchema,
+        EvidenceConfidence.Medium,
+        RiskTarget.Access("t0"),
+    )
 
-private fun oneTableSpec() = QuerySpec(
-    tables = listOf(TableRef("public", "orders", "t0")),
-    columns = listOf(ColumnSel("t0", "id")),
-    filters = FilterGroup.empty(),
-    limit = 100,
-)
+private fun oneTableSpec() =
+    QuerySpec(
+        tables = listOf(TableRef("public", "orders", "t0")),
+        columns = listOf(ColumnSel("t0", "id")),
+        filters = FilterGroup.empty(),
+        limit = 100,
+    )
 
-private fun twoTableSpec() = QuerySpec(
-    tables = listOf(TableRef("public", "orders", "t0"), TableRef("public", "items", "t1")),
-    columns = listOf(ColumnSel("t0", "id")),
-    joins = listOf(JoinSpec("t0", "id", "t1", "id")),
-    filters = FilterGroup.empty(),
-    limit = 100,
-)
+private fun twoTableSpec() =
+    QuerySpec(
+        tables = listOf(TableRef("public", "orders", "t0"), TableRef("public", "items", "t1")),
+        columns = listOf(ColumnSel("t0", "id")),
+        joins = listOf(JoinSpec("t0", "id", "t1", "id")),
+        filters = FilterGroup.empty(),
+        limit = 100,
+    )
 
 private fun table(
     name: String,
     size: TableSizeClass = TableSizeClass.Medium,
     confidence: EvidenceConfidence = EvidenceConfidence.Medium,
-): TableInfo = TableInfo(
-    schema = "public",
-    name = name,
-    columns = listOf(ColumnInfo("id", "int", false, joinEligible = true)),
-    indexes = listOf(
-        IndexInfo(
-            "${name}_id",
-            columns = listOf("id"),
-            keys = listOf(IndexKey("id")),
-            capabilities = IndexCapabilities(equality = true, ordering = true),
-            isPartial = false,
-        ),
-    ),
-    indexMetadata = MetadataCoverage.complete(),
-    foreignKeyMetadata = MetadataCoverage.complete(),
-    tableSize = TableSizeEstimate(size, MetadataCoverage.complete(), confidence),
-)
+): TableInfo =
+    TableInfo(
+        schema = "public",
+        name = name,
+        columns = listOf(ColumnInfo("id", "int", false, joinEligible = true)),
+        indexes =
+            listOf(
+                IndexInfo(
+                    "${name}_id",
+                    columns = listOf("id"),
+                    keys = listOf(IndexKey("id")),
+                    capabilities = IndexCapabilities(equality = true, ordering = true),
+                    isPartial = false,
+                )
+            ),
+        indexMetadata = MetadataCoverage.complete(),
+        foreignKeyMetadata = MetadataCoverage.complete(),
+        tableSize = TableSizeEstimate(size, MetadataCoverage.complete(), confidence),
+    )

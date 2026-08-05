@@ -6,10 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 const val SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000L
 
-private data class SessionCredential(
-    var password: String,
-    var lastUsed: Instant,
-)
+private data class SessionCredential(var password: String, var lastUsed: Instant)
 
 object CredentialSession {
     private val session = ConcurrentHashMap<String, SessionCredential>()

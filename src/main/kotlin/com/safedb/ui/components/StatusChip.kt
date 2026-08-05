@@ -13,7 +13,12 @@ import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 
 enum class StatusChipKind {
-    NEUTRAL, SUCCESS, WARNING, ERROR, INFO, UQ
+    NEUTRAL,
+    SUCCESS,
+    WARNING,
+    ERROR,
+    INFO,
+    UQ,
 }
 
 @Composable

@@ -3,9 +3,7 @@ package com.safedb.tools
 import com.safedb.AppRoute
 import com.safedb.model.ThemePalette
 
-/**
- * Dev-only comparison render for the persisted Control Plane color schemes.
- */
+/** Dev-only comparison render for the persisted Control Plane color schemes. */
 fun main() {
     System.setProperty("java.awt.headless", "false")
 
@@ -16,9 +14,7 @@ fun main() {
             render("scheme-connections-$suffix", dark, palette) { state, _ ->
                 state.navigate(AppRoute.Connections)
             }
-            render("scheme-settings-$suffix", dark, palette) { state, _ ->
-                state.openSettings()
-            }
+            render("scheme-settings-$suffix", dark, palette) { state, _ -> state.openSettings() }
         }
     }
 }

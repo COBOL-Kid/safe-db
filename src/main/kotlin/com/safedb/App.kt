@@ -4,8 +4,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.safedb.secrets.SecretsManager
 import com.safedb.explore.exploreSpecHash
+import com.safedb.secrets.SecretsManager
 import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
@@ -38,9 +38,7 @@ import kotlinx.coroutines.runBlocking
 @Composable
 fun App(appState: AppState, mainWindow: java.awt.Window) {
     val viewModel = remember(appState) { AppViewModel(appState.service) }
-    DisposableEffect(viewModel) {
-        onDispose(viewModel::close)
-    }
+    DisposableEffect(viewModel) { onDispose(viewModel::close) }
     val settings by viewModel.settings.settings.collectAsState()
     val exploreViewModel by viewModel.explore.collectAsState()
     val pendingRecipeRun by viewModel.pendingRecipeRun.collectAsState()
@@ -69,14 +67,23 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
         viewModel.query.onQueryRiskGateChanged(settings.queryRiskGate)
     }
 
-    LaunchedEffect(pendingRecipeRun, viewModel.query.results, viewModel.query.running, viewModel.query.error, activeConnectionId) {
+    LaunchedEffect(
+        pendingRecipeRun,
+        viewModel.query.results,
+        viewModel.query.running,
+        viewModel.query.error,
+        activeConnectionId,
+    ) {
         val pending = pendingRecipeRun ?: return@LaunchedEffect
-        if (viewModel.cancelPendingRecipeRunIfConnectionChanged(activeConnectionId)) return@LaunchedEffect
+        if (viewModel.cancelPendingRecipeRunIfConnectionChanged(activeConnectionId))
+            return@LaunchedEffect
         val activeConnection = connections.firstOrNull { it.id == pending.connectionId }
         val sample = viewModel.query.currentSample(pending.connectionId)
         when {
-            activeConnection != null && sample != null -> viewModel.completePendingRecipeRun(activeConnection, sample.result, sample.spec)
-            exploreSpecHash(viewModel.query.spec) != pending.specHash -> viewModel.cancelPendingRecipeRun()
+            activeConnection != null && sample != null ->
+                viewModel.completePendingRecipeRun(activeConnection, sample.result, sample.spec)
+            exploreSpecHash(viewModel.query.spec) != pending.specHash ->
+                viewModel.cancelPendingRecipeRun()
             shouldCancelPendingRecipeOnQuerySettle(
                 running = viewModel.query.running,
                 hasError = viewModel.query.error != null,
@@ -84,20 +91,15 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
         }
     }
 
-    SafeDbTheme(
-        isDark = useDarkTheme,
-        palette = themePalette,
-    ) {
+    SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
         val bgColor = MaterialTheme.colorScheme.background
-        SideEffect {
-            mainWindow.background = java.awt.Color(bgColor.toArgb())
-        }
+        SideEffect { mainWindow.background = java.awt.Color(bgColor.toArgb()) }
         Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .onPreviewKeyEvent { event ->
+            modifier =
+                Modifier.fillMaxSize().onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    val shortcut = event.key == Key.K && (event.isCtrlPressed || event.isMetaPressed)
+                    val shortcut =
+                        event.key == Key.K && (event.isCtrlPressed || event.isMetaPressed)
                     if (shortcut) {
                         paletteOpen = true
                         true
@@ -119,46 +121,46 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
             val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
             val currentSpec = viewModel.query.spec
             val builderSample = viewModel.query.currentSample(activeConnectionId)
-            val sampleRefreshEnabled = activeConnectionId == explore.session.connectionId &&
-                builderSample != null &&
-                connections.any { it.id == activeConnectionId }
+            val sampleRefreshEnabled =
+                activeConnectionId == explore.session.connectionId &&
+                    builderSample != null &&
+                    connections.any { it.id == activeConnectionId }
             Window(
                 onCloseRequest = viewModel::closeExplore,
                 title = "Explore - Safe-DB",
                 state = exploreWindowState,
             ) {
-                LaunchedEffect(window) {
-                    window.minimumSize = Dimension(920, 560)
-                }
+                LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
                 SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
                     val exploreBgColor = MaterialTheme.colorScheme.background
-                    SideEffect {
-                        window.background = java.awt.Color(exploreBgColor.toArgb())
-                    }
+                    SideEffect { window.background = java.awt.Color(exploreBgColor.toArgb()) }
                     Surface(color = MaterialTheme.colorScheme.background) {
                         ExploreWindowContent(
                             viewModel = explore,
                             currentSpec = currentSpec,
                             onClose = viewModel::closeExplore,
-                            onRefreshSample = if (sampleRefreshEnabled) {
-                                refresh@{
-                                    val builderConnectionId = appState.activeConnectionId.value
-                                    if (builderConnectionId != explore.session.connectionId) return@refresh
-                                    val connection = connections.firstOrNull { connection ->
-                                        connection.id == builderConnectionId
+                            onRefreshSample =
+                                if (sampleRefreshEnabled) {
+                                    refresh@{
+                                        val builderConnectionId = appState.activeConnectionId.value
+                                        if (builderConnectionId != explore.session.connectionId)
+                                            return@refresh
+                                        val connection = connections.firstOrNull { connection ->
+                                            connection.id == builderConnectionId
+                                        }
+                                        val latestSample =
+                                            viewModel.query.currentSample(builderConnectionId)
+                                        if (connection != null && latestSample != null) {
+                                            viewModel.refreshExploreSample(
+                                                connection,
+                                                latestSample.spec,
+                                                latestSample.result,
+                                            )
+                                        }
                                     }
-                                    val latestSample = viewModel.query.currentSample(builderConnectionId)
-                                    if (connection != null && latestSample != null) {
-                                        viewModel.refreshExploreSample(
-                                            connection,
-                                            latestSample.spec,
-                                            latestSample.result,
-                                        )
-                                    }
-                                }
-                            } else {
-                                null
-                            },
+                                } else {
+                                    null
+                                },
                             sampleRefreshEnabled = sampleRefreshEnabled,
                             recipesViewModel = viewModel.recipes,
                             connections = connections,
@@ -190,9 +192,7 @@ fun runApp(appState: AppState) = application {
         title = "Safe-DB",
         state = windowState,
     ) {
-        LaunchedEffect(window) {
-            window.minimumSize = Dimension(960, 600)
-        }
+        LaunchedEffect(window) { window.minimumSize = Dimension(960, 600) }
         App(appState, window)
     }
 }

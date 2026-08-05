@@ -11,12 +11,13 @@ fun createExploreSession(
     connection: ConnectionDef,
     spec: QuerySpec,
     sample: QueryResult,
-): ExploreSession = ExploreSession(
-    connectionId = connection.id,
-    connectionLabel = connection.name,
-    baseSpec = spec,
-    baseSpecHash = exploreSpecHash(spec),
-    sample = sample,
-    sampleFetchedAtEpochSec = Instant.now().epochSecond,
-    builderLimit = spec.limit,
-)
+): ExploreSession =
+    ExploreSession(
+        connectionId = connection.id,
+        connectionLabel = connection.name,
+        baseSpec = spec,
+        baseSpecHash = exploreSpecHash(spec),
+        sample = sample,
+        sampleFetchedAtEpochSec = Instant.now().epochSecond,
+        builderLimit = spec.limit,
+    )

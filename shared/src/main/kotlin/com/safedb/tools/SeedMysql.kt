@@ -83,39 +83,56 @@ private class SeedMysql(rawArgs: List<String>) {
     }
 
     private fun resolveMysqlClient() {
-        dockerContainer = when {
-            dockerPin.isNotEmpty() -> {
-                if (!commandExists("docker")) {
-                    throw RuntimeException("SAFEDB_TEST_MYSQL_DOCKER set but 'docker' not found in PATH")
+        dockerContainer =
+            when {
+                dockerPin.isNotEmpty() -> {
+                    if (!commandExists("docker")) {
+                        throw RuntimeException(
+                            "SAFEDB_TEST_MYSQL_DOCKER set but 'docker' not found in PATH"
+                        )
+                    }
+                    if (runCommand(listOf("docker", "inspect", dockerPin)).exitCode != 0) {
+                        val running =
+                            runCommand(
+                                    listOf(
+                                        "docker",
+                                        "ps",
+                                        "--format",
+                                        "    {{.Names}} ({{.Image}})",
+                                    )
+                                )
+                                .stdout
+                        throw RuntimeException(
+                            "docker container '$dockerPin' not found\n  running containers:\n$running"
+                        )
+                    }
+                    dockerPin
                 }
-                if (runCommand(listOf("docker", "inspect", dockerPin)).exitCode != 0) {
-                    val running = runCommand(listOf("docker", "ps", "--format", "    {{.Names}} ({{.Image}})")).stdout
-                    throw RuntimeException("docker container '$dockerPin' not found\n  running containers:\n$running")
+                commandExists("mysql") -> ""
+                commandExists("docker") -> {
+                    val matches = runningMysqlContainers()
+                    when (matches.size) {
+                        0 ->
+                            throw RuntimeException(
+                                "no 'mysql' client on PATH and no running mysql/mariadb container\n" +
+                                    "  install a client (brew install mysql-client / apt install default-mysql-client)\n" +
+                                    "  or start a MySQL container, or set SAFEDB_TEST_MYSQL_DOCKER=<name>"
+                            )
+                        1 -> matches.single()
+                        else ->
+                            throw RuntimeException(
+                                "multiple mysql/mariadb containers running; pin one:\n" +
+                                    matches.joinToString("\n") { "    $it" } +
+                                    "\n  hint: SAFEDB_TEST_MYSQL_DOCKER=<name>"
+                            )
+                    }
                 }
-                dockerPin
-            }
-            commandExists("mysql") -> ""
-            commandExists("docker") -> {
-                val matches = runningMysqlContainers()
-                when (matches.size) {
-                    0 -> throw RuntimeException(
-                        "no 'mysql' client on PATH and no running mysql/mariadb container\n" +
-                            "  install a client (brew install mysql-client / apt install default-mysql-client)\n" +
-                            "  or start a MySQL container, or set SAFEDB_TEST_MYSQL_DOCKER=<name>",
+                else ->
+                    throw RuntimeException(
+                        "no 'mysql' client in PATH and 'docker' not found either\n" +
+                            "  install with: brew install mysql-client (macOS) or apt install default-mysql-client (Debian/Ubuntu)"
                     )
-                    1 -> matches.single()
-                    else -> throw RuntimeException(
-                        "multiple mysql/mariadb containers running; pin one:\n" +
-                            matches.joinToString("\n") { "    $it" } +
-                            "\n  hint: SAFEDB_TEST_MYSQL_DOCKER=<name>",
-                    )
-                }
             }
-            else -> throw RuntimeException(
-                "no 'mysql' client in PATH and 'docker' not found either\n" +
-                    "  install with: brew install mysql-client (macOS) or apt install default-mysql-client (Debian/Ubuntu)",
-            )
-        }
     }
 
     private fun resolveDockerPassword() {
@@ -123,22 +140,30 @@ private class SeedMysql(rawArgs: List<String>) {
             password = dockerEnvVar(dockerContainer, "MYSQL_ROOT_PASSWORD")
         }
 
-        if (dockerContainer.isEmpty() && password.isEmpty() && user == "root" && isLocalHost(host) && commandExists("docker")) {
-            val hostDocker = runCommand(
-                listOf(
-                    "docker",
-                    "ps",
-                    "--filter",
-                    "status=running",
-                    "--filter",
-                    "publish=$port",
-                    "--format",
-                    "{{.Names}}\t{{.Image}}",
-                ),
-            ).stdout
-                .lineSequence()
-                .mapNotNull { parseMysqlContainerLine(it) }
-                .firstOrNull()
+        if (
+            dockerContainer.isEmpty() &&
+                password.isEmpty() &&
+                user == "root" &&
+                isLocalHost(host) &&
+                commandExists("docker")
+        ) {
+            val hostDocker =
+                runCommand(
+                        listOf(
+                            "docker",
+                            "ps",
+                            "--filter",
+                            "status=running",
+                            "--filter",
+                            "publish=$port",
+                            "--format",
+                            "{{.Names}}\t{{.Image}}",
+                        )
+                    )
+                    .stdout
+                    .lineSequence()
+                    .mapNotNull { parseMysqlContainerLine(it) }
+                    .firstOrNull()
             if (hostDocker != null) {
                 password = dockerEnvVar(hostDocker, "MYSQL_ROOT_PASSWORD")
             }
@@ -147,24 +172,28 @@ private class SeedMysql(rawArgs: List<String>) {
 
     private fun createDefaultsFileIfNeeded() {
         if (dockerContainer.isNotEmpty()) return
-        defaultsFile = Files.createTempFile("safedb-seed.", ".cnf").also { file ->
-            file.writeText(
-                """
+        defaultsFile =
+            Files.createTempFile("safedb-seed.", ".cnf").also { file ->
+                file.writeText(
+                    """
                 [client]
                 host=$host
                 port=$port
                 user=$user
                 password=$password
                 protocol=TCP
-                """.trimIndent() + "\n",
-            )
-            runCommand(listOf("chmod", "600", file.toString()))
-        }
+                """
+                        .trimIndent() + "\n"
+                )
+                runCommand(listOf("chmod", "600", file.toString()))
+            }
     }
 
     private fun checkConnection() {
         if (dockerContainer.isNotEmpty()) {
-            println("-> using docker container: $dockerContainer  (connecting to 127.0.0.1:3306 as $user)")
+            println(
+                "-> using docker container: $dockerContainer  (connecting to 127.0.0.1:3306 as $user)"
+            )
         } else {
             println("-> checking connection to $user@$host:$port")
         }
@@ -174,12 +203,12 @@ private class SeedMysql(rawArgs: List<String>) {
                 throw RuntimeException(
                     "cannot connect to MySQL inside container '$dockerContainer' as $user\n" +
                         "  set SAFEDB_TEST_MYSQL_PASSWORD (or MYSQL_ROOT_PASSWORD on the container)\n" +
-                        "  and SAFEDB_TEST_MYSQL_USER if not using root",
+                        "  and SAFEDB_TEST_MYSQL_USER if not using root"
                 )
             }
             throw RuntimeException(
                 "cannot connect to MySQL at $user@$host:$port\n" +
-                    "  set SAFEDB_TEST_MYSQL_HOST / PORT / USER / PASSWORD and retry",
+                    "  set SAFEDB_TEST_MYSQL_HOST / PORT / USER / PASSWORD and retry"
             )
         }
         val version = mysqlRun("-N", "-e", "SELECT VERSION()").stdout.trim()
@@ -212,26 +241,30 @@ private class SeedMysql(rawArgs: List<String>) {
         if (options.static) {
             println("-> loading $staticSql into '$database'")
             mysqlRunWithInput(emptyList()) { writer ->
-                staticSql.inputStream().use { input -> input.copyTo(writer) }
-            }.requireSuccess()
+                    staticSql.inputStream().use { input -> input.copyTo(writer) }
+                }
+                .requireSuccess()
             return
         }
 
         println("-> generating fixture SQL and loading it into '$database'")
         mysqlRunWithInput(emptyList()) { writer ->
-            BufferedWriter(OutputStreamWriter(writer)).use { sql ->
-                MysqlFixtureGenerator(options.generator.copy(database = database), sql).generate()
+                BufferedWriter(OutputStreamWriter(writer)).use { sql ->
+                    MysqlFixtureGenerator(options.generator.copy(database = database), sql)
+                        .generate()
+                }
             }
-        }.requireSuccess()
+            .requireSuccess()
     }
 
     private fun verifyCounts() {
         println("-> verifying row counts")
-        val result = mysqlRun(
-            database,
-            "--skip-column-names",
-            "-e",
-            """
+        val result =
+            mysqlRun(
+                database,
+                "--skip-column-names",
+                "-e",
+                """
             SELECT CONCAT('  ', t.table_name, ': ', c.cnt)
             FROM information_schema.tables t
             JOIN (
@@ -244,8 +277,9 @@ private class SeedMysql(rawArgs: List<String>) {
             ) c ON c.table_name = t.table_name
             WHERE t.table_schema = '$database'
             ORDER BY t.table_name;
-            """.trimIndent(),
-        )
+            """
+                    .trimIndent(),
+            )
         result.requireSuccess()
         print(result.stdout)
     }
@@ -259,10 +293,13 @@ private class SeedMysql(rawArgs: List<String>) {
         }
     }
 
-    private fun mysqlRun(vararg args: String): CommandResult = runCommand(mysqlCommand(args.toList()))
+    private fun mysqlRun(vararg args: String): CommandResult =
+        runCommand(mysqlCommand(args.toList()))
 
-    private fun mysqlRunWithInput(args: List<String>, writeInput: (java.io.OutputStream) -> Unit): CommandResult =
-        runCommand(mysqlCommand(args), writeInput)
+    private fun mysqlRunWithInput(
+        args: List<String>,
+        writeInput: (java.io.OutputStream) -> Unit,
+    ): CommandResult = runCommand(mysqlCommand(args), writeInput)
 
     private fun mysqlCommand(args: List<String>): List<String> =
         if (dockerContainer.isNotEmpty()) {
@@ -282,6 +319,7 @@ private class SeedMysql(rawArgs: List<String>) {
                 user,
             ) + args
         } else {
-            listOf("mysql", "--defaults-file=${defaultsFile ?: error("missing defaults file")}") + args
+            listOf("mysql", "--defaults-file=${defaultsFile ?: error("missing defaults file")}") +
+                args
         }
 }

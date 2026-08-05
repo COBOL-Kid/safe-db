@@ -15,6 +15,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,12 +45,6 @@ import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.InputShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.SchemaViewModel
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Search
 
 @Composable
 fun SchemaBrowser(
@@ -57,7 +57,9 @@ fun SchemaBrowser(
     var schemaMenuOpen by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)
+        ) {
             Text(
                 "Schema",
                 style = MaterialTheme.typography.labelMedium,
@@ -70,7 +72,10 @@ fun SchemaBrowser(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = schemaViewModel.schemaOptions.isNotEmpty(),
                 ) {
-                    Text(schemaViewModel.selectedSchema ?: "Select schema", modifier = Modifier.weight(1f))
+                    Text(
+                        schemaViewModel.selectedSchema ?: "Select schema",
+                        modifier = Modifier.weight(1f),
+                    )
                     Icon(Icons.Default.ExpandMore, contentDescription = null)
                 }
                 SafeDropdownMenu(
@@ -102,12 +107,15 @@ fun SchemaBrowser(
         }
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-                .border(1.dp, MaterialTheme.colorScheme.outline, InputShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.5f), InputShape)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .padding(12.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, InputShape)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.5f),
+                        InputShape,
+                    )
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -123,7 +131,10 @@ fun SchemaBrowser(
                 enabled = schemaViewModel.selectedSchema != null && !schemaViewModel.loading,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                textStyle =
+                    MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 decorationBox = { innerTextField ->
                     Box {
@@ -131,7 +142,8 @@ fun SchemaBrowser(
                             Text(
                                 "Search tables…",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                color =
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             )
                         }
                         innerTextField()
@@ -142,10 +154,7 @@ fun SchemaBrowser(
 
         when {
             schemaViewModel.loading -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Text(
@@ -176,10 +185,7 @@ fun SchemaBrowser(
                 }
             }
             schemaViewModel.selectedSchema == null -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         if (schemaViewModel.schemaOptions.isEmpty()) {
                             "No schemas containing visible tables were found."
@@ -191,10 +197,7 @@ fun SchemaBrowser(
                 }
             }
             schemaViewModel.filteredTables.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         if (schemaViewModel.search.isNotBlank()) {
                             "No tables match your search."
@@ -207,10 +210,10 @@ fun SchemaBrowser(
             }
             else -> {
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 8.dp),
+                    modifier =
+                        Modifier.fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     for (table in schemaViewModel.filteredTables) {
@@ -227,11 +230,12 @@ fun SchemaBrowser(
                                 modifier = Modifier.weight(1f),
                             ) {
                                 Icon(
-                                    imageVector = if (isOpen) {
-                                        Icons.Default.KeyboardArrowDown
-                                    } else {
-                                        Icons.AutoMirrored.Filled.KeyboardArrowRight
-                                    },
+                                    imageVector =
+                                        if (isOpen) {
+                                            Icons.Default.KeyboardArrowDown
+                                        } else {
+                                            Icons.AutoMirrored.Filled.KeyboardArrowRight
+                                        },
                                     contentDescription = null,
                                 )
                                 Text(table.name, modifier = Modifier.weight(1f))
@@ -283,11 +287,17 @@ fun SchemaBrowser(
                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                                     )
                                     for (idx in table.indexes) {
-                                        val (badge, badgeColor) = when {
-                                            idx.isPrimary -> "PK" to MaterialTheme.colorScheme.tertiary
-                                            idx.isUnique -> "UQ" to com.safedb.ui.theme.SafeDbTheme.colors.uq
-                                            else -> "IDX" to MaterialTheme.colorScheme.onSurfaceVariant
-                                        }
+                                        val (badge, badgeColor) =
+                                            when {
+                                                idx.isPrimary ->
+                                                    "PK" to MaterialTheme.colorScheme.tertiary
+                                                idx.isUnique ->
+                                                    "UQ" to
+                                                        com.safedb.ui.theme.SafeDbTheme.colors.uq
+                                                else ->
+                                                    "IDX" to
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
                                         Row(
                                             modifier = Modifier.padding(vertical = 2.dp),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -296,7 +306,9 @@ fun SchemaBrowser(
                                                 badge,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = badgeColor,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                                fontWeight =
+                                                    androidx.compose.ui.text.font.FontWeight
+                                                        .SemiBold,
                                             )
                                             Text(
                                                 "${idx.name} (${idx.columns.joinToString(", ")})",

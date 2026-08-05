@@ -19,15 +19,10 @@ data class QueryRunRequest(
     val confirmation: QueryExecutionConfirmation? = null,
 )
 
-data class QueryRunResult(
-    val queryResult: QueryResult,
-    val riskEvaluation: QueryRiskEvaluation,
-)
+data class QueryRunResult(val queryResult: QueryResult, val riskEvaluation: QueryRiskEvaluation)
 
-class QueryFailureException(
-    val queryError: QueryError,
-    val warnings: List<String> = emptyList(),
-) : IllegalArgumentException(queryError.message)
+class QueryFailureException(val queryError: QueryError, val warnings: List<String> = emptyList()) :
+    IllegalArgumentException(queryError.message)
 
 internal fun QueryFailureException(coreError: QueryCoreError): QueryFailureException =
     QueryFailureException(coreError.error, coreError.warnings)

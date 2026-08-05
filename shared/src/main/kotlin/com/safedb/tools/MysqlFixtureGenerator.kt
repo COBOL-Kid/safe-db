@@ -78,7 +78,8 @@ internal class MysqlFixtureGenerator(
                 created_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_categories_name (name)
             ) ENGINE=InnoDB;
-            """.trimIndent(),
+            """
+                .trimIndent()
         )
         write()
         write(
@@ -101,7 +102,8 @@ internal class MysqlFixtureGenerator(
                 INDEX idx_products_price   (price),
                 CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id)
             ) ENGINE=InnoDB;
-            """.trimIndent(),
+            """
+                .trimIndent()
         )
         write()
         write(
@@ -124,7 +126,8 @@ internal class MysqlFixtureGenerator(
                 INDEX idx_customers_city  (city),
                 INDEX idx_customers_vip   (is_vip)
             ) ENGINE=InnoDB;
-            """.trimIndent(),
+            """
+                .trimIndent()
         )
         write()
         write(
@@ -145,7 +148,8 @@ internal class MysqlFixtureGenerator(
                 INDEX idx_orders_date      (order_date),
                 CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
             ) ENGINE=InnoDB;
-            """.trimIndent(),
+            """
+                .trimIndent()
         )
         write()
         write(
@@ -162,7 +166,8 @@ internal class MysqlFixtureGenerator(
                 CONSTRAINT fk_items_order   FOREIGN KEY (order_id)   REFERENCES orders(id),
                 CONSTRAINT fk_items_product FOREIGN KEY (product_id) REFERENCES products(id)
             ) ENGINE=InnoDB;
-            """.trimIndent(),
+            """
+                .trimIndent()
         )
         write()
         write(
@@ -175,26 +180,28 @@ internal class MysqlFixtureGenerator(
                 logged_by   VARCHAR(100)   NULL,
                 logged_at   TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB;
-            """.trimIndent(),
+            """
+                .trimIndent()
         )
         write()
     }
 
     private fun makeCategories(): Sequence<List<String>> {
-        val names = listOf(
-            "Electronics",
-            "Books",
-            "Clothing",
-            "Home & Garden",
-            "Sports",
-            "Office",
-            "Beauty",
-            "Toys",
-            "Automotive",
-            "Grocery",
-            "Pet Supplies",
-            "Music",
-        )
+        val names =
+            listOf(
+                "Electronics",
+                "Books",
+                "Clothing",
+                "Home & Garden",
+                "Sports",
+                "Office",
+                "Beauty",
+                "Toys",
+                "Automotive",
+                "Grocery",
+                "Pet Supplies",
+                "Music",
+            )
         return (1..options.categories).asSequence().map { id ->
             val name = names[(id - 1) % names.size]
             listOf(
@@ -206,13 +213,27 @@ internal class MysqlFixtureGenerator(
     }
 
     private fun makeProducts(): Sequence<List<String>> {
-        val adjectives = listOf("Compact", "Premium", "Classic", "Eco", "Wireless", "Smart", "Travel", "Pro")
-        val nouns = listOf("Kit", "Stand", "Pack", "Device", "Guide", "Jacket", "Lamp", "Bottle", "Mat", "Hub")
+        val adjectives =
+            listOf("Compact", "Premium", "Classic", "Eco", "Wireless", "Smart", "Travel", "Pro")
+        val nouns =
+            listOf(
+                "Kit",
+                "Stand",
+                "Pack",
+                "Device",
+                "Guide",
+                "Jacket",
+                "Lamp",
+                "Bottle",
+                "Mat",
+                "Hub",
+            )
         return (1..options.products).asSequence().map { id ->
             val categoryId = ((id - 1) % options.categories) + 1
             val basePrice = random.float(8.0, 500.0)
             val cost = maxOf(1.0, basePrice * random.float(0.35, 0.72))
-            val sku = "GEN-${categoryId.toString().padStart(2, '0')}-${id.toString().padStart(6, '0')}"
+            val sku =
+                "GEN-${categoryId.toString().padStart(2, '0')}-${id.toString().padStart(6, '0')}"
             val name = "${random.pick(adjectives)} ${random.pick(nouns)} $id"
             listOf(
                 id.toString(),
@@ -230,9 +251,45 @@ internal class MysqlFixtureGenerator(
     }
 
     private fun makeCustomers(): Sequence<List<String>> {
-        val firstNames = listOf("Alex", "Sam", "Jordan", "Taylor", "Morgan", "Riley", "Casey", "Jamie", "Avery", "Quinn")
-        val lastNames = listOf("Johnson", "Smith", "Williams", "Brown", "Davis", "Miller", "Wilson", "Moore", "Taylor", "Anderson")
-        val cities = listOf("Portland", "Seattle", "Austin", "Denver", "Chicago", "Miami", "Boston", "New York", "Phoenix", "London")
+        val firstNames =
+            listOf(
+                "Alex",
+                "Sam",
+                "Jordan",
+                "Taylor",
+                "Morgan",
+                "Riley",
+                "Casey",
+                "Jamie",
+                "Avery",
+                "Quinn",
+            )
+        val lastNames =
+            listOf(
+                "Johnson",
+                "Smith",
+                "Williams",
+                "Brown",
+                "Davis",
+                "Miller",
+                "Wilson",
+                "Moore",
+                "Taylor",
+                "Anderson",
+            )
+        val cities =
+            listOf(
+                "Portland",
+                "Seattle",
+                "Austin",
+                "Denver",
+                "Chicago",
+                "Miami",
+                "Boston",
+                "New York",
+                "Phoenix",
+                "London",
+            )
         val states = listOf("OR", "WA", "TX", "CO", "IL", "FL", "MA", "NY", "AZ", null)
         return (1..options.customers).asSequence().map { id ->
             val cityIndex = random.int(0, cities.lastIndex)
@@ -242,8 +299,10 @@ internal class MysqlFixtureGenerator(
                 sqlString(random.pick(firstNames)),
                 sqlString(random.pick(lastNames)),
                 sqlString("customer${id.toString().padStart(6, '0')}@example.test"),
-                if (random.chance(0.18)) "NULL" else sqlString("+1-555-${(1000 + id).toString().takeLast(4)}"),
-                if (random.chance(0.08)) "NULL" else sqlString("${random.int(100, 9999)} Generated Ave"),
+                if (random.chance(0.18)) "NULL"
+                else sqlString("+1-555-${(1000 + id).toString().takeLast(4)}"),
+                if (random.chance(0.08)) "NULL"
+                else sqlString("${random.int(100, 9999)} Generated Ave"),
                 sqlString(cities[cityIndex]),
                 sqlString(states[cityIndex]),
                 sqlString((90000 + random.int(0, 8999)).toString()),
@@ -256,8 +315,21 @@ internal class MysqlFixtureGenerator(
     }
 
     private fun emitOrders() {
-        val statuses = listOf("pending", "shipped", "delivered", "delivered", "delivered", "cancelled")
-        val cities = listOf("Portland", "Seattle", "Austin", "Denver", "Chicago", "Miami", "Boston", "New York", "Phoenix", "London")
+        val statuses =
+            listOf("pending", "shipped", "delivered", "delivered", "delivered", "cancelled")
+        val cities =
+            listOf(
+                "Portland",
+                "Seattle",
+                "Austin",
+                "Denver",
+                "Chicago",
+                "Miami",
+                "Boston",
+                "New York",
+                "Phoenix",
+                "London",
+            )
         val orderRows = mutableListOf<List<String>>()
         val itemRows = mutableListOf<List<String>>()
         val inventoryRows = mutableListOf<List<String>>()
@@ -268,13 +340,32 @@ internal class MysqlFixtureGenerator(
             if (!force && orderRows.size < options.batchSize) return
             emitInsert(
                 "orders",
-                listOf("id", "customer_id", "order_date", "status", "subtotal", "tax", "shipping_cost", "total", "shipping_city", "notes"),
+                listOf(
+                    "id",
+                    "customer_id",
+                    "order_date",
+                    "status",
+                    "subtotal",
+                    "tax",
+                    "shipping_cost",
+                    "total",
+                    "shipping_city",
+                    "notes",
+                ),
                 orderRows,
             )
             orderRows.clear()
-            emitInsert("order_items", listOf("id", "order_id", "product_id", "quantity", "unit_price", "line_total"), itemRows)
+            emitInsert(
+                "order_items",
+                listOf("id", "order_id", "product_id", "quantity", "unit_price", "line_total"),
+                itemRows,
+            )
             itemRows.clear()
-            emitInsert("inventory_log", listOf("id", "product_id", "change_qty", "reason", "logged_by", "logged_at"), inventoryRows)
+            emitInsert(
+                "inventory_log",
+                listOf("id", "product_id", "change_qty", "reason", "logged_by", "logged_at"),
+                inventoryRows,
+            )
             inventoryRows.clear()
         }
 
@@ -288,7 +379,16 @@ internal class MysqlFixtureGenerator(
                 val unitPrice = random.float(8.0, 500.0)
                 val lineTotal = round(unitPrice * quantity, 2)
                 subtotal += lineTotal
-                itemRows.add(listOf(itemId.toString(), orderId.toString(), productId.toString(), quantity.toString(), sqlNumber(unitPrice), sqlNumber(lineTotal)))
+                itemRows.add(
+                    listOf(
+                        itemId.toString(),
+                        orderId.toString(),
+                        productId.toString(),
+                        quantity.toString(),
+                        sqlNumber(unitPrice),
+                        sqlNumber(lineTotal),
+                    )
+                )
                 inventoryRows.add(
                     listOf(
                         inventoryId.toString(),
@@ -297,14 +397,15 @@ internal class MysqlFixtureGenerator(
                         sqlString("generated order #$orderId"),
                         sqlString(random.pick(listOf("warehouse", "system", "batch-loader"))),
                         sqlString(orderDate),
-                    ),
+                    )
                 )
                 itemId += 1
                 inventoryId += 1
             }
             subtotal = round(subtotal, 2)
             val tax = round(subtotal * random.float(0.04, 0.095), 2)
-            val shipping = if (subtotal > 150 || random.chance(0.2)) 0.0 else random.float(3.99, 18.99)
+            val shipping =
+                if (subtotal > 150 || random.chance(0.2)) 0.0 else random.float(3.99, 18.99)
             val total = round(subtotal + tax + shipping, 2)
             orderRows.add(
                 listOf(
@@ -317,8 +418,9 @@ internal class MysqlFixtureGenerator(
                     sqlNumber(shipping),
                     sqlNumber(total),
                     sqlString(random.pick(cities)),
-                    if (random.chance(0.08)) sqlString("Generated reporting fixture order") else "NULL",
-                ),
+                    if (random.chance(0.08)) sqlString("Generated reporting fixture order")
+                    else "NULL",
+                )
             )
             flush()
         }
@@ -355,7 +457,8 @@ private class SeededRandom(seed: Int) {
 
     fun int(min: Int, max: Int): Int = (nextDouble() * (max - min + 1)).toInt() + min
 
-    fun float(min: Double, max: Double, decimals: Int = 2): Double = round(nextDouble() * (max - min) + min, decimals)
+    fun float(min: Double, max: Double, decimals: Int = 2): Double =
+        round(nextDouble() * (max - min) + min, decimals)
 
     fun <T> pick(values: List<T>): T = values[int(0, values.lastIndex)]
 
@@ -373,9 +476,11 @@ private class SeededRandom(seed: Int) {
 internal fun sqlString(value: String?): String =
     value?.let { "'${it.replace("\\", "\\\\").replace("'", "''")}'" } ?: "NULL"
 
-private fun sqlNumber(value: Double): String = BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString()
+private fun sqlNumber(value: Double): String =
+    BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString()
 
-private fun round(value: Double, decimals: Int): Double = BigDecimal.valueOf(value).setScale(decimals, RoundingMode.HALF_UP).toDouble()
+private fun round(value: Double, decimals: Int): Double =
+    BigDecimal.valueOf(value).setScale(decimals, RoundingMode.HALF_UP).toDouble()
 
 private fun timestamp(daysAgo: Int, secondsOffset: Int): String =
     LocalDateTime.of(2026, 1, 31, 12, 0, 0)

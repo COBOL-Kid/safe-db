@@ -7,40 +7,51 @@ import com.safedb.model.ExplainResult
 import com.safedb.model.QueryResult
 import com.safedb.model.Schema
 import com.zaxxer.hikari.HikariDataSource
+import java.sql.SQLException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import java.sql.SQLException
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
-class MssqlState(
-    var dataSource: HikariDataSource?,
-    val def: ConnectionDef,
-    val password: String,
-)
+class MssqlState(var dataSource: HikariDataSource?, val def: ConnectionDef, val password: String)
 
 sealed class Adapter {
     abstract suspend fun test(): String
+
     abstract suspend fun introspect(): Schema
+
     abstract suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult
+
     abstract suspend fun explain(compiled: CompiledQuery): ExplainResult
 
     data class Postgres(val dataSource: HikariDataSource) : Adapter() {
-        override suspend fun test(): String = withContext(Dispatchers.IO) { PgAdapter.test(dataSource) }
-        override suspend fun introspect(): Schema = withContext(Dispatchers.IO) { PgAdapter.introspect(dataSource) }
+        override suspend fun test(): String =
+            withContext(Dispatchers.IO) { PgAdapter.test(dataSource) }
+
+        override suspend fun introspect(): Schema =
+            withContext(Dispatchers.IO) { PgAdapter.introspect(dataSource) }
+
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
             withContext(Dispatchers.IO) { PgAdapter.executeQuery(dataSource, compiled, timeoutMs) }
+
         override suspend fun explain(compiled: CompiledQuery): ExplainResult =
             withContext(Dispatchers.IO) { PgAdapter.explain(dataSource, compiled) }
     }
 
     data class MySql(val dataSource: HikariDataSource) : Adapter() {
-        override suspend fun test(): String = withContext(Dispatchers.IO) { MySqlAdapter.test(dataSource) }
-        override suspend fun introspect(): Schema = withContext(Dispatchers.IO) { MySqlAdapter.introspect(dataSource) }
+        override suspend fun test(): String =
+            withContext(Dispatchers.IO) { MySqlAdapter.test(dataSource) }
+
+        override suspend fun introspect(): Schema =
+            withContext(Dispatchers.IO) { MySqlAdapter.introspect(dataSource) }
+
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-            withContext(Dispatchers.IO) { MySqlAdapter.executeQuery(dataSource, compiled, timeoutMs) }
+            withContext(Dispatchers.IO) {
+                MySqlAdapter.executeQuery(dataSource, compiled, timeoutMs)
+            }
+
         override suspend fun explain(compiled: CompiledQuery): ExplainResult =
             withContext(Dispatchers.IO) { MySqlAdapter.explain(dataSource, compiled) }
     }
@@ -48,19 +59,21 @@ sealed class Adapter {
     data class Mssql(val state: MssqlState) : Adapter() {
         private val lock = ReentrantLock()
 
-        override suspend fun test(): String = withContext(Dispatchers.IO) {
-            lock.withLock {
-                val ds = ensureDataSource()
-                MssqlAdapter.test(ds)
+        override suspend fun test(): String =
+            withContext(Dispatchers.IO) {
+                lock.withLock {
+                    val ds = ensureDataSource()
+                    MssqlAdapter.test(ds)
+                }
             }
-        }
 
-        override suspend fun introspect(): Schema = withContext(Dispatchers.IO) {
-            lock.withLock {
-                val ds = ensureDataSource()
-                MssqlAdapter.introspect(ds)
+        override suspend fun introspect(): Schema =
+            withContext(Dispatchers.IO) {
+                lock.withLock {
+                    val ds = ensureDataSource()
+                    MssqlAdapter.introspect(ds)
+                }
             }
-        }
 
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
             withContext(Dispatchers.IO) {
@@ -97,10 +110,17 @@ sealed class Adapter {
     }
 
     data class Oracle(val dataSource: HikariDataSource) : Adapter() {
-        override suspend fun test(): String = withContext(Dispatchers.IO) { OracleAdapter.test(dataSource) }
-        override suspend fun introspect(): Schema = withContext(Dispatchers.IO) { OracleAdapter.introspect(dataSource) }
+        override suspend fun test(): String =
+            withContext(Dispatchers.IO) { OracleAdapter.test(dataSource) }
+
+        override suspend fun introspect(): Schema =
+            withContext(Dispatchers.IO) { OracleAdapter.introspect(dataSource) }
+
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-            withContext(Dispatchers.IO) { OracleAdapter.executeQuery(dataSource, compiled, timeoutMs) }
+            withContext(Dispatchers.IO) {
+                OracleAdapter.executeQuery(dataSource, compiled, timeoutMs)
+            }
+
         override suspend fun explain(compiled: CompiledQuery): ExplainResult =
             withContext(Dispatchers.IO) { OracleAdapter.explain(dataSource, compiled) }
     }
@@ -113,7 +133,8 @@ sealed class Adapter {
                     when (def.dialect) {
                         Dialect.Postgres -> Postgres(createDataSource(def, password))
                         Dialect.MySql -> MySql(createDataSource(def, password))
-                        Dialect.Mssql -> Mssql(MssqlState(createDataSource(def, password), def, password))
+                        Dialect.Mssql ->
+                            Mssql(MssqlState(createDataSource(def, password), def, password))
                         Dialect.Oracle -> Oracle(createDataSource(def, password))
                     }
                 }
@@ -131,8 +152,9 @@ sealed class Adapter {
                         "Query plan assessment timed out",
                     )
             } catch (error: SQLException) {
-                val permissionDenied = error.message?.contains("permission", ignoreCase = true) == true ||
-                    error.message?.contains("denied", ignoreCase = true) == true
+                val permissionDenied =
+                    error.message?.contains("permission", ignoreCase = true) == true ||
+                        error.message?.contains("denied", ignoreCase = true) == true
                 ExplainResult.Unavailable(
                     if (permissionDenied) com.safedb.model.PlanUnavailableReason.PermissionDenied
                     else com.safedb.model.PlanUnavailableReason.ExecutionFailure,
@@ -179,8 +201,10 @@ fun columnsFromCompiledSql(sql: String, dialect: Dialect): List<String> {
     }
 }
 
-private fun unquoteIdentifier(identifier: String, dialect: Dialect): String = when (dialect) {
-    Dialect.Postgres, Dialect.Oracle -> identifier.trim('"')
-    Dialect.MySql -> identifier.trim('`')
-    Dialect.Mssql -> identifier.removePrefix("[").removeSuffix("]")
-}
+private fun unquoteIdentifier(identifier: String, dialect: Dialect): String =
+    when (dialect) {
+        Dialect.Postgres,
+        Dialect.Oracle -> identifier.trim('"')
+        Dialect.MySql -> identifier.trim('`')
+        Dialect.Mssql -> identifier.removePrefix("[").removeSuffix("]")
+    }

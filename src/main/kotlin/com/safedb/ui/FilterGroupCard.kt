@@ -40,30 +40,27 @@ fun FilterGroupCard(
 ) {
     val atMaxDepth = depth >= MAX_FILTER_DEPTH - 1
     val singleLeafPath = if (group.children.singleOrNull() is FilterNode.Leaf) path + 0 else null
-    val depthTint = if (depth > 0) {
-        if (depth % 2 == 1) {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+    val depthTint =
+        if (depth > 0) {
+            if (depth % 2 == 1) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            }
         } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            null
         }
-    } else {
-        null
-    }
-    val backgroundModifier = if (depth > 0) {
-        Modifier
-            .background(depthTint!!, RoundedCornerShape(3.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
-            .padding(6.dp)
-    } else {
-        Modifier
-    }
+    val backgroundModifier =
+        if (depth > 0) {
+            Modifier.background(depthTint!!, RoundedCornerShape(3.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
+                .padding(6.dp)
+        } else {
+            Modifier
+        }
 
-    Column(
-        modifier = modifier.then(backgroundModifier),
-    ) {
-        Column(
-            modifier = Modifier.padding(start = if (depth > 0) 12.dp else 0.dp),
-        ) {
+    Column(modifier = modifier.then(backgroundModifier)) {
+        Column(modifier = Modifier.padding(start = if (depth > 0) 12.dp else 0.dp)) {
             group.children.forEachIndexed { index, child ->
                 val childPath = path + index
                 if (index > 0) {
@@ -76,18 +73,20 @@ fun FilterGroupCard(
                     }
                 }
                 when (child) {
-                    is FilterNode.Leaf -> FilterRow(
-                        queryViewModel = queryViewModel,
-                        filter = child.spec,
-                        path = childPath,
-                        showRemoveAction = singleLeafPath == null,
-                    )
-                    is FilterNode.Group -> FilterGroupCard(
-                        queryViewModel = queryViewModel,
-                        group = child.group,
-                        path = childPath,
-                        depth = depth + 1,
-                    )
+                    is FilterNode.Leaf ->
+                        FilterRow(
+                            queryViewModel = queryViewModel,
+                            filter = child.spec,
+                            path = childPath,
+                            showRemoveAction = singleLeafPath == null,
+                        )
+                    is FilterNode.Group ->
+                        FilterGroupCard(
+                            queryViewModel = queryViewModel,
+                            group = child.group,
+                            path = childPath,
+                            depth = depth + 1,
+                        )
                 }
             }
         }
@@ -97,8 +96,7 @@ fun FilterGroupCard(
                 "No conditions",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
-                modifier = Modifier
-                    .padding(vertical = 8.dp),
+                modifier = Modifier.padding(vertical = 8.dp),
             )
         }
 
@@ -115,14 +113,22 @@ fun FilterGroupCard(
                 onClick = { queryViewModel.addGroupToGroup(path, GroupConnector.And) },
                 enabled = !atMaxDepth,
             ) {
-                Icon(Icons.Default.GridView, contentDescription = null, modifier = Modifier.size(13.dp))
+                Icon(
+                    Icons.Default.GridView,
+                    contentDescription = null,
+                    modifier = Modifier.size(13.dp),
+                )
                 Text("Group", style = MaterialTheme.typography.labelSmall)
             }
             if (singleLeafPath != null) {
                 CompactFilterBuilderAction(
-                    onClick = { queryViewModel.removeFilterNode(singleLeafPath) },
+                    onClick = { queryViewModel.removeFilterNode(singleLeafPath) }
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                    )
                     Text("Remove", style = MaterialTheme.typography.labelSmall)
                 }
             }
@@ -155,7 +161,8 @@ internal fun CompactFilterBuilderAction(
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(2.dp),
         color = Color.Transparent,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border =
+            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -168,14 +175,9 @@ internal fun CompactFilterBuilderAction(
 }
 
 @Composable
-private fun CompactIconAction(
-    onClick: () -> Unit,
-    content: @Composable () -> Unit,
-) {
+private fun CompactIconAction(onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clickable(onClick = onClick),
+        modifier = Modifier.size(28.dp).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         content()

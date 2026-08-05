@@ -27,32 +27,42 @@ import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.TableSizeClass
 import com.safedb.model.TableSizeEstimate
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 class QueryRiskCorpusTest {
     @Test
     fun versionedCrossDialectCorpusMatchesGoldenOutcomes() {
-        val resource = requireNotNull(javaClass.getResource("/query-risk/v2/normalized-corpus.json"))
+        val resource =
+            requireNotNull(javaClass.getResource("/query-risk/v2/normalized-corpus.json"))
         val corpus = SafeDbJson.lenient.decodeFromString<RiskCorpus>(resource.readText())
         assertEquals(QUERY_RISK_SCORE_VERSION, corpus.scoreVersion)
 
         for (case in corpus.cases) {
             val (spec, schema) = case.fixture()
-            val validated = when (val result = validateQuery(spec, schema, emptyList(), case.dialect)) {
-                is Outcome.Ok -> result.value.first
-                is Outcome.Err -> error("${case.id}: ${result.message}")
-            }
+            val validated =
+                when (val result = validateQuery(spec, schema, emptyList(), case.dialect)) {
+                    is Outcome.Ok -> result.value.first
+                    is Outcome.Err -> error("${case.id}: ${result.message}")
+                }
             val assessment = assessStaticQueryRisk(validated, schema, case.dialect)
             val decision = applyRiskGate(assessment, case.gate)
 
             assertEquals(case.expectedScore, assessment.score, case.id)
             assertEquals(case.expectedSeverity, assessment.severity, case.id)
             assertEquals(case.expectedCategoryScores, assessment.categoryScores, case.id)
-            assertEquals(case.expectedSignalCodes, assessment.signals.map { it.code }.distinct(), case.id)
-            assertEquals(case.expectedUncertaintyCodes, assessment.uncertainties.map { it.code }.distinct(), case.id)
+            assertEquals(
+                case.expectedSignalCodes,
+                assessment.signals.map { it.code }.distinct(),
+                case.id,
+            )
+            assertEquals(
+                case.expectedUncertaintyCodes,
+                assessment.uncertainties.map { it.code }.distinct(),
+                case.id,
+            )
             assertEquals(case.expectedGateState, decision.state, case.id)
         }
     }
@@ -78,73 +88,101 @@ private data class RiskCorpusCase(
     @SerialName("expected_severity") val expectedSeverity: QueryRiskSeverity,
     @SerialName("expected_category_scores") val expectedCategoryScores: Map<RiskCategory, Int>,
     @SerialName("expected_signal_codes") val expectedSignalCodes: List<RiskSignalCode>,
-    @SerialName("expected_uncertainty_codes") val expectedUncertaintyCodes: List<String> = emptyList(),
+    @SerialName("expected_uncertainty_codes")
+    val expectedUncertaintyCodes: List<String> = emptyList(),
     @SerialName("expected_gate_state") val expectedGateState: RiskGateState,
 ) {
     fun fixture(): Pair<QuerySpec, Schema> {
         val notes = predicate == CorpusPredicate.BroadTextWithoutIndex
-        val column = if (notes) ColumnInfo("notes", "text", true, category = ColumnCategory.Text) else
-            ColumnInfo("id", "int", false, category = ColumnCategory.Integer)
-        val indexes = if (predicate == CorpusPredicate.IndexedEquality) {
-            listOf(
-                IndexInfo(
-                    name = "orders_lookup",
-                    columns = listOf("id"),
-                    keys = listOf(IndexKey("id", SortDirection.Asc)),
-                    capabilities = IndexCapabilities(
-                        equality = true,
-                        ordering = true,
-                        specializedText = false,
-                        expressionKeys = false,
-                        partialPredicate = false,
-                        includedColumns = false,
-                    ),
-                    isPartial = false,
-                ),
+        val column =
+            if (notes) ColumnInfo("notes", "text", true, category = ColumnCategory.Text)
+            else ColumnInfo("id", "int", false, category = ColumnCategory.Integer)
+        val indexes =
+            if (predicate == CorpusPredicate.IndexedEquality) {
+                listOf(
+                    IndexInfo(
+                        name = "orders_lookup",
+                        columns = listOf("id"),
+                        keys = listOf(IndexKey("id", SortDirection.Asc)),
+                        capabilities =
+                            IndexCapabilities(
+                                equality = true,
+                                ordering = true,
+                                specializedText = false,
+                                expressionKeys = false,
+                                partialPredicate = false,
+                                includedColumns = false,
+                            ),
+                        isPartial = false,
+                    )
+                )
+            } else {
+                emptyList()
+            }
+        val table =
+            TableInfo(
+                "public",
+                "orders",
+                listOf(column),
+                indexes,
+                indexMetadata = MetadataCoverage.complete(),
+                foreignKeyMetadata = MetadataCoverage.complete(),
+                tableSize =
+                    if (sizeClass == TableSizeClass.Unknown) TableSizeEstimate()
+                    else TableSizeEstimate(sizeClass, MetadataCoverage.complete(), confidence),
             )
-        } else {
-            emptyList()
-        }
-        val table = TableInfo(
-            "public",
-            "orders",
-            listOf(column),
-            indexes,
-            indexMetadata = MetadataCoverage.complete(),
-            foreignKeyMetadata = MetadataCoverage.complete(),
-            tableSize = if (sizeClass == TableSizeClass.Unknown) TableSizeEstimate()
-            else TableSizeEstimate(sizeClass, MetadataCoverage.complete(), confidence),
-        )
-        val filters = when (predicate) {
-            CorpusPredicate.None -> FilterGroup("root")
-            CorpusPredicate.IndexedEquality -> FilterGroup(
-                "root",
-                children = listOf(
-                    FilterNode.Leaf(
-                        FilterSpec("id-eq", "t0", "id", FilterOp.Eq, FilterValue.Single(FilterLiteral(LiteralKind.Int, "1"))),
-                    ),
-                ),
-            )
-            CorpusPredicate.BroadTextWithoutIndex -> FilterGroup(
-                "root",
-                children = listOf(
-                    FilterNode.Leaf(
-                        FilterSpec("notes-contains", "t0", "notes", FilterOp.Contains, FilterValue.Single(FilterLiteral(LiteralKind.Text, "term"))),
-                    ),
-                ),
-            )
-        }
+        val filters =
+            when (predicate) {
+                CorpusPredicate.None -> FilterGroup("root")
+                CorpusPredicate.IndexedEquality ->
+                    FilterGroup(
+                        "root",
+                        children =
+                            listOf(
+                                FilterNode.Leaf(
+                                    FilterSpec(
+                                        "id-eq",
+                                        "t0",
+                                        "id",
+                                        FilterOp.Eq,
+                                        FilterValue.Single(FilterLiteral(LiteralKind.Int, "1")),
+                                    )
+                                )
+                            ),
+                    )
+                CorpusPredicate.BroadTextWithoutIndex ->
+                    FilterGroup(
+                        "root",
+                        children =
+                            listOf(
+                                FilterNode.Leaf(
+                                    FilterSpec(
+                                        "notes-contains",
+                                        "t0",
+                                        "notes",
+                                        FilterOp.Contains,
+                                        FilterValue.Single(FilterLiteral(LiteralKind.Text, "term")),
+                                    )
+                                )
+                            ),
+                    )
+            }
         val selected = if (notes) "notes" else "id"
-        val spec = QuerySpec(
-            tables = listOf(TableRef("public", "orders", "t0")),
-            columns = listOf(ColumnSel("t0", selected)),
-            filters = filters,
-            limit = limit,
-            groups = if (blockingOperation) listOf(GroupSpec("t0", selected)) else emptyList(),
-        )
+        val spec =
+            QuerySpec(
+                tables = listOf(TableRef("public", "orders", "t0")),
+                columns = listOf(ColumnSel("t0", selected)),
+                filters = filters,
+                limit = limit,
+                groups = if (blockingOperation) listOf(GroupSpec("t0", selected)) else emptyList(),
+            )
         return spec to Schema(listOf(table))
     }
 }
 
 @Serializable
-private enum class CorpusPredicate { None, IndexedEquality, BroadTextWithoutIndex }
+private enum class CorpusPredicate {
+    None,
+    IndexedEquality,
+    BroadTextWithoutIndex,
+}

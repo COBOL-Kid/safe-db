@@ -46,7 +46,11 @@ fun columnY(
     rowHeight: Float = CANVAS_ROW_HEIGHT * ct.layoutScale,
 ): Float {
     val idx = ct.tableInfo.columns.indexOfFirst { it.name == columnName }
-    return ct.y + headerHeight + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) + idx * rowHeight + rowHeight / 2f
+    return ct.y +
+        headerHeight +
+        scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) +
+        idx * rowHeight +
+        rowHeight / 2f
 }
 
 fun tableRightX(ct: CanvasTableLike, cardWidth: Float = CANVAS_CARD_WIDTH * ct.layoutScale): Float =
@@ -54,26 +58,24 @@ fun tableRightX(ct: CanvasTableLike, cardWidth: Float = CANVAS_CARD_WIDTH * ct.l
 
 fun tableLeftX(ct: CanvasTableLike): Float = ct.x
 
-fun tableBottomY(ct: CanvasTableLike, cardHeight: Float = CANVAS_CARD_HEIGHT * ct.layoutScale): Float =
-    ct.y + (ct.height ?: cardHeight)
+fun tableBottomY(
+    ct: CanvasTableLike,
+    cardHeight: Float = CANVAS_CARD_HEIGHT * ct.layoutScale,
+): Float = ct.y + (ct.height ?: cardHeight)
 
-fun tableCenterX(ct: CanvasTableLike, cardWidth: Float = CANVAS_CARD_WIDTH * ct.layoutScale): Float =
-    ct.x + (ct.width ?: cardWidth) / 2f
+fun tableCenterX(
+    ct: CanvasTableLike,
+    cardWidth: Float = CANVAS_CARD_WIDTH * ct.layoutScale,
+): Float = ct.x + (ct.width ?: cardWidth) / 2f
 
-fun tableCenterY(ct: CanvasTableLike, cardHeight: Float = CANVAS_CARD_HEIGHT * ct.layoutScale): Float =
-    ct.y + (ct.height ?: cardHeight) / 2f
+fun tableCenterY(
+    ct: CanvasTableLike,
+    cardHeight: Float = CANVAS_CARD_HEIGHT * ct.layoutScale,
+): Float = ct.y + (ct.height ?: cardHeight) / 2f
 
-data class CanvasPoint(
-    val x: Float,
-    val y: Float,
-)
+data class CanvasPoint(val x: Float, val y: Float)
 
-data class CanvasRect(
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float,
-) {
+data class CanvasRect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
     fun expanded(amount: Float): CanvasRect =
         CanvasRect(left - amount, top - amount, right + amount, bottom + amount)
 
@@ -123,8 +125,7 @@ fun routedEdgeContainsPoint(
     x: Float,
     y: Float,
     tolerance: Float = JOIN_LINE_HIT_TOLERANCE,
-): Boolean =
-    pathContainsPoint(edge.points, CanvasPoint(x, y), tolerance)
+): Boolean = pathContainsPoint(edge.points, CanvasPoint(x, y), tolerance)
 
 fun pathContainsPoint(
     points: List<CanvasPoint>,
@@ -158,9 +159,13 @@ fun fieldViewportBounds(
     val bounds = tableBounds(ct, cardWidth, cardHeight)
     return CanvasRect(
         left = bounds.left,
-        top = bounds.top + scaled(CANVAS_HEADER_HEIGHT, ct) + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct),
+        top =
+            bounds.top + scaled(CANVAS_HEADER_HEIGHT, ct) + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct),
         right = bounds.right,
-        bottom = bounds.bottom - scaled(CANVAS_RESIZE_FOOTER_HEIGHT, ct) - scaled(CANVAS_FIELD_BODY_PADDING_Y, ct),
+        bottom =
+            bounds.bottom -
+                scaled(CANVAS_RESIZE_FOOTER_HEIGHT, ct) -
+                scaled(CANVAS_FIELD_BODY_PADDING_Y, ct),
     )
 }
 
@@ -172,8 +177,7 @@ data class ColumnHitBounds(
     val right: Float,
     val bottom: Float,
 ) {
-    fun contains(x: Float, y: Float): Boolean =
-        x in left..right && y in top..bottom
+    fun contains(x: Float, y: Float): Boolean = x in left..right && y in top..bottom
 }
 
 fun columnHitBounds(
@@ -187,7 +191,9 @@ fun columnHitBounds(
     val idx = ct.tableInfo.columns.indexOfFirst { it.name == columnName }
     if (idx < 0) return null
     val viewport = fieldViewportBounds(ct, cardWidth, cardHeight)
-    val rowTop = ct.y + headerHeight + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) + idx * rowHeight - ct.fieldScrollOffset
+    val rowTop =
+        ct.y + headerHeight + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) + idx * rowHeight -
+            ct.fieldScrollOffset
     val rowBottom = rowTop + rowHeight
     if (rowBottom <= viewport.top || rowTop >= viewport.bottom) return null
     val top = maxOf(rowTop, viewport.top)
@@ -214,18 +220,25 @@ fun columnJoinPort(
     if (idx < 0) return null
 
     val viewport = fieldViewportBounds(ct, cardWidth, cardHeight)
-    val unclampedY = ct.y + headerHeight + scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) + idx * rowHeight + rowHeight / 2f - ct.fieldScrollOffset
+    val unclampedY =
+        ct.y +
+            headerHeight +
+            scaled(CANVAS_FIELD_BODY_PADDING_Y, ct) +
+            idx * rowHeight +
+            rowHeight / 2f - ct.fieldScrollOffset
     val markerInset = scaled(8f, ct)
-    val visibility = when {
-        unclampedY < viewport.top -> JoinPortVisibility.HiddenAbove
-        unclampedY > viewport.bottom -> JoinPortVisibility.HiddenBelow
-        else -> JoinPortVisibility.Visible
-    }
-    val y = when (visibility) {
-        JoinPortVisibility.Visible -> unclampedY
-        JoinPortVisibility.HiddenAbove -> viewport.top + markerInset
-        JoinPortVisibility.HiddenBelow -> viewport.bottom - markerInset
-    }
+    val visibility =
+        when {
+            unclampedY < viewport.top -> JoinPortVisibility.HiddenAbove
+            unclampedY > viewport.bottom -> JoinPortVisibility.HiddenBelow
+            else -> JoinPortVisibility.Visible
+        }
+    val y =
+        when (visibility) {
+            JoinPortVisibility.Visible -> unclampedY
+            JoinPortVisibility.HiddenAbove -> viewport.top + markerInset
+            JoinPortVisibility.HiddenBelow -> viewport.bottom - markerInset
+        }
     return ColumnJoinPort(tableSidePoint(ct, side, y, cardWidth), side, visibility)
 }
 
@@ -241,16 +254,21 @@ fun routeJoinEdge(
 ): RoutedJoinEdge? {
     val sourceSide = JoinPortSide.Right
     val targetSide = JoinPortSide.Right
-    val sourcePort = columnJoinPort(source, sourceColumn, sourceSide, cardWidth, cardHeight) ?: return null
-    val targetPort = columnJoinPort(target, targetColumn, targetSide, cardWidth, cardHeight) ?: return null
+    val sourcePort =
+        columnJoinPort(source, sourceColumn, sourceSide, cardWidth, cardHeight) ?: return null
+    val targetPort =
+        columnJoinPort(target, targetColumn, targetSide, cardWidth, cardHeight) ?: return null
     val routeScale = source.layoutScale
     val laneOffset = laneIndex.coerceAtLeast(0) * scaled(JOIN_ROUTE_LANE_STEP, routeScale)
     val sourceSidePoint = tableSidePoint(source, sourceSide, sourcePort.point.y, cardWidth)
     val targetSidePoint = tableSidePoint(target, targetSide, targetPort.point.y, cardWidth)
-    val sourceExit = sourceSidePoint.exitPoint(sourceSide, scaled(JOIN_PORT_EXIT, routeScale) + laneOffset)
-    val targetExit = targetSidePoint.exitPoint(targetSide, scaled(JOIN_PORT_EXIT, routeScale) + laneOffset)
-    val obstacles = allTables
-        .map { tableBounds(it).expanded(scaled(JOIN_ROUTE_MARGIN, routeScale)) }
+    val sourceExit =
+        sourceSidePoint.exitPoint(sourceSide, scaled(JOIN_PORT_EXIT, routeScale) + laneOffset)
+    val targetExit =
+        targetSidePoint.exitPoint(targetSide, scaled(JOIN_PORT_EXIT, routeScale) + laneOffset)
+    val obstacles = allTables.map {
+        tableBounds(it).expanded(scaled(JOIN_ROUTE_MARGIN, routeScale))
+    }
 
     val middle = routeOrthogonal(sourceExit, targetExit, obstacles)
     val points = mutableListOf(sourcePort.point)
@@ -259,18 +277,12 @@ fun routeJoinEdge(
     points.addAll(middle.drop(1))
     points.addIfDistinct(targetSidePoint)
     points.addIfDistinct(targetPort.point)
-    return RoutedJoinEdge(
-        points = points,
-        sourcePort = sourcePort,
-        targetPort = targetPort,
-    )
+    return RoutedJoinEdge(points = points, sourcePort = sourcePort, targetPort = targetPort)
 }
 
-private fun scaled(value: Float, ct: CanvasTableLike): Float =
-    scaled(value, ct.layoutScale)
+private fun scaled(value: Float, ct: CanvasTableLike): Float = scaled(value, ct.layoutScale)
 
-private fun scaled(value: Float, scale: Float): Float =
-    value * scale
+private fun scaled(value: Float, scale: Float): Float = value * scale
 
 private fun tableSidePoint(
     ct: CanvasTableLike,
@@ -279,10 +291,11 @@ private fun tableSidePoint(
     cardWidth: Float,
 ): CanvasPoint =
     CanvasPoint(
-        x = when (side) {
-            JoinPortSide.Left -> tableLeftX(ct)
-            JoinPortSide.Right -> tableRightX(ct, cardWidth)
-        },
+        x =
+            when (side) {
+                JoinPortSide.Left -> tableLeftX(ct)
+                JoinPortSide.Right -> tableRightX(ct, cardWidth)
+            },
         y = y,
     )
 
@@ -296,7 +309,11 @@ private fun CanvasPoint.exitPoint(side: JoinPortSide, amount: Float): CanvasPoin
         JoinPortSide.Right -> copy(x = x + amount)
     }
 
-private fun distanceToSegmentSquared(point: CanvasPoint, start: CanvasPoint, end: CanvasPoint): Float {
+private fun distanceToSegmentSquared(
+    point: CanvasPoint,
+    start: CanvasPoint,
+    end: CanvasPoint,
+): Float {
     val dx = end.x - start.x
     val dy = end.y - start.y
     val lengthSquared = dx * dx + dy * dy
@@ -319,7 +336,13 @@ private fun routeOrthogonal(
     target: CanvasPoint,
     obstacles: List<CanvasRect>,
 ): List<CanvasPoint> {
-    val direct = listOf(start, CanvasPoint((start.x + target.x) / 2f, start.y), CanvasPoint((start.x + target.x) / 2f, target.y), target)
+    val direct =
+        listOf(
+            start,
+            CanvasPoint((start.x + target.x) / 2f, start.y),
+            CanvasPoint((start.x + target.x) / 2f, target.y),
+            target,
+        )
     if (direct.isClear(obstacles)) return direct
 
     val xCandidates = mutableSetOf(start.x, target.x)
@@ -428,8 +451,7 @@ private fun segmentClear(a: CanvasPoint, b: CanvasPoint, obstacles: List<CanvasR
         }
     }
 
-private fun manhattan(a: CanvasPoint, b: CanvasPoint): Float =
-    abs(a.x - b.x) + abs(a.y - b.y)
+private fun manhattan(a: CanvasPoint, b: CanvasPoint): Float = abs(a.x - b.x) + abs(a.y - b.y)
 
 private fun CanvasPoint.nearlyEquals(other: CanvasPoint): Boolean =
     abs(x - other.x) < 0.001f && abs(y - other.y) < 0.001f
@@ -471,16 +493,15 @@ fun indexedJoinTargetAt(
     return null
 }
 
-data class SuggestedRelationship(
-    val name: String,
-    val joins: List<JoinSpec>,
-)
+data class SuggestedRelationship(val name: String, val joins: List<JoinSpec>)
 
 fun suggestedRelationships(
     tables: List<CanvasTableLike>,
     joins: List<JoinSpec>,
 ): List<SuggestedRelationship> {
-    val tableByQualifiedName = tables.associateBy { qualifiedTableKey(it.tableInfo.schema, it.tableInfo.name) }
+    val tableByQualifiedName = tables.associateBy {
+        qualifiedTableKey(it.tableInfo.schema, it.tableInfo.name)
+    }
     val suggestions = mutableListOf<SuggestedRelationship>()
 
     for (foreignTable in tables) {
@@ -488,16 +509,19 @@ fun suggestedRelationships(
             if (foreignKey.columns.size != foreignKey.referencedColumns.size) continue
             if (foreignKey.columns.isEmpty()) continue
 
-            val referencedTable = tableByQualifiedName[
-                qualifiedTableKey(foreignKey.referencedSchema, foreignKey.referencedTable)
-            ] ?: continue
+            val referencedTable =
+                tableByQualifiedName[
+                    qualifiedTableKey(foreignKey.referencedSchema, foreignKey.referencedTable)]
+                    ?: continue
 
             val columnPairs = foreignKey.columns.zip(foreignKey.referencedColumns)
-            if (columnPairs.any { (foreignColumn, referencedColumn) ->
+            if (
+                columnPairs.any { (foreignColumn, referencedColumn) ->
                     !foreignTable.tableInfo.hasColumn(foreignColumn) ||
                         !referencedTable.tableInfo.hasColumn(referencedColumn)
                 }
-            ) continue
+            )
+                continue
 
             val relationshipJoins = columnPairs.map { (foreignColumn, referencedColumn) ->
                 JoinSpec(
@@ -507,7 +531,8 @@ fun suggestedRelationships(
                     rightColumn = referencedColumn,
                 )
             }
-            if (relationshipJoins.all { suggested ->
+            if (
+                relationshipJoins.all { suggested ->
                     joins.hasJoin(
                         suggested.leftAlias,
                         suggested.leftColumn,
@@ -515,16 +540,18 @@ fun suggestedRelationships(
                         suggested.rightColumn,
                     )
                 }
-            ) continue
-            suggestions.add(SuggestedRelationship(name = foreignKey.name, joins = relationshipJoins))
+            )
+                continue
+            suggestions.add(
+                SuggestedRelationship(name = foreignKey.name, joins = relationshipJoins)
+            )
         }
     }
 
     return suggestions.distinct()
 }
 
-private fun TableInfo.hasColumn(column: String): Boolean =
-    columns.any { it.name == column }
+private fun TableInfo.hasColumn(column: String): Boolean = columns.any { it.name == column }
 
 private fun List<JoinSpec>.hasJoin(
     leftAlias: String,
@@ -532,14 +559,17 @@ private fun List<JoinSpec>.hasJoin(
     rightAlias: String,
     rightColumn: String,
 ): Boolean = any { join ->
-    (join.leftAlias == leftAlias && join.leftColumn == leftColumn &&
-        join.rightAlias == rightAlias && join.rightColumn == rightColumn) ||
-        (join.leftAlias == rightAlias && join.leftColumn == rightColumn &&
-            join.rightAlias == leftAlias && join.rightColumn == leftColumn)
+    (join.leftAlias == leftAlias &&
+        join.leftColumn == leftColumn &&
+        join.rightAlias == rightAlias &&
+        join.rightColumn == rightColumn) ||
+        (join.leftAlias == rightAlias &&
+            join.leftColumn == rightColumn &&
+            join.rightAlias == leftAlias &&
+            join.rightColumn == leftColumn)
 }
 
-private fun qualifiedTableKey(schema: String, table: String): String =
-    "$schema.$table"
+private fun qualifiedTableKey(schema: String, table: String): String = "$schema.$table"
 
 /** Cubic Bezier path between two tables' join endpoints (SVG path data). */
 fun joinEdgePath(

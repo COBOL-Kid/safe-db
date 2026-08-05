@@ -1,10 +1,10 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,13 +27,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
-import androidx.compose.ui.text.font.FontWeight
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.DataMono
@@ -49,10 +49,10 @@ fun ResultsTable(
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
@@ -75,10 +75,10 @@ fun ResultsTable(
 
         if (result.warnings.isNotEmpty()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 for (warning in result.warnings) {
                     Text("\u26A0 $warning", style = MaterialTheme.typography.labelSmall)
@@ -87,31 +87,30 @@ fun ResultsTable(
         }
 
         if (result.rows.isEmpty() && result.columns.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
                 Text("No rows returned.", style = MaterialTheme.typography.bodySmall)
             }
         } else {
             val horizontalScroll = rememberScrollState()
             val listState = rememberLazyListState()
             val tableWidth = columns.sumOf { it.widthDp }.dp
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .horizontalScroll(horizontalScroll),
-            ) {
+            Column(modifier = Modifier.fillMaxSize().horizontalScroll(horizontalScroll)) {
                 Row(
-                    modifier = Modifier
-                        .width(tableWidth)
-                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .padding(vertical = 2.dp),
+                    modifier =
+                        Modifier.width(tableWidth)
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                            .padding(vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     for (column in columns) {
                         Text(
                             column.label,
-                            modifier = Modifier
-                                .width(column.widthDp.dp)
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            modifier =
+                                Modifier.width(column.widthDp.dp)
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
                             style = DataMono.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = column.alignment.textAlign,
@@ -135,39 +134,51 @@ fun ResultsTable(
                         itemsIndexed(result.rows, key = { index, _ -> index }) { rowIdx, row ->
                             val interactionSource = remember { MutableInteractionSource() }
                             val hovered by interactionSource.collectIsHoveredAsState()
-                            val rowBg = when {
-                                hovered -> SafeDbTheme.colors.accentContainer.copy(alpha = 0.55f)
-                                rowIdx % 2 == 1 -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f)
-                                else -> MaterialTheme.colorScheme.surface
-                            }
+                            val rowBg =
+                                when {
+                                    hovered ->
+                                        SafeDbTheme.colors.accentContainer.copy(alpha = 0.55f)
+                                    rowIdx % 2 == 1 ->
+                                        MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                                            alpha = 0.6f
+                                        )
+                                    else -> MaterialTheme.colorScheme.surface
+                                }
                             Row(
-                                modifier = Modifier
-                                    .width(tableWidth)
-                                    .background(rowBg)
-                                    .hoverable(interactionSource),
+                                modifier =
+                                    Modifier.width(tableWidth)
+                                        .background(rowBg)
+                                        .hoverable(interactionSource),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 columns.forEach { column ->
                                     val cell = row.getOrNull(column.index)
                                     Text(
                                         if (cell == ResultCell.Null) "null" else formatCell(cell),
-                                        modifier = Modifier
-                                            .width(column.widthDp.dp)
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier =
+                                            Modifier.width(column.widthDp.dp)
+                                                .padding(horizontal = 12.dp, vertical = 6.dp),
                                         style = DataMono,
-                                        fontStyle = if (cell == ResultCell.Null) FontStyle.Italic else FontStyle.Normal,
+                                        fontStyle =
+                                            if (cell == ResultCell.Null) FontStyle.Italic
+                                            else FontStyle.Normal,
                                         textAlign = column.alignment.textAlign,
-                                        color = if (cell == ResultCell.Null) {
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        },
+                                        color =
+                                            if (cell == ResultCell.Null) {
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                    alpha = 0.6f
+                                                )
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                            )
                         }
                     }
                 }
@@ -189,10 +200,11 @@ internal enum class ResultTableCellAlignment {
 }
 
 private val ResultTableCellAlignment.textAlign: TextAlign
-    get() = when (this) {
-        ResultTableCellAlignment.Start -> TextAlign.Start
-        ResultTableCellAlignment.End -> TextAlign.End
-    }
+    get() =
+        when (this) {
+            ResultTableCellAlignment.Start -> TextAlign.Start
+            ResultTableCellAlignment.End -> TextAlign.End
+        }
 
 internal fun buildResultTableColumns(result: QueryResult): List<ResultTableColumnLayout> {
     val labels = result.columns.map(::displayColumnName)
@@ -205,7 +217,11 @@ internal fun buildResultTableColumns(result: QueryResult): List<ResultTableColum
             maxLengths[index] = maxOf(maxLengths[index], formatCell(cell).length)
             if (cell != null && cell !is ResultCell.Null) {
                 hasConcrete[index] = true
-                if (cell !is ResultCell.IntegerCell && cell !is ResultCell.FloatCell && cell !is ResultCell.BoolCell) {
+                if (
+                    cell !is ResultCell.IntegerCell &&
+                        cell !is ResultCell.FloatCell &&
+                        cell !is ResultCell.BoolCell
+                ) {
                     allNumeric[index] = false
                 }
             }
@@ -215,26 +231,30 @@ internal fun buildResultTableColumns(result: QueryResult): List<ResultTableColum
         ResultTableColumnLayout(
             index = index,
             label = label,
-            widthDp = (maxLengths[index] * RESULT_TABLE_CHAR_WIDTH_DP + RESULT_TABLE_HORIZONTAL_PADDING_DP)
-                .coerceIn(RESULT_TABLE_MIN_COLUMN_WIDTH_DP, RESULT_TABLE_MAX_COLUMN_WIDTH_DP),
-            alignment = if (hasConcrete[index] && allNumeric[index]) {
-                ResultTableCellAlignment.End
-            } else {
-                ResultTableCellAlignment.Start
-            },
+            widthDp =
+                (maxLengths[index] * RESULT_TABLE_CHAR_WIDTH_DP +
+                        RESULT_TABLE_HORIZONTAL_PADDING_DP)
+                    .coerceIn(RESULT_TABLE_MIN_COLUMN_WIDTH_DP, RESULT_TABLE_MAX_COLUMN_WIDTH_DP),
+            alignment =
+                if (hasConcrete[index] && allNumeric[index]) {
+                    ResultTableCellAlignment.End
+                } else {
+                    ResultTableCellAlignment.Start
+                },
         )
     }
 }
 
-internal fun formatCell(value: ResultCell?): String = when (value) {
-    null -> ""
-    is ResultCell.Null -> ""
-    is ResultCell.BoolCell -> value.value.toString()
-    is ResultCell.IntegerCell -> value.value.toString()
-    is ResultCell.FloatCell -> value.value.toString()
-    is ResultCell.TextCell -> value.value.text + if (value.value.truncated) "…" else ""
-    is ResultCell.BinaryCell -> value.value.base64 + if (value.value.truncated) "…" else ""
-}
+internal fun formatCell(value: ResultCell?): String =
+    when (value) {
+        null -> ""
+        is ResultCell.Null -> ""
+        is ResultCell.BoolCell -> value.value.toString()
+        is ResultCell.IntegerCell -> value.value.toString()
+        is ResultCell.FloatCell -> value.value.toString()
+        is ResultCell.TextCell -> value.value.text + if (value.value.truncated) "…" else ""
+        is ResultCell.BinaryCell -> value.value.base64 + if (value.value.truncated) "…" else ""
+    }
 
 internal fun displayColumnName(column: ResultColumn): String {
     val raw = column.name
@@ -244,7 +264,11 @@ internal fun displayColumnName(column: ResultColumn): String {
 internal fun resultColumnAlignment(cells: List<ResultCell?>): ResultTableCellAlignment {
     val concreteCells = cells.filterNotNull().filterNot { it is ResultCell.Null }
     if (concreteCells.isEmpty()) return ResultTableCellAlignment.Start
-    return if (concreteCells.all { it is ResultCell.IntegerCell || it is ResultCell.FloatCell || it is ResultCell.BoolCell }) {
+    return if (
+        concreteCells.all {
+            it is ResultCell.IntegerCell || it is ResultCell.FloatCell || it is ResultCell.BoolCell
+        }
+    ) {
         ResultTableCellAlignment.End
     } else {
         ResultTableCellAlignment.Start
@@ -252,9 +276,12 @@ internal fun resultColumnAlignment(cells: List<ResultCell?>): ResultTableCellAli
 }
 
 internal fun resultColumnWidthDp(label: String, cells: List<ResultCell?>): Int {
-    val longestText = (listOf(label) + cells.map(::formatCell)).maxOfOrNull { it.length } ?: label.length
-    return (longestText * RESULT_TABLE_CHAR_WIDTH_DP + RESULT_TABLE_HORIZONTAL_PADDING_DP)
-        .coerceIn(RESULT_TABLE_MIN_COLUMN_WIDTH_DP, RESULT_TABLE_MAX_COLUMN_WIDTH_DP)
+    val longestText =
+        (listOf(label) + cells.map(::formatCell)).maxOfOrNull { it.length } ?: label.length
+    return (longestText * RESULT_TABLE_CHAR_WIDTH_DP + RESULT_TABLE_HORIZONTAL_PADDING_DP).coerceIn(
+        RESULT_TABLE_MIN_COLUMN_WIDTH_DP,
+        RESULT_TABLE_MAX_COLUMN_WIDTH_DP,
+    )
 }
 
 private const val RESULT_TABLE_CHAR_WIDTH_DP = 9

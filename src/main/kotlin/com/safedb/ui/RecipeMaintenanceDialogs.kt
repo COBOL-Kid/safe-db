@@ -44,7 +44,9 @@ internal fun RecipeMaintenanceDialogs(
                 PrimaryButton(
                     onClick = { onRename(recipe, renameValue.trim()) },
                     enabled = renameValue.isNotBlank(),
-                ) { Text("Rename") }
+                ) {
+                    Text("Rename")
+                }
             },
             dismissButton = { SecondaryButton(onClick = onRenameDismiss) { Text("Cancel") } },
         )

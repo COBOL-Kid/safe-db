@@ -1,13 +1,13 @@
 package com.safedb.query
 
+import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ColumnCategory
 import com.safedb.model.ColumnSel
-import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.Dialect
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
-import com.safedb.model.LiteralKind
 import com.safedb.model.JoinSpec
+import com.safedb.model.LiteralKind
 import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
@@ -21,59 +21,52 @@ const val MAX_FILTER_DEPTH = 5
 const val MAX_IN_LIST_SIZE = 1000
 const val MAX_TEXT_LITERAL_LEN = 10_000
 
-internal val BLOCKED_SCHEMAS = listOf(
-    "pg_catalog",
-    "information_schema",
-    "pg_toast",
-    "mysql",
-    "performance_schema",
-    "sys",
-    "guest",
-    "INFORMATION_SCHEMA",
-    "SYS",
-    "SYSTEM",
-    "OUTLN",
-    "DBSNMP",
-    "XDB",
-    "CTXSYS",
-    "MDSYS",
-    "OLAPSYS",
-    "WMSYS",
-    "ORDSYS",
-    "EXFSYS",
-    "ANONYMOUS",
-    "APEX_PUBLIC_USER",
-    "FLOWS_FILES",
-    "APEX_030200",
-    "APEX_040000",
-    "APEX_040200",
-    "AUDSYS",
-    "GSMADMIN_INTERNAL",
-    "SYSMAN",
-    "DBSFWUSER",
-    "APPQOSSYS",
-    "ORACLE_OCM",
-    "XS\$NULL",
-    "DVSYS",
-    "LBACSYS",
-)
+internal val BLOCKED_SCHEMAS =
+    listOf(
+        "pg_catalog",
+        "information_schema",
+        "pg_toast",
+        "mysql",
+        "performance_schema",
+        "sys",
+        "guest",
+        "INFORMATION_SCHEMA",
+        "SYS",
+        "SYSTEM",
+        "OUTLN",
+        "DBSNMP",
+        "XDB",
+        "CTXSYS",
+        "MDSYS",
+        "OLAPSYS",
+        "WMSYS",
+        "ORDSYS",
+        "EXFSYS",
+        "ANONYMOUS",
+        "APEX_PUBLIC_USER",
+        "FLOWS_FILES",
+        "APEX_030200",
+        "APEX_040000",
+        "APEX_040200",
+        "AUDSYS",
+        "GSMADMIN_INTERNAL",
+        "SYSMAN",
+        "DBSFWUSER",
+        "APPQOSSYS",
+        "ORACLE_OCM",
+        "XS\$NULL",
+        "DVSYS",
+        "LBACSYS",
+    )
 
-data class ValidationOutcome(
-    val warnings: List<String>,
-    val limit: Int,
-)
+data class ValidationOutcome(val warnings: List<String>, val limit: Int)
 
-data class ValidatedColumn(
-    val tableAlias: String,
-    val column: String,
-    val resultAlias: String,
-)
+data class ValidatedColumn(val tableAlias: String, val column: String, val resultAlias: String)
 
-class ValidatedQuery internal constructor(
-    private val spec: QuerySpec,
-    private val columns: List<ValidatedColumn>,
-) {
+class ValidatedQuery
+internal constructor(private val spec: QuerySpec, private val columns: List<ValidatedColumn>) {
     fun spec(): QuerySpec = spec
+
     fun columns(): List<ValidatedColumn> = columns
 }
 
@@ -83,20 +76,22 @@ fun validateQuery(
     customBlocked: List<String>,
     dialect: Dialect? = null,
 ): Outcome<Pair<ValidatedQuery, ValidationOutcome>> {
-    val (normalizedSpec, outcome) = when (val result = validate(spec, schema, customBlocked, dialect)) {
-        is Outcome.Ok -> result.value
-        is Outcome.Err -> return Outcome.err(result.message)
-    }
-
-    val selections = if (normalizedSpec.columns.isEmpty()) {
-        normalizedSpec.tables.flatMap { tableRef ->
-            findTable(schema, tableRef.schema, tableRef.name)?.columns.orEmpty().map { column ->
-                ColumnSel(tableAlias = tableRef.alias, column = column.name)
-            }
+    val (normalizedSpec, outcome) =
+        when (val result = validate(spec, schema, customBlocked, dialect)) {
+            is Outcome.Ok -> result.value
+            is Outcome.Err -> return Outcome.err(result.message)
         }
-    } else {
-        normalizedSpec.columns
-    }
+
+    val selections =
+        if (normalizedSpec.columns.isEmpty()) {
+            normalizedSpec.tables.flatMap { tableRef ->
+                findTable(schema, tableRef.schema, tableRef.name)?.columns.orEmpty().map { column ->
+                    ColumnSel(tableAlias = tableRef.alias, column = column.name)
+                }
+            }
+        } else {
+            normalizedSpec.columns
+        }
 
     val aliases = mutableSetOf<String>()
     val validatedColumns = selections.map { selection ->
@@ -114,56 +109,87 @@ fun validateQuery(
         )
     }
 
-    return Outcome.ok(
-        ValidatedQuery(normalizedSpec, validatedColumns) to outcome,
-    )
+    return Outcome.ok(ValidatedQuery(normalizedSpec, validatedColumns) to outcome)
 }
 
-fun literalKindForColumn(dataType: String): LiteralKind = when (classifyColumn(dataType)) {
-    ColumnCategory.Integer -> LiteralKind.Int
-    ColumnCategory.Decimal -> LiteralKind.Decimal
-    ColumnCategory.Bool -> LiteralKind.Bool
-    ColumnCategory.Date -> LiteralKind.Date
-    ColumnCategory.DateTime -> LiteralKind.DateTime
-    ColumnCategory.Text, ColumnCategory.Binary, ColumnCategory.Json, ColumnCategory.Other -> LiteralKind.Text
-}
+fun literalKindForColumn(dataType: String): LiteralKind =
+    when (classifyColumn(dataType)) {
+        ColumnCategory.Integer -> LiteralKind.Int
+        ColumnCategory.Decimal -> LiteralKind.Decimal
+        ColumnCategory.Bool -> LiteralKind.Bool
+        ColumnCategory.Date -> LiteralKind.Date
+        ColumnCategory.DateTime -> LiteralKind.DateTime
+        ColumnCategory.Text,
+        ColumnCategory.Binary,
+        ColumnCategory.Json,
+        ColumnCategory.Other -> LiteralKind.Text
+    }
 
-fun opsForColumn(dataType: String): List<FilterOp> = when (classifyColumn(dataType)) {
-    ColumnCategory.Text -> listOf(
-        FilterOp.Eq, FilterOp.Ne,
-        FilterOp.Contains, FilterOp.ContainsIgnoreCase, FilterOp.NotContains,
-        FilterOp.StartsWith, FilterOp.EndsWith,
-        FilterOp.In, FilterOp.NotIn, FilterOp.IsNull, FilterOp.IsNotNull,
-        FilterOp.IsEmpty, FilterOp.IsNotEmpty,
-    )
-    ColumnCategory.Integer, ColumnCategory.Decimal -> listOf(
-        FilterOp.Eq, FilterOp.Ne, FilterOp.Gt, FilterOp.Gte, FilterOp.Lt, FilterOp.Lte,
-        FilterOp.In, FilterOp.NotIn, FilterOp.Between, FilterOp.IsNull, FilterOp.IsNotNull,
-    )
-    ColumnCategory.Bool -> listOf(
-        FilterOp.Eq, FilterOp.Ne, FilterOp.IsNull, FilterOp.IsNotNull,
-    )
-    ColumnCategory.Date, ColumnCategory.DateTime -> listOf(
-        FilterOp.Eq, FilterOp.Ne, FilterOp.Gt, FilterOp.Gte, FilterOp.Lt, FilterOp.Lte,
-        FilterOp.Between, FilterOp.IsNull, FilterOp.IsNotNull,
-    )
-    ColumnCategory.Binary, ColumnCategory.Json, ColumnCategory.Other -> listOf(
-        FilterOp.Eq, FilterOp.Ne, FilterOp.IsNull, FilterOp.IsNotNull,
-    )
-}
+fun opsForColumn(dataType: String): List<FilterOp> =
+    when (classifyColumn(dataType)) {
+        ColumnCategory.Text ->
+            listOf(
+                FilterOp.Eq,
+                FilterOp.Ne,
+                FilterOp.Contains,
+                FilterOp.ContainsIgnoreCase,
+                FilterOp.NotContains,
+                FilterOp.StartsWith,
+                FilterOp.EndsWith,
+                FilterOp.In,
+                FilterOp.NotIn,
+                FilterOp.IsNull,
+                FilterOp.IsNotNull,
+                FilterOp.IsEmpty,
+                FilterOp.IsNotEmpty,
+            )
+        ColumnCategory.Integer,
+        ColumnCategory.Decimal ->
+            listOf(
+                FilterOp.Eq,
+                FilterOp.Ne,
+                FilterOp.Gt,
+                FilterOp.Gte,
+                FilterOp.Lt,
+                FilterOp.Lte,
+                FilterOp.In,
+                FilterOp.NotIn,
+                FilterOp.Between,
+                FilterOp.IsNull,
+                FilterOp.IsNotNull,
+            )
+        ColumnCategory.Bool -> listOf(FilterOp.Eq, FilterOp.Ne, FilterOp.IsNull, FilterOp.IsNotNull)
+        ColumnCategory.Date,
+        ColumnCategory.DateTime ->
+            listOf(
+                FilterOp.Eq,
+                FilterOp.Ne,
+                FilterOp.Gt,
+                FilterOp.Gte,
+                FilterOp.Lt,
+                FilterOp.Lte,
+                FilterOp.Between,
+                FilterOp.IsNull,
+                FilterOp.IsNotNull,
+            )
+        ColumnCategory.Binary,
+        ColumnCategory.Json,
+        ColumnCategory.Other ->
+            listOf(FilterOp.Eq, FilterOp.Ne, FilterOp.IsNull, FilterOp.IsNotNull)
+    }
 
 /** Includes historical raw LIKE operators so saved queries continue to validate and run. */
 internal fun validOpsForColumn(dataType: String): List<FilterOp> =
-    opsForColumn(dataType) + when (classifyColumn(dataType)) {
-        ColumnCategory.Text -> listOf(FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike)
-        else -> emptyList()
-    }
+    opsForColumn(dataType) +
+        when (classifyColumn(dataType)) {
+            ColumnCategory.Text -> listOf(FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike)
+            else -> emptyList()
+        }
 
 /** Returns sorts that are invalid because SELECT DISTINCT does not project their columns. */
 fun distinctSortProjectionConflicts(spec: QuerySpec): List<SortSpec> {
     if (!spec.distinct || spec.columns.isEmpty()) return emptyList()
-    val selectedColumns = spec.columns
-        .mapTo(mutableSetOf()) { it.tableAlias to it.column }
+    val selectedColumns = spec.columns.mapTo(mutableSetOf()) { it.tableAlias to it.column }
     return spec.sorts.filter { (it.tableAlias to it.column) !in selectedColumns }
 }
 
@@ -177,7 +203,7 @@ fun validate(
 
     if (spec.schemaVersion != CURRENT_SCHEMA_VERSION) {
         return Outcome.err(
-            "Query schema version ${spec.schemaVersion} is unsupported; expected $CURRENT_SCHEMA_VERSION",
+            "Query schema version ${spec.schemaVersion} is unsupported; expected $CURRENT_SCHEMA_VERSION"
         )
     }
 
@@ -213,10 +239,10 @@ fun validate(
 
         for (col in spec.columns) {
             if (col.tableAlias == table.alias) {
-                val exists = findTable(schema, table.schema, table.name)
-                    ?.columns
-                    ?.any { it.name == col.column }
-                    ?: false
+                val exists =
+                    findTable(schema, table.schema, table.name)?.columns?.any {
+                        it.name == col.column
+                    } ?: false
                 if (!exists) {
                     return Outcome.err("Column '${table.alias}.${col.column}' does not exist")
                 }
@@ -226,7 +252,9 @@ fun validate(
 
     for (col in spec.columns) {
         if (!tableAliases.contains(col.tableAlias)) {
-            return Outcome.err("Column selection references unknown table alias '${col.tableAlias}'")
+            return Outcome.err(
+                "Column selection references unknown table alias '${col.tableAlias}'"
+            )
         }
     }
 
@@ -235,14 +263,18 @@ fun validate(
         if (!tableAliases.contains(group.tableAlias)) {
             return Outcome.err("Group references unknown table alias '${group.tableAlias}'")
         }
-        val table = findTableByAlias(schema, spec, group.tableAlias)
-            ?: return Outcome.err("Cannot resolve table for group alias '${group.tableAlias}'")
-        val column = table.columns.find { it.name == group.column }
-            ?: return Outcome.err("Group column '${group.tableAlias}.${group.column}' does not exist")
+        val table =
+            findTableByAlias(schema, spec, group.tableAlias)
+                ?: return Outcome.err("Cannot resolve table for group alias '${group.tableAlias}'")
+        val column =
+            table.columns.find { it.name == group.column }
+                ?: return Outcome.err(
+                    "Group column '${group.tableAlias}.${group.column}' does not exist"
+                )
         if (dialect != null && !supportsGroupingAndSorting(column.dataType, dialect)) {
             return Outcome.err(
                 "Group column '${group.tableAlias}.${group.column}' has type '${column.dataType}', " +
-                    "which cannot be grouped by ${dialect.displayName()}",
+                    "which cannot be grouped by ${dialect.displayName()}"
             )
         }
         if (!groupedColumns.add(group.tableAlias to group.column)) {
@@ -255,14 +287,18 @@ fun validate(
         if (!tableAliases.contains(sort.tableAlias)) {
             return Outcome.err("Sort references unknown table alias '${sort.tableAlias}'")
         }
-        val table = findTableByAlias(schema, spec, sort.tableAlias)
-            ?: return Outcome.err("Cannot resolve table for sort alias '${sort.tableAlias}'")
-        val column = table.columns.find { it.name == sort.column }
-            ?: return Outcome.err("Sort column '${sort.tableAlias}.${sort.column}' does not exist")
+        val table =
+            findTableByAlias(schema, spec, sort.tableAlias)
+                ?: return Outcome.err("Cannot resolve table for sort alias '${sort.tableAlias}'")
+        val column =
+            table.columns.find { it.name == sort.column }
+                ?: return Outcome.err(
+                    "Sort column '${sort.tableAlias}.${sort.column}' does not exist"
+                )
         if (dialect != null && !supportsGroupingAndSorting(column.dataType, dialect)) {
             return Outcome.err(
                 "Sort column '${sort.tableAlias}.${sort.column}' has type '${column.dataType}', " +
-                    "which cannot be sorted by ${dialect.displayName()}",
+                    "which cannot be sorted by ${dialect.displayName()}"
             )
         }
         if (!sortedColumns.add(sort.tableAlias to sort.column)) {
@@ -273,7 +309,8 @@ fun validate(
     val distinctSortConflicts = distinctSortProjectionConflicts(spec)
     if (distinctSortConflicts.isNotEmpty()) {
         val labels = distinctSortConflicts.joinToString { "'${it.tableAlias}.${it.column}'" }
-        val subject = if (distinctSortConflicts.size == 1) "Sort column $labels" else "Sort columns $labels"
+        val subject =
+            if (distinctSortConflicts.size == 1) "Sort column $labels" else "Sort columns $labels"
         return Outcome.err("$subject must be explicitly selected when Distinct rows is enabled")
     }
 
@@ -284,14 +321,14 @@ fun validate(
         for (column in spec.columns) {
             if ((column.tableAlias to column.column) !in groupedColumns) {
                 return Outcome.err(
-                    "Selected output column '${column.tableAlias}.${column.column}' must appear in GROUP BY",
+                    "Selected output column '${column.tableAlias}.${column.column}' must appear in GROUP BY"
                 )
             }
         }
         for (sort in spec.sorts) {
             if ((sort.tableAlias to sort.column) !in groupedColumns) {
                 return Outcome.err(
-                    "Sort column '${sort.tableAlias}.${sort.column}' must appear in GROUP BY",
+                    "Sort column '${sort.tableAlias}.${sort.column}' must appear in GROUP BY"
                 )
             }
         }
@@ -305,42 +342,53 @@ fun validate(
             return Outcome.err("Join references unknown table alias '${join.rightAlias}'")
         }
 
-        val leftTable = findTableByAlias(schema, spec, join.leftAlias)
-            ?: return Outcome.err("Cannot resolve table for alias '${join.leftAlias}'")
-        val rightTable = findTableByAlias(schema, spec, join.rightAlias)
-            ?: return Outcome.err("Cannot resolve table for alias '${join.rightAlias}'")
+        val leftTable =
+            findTableByAlias(schema, spec, join.leftAlias)
+                ?: return Outcome.err("Cannot resolve table for alias '${join.leftAlias}'")
+        val rightTable =
+            findTableByAlias(schema, spec, join.rightAlias)
+                ?: return Outcome.err("Cannot resolve table for alias '${join.rightAlias}'")
 
-        val leftCol = leftTable.columns.find { it.name == join.leftColumn }
-            ?: return Outcome.err("Join column '${join.leftAlias}.${join.leftColumn}' does not exist")
-        val rightCol = rightTable.columns.find { it.name == join.rightColumn }
-            ?: return Outcome.err("Join column '${join.rightAlias}.${join.rightColumn}' does not exist")
+        val leftCol =
+            leftTable.columns.find { it.name == join.leftColumn }
+                ?: return Outcome.err(
+                    "Join column '${join.leftAlias}.${join.leftColumn}' does not exist"
+                )
+        val rightCol =
+            rightTable.columns.find { it.name == join.rightColumn }
+                ?: return Outcome.err(
+                    "Join column '${join.rightAlias}.${join.rightColumn}' does not exist"
+                )
 
         val completeForeignKeyJoin = isPartOfCompleteForeignKey(schema, spec, join)
         if (!leftCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
-                "Join column '${join.leftAlias}.${join.leftColumn}' is not the leading key of an equality-capable index",
+                "Join column '${join.leftAlias}.${join.leftColumn}' is not the leading key of an equality-capable index"
             )
         }
         if (!rightCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
-                "Join column '${join.rightAlias}.${join.rightColumn}' is not the leading key of an equality-capable index",
+                "Join column '${join.rightAlias}.${join.rightColumn}' is not the leading key of an equality-capable index"
             )
         }
         if (leftCol.category != rightCol.category) {
             return Outcome.err(
-                "Join columns '${join.leftAlias}.${join.leftColumn}' and '${join.rightAlias}.${join.rightColumn}' have incompatible types",
+                "Join columns '${join.leftAlias}.${join.leftColumn}' and '${join.rightAlias}.${join.rightColumn}' have incompatible types"
             )
         }
     }
 
-    when (val result = validateNode(
-        node = FilterNode.Group(spec.filters),
-        schema = schema,
-        spec = spec,
-        tableAliases = tableAliases,
-        depth = 0,
-        warnings = warnings,
-    )) {
+    when (
+        val result =
+            validateNode(
+                node = FilterNode.Group(spec.filters),
+                schema = schema,
+                spec = spec,
+                tableAliases = tableAliases,
+                depth = 0,
+                warnings = warnings,
+            )
+    ) {
         is Outcome.Ok -> Unit
         is Outcome.Err -> return Outcome.err(result.message)
     }
@@ -360,7 +408,7 @@ fun validate(
     }
     if (limit > LARGE_LIMIT_WARNING_THRESHOLD) {
         warnings.add(
-            "Large result limits are useful for reporting, but filters, selected columns, and indexed predicates keep queries faster and easier to reuse.",
+            "Large result limits are useful for reporting, but filters, selected columns, and indexed predicates keep queries faster and easier to reuse."
         )
     }
 
@@ -371,7 +419,7 @@ fun validate(
     val normalizedSpec = spec.copy(limit = limit)
 
     return Outcome.ok(
-        normalizedSpec to ValidationOutcome(warnings = warnings.toList(), limit = limit),
+        normalizedSpec to ValidationOutcome(warnings = warnings.toList(), limit = limit)
     )
 }
 
@@ -379,40 +427,58 @@ internal fun findTable(schema: Schema, tableSchema: String, tableName: String) =
     schema.tables.find { it.schema == tableSchema && it.name == tableName }
 
 internal fun findTableByAlias(schema: Schema, spec: QuerySpec, alias: String) =
-    spec.tables.find { it.alias == alias }?.let { tableRef ->
-        findTable(schema, tableRef.schema, tableRef.name)
-    }
+    spec.tables
+        .find { it.alias == alias }
+        ?.let { tableRef -> findTable(schema, tableRef.schema, tableRef.name) }
 
 internal fun supportsGroupingAndSorting(dataType: String, dialect: Dialect): Boolean {
     val normalized = dataType.lowercase().substringBefore('(').trim()
     return when (dialect) {
         Dialect.Postgres -> normalized !in setOf("json", "xml")
-        Dialect.Mssql -> normalized !in setOf("text", "ntext", "image", "xml", "geometry", "geography")
+        Dialect.Mssql ->
+            normalized !in setOf("text", "ntext", "image", "xml", "geometry", "geography")
         Dialect.Oracle -> normalized !in setOf("blob", "clob", "nclob", "bfile", "long", "xmltype")
         Dialect.MySql -> true
     }
 }
 
-private fun Dialect.displayName(): String = when (this) {
-    Dialect.Postgres -> "PostgreSQL"
-    Dialect.MySql -> "MySQL"
-    Dialect.Mssql -> "SQL Server"
-    Dialect.Oracle -> "Oracle"
-}
+private fun Dialect.displayName(): String =
+    when (this) {
+        Dialect.Postgres -> "PostgreSQL"
+        Dialect.MySql -> "MySQL"
+        Dialect.Mssql -> "SQL Server"
+        Dialect.Oracle -> "Oracle"
+    }
 
 private fun isPartOfCompleteForeignKey(schema: Schema, spec: QuerySpec, join: JoinSpec): Boolean {
     for (foreignRef in spec.tables) {
         val foreignTable = findTable(schema, foreignRef.schema, foreignRef.name) ?: continue
         for (foreignKey in foreignTable.foreignKeys) {
-            if (foreignKey.columns.isEmpty() || foreignKey.columns.size != foreignKey.referencedColumns.size) continue
-            val referencedRefs = spec.tables.filter { tableRef ->
-                tableRef.schema == foreignKey.referencedSchema && tableRef.name == foreignKey.referencedTable
-            }
-            for (referencedRef in referencedRefs) {
-                val expected = foreignKey.columns.zip(foreignKey.referencedColumns).map { (foreignColumn, referencedColumn) ->
-                    JoinSpec(foreignRef.alias, foreignColumn, referencedRef.alias, referencedColumn)
+            if (
+                foreignKey.columns.isEmpty() ||
+                    foreignKey.columns.size != foreignKey.referencedColumns.size
+            )
+                continue
+            val referencedRefs =
+                spec.tables.filter { tableRef ->
+                    tableRef.schema == foreignKey.referencedSchema &&
+                        tableRef.name == foreignKey.referencedTable
                 }
-                if (expected.any { it.matches(join) } && expected.all { candidate -> spec.joins.any(candidate::matches) }) {
+            for (referencedRef in referencedRefs) {
+                val expected =
+                    foreignKey.columns.zip(foreignKey.referencedColumns).map {
+                        (foreignColumn, referencedColumn) ->
+                        JoinSpec(
+                            foreignRef.alias,
+                            foreignColumn,
+                            referencedRef.alias,
+                            referencedColumn,
+                        )
+                    }
+                if (
+                    expected.any { it.matches(join) } &&
+                        expected.all { candidate -> spec.joins.any(candidate::matches) }
+                ) {
                     return true
                 }
             }
@@ -422,7 +488,11 @@ private fun isPartOfCompleteForeignKey(schema: Schema, spec: QuerySpec, join: Jo
 }
 
 private fun JoinSpec.matches(other: JoinSpec): Boolean =
-    (leftAlias == other.leftAlias && leftColumn == other.leftColumn &&
-        rightAlias == other.rightAlias && rightColumn == other.rightColumn) ||
-        (leftAlias == other.rightAlias && leftColumn == other.rightColumn &&
-            rightAlias == other.leftAlias && rightColumn == other.leftColumn)
+    (leftAlias == other.leftAlias &&
+        leftColumn == other.leftColumn &&
+        rightAlias == other.rightAlias &&
+        rightColumn == other.rightColumn) ||
+        (leftAlias == other.rightAlias &&
+            leftColumn == other.rightColumn &&
+            rightAlias == other.leftAlias &&
+            rightColumn == other.leftColumn)

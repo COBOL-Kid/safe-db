@@ -1,17 +1,17 @@
 package com.safedb.store
 
+import com.safedb.explore.ChartType
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
-import com.safedb.explore.RecipeField
-import com.safedb.explore.WorksheetConfig
-import com.safedb.explore.WorksheetColumnLayout
-import com.safedb.explore.WorksheetValueRef
-import com.safedb.explore.ChartType
 import com.safedb.explore.MeasureFn
+import com.safedb.explore.RecipeField
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
 import com.safedb.explore.VisualizationMeasure
+import com.safedb.explore.WorksheetColumnLayout
+import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetValueRef
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,7 +62,10 @@ class RecipeStoreTest {
     @Test
     fun invalidVersionIsRejected() {
         val store = RecipeStore.new(Files.createTempDirectory("recipe-version"))
-        val json = store.exportJson(recipe("r1", "Old")).replace("\"schemaVersion\": 1", "\"schemaVersion\": 99")
+        val json =
+            store
+                .exportJson(recipe("r1", "Old"))
+                .replace("\"schemaVersion\": 1", "\"schemaVersion\": 99")
 
         assertFailsWith<IllegalArgumentException> { store.importJson(json, "2") }
     }
@@ -73,29 +76,36 @@ class RecipeStoreTest {
         Files.writeString(dir.resolve("explore_recipes.json"), "not json")
 
         assertFailsWith<IllegalStateException> { RecipeStore.new(dir).list() }
-        assertTrue(Files.list(dir).use { files -> files.anyMatch { it.fileName.toString().startsWith("explore_recipes.corrupt-") } })
+        assertTrue(
+            Files.list(dir).use { files ->
+                files.anyMatch { it.fileName.toString().startsWith("explore_recipes.corrupt-") }
+            }
+        )
     }
 
     @Test
     fun visualizationRoundTripsAndOldPlaceholderRemainsCompatible() {
         val store = RecipeStore.new(Files.createTempDirectory("recipe-visualization"))
-        val chart = ExploreRecipe(
-            id = "chart",
-            name = "Chart",
-            createdAt = "1",
-            updatedAt = "1",
-            defaultMode = ExploreMode.Visualization,
-            visualization = VisualizationConfig(
-                chartType = ChartType.Bar,
-                x = VisualizationField("status"),
-                values = listOf(VisualizationMeasure("amount", MeasureFn.Sum, "amount")),
-            ),
-        )
+        val chart =
+            ExploreRecipe(
+                id = "chart",
+                name = "Chart",
+                createdAt = "1",
+                updatedAt = "1",
+                defaultMode = ExploreMode.Visualization,
+                visualization =
+                    VisualizationConfig(
+                        chartType = ChartType.Bar,
+                        x = VisualizationField("status"),
+                        values = listOf(VisualizationMeasure("amount", MeasureFn.Sum, "amount")),
+                    ),
+            )
 
         store.save(chart)
         assertEquals(ChartType.Bar, store.list().single().visualization?.chartType)
 
-        val placeholder = """
+        val placeholder =
+            """
             {
               "schemaVersion": 1,
               "id": "old",
@@ -106,23 +116,32 @@ class RecipeStoreTest {
               "visualization": {"schemaVersion": 1},
               "worksheet": {"schemaVersion": 1}
             }
-        """.trimIndent()
+            """
+                .trimIndent()
         val imported = store.importJson(placeholder, "2")
         assertEquals(ChartType.Auto, imported.visualization?.chartType)
         assertFalse(imported.visualization?.isConfigured() ?: true)
         assertTrue(imported.worksheet?.columnLayout?.isEmpty() == true)
     }
 
-    private fun recipe(id: String, name: String) = ExploreRecipe(
-        id = id,
-        name = name,
-        createdAt = "1",
-        updatedAt = "1",
-        defaultMode = ExploreMode.Pivot,
-        pivot = ExploreConfig(),
-        worksheet = WorksheetConfig(
-            columnLayout = listOf(WorksheetColumnLayout(WorksheetValueRef.Column("amount"), visible = false)),
-        ),
-        requiredFields = listOf(RecipeField("amount", "Amount", "decimal")),
-    )
+    private fun recipe(id: String, name: String) =
+        ExploreRecipe(
+            id = id,
+            name = name,
+            createdAt = "1",
+            updatedAt = "1",
+            defaultMode = ExploreMode.Pivot,
+            pivot = ExploreConfig(),
+            worksheet =
+                WorksheetConfig(
+                    columnLayout =
+                        listOf(
+                            WorksheetColumnLayout(
+                                WorksheetValueRef.Column("amount"),
+                                visible = false,
+                            )
+                        )
+                ),
+            requiredFields = listOf(RecipeField("amount", "Amount", "decimal")),
+        )
 }

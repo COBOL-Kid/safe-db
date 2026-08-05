@@ -14,10 +14,11 @@ object IntegrationFixtures {
         val table = requireSeededTable(schema, "customers", setOf("id", "email"), expectedSchema)
         return QuerySpec(
             tables = listOf(TableRef(schema = table.schema, name = table.name, alias = "t0")),
-            columns = listOf(
-                ColumnSel(tableAlias = "t0", column = "id"),
-                ColumnSel(tableAlias = "t0", column = "email"),
-            ),
+            columns =
+                listOf(
+                    ColumnSel(tableAlias = "t0", column = "id"),
+                    ColumnSel(tableAlias = "t0", column = "email"),
+                ),
             joins = emptyList(),
             filters = emptyFilters("integration-customers-filters"),
             limit = limit,
@@ -28,23 +29,25 @@ object IntegrationFixtures {
         val table = requireSeededTable(schema, "orders", setOf("id", "status"))
         return QuerySpec(
             tables = listOf(TableRef(schema = table.schema, name = table.name, alias = "t0")),
-            columns = listOf(
-                ColumnSel(tableAlias = "t0", column = "id"),
-                ColumnSel(tableAlias = "t0", column = "status"),
-            ),
+            columns =
+                listOf(
+                    ColumnSel(tableAlias = "t0", column = "id"),
+                    ColumnSel(tableAlias = "t0", column = "status"),
+                ),
             joins = emptyList(),
             filters = emptyFilters("integration-orders-filters"),
             limit = limit,
         )
     }
 
-    fun blockedSchemaQuery(): QuerySpec = QuerySpec(
-        tables = listOf(TableRef(schema = "mysql", name = "user", alias = "t0")),
-        columns = listOf(ColumnSel(tableAlias = "t0", column = "User")),
-        joins = emptyList(),
-        filters = emptyFilters("integration-blocked-schema-filters"),
-        limit = 10,
-    )
+    fun blockedSchemaQuery(): QuerySpec =
+        QuerySpec(
+            tables = listOf(TableRef(schema = "mysql", name = "user", alias = "t0")),
+            columns = listOf(ColumnSel(tableAlias = "t0", column = "User")),
+            joins = emptyList(),
+            filters = emptyFilters("integration-blocked-schema-filters"),
+            limit = 10,
+        )
 
     fun requireSeededTable(
         schema: Schema,
@@ -53,11 +56,15 @@ object IntegrationFixtures {
         expectedSchema: String? = null,
     ): TableInfo {
         val candidates = schema.tables.filter { it.name == tableName }
-        assertTrue(candidates.isNotEmpty(), "Expected seeded table '$tableName' in introspected schema")
+        assertTrue(
+            candidates.isNotEmpty(),
+            "Expected seeded table '$tableName' in introspected schema",
+        )
 
-        val table = candidates.firstOrNull { it.schema == (expectedSchema ?: IntegrationAssumptions.mysqlDatabase) }
-            ?: candidates.singleOrNull()
-            ?: candidates.first()
+        val table =
+            candidates.firstOrNull {
+                it.schema == (expectedSchema ?: IntegrationAssumptions.mysqlDatabase)
+            } ?: candidates.singleOrNull() ?: candidates.first()
         val columns = table.columns.map { it.name }.toSet()
         val missing = requiredColumns - columns
         assertTrue(
@@ -68,9 +75,6 @@ object IntegrationFixtures {
         return table
     }
 
-    private fun emptyFilters(id: String): FilterGroup = FilterGroup(
-        id = id,
-        connector = GroupConnector.And,
-        children = emptyList(),
-    )
+    private fun emptyFilters(id: String): FilterGroup =
+        FilterGroup(id = id, connector = GroupConnector.And, children = emptyList())
 }

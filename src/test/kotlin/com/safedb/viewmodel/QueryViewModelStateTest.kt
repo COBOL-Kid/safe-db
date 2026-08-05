@@ -24,13 +24,13 @@ import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.service.SafeDbService
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 
 class QueryViewModelStateTest {
     private val dispatcher = StandardTestDispatcher()
@@ -80,7 +80,10 @@ class QueryViewModelStateTest {
         assertEquals(listOf("t1"), viewModel.canvasTables.map { it.alias })
         assertEquals(setOf("t1\u0000customer_id"), viewModel.selectedColumns)
         assertTrue(viewModel.joins.isEmpty())
-        assertEquals(listOf("first"), viewModel.filters.children.map { (it as FilterNode.Leaf).spec.id })
+        assertEquals(
+            listOf("first"),
+            viewModel.filters.children.map { (it as FilterNode.Leaf).spec.id },
+        )
         assertTrue(viewModel.connectorOverrides.isEmpty())
         assertEquals(listOf("t1"), viewModel.sorts.map { it.tableAlias })
         assertEquals(listOf("t1"), viewModel.groups.map { it.tableAlias })
@@ -144,14 +147,8 @@ class QueryViewModelStateTest {
 
         viewModel.toggleAllColumns("t0")
 
-        assertEquals(
-            setOf("t0\u0000id", "t0\u0000status"),
-            viewModel.selectedColumns,
-        )
-        assertEquals(
-            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")),
-            viewModel.groups,
-        )
+        assertEquals(setOf("t0\u0000id", "t0\u0000status"), viewModel.selectedColumns)
+        assertEquals(listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")), viewModel.groups)
 
         viewModel.toggleAllColumns("t0")
 
@@ -164,31 +161,21 @@ class QueryViewModelStateTest {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         viewModel.addTable(table("orders", "id", "status", "created_at"))
         viewModel.setGroups(
-            listOf(
-                GroupSpec("t0", "id"),
-                GroupSpec("t0", "status"),
-                GroupSpec("t0", "created_at"),
-            ),
+            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status"), GroupSpec("t0", "created_at"))
         )
         viewModel.setSorts(
             listOf(
                 SortSpec("t0", "id"),
                 SortSpec("t0", "status", SortDirection.Desc),
                 SortSpec("t0", "created_at"),
-            ),
+            )
         )
 
         viewModel.moveGroup(2, 0)
         viewModel.moveSort(0, 2)
 
-        assertEquals(
-            listOf("created_at", "id", "status"),
-            viewModel.spec.groups.map { it.column },
-        )
-        assertEquals(
-            listOf("status", "created_at", "id"),
-            viewModel.spec.sorts.map { it.column },
-        )
+        assertEquals(listOf("created_at", "id", "status"), viewModel.spec.groups.map { it.column })
+        assertEquals(listOf("status", "created_at", "id"), viewModel.spec.sorts.map { it.column })
         assertEquals(SortDirection.Desc, viewModel.spec.sorts.first().direction)
     }
 
@@ -227,7 +214,10 @@ class QueryViewModelStateTest {
         viewModel.setSort("t0", "created_at", SortDirection.Desc)
         viewModel.setDistinct(true)
 
-        assertEquals(listOf("status", "created_at"), viewModel.distinctSortConflicts.map { it.column })
+        assertEquals(
+            listOf("status", "created_at"),
+            viewModel.distinctSortConflicts.map { it.column },
+        )
         assertFalse(viewModel.canRun)
 
         viewModel.selectDistinctSortColumns()
@@ -280,10 +270,7 @@ class QueryViewModelStateTest {
         viewModel.toggleColumn("t0", "status")
 
         assertTrue(viewModel.isColumnSelected("t0", "status"))
-        assertEquals(
-            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")),
-            viewModel.groups,
-        )
+        assertEquals(listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")), viewModel.groups)
 
         viewModel.toggleColumn("t0", "status")
 
@@ -295,25 +282,21 @@ class QueryViewModelStateTest {
     fun restoringGroupOnlyColumnPreservesExplicitOutputsAndAllowsSelectingItLater() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         val orders = table("orders", "id", "status")
-        val savedSpec = QuerySpec(
-            tables = listOf(TableRef("app", "orders", "saved_orders")),
-            columns = listOf(ColumnSel("saved_orders", "id")),
-            joins = emptyList(),
-            filters = FilterGroup.empty(),
-            limit = 100,
-            groups = listOf(
-                GroupSpec("saved_orders", "id"),
-                GroupSpec("saved_orders", "status"),
-            ),
-        )
+        val savedSpec =
+            QuerySpec(
+                tables = listOf(TableRef("app", "orders", "saved_orders")),
+                columns = listOf(ColumnSel("saved_orders", "id")),
+                joins = emptyList(),
+                filters = FilterGroup.empty(),
+                limit = 100,
+                groups =
+                    listOf(GroupSpec("saved_orders", "id"), GroupSpec("saved_orders", "status")),
+            )
 
         viewModel.restoreFromSpec(savedSpec, listOf(orders))
 
         assertEquals(listOf(ColumnSel("t0", "id")), viewModel.spec.columns)
-        assertEquals(
-            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")),
-            viewModel.groups,
-        )
+        assertEquals(listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")), viewModel.groups)
 
         viewModel.toggleColumn("t0", "status")
 
@@ -324,17 +307,16 @@ class QueryViewModelStateTest {
     fun removingOnlySelectedRestoredGroupPromotesRemainingGroupToOutput() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         val orders = table("orders", "id", "status")
-        val savedSpec = QuerySpec(
-            tables = listOf(TableRef("app", "orders", "saved_orders")),
-            columns = listOf(ColumnSel("saved_orders", "id")),
-            joins = emptyList(),
-            filters = FilterGroup.empty(),
-            limit = 100,
-            groups = listOf(
-                GroupSpec("saved_orders", "id"),
-                GroupSpec("saved_orders", "status"),
-            ),
-        )
+        val savedSpec =
+            QuerySpec(
+                tables = listOf(TableRef("app", "orders", "saved_orders")),
+                columns = listOf(ColumnSel("saved_orders", "id")),
+                joins = emptyList(),
+                filters = FilterGroup.empty(),
+                limit = 100,
+                groups =
+                    listOf(GroupSpec("saved_orders", "id"), GroupSpec("saved_orders", "status")),
+            )
         viewModel.restoreFromSpec(savedSpec, listOf(orders))
 
         viewModel.toggleGroup("t0", "id")
@@ -371,39 +353,56 @@ class QueryViewModelStateTest {
         assertEquals(30f, viewModel.canvasTables[1].y)
     }
 
-    private fun filter(id: String, alias: String, column: String) = FilterSpec(
-        id = id,
-        tableAlias = alias,
-        column = column,
-        op = FilterOp.Eq,
-        value = FilterValue.Single(FilterLiteral(LiteralKind.Int, "1")),
-    )
+    private fun filter(id: String, alias: String, column: String) =
+        FilterSpec(
+            id = id,
+            tableAlias = alias,
+            column = column,
+            op = FilterOp.Eq,
+            value = FilterValue.Single(FilterLiteral(LiteralKind.Int, "1")),
+        )
 
-    private fun table(name: String, vararg columns: String) = TableInfo(
-        schema = "app",
-        name = name,
-        columns = columns.map { column ->
-            ColumnInfo(column, "int", nullable = false, isIndexed = true)
-        },
-        indexes = emptyList(),
-    )
+    private fun table(name: String, vararg columns: String) =
+        TableInfo(
+            schema = "app",
+            name = name,
+            columns =
+                columns.map { column ->
+                    ColumnInfo(column, "int", nullable = false, isIndexed = true)
+                },
+            indexes = emptyList(),
+        )
 }
 
 private class NoOpService : SafeDbService {
     override suspend fun testConnection(def: ConnectionDef, password: String?) = "ok"
+
     override suspend fun createConnection(def: ConnectionDef, password: String) = def
+
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
+
     override suspend fun listConnections() = emptyList<ConnectionDef>()
+
     override suspend fun deleteConnection(id: String) = Unit
+
     override suspend fun lockCredentials() = Unit
+
     override suspend fun getSchema(connectionId: String) = Schema(emptyList())
+
     override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) =
         queryRunResult(QueryResult(emptyList(), emptyList(), 0, false, emptyList()))
+
     override suspend fun listSavedQueries() = emptyList<SavedQuery>()
+
     override suspend fun saveSavedQuery(query: SavedQuery) = Unit
+
     override suspend fun deleteSavedQuery(id: String) = Unit
+
     override suspend fun listHistory() = emptyList<HistoryEntry>()
+
     override suspend fun clearHistory() = Unit
+
     override suspend fun getSettings() = Settings.default()
+
     override suspend fun saveSettings(settings: Settings) = Unit
 }

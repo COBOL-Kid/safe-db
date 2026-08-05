@@ -12,12 +12,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * Subtle delete/remove icon button that renders in a faint slate tint and
- * turns red on hover — the universal "faint X → red" motif from the legacy app.
+ * Subtle delete/remove icon button that renders in a faint slate tint and turns red on hover — the
+ * universal "faint X → red" motif from the legacy app.
  */
 @Composable
 fun DeleteIconButton(
@@ -29,15 +28,13 @@ fun DeleteIconButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val tint = if (hovered) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-    }
-    IconButton(
-        onClick = onClick,
-        modifier = modifier.hoverable(interactionSource),
-    ) {
+    val tint =
+        if (hovered) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        }
+    IconButton(onClick = onClick, modifier = modifier.hoverable(interactionSource)) {
         Icon(icon, contentDescription = contentDescription, tint = tint, modifier = iconModifier)
     }
 }

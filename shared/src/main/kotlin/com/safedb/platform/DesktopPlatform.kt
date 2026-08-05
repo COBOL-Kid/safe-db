@@ -20,6 +20,7 @@ enum class DesktopPlatform {
     }
 }
 
-class UnsupportedDesktopPlatformException(osName: String) : IllegalStateException(
-    "unsupported operating system '$osName'; supported platforms are macOS and Windows",
-)
+class UnsupportedDesktopPlatformException(osName: String) :
+    IllegalStateException(
+        "unsupported operating system '$osName'; supported platforms are macOS and Windows"
+    )

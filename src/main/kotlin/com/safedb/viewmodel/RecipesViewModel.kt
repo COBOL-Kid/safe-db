@@ -5,8 +5,8 @@ import com.safedb.service.SafeDbService
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,15 +26,24 @@ class RecipesViewModel(
 
     suspend fun load() {
         runCatching { service.listExploreRecipes() }
-            .onSuccess { _recipes.value = it; _error.value = null }
+            .onSuccess {
+                _recipes.value = it
+                _error.value = null
+            }
             .onFailure { _error.value = it.message ?: it.toString() }
     }
 
     fun save(recipe: ExploreRecipe, onComplete: (Boolean) -> Unit = {}) {
         scope.launch {
             runCatching { service.saveExploreRecipe(recipe) }
-                .onSuccess { load(); onComplete(true) }
-                .onFailure { _error.value = it.message ?: it.toString(); onComplete(false) }
+                .onSuccess {
+                    load()
+                    onComplete(true)
+                }
+                .onFailure {
+                    _error.value = it.message ?: it.toString()
+                    onComplete(false)
+                }
         }
     }
 
@@ -49,25 +58,31 @@ class RecipesViewModel(
     fun import(path: Path, onComplete: (ExploreRecipe?) -> Unit = {}) {
         scope.launch {
             runCatching {
-                val json = withContext(ioDispatcher) { Files.readString(path) }
-                service.importExploreRecipe(json, Instant.now().epochSecond.toString())
-            }.onSuccess { recipe ->
-                load()
-                onComplete(recipe)
-            }.onFailure {
-                _error.value = it.message ?: it.toString()
-                onComplete(null)
-            }
+                    val json = withContext(ioDispatcher) { Files.readString(path) }
+                    service.importExploreRecipe(json, Instant.now().epochSecond.toString())
+                }
+                .onSuccess { recipe ->
+                    load()
+                    onComplete(recipe)
+                }
+                .onFailure {
+                    _error.value = it.message ?: it.toString()
+                    onComplete(null)
+                }
         }
     }
 
     fun export(recipe: ExploreRecipe, path: Path, onComplete: (Boolean) -> Unit = {}) {
         scope.launch {
             runCatching {
-                val json = service.exportExploreRecipe(recipe)
-                withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
-            }.onSuccess { onComplete(true) }
-                .onFailure { _error.value = it.message ?: it.toString(); onComplete(false) }
+                    val json = service.exportExploreRecipe(recipe)
+                    withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
+                }
+                .onSuccess { onComplete(true) }
+                .onFailure {
+                    _error.value = it.message ?: it.toString()
+                    onComplete(false)
+                }
         }
     }
 

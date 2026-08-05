@@ -35,17 +35,17 @@ class AtomicWriteTest {
 
     @Test
     fun ensurePrivateDirRestrictsPosixPermissionsWhenSupported() {
-        if (!runCatching { Files.getPosixFilePermissions(Files.createTempDirectory("posix-check")) }.isSuccess) {
+        if (
+            !runCatching { Files.getPosixFilePermissions(Files.createTempDirectory("posix-check")) }
+                .isSuccess
+        ) {
             return
         }
         val dir = Files.createTempDirectory("safedb-atomic-test")
         val nested = dir.resolve("private")
         ensurePrivateDir(nested)
         val perms = Files.getPosixFilePermissions(nested)
-        assertEquals(
-            PosixFilePermissions.fromString("rwx------"),
-            perms,
-        )
+        assertEquals(PosixFilePermissions.fromString("rwx------"), perms)
     }
 
     @Test
@@ -54,9 +54,7 @@ class AtomicWriteTest {
         val destination = Files.createDirectory(dir.resolve("state.json"))
         Files.writeString(destination.resolve("keep.txt"), "keep")
 
-        assertFailsWith<Exception> {
-            atomicWrite(destination, "new")
-        }
+        assertFailsWith<Exception> { atomicWrite(destination, "new") }
 
         assertTrue(Files.isDirectory(destination))
         assertEquals(

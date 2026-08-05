@@ -12,14 +12,20 @@ import kotlin.test.assertTrue
 class ApplyVisualizationTest {
     @Test
     fun autoSelectsLineAndAggregatesWithLineage() {
-        val preview = applyVisualization(
-            sample(),
-            VisualizationConfig(
-                x = VisualizationField("created_at", grouping = PivotGrouping.Date(DateGroupUnit.Month)),
-                values = listOf(VisualizationMeasure("revenue", MeasureFn.Sum, "amount", "Revenue")),
-                sort = VisualizationSort(VisualizationSortTarget.Source, SortDir.Asc),
-            ),
-        )
+        val preview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    x =
+                        VisualizationField(
+                            "created_at",
+                            grouping = PivotGrouping.Date(DateGroupUnit.Month),
+                        ),
+                    values =
+                        listOf(VisualizationMeasure("revenue", MeasureFn.Sum, "amount", "Revenue")),
+                    sort = VisualizationSort(VisualizationSortTarget.Source, SortDir.Asc),
+                ),
+            )
 
         assertEquals(ChartType.Line, preview.chartType)
         assertEquals(listOf("Jan 2026", "Feb 2026"), preview.marks.map { it.xLabel })
@@ -30,17 +36,27 @@ class ApplyVisualizationTest {
 
     @Test
     fun barSupportsSeriesTopNAndMemberFilters() {
-        val preview = applyVisualization(
-            sample(),
-            VisualizationConfig(
-                chartType = ChartType.Bar,
-                x = VisualizationField("status"),
-                values = listOf(VisualizationMeasure("revenue", MeasureFn.Sum, "amount", "Revenue")),
-                series = VisualizationField("region"),
-                filters = listOf(PivotFilter.Members("region", "region", "Region", setOf(pivotCellKey(ResultCell.text("West"))))),
-                topN = 10,
-            ),
-        )
+        val preview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values =
+                        listOf(VisualizationMeasure("revenue", MeasureFn.Sum, "amount", "Revenue")),
+                    series = VisualizationField("region"),
+                    filters =
+                        listOf(
+                            PivotFilter.Members(
+                                "region",
+                                "region",
+                                "Region",
+                                setOf(pivotCellKey(ResultCell.text("West"))),
+                            )
+                        ),
+                    topN = 10,
+                ),
+            )
 
         assertEquals(setOf("pending", "shipped"), preview.marks.map { it.xLabel }.toSet())
         assertTrue(preview.marks.all { it.seriesLabel == "West" })
@@ -49,15 +65,25 @@ class ApplyVisualizationTest {
 
     @Test
     fun scatterUsesRawRowsAndOptionalSize() {
-        val preview = applyVisualization(
-            sample(),
-            VisualizationConfig(
-                chartType = ChartType.Scatter,
-                x = VisualizationField("amount"),
-                values = listOf(VisualizationMeasure("score", MeasureFn.Sum, "score", "Score", aggregate = false)),
-                size = VisualizationField("amount"),
-            ),
-        )
+        val preview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Scatter,
+                    x = VisualizationField("amount"),
+                    values =
+                        listOf(
+                            VisualizationMeasure(
+                                "score",
+                                MeasureFn.Sum,
+                                "score",
+                                "Score",
+                                aggregate = false,
+                            )
+                        ),
+                    size = VisualizationField("amount"),
+                ),
+            )
 
         assertEquals(4, preview.marks.size)
         assertEquals(listOf(0), preview.marks.first().sourceRowIndices)
@@ -68,13 +94,14 @@ class ApplyVisualizationTest {
 
     @Test
     fun histogramCreatesBinsAndPreservesRows() {
-        val preview = applyVisualization(
-            sample(),
-            VisualizationConfig(
-                chartType = ChartType.Histogram,
-                x = VisualizationField("amount", grouping = PivotGrouping.NumberBin("10")),
-            ),
-        )
+        val preview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Histogram,
+                    x = VisualizationField("amount", grouping = PivotGrouping.NumberBin("10")),
+                ),
+            )
 
         assertEquals(listOf(10.0, 20.0, 30.0), preview.marks.map { it.xValue })
         assertEquals(listOf(1.0, 1.0, 2.0), preview.marks.map { it.y })
@@ -83,21 +110,24 @@ class ApplyVisualizationTest {
 
     @Test
     fun kpiFormatsValueAndExportsTransformedRow() {
-        val preview = applyVisualization(
-            sample(),
-            VisualizationConfig(
-                chartType = ChartType.Kpi,
-                values = listOf(
-                    VisualizationMeasure(
-                        "revenue",
-                        MeasureFn.Sum,
-                        "amount",
-                        "Revenue",
-                        numberFormat = PivotNumberFormat(NumberFormatKind.Number, decimals = 0),
-                    ),
+        val preview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Kpi,
+                    values =
+                        listOf(
+                            VisualizationMeasure(
+                                "revenue",
+                                MeasureFn.Sum,
+                                "amount",
+                                "Revenue",
+                                numberFormat =
+                                    PivotNumberFormat(NumberFormatKind.Number, decimals = 0),
+                            )
+                        ),
                 ),
-            ),
-        )
+            )
 
         assertEquals(90.0, preview.marks.single().y)
         assertEquals("90", preview.marks.single().formattedY)
@@ -112,62 +142,76 @@ class ApplyVisualizationTest {
         assertEquals("Choose a template or add fields to build a chart.", empty.blockingMessage)
         assertNull(empty.chartType)
 
-        val incomplete = applyVisualization(
-            sample(),
-            VisualizationConfig(chartType = ChartType.Scatter, x = VisualizationField("status")),
-        )
+        val incomplete =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(chartType = ChartType.Scatter, x = VisualizationField("status")),
+            )
         assertFalse(incomplete.ready)
         assertTrue(incomplete.blockingMessage.orEmpty().contains("numeric X"))
 
-        val noRows = applyVisualization(
-            sample().copy(rows = emptyList(), rowCount = 0),
-            VisualizationConfig(chartType = ChartType.Kpi, values = listOf(VisualizationMeasure.countRows())),
-        )
+        val noRows =
+            applyVisualization(
+                sample().copy(rows = emptyList(), rowCount = 0),
+                VisualizationConfig(
+                    chartType = ChartType.Kpi,
+                    values = listOf(VisualizationMeasure.countRows()),
+                ),
+            )
         assertEquals("No rows to plot.", noRows.blockingMessage)
     }
 
     @Test
     fun multipleValuesAndSeriesAreRejectedClearly() {
-        val preview = applyVisualization(
-            sample(),
-            VisualizationConfig(
-                chartType = ChartType.Bar,
-                x = VisualizationField("status"),
-                values = listOf(
-                    VisualizationMeasure("amount", MeasureFn.Sum, "amount"),
-                    VisualizationMeasure.countRows(),
+        val preview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values =
+                        listOf(
+                            VisualizationMeasure("amount", MeasureFn.Sum, "amount"),
+                            VisualizationMeasure.countRows(),
+                        ),
+                    series = VisualizationField("region"),
                 ),
-                series = VisualizationField("region"),
-            ),
-        )
+            )
 
-        assertEquals("Use either multiple values or a Series field, not both.", preview.blockingMessage)
+        assertEquals(
+            "Use either multiple values or a Series field, not both.",
+            preview.blockingMessage,
+        )
     }
 
-    private fun sample() = QueryResult(
-        columns = listOf(
-            ResultColumn("status", "varchar"),
-            ResultColumn("region", "varchar"),
-            ResultColumn("created_at", "datetime"),
-            ResultColumn("amount", "decimal"),
-            ResultColumn("score", "decimal"),
-        ),
-        rows = listOf(
-            row("pending", "West", "2026-01-01", 10, 1),
-            row("pending", "East", "2026-01-12", 20, 4),
-            row("shipped", "West", "2026-02-02", 30, 9),
-            row("shipped", "East", "2026-02-18", 30, 16),
-        ),
-        rowCount = 4,
-        truncated = false,
-        warnings = emptyList(),
-    )
+    private fun sample() =
+        QueryResult(
+            columns =
+                listOf(
+                    ResultColumn("status", "varchar"),
+                    ResultColumn("region", "varchar"),
+                    ResultColumn("created_at", "datetime"),
+                    ResultColumn("amount", "decimal"),
+                    ResultColumn("score", "decimal"),
+                ),
+            rows =
+                listOf(
+                    row("pending", "West", "2026-01-01", 10, 1),
+                    row("pending", "East", "2026-01-12", 20, 4),
+                    row("shipped", "West", "2026-02-02", 30, 9),
+                    row("shipped", "East", "2026-02-18", 30, 16),
+                ),
+            rowCount = 4,
+            truncated = false,
+            warnings = emptyList(),
+        )
 
-    private fun row(status: String, region: String, date: String, amount: Long, score: Long) = listOf(
-        ResultCell.text(status),
-        ResultCell.text(region),
-        ResultCell.text(date),
-        ResultCell.IntegerCell(amount),
-        ResultCell.IntegerCell(score),
-    )
+    private fun row(status: String, region: String, date: String, amount: Long, score: Long) =
+        listOf(
+            ResultCell.text(status),
+            ResultCell.text(region),
+            ResultCell.text(date),
+            ResultCell.IntegerCell(amount),
+            ResultCell.IntegerCell(score),
+        )
 }

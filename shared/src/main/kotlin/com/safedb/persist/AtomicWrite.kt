@@ -32,11 +32,8 @@ fun atomicWrite(path: Path, content: String) {
     val tmpPath = parent.resolve(".${fileName}.${UUID.randomUUID()}.tmp")
 
     try {
-        FileChannel.open(
-            tmpPath,
-            StandardOpenOption.WRITE,
-            StandardOpenOption.CREATE_NEW,
-        ).use { channel ->
+        FileChannel.open(tmpPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW).use {
+            channel ->
             channel.write(java.nio.ByteBuffer.wrap(content.toByteArray(Charsets.UTF_8)))
             channel.force(true)
         }
@@ -55,10 +52,17 @@ private fun replaceFile(source: Path, destination: Path) {
         Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE)
         return
     }
-    Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    Files.move(
+        source,
+        destination,
+        StandardCopyOption.REPLACE_EXISTING,
+        StandardCopyOption.ATOMIC_MOVE,
+    )
 }
 
-private fun isPosix(): Boolean = runCatching {
-    Files.getPosixFilePermissions(Path.of("."))
-    true
-}.getOrDefault(false)
+private fun isPosix(): Boolean =
+    runCatching {
+            Files.getPosixFilePermissions(Path.of("."))
+            true
+        }
+        .getOrDefault(false)

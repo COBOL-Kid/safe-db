@@ -1,9 +1,9 @@
 package com.safedb
 
-import com.safedb.service.SafeDbService
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
+import com.safedb.service.SafeDbService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,10 +42,7 @@ internal data class SchemaSelectionIntent(
     }
 }
 
-internal data class DefaultQueryLocation(
-    val connectionId: String,
-    val schema: String,
-)
+internal data class DefaultQueryLocation(val connectionId: String, val schema: String)
 
 internal fun resolveDefaultQueryLocation(
     settings: Settings,
@@ -60,18 +57,17 @@ internal fun resolveDefaultQueryLocation(
 internal fun resolveConnectionSchemaSelection(
     connectionId: String,
     settings: Settings,
-): SchemaSelectionIntent = settings.lastSelectedSchemas[connectionId]?.let { schema ->
-    SchemaSelectionIntent(schema, SchemaSelectionSource.ConnectionHistory)
-} ?: SchemaSelectionIntent.Unselected
+): SchemaSelectionIntent =
+    settings.lastSelectedSchemas[connectionId]?.let { schema ->
+        SchemaSelectionIntent(schema, SchemaSelectionSource.ConnectionHistory)
+    } ?: SchemaSelectionIntent.Unselected
 
 internal fun resolveQuerySchemaSelection(spec: QuerySpec): SchemaSelectionIntent =
     spec.tables.firstOrNull()?.schema?.let { schema ->
         SchemaSelectionIntent(schema, SchemaSelectionSource.RestoredQuery)
     } ?: SchemaSelectionIntent.Unselected
 
-class AppState(
-    val service: SafeDbService,
-) {
+class AppState(val service: SafeDbService) {
     private val _route = MutableStateFlow(AppRoute.Home)
     val route: StateFlow<AppRoute> = _route.asStateFlow()
 
@@ -82,7 +78,8 @@ class AppState(
     internal val schemaSelection: StateFlow<SchemaSelectionIntent> = _schemaSelection.asStateFlow()
 
     private val _activeConnectionOrigin = MutableStateFlow<ActiveConnectionOrigin?>(null)
-    val activeConnectionOrigin: StateFlow<ActiveConnectionOrigin?> = _activeConnectionOrigin.asStateFlow()
+    val activeConnectionOrigin: StateFlow<ActiveConnectionOrigin?> =
+        _activeConnectionOrigin.asStateFlow()
 
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> = _settingsOpen.asStateFlow()
@@ -96,7 +93,8 @@ class AppState(
         schemaSelection: SchemaSelectionIntent = SchemaSelectionIntent.Unselected,
     ) {
         _activeConnectionId.value = id
-        _schemaSelection.value = if (id == null) SchemaSelectionIntent.Unselected else schemaSelection
+        _schemaSelection.value =
+            if (id == null) SchemaSelectionIntent.Unselected else schemaSelection
         _activeConnectionOrigin.value = if (id == null) null else ActiveConnectionOrigin.Explicit
     }
 

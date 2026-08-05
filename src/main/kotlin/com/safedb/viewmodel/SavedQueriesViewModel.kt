@@ -8,10 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class SavedQueriesViewModel(
-    private val service: SafeDbService,
-    private val scope: CoroutineScope,
-) {
+class SavedQueriesViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
     private val _queries = MutableStateFlow<List<SavedQuery>>(emptyList())
     val queries: StateFlow<List<SavedQuery>> = _queries.asStateFlow()
 

@@ -14,21 +14,25 @@ class SchemaMetadataTest {
     @Test
     fun assemblerPreservesCompositeIndexAndForeignKeyOrder() {
         val child = MetadataTableKey("public", "child")
-        val schema = assembleSchema(
-            tables = listOf(child),
-            columns = listOf(
-                MetadataColumn(child, ColumnInfo("a", "int", false)),
-                MetadataColumn(child, ColumnInfo("b", "int", false)),
-            ),
-            indexes = listOf(
-                MetadataIndex(child, "child_pk", "a", "btree", true, true, true),
-                MetadataIndex(child, "child_pk", "b", "btree", true, true, true),
-            ),
-            foreignKeys = listOf(
-                MetadataForeignKey(child, "child_parent_fk", "a", "public", "parent", "x"),
-                MetadataForeignKey(child, "child_parent_fk", "b", "public", "parent", "y"),
-            ),
-        )
+        val schema =
+            assembleSchema(
+                tables = listOf(child),
+                columns =
+                    listOf(
+                        MetadataColumn(child, ColumnInfo("a", "int", false)),
+                        MetadataColumn(child, ColumnInfo("b", "int", false)),
+                    ),
+                indexes =
+                    listOf(
+                        MetadataIndex(child, "child_pk", "a", "btree", true, true, true),
+                        MetadataIndex(child, "child_pk", "b", "btree", true, true, true),
+                    ),
+                foreignKeys =
+                    listOf(
+                        MetadataForeignKey(child, "child_parent_fk", "a", "public", "parent", "x"),
+                        MetadataForeignKey(child, "child_parent_fk", "b", "public", "parent", "y"),
+                    ),
+            )
 
         val table = schema.tables.single()
         assertEquals(listOf("a", "b"), table.indexes.single().columns)
@@ -40,27 +44,65 @@ class SchemaMetadataTest {
     @Test
     fun assemblerPreservesExpressionOrdinalDirectionAndIncludedColumns() {
         val tableKey = MetadataTableKey("public", "events")
-        val capabilities = IndexCapabilities(
-            equality = true,
-            ordering = true,
-            specializedText = false,
-            expressionKeys = true,
-            partialPredicate = true,
-            includedColumns = true,
-        )
-        val schema = assembleSchema(
-            tables = listOf(tableKey),
-            columns = listOf(
-                MetadataColumn(tableKey, ColumnInfo("created_at", "timestamp", false)),
-                MetadataColumn(tableKey, ColumnInfo("payload", "text", true)),
-            ),
-            indexes = listOf(
-                MetadataIndex(tableKey, "events_expr", null, "btree", true, false, false, SortDirection.Asc, capabilities = capabilities, partial = false, expression = true),
-                MetadataIndex(tableKey, "events_expr", "created_at", "btree", true, false, false, SortDirection.Desc, capabilities = capabilities, partial = false),
-                MetadataIndex(tableKey, "events_expr", "payload", "btree", true, false, false, included = true, capabilities = capabilities, partial = false),
-            ),
-            foreignKeys = emptyList(),
-        )
+        val capabilities =
+            IndexCapabilities(
+                equality = true,
+                ordering = true,
+                specializedText = false,
+                expressionKeys = true,
+                partialPredicate = true,
+                includedColumns = true,
+            )
+        val schema =
+            assembleSchema(
+                tables = listOf(tableKey),
+                columns =
+                    listOf(
+                        MetadataColumn(tableKey, ColumnInfo("created_at", "timestamp", false)),
+                        MetadataColumn(tableKey, ColumnInfo("payload", "text", true)),
+                    ),
+                indexes =
+                    listOf(
+                        MetadataIndex(
+                            tableKey,
+                            "events_expr",
+                            null,
+                            "btree",
+                            true,
+                            false,
+                            false,
+                            SortDirection.Asc,
+                            capabilities = capabilities,
+                            partial = false,
+                            expression = true,
+                        ),
+                        MetadataIndex(
+                            tableKey,
+                            "events_expr",
+                            "created_at",
+                            "btree",
+                            true,
+                            false,
+                            false,
+                            SortDirection.Desc,
+                            capabilities = capabilities,
+                            partial = false,
+                        ),
+                        MetadataIndex(
+                            tableKey,
+                            "events_expr",
+                            "payload",
+                            "btree",
+                            true,
+                            false,
+                            false,
+                            included = true,
+                            capabilities = capabilities,
+                            partial = false,
+                        ),
+                    ),
+                foreignKeys = emptyList(),
+            )
 
         val index = schema.tables.single().indexes.single()
         assertEquals(listOf(null, "created_at"), index.keys.map { it.column })
@@ -71,10 +113,22 @@ class SchemaMetadataTest {
 
     @Test
     fun tableSizeNormalizationKeepsUnavailableDistinctFromSmall() {
-        assertEquals(TableSizeClass.Small, normalizeTableSize(9_999.0, EvidenceConfidence.Low).sizeClass)
-        assertEquals(TableSizeClass.Medium, normalizeTableSize(10_000.0, EvidenceConfidence.Low).sizeClass)
-        assertEquals(TableSizeClass.Large, normalizeTableSize(1_000_000.0, EvidenceConfidence.Low).sizeClass)
-        assertEquals(TableSizeClass.Unknown, normalizeTableSize(null, EvidenceConfidence.Low).sizeClass)
+        assertEquals(
+            TableSizeClass.Small,
+            normalizeTableSize(9_999.0, EvidenceConfidence.Low).sizeClass,
+        )
+        assertEquals(
+            TableSizeClass.Medium,
+            normalizeTableSize(10_000.0, EvidenceConfidence.Low).sizeClass,
+        )
+        assertEquals(
+            TableSizeClass.Large,
+            normalizeTableSize(1_000_000.0, EvidenceConfidence.Low).sizeClass,
+        )
+        assertEquals(
+            TableSizeClass.Unknown,
+            normalizeTableSize(null, EvidenceConfidence.Low).sizeClass,
+        )
     }
 
     @Test

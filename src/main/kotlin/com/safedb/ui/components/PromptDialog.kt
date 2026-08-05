@@ -49,17 +49,8 @@ fun PromptDialog(
             }
         },
         confirmButton = {
-            PrimaryButton(
-                onClick = onConfirm,
-                enabled = value.isNotBlank(),
-            ) {
-                Text(confirmLabel)
-            }
+            PrimaryButton(onClick = onConfirm, enabled = value.isNotBlank()) { Text(confirmLabel) }
         },
-        dismissButton = {
-            SecondaryButton(onClick = onCancel) {
-                Text(cancelLabel)
-            }
-        },
+        dismissButton = { SecondaryButton(onClick = onCancel) { Text(cancelLabel) } },
     )
 }

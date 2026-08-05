@@ -11,6 +11,11 @@ import com.safedb.model.stringOrEmpty
 import com.safedb.model.u64OrDefault
 import com.safedb.persist.atomicWrite
 import com.safedb.persist.ensurePrivateDir
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.UUID
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -19,16 +24,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.UUID
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
-class QueryStore private constructor(
+class QueryStore
+private constructor(
     private val savedPath: Path,
     private val historyPath: Path,
     private val lock: ReentrantLock = ReentrantLock(),
@@ -85,9 +85,7 @@ class QueryStore private constructor(
     }
 
     fun clearHistory() {
-        lock.withLock {
-            writeJson(historyPath, emptyList(), HistoryEntry.serializer())
-        }
+        lock.withLock { writeJson(historyPath, emptyList(), HistoryEntry.serializer()) }
     }
 
     private fun <T> readValid(path: Path, serializer: KSerializer<T>): List<T> {
@@ -101,9 +99,9 @@ class QueryStore private constructor(
 
         for (element in array) {
             val (upgradedValue, upgraded) = upgradeEntryToV3(element)
-            val decoded = runCatching {
-                SafeDbJson.lenient.decodeFromJsonElement(serializer, upgradedValue)
-            }.getOrNull()
+            val decoded =
+                runCatching { SafeDbJson.lenient.decodeFromJsonElement(serializer, upgradedValue) }
+                    .getOrNull()
             if (decoded != null) {
                 valid.add(decoded)
                 if (upgraded) migratedCount++
@@ -147,16 +145,11 @@ internal fun upgradeEntryToV3(value: JsonElement): Pair<JsonElement, Boolean> {
     }
 
     val updatedSpec = spec.toMutableMap()
-    updatedSpec["filters"]?.let { filters ->
-        updatedSpec["filters"] = ensureGroupIds(filters)
-    }
+    updatedSpec["filters"]?.let { filters -> updatedSpec["filters"] = ensureGroupIds(filters) }
     updatedSpec["schema_version"] = JsonPrimitive(CURRENT_SCHEMA_VERSION)
 
-    val updated = JsonObject(
-        objectValue.toMutableMap().apply {
-            put("spec", JsonObject(updatedSpec))
-        },
-    )
+    val updated =
+        JsonObject(objectValue.toMutableMap().apply { put("spec", JsonObject(updatedSpec)) })
     return updated to true
 }
 
@@ -196,8 +189,8 @@ internal fun ensureGroupIds(group: JsonElement): JsonElement {
 }
 
 /**
- * Attempt to migrate a legacy v1 entry (where `spec.filters` is a JSON array
- * of `FilterSpec` with string values) into the current v2 shape.
+ * Attempt to migrate a legacy v1 entry (where `spec.filters` is a JSON array of `FilterSpec` with
+ * string values) into the current v2 shape.
  */
 internal fun migrateV1Entry(value: JsonElement): JsonElement? {
     val objectValue = value.asObjectOrNull() ?: return null
@@ -210,23 +203,27 @@ internal fun migrateV1Entry(value: JsonElement): JsonElement? {
             val tableAlias = filterObject.stringOrEmpty("table_alias")
             val column = filterObject.stringOrEmpty("column")
             val opElement = filterObject["op"] ?: return null
-            val op = runCatching {
-                SafeDbJson.lenient.decodeFromJsonElement(FilterOp.serializer(), opElement)
-            }.getOrNull() ?: return null
+            val op =
+                runCatching {
+                        SafeDbJson.lenient.decodeFromJsonElement(FilterOp.serializer(), opElement)
+                    }
+                    .getOrNull() ?: return null
             val rawValue = filterObject["value"]
-            val valueElement = when {
-                rawValue == null || rawValue is JsonNull -> null
-                rawValue is JsonPrimitive && rawValue.isString -> buildJsonObject {
-                    put(
-                        "Single",
+            val valueElement =
+                when {
+                    rawValue == null || rawValue is JsonNull -> null
+                    rawValue is JsonPrimitive && rawValue.isString ->
                         buildJsonObject {
-                            put("kind", JsonPrimitive("Text"))
-                            put("text", rawValue)
-                        },
-                    )
+                            put(
+                                "Single",
+                                buildJsonObject {
+                                    put("kind", JsonPrimitive("Text"))
+                                    put("text", rawValue)
+                                },
+                            )
+                        }
+                    else -> null
                 }
-                else -> null
-            }
             add(
                 buildJsonObject {
                     put(
@@ -234,31 +231,31 @@ internal fun migrateV1Entry(value: JsonElement): JsonElement? {
                         buildJsonObject {
                             put("table_alias", JsonPrimitive(tableAlias))
                             put("column", JsonPrimitive(column))
-                            put("op", SafeDbJson.lenient.encodeToJsonElement(FilterOp.serializer(), op))
+                            put(
+                                "op",
+                                SafeDbJson.lenient.encodeToJsonElement(FilterOp.serializer(), op),
+                            )
                             if (valueElement != null) {
                                 put("value", valueElement)
                             }
                         },
                     )
-                },
+                }
             )
         }
     }
 
-    val newSpec = spec.toMutableMap().apply {
-        put(
-            "filters",
-            buildJsonObject {
-                put("connector", JsonPrimitive("And"))
-                put("children", children)
-            },
-        )
-        put("schema_version", JsonPrimitive(CURRENT_SCHEMA_VERSION))
-    }
+    val newSpec =
+        spec.toMutableMap().apply {
+            put(
+                "filters",
+                buildJsonObject {
+                    put("connector", JsonPrimitive("And"))
+                    put("children", children)
+                },
+            )
+            put("schema_version", JsonPrimitive(CURRENT_SCHEMA_VERSION))
+        }
 
-    return JsonObject(
-        objectValue.toMutableMap().apply {
-            put("spec", JsonObject(newSpec))
-        },
-    )
+    return JsonObject(objectValue.toMutableMap().apply { put("spec", JsonObject(newSpec)) })
 }

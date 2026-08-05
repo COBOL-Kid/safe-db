@@ -23,8 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.safedb.ui.theme.LabelMicro
 import com.safedb.ui.theme.CardShape
+import com.safedb.ui.theme.LabelMicro
 import com.safedb.ui.theme.SafeDbTheme
 
 @Composable
@@ -50,10 +50,7 @@ fun SafeDropdownMenu(
 }
 
 @Composable
-fun MenuSectionLabel(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
+fun MenuSectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text.uppercase(),
         style = LabelMicro,
@@ -74,35 +71,37 @@ fun MenuActionRow(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val background = when {
-        selected -> SafeDbTheme.colors.accentContainer
-        hovered -> MaterialTheme.colorScheme.surfaceContainerLow
-        else -> Color.Transparent
-    }
-    val contentColor = when {
-        selected -> SafeDbTheme.colors.onAccentContainer
-        hovered -> MaterialTheme.colorScheme.onSurface
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val background =
+        when {
+            selected -> SafeDbTheme.colors.accentContainer
+            hovered -> MaterialTheme.colorScheme.surfaceContainerLow
+            else -> Color.Transparent
+        }
+    val contentColor =
+        when {
+            selected -> SafeDbTheme.colors.onAccentContainer
+            hovered -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
 
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-            .clip(MaterialTheme.shapes.small)
-            .background(background)
-            .hoverable(interactionSource)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(background)
+                .hoverable(interactionSource)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
             leading()
         }
         androidx.compose.foundation.layout.Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = if (leading != null) 10.dp else 0.dp),
+            modifier =
+                Modifier.weight(1f).padding(horizontal = if (leading != null) 10.dp else 0.dp)
         ) {
             Text(
                 text = text,
