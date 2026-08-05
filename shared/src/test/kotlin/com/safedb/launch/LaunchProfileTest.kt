@@ -131,6 +131,20 @@ class LaunchProfileTest {
     }
 
     @Test
+    fun oversizedLaunchProfileIsRejectedBeforeJsonParsing() {
+        val directory = Files.createTempDirectory("safedb-launch-profile")
+        val profile = directory.resolve("oversized.json").apply {
+            writeBytes(ByteArray(65_537) { ' '.code.toByte() })
+        }
+
+        val error = assertFailsWith<LaunchProfileException> {
+            configure(arrayOf("--launch-profile", profile.toString()))
+        }
+
+        assertEquals("Launch profile is too large", error.message)
+    }
+
+    @Test
     fun passwordFileRejectsMalformedOrMultilineContentWithoutLeakingIt() {
         val directory = Files.createTempDirectory("safedb-launch-profile")
         val trustStore = createTrustStore(directory.resolve("roots.p12"), "secret", withCertificate = true)

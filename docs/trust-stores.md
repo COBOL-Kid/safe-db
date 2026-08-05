@@ -14,6 +14,17 @@ Examples are included in the packaged application resources under `trust-profile
 
 When no launch profile is selected, safe-db uses the bundled JVM's normal certificates. When a profile is selected, any missing or invalid profile, password source, or PKCS12 file stops startup; safe-db never silently changes trust policy.
 
+## Managed Linux desktop launch
+
+The Linux package includes `safe-db-managed.desktop.example`. Update its executable and profile paths, name it `safe-db-managed.desktop`, and install it in one of these graphical-session locations:
+
+- `/usr/share/applications/` to make it available in desktop application menus.
+- `~/.local/share/applications/` for one user's application menu.
+- `/etc/xdg/autostart/` to start it automatically for managed graphical users.
+- `~/.config/autostart/` to start it automatically for one graphical user.
+
+Desktop and autostart entries inherit the user's Wayland or X11 display, D-Bus session, and unlocked desktop keyring. Do not run safe-db as a boot-time system service: it is an interactive desktop application and requires a graphical user session. The packaged `launch-safe-db-managed.sh` wrapper remains available when deployment tooling prefers to supply the executable and profile paths itself.
+
 ## Credential-store passwords
 
 For desktop installations, use `source: "credentialStore"`. The fixed service name is `com.safedb.app.trust-store`; the profile's `reference` is the credential account. Provision that generic credential with macOS Keychain, Windows Credential Manager, or the supported Linux desktop keyring before starting safe-db.
@@ -24,9 +35,9 @@ The trust-store credential lookup is strict. Unlike saved database credentials, 
 
 ## Protected password files
 
-For unattended services, use `source: "file"` and an absolute password-file path. The file must contain one UTF-8 line; a single final LF or CRLF is removed, while other spaces are preserved.
+For managed launches that cannot use a desktop credential store, use `source: "file"` and an absolute password-file path. The file must contain one UTF-8 line; a single final LF or CRLF is removed, while other spaces are preserved.
 
-Provision the file so only the safe-db user or service identity and administrators can read it. On POSIX systems, mode `0600` owned by the service identity is the normal baseline. On Windows, use an ACL limited to the service identity, SYSTEM, and the required administrators. Do not place the file under the application installation or source tree.
+Provision the file so only the safe-db user and administrators can read it. On POSIX systems, mode `0600` owned by that user is the normal baseline. On Windows, use an ACL limited to the user, SYSTEM, and the required administrators. Do not place the file under the application installation or source tree.
 
 ## Trust precedence
 

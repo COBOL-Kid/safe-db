@@ -14,8 +14,12 @@ import java.sql.ResultSet
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.nio.file.Files
+import java.nio.file.Path
+import java.security.KeyStore
+import java.security.cert.Certificate
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -26,11 +30,11 @@ import kotlin.test.assertTrue
 
 class AdapterTest {
     @Test
-    fun datasourceCreationFailureDeletesTemporaryPemFiles() {
+    fun datasourceCreationFailureDeletesTemporaryTlsFiles() {
         val temporaryPem = Files.createTempFile("safedb-failed-datasource", ".pem")
 
         val failure = assertFailsWith<IllegalStateException> {
-            createWithTemporaryPemCleanup(listOf(temporaryPem)) {
+            createWithTemporaryTlsFileCleanup(listOf(temporaryPem)) {
                 error("datasource creation failed")
             }
         }
@@ -172,18 +176,41 @@ class AdapterTest {
     fun sqlServerConnectionCaAppliesWithHostnameVerification() {
         val temporaryFiles = mutableListOf<java.io.File>()
         try {
+            val trustedCertificate = bundledCertificate()
             val def = connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
-                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity, caPem = "test-ca"),
+                transportSecurity = TransportSecurity(
+                    TransportSecurityMode.VerifyIdentity,
+                    caPem = certificatePem(trustedCertificate),
+                ),
             )
             val properties = createDataSourceConfig(def, "pw", temporaryFiles::add).dataSourceProperties
 
             assertEquals("false", properties.getProperty("trustServerCertificate"))
             assertEquals("db.example.com", properties.getProperty("hostNameInCertificate"))
-            assertEquals("PEM", properties.getProperty("trustStoreType"))
-            assertEquals("test-ca", java.io.File(properties.getProperty("trustStore")).readText())
+            assertEquals("PKCS12", properties.getProperty("trustStoreType"))
+            val trustStore = KeyStore.getInstance(properties.getProperty("trustStoreType"))
+            java.io.File(properties.getProperty("trustStore")).inputStream().use {
+                trustStore.load(it, properties.getProperty("trustStorePassword").toCharArray())
+            }
+            assertEquals(1, trustStore.size())
+            assertTrue(trustStore.isCertificateEntry("safedb-ca-1"))
+            assertEquals(trustedCertificate, trustStore.getCertificate("safedb-ca-1"))
         } finally {
             temporaryFiles.forEach(java.io.File::delete)
         }
+    }
+
+    @Test
+    fun sqlServerConnectionCaRejectsInvalidPemBeforeConnecting() {
+        val def = connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
+            transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity, caPem = "not-a-certificate"),
+        )
+
+        assertTrue(
+            assertFailsWith<IllegalArgumentException> {
+                createDataSourceConfig(def, "pw")
+            }.message!!.contains("valid X.509 PEM"),
+        )
     }
 
     @Test
@@ -289,6 +316,21 @@ class AdapterTest {
                 Dialect.Postgres,
             ),
         )
+    }
+
+    private fun bundledCertificate(): Certificate {
+        val bundled = KeyStore.getInstance(KeyStore.getDefaultType())
+        Files.newInputStream(Path.of(System.getProperty("java.home"), "lib", "security", "cacerts")).use {
+            bundled.load(it, "changeit".toCharArray())
+        }
+        val alias = bundled.aliases().asSequence().first { bundled.getCertificate(it) != null }
+        return bundled.getCertificate(alias)
+    }
+
+    private fun certificatePem(certificate: Certificate): String {
+        val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte()))
+            .encodeToString(certificate.encoded)
+        return "-----BEGIN CERTIFICATE-----\n$encoded\n-----END CERTIFICATE-----\n"
     }
 
     private fun mysqlConnection(mode: TransportSecurityMode) = ConnectionDef(

@@ -7,9 +7,14 @@ import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurityMode
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.KeyStore
+import java.security.SecureRandom
+import java.security.cert.CertificateFactory
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -33,14 +38,14 @@ fun buildJdbcUrl(def: ConnectionDef): String = when (def.dialect) {
 
 fun createDataSource(def: ConnectionDef, password: String): HikariDataSource {
     val temporaryFiles = mutableListOf<Path>()
-    val dataSource = createWithTemporaryPemCleanup(temporaryFiles) {
+    val dataSource = createWithTemporaryTlsFileCleanup(temporaryFiles) {
         HikariDataSource(createDataSourceConfig(def, password) { temporaryFiles.add(it.toPath()) })
     }
-    if (temporaryFiles.isNotEmpty()) temporaryPemFiles[dataSource] = temporaryFiles
+    if (temporaryFiles.isNotEmpty()) temporaryTlsFiles[dataSource] = temporaryFiles
     return dataSource
 }
 
-internal fun <T> createWithTemporaryPemCleanup(temporaryFiles: List<Path>, create: () -> T): T =
+internal fun <T> createWithTemporaryTlsFileCleanup(temporaryFiles: List<Path>, create: () -> T): T =
     try {
         create()
     } catch (error: Throwable) {
@@ -48,14 +53,14 @@ internal fun <T> createWithTemporaryPemCleanup(temporaryFiles: List<Path>, creat
         throw error
     }
 
-private val temporaryPemFiles =
+private val temporaryTlsFiles =
     Collections.synchronizedMap(WeakHashMap<HikariDataSource, List<Path>>())
 
 fun closeDataSource(dataSource: HikariDataSource) {
     try {
         dataSource.close()
     } finally {
-        temporaryPemFiles.remove(dataSource).orEmpty().forEach { runCatching { Files.deleteIfExists(it) } }
+        temporaryTlsFiles.remove(dataSource).orEmpty().forEach { runCatching { Files.deleteIfExists(it) } }
     }
 }
 
@@ -170,11 +175,54 @@ private fun applyMssqlCa(
     registerTemporaryFile: (File) -> Unit,
 ) {
     def.transportSecurity.caPem?.let { ca ->
-        val file = writeTempPem(ca, "mssql-ca")
-        registerTemporaryFile(file)
-        config.addDataSourceProperty("trustStore", file.absolutePath)
-        config.addDataSourceProperty("trustStoreType", "PEM")
+        val trustStore = writeTempPkcs12TrustStore(ca)
+        registerTemporaryFile(trustStore.file)
+        config.addDataSourceProperty("trustStore", trustStore.file.absolutePath)
+        config.addDataSourceProperty("trustStoreType", "PKCS12")
+        config.addDataSourceProperty("trustStorePassword", trustStore.password)
     }
+}
+
+private data class TemporaryTrustStore(
+    val file: File,
+    val password: String,
+)
+
+private val trustStorePasswordRandom = SecureRandom()
+
+private fun writeTempPkcs12TrustStore(caPem: String): TemporaryTrustStore {
+    val certificates = try {
+        ByteArrayInputStream(caPem.toByteArray(StandardCharsets.UTF_8)).use {
+            CertificateFactory.getInstance("X.509").generateCertificates(it).toList()
+        }
+    } catch (error: Exception) {
+        throw IllegalArgumentException("SQL Server CA certificate must contain valid X.509 PEM", error)
+    }
+    if (certificates.isEmpty()) {
+        throw IllegalArgumentException("SQL Server CA certificate must contain valid X.509 PEM")
+    }
+
+    val passwordBytes = ByteArray(24).also(trustStorePasswordRandom::nextBytes)
+    val password = try {
+        Base64.getUrlEncoder().withoutPadding().encodeToString(passwordBytes)
+    } finally {
+        passwordBytes.fill(0)
+    }
+    val passwordChars = password.toCharArray()
+    val file = Files.createTempFile("mssql-ca", ".p12").toFile()
+    try {
+        val keyStore = KeyStore.getInstance("PKCS12").apply { load(null, passwordChars) }
+        certificates.forEachIndexed { index, certificate ->
+            keyStore.setCertificateEntry("safedb-ca-${index + 1}", certificate)
+        }
+        Files.newOutputStream(file.toPath()).use { keyStore.store(it, passwordChars) }
+    } catch (error: Exception) {
+        runCatching { Files.deleteIfExists(file.toPath()) }
+        throw IllegalArgumentException("SQL Server CA certificate could not be prepared", error)
+    } finally {
+        passwordChars.fill('\u0000')
+    }
+    return TemporaryTrustStore(file, password)
 }
 
 private fun buildOracleUrl(def: ConnectionDef): String {

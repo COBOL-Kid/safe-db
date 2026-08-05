@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=safe-db (managed)
+Comment=Start safe-db with an administrator-managed trust profile
+TryExec=/opt/safe-db/bin/safe-db
+Exec=/opt/safe-db/bin/safe-db --launch-profile /etc/safe-db/production.json
+Terminal=false
+Categories=Development;Database;
+StartupNotify=true

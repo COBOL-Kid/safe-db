@@ -22,7 +22,7 @@ Use the project wrapper, not a system Gradle installation. Do not run `./gradlew
 
 ## Verification
 
-- `check` currently enforces minimum unit discovery of 159 desktop and 331 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
+- `check` currently enforces minimum unit discovery of 159 desktop and 333 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
 - Kover line-coverage floors are 72% for desktop code and 66% for shared code. Stale incremental reports can be misleading, so use `--rerun-tasks --no-build-cache` for fresh coverage claims.
 - The integration source set is `shared/src/integrationTest/kotlin/`. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to make the corresponding engine mandatory; required suites must meet their discovery floor without skipped tests.
 - MySQL settings use `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, and `SAFEDB_TEST_MYSQL_DATABASE`; `SAFEDB_TEST_MYSQL_DOCKER` can select a Docker container. PostgreSQL uses the matching `SAFEDB_TEST_POSTGRES_*` names.

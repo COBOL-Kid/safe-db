@@ -14,6 +14,7 @@ import java.security.KeyStore
 const val TRUST_STORE_CREDENTIAL_SERVICE = "com.safedb.app.trust-store"
 
 private const val MAX_PASSWORD_BYTES = 4_096
+private const val MAX_PROFILE_BYTES = 65_536
 private const val PROFILE_OPTION = "--launch-profile"
 
 @Serializable
@@ -59,8 +60,9 @@ object LaunchProfileBootstrap {
         }
 
         val profilePath = requireAbsoluteRegularFile(args[1], "Launch profile")
+        val profileJson = readUtf8File(profilePath, MAX_PROFILE_BYTES, "Launch profile")
         val profile = try {
-            json.decodeFromString<LaunchProfile>(Files.readString(profilePath, StandardCharsets.UTF_8))
+            json.decodeFromString<LaunchProfile>(profileJson)
         } catch (error: Exception) {
             throw LaunchProfileException("Launch profile is not valid schema-version 1 JSON", error)
         }
@@ -118,37 +120,48 @@ object LaunchProfileBootstrap {
     }
 
     private fun readPasswordFile(path: Path): String {
-        val bytes = try {
-            Files.readAllBytes(path)
-        } catch (error: Exception) {
-            throw LaunchProfileException("Trust-store password file could not be read", error)
-        }
-        if (bytes.size > MAX_PASSWORD_BYTES + 2) {
-            throw LaunchProfileException("Trust-store password file is too large")
-        }
-        val decoded = try {
-            StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(bytes))
-                .toString()
-        } catch (error: Exception) {
-            throw LaunchProfileException("Trust-store password file must be valid UTF-8", error)
-        } finally {
-            bytes.fill(0)
-        }
+        val decoded = readUtf8File(path, MAX_PASSWORD_BYTES + 2, "Trust-store password file")
         val password = when {
             decoded.endsWith("\r\n") -> decoded.dropLast(2)
             decoded.endsWith("\n") -> decoded.dropLast(1)
             else -> decoded
         }
-        if (password.length > MAX_PASSWORD_BYTES) {
+        val passwordBytes = password.toByteArray(StandardCharsets.UTF_8)
+        val passwordTooLarge = try {
+            passwordBytes.size > MAX_PASSWORD_BYTES
+        } finally {
+            passwordBytes.fill(0)
+        }
+        if (passwordTooLarge) {
             throw LaunchProfileException("Trust-store password file is too large")
         }
         if (password.any { it == '\u0000' || it == '\r' || it == '\n' }) {
             throw LaunchProfileException("Trust-store password file must contain exactly one line")
         }
         return password
+    }
+
+    private fun readUtf8File(path: Path, maxBytes: Int, label: String): String {
+        val bytes = try {
+            Files.newInputStream(path).use { it.readNBytes(maxBytes + 1) }
+        } catch (error: Exception) {
+            throw LaunchProfileException("$label could not be read", error)
+        }
+        if (bytes.size > maxBytes) {
+            bytes.fill(0)
+            throw LaunchProfileException("$label is too large")
+        }
+        return try {
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (error: Exception) {
+            throw LaunchProfileException("$label must be valid UTF-8", error)
+        } finally {
+            bytes.fill(0)
+        }
     }
 
     private fun validateTrustStore(path: Path, password: CharArray) {
