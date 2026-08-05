@@ -107,6 +107,10 @@ On Linux hosts where the Java keyring delegate is unavailable, the app falls bac
 
 **Test Connection** uses the password from the form only and does not touch the keyring. **Save Connection** stores the password in the selected credential backend. After the first unlock, builder and query paths reuse an in-process credential session so repeated schema loads and queries do not re-hit the OS store.
 
+## External Trust Stores
+
+Managed installations can select an external PKCS12 trust store at startup without adding trust-store settings to saved database connections. Passwords are resolved from the platform credential store or a protected file, not JSON, command-line arguments, or environment variables. See [External trust stores](docs/trust-stores.md) for the launch-profile schema, provisioning guidance, and trust precedence.
+
 ## Data Directory
 
 The app stores JSON state under `com.safedb.app`:

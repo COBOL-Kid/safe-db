@@ -96,10 +96,21 @@ private fun buildPostgresUrl(def: ConnectionDef): String {
 }
 
 private fun applyPostgresSsl(config: HikariConfig, def: ConnectionDef, registerTemporaryFile: (File) -> Unit) {
-    def.transportSecurity.caPem?.let { ca ->
-        val file = writeTempPem(ca, "pg-ca")
-        registerTemporaryFile(file)
-        config.addDataSourceProperty("sslrootcert", file.absolutePath)
+    when (def.transportSecurity.mode) {
+        TransportSecurityMode.VerifyIdentity, TransportSecurityMode.VerifyCa -> {
+            val ca = def.transportSecurity.caPem
+            if (ca != null) {
+                val file = writeTempPem(ca, "pg-ca")
+                registerTemporaryFile(file)
+                config.addDataSourceProperty("sslrootcert", file.absolutePath)
+            } else {
+                config.addDataSourceProperty(
+                    "sslfactory",
+                    "org.postgresql.ssl.DefaultJavaSSLFactory",
+                )
+            }
+        }
+        TransportSecurityMode.EncryptOnly, TransportSecurityMode.Disabled -> Unit
     }
 }
 
@@ -135,16 +146,12 @@ private fun applyMssqlSsl(config: HikariConfig, def: ConnectionDef, registerTemp
             config.addDataSourceProperty("encrypt", "true")
             config.addDataSourceProperty("trustServerCertificate", "false")
             config.addDataSourceProperty("hostNameInCertificate", def.host)
+            applyMssqlCa(config, def, registerTemporaryFile)
         }
         TransportSecurityMode.VerifyCa -> {
             config.addDataSourceProperty("encrypt", "true")
             config.addDataSourceProperty("trustServerCertificate", "false")
-            def.transportSecurity.caPem?.let { ca ->
-                val file = writeTempPem(ca, "mssql-ca")
-                registerTemporaryFile(file)
-                config.addDataSourceProperty("trustStore", file.absolutePath)
-                config.addDataSourceProperty("trustStoreType", "PEM")
-            }
+            applyMssqlCa(config, def, registerTemporaryFile)
         }
         TransportSecurityMode.EncryptOnly -> {
             config.addDataSourceProperty("encrypt", "true")
@@ -154,6 +161,19 @@ private fun applyMssqlSsl(config: HikariConfig, def: ConnectionDef, registerTemp
             config.addDataSourceProperty("encrypt", "false")
             config.addDataSourceProperty("trustServerCertificate", "true")
         }
+    }
+}
+
+private fun applyMssqlCa(
+    config: HikariConfig,
+    def: ConnectionDef,
+    registerTemporaryFile: (File) -> Unit,
+) {
+    def.transportSecurity.caPem?.let { ca ->
+        val file = writeTempPem(ca, "mssql-ca")
+        registerTemporaryFile(file)
+        config.addDataSourceProperty("trustStore", file.absolutePath)
+        config.addDataSourceProperty("trustStoreType", "PEM")
     }
 }
 
@@ -176,6 +196,13 @@ private fun buildOracleUrl(def: ConnectionDef): String {
 private fun applyOracleSsl(config: HikariConfig, def: ConnectionDef) {
     def.transportSecurity.oracleWalletLocation?.let { wallet ->
         config.addDataSourceProperty("oracle.net.wallet_location", wallet)
+    }
+    when (def.transportSecurity.mode) {
+        TransportSecurityMode.VerifyIdentity ->
+            config.addDataSourceProperty("oracle.net.ssl_server_dn_match", "true")
+        TransportSecurityMode.VerifyCa, TransportSecurityMode.EncryptOnly ->
+            config.addDataSourceProperty("oracle.net.ssl_server_dn_match", "false")
+        TransportSecurityMode.Disabled -> Unit
     }
 }
 

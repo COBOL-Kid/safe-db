@@ -138,6 +138,79 @@ class AdapterTest {
     }
 
     @Test
+    fun postgresVerifiedModesUseJvmTrustOnlyWithoutConnectionCa() {
+        for (mode in listOf(TransportSecurityMode.VerifyIdentity, TransportSecurityMode.VerifyCa)) {
+            val properties = createDataSourceConfig(connection(Dialect.Postgres, 5432, mode), "pw")
+                .dataSourceProperties
+            assertEquals("org.postgresql.ssl.DefaultJavaSSLFactory", properties.getProperty("sslfactory"))
+            assertNull(properties.getProperty("sslrootcert"))
+        }
+        for (mode in listOf(TransportSecurityMode.EncryptOnly, TransportSecurityMode.Disabled)) {
+            val properties = createDataSourceConfig(connection(Dialect.Postgres, 5432, mode), "pw")
+                .dataSourceProperties
+            assertNull(properties.getProperty("sslfactory"))
+        }
+    }
+
+    @Test
+    fun postgresConnectionCaOverridesJvmTrustFactory() {
+        val temporaryFiles = mutableListOf<java.io.File>()
+        try {
+            val def = connection(Dialect.Postgres, 5432, TransportSecurityMode.VerifyIdentity).copy(
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity, caPem = "test-ca"),
+            )
+            val properties = createDataSourceConfig(def, "pw", temporaryFiles::add).dataSourceProperties
+
+            assertNull(properties.getProperty("sslfactory"))
+            assertEquals("test-ca", java.io.File(properties.getProperty("sslrootcert")).readText())
+        } finally {
+            temporaryFiles.forEach(java.io.File::delete)
+        }
+    }
+
+    @Test
+    fun sqlServerConnectionCaAppliesWithHostnameVerification() {
+        val temporaryFiles = mutableListOf<java.io.File>()
+        try {
+            val def = connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity, caPem = "test-ca"),
+            )
+            val properties = createDataSourceConfig(def, "pw", temporaryFiles::add).dataSourceProperties
+
+            assertEquals("false", properties.getProperty("trustServerCertificate"))
+            assertEquals("db.example.com", properties.getProperty("hostNameInCertificate"))
+            assertEquals("PEM", properties.getProperty("trustStoreType"))
+            assertEquals("test-ca", java.io.File(properties.getProperty("trustStore")).readText())
+        } finally {
+            temporaryFiles.forEach(java.io.File::delete)
+        }
+    }
+
+    @Test
+    fun oracleIdentityModeEnablesServerDnMatching() {
+        val identity = connection(Dialect.Oracle, 1521, TransportSecurityMode.VerifyIdentity).copy(
+            transportSecurity = TransportSecurity(
+                TransportSecurityMode.VerifyIdentity,
+                oracleWalletLocation = "/wallet",
+            ),
+        )
+        val caOnly = identity.copy(
+            transportSecurity = identity.transportSecurity.copy(mode = TransportSecurityMode.VerifyCa),
+        )
+
+        assertEquals(
+            "true",
+            createDataSourceConfig(identity, "pw").dataSourceProperties
+                .getProperty("oracle.net.ssl_server_dn_match"),
+        )
+        assertEquals(
+            "false",
+            createDataSourceConfig(caOnly, "pw").dataSourceProperties
+                .getProperty("oracle.net.ssl_server_dn_match"),
+        )
+    }
+
+    @Test
     fun datasourceReceivesCustomDriverPropertiesAndManagedSecurityWins() {
         val config = createDataSourceConfig(
             connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
