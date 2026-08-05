@@ -22,7 +22,7 @@ Use the project wrapper, not a system Gradle installation. Do not run `./gradlew
 
 ## Verification
 
-- `check` currently enforces minimum unit discovery of 159 desktop and 333 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
+- `check` currently enforces minimum unit discovery of 159 desktop and 334 shared test cases, with no JUnit XML failures or errors. Raise a floor when deliberately adding tests; do not lower it to hide a discovery regression.
 - Kover line-coverage floors are 72% for desktop code and 66% for shared code. Stale incremental reports can be misleading, so use `--rerun-tasks --no-build-cache` for fresh coverage claims.
 - The integration source set is `shared/src/integrationTest/kotlin/`. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to make the corresponding engine mandatory; required suites must meet their discovery floor without skipped tests.
 - MySQL settings use `SAFEDB_TEST_MYSQL_HOST`, `SAFEDB_TEST_MYSQL_PORT`, `SAFEDB_TEST_MYSQL_USER`, `SAFEDB_TEST_MYSQL_PASSWORD`, and `SAFEDB_TEST_MYSQL_DATABASE`; `SAFEDB_TEST_MYSQL_DOCKER` can select a Docker container. PostgreSQL uses the matching `SAFEDB_TEST_POSTGRES_*` names.
@@ -31,9 +31,9 @@ Use the project wrapper, not a system Gradle installation. Do not run `./gradlew
 
 ## Tech Stack
 
-- Jetpack Compose Desktop / Compose Multiplatform `1.9.3`
-- Kotlin `2.4.0`
-- Gradle wrapper with `jvmToolchain(25)`
+- Jetpack Compose Desktop / Compose Multiplatform `1.11.1`
+- Kotlin `2.4.10`
+- Gradle wrapper `9.6.1` with `jvmToolchain(25)`
 - JDBC via HikariCP and dialect adapters in `shared/`
 - Credentials through Java keyring-backed platform stores where available; `disabled` is in-memory only
 
@@ -86,6 +86,7 @@ safe-db/
 │   │   ├── adapter/                  # JDBC dialect adapters
 │   │   ├── connection/               # connection parsing and presets
 │   │   ├── explore/                  # Pivot, Worksheet, Visualization, Recipes
+│   │   ├── launch/                   # strict startup launch profiles and external trust stores
 │   │   ├── model/                    # shared models and settings
 │   │   ├── persist/                  # atomic file persistence
 │   │   ├── query/                    # hydration, validation, compilation, execution, risk scoring
@@ -96,6 +97,8 @@ safe-db/
 │   ├── src/test/kotlin/com/safedb/    # shared unit tests
 │   └── src/integrationTest/kotlin/    # live JDBC integration tests
 ├── buildSrc/                          # Gradle verification tasks
+├── docs/trust-stores.md               # managed launch-profile provisioning and trust precedence
+├── packaging/resources/               # Linux packages plus cross-platform managed-launch examples
 ├── scripts/seed_mysql.sh              # root MySQL seeder wrapper
 ├── testdata_mysql.sql                 # static MySQL fixture
 └── testdata_postgres.sql              # PostgreSQL fixture
@@ -109,6 +112,14 @@ safe-db/
 - Explore operates on the immutable query sample. Pivot, Worksheet, and Visualization configurations may be saved/exported as Recipes, but recipe files must never include credentials or sample rows.
 - Use semantic Compose colors (`MaterialTheme.colorScheme` and `SafeDbTheme.colors`) rather than copying hex values into UI code. The selectable Control Blue, Signal Teal, Oxide, and Command Violet palettes live in `src/main/kotlin/com/safedb/ui/theme/`.
 - Keep default connection flows simple. Advanced settings are for technical users and should use direct SSL labels such as “SSL with hostname verification” and “SSL encrypt only (no cert check)”. Avoid security-state indicators that can be transiently misleading.
+
+### Transport Security And Managed Trust
+
+- `TransportSecurity` is the typed source of JDBC TLS behavior. Keep TLS-related driver properties blocked from the generic property list so callers cannot bypass the selected mode; preserve legacy connection hydration and dialect-specific normalization when changing the form or parser.
+- A connection-specific CA PEM overrides managed launch-profile trust for verified PostgreSQL, MySQL, and SQL Server connections. Without either, MySQL and SQL Server use normal JVM trust; PostgreSQL must retain pgjdbc's standard trust and client-certificate behavior. Oracle verification remains wallet-based.
+- `LaunchProfileBootstrap` runs before Compose or JDBC initialization. A selected profile, PKCS12 store, password source, and every referenced path are strict: missing, relative, unreadable, oversized, or invalid inputs stop startup rather than falling back. Credential-store lookup for launch profiles must not use the saved-connection in-memory fallback.
+- Launch-profile passwords must never appear in profile JSON, command-line arguments, environment variables, or logs. PostgreSQL receives only a generated temporary PEM of trusted certificates; do not replace pgjdbc's SSL factory or interfere with its normal client certificate/key lookup.
+- When changing launch-profile schema, trust precedence, packaging resources, or managed-launch behavior, keep `docs/trust-stores.md`, the packaged examples under `packaging/resources/`, `LaunchProfileTest`, and adapter TLS tests aligned.
 
 ### Query Risk Scoring
 
