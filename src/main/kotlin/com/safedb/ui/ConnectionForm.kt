@@ -62,18 +62,6 @@ import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import kotlinx.coroutines.launch
 
-private data class FormTransportOption(
-    val value: TransportSecurityMode,
-    val label: String,
-)
-
-private val TRANSPORT_OPTIONS = listOf(
-    FormTransportOption(TransportSecurityMode.VerifyIdentity, "SSL with hostname verification"),
-    FormTransportOption(TransportSecurityMode.VerifyCa, "Verify CA"),
-    FormTransportOption(TransportSecurityMode.EncryptOnly, "SSL encrypt only (no cert check)"),
-    FormTransportOption(TransportSecurityMode.Disabled, "Disabled"),
-)
-
 // Leave a little vertical headroom beyond Material's 56 dp minimum. An exact
 // 56 dp constraint can clip glyph descenders on scaled desktop displays.
 private val CompactFieldHeight = 60.dp
@@ -393,14 +381,19 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Advanced settings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         TransportSecurityDropdown(form)
-        if (form.transportMode == TransportSecurityMode.VerifyCa) {
+        if (supportsConnectionCa(form.dialect, form.transportMode)) {
             OutlinedTextField(
                 value = form.caPem,
                 onValueChange = form::updateCaPem,
                 modifier = Modifier.fillMaxWidth(),
                 textStyle = MaterialTheme.typography.bodyMedium,
-                label = { CompactFieldLabel("CA certificate (PEM)") },
+                label = { CompactFieldLabel("Connection-specific CA certificate (PEM, optional)") },
                 minLines = 3,
+            )
+            Text(
+                "Leave blank to use the launch-profile trust store or the JDBC driver's default trust configuration.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (form.dialect == Dialect.Oracle && form.transportMode != TransportSecurityMode.Disabled) {
@@ -437,7 +430,9 @@ private fun AdvancedConnectionFields(form: ConnectionFormState) {
 @Composable
 private fun TransportSecurityDropdown(form: ConnectionFormState) {
     var expanded by remember { mutableStateOf(false) }
-    val selected = TRANSPORT_OPTIONS.first { it.value == form.transportMode }
+    val options = transportOptionsFor(form.dialect)
+    val displayedMode = displayedTransportMode(form.dialect, form.transportMode)
+    val selected = options.first { it.value == displayedMode }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Transport security", style = MaterialTheme.typography.labelLarge)
         Box {
@@ -452,14 +447,17 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(selected.label, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (selected.recommended) "${selected.label} (recommended)" else selected.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose transport security")
                 }
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                TRANSPORT_OPTIONS.forEach { option ->
+                options.forEach { option ->
                     DropdownMenuItem(
-                        text = { Text(option.label) },
+                        text = { Text(if (option.recommended) "${option.label} (recommended)" else option.label) },
                         onClick = {
                             form.changeTransportMode(option.value)
                             expanded = false
@@ -468,6 +466,15 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
                 }
             }
         }
+        Text(
+            selected.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (displayedMode == TransportSecurityMode.EncryptOnly || displayedMode == TransportSecurityMode.Disabled) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
     }
 }
 

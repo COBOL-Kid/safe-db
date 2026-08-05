@@ -86,7 +86,7 @@ private val COMMON_RESERVED_DRIVER_PROPERTIES = setOf(
 )
 
 private val DIALECT_RESERVED_DRIVER_PROPERTIES = mapOf(
-    Dialect.Postgres to setOf("ssl", "sslmode", "sslrootcert", "sslcert", "sslkey"),
+    Dialect.Postgres to setOf("ssl", "sslmode", "sslfactory", "sslrootcert", "sslcert", "sslkey"),
     Dialect.MySql to setOf(
         "sslmode",
         "usessl",
@@ -105,7 +105,11 @@ private val DIALECT_RESERVED_DRIVER_PROPERTIES = mapOf(
         "truststore",
         "truststoretype",
     ),
-    Dialect.Oracle to setOf("walletlocation", "oraclenetwalletlocation"),
+    Dialect.Oracle to setOf(
+        "walletlocation",
+        "oraclenetwalletlocation",
+        "oraclenetsslserverdnmatch",
+    ),
 )
 
 private fun normalizedDriverPropertyName(name: String): String =

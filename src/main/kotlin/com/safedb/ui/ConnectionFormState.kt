@@ -37,6 +37,7 @@ class ConnectionFormState(
         private set
     var transportOverridden by mutableStateOf(original != null)
         private set
+    private var transportSettingsChanged = false
     private var portIsAuto by mutableStateOf(original == null)
 
     var name by mutableStateOf(original?.name.orEmpty())
@@ -100,10 +101,13 @@ class ConnectionFormState(
                 passwordChangeEnabled = true
             }
             applyTransportSecurity(parsed.transportSecurity)
+            transportSettingsChanged = true
             transportOverridden = false
             driverProperties.clear()
             driverProperties.addAll(parsed.driverProperties.map { DriverPropertyDraft(name = it.name, value = it.value) })
-            parseWarnings = parsed.warnings
+            parseWarnings = parsed.warnings + listOfNotNull(
+                transportCompatibilityWarning(parsed.dialect, parsed.transportSecurity.mode),
+            )
             connectionString = parsed.sanitizedInput
         } catch (error: ConnectionStringParseError) {
             parseError = error.message
@@ -129,7 +133,9 @@ class ConnectionFormState(
 
     fun selectDialect(nextDialect: Dialect) {
         val previous = DIALECTS.firstOrNull { it.value == dialect }
+        if (nextDialect != dialect) transportSettingsChanged = true
         dialect = nextDialect
+        transportMode = normalizedTransportMode(nextDialect, transportMode)
         val entry = DIALECTS.firstOrNull { it.value == nextDialect }
         if (entry != null && (portIsAuto || port == previous?.defaultPort)) {
             port = entry.defaultPort
@@ -151,6 +157,7 @@ class ConnectionFormState(
     }
 
     fun changeTransportMode(value: TransportSecurityMode) {
+        if (value != transportMode) transportSettingsChanged = true
         transportMode = value
         transportOverridden = true
         resetResultState()
@@ -167,12 +174,14 @@ class ConnectionFormState(
     }
 
     fun updateOracleWallet(value: String) {
+        if (value != oracleWalletLocation) transportSettingsChanged = true
         oracleWalletLocation = value
         transportOverridden = true
         resetResultState()
     }
 
     fun updateCaPem(value: String) {
+        if (value != caPem) transportSettingsChanged = true
         caPem = value
         transportOverridden = true
         resetResultState()
@@ -200,22 +209,39 @@ class ConnectionFormState(
         resetResultState()
     }
 
-    fun buildDef(): ConnectionDef = ConnectionDef(
-        id = connectionId,
-        name = name.trim().ifEmpty { "$dialect ${host.trim()}:$port" },
-        dialect = dialect,
-        host = host.trim(),
-        port = port,
-        database = database.trim(),
-        username = username.trim(),
-        transportSecurity = TransportSecurity(
-            mode = transportMode,
-            caPem = caPem.trim().ifEmpty { null },
-            oracleWalletLocation = oracleWalletLocation.trim().ifEmpty { null },
-            legacyImplicit = false,
-        ),
-        driverProperties = driverProperties.map { DriverProperty(it.name.trim(), it.value) },
-    )
+    fun buildDef(): ConnectionDef {
+        val preserveLoadedTransport = original != null && !transportSettingsChanged
+        val persistedCa = if (preserveLoadedTransport) {
+            original.transportSecurity.caPem
+        } else if (supportsConnectionCa(dialect, transportMode)) {
+            caPem.trim().ifEmpty { null }
+        } else {
+            null
+        }
+        val persistedWallet = if (preserveLoadedTransport) {
+            original.transportSecurity.oracleWalletLocation
+        } else if (dialect == Dialect.Oracle && transportMode != TransportSecurityMode.Disabled) {
+            oracleWalletLocation.trim().ifEmpty { null }
+        } else {
+            null
+        }
+        return ConnectionDef(
+            id = connectionId,
+            name = name.trim().ifEmpty { "$dialect ${host.trim()}:$port" },
+            dialect = dialect,
+            host = host.trim(),
+            port = port,
+            database = database.trim(),
+            username = username.trim(),
+            transportSecurity = TransportSecurity(
+                mode = transportMode,
+                caPem = persistedCa,
+                oracleWalletLocation = persistedWallet,
+                legacyImplicit = false,
+            ),
+            driverProperties = driverProperties.map { DriverProperty(it.name.trim(), it.value) },
+        )
+    }
 
     fun credentialMaterialChanged(): Boolean =
         original?.credentialFingerprint()?.let { it != buildDef().credentialFingerprint() } ?: true

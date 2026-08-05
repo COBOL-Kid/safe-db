@@ -38,3 +38,6 @@ internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
     val keyring = create.invoke(null)
     JavaKeyringDelegate(keyring)
 }.getOrNull()
+
+/** A strict startup path for operational secrets; unlike connection credentials, it must not fall back. */
+internal fun createStrictPlatformCredentialStoreOrNull(): CredentialStore? = createJavaKeyringDelegateOrNull()

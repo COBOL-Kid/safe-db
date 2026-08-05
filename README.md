@@ -39,7 +39,7 @@ The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. I
 
 ## Features
 
-- **Connections** — save named profiles; passwords stored in the OS credential store when available, never in profile JSON.
+- **Connections** — save named profiles; passwords are stored in the OS credential store when available, never in profile JSON. Advanced settings expose explicit TLS verification modes, optional connection-specific CA certificates, and Oracle wallet configuration.
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out.
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
 - **Explore modes** — analyze the current immutable result sample as a nested pivot, worksheet, or visualization. Worksheet mode adds direct sort/group/filter controls, row and group formulas, summaries, and window calculations such as running totals, previous values, percentages, and ranks. Visualization offers templates and editable field shelves for bar, line, scatter, histogram, and KPI charts, with contributing-row drill-through plus PNG and chart-data CSV exports.
@@ -52,10 +52,10 @@ The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. I
 
 | Database | Driver | Notes |
 | --- | --- | --- |
-| PostgreSQL | JDBC | |
+| PostgreSQL | JDBC | Verified TLS preserves pgjdbc's standard trust and client-certificate behavior unless a connection CA or launch profile is selected. |
 | MySQL | JDBC | Uses read-only transactions for non-locking reads where supported. |
-| SQL Server | JDBC | |
-| Oracle | JDBC | Requires the Oracle JDBC driver/runtime available to the app. |
+| SQL Server | JDBC | Certificate verification supports the JVM/launch-profile trust store or a connection-specific CA. |
+| Oracle | JDBC | Verified TCPS uses an Oracle wallet; external launch-profile trust stores do not replace it. |
 
 ## Prerequisites
 
@@ -107,13 +107,17 @@ On Linux hosts where the Java keyring delegate is unavailable, the app falls bac
 
 **Test Connection** uses the password from the form only and does not touch the keyring. **Save Connection** stores the password in the selected credential backend. After the first unlock, builder and query paths reuse an in-process credential session so repeated schema loads and queries do not re-hit the OS store.
 
+## External Trust Stores
+
+Managed installations can select an external PKCS12 trust store at startup without adding trust-store settings to saved database connections. Passwords are resolved from the platform credential store or a protected file, not JSON, command-line arguments, or environment variables. A connection-specific CA takes precedence. Without a launch profile, MySQL and SQL Server use the bundled JVM trust store, while PostgreSQL retains pgjdbc's standard trust and client-certificate behavior; Oracle remains wallet-based. See [External trust stores](docs/trust-stores.md) for the launch-profile schema, provisioning guidance, and managed-launch examples.
+
 ## Data Directory
 
 The app stores JSON state under `com.safedb.app`:
 
 | OS | Path |
 | --- | --- |
-| Linux | `~/.local/share/com.safedb.app/` |
+| Linux | `$XDG_DATA_HOME/com.safedb.app/` when set; otherwise `~/.local/share/com.safedb.app/` |
 | macOS | `~/Library/Application Support/com.safedb.app/` |
 | Windows | `%APPDATA%\com.safedb.app\` |
 
@@ -129,16 +133,21 @@ EXPLAIN runs against the post-validation SQL and refines the query-risk calculat
 
 ```text
 safe-db/
-├── src/main/kotlin/com/safedb/        # Compose UI, app shell, platform helpers
+├── src/main/kotlin/com/safedb/        # Compose UI, app shell, exports, platform helpers
 ├── src/main/resources/                # fonts and app resources
-├── src/test/kotlin/                   # UI state tests
+├── src/test/kotlin/com/safedb/        # desktop unit tests
 ├── shared/
-│   ├── src/main/kotlin/com/safedb/    # models, query engine, JDBC adapters, stores, secrets
-│   └── src/test/kotlin/               # shared unit tests
+│   ├── src/main/kotlin/com/safedb/    # domain, query/JDBC, launch profiles, stores, secrets
+│   ├── src/test/kotlin/com/safedb/    # shared unit tests
+│   └── src/integrationTest/kotlin/    # live JDBC integration tests
+├── buildSrc/                          # verification task implementations
+├── docs/trust-stores.md               # managed external-trust-store guide
+├── packaging/resources/               # distribution resources and managed-launch examples
 ├── build.gradle.kts
 ├── settings.gradle.kts
 ├── gradle/                            # Gradle wrapper
 ├── scripts/seed_mysql.sh              # local MySQL fixture wrapper
 ├── testdata_mysql.sql                 # small static MySQL fixture
+├── testdata_postgres.sql              # PostgreSQL integration fixture
 └── AGENTS.md                          # agent-oriented commands and workspace notes
 ```

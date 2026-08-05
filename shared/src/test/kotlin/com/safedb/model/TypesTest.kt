@@ -79,6 +79,25 @@ class TypesTest {
     }
 
     @Test
+    fun managedTlsFactoryAndOracleDnPropertiesCannotBeSaved() {
+        assertFailsWith<IllegalArgumentException> {
+            sampleConnection().copy(
+                driverProperties = listOf(DriverProperty("SSL_FACTORY", "custom.Factory")),
+            ).validate().getOrThrow()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            sampleConnection().copy(
+                dialect = Dialect.Oracle,
+                transportSecurity = TransportSecurity(
+                    TransportSecurityMode.VerifyIdentity,
+                    oracleWalletLocation = "/wallet",
+                ),
+                driverProperties = listOf(DriverProperty("oracle.net.ssl_server_dn_match", "false")),
+            ).validate().getOrThrow()
+        }
+    }
+
+    @Test
     fun driverPropertyOrderDoesNotChangeFingerprintButValuesDo() {
         val base = sampleConnection()
         val first = base.copy(

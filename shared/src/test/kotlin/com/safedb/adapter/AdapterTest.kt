@@ -14,8 +14,12 @@ import java.sql.ResultSet
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.nio.file.Files
+import java.nio.file.Path
+import java.security.KeyStore
+import java.security.cert.Certificate
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -26,11 +30,11 @@ import kotlin.test.assertTrue
 
 class AdapterTest {
     @Test
-    fun datasourceCreationFailureDeletesTemporaryPemFiles() {
+    fun datasourceCreationFailureDeletesTemporaryTlsFiles() {
         val temporaryPem = Files.createTempFile("safedb-failed-datasource", ".pem")
 
         val failure = assertFailsWith<IllegalStateException> {
-            createWithTemporaryPemCleanup(listOf(temporaryPem)) {
+            createWithTemporaryTlsFileCleanup(listOf(temporaryPem)) {
                 error("datasource creation failed")
             }
         }
@@ -138,6 +142,127 @@ class AdapterTest {
     }
 
     @Test
+    fun postgresVerifiedModesPreservePgjdbcDefaultsWithoutConfiguredCa() {
+        for (mode in listOf(TransportSecurityMode.VerifyIdentity, TransportSecurityMode.VerifyCa)) {
+            val properties = createDataSourceConfig(connection(Dialect.Postgres, 5432, mode), "pw")
+                .dataSourceProperties
+            assertNull(properties.getProperty("sslfactory"))
+            assertNull(properties.getProperty("sslrootcert"))
+        }
+        for (mode in listOf(TransportSecurityMode.EncryptOnly, TransportSecurityMode.Disabled)) {
+            val properties = createDataSourceConfig(connection(Dialect.Postgres, 5432, mode), "pw")
+                .dataSourceProperties
+            assertNull(properties.getProperty("sslfactory"))
+        }
+    }
+
+    @Test
+    fun postgresLaunchProfileTrustUsesRootCertWithoutReplacingPgjdbcFactory() {
+        val launchRootCert = Files.createTempFile("safedb-launch-root", ".pem")
+        try {
+            val properties = createDataSourceConfig(
+                connection(Dialect.Postgres, 5432, TransportSecurityMode.VerifyIdentity),
+                "pw",
+                launchProfilePostgresRootCert = launchRootCert.toString(),
+            ).dataSourceProperties
+
+            assertNull(properties.getProperty("sslfactory"))
+            assertEquals(launchRootCert.toString(), properties.getProperty("sslrootcert"))
+        } finally {
+            Files.deleteIfExists(launchRootCert)
+        }
+    }
+
+    @Test
+    fun postgresConnectionCaOverridesLaunchProfileTrust() {
+        val temporaryFiles = mutableListOf<java.io.File>()
+        val launchRootCert = Files.createTempFile("safedb-launch-root", ".pem")
+        try {
+            val def = connection(Dialect.Postgres, 5432, TransportSecurityMode.VerifyIdentity).copy(
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity, caPem = "test-ca"),
+            )
+            val properties = createDataSourceConfig(
+                def,
+                "pw",
+                temporaryFiles::add,
+                launchProfilePostgresRootCert = launchRootCert.toString(),
+            ).dataSourceProperties
+
+            assertNull(properties.getProperty("sslfactory"))
+            assertTrue(properties.getProperty("sslrootcert") != launchRootCert.toString())
+            assertEquals("test-ca", java.io.File(properties.getProperty("sslrootcert")).readText())
+        } finally {
+            temporaryFiles.forEach(java.io.File::delete)
+            Files.deleteIfExists(launchRootCert)
+        }
+    }
+
+    @Test
+    fun sqlServerConnectionCaAppliesWithHostnameVerification() {
+        val temporaryFiles = mutableListOf<java.io.File>()
+        try {
+            val trustedCertificate = bundledCertificate()
+            val def = connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
+                transportSecurity = TransportSecurity(
+                    TransportSecurityMode.VerifyIdentity,
+                    caPem = certificatePem(trustedCertificate),
+                ),
+            )
+            val properties = createDataSourceConfig(def, "pw", temporaryFiles::add).dataSourceProperties
+
+            assertEquals("false", properties.getProperty("trustServerCertificate"))
+            assertEquals("db.example.com", properties.getProperty("hostNameInCertificate"))
+            assertEquals("PKCS12", properties.getProperty("trustStoreType"))
+            val trustStore = KeyStore.getInstance(properties.getProperty("trustStoreType"))
+            java.io.File(properties.getProperty("trustStore")).inputStream().use {
+                trustStore.load(it, properties.getProperty("trustStorePassword").toCharArray())
+            }
+            assertEquals(1, trustStore.size())
+            assertTrue(trustStore.isCertificateEntry("safedb-ca-1"))
+            assertEquals(trustedCertificate, trustStore.getCertificate("safedb-ca-1"))
+        } finally {
+            temporaryFiles.forEach(java.io.File::delete)
+        }
+    }
+
+    @Test
+    fun sqlServerConnectionCaRejectsInvalidPemBeforeConnecting() {
+        val def = connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
+            transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity, caPem = "not-a-certificate"),
+        )
+
+        assertTrue(
+            assertFailsWith<IllegalArgumentException> {
+                createDataSourceConfig(def, "pw")
+            }.message!!.contains("valid X.509 PEM"),
+        )
+    }
+
+    @Test
+    fun oracleIdentityModeEnablesServerDnMatching() {
+        val identity = connection(Dialect.Oracle, 1521, TransportSecurityMode.VerifyIdentity).copy(
+            transportSecurity = TransportSecurity(
+                TransportSecurityMode.VerifyIdentity,
+                oracleWalletLocation = "/wallet",
+            ),
+        )
+        val caOnly = identity.copy(
+            transportSecurity = identity.transportSecurity.copy(mode = TransportSecurityMode.VerifyCa),
+        )
+
+        assertEquals(
+            "true",
+            createDataSourceConfig(identity, "pw").dataSourceProperties
+                .getProperty("oracle.net.ssl_server_dn_match"),
+        )
+        assertEquals(
+            "false",
+            createDataSourceConfig(caOnly, "pw").dataSourceProperties
+                .getProperty("oracle.net.ssl_server_dn_match"),
+        )
+    }
+
+    @Test
     fun datasourceReceivesCustomDriverPropertiesAndManagedSecurityWins() {
         val config = createDataSourceConfig(
             connection(Dialect.Mssql, 1433, TransportSecurityMode.VerifyIdentity).copy(
@@ -216,6 +341,21 @@ class AdapterTest {
                 Dialect.Postgres,
             ),
         )
+    }
+
+    private fun bundledCertificate(): Certificate {
+        val bundled = KeyStore.getInstance(KeyStore.getDefaultType())
+        Files.newInputStream(Path.of(System.getProperty("java.home"), "lib", "security", "cacerts")).use {
+            bundled.load(it, "changeit".toCharArray())
+        }
+        val alias = bundled.aliases().asSequence().first { bundled.getCertificate(it) != null }
+        return bundled.getCertificate(alias)
+    }
+
+    private fun certificatePem(certificate: Certificate): String {
+        val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte()))
+            .encodeToString(certificate.encoded)
+        return "-----BEGIN CERTIFICATE-----\n$encoded\n-----END CERTIFICATE-----\n"
     }
 
     private fun mysqlConnection(mode: TransportSecurityMode) = ConnectionDef(
