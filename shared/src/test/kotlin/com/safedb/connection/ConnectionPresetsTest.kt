@@ -30,9 +30,18 @@ class ConnectionPresetsTest {
 
     @Test
     fun transportPresetForLocation() {
-        assertEquals(TransportSecurityMode.Disabled, transportPresetForLocation(DatabaseLocation.Local).mode)
-        assertEquals(TransportSecurityMode.VerifyIdentity, transportPresetForLocation(DatabaseLocation.Cloud).mode)
-        assertEquals(TransportSecurityMode.VerifyIdentity, transportPresetForLocation(DatabaseLocation.Organization).mode)
+        assertEquals(
+            TransportSecurityMode.Disabled,
+            transportPresetForLocation(DatabaseLocation.Local).mode,
+        )
+        assertEquals(
+            TransportSecurityMode.VerifyIdentity,
+            transportPresetForLocation(DatabaseLocation.Cloud).mode,
+        )
+        assertEquals(
+            TransportSecurityMode.VerifyIdentity,
+            transportPresetForLocation(DatabaseLocation.Organization).mode,
+        )
     }
 
     @Test

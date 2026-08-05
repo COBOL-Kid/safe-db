@@ -17,8 +17,8 @@ fun formatTime(timestamp: String, nowMs: Long = System.currentTimeMillis()): Str
         hours < 24 -> "${hours}h ago"
         days < 7 -> "${days}d ago"
         else -> {
-            val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
-                .withZone(ZoneId.systemDefault())
+            val formatter =
+                DateTimeFormatter.ofPattern("MMM d, yyyy").withZone(ZoneId.systemDefault())
             formatter.format(Instant.ofEpochSecond(seconds))
         }
     }

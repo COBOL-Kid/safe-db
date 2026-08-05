@@ -1,5 +1,13 @@
 package com.safedb.model
 
+import java.math.BigDecimal
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.util.Base64
+import java.util.UUID
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -16,20 +24,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.math.BigDecimal
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
-import java.util.Base64
-import java.util.UUID
 
 const val CURRENT_SCHEMA_VERSION: Int = 3
 const val MAX_CELL_BYTES: Int = 1024 * 1024
@@ -48,40 +48,25 @@ data class QuerySpec(
     val sorts: List<SortSpec> = emptyList(),
     /** Ordered builder-level SQL grouping. Earlier entries take precedence. */
     val groups: List<GroupSpec> = emptyList(),
-    @SerialName("schema_version")
-    val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
+    @SerialName("schema_version") val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     @SerialName("connector_overrides")
     val connectorOverrides: Map<String, GroupConnector> = emptyMap(),
 )
 
-@Serializable
-data class TableRef(
-    val schema: String,
-    val name: String,
-    val alias: String,
-)
+@Serializable data class TableRef(val schema: String, val name: String, val alias: String)
 
 @Serializable
-data class ColumnSel(
-    @SerialName("table_alias")
-    val tableAlias: String,
-    val column: String,
-)
+data class ColumnSel(@SerialName("table_alias") val tableAlias: String, val column: String)
 
 @Serializable
 data class SortSpec(
-    @SerialName("table_alias")
-    val tableAlias: String,
+    @SerialName("table_alias") val tableAlias: String,
     val column: String,
     val direction: SortDirection = SortDirection.Asc,
 )
 
 @Serializable
-data class GroupSpec(
-    @SerialName("table_alias")
-    val tableAlias: String,
-    val column: String,
-)
+data class GroupSpec(@SerialName("table_alias") val tableAlias: String, val column: String)
 
 @Serializable
 enum class SortDirection {
@@ -91,19 +76,16 @@ enum class SortDirection {
 
 @Serializable
 data class JoinSpec(
-    @SerialName("left_alias")
-    val leftAlias: String,
-    @SerialName("left_column")
-    val leftColumn: String,
-    @SerialName("right_alias")
-    val rightAlias: String,
-    @SerialName("right_column")
-    val rightColumn: String,
+    @SerialName("left_alias") val leftAlias: String,
+    @SerialName("left_column") val leftColumn: String,
+    @SerialName("right_alias") val rightAlias: String,
+    @SerialName("right_column") val rightColumn: String,
 )
 
 @Serializable(with = FilterNodeSerializer::class)
 sealed class FilterNode {
     data class Leaf(val spec: FilterSpec) : FilterNode()
+
     data class Group(val group: FilterGroup) : FilterNode()
 }
 
@@ -114,11 +96,12 @@ data class FilterGroup(
     val children: List<FilterNode> = emptyList(),
 ) {
     companion object {
-        fun empty(): FilterGroup = FilterGroup(
-            id = UUID.randomUUID().toString(),
-            connector = GroupConnector.And,
-            children = emptyList(),
-        )
+        fun empty(): FilterGroup =
+            FilterGroup(
+                id = UUID.randomUUID().toString(),
+                connector = GroupConnector.And,
+                children = emptyList(),
+            )
     }
 }
 
@@ -131,8 +114,7 @@ enum class GroupConnector {
 @Serializable
 data class FilterSpec(
     val id: String = "",
-    @SerialName("table_alias")
-    val tableAlias: String,
+    @SerialName("table_alias") val tableAlias: String,
     val column: String,
     val op: FilterOp,
     val value: FilterValue? = null,
@@ -141,7 +123,9 @@ data class FilterSpec(
 @Serializable(with = FilterValueSerializer::class)
 sealed class FilterValue {
     data class Single(val literal: FilterLiteral) : FilterValue()
+
     data class ListValue(val literals: kotlin.collections.List<FilterLiteral>) : FilterValue()
+
     data class Pair(val first: FilterLiteral, val second: FilterLiteral) : FilterValue()
 }
 
@@ -156,11 +140,7 @@ enum class LiteralKind {
     DateTime,
 }
 
-@Serializable
-data class FilterLiteral(
-    val kind: LiteralKind,
-    val text: String,
-)
+@Serializable data class FilterLiteral(val kind: LiteralKind, val text: String)
 
 @Serializable
 enum class FilterOp {
@@ -194,56 +174,79 @@ enum class ValueKind {
     Pair,
 }
 
-fun FilterOp.valueKind(): ValueKind = when (this) {
-    FilterOp.IsNull, FilterOp.IsNotNull, FilterOp.IsEmpty, FilterOp.IsNotEmpty -> ValueKind.None
-    FilterOp.In, FilterOp.NotIn -> ValueKind.List
-    FilterOp.Between -> ValueKind.Pair
-    else -> ValueKind.Single
-}
+fun FilterOp.valueKind(): ValueKind =
+    when (this) {
+        FilterOp.IsNull,
+        FilterOp.IsNotNull,
+        FilterOp.IsEmpty,
+        FilterOp.IsNotEmpty -> ValueKind.None
+        FilterOp.In,
+        FilterOp.NotIn -> ValueKind.List
+        FilterOp.Between -> ValueKind.Pair
+        else -> ValueKind.Single
+    }
 
 fun FilterOp.needsValue(): Boolean = valueKind() != ValueKind.None
 
-fun FilterOp.sqlOperator(): String? = when (this) {
-    FilterOp.Eq -> "="
-    FilterOp.Ne -> "<>"
-    FilterOp.Gt -> ">"
-    FilterOp.Gte -> ">="
-    FilterOp.Lt -> "<"
-    FilterOp.Lte -> "<="
-    FilterOp.Like -> "LIKE"
-    FilterOp.NotLike -> "NOT LIKE"
-    else -> null
-}
+fun FilterOp.sqlOperator(): String? =
+    when (this) {
+        FilterOp.Eq -> "="
+        FilterOp.Ne -> "<>"
+        FilterOp.Gt -> ">"
+        FilterOp.Gte -> ">="
+        FilterOp.Lt -> "<"
+        FilterOp.Lte -> "<="
+        FilterOp.Like -> "LIKE"
+        FilterOp.NotLike -> "NOT LIKE"
+        else -> null
+    }
 
 sealed class BindValue {
     data class Text(val value: String) : BindValue()
+
     data class Int(val value: Long) : BindValue()
+
     data class Decimal(val value: BigDecimal) : BindValue()
+
     data class Float(val value: Double) : BindValue()
+
     data class Bool(val value: Boolean) : BindValue()
+
     data class Date(val value: LocalDate) : BindValue()
+
     data class DateTime(val value: LocalDateTime) : BindValue()
+
     data object Null : BindValue()
 
     companion object {
         fun fromLiteral(literal: FilterLiteral): Result<BindValue> = runCatching {
             when (literal.kind) {
                 LiteralKind.Text -> BindValue.Text(literal.text)
-                LiteralKind.Int -> BindValue.Int(
-                    literal.text.toLongOrNull()
-                        ?: throw IllegalArgumentException("'${literal.text}' is not a valid integer"),
-                )
-                LiteralKind.Decimal -> BindValue.Decimal(
-                    literal.text.toBigDecimalOrNull()
-                        ?: throw IllegalArgumentException("'${literal.text}' is not a valid decimal"),
-                )
-                LiteralKind.Float -> BindValue.Float(
-                    literal.text.toDoubleOrNull()
-                        ?: throw IllegalArgumentException("'${literal.text}' is not a valid number"),
-                )
+                LiteralKind.Int ->
+                    BindValue.Int(
+                        literal.text.toLongOrNull()
+                            ?: throw IllegalArgumentException(
+                                "'${literal.text}' is not a valid integer"
+                            )
+                    )
+                LiteralKind.Decimal ->
+                    BindValue.Decimal(
+                        literal.text.toBigDecimalOrNull()
+                            ?: throw IllegalArgumentException(
+                                "'${literal.text}' is not a valid decimal"
+                            )
+                    )
+                LiteralKind.Float ->
+                    BindValue.Float(
+                        literal.text.toDoubleOrNull()
+                            ?: throw IllegalArgumentException(
+                                "'${literal.text}' is not a valid number"
+                            )
+                    )
                 LiteralKind.Bool -> BindValue.Bool(parseBoolLiteral(literal.text))
                 LiteralKind.Date -> BindValue.Date(parseDateLiteral(literal.text).getOrThrow())
-                LiteralKind.DateTime -> BindValue.DateTime(parseDateTimeLiteral(literal.text).getOrThrow())
+                LiteralKind.DateTime ->
+                    BindValue.DateTime(parseDateTimeLiteral(literal.text).getOrThrow())
             }
         }
     }
@@ -272,11 +275,16 @@ fun parseDateLiteral(text: String): Result<LocalDate> = runCatching {
 
 fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
     val trimmed = text.trim()
-    val parsers = listOf(
-        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]"),
-        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"),
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]"),
-    )
+    val parsers =
+        listOf(
+            DateTimeFormatter.ofPattern(
+                "yyyy-MM-dd'T'HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]"
+            ),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"),
+            DateTimeFormatter.ofPattern(
+                "yyyy-MM-dd HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]"
+            ),
+        )
     for (formatter in parsers) {
         try {
             return@runCatching LocalDateTime.parse(trimmed, formatter)
@@ -291,7 +299,7 @@ fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
             .toLocalDateTime()
     } catch (_: DateTimeParseException) {
         throw IllegalArgumentException(
-            "'$text' is not a valid datetime; expected YYYY-MM-DDTHH:MM[:SS] or RFC3339",
+            "'$text' is not a valid datetime; expected YYYY-MM-DDTHH:MM[:SS] or RFC3339"
         )
     }
 }
@@ -300,8 +308,7 @@ fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
 data class QueryResult(
     val columns: List<ResultColumn>,
     val rows: List<List<ResultCell>>,
-    @SerialName("row_count")
-    val rowCount: Int,
+    @SerialName("row_count") val rowCount: Int,
     val truncated: Boolean,
     val warnings: List<String>,
 ) {
@@ -316,9 +323,9 @@ data class QueryResult(
 
             for (row in rows) {
                 cellTruncated = cellTruncated || row.any { it.wasTruncated() }
-                val rowBytes = runCatching {
-                    rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size
-                }.getOrDefault(MAX_RESULT_BYTES + 1)
+                val rowBytes =
+                    runCatching { rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size }
+                        .getOrDefault(MAX_RESULT_BYTES + 1)
                 if (encodedBytes + rowBytes > MAX_RESULT_BYTES) {
                     resultTruncated = true
                     break
@@ -348,11 +355,7 @@ data class QueryResult(
 }
 
 @Serializable
-data class ResultColumn(
-    val name: String,
-    @SerialName("data_type")
-    val dataType: String,
-) {
+data class ResultColumn(val name: String, @SerialName("data_type") val dataType: String) {
     companion object {
         fun of(name: String, dataType: String): ResultColumn = ResultColumn(name, dataType)
     }
@@ -362,35 +365,24 @@ data class ResultColumn(
 @OptIn(ExperimentalSerializationApi::class)
 @JsonClassDiscriminator("kind")
 sealed class ResultCell {
-    @Serializable
-    @SerialName("Null")
-    data object Null : ResultCell()
+    @Serializable @SerialName("Null") data object Null : ResultCell()
 
-    @Serializable
-    @SerialName("Bool")
-    data class BoolCell(val value: Boolean) : ResultCell()
+    @Serializable @SerialName("Bool") data class BoolCell(val value: Boolean) : ResultCell()
 
-    @Serializable
-    @SerialName("Integer")
-    data class IntegerCell(val value: Long) : ResultCell()
+    @Serializable @SerialName("Integer") data class IntegerCell(val value: Long) : ResultCell()
 
-    @Serializable
-    @SerialName("Float")
-    data class FloatCell(val value: Double) : ResultCell()
+    @Serializable @SerialName("Float") data class FloatCell(val value: Double) : ResultCell()
 
-    @Serializable
-    @SerialName("Text")
-    data class TextCell(val value: TextValue) : ResultCell()
+    @Serializable @SerialName("Text") data class TextCell(val value: TextValue) : ResultCell()
 
-    @Serializable
-    @SerialName("Binary")
-    data class BinaryCell(val value: BinaryValue) : ResultCell()
+    @Serializable @SerialName("Binary") data class BinaryCell(val value: BinaryValue) : ResultCell()
 
-    fun wasTruncated(): Boolean = when (this) {
-        is TextCell -> value.truncated
-        is BinaryCell -> value.truncated
-        else -> false
-    }
+    fun wasTruncated(): Boolean =
+        when (this) {
+            is TextCell -> value.truncated
+            is BinaryCell -> value.truncated
+            else -> false
+        }
 
     companion object {
         fun text(value: String): ResultCell {
@@ -405,13 +397,16 @@ sealed class ResultCell {
                 BinaryValue(
                     base64 = Base64.getEncoder().encodeToString(clipped),
                     truncated = truncated,
-                ),
+                )
             )
         }
 
         fun nullCell(): ResultCell = Null
+
         fun bool(value: Boolean): ResultCell = BoolCell(value)
+
         fun integer(value: Long): ResultCell = IntegerCell(value)
+
         fun float(value: Double): ResultCell = FloatCell(value)
 
         private fun truncateUtf8(value: String, maxBytes: Int): Pair<String, Boolean> {
@@ -433,51 +428,65 @@ sealed class ResultCell {
     }
 }
 
-@Serializable
-data class TextValue(
-    val text: String,
-    val truncated: Boolean,
-)
+@Serializable data class TextValue(val text: String, val truncated: Boolean)
 
-@Serializable
-data class BinaryValue(
-    val base64: String,
-    val truncated: Boolean,
-)
+@Serializable data class BinaryValue(val base64: String, val truncated: Boolean)
 
-data class CompiledQuery(
-    val sql: String,
-    val params: List<BindValue>,
-)
+data class CompiledQuery(val sql: String, val params: List<BindValue>)
 
 internal object FilterNodeSerializer : KSerializer<FilterNode> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("FilterNode")
 
     override fun serialize(encoder: Encoder, value: FilterNode) {
-        val jsonEncoder = encoder as? JsonEncoder
-            ?: throw SerializationException("FilterNode can only be serialized to JSON")
-        val element = when (value) {
-            is FilterNode.Leaf -> buildJsonObject {
-                put("Leaf", jsonEncoder.json.encodeToJsonElement(FilterSpec.serializer(), value.spec))
+        val jsonEncoder =
+            encoder as? JsonEncoder
+                ?: throw SerializationException("FilterNode can only be serialized to JSON")
+        val element =
+            when (value) {
+                is FilterNode.Leaf ->
+                    buildJsonObject {
+                        put(
+                            "Leaf",
+                            jsonEncoder.json.encodeToJsonElement(
+                                FilterSpec.serializer(),
+                                value.spec,
+                            ),
+                        )
+                    }
+                is FilterNode.Group ->
+                    buildJsonObject {
+                        put(
+                            "Group",
+                            jsonEncoder.json.encodeToJsonElement(
+                                FilterGroup.serializer(),
+                                value.group,
+                            ),
+                        )
+                    }
             }
-            is FilterNode.Group -> buildJsonObject {
-                put("Group", jsonEncoder.json.encodeToJsonElement(FilterGroup.serializer(), value.group))
-            }
-        }
         jsonEncoder.encodeJsonElement(element)
     }
 
     override fun deserialize(decoder: Decoder): FilterNode {
-        val jsonDecoder = decoder as? JsonDecoder
-            ?: throw SerializationException("FilterNode can only be deserialized from JSON")
+        val jsonDecoder =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("FilterNode can only be deserialized from JSON")
         val objectValue = jsonDecoder.decodeJsonElement().jsonObject
         return when {
-            "Leaf" in objectValue -> FilterNode.Leaf(
-                jsonDecoder.json.decodeFromJsonElement(FilterSpec.serializer(), objectValue.getValue("Leaf")),
-            )
-            "Group" in objectValue -> FilterNode.Group(
-                jsonDecoder.json.decodeFromJsonElement(FilterGroup.serializer(), objectValue.getValue("Group")),
-            )
+            "Leaf" in objectValue ->
+                FilterNode.Leaf(
+                    jsonDecoder.json.decodeFromJsonElement(
+                        FilterSpec.serializer(),
+                        objectValue.getValue("Leaf"),
+                    )
+                )
+            "Group" in objectValue ->
+                FilterNode.Group(
+                    jsonDecoder.json.decodeFromJsonElement(
+                        FilterGroup.serializer(),
+                        objectValue.getValue("Group"),
+                    )
+                )
             else -> throw SerializationException("Unknown FilterNode variant: $objectValue")
         }
     }
@@ -487,53 +496,76 @@ internal object FilterValueSerializer : KSerializer<FilterValue> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("FilterValue")
 
     override fun serialize(encoder: Encoder, value: FilterValue) {
-        val jsonEncoder = encoder as? JsonEncoder
-            ?: throw SerializationException("FilterValue can only be serialized to JSON")
-        val element = when (value) {
-            is FilterValue.Single -> buildJsonObject {
-                put("Single", jsonEncoder.json.encodeToJsonElement(FilterLiteral.serializer(), value.literal))
+        val jsonEncoder =
+            encoder as? JsonEncoder
+                ?: throw SerializationException("FilterValue can only be serialized to JSON")
+        val element =
+            when (value) {
+                is FilterValue.Single ->
+                    buildJsonObject {
+                        put(
+                            "Single",
+                            jsonEncoder.json.encodeToJsonElement(
+                                FilterLiteral.serializer(),
+                                value.literal,
+                            ),
+                        )
+                    }
+                is FilterValue.ListValue ->
+                    buildJsonObject {
+                        put(
+                            "List",
+                            JsonArray(
+                                value.literals.map {
+                                    jsonEncoder.json.encodeToJsonElement(
+                                        FilterLiteral.serializer(),
+                                        it,
+                                    )
+                                }
+                            ),
+                        )
+                    }
+                is FilterValue.Pair ->
+                    buildJsonObject {
+                        put(
+                            "Pair",
+                            JsonArray(
+                                listOf(
+                                    jsonEncoder.json.encodeToJsonElement(
+                                        FilterLiteral.serializer(),
+                                        value.first,
+                                    ),
+                                    jsonEncoder.json.encodeToJsonElement(
+                                        FilterLiteral.serializer(),
+                                        value.second,
+                                    ),
+                                )
+                            ),
+                        )
+                    }
             }
-            is FilterValue.ListValue -> buildJsonObject {
-                put(
-                    "List",
-                    JsonArray(
-                        value.literals.map {
-                            jsonEncoder.json.encodeToJsonElement(FilterLiteral.serializer(), it)
-                        },
-                    ),
-                )
-            }
-            is FilterValue.Pair -> buildJsonObject {
-                put(
-                    "Pair",
-                    JsonArray(
-                        listOf(
-                            jsonEncoder.json.encodeToJsonElement(FilterLiteral.serializer(), value.first),
-                            jsonEncoder.json.encodeToJsonElement(FilterLiteral.serializer(), value.second),
-                        ),
-                    ),
-                )
-            }
-        }
         jsonEncoder.encodeJsonElement(element)
     }
 
     override fun deserialize(decoder: Decoder): FilterValue {
-        val jsonDecoder = decoder as? JsonDecoder
-            ?: throw SerializationException("FilterValue can only be deserialized from JSON")
+        val jsonDecoder =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("FilterValue can only be deserialized from JSON")
         val objectValue = jsonDecoder.decodeJsonElement().jsonObject
         return when {
-            "Single" in objectValue -> FilterValue.Single(
-                jsonDecoder.json.decodeFromJsonElement(
-                    FilterLiteral.serializer(),
-                    objectValue.getValue("Single"),
-                ),
-            )
-            "List" in objectValue -> FilterValue.ListValue(
-                objectValue.getValue("List").jsonArray.map {
-                    jsonDecoder.json.decodeFromJsonElement(FilterLiteral.serializer(), it)
-                },
-            )
+            "Single" in objectValue ->
+                FilterValue.Single(
+                    jsonDecoder.json.decodeFromJsonElement(
+                        FilterLiteral.serializer(),
+                        objectValue.getValue("Single"),
+                    )
+                )
+            "List" in objectValue ->
+                FilterValue.ListValue(
+                    objectValue.getValue("List").jsonArray.map {
+                        jsonDecoder.json.decodeFromJsonElement(FilterLiteral.serializer(), it)
+                    }
+                )
             "Pair" in objectValue -> {
                 val pair = objectValue.getValue("Pair").jsonArray
                 require(pair.size == 2) { "Pair filter value must contain exactly two literals" }
@@ -573,8 +605,7 @@ object SafeDbJson {
 
 internal fun JsonElement.asObjectOrNull(): JsonObject? = this as? JsonObject
 
-internal fun JsonObject.stringOrEmpty(key: String): String =
-    get(key)?.jsonPrimitive?.content ?: ""
+internal fun JsonObject.stringOrEmpty(key: String): String = get(key)?.jsonPrimitive?.content ?: ""
 
 internal fun JsonObject.u64OrDefault(key: String, default: Long): Long =
     get(key)?.jsonPrimitive?.content?.toLongOrNull() ?: default

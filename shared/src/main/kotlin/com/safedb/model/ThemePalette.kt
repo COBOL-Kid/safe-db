@@ -3,14 +3,10 @@ package com.safedb.model
 /**
  * A selectable color treatment for the Control Plane design system.
  *
- * Geometry, typography, and component behavior stay fixed across palettes so
- * the app keeps one coherent design language.
+ * Geometry, typography, and component behavior stay fixed across palettes so the app keeps one
+ * coherent design language.
  */
-enum class ThemePalette(
-    val id: String,
-    val label: String,
-    val tagline: String,
-) {
+enum class ThemePalette(val id: String, val label: String, val tagline: String) {
     ControlBlue(
         id = "control-blue",
         label = "Control Blue",
@@ -21,17 +17,12 @@ enum class ThemePalette(
         label = "Signal Teal",
         tagline = "Blue-green steel with a teal signal",
     ),
-    Oxide(
-        id = "oxide",
-        label = "Oxide",
-        tagline = "Warm alloy with a rust signal",
-    ),
+    Oxide(id = "oxide", label = "Oxide", tagline = "Warm alloy with a rust signal"),
     CommandViolet(
         id = "command-violet",
         label = "Command Violet",
         tagline = "Cool slate with a violet signal",
-    ),
-    ;
+    );
 
     companion object {
         val DEFAULT: ThemePalette = ControlBlue

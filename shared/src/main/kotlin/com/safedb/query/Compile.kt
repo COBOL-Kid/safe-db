@@ -23,19 +23,23 @@ private fun compileSpec(
     val selectClause = buildSelectClause(spec, dialect, validatedColumns)
     val fromClause = buildFromClause(spec, dialect)
     val joinClause = buildJoinClause(spec, dialect)
-    val whereClause = when (val result = buildWhereRoot(
-        group = spec.filters,
-        overrides = spec.connectorOverrides,
-        dialect = dialect,
-        params = params,
-        paramIdx = paramIdx,
-    )) {
-        is Outcome.Ok -> {
-            paramIdx = result.value.second
-            result.value.first
+    val whereClause =
+        when (
+            val result =
+                buildWhereRoot(
+                    group = spec.filters,
+                    overrides = spec.connectorOverrides,
+                    dialect = dialect,
+                    params = params,
+                    paramIdx = paramIdx,
+                )
+        ) {
+            is Outcome.Ok -> {
+                paramIdx = result.value.second
+                result.value.first
+            }
+            is Outcome.Err -> return Outcome.err(result.message)
         }
-        is Outcome.Err -> return Outcome.err(result.message)
-    }
     val orderByClause = buildOrderByClause(spec, dialect)
     val groupByClause = buildGroupByClause(spec, dialect)
 

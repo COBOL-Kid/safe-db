@@ -9,10 +9,11 @@ import kotlin.test.assertNull
 class PivotFormulaTest {
     @Test
     fun evaluatesMeasureReferencesWithArithmeticPrecedence() {
-        val result = evaluatePivotFormula(
-            "([revenue] - [cost]) / [revenue]",
-            mapOf("revenue" to BigDecimal("200"), "cost" to BigDecimal("50")),
-        )
+        val result =
+            evaluatePivotFormula(
+                "([revenue] - [cost]) / [revenue]",
+                mapOf("revenue" to BigDecimal("200"), "cost" to BigDecimal("50")),
+            )
 
         assertEquals(BigDecimal("0.75"), result.value?.stripTrailingZeros())
         assertNull(result.error)

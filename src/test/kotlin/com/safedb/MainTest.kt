@@ -9,13 +9,14 @@ class MainTest {
     fun unsupportedPlatformExitsBeforeStartup() {
         var reported = ""
 
-        val exit = assertFailsWith<ExitInvoked> {
-            requireSupportedDesktopPlatform(
-                osName = "Linux",
-                reportError = { reported = it },
-                exit = { throw ExitInvoked(it) },
-            )
-        }
+        val exit =
+            assertFailsWith<ExitInvoked> {
+                requireSupportedDesktopPlatform(
+                    osName = "Linux",
+                    reportError = { reported = it },
+                    exit = { throw ExitInvoked(it) },
+                )
+            }
 
         assertEquals(2, exit.status)
         assertEquals(

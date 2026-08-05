@@ -1,32 +1,26 @@
 package com.safedb.viewmodel
 
 import com.safedb.SchemaSelectionIntent
-import com.safedb.resolveQuerySchemaSelection
-import com.safedb.model.ConnectionDef
-import com.safedb.model.QueryResult
-import com.safedb.model.HistoryEntry
-import com.safedb.model.QuerySpec
-import com.safedb.model.SavedQuery
-import com.safedb.model.Settings
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.exploreSpecHash
+import com.safedb.model.ConnectionDef
+import com.safedb.model.QueryResult
+import com.safedb.model.QuerySpec
+import com.safedb.resolveQuerySchemaSelection
 import com.safedb.service.SafeDbService
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class AppViewModel(
-    service: SafeDbService,
-    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) {
+class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = Dispatchers.IO) {
     private val service = DispatchingSafeDbService(service, ioDispatcher)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -78,22 +72,31 @@ class AppViewModel(
     }
 
     fun lockCredentials() {
-        scope.launch {
-            service.lockCredentials()
-        }
+        scope.launch { service.lockCredentials() }
     }
 
     fun openExplore(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
         _explore.value?.close()
-        _explore.value = ExploreViewModel(createExploreSession(connection, spec, sample), computationScope = scope)
+        _explore.value =
+            ExploreViewModel(
+                createExploreSession(connection, spec, sample),
+                computationScope = scope,
+            )
     }
 
-    fun openExploreRecipe(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult, recipe: ExploreRecipe) {
+    fun openExploreRecipe(
+        connection: ConnectionDef,
+        spec: QuerySpec,
+        sample: QueryResult,
+        recipe: ExploreRecipe,
+    ) {
         _explore.value?.close()
-        _explore.value = ExploreViewModel(
-            createExploreSession(connection, spec, sample),
-            computationScope = scope,
-        ).also { it.requestRecipe(recipe) }
+        _explore.value =
+            ExploreViewModel(
+                    createExploreSession(connection, spec, sample),
+                    computationScope = scope,
+                )
+                .also { it.requestRecipe(recipe) }
     }
 
     fun runRecipe(connection: ConnectionDef, recipe: ExploreRecipe) {
@@ -104,16 +107,16 @@ class AppViewModel(
                 _pendingRecipeRun.value = null
                 return@restoreQueryForConnection
             }
-            _pendingRecipeRun.value = PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
-            query.run(connection.id) { succeeded ->
-                if (!succeeded) _pendingRecipeRun.value = null
-            }
+            _pendingRecipeRun.value =
+                PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
+            query.run(connection.id) { succeeded -> if (!succeeded) _pendingRecipeRun.value = null }
         }
     }
 
     fun completePendingRecipeRun(connection: ConnectionDef, sample: QueryResult, spec: QuerySpec) {
         val pending = _pendingRecipeRun.value ?: return
-        if (pending.connectionId != connection.id || pending.specHash != exploreSpecHash(spec)) return
+        if (pending.connectionId != connection.id || pending.specHash != exploreSpecHash(spec))
+            return
         _pendingRecipeRun.value = null
         openExploreRecipe(connection, spec, sample, pending.recipe)
     }
@@ -133,11 +136,13 @@ class AppViewModel(
         val current = _explore.value ?: return
         if (current.session.connectionId != connection.id) return
         current.close()
-        _explore.value = ExploreViewModel(
-            session = createExploreSession(connection, spec, sample),
-            initialWorkspace = current.workspace,
-            computationScope = scope,
-        ).also { it.inheritRecipeTrackingFrom(current) }
+        _explore.value =
+            ExploreViewModel(
+                    session = createExploreSession(connection, spec, sample),
+                    initialWorkspace = current.workspace,
+                    computationScope = scope,
+                )
+                .also { it.inheritRecipeTrackingFrom(current) }
     }
 
     fun closeExplore() {
@@ -158,7 +163,5 @@ data class PendingRecipeRun(
 )
 
 /** Settle a pending recipe whenever its query fails; risk details remain visible in the builder. */
-internal fun shouldCancelPendingRecipeOnQuerySettle(
-    running: Boolean,
-    hasError: Boolean,
-): Boolean = !running && hasError
+internal fun shouldCancelPendingRecipeOnQuerySettle(running: Boolean, hasError: Boolean): Boolean =
+    !running && hasError

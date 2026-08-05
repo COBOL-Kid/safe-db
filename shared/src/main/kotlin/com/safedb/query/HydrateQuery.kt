@@ -1,12 +1,10 @@
 package com.safedb.query
 
 import com.safedb.model.FilterGroup
-import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
-import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
-import com.safedb.model.GroupSpec
 import com.safedb.model.GroupConnector
+import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
 import com.safedb.model.QuerySpec
 import com.safedb.model.SortSpec
@@ -14,15 +12,25 @@ import com.safedb.model.TableInfo
 
 interface QueryHydrationTarget {
     fun clear()
+
     fun addTable(tableInfo: TableInfo)
+
     val tables: List<AliasRef>
+
     fun toggleColumn(alias: String, column: String)
+
     fun addJoin(join: JoinSpec)
+
     fun setFilters(group: FilterGroup)
+
     fun setConnectorOverrides(map: Map<String, GroupConnector>)
+
     fun setLimit(limit: Int)
+
     fun setDistinct(distinct: Boolean)
+
     fun setSorts(sorts: List<SortSpec>)
+
     fun setGroups(groups: List<GroupSpec>)
 }
 
@@ -52,13 +60,10 @@ private fun normalizeFilterValue(value: FilterValue?, dataType: String): FilterV
     val kind = literalKindForColumn(dataType)
     return when (value) {
         is FilterValue.Single -> FilterValue.Single(value.literal.copy(kind = kind))
-        is FilterValue.ListValue -> FilterValue.ListValue(
-            value.literals.map { it.copy(kind = kind) },
-        )
-        is FilterValue.Pair -> FilterValue.Pair(
-            value.first.copy(kind = kind),
-            value.second.copy(kind = kind),
-        )
+        is FilterValue.ListValue ->
+            FilterValue.ListValue(value.literals.map { it.copy(kind = kind) })
+        is FilterValue.Pair ->
+            FilterValue.Pair(value.first.copy(kind = kind), value.second.copy(kind = kind))
     }
 }
 
@@ -80,8 +85,8 @@ private fun remapFilterGroup(
                             child.spec.copy(
                                 tableAlias = tableAlias,
                                 value = normalizeFilterValue(child.spec.value, columnInfo.dataType),
-                            ),
-                        ),
+                            )
+                        )
                     )
                 }
             }
@@ -154,7 +159,7 @@ fun hydrateQueryFromSpec(
                 leftColumn = join.leftColumn,
                 rightAlias = rightAlias,
                 rightColumn = join.rightColumn,
-            ),
+            )
         )
     }
 
@@ -178,7 +183,7 @@ fun hydrateQueryFromSpec(
             } else {
                 sort.copy(tableAlias = newAlias)
             }
-        },
+        }
     )
 
     var droppedGroups = 0
@@ -192,7 +197,7 @@ fun hydrateQueryFromSpec(
             } else {
                 group.copy(tableAlias = newAlias)
             }
-        },
+        }
     )
 
     return HydrationWarnings(
@@ -212,9 +217,7 @@ fun formatHydrationWarning(warnings: HydrationWarnings): String? {
     }
     if (warnings.droppedColumns.isNotEmpty()) {
         val count = warnings.droppedColumns.size
-        parts.add(
-            "$count selected column${if (count != 1) "s" else ""} could not be restored",
-        )
+        parts.add("$count selected column${if (count != 1) "s" else ""} could not be restored")
     }
     if (warnings.droppedJoins > 0) {
         val count = warnings.droppedJoins

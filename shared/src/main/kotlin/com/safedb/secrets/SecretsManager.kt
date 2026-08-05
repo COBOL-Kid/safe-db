@@ -3,23 +3,19 @@ package com.safedb.secrets
 import com.safedb.adapter.SERVICE_NAME
 import com.safedb.model.ConnectionDef
 import com.safedb.platform.DesktopPlatform
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicInteger
 
 const val ENV_BACKEND = "SAFEDB_KEYCHAIN_BACKEND"
 
-enum class RequestedBackend { Auto, Disabled, Protected }
+enum class RequestedBackend {
+    Auto,
+    Disabled,
+    Protected,
+}
 
 @Serializable
-private data class BoundCredential(
-    val version: Int,
-    val fingerprint: String,
-    val password: String,
-)
+private data class BoundCredential(val version: Int, val fingerprint: String, val password: String)
 
 object SecretsManager {
     private val json = Json { ignoreUnknownKeys = true }
@@ -40,8 +36,10 @@ object SecretsManager {
         return when (raw.lowercase()) {
             "disabled" -> RequestedBackend.Disabled
             "protected" -> RequestedBackend.Protected
-            "auto", "" -> RequestedBackend.Auto
-            "keychain", "legacy" -> RequestedBackend.Auto
+            "auto",
+            "" -> RequestedBackend.Auto
+            "keychain",
+            "legacy" -> RequestedBackend.Auto
             else -> RequestedBackend.Auto
         }
     }
@@ -59,36 +57,43 @@ object SecretsManager {
 
     private fun initStore(envValue: String?, platformResolver: () -> DesktopPlatform) {
         storeReadCountForTest = 0
-        activeStore = when (parseRequestedBackendFrom(envValue)) {
-            RequestedBackend.Disabled -> {
-                println("WARN: $ENV_BACKEND=disabled: credentials are held in process memory only")
-                DisabledMemoryStore()
+        activeStore =
+            when (parseRequestedBackendFrom(envValue)) {
+                RequestedBackend.Disabled -> {
+                    println(
+                        "WARN: $ENV_BACKEND=disabled: credentials are held in process memory only"
+                    )
+                    DisabledMemoryStore()
+                }
+                RequestedBackend.Protected,
+                RequestedBackend.Auto -> selectStore(platformResolver())
             }
-            RequestedBackend.Protected,
-            RequestedBackend.Auto,
-            -> selectStore(platformResolver())
-        }
-        activeLabel = when (activeStore) {
-            is DisabledMemoryStore -> "disabled"
-            is MacCredentialStore -> "protected"
-            is WindowsCredentialStore -> "windows"
-            else -> "unknown"
-        }
+        activeLabel =
+            when (activeStore) {
+                is DisabledMemoryStore -> "disabled"
+                is MacCredentialStore -> "protected"
+                is WindowsCredentialStore -> "windows"
+                else -> "unknown"
+            }
     }
 
-    private fun selectStore(platform: DesktopPlatform): CredentialStore = when (platform) {
-        DesktopPlatform.MacOs -> MacCredentialStore.createOrFallback()
-        DesktopPlatform.Windows -> WindowsCredentialStore.createOrFallback()
-    }
+    private fun selectStore(platform: DesktopPlatform): CredentialStore =
+        when (platform) {
+            DesktopPlatform.MacOs -> MacCredentialStore.createOrFallback()
+            DesktopPlatform.Windows -> WindowsCredentialStore.createOrFallback()
+        }
 
     fun passwordForConnection(connectionId: String): Result<String> {
-        CredentialSession.get(connectionId)?.let { return Result.success(it) }
+        CredentialSession.get(connectionId)?.let {
+            return Result.success(it)
+        }
         return when (val password = readFromStore(connectionId)) {
-            null -> Result.failure(
-                IllegalStateException(
-                    "Password not found for this connection. Delete and add the connection again to store the password.",
-                ),
-            )
+            null ->
+                Result.failure(
+                    IllegalStateException(
+                        "Password not found for this connection. Delete and add the connection again to store the password."
+                    )
+                )
             else -> {
                 CredentialSession.put(connectionId, password)
                 Result.success(password)
@@ -98,45 +103,59 @@ object SecretsManager {
 
     fun passwordForDefinition(def: ConnectionDef): Result<String> {
         val cacheKey = "${def.id}:${def.credentialFingerprint()}"
-        CredentialSession.get(cacheKey)?.let { return Result.success(it) }
-        val raw = readFromStore(def.id) ?: return Result.failure(
-            IllegalStateException(
-                "Password not found for this connection. Delete and add the connection again to store the password.",
-            ),
-        )
-        val record = runCatching { json.decodeFromString<BoundCredential>(raw) }.getOrElse {
-            return Result.failure(
-                IllegalStateException(
-                    "This credential predates endpoint binding. Delete and add the connection again before use.",
-                ),
-            )
+        CredentialSession.get(cacheKey)?.let {
+            return Result.success(it)
         }
+        val raw =
+            readFromStore(def.id)
+                ?: return Result.failure(
+                    IllegalStateException(
+                        "Password not found for this connection. Delete and add the connection again to store the password."
+                    )
+                )
+        val record =
+            runCatching { json.decodeFromString<BoundCredential>(raw) }
+                .getOrElse {
+                    return Result.failure(
+                        IllegalStateException(
+                            "This credential predates endpoint binding. Delete and add the connection again before use."
+                        )
+                    )
+                }
         if (record.version != 1 || record.fingerprint != def.credentialFingerprint()) {
             return Result.failure(
                 IllegalStateException(
-                    "Stored credentials do not match this connection endpoint or transport configuration. Delete and add the connection again.",
-                ),
+                    "Stored credentials do not match this connection endpoint or transport configuration. Delete and add the connection again."
+                )
             )
         }
         CredentialSession.put(cacheKey, record.password)
         return Result.success(record.password)
     }
 
-    fun savePasswordForDefinition(def: ConnectionDef, password: String): Result<Unit> = runCatching {
-        val record = BoundCredential(1, def.credentialFingerprint(), password)
-        writeToStore(def.id, json.encodeToString(BoundCredential.serializer(), record))
-        CredentialSession.invalidate(def.id)
-        CredentialSession.put("${def.id}:${def.credentialFingerprint()}", password)
-    }.mapError(::formatSaveCredentialError)
+    fun savePasswordForDefinition(def: ConnectionDef, password: String): Result<Unit> =
+        runCatching {
+                val record = BoundCredential(1, def.credentialFingerprint(), password)
+                writeToStore(def.id, json.encodeToString(BoundCredential.serializer(), record))
+                CredentialSession.invalidate(def.id)
+                CredentialSession.put("${def.id}:${def.credentialFingerprint()}", password)
+            }
+            .mapError(::formatSaveCredentialError)
 
-    fun savePassword(connectionId: String, password: String): Result<Unit> = runCatching {
-        writeToStore(connectionId, password)
-        CredentialSession.put(connectionId, password)
-    }.mapError(::formatSaveCredentialError)
+    fun savePassword(connectionId: String, password: String): Result<Unit> =
+        runCatching {
+                writeToStore(connectionId, password)
+                CredentialSession.put(connectionId, password)
+            }
+            .mapError(::formatSaveCredentialError)
 
     fun getPassword(connectionId: String): Result<String?> {
-        CredentialSession.get(connectionId)?.let { return Result.success(it) }
-        return Result.success(readFromStore(connectionId)?.also { CredentialSession.put(connectionId, it) })
+        CredentialSession.get(connectionId)?.let {
+            return Result.success(it)
+        }
+        return Result.success(
+            readFromStore(connectionId)?.also { CredentialSession.put(connectionId, it) }
+        )
     }
 
     fun deletePassword(connectionId: String): Result<Unit> = runCatching {
@@ -176,4 +195,7 @@ object SecretsManager {
 }
 
 private fun <T> Result<T>.mapError(transform: (Throwable) -> String): Result<T> =
-    fold(onSuccess = { Result.success(it) }, onFailure = { Result.failure(IllegalStateException(transform(it))) })
+    fold(
+        onSuccess = { Result.success(it) },
+        onFailure = { Result.failure(IllegalStateException(transform(it))) },
+    )

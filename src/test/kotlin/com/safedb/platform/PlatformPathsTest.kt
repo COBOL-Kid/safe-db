@@ -9,9 +9,10 @@ import kotlin.test.assertFailsWith
 class PlatformPathsTest {
     @Test
     fun rejectsUnsupportedPlatformBeforeResolvingADataPath() {
-        val error = assertFailsWith<UnsupportedDesktopPlatformException> {
-            DataDirectory.baseDir(PlatformEnvironment("Linux", "/home/test"))
-        }
+        val error =
+            assertFailsWith<UnsupportedDesktopPlatformException> {
+                DataDirectory.baseDir(PlatformEnvironment("Linux", "/home/test"))
+            }
         assertEquals(
             "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
             error.message,
@@ -31,7 +32,11 @@ class PlatformPathsTest {
         assertEquals(
             Path.of("C:/Users/test/AppData/Roaming"),
             DataDirectory.baseDir(
-                PlatformEnvironment("Windows 11", "C:/Users/test", appData = "C:/Users/test/AppData/Roaming"),
+                PlatformEnvironment(
+                    "Windows 11",
+                    "C:/Users/test",
+                    appData = "C:/Users/test/AppData/Roaming",
+                )
             ),
         )
     }

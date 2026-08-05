@@ -23,12 +23,13 @@ fun main(args: Array<String>) {
     }
     SecretsManager.initStore(platform = platform)
     val dataDir = LegacyDataImport.resolveDataDir()
-    val service = SafeDbServiceImpl(
-        configStore = ConfigStore.new(dataDir),
-        queryStore = QueryStore.new(dataDir),
-        settingsStore = SettingsStore.new(dataDir),
-        recipeStore = RecipeStore.new(dataDir),
-    )
+    val service =
+        SafeDbServiceImpl(
+            configStore = ConfigStore.new(dataDir),
+            queryStore = QueryStore.new(dataDir),
+            settingsStore = SettingsStore.new(dataDir),
+            recipeStore = RecipeStore.new(dataDir),
+        )
     runApp(AppState(service))
 }
 
@@ -36,9 +37,10 @@ internal fun requireSupportedDesktopPlatform(
     osName: String = System.getProperty("os.name").orEmpty(),
     reportError: (String) -> Unit = System.err::println,
     exit: (Int) -> Nothing = ::exitProcess,
-): DesktopPlatform = try {
-    DesktopPlatform.resolve(osName)
-} catch (error: UnsupportedDesktopPlatformException) {
-    reportError("safe-db: ${error.message}")
-    exit(2)
-}
+): DesktopPlatform =
+    try {
+        DesktopPlatform.resolve(osName)
+    } catch (error: UnsupportedDesktopPlatformException) {
+        reportError("safe-db: ${error.message}")
+        exit(2)
+    }

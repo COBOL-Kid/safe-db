@@ -47,18 +47,22 @@ class ConnectionFormStateTest {
         assertTrue(
             transportOptionsFor(Dialect.Mssql)
                 .first { it.value == TransportSecurityMode.EncryptOnly }
-                .description.contains("does not verify"),
+                .description
+                .contains("does not verify")
         )
     }
 
     @Test
     fun legacyTransportModesDisplaySafelyWithoutRewritingStoredValue() {
-        val sqlServer = ConnectionFormState(
-            sampleConnection().copy(
-                dialect = Dialect.Mssql,
-                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyCa, caPem = "ca"),
-            ),
-        )
+        val sqlServer =
+            ConnectionFormState(
+                sampleConnection()
+                    .copy(
+                        dialect = Dialect.Mssql,
+                        transportSecurity =
+                            TransportSecurity(TransportSecurityMode.VerifyCa, caPem = "ca"),
+                    )
+            )
         assertEquals(
             TransportSecurityMode.VerifyIdentity,
             displayedTransportMode(sqlServer.dialect, sqlServer.transportMode),
@@ -66,15 +70,18 @@ class ConnectionFormStateTest {
         assertEquals(TransportSecurityMode.VerifyCa, sqlServer.buildDef().transportSecurity.mode)
         assertEquals("ca", sqlServer.buildDef().transportSecurity.caPem)
 
-        val oracle = ConnectionFormState(
-            sampleConnection().copy(
-                dialect = Dialect.Oracle,
-                transportSecurity = TransportSecurity(
-                    TransportSecurityMode.EncryptOnly,
-                    oracleWalletLocation = "/wallet",
-                ),
-            ),
-        )
+        val oracle =
+            ConnectionFormState(
+                sampleConnection()
+                    .copy(
+                        dialect = Dialect.Oracle,
+                        transportSecurity =
+                            TransportSecurity(
+                                TransportSecurityMode.EncryptOnly,
+                                oracleWalletLocation = "/wallet",
+                            ),
+                    )
+            )
         assertEquals(
             TransportSecurityMode.VerifyCa,
             displayedTransportMode(oracle.dialect, oracle.transportMode),
@@ -105,13 +112,16 @@ class ConnectionFormStateTest {
 
     @Test
     fun loadingProfileDoesNotRewriteLegacyHiddenTransportFields() {
-        val original = sampleConnection().copy(
-            transportSecurity = TransportSecurity(
-                TransportSecurityMode.EncryptOnly,
-                caPem = "legacy-unused-ca",
-                oracleWalletLocation = "/legacy-unused-wallet",
-            ),
-        )
+        val original =
+            sampleConnection()
+                .copy(
+                    transportSecurity =
+                        TransportSecurity(
+                            TransportSecurityMode.EncryptOnly,
+                            caPem = "legacy-unused-ca",
+                            oracleWalletLocation = "/legacy-unused-wallet",
+                        )
+                )
         val state = ConnectionFormState(original)
 
         assertEquals(original.transportSecurity, state.buildDef().transportSecurity)
@@ -257,13 +267,15 @@ class ConnectionFormStateTest {
 
     @Test
     fun applyingGeneratedOracleStringKeepsTheSavedUsernameAndPassword() {
-        val original = sampleConnection().copy(
-            dialect = Dialect.Oracle,
-            port = 1521,
-            database = "service",
-            transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
-            driverProperties = emptyList(),
-        )
+        val original =
+            sampleConnection()
+                .copy(
+                    dialect = Dialect.Oracle,
+                    port = 1521,
+                    database = "service",
+                    transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
+                    driverProperties = emptyList(),
+                )
         val state = ConnectionFormState(original)
 
         state.applyParsedInput()
@@ -313,15 +325,16 @@ class ConnectionFormStateTest {
         assertNull(state.validateForm())
     }
 
-    private fun sampleConnection() = ConnectionDef(
-        id = "c1",
-        name = "Production Replica",
-        dialect = Dialect.Postgres,
-        host = "db.example.com",
-        port = 5432,
-        database = "app",
-        username = "readonly",
-        transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
-        driverProperties = listOf(DriverProperty("applicationName", "Safe-DB")),
-    )
+    private fun sampleConnection() =
+        ConnectionDef(
+            id = "c1",
+            name = "Production Replica",
+            dialect = Dialect.Postgres,
+            host = "db.example.com",
+            port = 5432,
+            database = "app",
+            username = "readonly",
+            transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+            driverProperties = listOf(DriverProperty("applicationName", "Safe-DB")),
+        )
 }

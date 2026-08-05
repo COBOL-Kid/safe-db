@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
@@ -36,10 +35,9 @@ import com.safedb.AppRoute
 import com.safedb.model.HistoryEntry
 import com.safedb.model.SavedQuery
 import com.safedb.ui.components.AppCard
+import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.EmptyState
-import com.safedb.ui.components.HoverRevealActions
-import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.PromptDialog
@@ -75,9 +73,7 @@ fun HistoryScreen(
         message = "Clear all query history? This cannot be undone.",
         destructive = true,
         confirmLabel = "Clear",
-        onConfirm = {
-            viewModel.history.clear { showClearConfirm = false }
-        },
+        onConfirm = { viewModel.history.clear { showClearConfirm = false } },
         onCancel = { showClearConfirm = false },
     )
 
@@ -98,7 +94,7 @@ fun HistoryScreen(
                     connectionId = entry.connectionId,
                     spec = entry.spec,
                     createdAt = Instant.now().epochSecond.toString(),
-                ),
+                )
             ) {
                 showSavePrompt = false
                 saveEntry = null
@@ -112,15 +108,19 @@ fun HistoryScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SafeDbTheme.colors.workspaceHeader)
-                .padding(horizontal = 32.dp, vertical = 20.dp),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(SafeDbTheme.colors.workspaceHeader)
+                    .padding(horizontal = 32.dp, vertical = 20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text("History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "History",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     "Your recent and saved queries.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -129,9 +129,7 @@ fun HistoryScreen(
                 )
             }
             if (entries.isNotEmpty()) {
-                SecondaryButton(onClick = { showClearConfirm = true }) {
-                    Text("Clear History")
-                }
+                SecondaryButton(onClick = { showClearConfirm = true }) { Text("Clear History") }
             }
         }
 
@@ -147,51 +145,46 @@ fun HistoryScreen(
         }
 
         when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            entries.isEmpty() -> EmptyState(
-                icon = Icons.Filled.History,
-                title = "No query history yet",
-                subtitle = "Run your first query to see it here.",
-            ) {
-                PrimaryButton(onClick = { onNavigate(com.safedb.AppRoute.Builder) }) {
-                    Text("Build a Query")
+            loading ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
-            }
-            else -> LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(entries, key = { it.id }) { entry ->
-                    HistoryEntryCard(
-                        entry = entry,
-                        onRerun = { onRerun(entry) },
-                        onSave = {
-                            saveEntry = entry
-                            saveQueryName = "${entry.connectionName} query"
-                            showSavePrompt = true
-                        },
-                    )
+            entries.isEmpty() ->
+                EmptyState(
+                    icon = Icons.Filled.History,
+                    title = "No query history yet",
+                    subtitle = "Run your first query to see it here.",
+                ) {
+                    PrimaryButton(onClick = { onNavigate(com.safedb.AppRoute.Builder) }) {
+                        Text("Build a Query")
+                    }
                 }
-            }
+            else ->
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(entries, key = { it.id }) { entry ->
+                        HistoryEntryCard(
+                            entry = entry,
+                            onRerun = { onRerun(entry) },
+                            onSave = {
+                                saveEntry = entry
+                                saveQueryName = "${entry.connectionName} query"
+                                showSavePrompt = true
+                            },
+                        )
+                    }
+                }
         }
     }
 }
 
 @Composable
-private fun HistoryEntryCard(
-    entry: HistoryEntry,
-    onRerun: () -> Unit,
-    onSave: () -> Unit,
-) {
+private fun HistoryEntryCard(entry: HistoryEntry, onRerun: () -> Unit, onSave: () -> Unit) {
     AppCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
@@ -200,10 +193,16 @@ private fun HistoryEntryCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(entry.connectionName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        entry.connectionName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     StatusChip(
                         text = if (entry.error != null) "failed" else "${entry.rowCount} rows",
-                        kind = if (entry.error != null) StatusChipKind.ERROR else StatusChipKind.SUCCESS,
+                        kind =
+                            if (entry.error != null) StatusChipKind.ERROR
+                            else StatusChipKind.SUCCESS,
                     )
                     Text(
                         formatTime(entry.timestamp),
@@ -246,7 +245,11 @@ private fun HistoryEntryCard(
                     }
                 }
                 PrimaryButton(onClick = onRerun) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
                     Text("Rerun", modifier = Modifier.padding(start = 4.dp))
                 }
             }

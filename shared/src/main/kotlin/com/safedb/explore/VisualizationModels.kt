@@ -70,20 +70,22 @@ data class VisualizationSort(
     val dir: SortDir = SortDir.Desc,
 )
 
-private fun visualizationMeasureLabel(fn: MeasureFn, sourceColumn: String?): String = when (fn) {
-    MeasureFn.Count -> if (sourceColumn == null) "Count" else "Count ${displayColumnLabel(sourceColumn)}"
-    MeasureFn.CountNumbers -> "Count numbers ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.CountDistinct -> "Distinct ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.Sum -> "Sum ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.Avg -> "Average ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.Min -> "Minimum ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.Max -> "Maximum ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.Product -> "Product ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.StdDev -> "StdDev ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.StdDevPopulation -> "StdDevP ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.Variance -> "Variance ${displayColumnLabel(sourceColumn.orEmpty())}"
-    MeasureFn.VariancePopulation -> "VarianceP ${displayColumnLabel(sourceColumn.orEmpty())}"
-}.trim()
+private fun visualizationMeasureLabel(fn: MeasureFn, sourceColumn: String?): String =
+    when (fn) {
+        MeasureFn.Count ->
+            if (sourceColumn == null) "Count" else "Count ${displayColumnLabel(sourceColumn)}"
+        MeasureFn.CountNumbers -> "Count numbers ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.CountDistinct -> "Distinct ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.Sum -> "Sum ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.Avg -> "Average ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.Min -> "Minimum ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.Max -> "Maximum ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.Product -> "Product ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.StdDev -> "StdDev ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.StdDevPopulation -> "StdDevP ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.Variance -> "Variance ${displayColumnLabel(sourceColumn.orEmpty())}"
+        MeasureFn.VariancePopulation -> "VarianceP ${displayColumnLabel(sourceColumn.orEmpty())}"
+    }.trim()
 
 @Serializable
 enum class VisualizationSortTarget {
@@ -114,7 +116,8 @@ data class VisualizationPreview(
     val blockingMessage: String? = null,
     val exportResult: QueryResult? = null,
 ) {
-    val ready: Boolean get() = blockingMessage == null && marks.isNotEmpty()
+    val ready: Boolean
+        get() = blockingMessage == null && marks.isNotEmpty()
 }
 
 data class VisualizationMark(
@@ -132,7 +135,4 @@ data class VisualizationMark(
     val sourceRowIndices: List<Int>,
 )
 
-data class VisualizationSeries(
-    val key: String,
-    val label: String,
-)
+data class VisualizationSeries(val key: String, val label: String)

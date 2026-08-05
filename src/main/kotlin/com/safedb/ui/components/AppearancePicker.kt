@@ -40,22 +40,21 @@ import com.safedb.ui.theme.darkScheme
 import com.safedb.ui.theme.lightScheme
 
 @Composable
-fun ModeToggle(
-    isDark: Boolean,
-    onSelect: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun ModeToggle(isDark: Boolean, onSelect: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier
-            .border(1.dp, MaterialTheme.colorScheme.outline, CardShape)
-            .padding(2.dp),
+        modifier =
+            modifier.border(1.dp, MaterialTheme.colorScheme.outline, CardShape).padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         ModeSegment("Light", selected = !isDark, onClick = { onSelect(false) }) {
             Icon(Icons.Filled.WbSunny, contentDescription = null, modifier = Modifier.size(14.dp))
         }
         ModeSegment("Dark", selected = isDark, onClick = { onSelect(true) }) {
-            Icon(Icons.Outlined.DarkMode, contentDescription = null, modifier = Modifier.size(14.dp))
+            Icon(
+                Icons.Outlined.DarkMode,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+            )
         }
     }
 }
@@ -72,11 +71,12 @@ private fun ModeSegment(
         onClick,
         shape = ChipShape,
         color = if (selected) SafeDbTheme.colors.accentContainer else Color.Transparent,
-        contentColor = if (selected) {
-            SafeDbTheme.colors.onAccentContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
+        contentColor =
+            if (selected) {
+                SafeDbTheme.colors.onAccentContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -117,21 +117,24 @@ private fun ColorSchemeRow(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val borderColor = when {
-        selected -> SafeDbTheme.colors.actionPrimary
-        hovered -> MaterialTheme.colorScheme.onSurfaceVariant
-        else -> MaterialTheme.colorScheme.outlineVariant
-    }
+    val borderColor =
+        when {
+            selected -> SafeDbTheme.colors.actionPrimary
+            hovered -> MaterialTheme.colorScheme.onSurfaceVariant
+            else -> MaterialTheme.colorScheme.outlineVariant
+        }
     Surface(
         selected,
         onClick,
         interactionSource = interactionSource,
-        modifier = Modifier
-            .fillMaxWidth()
-            .hoverable(interactionSource)
-            .semantics { this.selected = selected },
+        modifier =
+            Modifier.fillMaxWidth().hoverable(interactionSource).semantics {
+                this.selected = selected
+            },
         shape = CardShape,
-        color = if (selected) SafeDbTheme.colors.accentContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color =
+            if (selected) SafeDbTheme.colors.accentContainer
+            else MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, borderColor),
     ) {
         Row(
@@ -145,11 +148,12 @@ private fun ColorSchemeRow(
                     palette.label,
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (selected) {
-                        SafeDbTheme.colors.onAccentContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
+                    color =
+                        if (selected) {
+                            SafeDbTheme.colors.onAccentContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                 )
                 Text(
                     palette.tagline,
@@ -171,45 +175,39 @@ private fun ColorSchemeRow(
 
 @Composable
 private fun ColorSchemeSwatch(palette: ThemePalette, isDark: Boolean) {
-    val resolved = remember(palette, isDark) {
-        if (isDark) darkScheme(palette) else lightScheme(palette)
-    }
+    val resolved =
+        remember(palette, isDark) { if (isDark) darkScheme(palette) else lightScheme(palette) }
     val material = resolved.first
     val colors = resolved.second
     Row(
-        modifier = Modifier
-            .size(width = 54.dp, height = 34.dp)
-            .background(colors.workspaceBackground, CardShape)
-            .border(1.dp, material.outline, CardShape),
+        modifier =
+            Modifier.size(width = 54.dp, height = 34.dp)
+                .background(colors.workspaceBackground, CardShape)
+                .border(1.dp, material.outline, CardShape)
     ) {
         Box(
-            modifier = Modifier
-                .size(width = 12.dp, height = 34.dp)
-                .background(colors.navigationBackground),
+            modifier =
+                Modifier.size(width = 12.dp, height = 34.dp).background(colors.navigationBackground)
         )
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(4.dp),
+            modifier = Modifier.weight(1f).padding(4.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .background(colors.workspaceHeader, ChipShape),
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .height(6.dp)
+                        .background(colors.workspaceHeader, ChipShape)
             )
             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(12.dp)
-                        .background(material.surface, ChipShape),
+                    modifier =
+                        Modifier.weight(1f).height(12.dp).background(material.surface, ChipShape)
                 )
                 Box(
-                    modifier = Modifier
-                        .size(width = 10.dp, height = 12.dp)
-                        .background(colors.actionPrimary, ChipShape),
+                    modifier =
+                        Modifier.size(width = 10.dp, height = 12.dp)
+                            .background(colors.actionPrimary, ChipShape)
                 )
             }
         }

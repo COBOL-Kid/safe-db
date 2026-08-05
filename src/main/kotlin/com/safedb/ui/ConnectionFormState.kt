@@ -24,47 +24,55 @@ data class DriverPropertyDraft(
     val value: String = "",
 )
 
-class ConnectionFormState(
-    val original: ConnectionDef? = null,
-) {
+class ConnectionFormState(val original: ConnectionDef? = null) {
     val connectionId: String = original?.id ?: UUID.randomUUID().toString()
     val isEditing: Boolean = original != null
 
     var connectionString by mutableStateOf(original?.let(::formatConnectionString).orEmpty())
     var parseError by mutableStateOf<String?>(null)
         private set
+
     var parseWarnings by mutableStateOf<List<String>>(emptyList())
         private set
+
     var transportOverridden by mutableStateOf(original != null)
         private set
+
     private var transportSettingsChanged = false
     private var portIsAuto by mutableStateOf(original == null)
 
     var name by mutableStateOf(original?.name.orEmpty())
     var dialect by mutableStateOf(original?.dialect ?: Dialect.Postgres)
         private set
+
     var host by mutableStateOf(original?.host ?: "localhost")
         private set
+
     var port by mutableStateOf(original?.port ?: 5432)
         private set
+
     var database by mutableStateOf(original?.database.orEmpty())
     var username by mutableStateOf(original?.username.orEmpty())
     var password by mutableStateOf("")
     var passwordChangeEnabled by mutableStateOf(original == null)
         private set
+
     var showPassword by mutableStateOf(false)
-    var transportMode by mutableStateOf(
-        original?.transportSecurity?.mode ?: TransportSecurityMode.Disabled,
-    )
+    var transportMode by
+        mutableStateOf(original?.transportSecurity?.mode ?: TransportSecurityMode.Disabled)
     var caPem by mutableStateOf(original?.transportSecurity?.caPem.orEmpty())
-    var oracleWalletLocation by mutableStateOf(
-        original?.transportSecurity?.oracleWalletLocation.orEmpty(),
-    )
+    var oracleWalletLocation by
+        mutableStateOf(original?.transportSecurity?.oracleWalletLocation.orEmpty())
         private set
 
-    val driverProperties = mutableStateListOf<DriverPropertyDraft>().apply {
-        addAll(original?.driverProperties.orEmpty().map { DriverPropertyDraft(name = it.name, value = it.value) })
-    }
+    val driverProperties =
+        mutableStateListOf<DriverPropertyDraft>().apply {
+            addAll(
+                original?.driverProperties.orEmpty().map {
+                    DriverPropertyDraft(name = it.name, value = it.value)
+                }
+            )
+        }
 
     var testing by mutableStateOf(false)
     var saving by mutableStateOf(false)
@@ -104,10 +112,16 @@ class ConnectionFormState(
             transportSettingsChanged = true
             transportOverridden = false
             driverProperties.clear()
-            driverProperties.addAll(parsed.driverProperties.map { DriverPropertyDraft(name = it.name, value = it.value) })
-            parseWarnings = parsed.warnings + listOfNotNull(
-                transportCompatibilityWarning(parsed.dialect, parsed.transportSecurity.mode),
+            driverProperties.addAll(
+                parsed.driverProperties.map {
+                    DriverPropertyDraft(name = it.name, value = it.value)
+                }
             )
+            parseWarnings =
+                parsed.warnings +
+                    listOfNotNull(
+                        transportCompatibilityWarning(parsed.dialect, parsed.transportSecurity.mode)
+                    )
             connectionString = parsed.sanitizedInput
         } catch (error: ConnectionStringParseError) {
             parseError = error.message
@@ -211,20 +225,24 @@ class ConnectionFormState(
 
     fun buildDef(): ConnectionDef {
         val preserveLoadedTransport = original != null && !transportSettingsChanged
-        val persistedCa = if (preserveLoadedTransport) {
-            original.transportSecurity.caPem
-        } else if (supportsConnectionCa(dialect, transportMode)) {
-            caPem.trim().ifEmpty { null }
-        } else {
-            null
-        }
-        val persistedWallet = if (preserveLoadedTransport) {
-            original.transportSecurity.oracleWalletLocation
-        } else if (dialect == Dialect.Oracle && transportMode != TransportSecurityMode.Disabled) {
-            oracleWalletLocation.trim().ifEmpty { null }
-        } else {
-            null
-        }
+        val persistedCa =
+            if (preserveLoadedTransport) {
+                original.transportSecurity.caPem
+            } else if (supportsConnectionCa(dialect, transportMode)) {
+                caPem.trim().ifEmpty { null }
+            } else {
+                null
+            }
+        val persistedWallet =
+            if (preserveLoadedTransport) {
+                original.transportSecurity.oracleWalletLocation
+            } else if (
+                dialect == Dialect.Oracle && transportMode != TransportSecurityMode.Disabled
+            ) {
+                oracleWalletLocation.trim().ifEmpty { null }
+            } else {
+                null
+            }
         return ConnectionDef(
             id = connectionId,
             name = name.trim().ifEmpty { "$dialect ${host.trim()}:$port" },
@@ -233,12 +251,13 @@ class ConnectionFormState(
             port = port,
             database = database.trim(),
             username = username.trim(),
-            transportSecurity = TransportSecurity(
-                mode = transportMode,
-                caPem = persistedCa,
-                oracleWalletLocation = persistedWallet,
-                legacyImplicit = false,
-            ),
+            transportSecurity =
+                TransportSecurity(
+                    mode = transportMode,
+                    caPem = persistedCa,
+                    oracleWalletLocation = persistedWallet,
+                    legacyImplicit = false,
+                ),
             driverProperties = driverProperties.map { DriverProperty(it.name.trim(), it.value) },
         )
     }
@@ -249,23 +268,29 @@ class ConnectionFormState(
     fun passwordForOperation(): String? =
         if (!isEditing || passwordChangeEnabled) password else null
 
-    fun driverPropertyError(): String? = validateDriverProperties(
-        dialect,
-        driverProperties.map { DriverProperty(it.name.trim(), it.value) },
-    ).exceptionOrNull()?.message
+    fun driverPropertyError(): String? =
+        validateDriverProperties(
+                dialect,
+                driverProperties.map { DriverProperty(it.name.trim(), it.value) },
+            )
+            .exceptionOrNull()
+            ?.message
 
     fun validateForm(): String? {
         if (host.trim().isEmpty()) return "Host is required"
         if (database.trim().isEmpty()) return "Database is required"
         if (username.trim().isEmpty()) return "Username is required"
         if (port !in 1..65535) return "Port must be between 1 and 65535"
-        if (dialect == Dialect.Oracle &&
-            transportMode != TransportSecurityMode.Disabled &&
-            oracleWalletLocation.trim().isEmpty()
+        if (
+            dialect == Dialect.Oracle &&
+                transportMode != TransportSecurityMode.Disabled &&
+                oracleWalletLocation.trim().isEmpty()
         ) {
             return "Oracle TCPS requires a wallet location"
         }
-        driverPropertyError()?.let { return it }
+        driverPropertyError()?.let {
+            return it
+        }
         if (isEditing && credentialMaterialChanged() && !passwordChangeEnabled) {
             return "Connection or driver parameter changes require the saved password to be changed or re-entered"
         }

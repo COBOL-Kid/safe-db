@@ -1,7 +1,7 @@
 package com.safedb.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -35,11 +35,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.safedb.explore.PivotFilter
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
-import com.safedb.model.QueryResult
+import com.safedb.explore.PivotFilter
 import com.safedb.model.ConnectionDef
+import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
@@ -67,15 +67,17 @@ fun ExploreWindowContent(
 ) {
     val session = viewModel.session
     val preview = viewModel.preview
-    val activePreviewLoading = when (viewModel.workspace.activeMode) {
-        ExploreMode.Pivot -> viewModel.pivotPreviewState.loading
-        ExploreMode.Worksheet -> viewModel.worksheetPreviewState.loading
-        ExploreMode.Visualization -> viewModel.visualizationPreviewState.loading
-    }
+    val activePreviewLoading =
+        when (viewModel.workspace.activeMode) {
+            ExploreMode.Pivot -> viewModel.pivotPreviewState.loading
+            ExploreMode.Worksheet -> viewModel.worksheetPreviewState.loading
+            ExploreMode.Visualization -> viewModel.visualizationPreviewState.loading
+        }
     val config = viewModel.config
-    val fields = remember(session.sample.columns, session.baseSpec.tables) {
-        buildExploreFieldOptions(session.sample, session.baseSpec.tables)
-    }
+    val fields =
+        remember(session.sample.columns, session.baseSpec.tables) {
+            buildExploreFieldOptions(session.sample, session.baseSpec.tables)
+        }
     val stale = viewModel.isStale(currentSpec)
     var drillResult by remember { mutableStateOf<QueryResult?>(null) }
 
@@ -91,14 +93,18 @@ fun ExploreWindowContent(
 
     Column(modifier = modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceBackground)) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SafeDbTheme.colors.workspaceHeader)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(SafeDbTheme.colors.workspaceHeader)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Explore", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Explore",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     "${session.connectionLabel} · Based on ${session.sample.rowCount} sampled rows",
                     style = MaterialTheme.typography.bodySmall,
@@ -141,143 +147,210 @@ fun ExploreWindowContent(
                 onRefreshSample = onRefreshSample,
             )
             when (viewModel.workspace.activeMode) {
-                ExploreMode.Pivot -> Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    ExploreConfigPanel(
-                        config = config,
-                        fields = fields,
-                        onConfigChange = { next -> viewModel.updateConfig { next } },
-                        memberOptionsFor = viewModel::memberOptions,
-                        onReset = viewModel::resetConfig,
-                        resetEnabled = !viewModel.isDefaultConfig(),
-                        modifier = Modifier.width(320.dp).fillMaxHeight(),
-                    )
-                    Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
-                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        ExploreFilterStrip(
-                            filters = config.filters.filterIsInstance<PivotFilter.Members>().filter { it.pinned },
-                            optionsFor = viewModel::memberOptions,
-                            onSelectionChange = viewModel::updateMemberFilter,
-                        )
-                        ExplorePivotTable(
-                            preview = preview,
+                ExploreMode.Pivot ->
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        ExploreConfigPanel(
                             config = config,
+                            fields = fields,
                             onConfigChange = { next -> viewModel.updateConfig { next } },
-                            onToggleRow = viewModel::toggleRowPath,
-                            onToggleColumn = viewModel::toggleColumnPath,
-                            onDrill = { rowPath, columnPath, measureAlias ->
-                                if (!viewModel.pivotPreviewState.loading) {
-                                    drillResult = viewModel.sourceRowsFor(rowPath, columnPath, measureAlias)
+                            memberOptionsFor = viewModel::memberOptions,
+                            onReset = viewModel::resetConfig,
+                            resetEnabled = !viewModel.isDefaultConfig(),
+                            modifier = Modifier.width(320.dp).fillMaxHeight(),
+                        )
+                        Box(
+                            modifier =
+                                Modifier.width(1.dp)
+                                    .fillMaxHeight()
+                                    .background(MaterialTheme.colorScheme.outline)
+                        )
+                        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            ExploreFilterStrip(
+                                filters =
+                                    config.filters.filterIsInstance<PivotFilter.Members>().filter {
+                                        it.pinned
+                                    },
+                                optionsFor = viewModel::memberOptions,
+                                onSelectionChange = viewModel::updateMemberFilter,
+                            )
+                            ExplorePivotTable(
+                                preview = preview,
+                                config = config,
+                                onConfigChange = { next -> viewModel.updateConfig { next } },
+                                onToggleRow = viewModel::toggleRowPath,
+                                onToggleColumn = viewModel::toggleColumnPath,
+                                onDrill = { rowPath, columnPath, measureAlias ->
+                                    if (!viewModel.pivotPreviewState.loading) {
+                                        drillResult =
+                                            viewModel.sourceRowsFor(
+                                                rowPath,
+                                                columnPath,
+                                                measureAlias,
+                                            )
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                            )
+                            ExploreExportBar(
+                                viewModel,
+                                enabled = !viewModel.pivotPreviewState.loading,
+                            ) {
+                                chooseCsvFile(session.connectionLabel)
+                                    ?.let(viewModel::savePreviewCsv)
+                            }
+                        }
+                    }
+                ExploreMode.Worksheet ->
+                    Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        ExploreWorksheet(
+                            sample = session.sample,
+                            config = viewModel.worksheetConfig,
+                            preview = viewModel.worksheetPreview,
+                            onConfigChange = { next -> viewModel.updateWorksheet { next } },
+                            onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
+                            onToggleGroup = viewModel::toggleWorksheetGroup,
+                            railFooter = { collapsed ->
+                                val enabled =
+                                    !viewModel.worksheetPreviewState.loading &&
+                                        viewModel.hasVisibleWorksheetColumns()
+                                val export: () -> Unit = export@{
+                                    val path =
+                                        chooseCsvFile("${session.connectionLabel}-worksheet")
+                                            ?: return@export
+                                    viewModel.saveWorksheetCsv(path)
+                                }
+                                if (collapsed) {
+                                    IconButton(
+                                        onClick = export,
+                                        enabled = enabled && !viewModel.exporting,
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Download,
+                                            contentDescription = "Export CSV",
+                                        )
+                                    }
+                                } else {
+                                    ExploreExportBar(
+                                        viewModel,
+                                        enabled = enabled,
+                                        verticalPadding = 4.dp,
+                                        showStatus = false,
+                                        onExport = export,
+                                    )
                                 }
                             },
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
-                        ExploreExportBar(viewModel, enabled = !viewModel.pivotPreviewState.loading) {
-                            chooseCsvFile(session.connectionLabel)?.let(viewModel::savePreviewCsv)
-                        }
+                        ExploreExportStatus(viewModel)
                     }
-                }
-                ExploreMode.Worksheet -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    ExploreWorksheet(
-                        sample = session.sample,
-                        config = viewModel.worksheetConfig,
-                        preview = viewModel.worksheetPreview,
-                        onConfigChange = { next -> viewModel.updateWorksheet { next } },
-                        onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
-                        onToggleGroup = viewModel::toggleWorksheetGroup,
-                        railFooter = { collapsed ->
-                            val enabled = !viewModel.worksheetPreviewState.loading && viewModel.hasVisibleWorksheetColumns()
-                            val export: () -> Unit = export@{
-                                val path = chooseCsvFile("${session.connectionLabel}-worksheet") ?: return@export
-                                viewModel.saveWorksheetCsv(path)
-                            }
-                            if (collapsed) {
-                                IconButton(onClick = export, enabled = enabled && !viewModel.exporting) {
-                                    Icon(Icons.Default.Download, contentDescription = "Export CSV")
-                                }
-                            } else {
-                                ExploreExportBar(
-                                    viewModel,
-                                    enabled = enabled,
-                                    verticalPadding = 4.dp,
-                                    showStatus = false,
-                                    onExport = export,
-                                )
-                            }
-                        },
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
-                    ExploreExportStatus(viewModel)
-                }
-                ExploreMode.Visualization -> Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        VisualizationConfigPanel(
-                            config = viewModel.visualizationConfig,
-                            sample = session.sample,
-                            tables = session.baseSpec.tables,
-                            fields = fields,
-                            memberOptionsFor = viewModel::memberOptions,
-                            onConfigChange = { next -> viewModel.updateVisualization { next } },
-                            onApplyTemplate = viewModel::applyVisualizationTemplate,
-                            onReset = viewModel::resetVisualization,
-                            modifier = Modifier.width(320.dp).fillMaxHeight(),
-                        )
-                        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
-                        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
-                                viewModel.visualizationPreview.warnings.firstOrNull()?.let { warning ->
-                                    MessageBanner(
-                                        text = warning,
-                                        kind = BannerKind.WARNING,
+                ExploreMode.Visualization ->
+                    Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            VisualizationConfigPanel(
+                                config = viewModel.visualizationConfig,
+                                sample = session.sample,
+                                tables = session.baseSpec.tables,
+                                fields = fields,
+                                memberOptionsFor = viewModel::memberOptions,
+                                onConfigChange = { next -> viewModel.updateVisualization { next } },
+                                onApplyTemplate = viewModel::applyVisualizationTemplate,
+                                onReset = viewModel::resetVisualization,
+                                modifier = Modifier.width(320.dp).fillMaxHeight(),
+                            )
+                            Box(
+                                modifier =
+                                    Modifier.width(1.dp)
+                                        .fillMaxHeight()
+                                        .background(MaterialTheme.colorScheme.outline)
+                            )
+                            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                Column(
+                                    modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)
+                                ) {
+                                    viewModel.visualizationPreview.warnings.firstOrNull()?.let {
+                                        warning ->
+                                        MessageBanner(text = warning, kind = BannerKind.WARNING)
+                                    }
+                                    VisualizationChart(
+                                        preview = viewModel.visualizationPreview,
+                                        config = viewModel.visualizationConfig,
+                                        sampleRowCount = session.sample.rowCount,
+                                        sampleTruncated = session.sample.truncated,
+                                        onMarkClick = { markId ->
+                                            if (!viewModel.visualizationPreviewState.loading) {
+                                                drillResult =
+                                                    viewModel.sourceRowsForVisualizationMark(markId)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f).fillMaxWidth(),
                                     )
                                 }
-                                VisualizationChart(
-                                    preview = viewModel.visualizationPreview,
-                                    config = viewModel.visualizationConfig,
-                                    sampleRowCount = session.sample.rowCount,
-                                    sampleTruncated = session.sample.truncated,
-                                    onMarkClick = { markId ->
-                                        if (!viewModel.visualizationPreviewState.loading) {
-                                            drillResult = viewModel.sourceRowsForVisualizationMark(markId)
-                                        }
+                                val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                                val themePalette = SafeDbTheme.palette
+                                VisualizationExportBar(
+                                    viewModel = viewModel,
+                                    enabled =
+                                        viewModel.visualizationPreview.ready &&
+                                            !viewModel.visualizationPreviewState.loading,
+                                    onExportCsv = {
+                                        chooseExportFile(
+                                                "${session.connectionLabel}-chart-data",
+                                                "csv",
+                                            )
+                                            ?.let(viewModel::saveVisualizationCsv)
                                     },
-                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    onExportPng = {
+                                        chooseExportFile("${session.connectionLabel}-chart", "png")
+                                            ?.let {
+                                                viewModel.saveVisualizationPng(
+                                                    it,
+                                                    isDark,
+                                                    themePalette,
+                                                )
+                                            }
+                                    },
                                 )
                             }
-                            val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-                            val themePalette = SafeDbTheme.palette
-                            VisualizationExportBar(
-                                viewModel = viewModel,
-                                enabled = viewModel.visualizationPreview.ready && !viewModel.visualizationPreviewState.loading,
-                                onExportCsv = {
-                                    chooseExportFile("${session.connectionLabel}-chart-data", "csv")?.let(viewModel::saveVisualizationCsv)
-                                },
-                                onExportPng = {
-                                    chooseExportFile("${session.connectionLabel}-chart", "png")?.let {
-                                        viewModel.saveVisualizationPng(it, isDark, themePalette)
-                                    }
-                                },
-                            )
                         }
                     }
-                }
             }
         }
     }
 }
 
 @Composable
-private fun ExploreModeSelector(selected: ExploreMode, onSelect: (ExploreMode) -> Unit, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(3.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+private fun ExploreModeSelector(
+    selected: ExploreMode,
+    onSelect: (ExploreMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(3.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
         Row(modifier = Modifier.padding(3.dp)) {
             ExploreMode.entries.forEach { mode ->
                 Surface(
                     shape = RoundedCornerShape(3.dp),
-                    color = if (mode == selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    color =
+                        if (mode == selected) MaterialTheme.colorScheme.primaryContainer
+                        else Color.Transparent,
                     modifier = Modifier.clickable { onSelect(mode) },
                 ) {
-                    Row(modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         ModeIcon(mode, Modifier.size(16.dp))
-                        Text(mode.displayName(), modifier = Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelMedium, fontWeight = if (mode == selected) FontWeight.SemiBold else FontWeight.Normal)
+                        Text(
+                            mode.displayName(),
+                            modifier = Modifier.padding(start = 5.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight =
+                                if (mode == selected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
                     }
                 }
             }
@@ -286,15 +359,31 @@ private fun ExploreModeSelector(selected: ExploreMode, onSelect: (ExploreMode) -
 }
 
 @Composable
-private fun ExploreSampleWarnings(truncated: Boolean, stale: Boolean, sampleRefreshEnabled: Boolean, onRefreshSample: (() -> Unit)?) {
+private fun ExploreSampleWarnings(
+    truncated: Boolean,
+    stale: Boolean,
+    sampleRefreshEnabled: Boolean,
+    onRefreshSample: (() -> Unit)?,
+) {
     if (!truncated && !stale) return
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-        if (truncated) MessageBanner(text = "You’re viewing a sample, so totals may not represent the full result.", kind = BannerKind.WARNING)
+        if (truncated)
+            MessageBanner(
+                text = "You’re viewing a sample, so totals may not represent the full result.",
+                kind = BannerKind.WARNING,
+            )
         if (stale) {
             MessageBanner(
-                text = if (sampleRefreshEnabled) "The builder query changed. Refresh the Explore sample from the latest Builder results." else "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
+                text =
+                    if (sampleRefreshEnabled)
+                        "The builder query changed. Refresh the Explore sample from the latest Builder results."
+                    else
+                        "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
                 kind = BannerKind.WARNING,
-                action = if (sampleRefreshEnabled && onRefreshSample != null) {{ PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }} else null,
+                action =
+                    if (sampleRefreshEnabled && onRefreshSample != null) {
+                        { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
+                    } else null,
             )
         }
     }
@@ -308,36 +397,63 @@ private fun ExploreExportBar(
     showStatus: Boolean = true,
     onExport: () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (showStatus) {
-            viewModel.exportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            viewModel.exportError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            viewModel.exportMessage?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            viewModel.exportError?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
         Box(modifier = Modifier.weight(1f))
         if (showStatus && (viewModel.exportMessage != null || viewModel.exportError != null)) {
             SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
         }
-        if (showStatus && viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+        if (showStatus && viewModel.exporting)
+            Text("Exporting…", style = MaterialTheme.typography.bodySmall)
         PrimaryButton(
             modifier = Modifier.padding(start = 8.dp),
             onClick = onExport,
             enabled = enabled && !viewModel.exporting,
-        ) { Text("Export CSV") }
+        ) {
+            Text("Export CSV")
+        }
     }
 }
 
 @Composable
 private fun ExploreExportStatus(viewModel: ExploreViewModel) {
-    if (viewModel.exportMessage == null && viewModel.exportError == null && !viewModel.exporting) return
+    if (viewModel.exportMessage == null && viewModel.exportError == null && !viewModel.exporting)
+        return
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         viewModel.exportMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         viewModel.exportError?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         if (viewModel.exporting) {
             Text("Exporting…", style = MaterialTheme.typography.bodySmall)
@@ -361,10 +477,18 @@ private fun VisualizationExportBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         viewModel.exportMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         viewModel.exportError?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         Box(modifier = Modifier.weight(1f))
         if (viewModel.exportMessage != null || viewModel.exportError != null) {
@@ -388,36 +512,49 @@ private fun VisualizationExportBar(
     }
 }
 
-private fun exploreWorkspaceSummary(viewModel: ExploreViewModel): String = when (viewModel.workspace.activeMode) {
-    ExploreMode.Pivot -> exploreConfigSummary(viewModel.config)
-    ExploreMode.Worksheet -> "${viewModel.worksheetConfig.groups.size} groups · ${viewModel.worksheetConfig.filters.size} filters · ${viewModel.worksheetConfig.calculations.size} calculations"
-    ExploreMode.Visualization -> if (viewModel.visualizationConfig.isConfigured()) {
-        "${viewModel.visualizationConfig.chartType.name} · ${viewModel.visualizationPreview.marks.size} plotted values"
-    } else {
-        "No chart configured"
+private fun exploreWorkspaceSummary(viewModel: ExploreViewModel): String =
+    when (viewModel.workspace.activeMode) {
+        ExploreMode.Pivot -> exploreConfigSummary(viewModel.config)
+        ExploreMode.Worksheet ->
+            "${viewModel.worksheetConfig.groups.size} groups · ${viewModel.worksheetConfig.filters.size} filters · ${viewModel.worksheetConfig.calculations.size} calculations"
+        ExploreMode.Visualization ->
+            if (viewModel.visualizationConfig.isConfigured()) {
+                "${viewModel.visualizationConfig.chartType.name} · ${viewModel.visualizationPreview.marks.size} plotted values"
+            } else {
+                "No chart configured"
+            }
     }
-}
 
 private fun chooseCsvFile(connectionLabel: String): java.nio.file.Path? {
-    val safeName = connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "explore" }
-    val chooser = JFileChooser().apply {
-        selectedFile = File("explore-$safeName.csv")
-        dialogTitle = "Export Explore CSV"
-    }
+    val safeName =
+        connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty {
+            "explore"
+        }
+    val chooser =
+        JFileChooser().apply {
+            selectedFile = File("explore-$safeName.csv")
+            dialogTitle = "Export Explore CSV"
+        }
     val result = chooser.showSaveDialog(null)
     if (result != JFileChooser.APPROVE_OPTION) return null
     val file = chooser.selectedFile
-    return if (file.extension.equals("csv", ignoreCase = true)) file.toPath() else File("${file.path}.csv").toPath()
+    return if (file.extension.equals("csv", ignoreCase = true)) file.toPath()
+    else File("${file.path}.csv").toPath()
 }
 
 private fun chooseExportFile(connectionLabel: String, extension: String): java.nio.file.Path? {
-    val safeName = connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "explore" }
-    val chooser = JFileChooser().apply {
-        selectedFile = File("explore-$safeName.$extension")
-        dialogTitle = "Export Explore ${extension.uppercase()}"
-    }
+    val safeName =
+        connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty {
+            "explore"
+        }
+    val chooser =
+        JFileChooser().apply {
+            selectedFile = File("explore-$safeName.$extension")
+            dialogTitle = "Export Explore ${extension.uppercase()}"
+        }
     val result = chooser.showSaveDialog(null)
     if (result != JFileChooser.APPROVE_OPTION) return null
     val file = chooser.selectedFile
-    return if (file.extension.equals(extension, ignoreCase = true)) file.toPath() else File("${file.path}.$extension").toPath()
+    return if (file.extension.equals(extension, ignoreCase = true)) file.toPath()
+    else File("${file.path}.$extension").toPath()
 }

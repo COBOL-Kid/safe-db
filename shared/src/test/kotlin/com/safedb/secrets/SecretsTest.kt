@@ -66,9 +66,10 @@ class SecretsTest {
 
     @Test
     fun unsupportedPlatformsCannotSelectACredentialBackend() {
-        val error = assertFailsWith<com.safedb.platform.UnsupportedDesktopPlatformException> {
-            SecretsManager.initStoreForOsName("auto", "Linux")
-        }
+        val error =
+            assertFailsWith<com.safedb.platform.UnsupportedDesktopPlatformException> {
+                SecretsManager.initStoreForOsName("auto", "Linux")
+            }
 
         assertEquals(
             "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
@@ -100,16 +101,17 @@ class SecretsTest {
     fun definitionsWithoutDriverPropertiesKeepTheReleasedCredentialFingerprint() {
         val store = DisabledMemoryStore()
         SecretsManager.useStoreForTest(store)
-        val def = ConnectionDef(
-            id = "legacy-bound",
-            name = "Existing connection",
-            dialect = Dialect.Postgres,
-            host = "localhost",
-            port = 5432,
-            database = "demo",
-            username = "readonly",
-            transportSecurity = TransportSecurity(mode = TransportSecurityMode.Disabled),
-        )
+        val def =
+            ConnectionDef(
+                id = "legacy-bound",
+                name = "Existing connection",
+                dialect = Dialect.Postgres,
+                host = "localhost",
+                port = 5432,
+                database = "demo",
+                username = "readonly",
+                transportSecurity = TransportSecurity(mode = TransportSecurityMode.Disabled),
+            )
         store.setPassword(
             SERVICE_NAME,
             def.id,

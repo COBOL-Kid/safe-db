@@ -32,32 +32,34 @@ fun ToolbarTooltipIconButton(
     modifier: Modifier = Modifier,
 ) {
     val safeDbColors = SafeDbTheme.colors
-    val containerColor = if (highlighted) {
-        safeDbColors.warningContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val contentColor = if (highlighted) {
-        safeDbColors.warning
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val borderColor = if (highlighted) {
-        safeDbColors.warning.copy(alpha = 0.5f)
-    } else {
-        MaterialTheme.colorScheme.outlineVariant
-    }
+    val containerColor =
+        if (highlighted) {
+            safeDbColors.warningContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        }
+    val contentColor =
+        if (highlighted) {
+            safeDbColors.warning
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    val borderColor =
+        if (highlighted) {
+            safeDbColors.warning.copy(alpha = 0.5f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant
+        }
 
     TooltipBox(
-        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        positionProvider =
+            TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         tooltip = { PlainTooltip { androidx.compose.material3.Text(label) } },
         state = rememberTooltipState(),
     ) {
         Surface(
             onClick = onClick,
-            modifier = modifier
-                .size(40.dp)
-                .pointerHoverIcon(PointerIcon.Hand),
+            modifier = modifier.size(40.dp).pointerHoverIcon(PointerIcon.Hand),
             shape = ButtonShape,
             color = containerColor,
             contentColor = contentColor,

@@ -30,10 +30,11 @@ internal data class PlatformEnvironment(
     val appData: String? = null,
 ) {
     companion object {
-        fun current(): PlatformEnvironment = PlatformEnvironment(
-            osName = System.getProperty("os.name").orEmpty(),
-            userHome = System.getProperty("user.home").orEmpty(),
-            appData = System.getenv("APPDATA"),
-        )
+        fun current(): PlatformEnvironment =
+            PlatformEnvironment(
+                osName = System.getProperty("os.name").orEmpty(),
+                userHome = System.getProperty("user.home").orEmpty(),
+                appData = System.getenv("APPDATA"),
+            )
     }
 }

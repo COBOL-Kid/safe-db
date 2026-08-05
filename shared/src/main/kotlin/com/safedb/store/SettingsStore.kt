@@ -5,16 +5,14 @@ import com.safedb.model.Settings
 import com.safedb.model.normalizeSettings
 import com.safedb.persist.atomicWrite
 import com.safedb.persist.ensurePrivateDir
-import kotlinx.serialization.encodeToString
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.serialization.encodeToString
 
-class SettingsStore private constructor(
-    private val path: Path,
-    private val lock: ReentrantLock = ReentrantLock(),
-) {
+class SettingsStore
+private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {
     companion object {
         fun new(dataDir: Path): SettingsStore {
             ensurePrivateDir(dataDir)

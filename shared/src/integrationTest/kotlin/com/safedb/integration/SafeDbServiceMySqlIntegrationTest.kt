@@ -4,21 +4,21 @@ import com.safedb.model.Settings
 import com.safedb.secrets.CredentialSession
 import com.safedb.secrets.DisabledMemoryStore
 import com.safedb.secrets.SecretsManager
-import com.safedb.service.SafeDbServiceImpl
 import com.safedb.service.QueryRunRequest
+import com.safedb.service.SafeDbServiceImpl
 import com.safedb.store.ConfigStore
 import com.safedb.store.QueryStore
 import com.safedb.store.SettingsStore
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.nio.file.Files
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 
 @Tag("integration")
 class SafeDbServiceMySqlIntegrationTest {
@@ -34,11 +34,12 @@ class SafeDbServiceMySqlIntegrationTest {
         val dir = Files.createTempDirectory("safedb-integration")
         val def = IntegrationAssumptions.mysqlConnectionDef()
         val queryStore = QueryStore.new(dir)
-        val service = SafeDbServiceImpl(
-            configStore = ConfigStore.new(dir),
-            queryStore = queryStore,
-            settingsStore = SettingsStore.new(dir),
-        )
+        val service =
+            SafeDbServiceImpl(
+                configStore = ConfigStore.new(dir),
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+            )
 
         service.createConnection(def, IntegrationAssumptions.mysqlPassword)
         val schema = service.getSchema(def.id)
@@ -73,23 +74,25 @@ class MySqlQuerySafetyIntegrationTest {
             val settingsStore = SettingsStore.new(dir)
             val queryStore = QueryStore.new(dir)
             settingsStore.save(Settings.default().copy(blockedSchemas = listOf("mysql")))
-            val service = SafeDbServiceImpl(
-                configStore = ConfigStore.new(dir),
-                queryStore = queryStore,
-                settingsStore = settingsStore,
-            )
+            val service =
+                SafeDbServiceImpl(
+                    configStore = ConfigStore.new(dir),
+                    queryStore = queryStore,
+                    settingsStore = settingsStore,
+                )
             service.createConnection(def, IntegrationAssumptions.mysqlPassword)
 
-            val error = assertFailsWith<IllegalArgumentException> {
-                service.runQuery(
-                    QueryRunRequest(
-                        def.id,
-                        IntegrationFixtures.blockedSchemaQuery(),
-                    ),
-                )
-            }
+            val error =
+                assertFailsWith<IllegalArgumentException> {
+                    service.runQuery(
+                        QueryRunRequest(def.id, IntegrationFixtures.blockedSchemaQuery())
+                    )
+                }
             assertTrue(error.message?.contains("Schema 'mysql' is blocked") == true)
-            assertTrue(queryStore.listHistory().single().error?.contains("Schema 'mysql' is blocked") == true)
+            assertTrue(
+                queryStore.listHistory().single().error?.contains("Schema 'mysql' is blocked") ==
+                    true
+            )
         }
     }
 }

@@ -22,35 +22,38 @@ fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResu
     return engine.apply()
 }
 
-private class PivotEngine(
-    private val sample: QueryResult,
-    private val config: ExploreConfig,
-) {
-    private val indexes = sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
+private class PivotEngine(private val sample: QueryResult, private val config: ExploreConfig) {
+    private val indexes =
+        sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
     private val warnings = linkedSetOf<String>()
     private val rowDimensions = config.rowDimensions.filterKnown(indexes, warnings, "row")
-    private val columnDimensions = config.effectiveColumnDimensions.filterKnown(indexes, warnings, "column")
-    private val measures = config.measures.ifEmpty { listOf(PivotMeasure.countRows()) }
-        .filterValid(indexes, warnings)
-        .ifEmpty { listOf(PivotMeasure.countRows()) }
+    private val columnDimensions =
+        config.effectiveColumnDimensions.filterKnown(indexes, warnings, "column")
+    private val measures =
+        config.measures
+            .ifEmpty { listOf(PivotMeasure.countRows()) }
+            .filterValid(indexes, warnings)
+            .ifEmpty { listOf(PivotMeasure.countRows()) }
     private val allRows = BitSet(sample.rows.size).apply { set(0, sample.rows.size) }
     private var activeRows: BitSet = allRows
     private val aggregateCache = mutableMapOf<BitSet, Map<String, ResultCell>>()
 
     fun apply(): ExplorePreviewResult {
-        var records = sample.rows.mapIndexedNotNull { index, row ->
-            if (!passesSourceFilters(row)) return@mapIndexedNotNull null
-            PivotRecord(
-                index = index,
-                row = row,
-                rowBuckets = rowDimensions.map { bucketFor(row, it) },
-                columnBuckets = columnDimensions.map { bucketFor(row, it) },
-            )
-        }
+        var records =
+            sample.rows.mapIndexedNotNull { index, row ->
+                if (!passesSourceFilters(row)) return@mapIndexedNotNull null
+                PivotRecord(
+                    index = index,
+                    row = row,
+                    rowBuckets = rowDimensions.map { bucketFor(row, it) },
+                    columnBuckets = columnDimensions.map { bucketFor(row, it) },
+                )
+            }
         var filteredRows = BitSet(sample.rows.size).apply { records.forEach { set(it.index) } }
         activeRows = filteredRows
         val axisColumns = (rowDimensions + columnDimensions).mapTo(mutableSetOf()) { it.column }
-        config.filters.filterIsInstance<PivotFilter.Value>()
+        config.filters
+            .filterIsInstance<PivotFilter.Value>()
             .filter { it.column !in axisColumns }
             .forEach { filter ->
                 val columnIndex = indexes[filter.column] ?: return@forEach
@@ -62,14 +65,23 @@ private class PivotEngine(
                 val scored = groupedRows.map { (key, rows) ->
                     key to aggregateDecimal(rows, activeRows, filter.measureAlias)
                 }
-                val retainedKeys = when (filter.op) {
-                    ValueFilterOp.Top -> scored.sortedByDescending { it.second }
-                        .take(filter.count.coerceAtLeast(1)).mapTo(mutableSetOf()) { it.first }
-                    ValueFilterOp.Bottom -> scored.sortedBy { it.second }
-                        .take(filter.count.coerceAtLeast(1)).mapTo(mutableSetOf()) { it.first }
-                    else -> scored.filter { (_, value) -> passesValueComparison(value, filter) }
-                        .mapTo(mutableSetOf()) { it.first }
-                }
+                val retainedKeys =
+                    when (filter.op) {
+                        ValueFilterOp.Top ->
+                            scored
+                                .sortedByDescending { it.second }
+                                .take(filter.count.coerceAtLeast(1))
+                                .mapTo(mutableSetOf()) { it.first }
+                        ValueFilterOp.Bottom ->
+                            scored
+                                .sortedBy { it.second }
+                                .take(filter.count.coerceAtLeast(1))
+                                .mapTo(mutableSetOf()) { it.first }
+                        else ->
+                            scored
+                                .filter { (_, value) -> passesValueComparison(value, filter) }
+                                .mapTo(mutableSetOf()) { it.first }
+                    }
                 val retainedRows = BitSet(sample.rows.size)
                 retainedKeys.forEach { key -> groupedRows[key]?.let(retainedRows::or) }
                 activeRows.and(retainedRows)
@@ -82,7 +94,8 @@ private class PivotEngine(
         var rawRowSlices = buildRowSlices(rowRoot)
         if (config.filters.any { it is PivotFilter.Value }) {
             val retained = BitSet(sample.rows.size)
-            rawRowSlices.filter { it.kind !in setOf(PivotRowKind.Group, PivotRowKind.GrandTotal) }
+            rawRowSlices
+                .filter { it.kind !in setOf(PivotRowKind.Group, PivotRowKind.GrandTotal) }
                 .forEach { retained.or(it.node.rows) }
             activeRows = retained
             aggregateCache.clear()
@@ -92,17 +105,21 @@ private class PivotEngine(
             rawRowSlices = buildRowSlices(rowRoot)
         }
         var rawColumnSlices = buildColumnSlices(columnRoot)
-        if (config.filters.filterIsInstance<PivotFilter.Value>().any { filter ->
+        if (
+            config.filters.filterIsInstance<PivotFilter.Value>().any { filter ->
                 columnDimensions.any { it.column == filter.column }
             }
         ) {
             val retainedColumns = BitSet(sample.rows.size)
-            rawColumnSlices.filterNot { it.isGrandTotal || it.isSubtotal }.forEach { retainedColumns.or(it.node.rows) }
+            rawColumnSlices
+                .filterNot { it.isGrandTotal || it.isSubtotal }
+                .forEach { retainedColumns.or(it.node.rows) }
             activeRows.and(retainedColumns)
             aggregateCache.clear()
             val retainedRecords = records.filter { activeRows[it.index] }
             rowRoot = buildTree(retainedRecords, rowDimensions, activeRows) { it.rowBuckets }
-            columnRoot = buildTree(retainedRecords, columnDimensions, activeRows) { it.columnBuckets }
+            columnRoot =
+                buildTree(retainedRecords, columnDimensions, activeRows) { it.columnBuckets }
             rawRowSlices = buildRowSlices(rowRoot)
             rawColumnSlices = buildColumnSlices(columnRoot)
         }
@@ -110,13 +127,14 @@ private class PivotEngine(
         val cellsPerRow = (maxColumns.size.coerceAtLeast(1) * measures.size.coerceAtLeast(1))
         val maxRowCount = (MAX_VISIBLE_PIVOT_CELLS / cellsPerRow).coerceAtLeast(1)
         val visibleRows = rawRowSlices.take(maxRowCount)
-        val overflowMessage = when {
-            rawColumnSlices.size > MAX_VISIBLE_COLUMN_LEAVES ->
-                "This pivot has ${rawColumnSlices.size} visible column groups. Showing the first $MAX_VISIBLE_COLUMN_LEAVES; filter, group, or collapse fields to see a smaller view."
-            rawRowSlices.size > maxRowCount ->
-                "This pivot exceeds $MAX_VISIBLE_PIVOT_CELLS visible cells. Showing the first $maxRowCount rows; filter, group, or collapse fields to see a smaller view."
-            else -> null
-        }
+        val overflowMessage =
+            when {
+                rawColumnSlices.size > MAX_VISIBLE_COLUMN_LEAVES ->
+                    "This pivot has ${rawColumnSlices.size} visible column groups. Showing the first $MAX_VISIBLE_COLUMN_LEAVES; filter, group, or collapse fields to see a smaller view."
+                rawRowSlices.size > maxRowCount ->
+                    "This pivot exceeds $MAX_VISIBLE_PIVOT_CELLS visible cells. Showing the first $maxRowCount rows; filter, group, or collapse fields to see a smaller view."
+                else -> null
+            }
         overflowMessage?.let(warnings::add)
 
         val includeRowHeader = rowDimensions.isNotEmpty()
@@ -139,14 +157,18 @@ private class PivotEngine(
                 val columnBits = columnSlice.node.rows
                 val matching = intersect(rowBits, columnBits)
                 for (measure in measures) {
-                    val cell = if (rowSlice.kind == PivotRowKind.Group) {
-                        ResultCell.Null
-                    } else {
-                        transformedValue(rowSlice.node, columnSlice.node, measure)
-                    }
+                    val cell =
+                        if (rowSlice.kind == PivotRowKind.Group) {
+                            ResultCell.Null
+                        } else {
+                            transformedValue(rowSlice.node, columnSlice.node, measure)
+                        }
                     cells += cell
-                    formatted += if (rowSlice.kind == PivotRowKind.Group) "" else formatPivotCell(cell, measure)
-                    lineage[cellKey(rowSlice.pathKey, columnSlice.pathKey, measure.alias)] = matching.toIndexList()
+                    formatted +=
+                        if (rowSlice.kind == PivotRowKind.Group) ""
+                        else formatPivotCell(cell, measure)
+                    lineage[cellKey(rowSlice.pathKey, columnSlice.pathKey, measure.alias)] =
+                        matching.toIndexList()
                 }
             }
             resultRows += cells
@@ -165,51 +187,56 @@ private class PivotEngine(
             )
         }
         return ExplorePreviewResult(
-            result = QueryResult(
-                columns = columns,
-                rows = resultRows,
-                rowCount = resultRows.size,
-                truncated = sample.truncated,
-                warnings = resultWarnings,
-            ),
+            result =
+                QueryResult(
+                    columns = columns,
+                    rows = resultRows,
+                    rowCount = resultRows.size,
+                    truncated = sample.truncated,
+                    warnings = resultWarnings,
+                ),
             warnings = warnings.toList(),
-            layout = ExplorePivotLayout(
-                rowDimensions = rowDimensions,
-                columnDimension = columnDimensions.firstOrNull(),
-                columnDimensions = columnDimensions,
-                measures = measures,
-                columnGroups = columnGroups,
-                hasGrandTotalRow = rowEntries.lastOrNull()?.kind == PivotRowKind.GrandTotal,
-                rowEntries = rowEntries,
-                columnLeaves = columnLeaves,
-                columnHeaderRows = headerRows,
-                formattedRows = formattedRows,
-                cellLineage = lineage,
-                overflowMessage = overflowMessage,
-            ),
+            layout =
+                ExplorePivotLayout(
+                    rowDimensions = rowDimensions,
+                    columnDimension = columnDimensions.firstOrNull(),
+                    columnDimensions = columnDimensions,
+                    measures = measures,
+                    columnGroups = columnGroups,
+                    hasGrandTotalRow = rowEntries.lastOrNull()?.kind == PivotRowKind.GrandTotal,
+                    rowEntries = rowEntries,
+                    columnLeaves = columnLeaves,
+                    columnHeaderRows = headerRows,
+                    formattedRows = formattedRows,
+                    cellLineage = lineage,
+                    overflowMessage = overflowMessage,
+                ),
         )
     }
 
-    private fun passesSourceFilters(row: List<ResultCell>): Boolean = config.filters.all { filter ->
-        when (filter) {
-            is PivotFilter.Members -> {
-                if (filter.includedKeys.isEmpty()) true else {
-                    val cell = indexes[filter.column]?.let(row::getOrNull)
-                    pivotCellKey(cell) in filter.includedKeys
+    private fun passesSourceFilters(row: List<ResultCell>): Boolean =
+        config.filters.all { filter ->
+            when (filter) {
+                is PivotFilter.Members -> {
+                    if (filter.includedKeys.isEmpty()) true
+                    else {
+                        val cell = indexes[filter.column]?.let(row::getOrNull)
+                        pivotCellKey(cell) in filter.includedKeys
+                    }
                 }
-            }
-            is PivotFilter.Label -> {
-                val text = indexes[filter.column]?.let(row::getOrNull)?.let(::cellText).orEmpty()
-                when (filter.op) {
-                    LabelFilterOp.Equals -> text.equals(filter.value, ignoreCase = true)
-                    LabelFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)
-                    LabelFilterOp.StartsWith -> text.startsWith(filter.value, ignoreCase = true)
-                    LabelFilterOp.EndsWith -> text.endsWith(filter.value, ignoreCase = true)
+                is PivotFilter.Label -> {
+                    val text =
+                        indexes[filter.column]?.let(row::getOrNull)?.let(::cellText).orEmpty()
+                    when (filter.op) {
+                        LabelFilterOp.Equals -> text.equals(filter.value, ignoreCase = true)
+                        LabelFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)
+                        LabelFilterOp.StartsWith -> text.startsWith(filter.value, ignoreCase = true)
+                        LabelFilterOp.EndsWith -> text.endsWith(filter.value, ignoreCase = true)
+                    }
                 }
+                is PivotFilter.Value -> true
             }
-            is PivotFilter.Value -> true
         }
-    }
 
     private fun bucketFor(row: List<ResultCell>, dimension: PivotDimension): PivotBucket {
         val cell = row.getOrNull(indexes.getValue(dimension.column))
@@ -223,7 +250,11 @@ private class PivotEngine(
         }
     }
 
-    private fun dateBucket(cell: ResultCell, dimension: PivotDimension, unit: DateGroupUnit): PivotBucket {
+    private fun dateBucket(
+        cell: ResultCell,
+        dimension: PivotDimension,
+        unit: DateGroupUnit,
+    ): PivotBucket {
         val dateTime = parseDateTime(cellText(cell))
         if (dateTime == null) {
             warnings += "${dimension.label} contains values that could not be grouped as dates"
@@ -231,27 +262,41 @@ private class PivotEngine(
         }
         val date = dateTime.toLocalDate()
         return when (unit) {
-            DateGroupUnit.Year -> PivotBucket("${date.year}", "${date.year}", "%04d".format(date.year))
+            DateGroupUnit.Year ->
+                PivotBucket("${date.year}", "${date.year}", "%04d".format(date.year))
             DateGroupUnit.Quarter -> {
                 val quarter = ((date.monthValue - 1) / 3) + 1
-                PivotBucket("${date.year}-Q$quarter", "Q$quarter ${date.year}", "%04d-%d".format(date.year, quarter))
+                PivotBucket(
+                    "${date.year}-Q$quarter",
+                    "Q$quarter ${date.year}",
+                    "%04d-%d".format(date.year, quarter),
+                )
             }
-            DateGroupUnit.Month -> PivotBucket(
-                "%04d-%02d".format(date.year, date.monthValue),
-                date.format(DateTimeFormatter.ofPattern("MMM yyyy")),
-                "%04d-%02d".format(date.year, date.monthValue),
-            )
+            DateGroupUnit.Month ->
+                PivotBucket(
+                    "%04d-%02d".format(date.year, date.monthValue),
+                    date.format(DateTimeFormatter.ofPattern("MMM yyyy")),
+                    "%04d-%02d".format(date.year, date.monthValue),
+                )
             DateGroupUnit.IsoWeek -> {
                 val weekFields = WeekFields.ISO
                 val weekYear = date.get(weekFields.weekBasedYear())
                 val week = date.get(weekFields.weekOfWeekBasedYear())
-                PivotBucket("$weekYear-W$week", "%04d-W%02d".format(weekYear, week), "%04d-%02d".format(weekYear, week))
+                PivotBucket(
+                    "$weekYear-W$week",
+                    "%04d-W%02d".format(weekYear, week),
+                    "%04d-%02d".format(weekYear, week),
+                )
             }
             DateGroupUnit.Day -> PivotBucket(date.toString(), date.toString(), date.toString())
         }
     }
 
-    private fun numberBucket(cell: ResultCell, dimension: PivotDimension, grouping: PivotGrouping.NumberBin): PivotBucket {
+    private fun numberBucket(
+        cell: ResultCell,
+        dimension: PivotDimension,
+        grouping: PivotGrouping.NumberBin,
+    ): PivotBucket {
         val value = cell.toDecimalOrNull()
         val size = grouping.size.toBigDecimalOrNull()
         val start = grouping.start?.toBigDecimalOrNull() ?: BigDecimal.ZERO
@@ -263,7 +308,11 @@ private class PivotEngine(
         val lower = start.add(bucketIndex.multiply(size)).stripTrailingZeros()
         val upper = lower.add(size).stripTrailingZeros()
         val label = "${lower.toPlainString()} – ${upper.toPlainString()}"
-        return PivotBucket("${lower.toPlainString()}:${size.toPlainString()}", label, lower.toPlainString().padStart(32, '0'))
+        return PivotBucket(
+            "${lower.toPlainString()}:${size.toPlainString()}",
+            label,
+            lower.toPlainString().padStart(32, '0'),
+        )
     }
 
     private fun buildTree(
@@ -272,14 +321,24 @@ private class PivotEngine(
         filteredRows: BitSet,
         buckets: (PivotRecord) -> List<PivotBucket>,
     ): AxisNode {
-        val root = AxisNode(null, depth = 0, pathKey = "", parent = null, rows = filteredRows.clone() as BitSet)
+        val root =
+            AxisNode(
+                null,
+                depth = 0,
+                pathKey = "",
+                parent = null,
+                rows = filteredRows.clone() as BitSet,
+            )
         for (record in records) {
             var node = root
             buckets(record).forEachIndexed { index, bucket ->
-                val path = if (node.pathKey.isEmpty()) escapePath(bucket.key) else "${node.pathKey}/${escapePath(bucket.key)}"
-                node = node.children.getOrPut(bucket.key) {
-                    AxisNode(bucket, depth = index + 1, pathKey = path, parent = node)
-                }
+                val path =
+                    if (node.pathKey.isEmpty()) escapePath(bucket.key)
+                    else "${node.pathKey}/${escapePath(bucket.key)}"
+                node =
+                    node.children.getOrPut(bucket.key) {
+                        AxisNode(bucket, depth = index + 1, pathKey = path, parent = node)
+                    }
                 node.rows.set(record.index)
             }
         }
@@ -288,7 +347,8 @@ private class PivotEngine(
     }
 
     private fun buildRowSlices(root: AxisNode): List<RowSlice> {
-        if (rowDimensions.isEmpty()) return listOf(RowSlice(root, "", PivotRowKind.Leaf, false, true))
+        if (rowDimensions.isEmpty())
+            return listOf(RowSlice(root, "", PivotRowKind.Leaf, false, true))
         val out = mutableListOf<RowSlice>()
         orderedChildren(root, rowDimensions.first()).forEach { flattenRowNode(it, out) }
         if (config.showColumnTotals && root.rows.cardinality() > 0) {
@@ -311,15 +371,31 @@ private class PivotEngine(
             return
         }
         if (config.subtotalPosition == SubtotalPosition.Top && showSubtotal) {
-            out += RowSlice(node, "${node.bucket?.label.orEmpty()} total", PivotRowKind.Subtotal, true, true)
+            out +=
+                RowSlice(
+                    node,
+                    "${node.bucket?.label.orEmpty()} total",
+                    PivotRowKind.Subtotal,
+                    true,
+                    true,
+                )
         } else {
             out += RowSlice(node, node.bucket?.label.orEmpty(), PivotRowKind.Group, true, true)
         }
         val childDimension = rowDimensions.getOrNull(node.depth)
-        val children = if (childDimension == null) node.children.values.toList() else orderedChildren(node, childDimension)
+        val children =
+            if (childDimension == null) node.children.values.toList()
+            else orderedChildren(node, childDimension)
         children.forEach { flattenRowNode(it, out) }
         if (config.subtotalPosition == SubtotalPosition.Bottom && showSubtotal) {
-            out += RowSlice(node, "${node.bucket?.label.orEmpty()} total", PivotRowKind.Subtotal, false, true)
+            out +=
+                RowSlice(
+                    node,
+                    "${node.bucket?.label.orEmpty()} total",
+                    PivotRowKind.Subtotal,
+                    false,
+                    true,
+                )
         }
     }
 
@@ -340,7 +416,9 @@ private class PivotEngine(
             return
         }
         val childDimension = columnDimensions.getOrNull(node.depth)
-        val children = if (childDimension == null) node.children.values.toList() else orderedChildren(node, childDimension)
+        val children =
+            if (childDimension == null) node.children.values.toList()
+            else orderedChildren(node, childDimension)
         children.forEach { flattenColumnNode(it, out) }
         val dimension = columnDimensions.getOrNull(node.depth - 1)
         if (config.showSubtotals && dimension?.showSubtotals != false) {
@@ -350,46 +428,78 @@ private class PivotEngine(
 
     private fun orderedChildren(node: AxisNode, dimension: PivotDimension): List<AxisNode> {
         var children = node.children.values.toList()
-        config.filters.filterIsInstance<PivotFilter.Value>()
+        config.filters
+            .filterIsInstance<PivotFilter.Value>()
             .filter { it.column == dimension.column }
             .forEach { filter ->
-                val scored = children.map { it to aggregateDecimal(it.rows, activeRows, filter.measureAlias) }
-                children = when (filter.op) {
-                    ValueFilterOp.Top -> scored.sortedByDescending { it.second }.take(filter.count.coerceAtLeast(1)).map { it.first }
-                    ValueFilterOp.Bottom -> scored.sortedBy { it.second }.take(filter.count.coerceAtLeast(1)).map { it.first }
-                    else -> scored.filter { (_, value) -> passesValueComparison(value, filter) }.map { it.first }
+                val scored = children.map {
+                    it to aggregateDecimal(it.rows, activeRows, filter.measureAlias)
                 }
+                children =
+                    when (filter.op) {
+                        ValueFilterOp.Top ->
+                            scored
+                                .sortedByDescending { it.second }
+                                .take(filter.count.coerceAtLeast(1))
+                                .map { it.first }
+                        ValueFilterOp.Bottom ->
+                            scored
+                                .sortedBy { it.second }
+                                .take(filter.count.coerceAtLeast(1))
+                                .map { it.first }
+                        else ->
+                            scored
+                                .filter { (_, value) -> passesValueComparison(value, filter) }
+                                .map { it.first }
+                    }
             }
         val sort = config.sort
         var descending = sort?.dir == SortDir.Desc
-        val comparator = when (val target = sort?.target) {
-            is ExploreSortTarget.Dimension -> if (target.column == dimension.column) {
-                compareBy<AxisNode> { it.bucket?.sortKey.orEmpty() }
-            } else {
-                dimensionComparator(dimension).also { descending = dimension.sortMode == DimensionSortMode.LabelDescending || dimension.sortMode == DimensionSortMode.ValueDescending }
+        val comparator =
+            when (val target = sort?.target) {
+                is ExploreSortTarget.Dimension ->
+                    if (target.column == dimension.column) {
+                        compareBy<AxisNode> { it.bucket?.sortKey.orEmpty() }
+                    } else {
+                        dimensionComparator(dimension).also {
+                            descending =
+                                dimension.sortMode == DimensionSortMode.LabelDescending ||
+                                    dimension.sortMode == DimensionSortMode.ValueDescending
+                        }
+                    }
+                is ExploreSortTarget.Measure ->
+                    Comparator { left, right ->
+                        aggregateDecimal(left.rows, activeRows, target.alias)
+                            .compareTo(aggregateDecimal(right.rows, activeRows, target.alias))
+                    }
+                null ->
+                    dimensionComparator(dimension).also {
+                        descending =
+                            dimension.sortMode == DimensionSortMode.LabelDescending ||
+                                dimension.sortMode == DimensionSortMode.ValueDescending
+                    }
             }
-            is ExploreSortTarget.Measure -> Comparator { left, right ->
-                aggregateDecimal(left.rows, activeRows, target.alias).compareTo(aggregateDecimal(right.rows, activeRows, target.alias))
-            }
-            null -> dimensionComparator(dimension).also { descending = dimension.sortMode == DimensionSortMode.LabelDescending || dimension.sortMode == DimensionSortMode.ValueDescending }
-        }
         if (comparator == null) return children
-        return if (descending) children.sortedWith(comparator.reversed()) else children.sortedWith(comparator)
+        return if (descending) children.sortedWith(comparator.reversed())
+        else children.sortedWith(comparator)
     }
 
-    private fun dimensionComparator(dimension: PivotDimension): Comparator<AxisNode>? = when (dimension.sortMode) {
-        DimensionSortMode.SourceOrder -> if (dimension.grouping == PivotGrouping.Exact) null else compareBy { it.bucket?.sortKey.orEmpty() }
-        DimensionSortMode.LabelAscending,
-        DimensionSortMode.LabelDescending,
-        -> compareBy { it.bucket?.sortKey.orEmpty() }
-        DimensionSortMode.ValueAscending,
-        DimensionSortMode.ValueDescending,
-        -> dimension.sortMeasureAlias?.let { alias ->
-            Comparator { left, right ->
-                aggregateDecimal(left.rows, activeRows, alias).compareTo(aggregateDecimal(right.rows, activeRows, alias))
-            }
+    private fun dimensionComparator(dimension: PivotDimension): Comparator<AxisNode>? =
+        when (dimension.sortMode) {
+            DimensionSortMode.SourceOrder ->
+                if (dimension.grouping == PivotGrouping.Exact) null
+                else compareBy { it.bucket?.sortKey.orEmpty() }
+            DimensionSortMode.LabelAscending,
+            DimensionSortMode.LabelDescending -> compareBy { it.bucket?.sortKey.orEmpty() }
+            DimensionSortMode.ValueAscending,
+            DimensionSortMode.ValueDescending ->
+                dimension.sortMeasureAlias?.let { alias ->
+                    Comparator { left, right ->
+                        aggregateDecimal(left.rows, activeRows, alias)
+                            .compareTo(aggregateDecimal(right.rows, activeRows, alias))
+                    }
+                }
         }
-    }
 
     private fun passesValueComparison(value: BigDecimal, filter: PivotFilter.Value): Boolean {
         val first = filter.value.toBigDecimalOrNull() ?: return true
@@ -398,47 +508,65 @@ private class PivotEngine(
             ValueFilterOp.GreaterThanOrEqual -> value >= first
             ValueFilterOp.LessThan -> value < first
             ValueFilterOp.LessThanOrEqual -> value <= first
-            ValueFilterOp.Between -> value >= first && value <= (filter.secondValue?.toBigDecimalOrNull() ?: first)
-            ValueFilterOp.Top, ValueFilterOp.Bottom -> true
+            ValueFilterOp.Between ->
+                value >= first && value <= (filter.secondValue?.toBigDecimalOrNull() ?: first)
+            ValueFilterOp.Top,
+            ValueFilterOp.Bottom -> true
         }
     }
 
-    private fun transformedValue(rowNode: AxisNode, columnNode: AxisNode, measure: PivotMeasure): ResultCell {
+    private fun transformedValue(
+        rowNode: AxisNode,
+        columnNode: AxisNode,
+        measure: PivotMeasure,
+    ): ResultCell {
         val raw = aggregateValues(rowNode.rows, columnNode.rows)[measure.alias] ?: ResultCell.Null
         val rawDecimal = raw.toDecimalOrNull()
         if (measure.showAs.mode == ShowAsMode.Value || rawDecimal == null) return raw
         val denominator: BigDecimal?
-        val value = when (measure.showAs.mode) {
-            ShowAsMode.Value -> rawDecimal
-            ShowAsMode.PercentGrandTotal -> {
-                denominator = aggregateDecimal(activeRows, activeRows, measure.alias)
-                ratio(rawDecimal, denominator)
-            }
-            ShowAsMode.PercentRowTotal -> {
-                denominator = aggregateDecimal(rowNode.rows, activeRows, measure.alias)
-                ratio(rawDecimal, denominator)
-            }
-            ShowAsMode.PercentColumnTotal -> {
-                denominator = aggregateDecimal(activeRows, columnNode.rows, measure.alias)
-                ratio(rawDecimal, denominator)
-            }
-            ShowAsMode.PercentParent -> {
-                val baseIsColumn = columnDimensions.any { it.id == measure.showAs.baseDimensionId }
-                denominator = if (baseIsColumn) {
-                    aggregateDecimal(rowNode.rows, columnNode.parent?.rows ?: activeRows, measure.alias)
-                } else {
-                    aggregateDecimal(rowNode.parent?.rows ?: activeRows, columnNode.rows, measure.alias)
+        val value =
+            when (measure.showAs.mode) {
+                ShowAsMode.Value -> rawDecimal
+                ShowAsMode.PercentGrandTotal -> {
+                    denominator = aggregateDecimal(activeRows, activeRows, measure.alias)
+                    ratio(rawDecimal, denominator)
                 }
-                ratio(rawDecimal, denominator)
+                ShowAsMode.PercentRowTotal -> {
+                    denominator = aggregateDecimal(rowNode.rows, activeRows, measure.alias)
+                    ratio(rawDecimal, denominator)
+                }
+                ShowAsMode.PercentColumnTotal -> {
+                    denominator = aggregateDecimal(activeRows, columnNode.rows, measure.alias)
+                    ratio(rawDecimal, denominator)
+                }
+                ShowAsMode.PercentParent -> {
+                    val baseIsColumn = columnDimensions.any {
+                        it.id == measure.showAs.baseDimensionId
+                    }
+                    denominator =
+                        if (baseIsColumn) {
+                            aggregateDecimal(
+                                rowNode.rows,
+                                columnNode.parent?.rows ?: activeRows,
+                                measure.alias,
+                            )
+                        } else {
+                            aggregateDecimal(
+                                rowNode.parent?.rows ?: activeRows,
+                                columnNode.rows,
+                                measure.alias,
+                            )
+                        }
+                    ratio(rawDecimal, denominator)
+                }
+                ShowAsMode.DifferenceFrom,
+                ShowAsMode.PercentDifferenceFrom,
+                ShowAsMode.RunningTotal,
+                ShowAsMode.PercentRunningTotal,
+                ShowAsMode.RankAscending,
+                ShowAsMode.RankDescending ->
+                    siblingTransform(rowNode, columnNode, measure, rawDecimal)
             }
-            ShowAsMode.DifferenceFrom,
-            ShowAsMode.PercentDifferenceFrom,
-            ShowAsMode.RunningTotal,
-            ShowAsMode.PercentRunningTotal,
-            ShowAsMode.RankAscending,
-            ShowAsMode.RankDescending,
-            -> siblingTransform(rowNode, columnNode, measure, rawDecimal)
-        }
         return value?.toResultCell() ?: ResultCell.Null
     }
 
@@ -453,46 +581,57 @@ private class PivotEngine(
         val parent = node.parent ?: return null
         val dimensions = if (useColumns) columnDimensions else rowDimensions
         val dimension = dimensions.getOrNull(node.depth - 1)
-        val siblings = if (dimension == null) {
-            parent.children.values.toList()
-        } else {
-            orderedChildren(parent, dimension)
-        }
+        val siblings =
+            if (dimension == null) {
+                parent.children.values.toList()
+            } else {
+                orderedChildren(parent, dimension)
+            }
         val index = siblings.indexOf(node)
         if (index < 0) return null
-        fun siblingValue(sibling: AxisNode): BigDecimal = if (useColumns) {
-            aggregateDecimal(rowNode.rows, sibling.rows, measure.alias)
-        } else {
-            aggregateDecimal(sibling.rows, columnNode.rows, measure.alias)
-        }
+        fun siblingValue(sibling: AxisNode): BigDecimal =
+            if (useColumns) {
+                aggregateDecimal(rowNode.rows, sibling.rows, measure.alias)
+            } else {
+                aggregateDecimal(sibling.rows, columnNode.rows, measure.alias)
+            }
         return when (measure.showAs.mode) {
             ShowAsMode.DifferenceFrom -> {
-                val base = measure.showAs.baseItemKey?.let { key -> siblings.firstOrNull { it.bucket?.key == key } }
-                    ?: siblings.getOrNull(index - 1)
-                    ?: return null
+                val base =
+                    measure.showAs.baseItemKey?.let { key ->
+                        siblings.firstOrNull { it.bucket?.key == key }
+                    } ?: siblings.getOrNull(index - 1) ?: return null
                 raw.subtract(siblingValue(base))
             }
             ShowAsMode.PercentDifferenceFrom -> {
-                val base = measure.showAs.baseItemKey?.let { key -> siblings.firstOrNull { it.bucket?.key == key } }
-                    ?: siblings.getOrNull(index - 1)
-                    ?: return null
+                val base =
+                    measure.showAs.baseItemKey?.let { key ->
+                        siblings.firstOrNull { it.bucket?.key == key }
+                    } ?: siblings.getOrNull(index - 1) ?: return null
                 val baseValue = siblingValue(base)
                 ratio(raw.subtract(baseValue), baseValue)
             }
-            ShowAsMode.RunningTotal -> siblings.take(index + 1).fold(BigDecimal.ZERO) { total, sibling -> total + siblingValue(sibling) }
+            ShowAsMode.RunningTotal ->
+                siblings.take(index + 1).fold(BigDecimal.ZERO) { total, sibling ->
+                    total + siblingValue(sibling)
+                }
             ShowAsMode.PercentRunningTotal -> {
-                val running = siblings.take(index + 1).fold(BigDecimal.ZERO) { total, sibling -> total + siblingValue(sibling) }
-                val total = siblings.fold(BigDecimal.ZERO) { sum, sibling -> sum + siblingValue(sibling) }
+                val running =
+                    siblings.take(index + 1).fold(BigDecimal.ZERO) { total, sibling ->
+                        total + siblingValue(sibling)
+                    }
+                val total =
+                    siblings.fold(BigDecimal.ZERO) { sum, sibling -> sum + siblingValue(sibling) }
                 ratio(running, total)
             }
             ShowAsMode.RankAscending,
-            ShowAsMode.RankDescending,
-            -> {
-                val sorted = if (measure.showAs.mode == ShowAsMode.RankAscending) {
-                    siblings.sortedBy(::siblingValue)
-                } else {
-                    siblings.sortedByDescending(::siblingValue)
-                }
+            ShowAsMode.RankDescending -> {
+                val sorted =
+                    if (measure.showAs.mode == ShowAsMode.RankAscending) {
+                        siblings.sortedBy(::siblingValue)
+                    } else {
+                        siblings.sortedByDescending(::siblingValue)
+                    }
                 BigDecimal(sorted.indexOf(node) + 1)
             }
             else -> raw
@@ -511,28 +650,31 @@ private class PivotEngine(
             val resolving = mutableSetOf<String>()
 
             fun resolve(measure: PivotMeasure): ResultCell {
-                resolved[measure.alias]?.let { return it }
+                resolved[measure.alias]?.let {
+                    return it
+                }
                 if (!resolving.add(measure.alias)) {
                     warnings += "Calculated measure '${measure.label}' contains a cycle"
                     return ResultCell.Null
                 }
-                val value = if (measure.formula.isNullOrBlank()) {
-                    computeMeasure(rowIndexes, measure)
-                } else {
-                    val references = measureReferences(measure.formula)
-                    val values = references.associateWith { alias ->
-                        val dependency = measures.firstOrNull { it.alias == alias }
-                        if (dependency == null) {
-                            warnings += "${measure.label}: unknown measure '$alias'"
-                            null
-                        } else {
-                            resolve(dependency).toDecimalOrNull()
+                val value =
+                    if (measure.formula.isNullOrBlank()) {
+                        computeMeasure(rowIndexes, measure)
+                    } else {
+                        val references = measureReferences(measure.formula)
+                        val values = references.associateWith { alias ->
+                            val dependency = measures.firstOrNull { it.alias == alias }
+                            if (dependency == null) {
+                                warnings += "${measure.label}: unknown measure '$alias'"
+                                null
+                            } else {
+                                resolve(dependency).toDecimalOrNull()
+                            }
                         }
+                        val result = evaluatePivotFormula(measure.formula, values)
+                        result.error?.let { warnings += "${measure.label}: $it" }
+                        result.value?.toResultCell() ?: ResultCell.Null
                     }
-                    val result = evaluatePivotFormula(measure.formula, values)
-                    result.error?.let { warnings += "${measure.label}: $it" }
-                    result.value?.toResultCell() ?: ResultCell.Null
-                }
                 resolving.remove(measure.alias)
                 resolved[measure.alias] = value
                 return value
@@ -546,26 +688,51 @@ private class PivotEngine(
         val index = measure.sourceColumn?.let(indexes::get)
         val rows = rowIndexes.map(sample.rows::get)
         return when (measure.fn) {
-            MeasureFn.Count -> ResultCell.IntegerCell(
-                if (index == null) rows.size.toLong() else rows.count { it.getOrNull(index) !is ResultCell.Null }.toLong(),
-            )
-            MeasureFn.CountNumbers -> ResultCell.IntegerCell(decimalCells(rows, index, measure).size.toLong())
-            MeasureFn.CountDistinct -> {
-                if (index == null) ResultCell.IntegerCell(0) else ResultCell.IntegerCell(
-                    rows.mapNotNull { row -> row.getOrNull(index)?.takeUnless { it is ResultCell.Null }?.let(::pivotCellKey) }
-                        .distinct().size.toLong(),
+            MeasureFn.Count ->
+                ResultCell.IntegerCell(
+                    if (index == null) rows.size.toLong()
+                    else rows.count { it.getOrNull(index) !is ResultCell.Null }.toLong()
                 )
+            MeasureFn.CountNumbers ->
+                ResultCell.IntegerCell(decimalCells(rows, index, measure).size.toLong())
+            MeasureFn.CountDistinct -> {
+                if (index == null) ResultCell.IntegerCell(0)
+                else
+                    ResultCell.IntegerCell(
+                        rows
+                            .mapNotNull { row ->
+                                row.getOrNull(index)
+                                    ?.takeUnless { it is ResultCell.Null }
+                                    ?.let(::pivotCellKey)
+                            }
+                            .distinct()
+                            .size
+                            .toLong()
+                    )
             }
-            MeasureFn.Sum -> decimalCells(rows, index, measure).fold(BigDecimal.ZERO, BigDecimal::add).toResultCell()
-            MeasureFn.Avg -> decimalCells(rows, index, measure).average()?.toResultCell() ?: ResultCell.Null
-            MeasureFn.Min -> comparableCells(rows, index).minWithOrNull(::compareCells) ?: ResultCell.Null
-            MeasureFn.Max -> comparableCells(rows, index).maxWithOrNull(::compareCells) ?: ResultCell.Null
-            MeasureFn.Product -> decimalCells(rows, index, measure).takeIf { it.isNotEmpty() }
-                ?.fold(BigDecimal.ONE, BigDecimal::multiply)?.toResultCell() ?: ResultCell.Null
-            MeasureFn.StdDev -> statistic(decimalCells(rows, index, measure), sample = true, squareRoot = true)
-            MeasureFn.StdDevPopulation -> statistic(decimalCells(rows, index, measure), sample = false, squareRoot = true)
-            MeasureFn.Variance -> statistic(decimalCells(rows, index, measure), sample = true, squareRoot = false)
-            MeasureFn.VariancePopulation -> statistic(decimalCells(rows, index, measure), sample = false, squareRoot = false)
+            MeasureFn.Sum ->
+                decimalCells(rows, index, measure)
+                    .fold(BigDecimal.ZERO, BigDecimal::add)
+                    .toResultCell()
+            MeasureFn.Avg ->
+                decimalCells(rows, index, measure).average()?.toResultCell() ?: ResultCell.Null
+            MeasureFn.Min ->
+                comparableCells(rows, index).minWithOrNull(::compareCells) ?: ResultCell.Null
+            MeasureFn.Max ->
+                comparableCells(rows, index).maxWithOrNull(::compareCells) ?: ResultCell.Null
+            MeasureFn.Product ->
+                decimalCells(rows, index, measure)
+                    .takeIf { it.isNotEmpty() }
+                    ?.fold(BigDecimal.ONE, BigDecimal::multiply)
+                    ?.toResultCell() ?: ResultCell.Null
+            MeasureFn.StdDev ->
+                statistic(decimalCells(rows, index, measure), sample = true, squareRoot = true)
+            MeasureFn.StdDevPopulation ->
+                statistic(decimalCells(rows, index, measure), sample = false, squareRoot = true)
+            MeasureFn.Variance ->
+                statistic(decimalCells(rows, index, measure), sample = true, squareRoot = false)
+            MeasureFn.VariancePopulation ->
+                statistic(decimalCells(rows, index, measure), sample = false, squareRoot = false)
         }
     }
 
@@ -582,11 +749,17 @@ private class PivotEngine(
             if (decimal == null && value != null && value !is ResultCell.Null) skipped++
             decimal
         }
-        if (skipped > 0) warnings += "Measure '${measure.label}' skipped $skipped non-numeric cell${if (skipped == 1) "" else "s"}"
+        if (skipped > 0)
+            warnings +=
+                "Measure '${measure.label}' skipped $skipped non-numeric cell${if (skipped == 1) "" else "s"}"
         return values
     }
 
-    private fun statistic(values: List<BigDecimal>, sample: Boolean, squareRoot: Boolean): ResultCell {
+    private fun statistic(
+        values: List<BigDecimal>,
+        sample: Boolean,
+        squareRoot: Boolean,
+    ): ResultCell {
         if (values.isEmpty() || sample && values.size < 2) return ResultCell.Null
         val doubles = values.map(BigDecimal::toDouble)
         val mean = doubles.average()
@@ -595,12 +768,21 @@ private class PivotEngine(
         return ResultCell.FloatCell(if (squareRoot) sqrt(variance) else variance)
     }
 
-    private fun buildOutputColumns(includeRowHeader: Boolean, columns: List<ColumnSlice>): List<ResultColumn> = buildList {
-        if (includeRowHeader) add(ResultColumn(rowDimensions.firstOrNull()?.label ?: "Row labels", "text"))
+    private fun buildOutputColumns(
+        includeRowHeader: Boolean,
+        columns: List<ColumnSlice>,
+    ): List<ResultColumn> = buildList {
+        if (includeRowHeader)
+            add(ResultColumn(rowDimensions.firstOrNull()?.label ?: "Row labels", "text"))
         for (column in columns) {
             for (measure in measures) {
                 val prefix = column.labels.joinToString(" / ")
-                add(ResultColumn(if (prefix.isEmpty()) measure.label else "$prefix ${measure.label}", resultType(measure)))
+                add(
+                    ResultColumn(
+                        if (prefix.isEmpty()) measure.label else "$prefix ${measure.label}",
+                        resultType(measure),
+                    )
+                )
             }
         }
     }
@@ -617,16 +799,17 @@ private class PivotEngine(
                 var end = start + 1
                 while (end < columns.size && columns[end].labels.take(depth + 1) == prefix) end++
                 val node = column.node.ancestorAtDepth(depth + 1)
-                cells += PivotHeaderCell(
-                    pathKey = node?.pathKey ?: column.pathKey,
-                    label = label,
-                    startLeafIndex = start,
-                    leafSpan = end - start,
-                    depth = depth,
-                    hasChildren = node?.children?.isNotEmpty() == true,
-                    expanded = node?.pathKey !in config.collapsedColumnPaths,
-                    isTotal = column.isGrandTotal || column.isSubtotal,
-                )
+                cells +=
+                    PivotHeaderCell(
+                        pathKey = node?.pathKey ?: column.pathKey,
+                        label = label,
+                        startLeafIndex = start,
+                        leafSpan = end - start,
+                        depth = depth,
+                        hasChildren = node?.children?.isNotEmpty() == true,
+                        expanded = node?.pathKey !in config.collapsedColumnPaths,
+                        isTotal = column.isGrandTotal || column.isSubtotal,
+                    )
                 start = end
             }
             cells
@@ -637,11 +820,15 @@ private class PivotEngine(
         if (cell is ResultCell.Null) return ""
         val decimal = cell.toDecimalOrNull() ?: return cellText(cell)
         val configured = measure.numberFormat
-        val kind = if (configured.kind == NumberFormatKind.Auto && measure.showAs.mode.name.startsWith("Percent")) {
-            NumberFormatKind.Percent
-        } else {
-            configured.kind
-        }
+        val kind =
+            if (
+                configured.kind == NumberFormatKind.Auto &&
+                    measure.showAs.mode.name.startsWith("Percent")
+            ) {
+                NumberFormatKind.Percent
+            } else {
+                configured.kind
+            }
         if (kind == NumberFormatKind.Auto) return decimal.stripTrailingZeros().toPlainString()
         val decimals = configured.decimals.coerceIn(0, 8)
         val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
@@ -653,12 +840,14 @@ private class PivotEngine(
             NumberFormatKind.Number -> DecimalFormat(pattern, symbols).format(decimal)
             NumberFormatKind.Percent -> DecimalFormat("$pattern%", symbols).format(decimal)
             NumberFormatKind.Currency -> {
-                val currency = runCatching { Currency.getInstance(configured.currencyCode) }.getOrNull()
+                val currency =
+                    runCatching { Currency.getInstance(configured.currencyCode) }.getOrNull()
                 val formatter = DecimalFormat("¤$pattern", symbols)
                 currency?.let { formatter.currency = it }
                 formatter.format(decimal)
             }
-            NumberFormatKind.Scientific -> DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(decimal)
+            NumberFormatKind.Scientific ->
+                DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(decimal)
             NumberFormatKind.Auto -> decimal.toPlainString()
         }
     }
@@ -682,10 +871,8 @@ private class AxisNode(
 ) {
     val children = linkedMapOf<String, AxisNode>()
 
-    fun labels(): List<String> = generateSequence(this) { it.parent }
-        .mapNotNull { it.bucket?.label }
-        .toList()
-        .asReversed()
+    fun labels(): List<String> =
+        generateSequence(this) { it.parent }.mapNotNull { it.bucket?.label }.toList().asReversed()
 
     fun ancestorAtDepth(targetDepth: Int): AxisNode? {
         var node: AxisNode? = this
@@ -701,16 +888,18 @@ private data class RowSlice(
     val hasChildren: Boolean,
     val expanded: Boolean,
 ) {
-    val pathKey: String get() = if (kind == PivotRowKind.GrandTotal) "<grand>" else node.pathKey
+    val pathKey: String
+        get() = if (kind == PivotRowKind.GrandTotal) "<grand>" else node.pathKey
 
-    fun toEntry() = PivotRowEntry(
-        pathKey = pathKey,
-        label = label,
-        depth = (node.depth - 1).coerceAtLeast(0),
-        kind = kind,
-        hasChildren = hasChildren,
-        expanded = expanded,
-    )
+    fun toEntry() =
+        PivotRowEntry(
+            pathKey = pathKey,
+            label = label,
+            depth = (node.depth - 1).coerceAtLeast(0),
+            kind = kind,
+            hasChildren = hasChildren,
+            expanded = expanded,
+        )
 }
 
 private data class ColumnSlice(
@@ -719,14 +908,18 @@ private data class ColumnSlice(
     val isSubtotal: Boolean,
     val isGrandTotal: Boolean,
 ) {
-    val pathKey: String get() = if (isGrandTotal) "<grand>" else node.pathKey
+    val pathKey: String
+        get() = if (isGrandTotal) "<grand>" else node.pathKey
+
     fun toLeaf() = PivotColumnLeaf(pathKey, labels, isSubtotal, isGrandTotal)
 }
 
-fun pivotCellKey(cell: ResultCell?): String = when (cell) {
-    null, is ResultCell.Null -> "<null>"
-    else -> "${cell::class.simpleName}:${cellText(cell)}"
-}
+fun pivotCellKey(cell: ResultCell?): String =
+    when (cell) {
+        null,
+        is ResultCell.Null -> "<null>"
+        else -> "${cell::class.simpleName}:${cellText(cell)}"
+    }
 
 fun pivotCellLineageKey(rowPath: String, columnPath: String, measureAlias: String): String =
     cellKey(rowPath, columnPath, measureAlias)
@@ -740,7 +933,8 @@ private fun List<PivotDimension>.filterKnown(
     kind: String,
 ): List<PivotDimension> = filter { dimension ->
     val known = indexes.containsKey(dimension.column)
-    if (!known) warnings += "Unknown $kind dimension '${displayColumnLabel(dimension.column)}' was ignored"
+    if (!known)
+        warnings += "Unknown $kind dimension '${displayColumnLabel(dimension.column)}' was ignored"
     known
 }
 
@@ -748,7 +942,10 @@ private fun List<PivotMeasure>.filterValid(
     indexes: Map<String, Int>,
     warnings: MutableSet<String>,
 ): List<PivotMeasure> = filter { measure ->
-    val valid = !measure.formula.isNullOrBlank() || measure.fn == MeasureFn.Count || measure.sourceColumn?.let(indexes::containsKey) == true
+    val valid =
+        !measure.formula.isNullOrBlank() ||
+            measure.fn == MeasureFn.Count ||
+            measure.sourceColumn?.let(indexes::containsKey) == true
     if (!valid) warnings += "Measure '${measure.label}' references an unknown source column"
     valid
 }
@@ -763,7 +960,8 @@ private fun parseDateTime(raw: String): LocalDateTime? {
 
 private fun escapePath(raw: String): String = raw.replace("%", "%25").replace("/", "%2F")
 
-private fun intersect(left: BitSet, right: BitSet): BitSet = (left.clone() as BitSet).apply { and(right) }
+private fun intersect(left: BitSet, right: BitSet): BitSet =
+    (left.clone() as BitSet).apply { and(right) }
 
 private fun BitSet.toIndexList(): List<Int> = buildList {
     var index = nextSetBit(0)
@@ -773,15 +971,24 @@ private fun BitSet.toIndexList(): List<Int> = buildList {
     }
 }
 
-private fun List<BigDecimal>.average(): BigDecimal? = if (isEmpty()) null else
-    fold(BigDecimal.ZERO, BigDecimal::add).divide(BigDecimal(size), 8, RoundingMode.HALF_UP).stripTrailingZeros()
+private fun List<BigDecimal>.average(): BigDecimal? =
+    if (isEmpty()) null
+    else
+        fold(BigDecimal.ZERO, BigDecimal::add)
+            .divide(BigDecimal(size), 8, RoundingMode.HALF_UP)
+            .stripTrailingZeros()
 
 private fun ratio(numerator: BigDecimal, denominator: BigDecimal?): BigDecimal? =
-    denominator?.takeUnless { it.compareTo(BigDecimal.ZERO) == 0 }
+    denominator
+        ?.takeUnless { it.compareTo(BigDecimal.ZERO) == 0 }
         ?.let { numerator.divide(it, 10, RoundingMode.HALF_UP).stripTrailingZeros() }
 
 private fun measureReferences(formula: String): Set<String> =
-    Regex("\\[([^]]+)]").findAll(formula).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toSet()
+    Regex("\\[([^]]+)]")
+        .findAll(formula)
+        .map { it.groupValues[1].trim() }
+        .filter { it.isNotEmpty() }
+        .toSet()
 
 private fun ResultCell.toDecimalOrNull(): BigDecimal? = resultCellDecimal(this)
 
@@ -805,17 +1012,20 @@ private fun compareCells(left: ResultCell, right: ResultCell): Int {
 
 private fun cellText(cell: ResultCell): String = resultCellText(cell)
 
-private fun resultType(measure: PivotMeasure): String = when {
-    measure.formula != null -> "decimal"
-    measure.showAs.mode in setOf(
-        ShowAsMode.PercentGrandTotal,
-        ShowAsMode.PercentRowTotal,
-        ShowAsMode.PercentColumnTotal,
-        ShowAsMode.PercentParent,
-        ShowAsMode.PercentDifferenceFrom,
-        ShowAsMode.PercentRunningTotal,
-    ) -> "decimal"
-    measure.fn in setOf(MeasureFn.Count, MeasureFn.CountNumbers, MeasureFn.CountDistinct) -> "bigint"
-    measure.fn in setOf(MeasureFn.Min, MeasureFn.Max) -> "text"
-    else -> "decimal"
-}
+private fun resultType(measure: PivotMeasure): String =
+    when {
+        measure.formula != null -> "decimal"
+        measure.showAs.mode in
+            setOf(
+                ShowAsMode.PercentGrandTotal,
+                ShowAsMode.PercentRowTotal,
+                ShowAsMode.PercentColumnTotal,
+                ShowAsMode.PercentParent,
+                ShowAsMode.PercentDifferenceFrom,
+                ShowAsMode.PercentRunningTotal,
+            ) -> "decimal"
+        measure.fn in setOf(MeasureFn.Count, MeasureFn.CountNumbers, MeasureFn.CountDistinct) ->
+            "bigint"
+        measure.fn in setOf(MeasureFn.Min, MeasureFn.Max) -> "text"
+        else -> "decimal"
+    }

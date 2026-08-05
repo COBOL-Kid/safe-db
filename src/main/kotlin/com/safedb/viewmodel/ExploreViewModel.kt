@@ -10,27 +10,27 @@ import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.ExploreSession
 import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.PivotFilter
-import com.safedb.explore.WorksheetConfig
-import com.safedb.explore.WorksheetColumnLayout
-import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationPreview
+import com.safedb.explore.WorksheetColumnLayout
+import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.applyExplore
-import com.safedb.explore.applyWorksheet
 import com.safedb.explore.applyVisualization
-import com.safedb.explore.remapRecipe
-import com.safedb.explore.resolveRecipeFields
-import com.safedb.explore.projectWorksheetTable
-import com.safedb.explore.resolveWorksheetColumnLayout
-import com.safedb.explore.withoutTransientState
+import com.safedb.explore.applyWorksheet
 import com.safedb.explore.exploreSpecHash
 import com.safedb.explore.pivotCellKey
 import com.safedb.explore.pivotCellLineageKey
+import com.safedb.explore.projectWorksheetTable
+import com.safedb.explore.remapRecipe
+import com.safedb.explore.resolveRecipeFields
+import com.safedb.explore.resolveWorksheetColumnLayout
+import com.safedb.explore.withoutTransientState
 import com.safedb.export.writeQueryResultCsv
 import com.safedb.export.writeVisualizationPng
 import com.safedb.model.QueryResult
-import com.safedb.model.ResultCell
 import com.safedb.model.QuerySpec
+import com.safedb.model.ResultCell
 import com.safedb.model.ThemePalette
 import java.nio.file.Files
 import java.nio.file.Path
@@ -42,11 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class PreviewState<T>(
-    val value: T,
-    val loading: Boolean = false,
-    val error: String? = null,
-)
+data class PreviewState<T>(val value: T, val loading: Boolean = false, val error: String? = null)
 
 class ExploreViewModel(
     val session: ExploreSession,
@@ -58,26 +54,43 @@ class ExploreViewModel(
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
-    var workspace by mutableStateOf(
-        initialWorkspace ?: ExploreWorkspaceState(pivot = initialConfig ?: defaultConfig),
-    )
+    var workspace by
+        mutableStateOf(
+            initialWorkspace ?: ExploreWorkspaceState(pivot = initialConfig ?: defaultConfig)
+        )
         private set
-    val config: ExploreConfig get() = workspace.pivot
-    val worksheetConfig: WorksheetConfig get() = workspace.worksheet
-    val visualizationConfig: VisualizationConfig get() = workspace.visualization
+
+    val config: ExploreConfig
+        get() = workspace.pivot
+
+    val worksheetConfig: WorksheetConfig
+        get() = workspace.worksheet
+
+    val visualizationConfig: VisualizationConfig
+        get() = workspace.visualization
 
     var preview by mutableStateOf(applyExplore(session.sample, workspace.pivot))
         private set
-    var worksheetPreview by mutableStateOf(applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables))
+
+    var worksheetPreview by
+        mutableStateOf(applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables))
         private set
-    var visualizationPreview by mutableStateOf(applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables))
+
+    var visualizationPreview by
+        mutableStateOf(
+            applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+        )
         private set
+
     var pivotPreviewState by mutableStateOf(PreviewState(preview))
         private set
+
     var worksheetPreviewState by mutableStateOf(PreviewState(worksheetPreview))
         private set
+
     var visualizationPreviewState by mutableStateOf(PreviewState(visualizationPreview))
         private set
+
     private val pivotTask = PreviewTask<ExplorePreviewResult>()
     private val worksheetTask = PreviewTask<WorksheetPreview>()
     private val visualizationTask = PreviewTask<VisualizationPreview>()
@@ -85,13 +98,17 @@ class ExploreViewModel(
     private val memberOptionsCache = mutableMapOf<String, List<MemberOption>>()
     var appliedRecipeId by mutableStateOf<String?>(null)
         private set
+
     var pendingRecipe by mutableStateOf<ExploreRecipe?>(null)
         private set
+
     private var appliedRecipeBaseline: ExploreWorkspaceState? = null
     var exportError by mutableStateOf<String?>(null)
         private set
+
     var exportMessage by mutableStateOf<String?>(null)
         private set
+
     var exporting by mutableStateOf(false)
         private set
 
@@ -114,7 +131,9 @@ class ExploreViewModel(
     }
 
     fun hasVisibleWorksheetColumns(): Boolean =
-        resolveWorksheetColumnLayout(worksheetPreview.columns, worksheetConfig.columnLayout).any { it.visible }
+        resolveWorksheetColumnLayout(worksheetPreview.columns, worksheetConfig.columnLayout).any {
+            it.visible
+        }
 
     fun updateVisualization(block: (VisualizationConfig) -> VisualizationConfig) {
         workspace = workspace.copy(visualization = block(workspace.visualization))
@@ -140,9 +159,11 @@ class ExploreViewModel(
         clearExportMessages()
     }
 
-    fun isDefaultConfig(): Boolean = workspace.pivot.withoutTransientState() == defaultConfig.withoutTransientState()
+    fun isDefaultConfig(): Boolean =
+        workspace.pivot.withoutTransientState() == defaultConfig.withoutTransientState()
 
-    fun isDefaultWorksheet(): Boolean = workspace.worksheet.withoutTransientState() == WorksheetConfig()
+    fun isDefaultWorksheet(): Boolean =
+        workspace.worksheet.withoutTransientState() == WorksheetConfig()
 
     fun isDefaultVisualization(): Boolean = workspace.visualization == VisualizationConfig()
 
@@ -155,18 +176,20 @@ class ExploreViewModel(
     }
 
     fun applyVisualizationTemplate(templateConfig: VisualizationConfig) {
-        workspace = workspace.copy(activeMode = ExploreMode.Visualization, visualization = templateConfig)
+        workspace =
+            workspace.copy(activeMode = ExploreMode.Visualization, visualization = templateConfig)
         refreshMode(ExploreMode.Visualization)
         clearExportMessages()
     }
 
     fun applyRecipe(recipe: ExploreRecipe) {
-        workspace = workspace.copy(
-            activeMode = recipe.defaultMode,
-            pivot = recipe.pivot ?: workspace.pivot,
-            worksheet = recipe.worksheet ?: workspace.worksheet,
-            visualization = recipe.visualization ?: workspace.visualization,
-        )
+        workspace =
+            workspace.copy(
+                activeMode = recipe.defaultMode,
+                pivot = recipe.pivot ?: workspace.pivot,
+                worksheet = recipe.worksheet ?: workspace.worksheet,
+                visualization = recipe.visualization ?: workspace.visualization,
+            )
         dirtyModes += setOf(ExploreMode.Pivot, ExploreMode.Worksheet, ExploreMode.Visualization)
         refreshMode(workspace.activeMode)
         appliedRecipeId = recipe.id
@@ -193,7 +216,8 @@ class ExploreViewModel(
         pendingRecipe = null
     }
 
-    fun recipeDirty(): Boolean = appliedRecipeBaseline?.let { baseline -> workspace.recipeSnapshot() != baseline } ?: false
+    fun recipeDirty(): Boolean =
+        appliedRecipeBaseline?.let { baseline -> workspace.recipeSnapshot() != baseline } ?: false
 
     fun clearAppliedRecipe() {
         appliedRecipeId = null
@@ -206,19 +230,11 @@ class ExploreViewModel(
     }
 
     fun toggleRowPath(pathKey: String) {
-        updateConfig {
-            it.copy(
-                collapsedRowPaths = it.collapsedRowPaths.toggle(pathKey),
-            )
-        }
+        updateConfig { it.copy(collapsedRowPaths = it.collapsedRowPaths.toggle(pathKey)) }
     }
 
     fun toggleColumnPath(pathKey: String) {
-        updateConfig {
-            it.copy(
-                collapsedColumnPaths = it.collapsedColumnPaths.toggle(pathKey),
-            )
-        }
+        updateConfig { it.copy(collapsedColumnPaths = it.collapsedColumnPaths.toggle(pathKey)) }
     }
 
     fun toggleWorksheetGroup(pathKey: String) {
@@ -238,7 +254,8 @@ class ExploreViewModel(
                 val current = cells[key]
                 cells[key] = (current?.first ?: cell) to ((current?.second ?: 0) + 1)
             }
-            cells.map { (key, value) -> MemberOption(key, memberLabel(value.first), value.second) }
+            cells
+                .map { (key, value) -> MemberOption(key, memberLabel(value.first), value.second) }
                 .sortedBy { it.label }
         }
     }
@@ -254,24 +271,62 @@ class ExploreViewModel(
         when (mode) {
             ExploreMode.Pivot -> {
                 val config = workspace.pivot
-                pivotTask.schedule(scope, computeDispatcher, { applyExplore(session.sample, config) },
+                pivotTask.schedule(
+                    scope,
+                    computeDispatcher,
+                    { applyExplore(session.sample, config) },
                     { pivotPreviewState = pivotPreviewState.copy(loading = true, error = null) },
-                    { result -> preview = result; pivotPreviewState = PreviewState(result); dirtyModes -= mode },
-                    { error -> pivotPreviewState = pivotPreviewState.copy(loading = false, error = error) })
+                    { result ->
+                        preview = result
+                        pivotPreviewState = PreviewState(result)
+                        dirtyModes -= mode
+                    },
+                    { error ->
+                        pivotPreviewState = pivotPreviewState.copy(loading = false, error = error)
+                    },
+                )
             }
             ExploreMode.Worksheet -> {
                 val config = workspace.worksheet
-                worksheetTask.schedule(scope, computeDispatcher, { applyWorksheet(session.sample, config, session.baseSpec.tables) },
-                    { worksheetPreviewState = worksheetPreviewState.copy(loading = true, error = null) },
-                    { result -> worksheetPreview = result; worksheetPreviewState = PreviewState(result); dirtyModes -= mode },
-                    { error -> worksheetPreviewState = worksheetPreviewState.copy(loading = false, error = error) })
+                worksheetTask.schedule(
+                    scope,
+                    computeDispatcher,
+                    { applyWorksheet(session.sample, config, session.baseSpec.tables) },
+                    {
+                        worksheetPreviewState =
+                            worksheetPreviewState.copy(loading = true, error = null)
+                    },
+                    { result ->
+                        worksheetPreview = result
+                        worksheetPreviewState = PreviewState(result)
+                        dirtyModes -= mode
+                    },
+                    { error ->
+                        worksheetPreviewState =
+                            worksheetPreviewState.copy(loading = false, error = error)
+                    },
+                )
             }
             ExploreMode.Visualization -> {
                 val config = workspace.visualization
-                visualizationTask.schedule(scope, computeDispatcher, { applyVisualization(session.sample, config, session.baseSpec.tables) },
-                    { visualizationPreviewState = visualizationPreviewState.copy(loading = true, error = null) },
-                    { result -> visualizationPreview = result; visualizationPreviewState = PreviewState(result); dirtyModes -= mode },
-                    { error -> visualizationPreviewState = visualizationPreviewState.copy(loading = false, error = error) })
+                visualizationTask.schedule(
+                    scope,
+                    computeDispatcher,
+                    { applyVisualization(session.sample, config, session.baseSpec.tables) },
+                    {
+                        visualizationPreviewState =
+                            visualizationPreviewState.copy(loading = true, error = null)
+                    },
+                    { result ->
+                        visualizationPreview = result
+                        visualizationPreviewState = PreviewState(result)
+                        dirtyModes -= mode
+                    },
+                    { error ->
+                        visualizationPreviewState =
+                            visualizationPreviewState.copy(loading = false, error = error)
+                    },
+                )
             }
         }
     }
@@ -283,11 +338,17 @@ class ExploreViewModel(
                 pivotPreviewState = PreviewState(preview)
             }
             ExploreMode.Worksheet -> {
-                worksheetPreview = applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
+                worksheetPreview =
+                    applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
                 worksheetPreviewState = PreviewState(worksheetPreview)
             }
             ExploreMode.Visualization -> {
-                visualizationPreview = applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+                visualizationPreview =
+                    applyVisualization(
+                        session.sample,
+                        workspace.visualization,
+                        session.baseSpec.tables,
+                    )
                 visualizationPreviewState = PreviewState(visualizationPreview)
             }
         }
@@ -303,19 +364,22 @@ class ExploreViewModel(
     fun updateMemberFilter(filterId: String, includedKeys: Set<String>) {
         updateConfig { current ->
             current.copy(
-                filters = current.filters.map { filter ->
-                    if (filter is PivotFilter.Members && filter.id == filterId) {
-                        filter.copy(includedKeys = includedKeys)
-                    } else {
-                        filter
+                filters =
+                    current.filters.map { filter ->
+                        if (filter is PivotFilter.Members && filter.id == filterId) {
+                            filter.copy(includedKeys = includedKeys)
+                        } else {
+                            filter
+                        }
                     }
-                },
             )
         }
     }
 
     fun sourceRowsFor(rowPath: String, columnPath: String, measureAlias: String): QueryResult {
-        val indexes = preview.layout.cellLineage[pivotCellLineageKey(rowPath, columnPath, measureAlias)].orEmpty()
+        val indexes =
+            preview.layout.cellLineage[pivotCellLineageKey(rowPath, columnPath, measureAlias)]
+                .orEmpty()
         val rows = indexes.mapNotNull(session.sample.rows::getOrNull)
         return QueryResult(
             columns = session.sample.columns,
@@ -327,7 +391,8 @@ class ExploreViewModel(
     }
 
     fun sourceRowsForVisualizationMark(markId: String): QueryResult {
-        val indexes = visualizationPreview.marks.firstOrNull { it.id == markId }?.sourceRowIndices.orEmpty()
+        val indexes =
+            visualizationPreview.marks.firstOrNull { it.id == markId }?.sourceRowIndices.orEmpty()
         val rows = indexes.mapNotNull(session.sample.rows::getOrNull)
         return QueryResult(
             columns = session.sample.columns,
@@ -343,13 +408,12 @@ class ExploreViewModel(
 
     fun savePreviewCsv(path: Path) {
         val formattedRows = preview.layout.formattedRows
-        val result = if (formattedRows.size == preview.result.rows.size) {
-            preview.result.copy(
-                rows = formattedRows.map { row -> row.map(ResultCell::text) },
-            )
-        } else {
-            preview.result
-        }
+        val result =
+            if (formattedRows.size == preview.result.rows.size) {
+                preview.result.copy(rows = formattedRows.map { row -> row.map(ResultCell::text) })
+            } else {
+                preview.result
+            }
         saveResultCsv(result, path)
     }
 
@@ -360,26 +424,28 @@ class ExploreViewModel(
             exportError = "Show at least one worksheet column before exporting."
             return
         }
-        val rows = projection.rows.map { row ->
-            buildList {
-                if (projection.hasRowLabels) {
-                    add(row.rowLabel?.let(ResultCell::text) ?: ResultCell.Null)
-                }
-                row.cells.forEach { cell ->
-                    add(cell.error?.let { ResultCell.text("Error: $it") } ?: cell.value)
+        val rows =
+            projection.rows.map { row ->
+                buildList {
+                    if (projection.hasRowLabels) {
+                        add(row.rowLabel?.let(ResultCell::text) ?: ResultCell.Null)
+                    }
+                    row.cells.forEach { cell ->
+                        add(cell.error?.let { ResultCell.text("Error: $it") } ?: cell.value)
+                    }
                 }
             }
-        }
         saveResultCsv(
             QueryResult(
-                columns = buildList {
-                    if (projection.hasRowLabels) {
-                        add(com.safedb.model.ResultColumn("Group", "text"))
-                    }
-                    projection.columns.mapTo(this) {
-                        com.safedb.model.ResultColumn(it.label, it.dataType)
-                    }
-                },
+                columns =
+                    buildList {
+                        if (projection.hasRowLabels) {
+                            add(com.safedb.model.ResultColumn("Group", "text"))
+                        }
+                        projection.columns.mapTo(this) {
+                            com.safedb.model.ResultColumn(it.label, it.dataType)
+                        }
+                    },
                 rows = rows,
                 rowCount = rows.size,
                 truncated = session.sample.truncated,
@@ -419,9 +485,7 @@ class ExploreViewModel(
 
     fun saveResultCsv(result: QueryResult, path: Path) {
         executeExport("Exported ${result.rowCount} row${if (result.rowCount == 1) "" else "s"}") {
-            Files.newOutputStream(path).use { output ->
-                writeQueryResultCsv(result, output)
-            }
+            Files.newOutputStream(path).use { output -> writeQueryResultCsv(result, output) }
         }
     }
 
@@ -460,27 +524,24 @@ class ExploreViewModel(
     }
 }
 
-data class MemberOption(
-    val key: String,
-    val label: String,
-    val count: Int,
-)
+data class MemberOption(val key: String, val label: String, val count: Int)
 
-private fun Set<String>.toggle(value: String): Set<String> = if (value in this) this - value else this + value
+private fun Set<String>.toggle(value: String): Set<String> =
+    if (value in this) this - value else this + value
 
-private fun ExploreWorkspaceState.recipeSnapshot(): ExploreWorkspaceState = copy(
-    pivot = pivot.withoutTransientState(),
-    worksheet = worksheet.withoutTransientState(),
-)
+private fun ExploreWorkspaceState.recipeSnapshot(): ExploreWorkspaceState =
+    copy(pivot = pivot.withoutTransientState(), worksheet = worksheet.withoutTransientState())
 
-private fun memberLabel(cell: com.safedb.model.ResultCell?): String = when (cell) {
-    null, is com.safedb.model.ResultCell.Null -> "(blank)"
-    is com.safedb.model.ResultCell.BoolCell -> cell.value.toString()
-    is com.safedb.model.ResultCell.IntegerCell -> cell.value.toString()
-    is com.safedb.model.ResultCell.FloatCell -> cell.value.toString()
-    is com.safedb.model.ResultCell.TextCell -> cell.value.text
-    is com.safedb.model.ResultCell.BinaryCell -> cell.value.base64
-}
+private fun memberLabel(cell: com.safedb.model.ResultCell?): String =
+    when (cell) {
+        null,
+        is com.safedb.model.ResultCell.Null -> "(blank)"
+        is com.safedb.model.ResultCell.BoolCell -> cell.value.toString()
+        is com.safedb.model.ResultCell.IntegerCell -> cell.value.toString()
+        is com.safedb.model.ResultCell.FloatCell -> cell.value.toString()
+        is com.safedb.model.ResultCell.TextCell -> cell.value.text
+        is com.safedb.model.ResultCell.BinaryCell -> cell.value.base64
+    }
 
 /** Latest-result-wins scheduling shared by the independent Explore evaluators. */
 private class PreviewTask<T> {
@@ -502,7 +563,9 @@ private class PreviewTask<T> {
             delay(PREVIEW_DEBOUNCE_MS)
             val outcome = runCatching { withContext(dispatcher) { compute() } }
             if (scheduledGeneration != generation) return@launch
-            outcome.onSuccess(success).onFailure { error -> failure(error.message ?: error.toString()) }
+            outcome.onSuccess(success).onFailure { error ->
+                failure(error.message ?: error.toString())
+            }
         }
     }
 

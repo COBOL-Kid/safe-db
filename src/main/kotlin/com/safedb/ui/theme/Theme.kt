@@ -20,9 +20,10 @@ object SafeDbTheme {
         @Composable get() = LocalThemePalette.current
 }
 
-val LocalSafeDbColors = staticCompositionLocalOf<SafeDbColors> {
-    error("SafeDbColors not provided. Wrap content in SafeDbTheme.")
-}
+val LocalSafeDbColors =
+    staticCompositionLocalOf<SafeDbColors> {
+        error("SafeDbColors not provided. Wrap content in SafeDbTheme.")
+    }
 
 val LocalThemePalette = staticCompositionLocalOf { ThemePalette.DEFAULT }
 
@@ -34,14 +35,15 @@ fun SafeDbTheme(
 ) {
     val (colorScheme, safeDbColors) = if (isDark) darkScheme(palette) else lightScheme(palette)
 
-    val scrollbarStyle = ScrollbarStyle(
-        minimalHeight = 32.dp,
-        thickness = 6.dp,
-        shape = RoundedCornerShape(1.dp),
-        hoverDurationMillis = 120,
-        unhoverColor = if (isDark) Color(0x405F7182) else Color(0x50687889),
-        hoverColor = if (isDark) Color(0xA06F8497) else Color(0xA0526576),
-    )
+    val scrollbarStyle =
+        ScrollbarStyle(
+            minimalHeight = 32.dp,
+            thickness = 6.dp,
+            shape = RoundedCornerShape(1.dp),
+            hoverDurationMillis = 120,
+            unhoverColor = if (isDark) Color(0x405F7182) else Color(0x50687889),
+            hoverColor = if (isDark) Color(0xA06F8497) else Color(0xA0526576),
+        )
 
     CompositionLocalProvider(
         LocalSafeDbColors provides safeDbColors,

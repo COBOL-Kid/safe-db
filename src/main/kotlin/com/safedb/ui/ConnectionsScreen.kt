@@ -18,9 +18,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,17 +37,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.safedb.ui.theme.DataMono
-import com.safedb.ui.theme.LabelMicro
-import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.model.ConnectionDef
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
+import com.safedb.ui.components.DeleteIconButton
 import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
-import com.safedb.ui.components.DeleteIconButton
+import com.safedb.ui.theme.DataMono
+import com.safedb.ui.theme.LabelMicro
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.ConnectionsViewModel
 
 @Composable
@@ -72,7 +72,8 @@ fun ConnectionsScreen(
     ConfirmDialog(
         open = pendingDelete != null,
         title = "Delete connection?",
-        message = pendingDelete?.let { "Delete connection \"${it.name}\"? This cannot be undone." } ?: "",
+        message =
+            pendingDelete?.let { "Delete connection \"${it.name}\"? This cannot be undone." } ?: "",
         destructive = true,
         onConfirm = {
             pendingDelete?.let { connection ->
@@ -85,10 +86,10 @@ fun ConnectionsScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SafeDbTheme.colors.workspaceHeader)
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(SafeDbTheme.colors.workspaceHeader)
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -104,8 +105,10 @@ fun ConnectionsScreen(
                 )
                 Text(
                     when {
-                        editingConnection != null -> "Update connection details and driver properties."
-                        showConnectionForm -> "Connect to a database. Credentials are stored in your OS keychain."
+                        editingConnection != null ->
+                            "Update connection details and driver properties."
+                        showConnectionForm ->
+                            "Connect to a database. Credentials are stored in your OS keychain."
                         else -> "Manage your database connections."
                     },
                     style = MaterialTheme.typography.bodyMedium,
@@ -118,14 +121,20 @@ fun ConnectionsScreen(
                     "Cancel",
                     style = MaterialTheme.typography.labelLarge,
                     color = SafeDbTheme.colors.actionPrimary,
-                    modifier = Modifier.clickable {
-                        showConnectionForm = false
-                        editingConnection = null
-                    }.padding(8.dp),
+                    modifier =
+                        Modifier.clickable {
+                                showConnectionForm = false
+                                editingConnection = null
+                            }
+                            .padding(8.dp),
                 )
             } else {
                 PrimaryButton(onClick = { showConnectionForm = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
                     Text("Add Connection", modifier = Modifier.padding(start = 8.dp))
                 }
             }
@@ -134,41 +143,43 @@ fun ConnectionsScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         when {
-            showConnectionForm || editingConnection != null -> Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                ConnectionForm(
-                    service = service,
-                    existingConnection = editingConnection,
-                    onSaved = { saved, credentialMaterialChanged ->
-                        if (editingConnection != null && credentialMaterialChanged) {
-                            onConnectionChanged(saved.id)
-                        }
-                        showConnectionForm = false
-                        editingConnection = null
-                        onSaved()
-                    },
-                    modifier = Modifier.widthIn(max = 1_020.dp),
-                )
-            }
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                androidx.compose.material3.CircularProgressIndicator()
-            }
-            error != null -> Box(Modifier.padding(32.dp)) {
-                Text(error!!, color = MaterialTheme.colorScheme.error)
-            }
-            connections.isEmpty() -> EmptyState(
-                icon = Icons.Filled.Add,
-                title = "No connections yet",
-                subtitle = "Add a connection to start exploring your data.",
-            ) {
-                PrimaryButton(onClick = { showConnectionForm = true }) {
-                    Text("Add Connection")
+            showConnectionForm || editingConnection != null ->
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    ConnectionForm(
+                        service = service,
+                        existingConnection = editingConnection,
+                        onSaved = { saved, credentialMaterialChanged ->
+                            if (editingConnection != null && credentialMaterialChanged) {
+                                onConnectionChanged(saved.id)
+                            }
+                            showConnectionForm = false
+                            editingConnection = null
+                            onSaved()
+                        },
+                        modifier = Modifier.widthIn(max = 1_020.dp),
+                    )
                 }
-            }
+            loading ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
+            error != null ->
+                Box(Modifier.padding(32.dp)) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
+            connections.isEmpty() ->
+                EmptyState(
+                    icon = Icons.Filled.Add,
+                    title = "No connections yet",
+                    subtitle = "Add a connection to start exploring your data.",
+                ) {
+                    PrimaryButton(onClick = { showConnectionForm = true }) {
+                        Text("Add Connection")
+                    }
+                }
             else -> {
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (deleteError != null) {
@@ -187,9 +198,7 @@ fun ConnectionsScreen(
                         columns = GridCells.Adaptive(minSize = 276.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
                     ) {
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
@@ -220,7 +229,10 @@ private fun ConnectionCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
-                Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Surface(
                         modifier = Modifier.size(30.dp),
                         shape = MaterialTheme.shapes.small,
@@ -254,7 +266,10 @@ private fun ConnectionCard(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    androidx.compose.material3.IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                    androidx.compose.material3.IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(32.dp),
+                    ) {
                         Icon(
                             Icons.Filled.Settings,
                             contentDescription = "Edit ${connection.name}",
@@ -277,9 +292,7 @@ private fun ConnectionCard(
 
             PrimaryButton(
                 onClick = onOpen,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
             ) {
                 Text("Open")
                 Icon(

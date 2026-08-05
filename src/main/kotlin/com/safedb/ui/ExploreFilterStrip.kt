@@ -21,7 +21,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.safedb.explore.PivotFilter
@@ -39,10 +38,11 @@ internal fun ExploreFilterStrip(
 ) {
     if (filters.isEmpty()) return
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         filters.forEach { filter ->
@@ -64,23 +64,34 @@ private fun SlicerControl(
     var expanded by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val selected = filter.includedKeys
-    val summary = if (selected.isEmpty() || selected.size == options.size) {
-        "All (${options.size})"
-    } else {
-        "${selected.size} of ${options.size} selected"
-    }
+    val summary =
+        if (selected.isEmpty() || selected.size == options.size) {
+            "All (${options.size})"
+        } else {
+            "${selected.size} of ${options.size} selected"
+        }
     val visible = options.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) }
 
     Box {
         Surface(
             shape = RoundedCornerShape(2.dp),
-            color = if (selected.isEmpty()) MaterialTheme.colorScheme.surface else SafeDbTheme.colors.accentContainer,
+            color =
+                if (selected.isEmpty()) MaterialTheme.colorScheme.surface
+                else SafeDbTheme.colors.accentContainer,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             onClick = { expanded = true },
         ) {
             Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)) {
-                Text(filter.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text(summary, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    filter.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         SafeDropdownMenu(
@@ -105,10 +116,15 @@ private fun SlicerControl(
                         supportingText = "${option.count} row${if (option.count == 1) "" else "s"}",
                         leading = { Checkbox(checked = checked, onCheckedChange = null) },
                         onClick = {
-                            val baseline = if (selected.isEmpty()) options.map { it.key }.toSet() else selected
-                            val next = if (option.key in baseline) baseline - option.key else baseline + option.key
+                            val baseline =
+                                if (selected.isEmpty()) options.map { it.key }.toSet() else selected
+                            val next =
+                                if (option.key in baseline) baseline - option.key
+                                else baseline + option.key
                             if (next.isNotEmpty()) {
-                                onSelectionChange(if (next.size == options.size) emptySet() else next)
+                                onSelectionChange(
+                                    if (next.size == options.size) emptySet() else next
+                                )
                             }
                         },
                     )

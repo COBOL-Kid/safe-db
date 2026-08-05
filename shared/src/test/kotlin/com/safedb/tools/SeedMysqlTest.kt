@@ -13,17 +13,24 @@ import kotlin.test.assertTrue
 class SeedMysqlTest {
     @Test
     fun parsesFlagsAndGeneratorSizes() {
-        val options = parseArgs(
-            listOf(
-                "--reset",
-                "--orders", "12",
-                "--customers", "8",
-                "--products", "4",
-                "--categories", "2",
-                "--seed", "7",
-                "--batch-size", "3",
-            ),
-        )
+        val options =
+            parseArgs(
+                listOf(
+                    "--reset",
+                    "--orders",
+                    "12",
+                    "--customers",
+                    "8",
+                    "--products",
+                    "4",
+                    "--categories",
+                    "2",
+                    "--seed",
+                    "7",
+                    "--batch-size",
+                    "3",
+                )
+            )
 
         assertTrue(options.reset)
         assertEquals(12, options.generator.orders)
@@ -43,23 +50,25 @@ class SeedMysqlTest {
         assertEquals(
             "--products must be greater than or equal to --categories",
             assertFailsWith<UsageError> {
-                parseArgs(listOf("--products", "1", "--categories", "2"))
-            }.message,
+                    parseArgs(listOf("--products", "1", "--categories", "2"))
+                }
+                .message,
         )
         assertFailsWith<RuntimeException> { sanitizeIdentifier("safe;drop", "database") }
     }
 
     @Test
     fun generatedSqlIsDeterministicAndBatched() {
-        val options = GeneratorOptions(
-            database = "fixture_db",
-            categories = 2,
-            products = 4,
-            customers = 5,
-            orders = 7,
-            seed = 9,
-            batchSize = 2,
-        )
+        val options =
+            GeneratorOptions(
+                database = "fixture_db",
+                categories = 2,
+                products = 4,
+                customers = 5,
+                orders = 7,
+                seed = 9,
+                batchSize = 2,
+            )
 
         val first = generate(options)
         val second = generate(options)
@@ -94,7 +103,7 @@ class SeedMysqlTest {
                     "Windows 11",
                     "C:/Users/test",
                     appData = "C:/Users/test/AppData/Roaming",
-                ),
+                )
             ),
         )
         assertNull(safeDbAppDataDir(SeedMysqlPlatformEnvironment("Windows 11", "C:/Users/test")))
@@ -102,9 +111,10 @@ class SeedMysqlTest {
 
     @Test
     fun linuxAppDataLookupReportsUnsupportedPlatform() {
-        val error = assertFailsWith<UnsupportedDesktopPlatformException> {
-            safeDbAppDataDir(SeedMysqlPlatformEnvironment("Linux", "/home/test"))
-        }
+        val error =
+            assertFailsWith<UnsupportedDesktopPlatformException> {
+                safeDbAppDataDir(SeedMysqlPlatformEnvironment("Linux", "/home/test"))
+            }
 
         assertEquals(
             "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
@@ -116,7 +126,7 @@ class SeedMysqlTest {
             safeDbAppDataDirForStateReset(
                 environment = SeedMysqlPlatformEnvironment("Linux", "/home/test"),
                 report = { resetMessage = it },
-            ),
+            )
         )
         assertEquals(
             "-> skipping safe-db app state reset " +
@@ -127,9 +137,7 @@ class SeedMysqlTest {
 
     private fun generate(options: GeneratorOptions): String {
         val output = StringWriter()
-        BufferedWriter(output).use { writer ->
-            MysqlFixtureGenerator(options, writer).generate()
-        }
+        BufferedWriter(output).use { writer -> MysqlFixtureGenerator(options, writer).generate() }
         return output.toString()
     }
 }

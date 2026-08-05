@@ -19,8 +19,8 @@ import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.SafeDbTheme
 
 /**
- * Flat Control Plane panel. Hover is expressed through a cobalt border and
- * cool surface shift rather than Material elevation.
+ * Flat Control Plane panel. Hover is expressed through a cobalt border and cool surface shift
+ * rather than Material elevation.
  */
 @Composable
 fun AppCard(
@@ -34,16 +34,18 @@ fun AppCard(
     val hovered by interactionSource.collectIsHoveredAsState()
 
     val lifted = hoverLift && hovered
-    val borderColor by animateColorAsState(
-        if (lifted) {
-            SafeDbTheme.colors.actionPrimary
-        } else {
-            MaterialTheme.colorScheme.outline
-        },
-    )
-    val backgroundColor by animateColorAsState(
-        if (lifted) MaterialTheme.colorScheme.surfaceContainerLow else containerColor,
-    )
+    val borderColor by
+        animateColorAsState(
+            if (lifted) {
+                SafeDbTheme.colors.actionPrimary
+            } else {
+                MaterialTheme.colorScheme.outline
+            }
+        )
+    val backgroundColor by
+        animateColorAsState(
+            if (lifted) MaterialTheme.colorScheme.surfaceContainerLow else containerColor
+        )
     val border = BorderStroke(1.dp, borderColor)
 
     if (onClick != null) {

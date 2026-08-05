@@ -11,37 +11,41 @@ import com.safedb.service.SafeDbService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-class SchemaViewModel(
-    private val service: SafeDbService,
-    private val scope: CoroutineScope,
-) {
+class SchemaViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
     private var requestGeneration = 0
     private var requestedConnectionId: String? = null
 
     var schema by mutableStateOf<Schema?>(null)
         private set
+
     var loading by mutableStateOf(false)
         private set
+
     var error by mutableStateOf<String?>(null)
         private set
+
     var loadedConnectionId by mutableStateOf<String?>(null)
         private set
+
     var selectedSchema by mutableStateOf<String?>(null)
         private set
+
     var preferredSchemaWarning by mutableStateOf<String?>(null)
         private set
+
     var search by mutableStateOf("")
 
     val tables: List<TableInfo>
         get() = schema?.tables.orEmpty()
 
     val schemaOptions: List<String>
-        get() = tables
-            .asSequence()
-            .map { it.schema }
-            .distinct()
-            .sortedWith(String.CASE_INSENSITIVE_ORDER)
-            .toList()
+        get() =
+            tables
+                .asSequence()
+                .map { it.schema }
+                .distinct()
+                .sortedWith(String.CASE_INSENSITIVE_ORDER)
+                .toList()
 
     val filteredTables: List<TableInfo>
         get() {
@@ -134,17 +138,18 @@ class SchemaViewModel(
             return
         }
 
-        preferredSchemaWarning = when (selection.source) {
-            SchemaSelectionSource.StartupDefault ->
-                "Default schema \"$requestedSchema\" is unavailable. Select a schema or update Settings."
-            SchemaSelectionSource.ConnectionHistory ->
-                "Previously selected schema \"$requestedSchema\" is unavailable. Select another schema."
-            SchemaSelectionSource.RestoredQuery ->
-                "Query schema \"$requestedSchema\" is unavailable. Select another schema."
-            SchemaSelectionSource.User ->
-                "Schema \"$requestedSchema\" is unavailable. Select another schema."
-            null -> null
-        }
+        preferredSchemaWarning =
+            when (selection.source) {
+                SchemaSelectionSource.StartupDefault ->
+                    "Default schema \"$requestedSchema\" is unavailable. Select a schema or update Settings."
+                SchemaSelectionSource.ConnectionHistory ->
+                    "Previously selected schema \"$requestedSchema\" is unavailable. Select another schema."
+                SchemaSelectionSource.RestoredQuery ->
+                    "Query schema \"$requestedSchema\" is unavailable. Select another schema."
+                SchemaSelectionSource.User ->
+                    "Schema \"$requestedSchema\" is unavailable. Select another schema."
+                null -> null
+            }
         onUnavailableSelection?.invoke(selection)
     }
 }

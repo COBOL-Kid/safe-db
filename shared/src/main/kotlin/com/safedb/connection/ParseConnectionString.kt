@@ -34,12 +34,13 @@ private data class MutableTransport(
     var oracleWalletLocation: String? = null,
 )
 
-private val DEFAULT_PORTS = mapOf(
-    Dialect.Postgres to 5432,
-    Dialect.MySql to 3306,
-    Dialect.Mssql to 1433,
-    Dialect.Oracle to 1521,
-)
+private val DEFAULT_PORTS =
+    mapOf(
+        Dialect.Postgres to 5432,
+        Dialect.MySql to 3306,
+        Dialect.Mssql to 1433,
+        Dialect.Oracle to 1521,
+    )
 
 fun parseConnectionString(input: String): ParsedConnection {
     val raw = input.trim()
@@ -56,9 +57,10 @@ fun parseConnectionString(input: String): ParsedConnection {
             raw.startsWith("@//") -> parseOracle(raw)
 
         looksLikeSqlServerKeyValue(raw) -> parseSqlServerKeyValue(raw)
-        else -> throw ConnectionStringParseError(
-            "This connection string format is not recognized. Try the guided setup instead.",
-        )
+        else ->
+            throw ConnectionStringParseError(
+                "This connection string format is not recognized. Try the guided setup instead."
+            )
     }
 }
 
@@ -78,7 +80,8 @@ private fun baseResult(
     sanitizedInput: String,
 ): ParsedConnection {
     val cleanHost = stripBrackets(host.trim())
-    if (cleanHost.isEmpty()) throw ConnectionStringParseError("Connection string is missing a host.")
+    if (cleanHost.isEmpty())
+        throw ConnectionStringParseError("Connection string is missing a host.")
     if (database.trim().isEmpty()) {
         throw ConnectionStringParseError("Connection string is missing a database name.")
     }
@@ -95,12 +98,13 @@ private fun baseResult(
         database = database.trim(),
         username = username?.trim().orEmpty(),
         password = password,
-        transportSecurity = TransportSecurity(
-            mode = transport.mode,
-            caPem = transport.caPem,
-            oracleWalletLocation = transport.oracleWalletLocation,
-            legacyImplicit = false,
-        ),
+        transportSecurity =
+            TransportSecurity(
+                mode = transport.mode,
+                caPem = transport.caPem,
+                oracleWalletLocation = transport.oracleWalletLocation,
+                legacyImplicit = false,
+            ),
         driverProperties = driverProperties,
         inferredLocation = inferLocation(cleanHost),
         warnings = warnings,
@@ -131,14 +135,16 @@ private fun parsePostgresJdbc(raw: String): ParsedConnection =
 
 private fun parseMysqlUri(raw: String): ParsedConnection {
     val url = parseUrl(raw, "MySQL")
-    val sslMode = lowercaseParam(url, "ssl-mode")
-        ?: lowercaseParam(url, "ssl_mode")
-        ?: lowercaseParam(url, "sslMode")
-    val extracted = extractDriverProperties(
-        Dialect.MySql,
-        urlQueryPairs(url),
-        setOf("ssl-mode", "ssl_mode", "sslmode", "ssl-ca", "ssl_ca"),
-    )
+    val sslMode =
+        lowercaseParam(url, "ssl-mode")
+            ?: lowercaseParam(url, "ssl_mode")
+            ?: lowercaseParam(url, "sslMode")
+    val extracted =
+        extractDriverProperties(
+            Dialect.MySql,
+            urlQueryPairs(url),
+            setOf("ssl-mode", "ssl_mode", "sslmode", "ssl-ca", "ssl_ca"),
+        )
     val warnings = sslCaWarnings(url) + extracted.warnings
     return baseResult(
         dialect = Dialect.MySql,
@@ -168,12 +174,14 @@ private fun parseSqlServerJdbc(raw: String): ParsedConnection {
     val username = findKey(props, listOf("user", "username", "user id", "uid")).orEmpty()
     val password = findKey(props, listOf("password", "pwd"))
     val encrypt = findKey(props, listOf("encrypt"))
-    val trustServerCertificate = findKey(props, listOf("trustservercertificate", "trust server certificate"))
-    val extracted = extractDriverProperties(
-        Dialect.Mssql,
-        parseSemicolonKeyValueList(propertyParts.joinToString(";")),
-        SQL_SERVER_MANAGED_KEYS,
-    )
+    val trustServerCertificate =
+        findKey(props, listOf("trustservercertificate", "trust server certificate"))
+    val extracted =
+        extractDriverProperties(
+            Dialect.Mssql,
+            parseSemicolonKeyValueList(propertyParts.joinToString(";")),
+            SQL_SERVER_MANAGED_KEYS,
+        )
 
     return baseResult(
         dialect = Dialect.Mssql,
@@ -191,18 +199,22 @@ private fun parseSqlServerJdbc(raw: String): ParsedConnection {
 
 private fun parseSqlServerKeyValue(raw: String): ParsedConnection {
     val props = parseSemicolonKeyValues(raw)
-    val server = findKey(props, listOf("server", "data source", "address", "addr", "network address")).orEmpty()
+    val server =
+        findKey(props, listOf("server", "data source", "address", "addr", "network address"))
+            .orEmpty()
     val (host, port) = parseSqlServerHost(server)
     val database = findKey(props, listOf("database", "initial catalog")).orEmpty()
     val username = findKey(props, listOf("user id", "uid", "user", "username")).orEmpty()
     val password = findKey(props, listOf("password", "pwd"))
     val encrypt = findKey(props, listOf("encrypt"))
-    val trustServerCertificate = findKey(props, listOf("trustservercertificate", "trust server certificate"))
-    val extracted = extractDriverProperties(
-        Dialect.Mssql,
-        parseSemicolonKeyValueList(raw),
-        SQL_SERVER_MANAGED_KEYS,
-    )
+    val trustServerCertificate =
+        findKey(props, listOf("trustservercertificate", "trust server certificate"))
+    val extracted =
+        extractDriverProperties(
+            Dialect.Mssql,
+            parseSemicolonKeyValueList(raw),
+            SQL_SERVER_MANAGED_KEYS,
+        )
 
     return baseResult(
         dialect = Dialect.Mssql,
@@ -239,29 +251,31 @@ private fun parseOracle(raw: String): ParsedConnection {
     rest = rest.removePrefix("@")
     if (matchesPrefix(rest, "^\\(description=")) {
         throw ConnectionStringParseError(
-            "Oracle TNS DESCRIPTION blocks are not supported. Use guided setup or paste an Easy Connect URL.",
+            "Oracle TNS DESCRIPTION blocks are not supported. Use guided setup or paste an Easy Connect URL."
         )
     }
 
     val protocol = if (matchesPrefix(rest, "^tcps:")) "tcps" else "tcp"
-    rest = rest.replace(Regex("^tcps?:", RegexOption.IGNORE_CASE), "")
-        .replace(Regex("^//"), "")
+    rest = rest.replace(Regex("^tcps?:", RegexOption.IGNORE_CASE), "").replace(Regex("^//"), "")
 
     val pseudoUrl = parseUrl("$protocol://$rest", "Oracle")
-    val walletLocation = paramValue(pseudoUrl, "wallet_location")
-        ?: paramValue(pseudoUrl, "walletLocation")
-    val mode = if (protocol == "tcps") TransportSecurityMode.VerifyIdentity else TransportSecurityMode.Disabled
+    val walletLocation =
+        paramValue(pseudoUrl, "wallet_location") ?: paramValue(pseudoUrl, "walletLocation")
+    val mode =
+        if (protocol == "tcps") TransportSecurityMode.VerifyIdentity
+        else TransportSecurityMode.Disabled
     val warnings =
         if (mode != TransportSecurityMode.Disabled && walletLocation == null) {
             listOf("Oracle TCPS requires a wallet location before testing or saving.")
         } else {
             emptyList()
         }
-    val extracted = extractDriverProperties(
-        Dialect.Oracle,
-        urlQueryPairs(pseudoUrl),
-        setOf("wallet_location", "walletlocation"),
-    )
+    val extracted =
+        extractDriverProperties(
+            Dialect.Oracle,
+            urlQueryPairs(pseudoUrl),
+            setOf("wallet_location", "walletlocation"),
+        )
 
     return baseResult(
         dialect = Dialect.Oracle,
@@ -270,10 +284,7 @@ private fun parseOracle(raw: String): ParsedConnection {
         database = pathnameDatabase(pseudoUrl.rawPath),
         username = decodeComponent(username),
         password = password?.let { decodeComponent(it) },
-        transport = MutableTransport(
-            mode = mode,
-            oracleWalletLocation = walletLocation,
-        ),
+        transport = MutableTransport(mode = mode, oracleWalletLocation = walletLocation),
         driverProperties = extracted.properties,
         warnings = warnings + extracted.warnings,
         sanitizedInput = sanitizeOracleInput(raw),
@@ -292,11 +303,12 @@ private data class ParsedUrl(
 )
 
 private fun parseUrl(raw: String, label: String): ParsedUrl {
-    val uri = try {
-        URI(raw)
-    } catch (_: Exception) {
-        throw ConnectionStringParseError("$label connection string is not a valid URL.")
-    }
+    val uri =
+        try {
+            URI(raw)
+        } catch (_: Exception) {
+            throw ConnectionStringParseError("$label connection string is not a valid URL.")
+        }
     val host = uri.host
     if (host.isNullOrBlank()) {
         throw ConnectionStringParseError("$label connection string is not a valid URL.")
@@ -325,9 +337,11 @@ private fun postgresTransport(sslmode: String?, host: String): MutableTransport 
         "require" -> MutableTransport(TransportSecurityMode.EncryptOnly)
         "verify-ca" -> MutableTransport(TransportSecurityMode.VerifyCa)
         "verify-full" -> MutableTransport(TransportSecurityMode.VerifyIdentity)
-        else -> MutableTransport(
-            if (isLocalHost(host)) TransportSecurityMode.Disabled else TransportSecurityMode.VerifyIdentity,
-        )
+        else ->
+            MutableTransport(
+                if (isLocalHost(host)) TransportSecurityMode.Disabled
+                else TransportSecurityMode.VerifyIdentity
+            )
     }
 
 private fun mysqlTransport(sslMode: String?, host: String): MutableTransport =
@@ -336,9 +350,11 @@ private fun mysqlTransport(sslMode: String?, host: String): MutableTransport =
         "required" -> MutableTransport(TransportSecurityMode.EncryptOnly)
         "verify_ca" -> MutableTransport(TransportSecurityMode.VerifyCa)
         "verify_identity" -> MutableTransport(TransportSecurityMode.VerifyIdentity)
-        else -> MutableTransport(
-            if (isLocalHost(host)) TransportSecurityMode.Disabled else TransportSecurityMode.VerifyIdentity,
-        )
+        else ->
+            MutableTransport(
+                if (isLocalHost(host)) TransportSecurityMode.Disabled
+                else TransportSecurityMode.VerifyIdentity
+            )
     }
 
 private fun sqlServerTransport(
@@ -350,7 +366,8 @@ private fun sqlServerTransport(
     if (isTrue(trustServerCertificate)) return MutableTransport(TransportSecurityMode.EncryptOnly)
     if (isTrue(encrypt)) return MutableTransport(TransportSecurityMode.VerifyIdentity)
     return MutableTransport(
-        if (isLocalHost(host)) TransportSecurityMode.Disabled else TransportSecurityMode.VerifyIdentity,
+        if (isLocalHost(host)) TransportSecurityMode.Disabled
+        else TransportSecurityMode.VerifyIdentity
     )
 }
 
@@ -360,34 +377,35 @@ private fun isTrue(value: String?): Boolean =
 private fun isFalse(value: String?): Boolean =
     listOf("false", "no", "optional").contains(value?.trim()?.lowercase())
 
-private fun lowercaseParam(url: ParsedUrl, key: String): String? =
-    paramValue(url, key)?.lowercase()
+private fun lowercaseParam(url: ParsedUrl, key: String): String? = paramValue(url, key)?.lowercase()
 
 private fun paramValue(url: ParsedUrl, key: String): String? {
     val query = url.rawQuery ?: return null
-    return query.split('&').mapNotNull { part ->
-        val eqIndex = part.indexOf('=')
-        if (eqIndex < 0) return@mapNotNull null
-        val candidate = decodeComponent(part.substring(0, eqIndex))
-        if (candidate.equals(key, ignoreCase = true)) {
-            decodeComponent(part.substring(eqIndex + 1))
-        } else {
-            null
+    return query
+        .split('&')
+        .mapNotNull { part ->
+            val eqIndex = part.indexOf('=')
+            if (eqIndex < 0) return@mapNotNull null
+            val candidate = decodeComponent(part.substring(0, eqIndex))
+            if (candidate.equals(key, ignoreCase = true)) {
+                decodeComponent(part.substring(eqIndex + 1))
+            } else {
+                null
+            }
         }
-    }.firstOrNull()
+        .firstOrNull()
 }
 
 private fun urlQueryPairs(url: ParsedUrl): List<Pair<String, String>> =
-    url.rawQuery.orEmpty().split('&')
-        .filter(String::isNotEmpty)
-        .map { part ->
-            val eqIndex = part.indexOf('=')
-            if (eqIndex < 0) {
-                decodeComponent(part) to ""
-            } else {
-                decodeComponent(part.substring(0, eqIndex)) to decodeComponent(part.substring(eqIndex + 1))
-            }
+    url.rawQuery.orEmpty().split('&').filter(String::isNotEmpty).map { part ->
+        val eqIndex = part.indexOf('=')
+        if (eqIndex < 0) {
+            decodeComponent(part) to ""
+        } else {
+            decodeComponent(part.substring(0, eqIndex)) to
+                decodeComponent(part.substring(eqIndex + 1))
         }
+    }
 
 private data class ExtractedDriverProperties(
     val properties: List<DriverProperty>,
@@ -418,7 +436,8 @@ private fun extractDriverProperties(
                     warnings += "Driver parameter '$name' was not imported: ${error.message}."
                 } else {
                     if (properties.remove(normalized) != null) {
-                        warnings += "Driver parameter '$name' appeared more than once; the last value was imported."
+                        warnings +=
+                            "Driver parameter '$name' appeared more than once; the last value was imported."
                     }
                     properties[normalized] = property
                 }
@@ -436,7 +455,10 @@ private fun sslCaWarnings(url: ParsedUrl): List<String> =
     }
 
 private fun looksLikeSqlServerKeyValue(raw: String): Boolean =
-    Regex("(^|;)\\s*(server|data source|database|initial catalog|user id|uid)\\s*=", RegexOption.IGNORE_CASE)
+    Regex(
+            "(^|;)\\s*(server|data source|database|initial catalog|user id|uid)\\s*=",
+            RegexOption.IGNORE_CASE,
+        )
         .containsMatchIn(raw)
 
 private fun splitSemicolonRecords(raw: String): List<String> {
@@ -537,25 +559,26 @@ private fun parseSemicolonKeyValueList(raw: String): List<Pair<String, String>> 
         record.substring(0, eqIndex).trim() to unwrapValue(record.substring(eqIndex + 1).trim())
     }
 
-private val SQL_SERVER_MANAGED_KEYS = setOf(
-    "server",
-    "data source",
-    "address",
-    "addr",
-    "network address",
-    "databasename",
-    "database",
-    "initial catalog",
-    "user",
-    "username",
-    "user id",
-    "uid",
-    "password",
-    "pwd",
-    "encrypt",
-    "trustservercertificate",
-    "trust server certificate",
-)
+private val SQL_SERVER_MANAGED_KEYS =
+    setOf(
+        "server",
+        "data source",
+        "address",
+        "addr",
+        "network address",
+        "databasename",
+        "database",
+        "initial catalog",
+        "user",
+        "username",
+        "user id",
+        "uid",
+        "password",
+        "pwd",
+        "encrypt",
+        "trustservercertificate",
+        "trust server certificate",
+    )
 
 private fun unwrapValue(value: String): String {
     if (value.startsWith('{') && value.endsWith('}')) {
@@ -563,7 +586,7 @@ private fun unwrapValue(value: String): String {
     }
     if (
         (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith('\'') && value.endsWith('\''))
+            (value.startsWith('\'') && value.endsWith('\''))
     ) {
         return value.substring(1, value.length - 1)
     }
@@ -581,7 +604,8 @@ private fun findKey(props: Map<String, String>, keys: List<String>): String? {
 private fun parseSqlServerHost(value: String): Pair<String, Int?> {
     var server = unwrapValue(value.trim())
     server = server.replace(Regex("^tcp:", RegexOption.IGNORE_CASE), "")
-    if (server.isEmpty()) throw ConnectionStringParseError("SQL Server connection string is missing a server.")
+    if (server.isEmpty())
+        throw ConnectionStringParseError("SQL Server connection string is missing a server.")
 
     if (server.startsWith('[')) {
         val close = server.indexOf(']')
@@ -590,7 +614,8 @@ private fun parseSqlServerHost(value: String): Pair<String, Int?> {
         return host to port.toIntOrNull()
     }
 
-    val parts = if (server.contains(',')) server.split(',', limit = 2) else server.split(':', limit = 2)
+    val parts =
+        if (server.contains(',')) server.split(',', limit = 2) else server.split(':', limit = 2)
     val host = parts[0]
     val port = parts.getOrNull(1)?.toIntOrNull()
     return host to port
@@ -600,9 +625,12 @@ private fun sanitizeUrlPassword(url: ParsedUrl): String {
     val user = url.rawUserInfo?.substringBefore(':')
     val authorityPrefix = user?.let { "${encodeComponent(decodeComponent(it))}@" }.orEmpty()
     val portPart = if (url.port != -1) ":${url.port}" else ""
-    val safeQuery = urlQueryPairs(url)
-        .filterNot { (name, _) -> isSensitiveDriverPropertyName(name) }
-        .joinToString("&") { (name, value) -> "${encodeComponent(name)}=${encodeComponent(value)}" }
+    val safeQuery =
+        urlQueryPairs(url)
+            .filterNot { (name, _) -> isSensitiveDriverPropertyName(name) }
+            .joinToString("&") { (name, value) ->
+                "${encodeComponent(name)}=${encodeComponent(value)}"
+            }
     val queryPart = safeQuery.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
     val refPart = url.rawFragment?.let { "#$it" }.orEmpty()
     return "${url.scheme}://$authorityPrefix${url.host}$portPart${url.rawPath}$queryPart$refPart"
@@ -612,9 +640,8 @@ private fun passwordFromUrl(raw: String, url: ParsedUrl): String? {
     val schemeEnd = raw.indexOf("://")
     if (schemeEnd < 0) return null
     val authorityStart = schemeEnd + 3
-    val authorityEndCandidates = listOf('/', '?', '#')
-        .map { char -> raw.indexOf(char, authorityStart) }
-        .filter { it >= 0 }
+    val authorityEndCandidates =
+        listOf('/', '?', '#').map { char -> raw.indexOf(char, authorityStart) }.filter { it >= 0 }
     val authorityEnd = authorityEndCandidates.minOrNull() ?: raw.length
     val authority = raw.substring(authorityStart, authorityEnd)
     val atIndex = authority.lastIndexOf('@')
@@ -626,17 +653,16 @@ private fun passwordFromUrl(raw: String, url: ParsedUrl): String? {
 }
 
 private fun sanitizeSqlServerKeyValue(raw: String): String =
-    splitSemicolonRecords(raw)
-        .joinToString(";") { record ->
-            val eqIndex = record.indexOf('=')
-            if (eqIndex < 0) return@joinToString record
-            val key = record.substring(0, eqIndex).trim()
-            if (isSensitiveDriverPropertyName(key)) {
-                "$key="
-            } else {
-                record
-            }
+    splitSemicolonRecords(raw).joinToString(";") { record ->
+        val eqIndex = record.indexOf('=')
+        if (eqIndex < 0) return@joinToString record
+        val key = record.substring(0, eqIndex).trim()
+        if (isSensitiveDriverPropertyName(key)) {
+            "$key="
+        } else {
+            record
         }
+    }
 
 private fun sanitizeOracleInput(raw: String): String {
     val prefixMatch = Regex("^jdbc:oracle:thin:", RegexOption.IGNORE_CASE).find(raw)
@@ -659,16 +685,19 @@ private fun sanitizeSensitiveQueryProperties(raw: String): String {
     if (queryStart < 0) return raw
     val fragmentStart = raw.indexOf('#', queryStart)
     val queryEnd = if (fragmentStart < 0) raw.length else fragmentStart
-    val safeQuery = raw.substring(queryStart + 1, queryEnd)
-        .split('&')
-        .filter(String::isNotEmpty)
-        .filterNot { part ->
-            val name = decodeComponent(part.substringBefore('='))
-            isSensitiveDriverPropertyName(name)
-        }
-        .joinToString("&")
+    val safeQuery =
+        raw.substring(queryStart + 1, queryEnd)
+            .split('&')
+            .filter(String::isNotEmpty)
+            .filterNot { part ->
+                val name = decodeComponent(part.substringBefore('='))
+                isSensitiveDriverPropertyName(name)
+            }
+            .joinToString("&")
     val fragment = if (fragmentStart < 0) "" else raw.substring(fragmentStart)
-    return raw.substring(0, queryStart) + safeQuery.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty() + fragment
+    return raw.substring(0, queryStart) +
+        safeQuery.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty() +
+        fragment
 }
 
 private fun findOracleAuthSeparator(rest: String): Int {
@@ -688,55 +717,66 @@ private fun decodeComponent(value: String?): String {
 private fun encodeComponent(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 
-private fun encodeSqlServerPropertyValue(value: String): String =
-    "{${value.replace("}", "}}")}}"
+private fun encodeSqlServerPropertyValue(value: String): String = "{${value.replace("}", "}}")}}"
 
 fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
-    val properties = def.driverProperties.joinToString("&") {
-        "${encodeComponent(it.name)}=${encodeComponent(it.value)}"
-    }
+    val properties =
+        def.driverProperties.joinToString("&") {
+            "${encodeComponent(it.name)}=${encodeComponent(it.value)}"
+        }
     return when (def.dialect) {
         Dialect.Postgres -> {
-            val sslMode = when (def.transportSecurity.mode) {
-                TransportSecurityMode.VerifyIdentity -> "verify-full"
-                TransportSecurityMode.VerifyCa -> "verify-ca"
-                TransportSecurityMode.EncryptOnly -> "require"
-                TransportSecurityMode.Disabled -> "disable"
-            }
-            val query = listOf("sslmode=$sslMode", properties).filter(String::isNotEmpty).joinToString("&")
+            val sslMode =
+                when (def.transportSecurity.mode) {
+                    TransportSecurityMode.VerifyIdentity -> "verify-full"
+                    TransportSecurityMode.VerifyCa -> "verify-ca"
+                    TransportSecurityMode.EncryptOnly -> "require"
+                    TransportSecurityMode.Disabled -> "disable"
+                }
+            val query =
+                listOf("sslmode=$sslMode", properties).filter(String::isNotEmpty).joinToString("&")
             "postgresql://${encodeComponent(def.username)}@${def.host}:${def.port}/${encodeComponent(def.database)}?$query"
         }
         Dialect.MySql -> {
-            val sslMode = when (def.transportSecurity.mode) {
-                TransportSecurityMode.VerifyIdentity -> "VERIFY_IDENTITY"
-                TransportSecurityMode.VerifyCa -> "VERIFY_CA"
-                TransportSecurityMode.EncryptOnly -> "REQUIRED"
-                TransportSecurityMode.Disabled -> "DISABLED"
-            }
-            val query = listOf("ssl-mode=$sslMode", properties).filter(String::isNotEmpty).joinToString("&")
+            val sslMode =
+                when (def.transportSecurity.mode) {
+                    TransportSecurityMode.VerifyIdentity -> "VERIFY_IDENTITY"
+                    TransportSecurityMode.VerifyCa -> "VERIFY_CA"
+                    TransportSecurityMode.EncryptOnly -> "REQUIRED"
+                    TransportSecurityMode.Disabled -> "DISABLED"
+                }
+            val query =
+                listOf("ssl-mode=$sslMode", properties).filter(String::isNotEmpty).joinToString("&")
             "mysql://${encodeComponent(def.username)}@${def.host}:${def.port}/${encodeComponent(def.database)}?$query"
         }
         Dialect.Mssql -> {
-            val security = when (def.transportSecurity.mode) {
-                TransportSecurityMode.VerifyIdentity, TransportSecurityMode.VerifyCa ->
-                    listOf("encrypt=true", "trustServerCertificate=false")
-                TransportSecurityMode.EncryptOnly -> listOf("encrypt=true", "trustServerCertificate=true")
-                TransportSecurityMode.Disabled -> listOf("encrypt=false", "trustServerCertificate=true")
-            }
-            val extra = def.driverProperties.map { "${it.name}=${encodeSqlServerPropertyValue(it.value)}" }
-            (
-                listOf(
+            val security =
+                when (def.transportSecurity.mode) {
+                    TransportSecurityMode.VerifyIdentity,
+                    TransportSecurityMode.VerifyCa ->
+                        listOf("encrypt=true", "trustServerCertificate=false")
+                    TransportSecurityMode.EncryptOnly ->
+                        listOf("encrypt=true", "trustServerCertificate=true")
+                    TransportSecurityMode.Disabled ->
+                        listOf("encrypt=false", "trustServerCertificate=true")
+                }
+            val extra =
+                def.driverProperties.map { "${it.name}=${encodeSqlServerPropertyValue(it.value)}" }
+            (listOf(
                     "jdbc:sqlserver://${def.host}:${def.port}",
                     "databaseName=${encodeSqlServerPropertyValue(def.database)}",
                     "user=${encodeSqlServerPropertyValue(def.username)}",
-                ) + security + extra
-                ).joinToString(";")
+                ) + security + extra)
+                .joinToString(";")
         }
         Dialect.Oracle -> {
-            val protocol = if (def.transportSecurity.mode == TransportSecurityMode.Disabled) "@//" else "@tcps://"
-            val wallet = def.transportSecurity.oracleWalletLocation
-                ?.let { "wallet_location=${encodeComponent(it)}" }
-                .orEmpty()
+            val protocol =
+                if (def.transportSecurity.mode == TransportSecurityMode.Disabled) "@//"
+                else "@tcps://"
+            val wallet =
+                def.transportSecurity.oracleWalletLocation
+                    ?.let { "wallet_location=${encodeComponent(it)}" }
+                    .orEmpty()
             val query = listOf(wallet, properties).filter(String::isNotEmpty).joinToString("&")
             val suffix = query.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
             "jdbc:oracle:thin:$protocol${def.host}:${def.port}/${encodeComponent(def.database)}$suffix"

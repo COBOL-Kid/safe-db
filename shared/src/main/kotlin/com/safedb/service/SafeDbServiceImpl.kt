@@ -1,7 +1,7 @@
 package com.safedb.service
 
-import com.safedb.explore.ExploreRecipe
 import com.safedb.adapter.Adapter
+import com.safedb.explore.ExploreRecipe
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.ExplainResult
@@ -30,9 +30,13 @@ internal fun interface QuerySessionFactory {
 
 internal interface ConnectedAdapter {
     suspend fun test(): String
+
     suspend fun introspect(): Schema
+
     suspend fun explain(compiled: CompiledQuery): ExplainResult
+
     suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult
+
     fun close()
 }
 
@@ -45,12 +49,16 @@ private object DefaultAdapterFactory : AdapterFactory {
         val adapter = Adapter.connect(def, password)
         return object : ConnectedAdapter {
             override suspend fun test(): String = adapter.test()
+
             override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
+
             override suspend fun explain(compiled: CompiledQuery): ExplainResult =
                 Adapter.explainWithTimeout(adapter, compiled)
 
-            override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-                adapter.executeQuery(compiled, timeoutMs)
+            override suspend fun executeQuery(
+                compiled: CompiledQuery,
+                timeoutMs: Int,
+            ): QueryResult = adapter.executeQuery(compiled, timeoutMs)
 
             override fun close() = adapter.close()
         }
@@ -65,7 +73,8 @@ internal class QuerySession(
     suspend fun close() = onClose()
 }
 
-class SafeDbServiceImpl internal constructor(
+class SafeDbServiceImpl
+internal constructor(
     private val configStore: ConfigStore,
     private val queryStore: QueryStore,
     private val settingsStore: SettingsStore,
@@ -83,14 +92,21 @@ class SafeDbServiceImpl internal constructor(
 
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         def.validate().getOrThrow()
-        val resolvedPassword = password ?: run {
-            val previous = configStore.get(def.id)
-                ?: throw IllegalArgumentException("A password is required for a new connection")
-            if (previous.credentialFingerprint() != def.credentialFingerprint()) {
-                throw IllegalArgumentException("Connection changes require the password to be re-entered before testing")
-            }
-            SecretsManager.passwordForDefinition(previous).getOrThrow()
-        }
+        val resolvedPassword =
+            password
+                ?: run {
+                    val previous =
+                        configStore.get(def.id)
+                            ?: throw IllegalArgumentException(
+                                "A password is required for a new connection"
+                            )
+                    if (previous.credentialFingerprint() != def.credentialFingerprint()) {
+                        throw IllegalArgumentException(
+                            "Connection changes require the password to be re-entered before testing"
+                        )
+                    }
+                    SecretsManager.passwordForDefinition(previous).getOrThrow()
+                }
         val adapter = adapterFactory.connect(def, resolvedPassword)
         return try {
             adapter.test()
@@ -128,7 +144,8 @@ class SafeDbServiceImpl internal constructor(
     override suspend fun lockCredentials() = SecretsManager.lockCredentials()
 
     override suspend fun getSchema(connectionId: String): Schema {
-        val def = configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val def =
+            configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val adapter = adapterFactory.connect(def, password)
         return try {
@@ -139,20 +156,24 @@ class SafeDbServiceImpl internal constructor(
     }
 
     override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
-        val def = configStore.get(request.connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val def =
+            configStore.get(request.connectionId)
+                ?: throw IllegalArgumentException("Connection not found")
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val settings = settingsStore.load()
-        val session = querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
+        val session =
+            querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
         return try {
             when (
-                val outcome = runQueryCore(
-                    session.runner,
-                    def,
-                    request.spec,
-                    session.schema,
-                    settings,
-                    request.confirmation,
-                )
+                val outcome =
+                    runQueryCore(
+                        session.runner,
+                        def,
+                        request.spec,
+                        session.schema,
+                        settings,
+                        request.confirmation,
+                    )
             ) {
                 is QueryCoreOutcome.Success -> {
                     recordHistory(
@@ -182,14 +203,18 @@ class SafeDbServiceImpl internal constructor(
         }
     }
 
-    private suspend fun openDefaultQuerySession(def: ConnectionDef, password: String): QuerySession {
+    private suspend fun openDefaultQuerySession(
+        def: ConnectionDef,
+        password: String,
+    ): QuerySession {
         val adapter = adapterFactory.connect(def, password)
-        val schema = try {
-            adapter.introspect()
-        } catch (error: Throwable) {
-            runCatching { adapter.close() }.onFailure(error::addSuppressed)
-            throw error
-        }
+        val schema =
+            try {
+                adapter.introspect()
+            } catch (error: Throwable) {
+                runCatching { adapter.close() }.onFailure(error::addSuppressed)
+                throw error
+            }
         return QuerySession(
             schema = schema,
             runner = AdapterQueryRunner(adapter),
@@ -230,11 +255,14 @@ class SafeDbServiceImpl internal constructor(
     private fun persistConnection(def: ConnectionDef, password: String?) {
         def.validate().getOrThrow()
         val previous = configStore.get(def.id)
-        if (previous != null &&
-            previous.credentialFingerprint() != def.credentialFingerprint() &&
-            password == null
+        if (
+            previous != null &&
+                previous.credentialFingerprint() != def.credentialFingerprint() &&
+                password == null
         ) {
-            throw IllegalArgumentException("Endpoint or transport changes require the password to be re-entered")
+            throw IllegalArgumentException(
+                "Endpoint or transport changes require the password to be re-entered"
+            )
         }
         if (previous == null && password == null) {
             throw IllegalArgumentException("A password is required when creating a connection")
@@ -271,22 +299,37 @@ class SafeDbServiceImpl internal constructor(
                     riskStaticScore = riskEvaluation?.staticAssessment?.score,
                     riskFinalScore = riskEvaluation?.finalAssessment?.score,
                     riskSeverity = riskEvaluation?.finalAssessment?.severity?.name,
-                    riskSignalCodes = riskEvaluation?.finalAssessment?.signals.orEmpty().map { it.code.name }.distinct(),
-                    riskUncertaintyCodes = riskEvaluation?.finalAssessment?.uncertainties.orEmpty().map { it.code }.distinct(),
+                    riskSignalCodes =
+                        riskEvaluation
+                            ?.finalAssessment
+                            ?.signals
+                            .orEmpty()
+                            .map { it.code.name }
+                            .distinct(),
+                    riskUncertaintyCodes =
+                        riskEvaluation
+                            ?.finalAssessment
+                            ?.uncertainties
+                            .orEmpty()
+                            .map { it.code }
+                            .distinct(),
                     riskPlanStatus = riskEvaluation?.planStatus?.name,
                     riskPlanReason = riskEvaluation?.planUnavailableReason?.name,
                     riskGateState = riskEvaluation?.decision?.state?.name,
                     riskOptimizerCost = riskEvaluation?.optimizerCost,
-                    riskConfirmationCodes = riskEvaluation?.confirmationRequirement
-                        ?.confirmation
-                        ?.reasonCodes
-                        .orEmpty()
-                        .map { it.name }
-                        .sorted(),
-                    riskConfirmationAccepted = riskEvaluation?.confirmationRequirement?.let {
-                        riskEvaluation.confirmationAccepted
-                    },
-                ),
+                    riskConfirmationCodes =
+                        riskEvaluation
+                            ?.confirmationRequirement
+                            ?.confirmation
+                            ?.reasonCodes
+                            .orEmpty()
+                            .map { it.name }
+                            .sorted(),
+                    riskConfirmationAccepted =
+                        riskEvaluation?.confirmationRequirement?.let {
+                            riskEvaluation.confirmationAccepted
+                        },
+                )
             )
         }
     }
@@ -295,7 +338,10 @@ class SafeDbServiceImpl internal constructor(
         override suspend fun explain(compiled: CompiledQuery): ExplainResult =
             adapter.explain(compiled)
 
-        override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult> =
+        override suspend fun executeQuery(
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): Outcome<QueryResult> =
             try {
                 Outcome.ok(adapter.executeQuery(compiled, timeoutMs))
             } catch (error: CancellationException) {

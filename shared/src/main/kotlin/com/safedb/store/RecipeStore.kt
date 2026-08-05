@@ -4,16 +4,14 @@ import com.safedb.explore.EXPLORE_RECIPE_SCHEMA_VERSION
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.SafeDbJson
 import com.safedb.persist.ensurePrivateDir
-import kotlinx.serialization.encodeToString
 import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.serialization.encodeToString
 
-class RecipeStore private constructor(
-    private val path: Path,
-    private val lock: ReentrantLock = ReentrantLock(),
-) {
+class RecipeStore
+private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {
     companion object {
         fun new(dataDir: Path): RecipeStore {
             ensurePrivateDir(dataDir)
@@ -38,27 +36,37 @@ class RecipeStore private constructor(
     }
 
     fun importJson(content: String, nowEpochSec: String): ExploreRecipe {
-        val decoded = SafeDbJson.lenient.decodeFromString(ExploreRecipe.serializer(), content).validate()
-        require(decoded.schemaVersion == EXPLORE_RECIPE_SCHEMA_VERSION) { "Unsupported recipe version ${decoded.schemaVersion}" }
+        val decoded =
+            SafeDbJson.lenient.decodeFromString(ExploreRecipe.serializer(), content).validate()
+        require(decoded.schemaVersion == EXPLORE_RECIPE_SCHEMA_VERSION) {
+            "Unsupported recipe version ${decoded.schemaVersion}"
+        }
         return lock.withLock {
             val existing = read()
-            val imported = decoded.copy(
-                id = UUID.randomUUID().toString(),
-                name = uniqueName(decoded.name, existing.map { it.name }),
-                createdAt = nowEpochSec,
-                updatedAt = nowEpochSec,
-            )
+            val imported =
+                decoded.copy(
+                    id = UUID.randomUUID().toString(),
+                    name = uniqueName(decoded.name, existing.map { it.name }),
+                    createdAt = nowEpochSec,
+                    updatedAt = nowEpochSec,
+                )
             write(existing + imported)
             imported
         }
     }
 
-    fun exportJson(recipe: ExploreRecipe): String = SafeDbJson.store.encodeToString(recipe.validate())
+    fun exportJson(recipe: ExploreRecipe): String =
+        SafeDbJson.store.encodeToString(recipe.validate())
 
     private fun read(): List<ExploreRecipe> {
         val document = readJsonList(path) ?: return emptyList()
         return document.entries.mapNotNull { element ->
-            runCatching { SafeDbJson.lenient.decodeFromJsonElement(ExploreRecipe.serializer(), element).validate() }.getOrNull()
+            runCatching {
+                    SafeDbJson.lenient
+                        .decodeFromJsonElement(ExploreRecipe.serializer(), element)
+                        .validate()
+                }
+                .getOrNull()
         }
     }
 

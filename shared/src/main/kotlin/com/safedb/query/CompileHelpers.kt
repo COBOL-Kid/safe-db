@@ -12,18 +12,21 @@ import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.sqlOperator
 
-internal fun quote(ident: String, dialect: Dialect): String = when (dialect) {
-    Dialect.Postgres, Dialect.Oracle -> "\"${ident.replace("\"", "\"\"")}\""
-    Dialect.MySql -> "`${ident.replace("`", "``")}`"
-    Dialect.Mssql -> "[${ident.replace("]", "]]")}]"
-}
+internal fun quote(ident: String, dialect: Dialect): String =
+    when (dialect) {
+        Dialect.Postgres,
+        Dialect.Oracle -> "\"${ident.replace("\"", "\"\"")}\""
+        Dialect.MySql -> "`${ident.replace("`", "``")}`"
+        Dialect.Mssql -> "[${ident.replace("]", "]]")}]"
+    }
 
-internal fun placeholder(idx: Int, dialect: Dialect): String = when (dialect) {
-    Dialect.Postgres -> "$$idx"
-    Dialect.MySql -> "?"
-    Dialect.Mssql -> "@P$idx"
-    Dialect.Oracle -> ":$idx"
-}
+internal fun placeholder(idx: Int, dialect: Dialect): String =
+    when (dialect) {
+        Dialect.Postgres -> "$$idx"
+        Dialect.MySql -> "?"
+        Dialect.Mssql -> "@P$idx"
+        Dialect.Oracle -> ":$idx"
+    }
 
 internal fun buildSelectClause(
     spec: QuerySpec,
@@ -62,7 +65,10 @@ internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
             for (join in spec.joins) {
                 val left = join.leftAlias
                 val right = join.rightAlias
-                if ((left == alias && included.contains(right)) || (right == alias && included.contains(left))) {
+                if (
+                    (left == alias && included.contains(right)) ||
+                        (right == alias && included.contains(left))
+                ) {
                     found = i to alias
                     break
                 }
@@ -84,15 +90,16 @@ internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
             append(quote(tableRef.alias, dialect))
         }
 
-        val onClause = spec.joins
-            .filter { candidate ->
-                (candidate.leftAlias == alias && included.contains(candidate.rightAlias)) ||
-                    (candidate.rightAlias == alias && included.contains(candidate.leftAlias))
-            }
-            .joinToString(" AND ") { candidate ->
-                "${quote(candidate.leftAlias, dialect)}.${quote(candidate.leftColumn, dialect)} = " +
-                    "${quote(candidate.rightAlias, dialect)}.${quote(candidate.rightColumn, dialect)}"
-            }
+        val onClause =
+            spec.joins
+                .filter { candidate ->
+                    (candidate.leftAlias == alias && included.contains(candidate.rightAlias)) ||
+                        (candidate.rightAlias == alias && included.contains(candidate.leftAlias))
+                }
+                .joinToString(" AND ") { candidate ->
+                    "${quote(candidate.leftAlias, dialect)}.${quote(candidate.leftColumn, dialect)} = " +
+                        "${quote(candidate.rightAlias, dialect)}.${quote(candidate.rightColumn, dialect)}"
+                }
 
         clauses.add("$joinTarget ON $onClause")
     }
@@ -102,10 +109,11 @@ internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
 
 internal fun buildOrderByClause(spec: QuerySpec, dialect: Dialect): String =
     spec.sorts.joinToString(", ") { sort ->
-        val direction = when (sort.direction) {
-            com.safedb.model.SortDirection.Asc -> "ASC"
-            com.safedb.model.SortDirection.Desc -> "DESC"
-        }
+        val direction =
+            when (sort.direction) {
+                com.safedb.model.SortDirection.Asc -> "ASC"
+                com.safedb.model.SortDirection.Desc -> "DESC"
+            }
         "${quote(sort.tableAlias, dialect)}.${quote(sort.column, dialect)} $direction"
     }
 
@@ -167,15 +175,17 @@ private fun joinChildren(
     return Outcome.ok(rendered to currentIdx)
 }
 
-private fun childId(node: FilterNode): String = when (node) {
-    is FilterNode.Leaf -> node.spec.id
-    is FilterNode.Group -> node.group.id
-}
+private fun childId(node: FilterNode): String =
+    when (node) {
+        is FilterNode.Leaf -> node.spec.id
+        is FilterNode.Group -> node.group.id
+    }
 
-private fun connectorSql(connector: GroupConnector): String = when (connector) {
-    GroupConnector.And -> " AND "
-    GroupConnector.Or -> " OR "
-}
+private fun connectorSql(connector: GroupConnector): String =
+    when (connector) {
+        GroupConnector.And -> " AND "
+        GroupConnector.Or -> " OR "
+    }
 
 private fun buildWhereNode(
     node: FilterNode,
@@ -183,10 +193,11 @@ private fun buildWhereNode(
     dialect: Dialect,
     params: MutableList<BindValue>,
     paramIdx: Int,
-): Outcome<Pair<String, Int>> = when (node) {
-    is FilterNode.Leaf -> buildLeaf(node.spec, dialect, params, paramIdx)
-    is FilterNode.Group -> buildGroup(node.group, overrides, dialect, params, paramIdx)
-}
+): Outcome<Pair<String, Int>> =
+    when (node) {
+        is FilterNode.Leaf -> buildLeaf(node.spec, dialect, params, paramIdx)
+        is FilterNode.Group -> buildGroup(node.group, overrides, dialect, params, paramIdx)
+    }
 
 private fun buildGroup(
     group: FilterGroup,
@@ -198,10 +209,11 @@ private fun buildGroup(
     joinChildren(group, overrides, dialect, params, paramIdx, wrap = true)
 
 private fun bindLiteral(literal: com.safedb.model.FilterLiteral): Outcome<BindValue> =
-    BindValue.fromLiteral(literal).fold(
-        onSuccess = { Outcome.ok(it) },
-        onFailure = { Outcome.err(it.message ?: "Invalid literal") },
-    )
+    BindValue.fromLiteral(literal)
+        .fold(
+            onSuccess = { Outcome.ok(it) },
+            onFailure = { Outcome.err(it.message ?: "Invalid literal") },
+        )
 
 private fun buildLeaf(
     filter: FilterSpec,
@@ -213,33 +225,41 @@ private fun buildLeaf(
     var currentIdx = paramIdx
 
     if (filter.op.isFriendlyTextPattern()) {
-        val literal = (filter.value as? FilterValue.Single)?.literal
-            ?: return Outcome.err("${opLabel(filter.op)} expects a single text value")
-        val bound = when (val result = bindLiteral(literal)) {
-            is Outcome.Ok -> result.value
-            is Outcome.Err -> return Outcome.err(result.message)
-        }
-        val text = (bound as? BindValue.Text)?.value
-            ?: return Outcome.err("${opLabel(filter.op)} expects a text value")
+        val literal =
+            (filter.value as? FilterValue.Single)?.literal
+                ?: return Outcome.err("${opLabel(filter.op)} expects a single text value")
+        val bound =
+            when (val result = bindLiteral(literal)) {
+                is Outcome.Ok -> result.value
+                is Outcome.Err -> return Outcome.err(result.message)
+            }
+        val text =
+            (bound as? BindValue.Text)?.value
+                ?: return Outcome.err("${opLabel(filter.op)} expects a text value")
         val ph = placeholder(currentIdx, dialect)
         currentIdx += 1
         params.add(BindValue.Text(friendlyPatternText(filter.op, text)))
-        val predicate = if (filter.op == FilterOp.ContainsIgnoreCase) {
-            buildIlike(columnRef, ph, dialect)
-        } else {
-            "$columnRef ${friendlyPatternOperator(filter.op)} $ph"
-        }
+        val predicate =
+            if (filter.op == FilterOp.ContainsIgnoreCase) {
+                buildIlike(columnRef, ph, dialect)
+            } else {
+                "$columnRef ${friendlyPatternOperator(filter.op)} $ph"
+            }
         return Outcome.ok("$predicate ESCAPE '!'" to currentIdx)
     }
 
     val sqlOp = filter.op.sqlOperator()
     if (sqlOp != null) {
-        val value = filter.value
-            ?: return Outcome.err("Filter on ${filter.tableAlias}.${filter.column} is missing its value")
-        val lit = when (value) {
-            is FilterValue.Single -> value.literal
-            else -> return Outcome.err("Operator '$sqlOp' expects a single value")
-        }
+        val value =
+            filter.value
+                ?: return Outcome.err(
+                    "Filter on ${filter.tableAlias}.${filter.column} is missing its value"
+                )
+        val lit =
+            when (value) {
+                is FilterValue.Single -> value.literal
+                else -> return Outcome.err("Operator '$sqlOp' expects a single value")
+            }
         val ph = placeholder(currentIdx, dialect)
         currentIdx += 1
         when (val bind = bindLiteral(lit)) {
@@ -251,12 +271,16 @@ private fun buildLeaf(
 
     return when (filter.op) {
         FilterOp.Ilike -> {
-            val value = filter.value
-                ?: return Outcome.err("Filter on ${filter.tableAlias}.${filter.column} is missing its value")
-            val lit = when (value) {
-                is FilterValue.Single -> value.literal
-                else -> return Outcome.err("ILIKE expects a single value")
-            }
+            val value =
+                filter.value
+                    ?: return Outcome.err(
+                        "Filter on ${filter.tableAlias}.${filter.column} is missing its value"
+                    )
+            val lit =
+                when (value) {
+                    is FilterValue.Single -> value.literal
+                    else -> return Outcome.err("ILIKE expects a single value")
+                }
             val ph = placeholder(currentIdx, dialect)
             currentIdx += 1
             when (val bind = bindLiteral(lit)) {
@@ -265,13 +289,18 @@ private fun buildLeaf(
             }
             Outcome.ok(buildIlike(columnRef, ph, dialect) to currentIdx)
         }
-        FilterOp.In, FilterOp.NotIn -> {
-            val value = filter.value
-                ?: return Outcome.err("Filter on ${filter.tableAlias}.${filter.column} is missing its value")
-            val list = when (value) {
-                is FilterValue.ListValue -> value.literals
-                else -> return Outcome.err("IN expects a list of values")
-            }
+        FilterOp.In,
+        FilterOp.NotIn -> {
+            val value =
+                filter.value
+                    ?: return Outcome.err(
+                        "Filter on ${filter.tableAlias}.${filter.column} is missing its value"
+                    )
+            val list =
+                when (value) {
+                    is FilterValue.ListValue -> value.literals
+                    else -> return Outcome.err("IN expects a list of values")
+                }
             if (list.isEmpty()) {
                 val sql = if (filter.op == FilterOp.In) "1=0" else "1=1"
                 return Outcome.ok(sql to currentIdx)
@@ -290,12 +319,16 @@ private fun buildLeaf(
             Outcome.ok("$columnRef $kw (${phs.joinToString(", ")})" to currentIdx)
         }
         FilterOp.Between -> {
-            val value = filter.value
-                ?: return Outcome.err("Filter on ${filter.tableAlias}.${filter.column} is missing its value")
-            val (from, to) = when (value) {
-                is FilterValue.Pair -> value.first to value.second
-                else -> return Outcome.err("BETWEEN expects a pair of values")
-            }
+            val value =
+                filter.value
+                    ?: return Outcome.err(
+                        "Filter on ${filter.tableAlias}.${filter.column} is missing its value"
+                    )
+            val (from, to) =
+                when (value) {
+                    is FilterValue.Pair -> value.first to value.second
+                    else -> return Outcome.err("BETWEEN expects a pair of values")
+                }
             val ph1 = placeholder(currentIdx, dialect)
             currentIdx += 1
             when (val bind1 = bindLiteral(from)) {
@@ -318,37 +351,44 @@ private fun buildLeaf(
     }
 }
 
-private fun FilterOp.isFriendlyTextPattern(): Boolean = this in setOf(
-    FilterOp.Contains,
-    FilterOp.ContainsIgnoreCase,
-    FilterOp.NotContains,
-    FilterOp.StartsWith,
-    FilterOp.EndsWith,
-)
+private fun FilterOp.isFriendlyTextPattern(): Boolean =
+    this in
+        setOf(
+            FilterOp.Contains,
+            FilterOp.ContainsIgnoreCase,
+            FilterOp.NotContains,
+            FilterOp.StartsWith,
+            FilterOp.EndsWith,
+        )
 
-private fun friendlyPatternOperator(op: FilterOp): String = when (op) {
-    FilterOp.NotContains -> "NOT LIKE"
-    FilterOp.Contains, FilterOp.StartsWith, FilterOp.EndsWith -> "LIKE"
-    else -> error("Not a friendly text pattern: $op")
-}
+private fun friendlyPatternOperator(op: FilterOp): String =
+    when (op) {
+        FilterOp.NotContains -> "NOT LIKE"
+        FilterOp.Contains,
+        FilterOp.StartsWith,
+        FilterOp.EndsWith -> "LIKE"
+        else -> error("Not a friendly text pattern: $op")
+    }
 
 private fun friendlyPatternText(op: FilterOp, text: String): String {
     val escaped = escapeLikeLiteral(text)
     return when (op) {
-        FilterOp.Contains, FilterOp.ContainsIgnoreCase, FilterOp.NotContains -> "%$escaped%"
+        FilterOp.Contains,
+        FilterOp.ContainsIgnoreCase,
+        FilterOp.NotContains -> "%$escaped%"
         FilterOp.StartsWith -> "$escaped%"
         FilterOp.EndsWith -> "%$escaped"
         else -> error("Not a friendly text pattern: $op")
     }
 }
 
-private fun escapeLikeLiteral(text: String): String = text
-    .replace("!", "!!")
-    .replace("%", "!%")
-    .replace("_", "!_")
+private fun escapeLikeLiteral(text: String): String =
+    text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
 
-private fun buildIlike(columnRef: String, ph: String, dialect: Dialect): String = when (dialect) {
-    Dialect.Postgres -> "$columnRef ILIKE $ph"
-    Dialect.Mssql, Dialect.MySql -> "LOWER($columnRef) LIKE LOWER($ph)"
-    Dialect.Oracle -> "UPPER($columnRef) LIKE UPPER($ph)"
-}
+private fun buildIlike(columnRef: String, ph: String, dialect: Dialect): String =
+    when (dialect) {
+        Dialect.Postgres -> "$columnRef ILIKE $ph"
+        Dialect.Mssql,
+        Dialect.MySql -> "LOWER($columnRef) LIKE LOWER($ph)"
+        Dialect.Oracle -> "UPPER($columnRef) LIKE UPPER($ph)"
+    }

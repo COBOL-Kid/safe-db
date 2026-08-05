@@ -53,40 +53,59 @@ fun suggestedVisualizationTemplates(
     sample: QueryResult,
     tables: List<TableRef> = emptyList(),
     limit: Int = 5,
-): List<VisualizationTemplate> = visualizationTemplates(sample, tables)
-    .filter { it.result is VisualizationTemplateBuildResult.Ready }
-    .sortedWith(compareByDescending<VisualizationTemplate> { it.score }.thenBy { it.id.ordinal })
-    .take(limit.coerceIn(3, 5))
+): List<VisualizationTemplate> =
+    visualizationTemplates(sample, tables)
+        .filter { it.result is VisualizationTemplateBuildResult.Ready }
+        .sortedWith(
+            compareByDescending<VisualizationTemplate> { it.score }.thenBy { it.id.ordinal }
+        )
+        .take(limit.coerceIn(3, 5))
 
 private class VisualizationSampleProfile(sample: QueryResult, tables: List<TableRef>) {
     private val labels = displayColumnLabels(sample.columns, tables)
-    private val fields = sample.columns.mapIndexed { index, column ->
-        val values = sample.rows.mapNotNull { it.getOrNull(index) }.filterNot { it is ResultCell.Null }
-        ProfileField(
-            column = column.name,
-            label = labels[column.name] ?: displayColumnLabel(column.name),
-            category = classifyColumn(column.dataType),
-            cardinality = values.map(::pivotCellKey).distinct().size,
-            nonNull = values.size,
-        )
-    }
+    private val fields =
+        sample.columns.mapIndexed { index, column ->
+            val values =
+                sample.rows.mapNotNull { it.getOrNull(index) }.filterNot { it is ResultCell.Null }
+            ProfileField(
+                column = column.name,
+                label = labels[column.name] ?: displayColumnLabel(column.name),
+                category = classifyColumn(column.dataType),
+                cardinality = values.map(::pivotCellKey).distinct().size,
+                nonNull = values.size,
+            )
+        }
     private val numeric = fields.filter { it.category.isNumeric() && !it.identifierLike }
     private val temporal = fields.filter { it.category.isTemporal() && !it.identifierLike }
-    private val dimensions = fields.filter {
-        !it.identifierLike && it.category !in setOf(ColumnCategory.Binary, ColumnCategory.Json)
-    }.sortedWith(
-        compareByDescending<ProfileField> {
-            when (it.category) {
-                ColumnCategory.Text, ColumnCategory.Bool -> 3
-                ColumnCategory.Date, ColumnCategory.DateTime -> 2
-                else -> 1
+    private val dimensions =
+        fields
+            .filter {
+                !it.identifierLike &&
+                    it.category !in setOf(ColumnCategory.Binary, ColumnCategory.Json)
             }
-        }.thenBy { if (it.cardinality in 2..50) 0 else 1 },
-    )
+            .sortedWith(
+                compareByDescending<ProfileField> {
+                        when (it.category) {
+                            ColumnCategory.Text,
+                            ColumnCategory.Bool -> 3
+                            ColumnCategory.Date,
+                            ColumnCategory.DateTime -> 2
+                            else -> 1
+                        }
+                    }
+                    .thenBy { if (it.cardinality in 2..50) 0 else 1 }
+            )
 
     fun breakdown(): VisualizationTemplate {
-        val dimension = dimensions.firstOrNull()
-            ?: return unavailable(VisualizationTemplateId.Breakdown, "Breakdown", "Count rows by a category.", "Category · Count", "Needs a groupable field.")
+        val dimension =
+            dimensions.firstOrNull()
+                ?: return unavailable(
+                    VisualizationTemplateId.Breakdown,
+                    "Breakdown",
+                    "Count rows by a category.",
+                    "Category · Count",
+                    "Needs a groupable field.",
+                )
         return ready(
             VisualizationTemplateId.Breakdown,
             "Breakdown",
@@ -102,10 +121,24 @@ private class VisualizationSampleProfile(sample: QueryResult, tables: List<Table
     }
 
     fun trend(): VisualizationTemplate {
-        val date = temporal.firstOrNull()
-            ?: return unavailable(VisualizationTemplateId.TrendOverTime, "Trend over time", "Track a value over time.", "Date by month · Sum", "Needs a date or datetime field.")
-        val value = numeric.firstOrNull()
-            ?: return unavailable(VisualizationTemplateId.TrendOverTime, "Trend over time", "Track a value over time.", "Date by month · Sum", "Needs a numeric value.")
+        val date =
+            temporal.firstOrNull()
+                ?: return unavailable(
+                    VisualizationTemplateId.TrendOverTime,
+                    "Trend over time",
+                    "Track a value over time.",
+                    "Date by month · Sum",
+                    "Needs a date or datetime field.",
+                )
+        val value =
+            numeric.firstOrNull()
+                ?: return unavailable(
+                    VisualizationTemplateId.TrendOverTime,
+                    "Trend over time",
+                    "Track a value over time.",
+                    "Date by month · Sum",
+                    "Needs a numeric value.",
+                )
         return ready(
             VisualizationTemplateId.TrendOverTime,
             "Trend over time",
@@ -122,8 +155,15 @@ private class VisualizationSampleProfile(sample: QueryResult, tables: List<Table
     }
 
     fun topValues(): VisualizationTemplate {
-        val dimension = dimensions.firstOrNull()
-            ?: return unavailable(VisualizationTemplateId.TopValues, "Top values", "Rank the largest groups.", "Top 10 · Horizontal bar", "Needs a groupable field.")
+        val dimension =
+            dimensions.firstOrNull()
+                ?: return unavailable(
+                    VisualizationTemplateId.TopValues,
+                    "Top values",
+                    "Rank the largest groups.",
+                    "Top 10 · Horizontal bar",
+                    "Needs a groupable field.",
+                )
         val measure = numeric.firstOrNull()?.sumMeasure() ?: VisualizationMeasure.countRows()
         return ready(
             VisualizationTemplateId.TopValues,
@@ -168,8 +208,15 @@ private class VisualizationSampleProfile(sample: QueryResult, tables: List<Table
     }
 
     fun distribution(): VisualizationTemplate {
-        val field = numeric.firstOrNull()
-            ?: return unavailable(VisualizationTemplateId.Distribution, "Distribution", "See how numeric values are distributed.", "Numeric bins · Count", "Needs a numeric field.")
+        val field =
+            numeric.firstOrNull()
+                ?: return unavailable(
+                    VisualizationTemplateId.Distribution,
+                    "Distribution",
+                    "See how numeric values are distributed.",
+                    "Numeric bins · Count",
+                    "Needs a numeric field.",
+                )
         return ready(
             VisualizationTemplateId.Distribution,
             "Distribution",
@@ -215,10 +262,7 @@ private class VisualizationSampleProfile(sample: QueryResult, tables: List<Table
             "Summarize the sample in one headline value.",
             measure.label,
             55,
-            VisualizationConfig(
-                chartType = ChartType.Kpi,
-                values = listOf(measure),
-            ),
+            VisualizationConfig(chartType = ChartType.Kpi, values = listOf(measure)),
         )
     }
 
@@ -229,7 +273,15 @@ private class VisualizationSampleProfile(sample: QueryResult, tables: List<Table
         preview: String,
         score: Int,
         config: VisualizationConfig,
-    ) = VisualizationTemplate(id, name, description, preview, score, VisualizationTemplateBuildResult.Ready(config))
+    ) =
+        VisualizationTemplate(
+            id,
+            name,
+            description,
+            preview,
+            score,
+            VisualizationTemplateBuildResult.Ready(config),
+        )
 
     private fun unavailable(
         id: VisualizationTemplateId,
@@ -237,13 +289,22 @@ private class VisualizationSampleProfile(sample: QueryResult, tables: List<Table
         description: String,
         preview: String,
         reason: String,
-    ) = VisualizationTemplate(id, name, description, preview, 0, VisualizationTemplateBuildResult.Unavailable(reason))
+    ) =
+        VisualizationTemplate(
+            id,
+            name,
+            description,
+            preview,
+            0,
+            VisualizationTemplateBuildResult.Unavailable(reason),
+        )
 
-    private fun readableCardinalityScore(field: ProfileField): Int = when (field.cardinality) {
-        in 2..12 -> 15
-        in 13..50 -> 8
-        else -> 0
-    }
+    private fun readableCardinalityScore(field: ProfileField): Int =
+        when (field.cardinality) {
+            in 2..12 -> 15
+            in 13..50 -> 8
+            else -> 0
+        }
 }
 
 private data class ProfileField(
@@ -257,25 +318,30 @@ private data class ProfileField(
         get() {
             val normalized = label.lowercase()
             val raw = column.lowercase()
-            return normalized == "id" || normalized.endsWith("_id") || normalized.endsWith(" id") ||
-                raw == "id" || raw.endsWith("_id")
+            return normalized == "id" ||
+                normalized.endsWith("_id") ||
+                normalized.endsWith(" id") ||
+                raw == "id" ||
+                raw.endsWith("_id")
         }
 
     fun encoding(grouping: PivotGrouping = PivotGrouping.Exact) =
         VisualizationField(column, label, grouping)
 
-    fun sumMeasure() = VisualizationMeasure(
-        alias = "sum_$column",
-        fn = MeasureFn.Sum,
-        sourceColumn = column,
-        label = "Sum $label",
-    )
+    fun sumMeasure() =
+        VisualizationMeasure(
+            alias = "sum_$column",
+            fn = MeasureFn.Sum,
+            sourceColumn = column,
+            label = "Sum $label",
+        )
 
-    fun rawMeasure() = VisualizationMeasure(
-        alias = "raw_$column",
-        fn = MeasureFn.Sum,
-        sourceColumn = column,
-        label = label,
-        aggregate = false,
-    )
+    fun rawMeasure() =
+        VisualizationMeasure(
+            alias = "raw_$column",
+            fn = MeasureFn.Sum,
+            sourceColumn = column,
+            label = label,
+            aggregate = false,
+        )
 }

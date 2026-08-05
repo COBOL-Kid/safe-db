@@ -8,10 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class HistoryViewModel(
-    private val service: SafeDbService,
-    private val scope: CoroutineScope,
-) {
+class HistoryViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
     private val _entries = MutableStateFlow<List<HistoryEntry>>(emptyList())
     val entries: StateFlow<List<HistoryEntry>> = _entries.asStateFlow()
 

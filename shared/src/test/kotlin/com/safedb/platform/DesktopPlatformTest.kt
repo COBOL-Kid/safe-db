@@ -19,9 +19,10 @@ class DesktopPlatformTest {
     @Test
     fun rejectsLinuxAndUnknownNamesWithTheSupportedPlatformMessage() {
         listOf("Linux", "Haiku", "SwingOS").forEach { osName ->
-            val error = assertFailsWith<UnsupportedDesktopPlatformException> {
-                DesktopPlatform.resolve(osName)
-            }
+            val error =
+                assertFailsWith<UnsupportedDesktopPlatformException> {
+                    DesktopPlatform.resolve(osName)
+                }
             assertEquals(
                 "unsupported operating system '$osName'; supported platforms are macOS and Windows",
                 error.message,

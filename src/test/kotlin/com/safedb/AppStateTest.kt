@@ -66,17 +66,23 @@ class AppStateTest {
                 connections,
             ),
         )
-        assertNull(resolveDefaultQueryLocation(Settings(defaultConnectionId = "missing", defaultSchema = "public"), connections))
+        assertNull(
+            resolveDefaultQueryLocation(
+                Settings(defaultConnectionId = "missing", defaultSchema = "public"),
+                connections,
+            )
+        )
         assertNull(resolveDefaultQueryLocation(Settings(defaultConnectionId = "c1"), connections))
     }
 
     @Test
     fun explicitConnectionSelectionUsesOnlyPerConnectionHistory() {
-        val settings = Settings(
-            defaultConnectionId = "c1",
-            defaultSchema = "default_schema",
-            lastSelectedSchemas = mapOf("c1" to "remembered_schema", "c2" to "analytics"),
-        )
+        val settings =
+            Settings(
+                defaultConnectionId = "c1",
+                defaultSchema = "default_schema",
+                lastSelectedSchemas = mapOf("c1" to "remembered_schema", "c2" to "analytics"),
+            )
 
         assertEquals(
             SchemaSelectionIntent("remembered_schema", SchemaSelectionSource.ConnectionHistory),
@@ -86,19 +92,24 @@ class AppStateTest {
             SchemaSelectionIntent("analytics", SchemaSelectionSource.ConnectionHistory),
             resolveConnectionSchemaSelection("c2", settings),
         )
-        assertEquals(SchemaSelectionIntent.Unselected, resolveConnectionSchemaSelection("c3", settings))
+        assertEquals(
+            SchemaSelectionIntent.Unselected,
+            resolveConnectionSchemaSelection("c3", settings),
+        )
     }
 
     @Test
     fun restoredQueryUsesFirstTableSchemaWithoutHistorySource() {
-        val spec = QuerySpec(
-            tables = listOf(
-                TableRef("reporting", "orders", "t0"),
-                TableRef("public", "customers", "t1"),
-            ),
-            filters = FilterGroup.empty(),
-            limit = 100,
-        )
+        val spec =
+            QuerySpec(
+                tables =
+                    listOf(
+                        TableRef("reporting", "orders", "t0"),
+                        TableRef("public", "customers", "t1"),
+                    ),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            )
 
         assertEquals(
             SchemaSelectionIntent("reporting", SchemaSelectionSource.RestoredQuery),
@@ -110,18 +121,22 @@ class AppStateTest {
         )
     }
 
-    private fun connection(id: String) = ConnectionDef(
-        id = id,
-        name = id,
-        dialect = Dialect.Postgres,
-        host = "localhost",
-        port = 5432,
-        database = "database",
-        username = "readonly",
-    )
+    private fun connection(id: String) =
+        ConnectionDef(
+            id = id,
+            name = id,
+            dialect = Dialect.Postgres,
+            host = "localhost",
+            port = 5432,
+            database = "database",
+            username = "readonly",
+        )
 
-    private fun unusedService(): SafeDbService = Proxy.newProxyInstance(
-        SafeDbService::class.java.classLoader,
-        arrayOf(SafeDbService::class.java),
-    ) { _, method, _ -> error("Unexpected service call: ${method.name}") } as SafeDbService
+    private fun unusedService(): SafeDbService =
+        Proxy.newProxyInstance(
+            SafeDbService::class.java.classLoader,
+            arrayOf(SafeDbService::class.java),
+        ) { _, method, _ ->
+            error("Unexpected service call: ${method.name}")
+        } as SafeDbService
 }

@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.DimensionSortMode
+import com.safedb.explore.LabelFilterOp
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotDimension
@@ -38,7 +39,6 @@ import com.safedb.explore.PivotMeasure
 import com.safedb.explore.PivotNumberFormat
 import com.safedb.explore.PivotShowAs
 import com.safedb.explore.ShowAsMode
-import com.safedb.explore.LabelFilterOp
 import com.safedb.explore.ValueFilterOp
 import com.safedb.explore.evaluatePivotFormula
 import com.safedb.model.ColumnCategory
@@ -59,14 +59,25 @@ internal fun DimensionSettingsDialog(
 ) {
     var label by remember(dimension.id) { mutableStateOf(dimension.label) }
     var grouping by remember(dimension.id) { mutableStateOf(dimension.grouping) }
-    var binSize by remember(dimension.id) { mutableStateOf((dimension.grouping as? PivotGrouping.NumberBin)?.size.orEmpty()) }
-    var binStart by remember(dimension.id) { mutableStateOf((dimension.grouping as? PivotGrouping.NumberBin)?.start.orEmpty()) }
+    var binSize by
+        remember(dimension.id) {
+            mutableStateOf((dimension.grouping as? PivotGrouping.NumberBin)?.size.orEmpty())
+        }
+    var binStart by
+        remember(dimension.id) {
+            mutableStateOf((dimension.grouping as? PivotGrouping.NumberBin)?.start.orEmpty())
+        }
     var subtotals by remember(dimension.id) { mutableStateOf(dimension.showSubtotals) }
     var sortMode by remember(dimension.id) { mutableStateOf(dimension.sortMode) }
-    var sortMeasureAlias by remember(dimension.id) { mutableStateOf(dimension.sortMeasureAlias ?: measures.firstOrNull()?.alias) }
+    var sortMeasureAlias by
+        remember(dimension.id) {
+            mutableStateOf(dimension.sortMeasureAlias ?: measures.firstOrNull()?.alias)
+        }
     val numeric = field?.category in setOf(ColumnCategory.Integer, ColumnCategory.Decimal)
     val temporal = field?.category in setOf(ColumnCategory.Date, ColumnCategory.DateTime)
-    val validBin = grouping !is PivotGrouping.NumberBin || binSize.toBigDecimalOrNull()?.let { it > BigDecimal.ZERO } == true
+    val validBin =
+        grouping !is PivotGrouping.NumberBin ||
+            binSize.toBigDecimalOrNull()?.let { it > BigDecimal.ZERO } == true
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -83,8 +94,13 @@ internal fun DimensionSettingsDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 SettingsLabel("Group values")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ChoicePill("Exact", grouping == PivotGrouping.Exact) { grouping = PivotGrouping.Exact }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ChoicePill("Exact", grouping == PivotGrouping.Exact) {
+                        grouping = PivotGrouping.Exact
+                    }
                     if (temporal) {
                         DateGroupUnit.entries.forEach { unit ->
                             ChoicePill(dateUnitLabel(unit), grouping == PivotGrouping.Date(unit)) {
@@ -94,7 +110,11 @@ internal fun DimensionSettingsDialog(
                     }
                     if (numeric) {
                         ChoicePill("Number bins", grouping is PivotGrouping.NumberBin) {
-                            grouping = PivotGrouping.NumberBin(binSize.ifBlank { "100" }, binStart.ifBlank { null })
+                            grouping =
+                                PivotGrouping.NumberBin(
+                                    binSize.ifBlank { "100" },
+                                    binStart.ifBlank { null },
+                                )
                         }
                     }
                 }
@@ -122,18 +142,32 @@ internal fun DimensionSettingsDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = subtotals, onCheckedChange = null)
-                    Text("Show subtotals for this field", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "Show subtotals for this field",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
                 SettingsLabel("Sort members")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     DimensionSortMode.entries.forEach { mode ->
                         ChoicePill(dimensionSortLabel(mode), sortMode == mode) { sortMode = mode }
                     }
                 }
-                if (sortMode in setOf(DimensionSortMode.ValueAscending, DimensionSortMode.ValueDescending)) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (
+                    sortMode in
+                        setOf(DimensionSortMode.ValueAscending, DimensionSortMode.ValueDescending)
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         measures.forEach { measure ->
-                            ChoicePill(measure.label, sortMeasureAlias == measure.alias) { sortMeasureAlias = measure.alias }
+                            ChoicePill(measure.label, sortMeasureAlias == measure.alias) {
+                                sortMeasureAlias = measure.alias
+                            }
                         }
                     }
                 }
@@ -145,19 +179,25 @@ internal fun DimensionSettingsDialog(
                     onSave(
                         dimension.copy(
                             label = label.trim().ifEmpty { dimension.label },
-                            grouping = if (grouping is PivotGrouping.NumberBin) {
-                                PivotGrouping.NumberBin(binSize.trim(), binStart.trim().ifEmpty { null })
-                            } else {
-                                grouping
-                            },
+                            grouping =
+                                if (grouping is PivotGrouping.NumberBin) {
+                                    PivotGrouping.NumberBin(
+                                        binSize.trim(),
+                                        binStart.trim().ifEmpty { null },
+                                    )
+                                } else {
+                                    grouping
+                                },
                             showSubtotals = subtotals,
                             sortMode = sortMode,
                             sortMeasureAlias = sortMeasureAlias,
-                        ),
+                        )
                     )
                 },
                 enabled = label.isNotBlank() && validBin,
-            ) { Text("Apply") }
+            ) {
+                Text("Apply")
+            }
         },
         dismissButton = { SecondaryButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -175,11 +215,15 @@ internal fun MeasureSettingsDialog(
     var formula by remember(measure.alias) { mutableStateOf(measure.formula.orEmpty()) }
     var function by remember(measure.alias) { mutableStateOf(measure.fn) }
     var showAs by remember(measure.alias) { mutableStateOf(measure.showAs.mode) }
-    var baseDimensionId by remember(measure.alias) { mutableStateOf(measure.showAs.baseDimensionId) }
+    var baseDimensionId by
+        remember(measure.alias) { mutableStateOf(measure.showAs.baseDimensionId) }
     var formatKind by remember(measure.alias) { mutableStateOf(measure.numberFormat.kind) }
-    var decimals by remember(measure.alias) { mutableStateOf(measure.numberFormat.decimals.toString()) }
-    var thousands by remember(measure.alias) { mutableStateOf(measure.numberFormat.thousandsSeparator) }
-    var currencyCode by remember(measure.alias) { mutableStateOf(measure.numberFormat.currencyCode) }
+    var decimals by
+        remember(measure.alias) { mutableStateOf(measure.numberFormat.decimals.toString()) }
+    var thousands by
+        remember(measure.alias) { mutableStateOf(measure.numberFormat.thousandsSeparator) }
+    var currencyCode by
+        remember(measure.alias) { mutableStateOf(measure.numberFormat.currencyCode) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -202,36 +246,56 @@ internal fun MeasureSettingsDialog(
                         value = formula,
                         onValueChange = { formula = it },
                         label = { Text("Formula") },
-                        supportingText = { Text("References use stable tokens such as [${measure.alias}]") },
+                        supportingText = {
+                            Text("References use stable tokens such as [${measure.alias}]")
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
                     SettingsLabel("Summarize by")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         availableFunctions.forEach { option ->
-                            ChoicePill(measureFunctionName(option), function == option) { function = option }
+                            ChoicePill(measureFunctionName(option), function == option) {
+                                function = option
+                            }
                         }
                     }
                 }
                 SettingsLabel("Show values as")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     showAsChoices.forEach { mode ->
                         ChoicePill(showAsLabel(mode), showAs == mode) { showAs = mode }
                     }
                 }
                 if (showAs in modesNeedingBaseDimension && dimensions.isNotEmpty()) {
                     SettingsLabel("Base field")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         dimensions.forEach { dimension ->
-                            ChoicePill(dimension.label, baseDimensionId == dimension.id) { baseDimensionId = dimension.id }
+                            ChoicePill(dimension.label, baseDimensionId == dimension.id) {
+                                baseDimensionId = dimension.id
+                            }
                         }
                     }
                 }
                 SettingsLabel("Number format")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     NumberFormatKind.entries.forEach { kind ->
-                        ChoicePill(numberFormatKindLabel(kind), formatKind == kind) { formatKind = kind }
+                        ChoicePill(numberFormatKindLabel(kind), formatKind == kind) {
+                            formatKind = kind
+                        }
                     }
                 }
                 if (formatKind != NumberFormatKind.Auto) {
@@ -254,7 +318,9 @@ internal fun MeasureSettingsDialog(
                     if (formatKind == NumberFormatKind.Currency) {
                         OutlinedTextField(
                             value = currencyCode,
-                            onValueChange = { currencyCode = it.uppercase().filter(Char::isLetter).take(3) },
+                            onValueChange = {
+                                currencyCode = it.uppercase().filter(Char::isLetter).take(3)
+                            },
                             label = { Text("Currency code") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -272,19 +338,24 @@ internal fun MeasureSettingsDialog(
                             fn = function,
                             formula = measure.formula?.let { formula.trim() },
                             showAs = PivotShowAs(showAs, baseDimensionId),
-                            numberFormat = measure.numberFormat.copy(
-                                kind = formatKind,
-                                decimals = decimals.toIntOrNull()?.coerceIn(0, 8) ?: 2,
-                                thousandsSeparator = thousands,
-                                currencyCode = currencyCode.ifBlank { measure.numberFormat.currencyCode },
-                            ),
-                        ),
+                            numberFormat =
+                                measure.numberFormat.copy(
+                                    kind = formatKind,
+                                    decimals = decimals.toIntOrNull()?.coerceIn(0, 8) ?: 2,
+                                    thousandsSeparator = thousands,
+                                    currencyCode =
+                                        currencyCode.ifBlank { measure.numberFormat.currencyCode },
+                                ),
+                        )
                     )
                 },
-                enabled = label.isNotBlank() &&
-                    (measure.formula == null || formula.isNotBlank()) &&
-                    (formatKind != NumberFormatKind.Currency || currencyCode.length == 3),
-            ) { Text("Apply") }
+                enabled =
+                    label.isNotBlank() &&
+                        (measure.formula == null || formula.isNotBlank()) &&
+                        (formatKind != NumberFormatKind.Currency || currencyCode.length == 3),
+            ) {
+                Text("Apply")
+            }
         },
         dismissButton = { SecondaryButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -322,16 +393,26 @@ internal fun CalculatedMeasureDialog(
                     onValueChange = { formula = it },
                     label = { Text("Formula") },
                     placeholder = { Text("[revenue] / [orders]") },
-                    supportingText = { Text(validation ?: "Use +, −, ×, ÷, parentheses, and the measure tokens below.") },
+                    supportingText = {
+                        Text(
+                            validation
+                                ?: "Use +, −, ×, ÷, parentheses, and the measure tokens below."
+                        )
+                    },
                     isError = validation != null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 SettingsLabel("Insert measure")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     existing.forEach { measure ->
                         ChoicePill(measure.label, false) {
-                            formula += if (formula.isBlank()) "[${measure.alias}]" else " [${measure.alias}]"
+                            formula +=
+                                if (formula.isBlank()) "[${measure.alias}]"
+                                else " [${measure.alias}]"
                         }
                     }
                 }
@@ -347,11 +428,13 @@ internal fun CalculatedMeasureDialog(
                             label = label.trim(),
                             formula = formula.trim(),
                             numberFormat = PivotNumberFormat(),
-                        ),
+                        )
                     )
                 },
                 enabled = label.isNotBlank() && formula.isNotBlank() && validation == null,
-            ) { Text("Add") }
+            ) {
+                Text("Add")
+            }
         },
         dismissButton = { SecondaryButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -361,7 +444,9 @@ internal fun CalculatedMeasureDialog(
 private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(3.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color =
+            if (selected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerLow,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.clickable(onClick = onClick),
     ) {
@@ -369,7 +454,9 @@ private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
             label,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             style = MaterialTheme.typography.labelMedium,
-            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            color =
+                if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
@@ -385,82 +472,89 @@ private fun SettingsLabel(text: String) {
     )
 }
 
-private fun dateUnitLabel(unit: DateGroupUnit): String = when (unit) {
-    DateGroupUnit.Year -> "Year"
-    DateGroupUnit.Quarter -> "Quarter"
-    DateGroupUnit.Month -> "Month"
-    DateGroupUnit.IsoWeek -> "ISO week"
-    DateGroupUnit.Day -> "Day"
-}
+private fun dateUnitLabel(unit: DateGroupUnit): String =
+    when (unit) {
+        DateGroupUnit.Year -> "Year"
+        DateGroupUnit.Quarter -> "Quarter"
+        DateGroupUnit.Month -> "Month"
+        DateGroupUnit.IsoWeek -> "ISO week"
+        DateGroupUnit.Day -> "Day"
+    }
 
-private fun dimensionSortLabel(mode: DimensionSortMode): String = when (mode) {
-    DimensionSortMode.SourceOrder -> "Source order"
-    DimensionSortMode.LabelAscending -> "A → Z"
-    DimensionSortMode.LabelDescending -> "Z → A"
-    DimensionSortMode.ValueAscending -> "Value ↑"
-    DimensionSortMode.ValueDescending -> "Value ↓"
-}
+private fun dimensionSortLabel(mode: DimensionSortMode): String =
+    when (mode) {
+        DimensionSortMode.SourceOrder -> "Source order"
+        DimensionSortMode.LabelAscending -> "A → Z"
+        DimensionSortMode.LabelDescending -> "Z → A"
+        DimensionSortMode.ValueAscending -> "Value ↑"
+        DimensionSortMode.ValueDescending -> "Value ↓"
+    }
 
-private val showAsChoices = listOf(
-    ShowAsMode.Value,
-    ShowAsMode.PercentGrandTotal,
-    ShowAsMode.PercentRowTotal,
-    ShowAsMode.PercentColumnTotal,
-    ShowAsMode.PercentParent,
-    ShowAsMode.DifferenceFrom,
-    ShowAsMode.PercentDifferenceFrom,
-    ShowAsMode.RunningTotal,
-    ShowAsMode.PercentRunningTotal,
-    ShowAsMode.RankAscending,
-    ShowAsMode.RankDescending,
-)
+private val showAsChoices =
+    listOf(
+        ShowAsMode.Value,
+        ShowAsMode.PercentGrandTotal,
+        ShowAsMode.PercentRowTotal,
+        ShowAsMode.PercentColumnTotal,
+        ShowAsMode.PercentParent,
+        ShowAsMode.DifferenceFrom,
+        ShowAsMode.PercentDifferenceFrom,
+        ShowAsMode.RunningTotal,
+        ShowAsMode.PercentRunningTotal,
+        ShowAsMode.RankAscending,
+        ShowAsMode.RankDescending,
+    )
 
-private val modesNeedingBaseDimension = setOf(
-    ShowAsMode.PercentParent,
-    ShowAsMode.DifferenceFrom,
-    ShowAsMode.PercentDifferenceFrom,
-    ShowAsMode.RunningTotal,
-    ShowAsMode.PercentRunningTotal,
-    ShowAsMode.RankAscending,
-    ShowAsMode.RankDescending,
-)
+private val modesNeedingBaseDimension =
+    setOf(
+        ShowAsMode.PercentParent,
+        ShowAsMode.DifferenceFrom,
+        ShowAsMode.PercentDifferenceFrom,
+        ShowAsMode.RunningTotal,
+        ShowAsMode.PercentRunningTotal,
+        ShowAsMode.RankAscending,
+        ShowAsMode.RankDescending,
+    )
 
-private fun showAsLabel(mode: ShowAsMode): String = when (mode) {
-    ShowAsMode.Value -> "Value"
-    ShowAsMode.PercentGrandTotal -> "% grand total"
-    ShowAsMode.PercentRowTotal -> "% row total"
-    ShowAsMode.PercentColumnTotal -> "% column total"
-    ShowAsMode.PercentParent -> "% parent"
-    ShowAsMode.DifferenceFrom -> "Difference"
-    ShowAsMode.PercentDifferenceFrom -> "% difference"
-    ShowAsMode.RunningTotal -> "Running total"
-    ShowAsMode.PercentRunningTotal -> "% running total"
-    ShowAsMode.RankAscending -> "Rank ascending"
-    ShowAsMode.RankDescending -> "Rank descending"
-}
+private fun showAsLabel(mode: ShowAsMode): String =
+    when (mode) {
+        ShowAsMode.Value -> "Value"
+        ShowAsMode.PercentGrandTotal -> "% grand total"
+        ShowAsMode.PercentRowTotal -> "% row total"
+        ShowAsMode.PercentColumnTotal -> "% column total"
+        ShowAsMode.PercentParent -> "% parent"
+        ShowAsMode.DifferenceFrom -> "Difference"
+        ShowAsMode.PercentDifferenceFrom -> "% difference"
+        ShowAsMode.RunningTotal -> "Running total"
+        ShowAsMode.PercentRunningTotal -> "% running total"
+        ShowAsMode.RankAscending -> "Rank ascending"
+        ShowAsMode.RankDescending -> "Rank descending"
+    }
 
-private fun measureFunctionName(function: MeasureFn): String = when (function) {
-    MeasureFn.Count -> "Count"
-    MeasureFn.CountNumbers -> "Count numbers"
-    MeasureFn.CountDistinct -> "Count distinct"
-    MeasureFn.Sum -> "Sum"
-    MeasureFn.Avg -> "Average"
-    MeasureFn.Min -> "Minimum"
-    MeasureFn.Max -> "Maximum"
-    MeasureFn.Product -> "Product"
-    MeasureFn.StdDev -> "StdDev"
-    MeasureFn.StdDevPopulation -> "StdDevP"
-    MeasureFn.Variance -> "Variance"
-    MeasureFn.VariancePopulation -> "VarianceP"
-}
+private fun measureFunctionName(function: MeasureFn): String =
+    when (function) {
+        MeasureFn.Count -> "Count"
+        MeasureFn.CountNumbers -> "Count numbers"
+        MeasureFn.CountDistinct -> "Count distinct"
+        MeasureFn.Sum -> "Sum"
+        MeasureFn.Avg -> "Average"
+        MeasureFn.Min -> "Minimum"
+        MeasureFn.Max -> "Maximum"
+        MeasureFn.Product -> "Product"
+        MeasureFn.StdDev -> "StdDev"
+        MeasureFn.StdDevPopulation -> "StdDevP"
+        MeasureFn.Variance -> "Variance"
+        MeasureFn.VariancePopulation -> "VarianceP"
+    }
 
-private fun numberFormatKindLabel(kind: NumberFormatKind): String = when (kind) {
-    NumberFormatKind.Auto -> "Auto"
-    NumberFormatKind.Number -> "Number"
-    NumberFormatKind.Percent -> "Percent"
-    NumberFormatKind.Currency -> "Currency"
-    NumberFormatKind.Scientific -> "Scientific"
-}
+private fun numberFormatKindLabel(kind: NumberFormatKind): String =
+    when (kind) {
+        NumberFormatKind.Auto -> "Auto"
+        NumberFormatKind.Number -> "Number"
+        NumberFormatKind.Percent -> "Percent"
+        NumberFormatKind.Currency -> "Currency"
+        NumberFormatKind.Scientific -> "Scientific"
+    }
 
 @Composable
 internal fun FilterSettingsDialog(
@@ -471,40 +565,72 @@ internal fun FilterSettingsDialog(
     onSave: (PivotFilter) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var kind by remember(filter.id) {
-        mutableStateOf(
-            when (filter) {
-                is PivotFilter.Members -> FilterEditorKind.Members
-                is PivotFilter.Label -> FilterEditorKind.Label
-                is PivotFilter.Value -> if (filter.op in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom)) FilterEditorKind.TopN else FilterEditorKind.Value
-            },
-        )
-    }
+    var kind by
+        remember(filter.id) {
+            mutableStateOf(
+                when (filter) {
+                    is PivotFilter.Members -> FilterEditorKind.Members
+                    is PivotFilter.Label -> FilterEditorKind.Label
+                    is PivotFilter.Value ->
+                        if (filter.op in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom))
+                            FilterEditorKind.TopN
+                        else FilterEditorKind.Value
+                }
+            )
+        }
     var pinned by remember(filter.id) { mutableStateOf(filter.pinned) }
-    var textValue by remember(filter.id) {
-        mutableStateOf(
-            when (filter) {
-                is PivotFilter.Label -> filter.value
-                is PivotFilter.Value -> filter.value
-                else -> ""
-            },
-        )
-    }
-    var secondValue by remember(filter.id) { mutableStateOf((filter as? PivotFilter.Value)?.secondValue.orEmpty()) }
-    var labelOp by remember(filter.id) { mutableStateOf((filter as? PivotFilter.Label)?.op ?: LabelFilterOp.Contains) }
-    var valueOp by remember(filter.id) { mutableStateOf((filter as? PivotFilter.Value)?.op ?: ValueFilterOp.GreaterThan) }
-    var measureAlias by remember(filter.id) { mutableStateOf((filter as? PivotFilter.Value)?.measureAlias ?: measures.firstOrNull()?.alias.orEmpty()) }
-    var count by remember(filter.id) { mutableStateOf(((filter as? PivotFilter.Value)?.count ?: 10).toString()) }
-    var includedKeys by remember(filter.id) { mutableStateOf((filter as? PivotFilter.Members)?.includedKeys.orEmpty()) }
+    var textValue by
+        remember(filter.id) {
+            mutableStateOf(
+                when (filter) {
+                    is PivotFilter.Label -> filter.value
+                    is PivotFilter.Value -> filter.value
+                    else -> ""
+                }
+            )
+        }
+    var secondValue by
+        remember(filter.id) {
+            mutableStateOf((filter as? PivotFilter.Value)?.secondValue.orEmpty())
+        }
+    var labelOp by
+        remember(filter.id) {
+            mutableStateOf((filter as? PivotFilter.Label)?.op ?: LabelFilterOp.Contains)
+        }
+    var valueOp by
+        remember(filter.id) {
+            mutableStateOf((filter as? PivotFilter.Value)?.op ?: ValueFilterOp.GreaterThan)
+        }
+    var measureAlias by
+        remember(filter.id) {
+            mutableStateOf(
+                (filter as? PivotFilter.Value)?.measureAlias
+                    ?: measures.firstOrNull()?.alias.orEmpty()
+            )
+        }
+    var count by
+        remember(filter.id) {
+            mutableStateOf(((filter as? PivotFilter.Value)?.count ?: 10).toString())
+        }
+    var includedKeys by
+        remember(filter.id) {
+            mutableStateOf((filter as? PivotFilter.Members)?.includedKeys.orEmpty())
+        }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(4.dp),
         title = { Text("${filter.label} filter", style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column(modifier = Modifier.widthIn(min = 500.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                modifier = Modifier.widthIn(min = 500.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 SettingsLabel("Filter type")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     FilterEditorKind.entries.forEach { option ->
                         ChoicePill(filterKindLabel(option), kind == option) { kind = option }
                     }
@@ -521,30 +647,47 @@ internal fun FilterSettingsDialog(
                             }
                         }
                         Text(
-                            if (includedKeys.isEmpty()) "All sample values selected" else "${includedKeys.size} selected",
+                            if (includedKeys.isEmpty()) "All sample values selected"
+                            else "${includedKeys.size} selected",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Column(
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                            modifier =
+                                Modifier.fillMaxWidth()
+                                    .heightIn(max = 240.dp)
+                                    .verticalScroll(rememberScrollState())
                         ) {
                             memberOptions.forEach { option ->
                                 val checked = includedKeys.isEmpty() || option.key in includedKeys
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            val baseline = if (includedKeys.isEmpty()) memberOptions.map { it.key }.toSet() else includedKeys
-                                            val next = if (option.key in baseline) baseline - option.key else baseline + option.key
+                                    modifier =
+                                        Modifier.fillMaxWidth().clickable {
+                                            val baseline =
+                                                if (includedKeys.isEmpty())
+                                                    memberOptions.map { it.key }.toSet()
+                                                else includedKeys
+                                            val next =
+                                                if (option.key in baseline) baseline - option.key
+                                                else baseline + option.key
                                             if (next.isNotEmpty()) {
-                                                includedKeys = if (next.size == memberOptions.size) emptySet() else next
+                                                includedKeys =
+                                                    if (next.size == memberOptions.size) emptySet()
+                                                    else next
                                             }
                                         },
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Checkbox(checked = checked, onCheckedChange = null)
-                                    Text(option.label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                    Text("${option.count}", style = MaterialTheme.typography.labelSmall)
+                                    Text(
+                                        option.label,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                    Text(
+                                        "${option.count}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
                                 }
                             }
                         }
@@ -552,7 +695,9 @@ internal fun FilterSettingsDialog(
                     FilterEditorKind.Label -> {
                         SettingsLabel("Match")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            LabelFilterOp.entries.forEach { op -> ChoicePill(labelFilterLabel(op), labelOp == op) { labelOp = op } }
+                            LabelFilterOp.entries.forEach { op ->
+                                ChoicePill(labelFilterLabel(op), labelOp == op) { labelOp = op }
+                            }
                         }
                         OutlinedTextField(
                             value = textValue,
@@ -563,18 +708,26 @@ internal fun FilterSettingsDialog(
                         )
                     }
                     FilterEditorKind.Value,
-                    FilterEditorKind.TopN,
-                    -> {
+                    FilterEditorKind.TopN -> {
                         SettingsLabel("Measure")
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
                             measures.forEach { measure ->
-                                ChoicePill(measure.label, measureAlias == measure.alias) { measureAlias = measure.alias }
+                                ChoicePill(measure.label, measureAlias == measure.alias) {
+                                    measureAlias = measure.alias
+                                }
                             }
                         }
                         if (kind == FilterEditorKind.TopN) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                ChoicePill("Top", valueOp == ValueFilterOp.Top) { valueOp = ValueFilterOp.Top }
-                                ChoicePill("Bottom", valueOp == ValueFilterOp.Bottom) { valueOp = ValueFilterOp.Bottom }
+                                ChoicePill("Top", valueOp == ValueFilterOp.Top) {
+                                    valueOp = ValueFilterOp.Top
+                                }
+                                ChoicePill("Bottom", valueOp == ValueFilterOp.Bottom) {
+                                    valueOp = ValueFilterOp.Bottom
+                                }
                             }
                             OutlinedTextField(
                                 value = count,
@@ -584,10 +737,19 @@ internal fun FilterSettingsDialog(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         } else {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                ValueFilterOp.entries.filterNot { it in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom) }.forEach { op ->
-                                    ChoicePill(valueFilterLabel(op), valueOp == op) { valueOp = op }
-                                }
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                ValueFilterOp.entries
+                                    .filterNot {
+                                        it in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom)
+                                    }
+                                    .forEach { op ->
+                                        ChoicePill(valueFilterLabel(op), valueOp == op) {
+                                            valueOp = op
+                                        }
+                                    }
                             }
                             OutlinedTextField(
                                 value = textValue,
@@ -611,75 +773,105 @@ internal fun FilterSettingsDialog(
             }
         },
         confirmButton = {
-            val enabled = when (kind) {
-                FilterEditorKind.Members -> true
-                FilterEditorKind.Label -> textValue.isNotBlank()
-                FilterEditorKind.Value -> measureAlias.isNotBlank() && textValue.toBigDecimalOrNull() != null &&
-                    (valueOp != ValueFilterOp.Between || secondValue.toBigDecimalOrNull() != null)
-                FilterEditorKind.TopN -> measureAlias.isNotBlank() && (count.toIntOrNull() ?: 0) > 0
-            }
+            val enabled =
+                when (kind) {
+                    FilterEditorKind.Members -> true
+                    FilterEditorKind.Label -> textValue.isNotBlank()
+                    FilterEditorKind.Value ->
+                        measureAlias.isNotBlank() &&
+                            textValue.toBigDecimalOrNull() != null &&
+                            (valueOp != ValueFilterOp.Between ||
+                                secondValue.toBigDecimalOrNull() != null)
+                    FilterEditorKind.TopN ->
+                        measureAlias.isNotBlank() && (count.toIntOrNull() ?: 0) > 0
+                }
             PrimaryButton(
                 onClick = {
-                    val updated = when (kind) {
-                        FilterEditorKind.Members -> PivotFilter.Members(
-                            filter.id,
-                            filter.column,
-                            filter.label,
-                            includedKeys = includedKeys,
-                            pinned = pinned,
-                        )
-                        FilterEditorKind.Label -> PivotFilter.Label(filter.id, filter.column, filter.label, labelOp, textValue.trim(), pinned)
-                        FilterEditorKind.Value -> PivotFilter.Value(
-                            filter.id,
-                            filter.column,
-                            filter.label,
-                            measureAlias,
-                            valueOp.takeUnless { it in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom) } ?: ValueFilterOp.GreaterThan,
-                            textValue.trim(),
-                            secondValue.trim().ifEmpty { null },
-                            pinned = false,
-                        )
-                        FilterEditorKind.TopN -> PivotFilter.Value(
-                            filter.id,
-                            filter.column,
-                            filter.label,
-                            measureAlias,
-                            if (valueOp == ValueFilterOp.Bottom) ValueFilterOp.Bottom else ValueFilterOp.Top,
-                            count = count.toIntOrNull()?.coerceAtLeast(1) ?: 10,
-                            pinned = false,
-                        )
-                    }
+                    val updated =
+                        when (kind) {
+                            FilterEditorKind.Members ->
+                                PivotFilter.Members(
+                                    filter.id,
+                                    filter.column,
+                                    filter.label,
+                                    includedKeys = includedKeys,
+                                    pinned = pinned,
+                                )
+                            FilterEditorKind.Label ->
+                                PivotFilter.Label(
+                                    filter.id,
+                                    filter.column,
+                                    filter.label,
+                                    labelOp,
+                                    textValue.trim(),
+                                    pinned,
+                                )
+                            FilterEditorKind.Value ->
+                                PivotFilter.Value(
+                                    filter.id,
+                                    filter.column,
+                                    filter.label,
+                                    measureAlias,
+                                    valueOp.takeUnless {
+                                        it in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom)
+                                    } ?: ValueFilterOp.GreaterThan,
+                                    textValue.trim(),
+                                    secondValue.trim().ifEmpty { null },
+                                    pinned = false,
+                                )
+                            FilterEditorKind.TopN ->
+                                PivotFilter.Value(
+                                    filter.id,
+                                    filter.column,
+                                    filter.label,
+                                    measureAlias,
+                                    if (valueOp == ValueFilterOp.Bottom) ValueFilterOp.Bottom
+                                    else ValueFilterOp.Top,
+                                    count = count.toIntOrNull()?.coerceAtLeast(1) ?: 10,
+                                    pinned = false,
+                                )
+                        }
                     onSave(updated)
                 },
                 enabled = enabled,
-            ) { Text("Apply") }
+            ) {
+                Text("Apply")
+            }
         },
         dismissButton = { SecondaryButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
-private enum class FilterEditorKind { Members, Label, Value, TopN }
-
-private fun filterKindLabel(kind: FilterEditorKind): String = when (kind) {
-    FilterEditorKind.Members -> "Members / slicer"
-    FilterEditorKind.Label -> "Label"
-    FilterEditorKind.Value -> "Value"
-    FilterEditorKind.TopN -> "Top / Bottom N"
+private enum class FilterEditorKind {
+    Members,
+    Label,
+    Value,
+    TopN,
 }
 
-private fun labelFilterLabel(op: LabelFilterOp): String = when (op) {
-    LabelFilterOp.Equals -> "Equals"
-    LabelFilterOp.Contains -> "Contains"
-    LabelFilterOp.StartsWith -> "Starts with"
-    LabelFilterOp.EndsWith -> "Ends with"
-}
+private fun filterKindLabel(kind: FilterEditorKind): String =
+    when (kind) {
+        FilterEditorKind.Members -> "Members / slicer"
+        FilterEditorKind.Label -> "Label"
+        FilterEditorKind.Value -> "Value"
+        FilterEditorKind.TopN -> "Top / Bottom N"
+    }
 
-private fun valueFilterLabel(op: ValueFilterOp): String = when (op) {
-    ValueFilterOp.GreaterThan -> ">"
-    ValueFilterOp.GreaterThanOrEqual -> "≥"
-    ValueFilterOp.LessThan -> "<"
-    ValueFilterOp.LessThanOrEqual -> "≤"
-    ValueFilterOp.Between -> "Between"
-    ValueFilterOp.Top -> "Top"
-    ValueFilterOp.Bottom -> "Bottom"
-}
+private fun labelFilterLabel(op: LabelFilterOp): String =
+    when (op) {
+        LabelFilterOp.Equals -> "Equals"
+        LabelFilterOp.Contains -> "Contains"
+        LabelFilterOp.StartsWith -> "Starts with"
+        LabelFilterOp.EndsWith -> "Ends with"
+    }
+
+private fun valueFilterLabel(op: ValueFilterOp): String =
+    when (op) {
+        ValueFilterOp.GreaterThan -> ">"
+        ValueFilterOp.GreaterThanOrEqual -> "≥"
+        ValueFilterOp.LessThan -> "<"
+        ValueFilterOp.LessThanOrEqual -> "≤"
+        ValueFilterOp.Between -> "Between"
+        ValueFilterOp.Top -> "Top"
+        ValueFilterOp.Bottom -> "Bottom"
+    }

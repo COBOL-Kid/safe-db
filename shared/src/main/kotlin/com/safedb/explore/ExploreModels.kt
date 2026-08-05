@@ -5,10 +5,10 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.ResultColumn
 import com.safedb.model.SafeDbJson
 import com.safedb.model.TableRef
-import kotlinx.serialization.Serializable
 import java.security.MessageDigest
 import java.util.Currency
 import java.util.Locale
+import kotlinx.serialization.Serializable
 
 const val EXPLORE_SCHEMA_VERSION = 2
 const val MAX_VISIBLE_PIVOT_CELLS = 100_000
@@ -49,13 +49,18 @@ data class ExploreConfig(
     companion object {
         fun defaultFor(sample: QueryResult, tables: List<TableRef> = emptyList()): ExploreConfig {
             val labels = displayColumnLabels(sample.columns, tables)
-            val firstDimension = sample.columns
-                .firstOrNull { !looksUniqueIdentifier(it.name) }
-                ?: sample.columns.firstOrNull()
+            val firstDimension =
+                sample.columns.firstOrNull { !looksUniqueIdentifier(it.name) }
+                    ?: sample.columns.firstOrNull()
             return ExploreConfig(
-                rowDimensions = firstDimension?.let {
-                    listOf(PivotDimension(column = it.name, label = labels.getValue(it.name)))
-                }.orEmpty(),
+                rowDimensions =
+                    firstDimension
+                        ?.let {
+                            listOf(
+                                PivotDimension(column = it.name, label = labels.getValue(it.name))
+                            )
+                        }
+                        .orEmpty(),
                 measures = listOf(PivotMeasure.countRows()),
             )
         }
@@ -89,17 +94,12 @@ enum class DimensionSortMode {
 
 @Serializable
 sealed class PivotGrouping {
-    @Serializable
-    data object Exact : PivotGrouping()
+    @Serializable data object Exact : PivotGrouping()
+
+    @Serializable data class Date(val unit: DateGroupUnit) : PivotGrouping()
 
     @Serializable
-    data class Date(val unit: DateGroupUnit) : PivotGrouping()
-
-    @Serializable
-    data class NumberBin(
-        val size: String,
-        val start: String? = null,
-    ) : PivotGrouping()
+    data class NumberBin(val size: String, val start: String? = null) : PivotGrouping()
 }
 
 @Serializable
@@ -247,19 +247,13 @@ enum class ValueFilterOp {
     Bottom,
 }
 
-@Serializable
-data class ExploreSort(
-    val target: ExploreSortTarget,
-    val dir: SortDir = SortDir.Asc,
-)
+@Serializable data class ExploreSort(val target: ExploreSortTarget, val dir: SortDir = SortDir.Asc)
 
 @Serializable
 sealed class ExploreSortTarget {
-    @Serializable
-    data class Dimension(val column: String) : ExploreSortTarget()
+    @Serializable data class Dimension(val column: String) : ExploreSortTarget()
 
-    @Serializable
-    data class Measure(val alias: String) : ExploreSortTarget()
+    @Serializable data class Measure(val alias: String) : ExploreSortTarget()
 }
 
 @Serializable
@@ -330,19 +324,19 @@ data class PivotHeaderCell(
     val isTotal: Boolean,
 )
 
-fun displayColumnLabel(raw: String): String =
-    raw.replace(Regex("^t\\d+__(.+)$"), "$1")
+fun displayColumnLabel(raw: String): String = raw.replace(Regex("^t\\d+__(.+)$"), "$1")
 
 /**
- * Produces short labels for ordinary results and table-qualified labels only
- * where a joined result would otherwise show duplicate field names.
+ * Produces short labels for ordinary results and table-qualified labels only where a joined result
+ * would otherwise show duplicate field names.
  */
 fun displayColumnLabels(
     columns: List<ResultColumn>,
     tables: List<TableRef> = emptyList(),
 ): Map<String, String> {
     val baseLabels = columns.associate { it.name to displayColumnLabel(it.name) }
-    val duplicateBases = baseLabels.values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+    val duplicateBases =
+        baseLabels.values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
     if (duplicateBases.isEmpty()) return baseLabels
 
     val tableByAlias = tables.associate { it.alias to it.name }
@@ -357,7 +351,8 @@ fun displayColumnLabels(
         }
     }
 
-    val duplicateQualified = qualified.values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+    val duplicateQualified =
+        qualified.values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
     if (duplicateQualified.isEmpty()) return qualified
     return qualified.mapValues { (raw, label) ->
         if (label !in duplicateQualified) {
@@ -393,6 +388,5 @@ private fun defaultMeasureLabel(fn: MeasureFn, sourceColumn: String?): String {
     }
 }
 
-private fun defaultCurrencyCode(): String = runCatching {
-    Currency.getInstance(Locale.getDefault()).currencyCode
-}.getOrDefault("USD")
+private fun defaultCurrencyCode(): String =
+    runCatching { Currency.getInstance(Locale.getDefault()).currencyCode }.getOrDefault("USD")

@@ -1,7 +1,7 @@
 package com.safedb.connection
 
-import com.safedb.model.Dialect
 import com.safedb.model.ConnectionDef
+import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
@@ -14,9 +14,10 @@ import kotlin.test.assertTrue
 class ParseConnectionStringTest {
     @Test
     fun parsesPostgreSqlUriWithVerifyFull() {
-        val parsed = parseConnectionString(
-            "postgresql://u:p%40ss@db.example.com:5432/app?sslmode=verify-full",
-        )
+        val parsed =
+            parseConnectionString(
+                "postgresql://u:p%40ss@db.example.com:5432/app?sslmode=verify-full"
+            )
 
         assertEquals(Dialect.Postgres, parsed.dialect)
         assertEquals("db.example.com", parsed.host)
@@ -31,9 +32,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun importsSafePostgresExtrasAndDropsSensitiveValuesFromSanitizedInput() {
-        val parsed = parseConnectionString(
-            "postgresql://u:p@host/db?sslmode=verify-full&currentSchema=reporting&apiToken=do-not-store",
-        )
+        val parsed =
+            parseConnectionString(
+                "postgresql://u:p@host/db?sslmode=verify-full&currentSchema=reporting&apiToken=do-not-store"
+            )
 
         assertEquals(listOf(DriverProperty("currentSchema", "reporting")), parsed.driverProperties)
         assertTrue(parsed.warnings.single().contains("apiToken"))
@@ -43,9 +45,8 @@ class ParseConnectionStringTest {
 
     @Test
     fun encodedDelimitersCannotSplitSensitiveValuesIntoPersistableProperties() {
-        val parsed = parseConnectionString(
-            "postgresql://u@host/db?apiToken=first%26second%3Dsecret",
-        )
+        val parsed =
+            parseConnectionString("postgresql://u@host/db?apiToken=first%26second%3Dsecret")
 
         assertEquals(emptyList(), parsed.driverProperties)
         assertTrue(parsed.warnings.single().contains("apiToken"))
@@ -56,19 +57,20 @@ class ParseConnectionStringTest {
 
     @Test
     fun encodedDelimitersRemainInsideSafeDriverPropertyValues() {
-        val parsed = parseConnectionString(
-            "postgresql://u@host/db?applicationName=R%26D%3Dreporting",
-        )
+        val parsed =
+            parseConnectionString("postgresql://u@host/db?applicationName=R%26D%3Dreporting")
 
-        assertEquals(listOf(DriverProperty("applicationName", "R&D=reporting")), parsed.driverProperties)
+        assertEquals(
+            listOf(DriverProperty("applicationName", "R&D=reporting")),
+            parsed.driverProperties,
+        )
         assertTrue(parsed.sanitizedInput.contains("applicationName=R%26D%3Dreporting"))
     }
 
     @Test
     fun duplicateExtrasUseLastValueWithWarning() {
-        val parsed = parseConnectionString(
-            "postgresql://u@host/db?currentSchema=one&CURRENTSCHEMA=two",
-        )
+        val parsed =
+            parseConnectionString("postgresql://u@host/db?currentSchema=one&CURRENTSCHEMA=two")
 
         assertEquals(listOf(DriverProperty("CURRENTSCHEMA", "two")), parsed.driverProperties)
         assertTrue(parsed.warnings.single().contains("last value"))
@@ -122,9 +124,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun importsSafeMySqlDriverProperties() {
-        val parsed = parseConnectionString(
-            "jdbc:mysql://host:3306/db?sslMode=VERIFY_IDENTITY&serverTimezone=UTC",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:mysql://host:3306/db?sslMode=VERIFY_IDENTITY&serverTimezone=UTC"
+            )
 
         assertEquals(listOf(DriverProperty("serverTimezone", "UTC")), parsed.driverProperties)
     }
@@ -148,9 +151,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun parsesSqlServerAdoNetStrings() {
-        val parsed = parseConnectionString(
-            "Server=host,1433;Database=db;User ID=u;Password={p;semi};Encrypt=True;TrustServerCertificate=False",
-        )
+        val parsed =
+            parseConnectionString(
+                "Server=host,1433;Database=db;User ID=u;Password={p;semi};Encrypt=True;TrustServerCertificate=False"
+            )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
         assertEquals("host", parsed.host)
@@ -165,9 +169,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun parsesSqlServerAliasesAndDisabledEncryption() {
-        val parsed = parseConnectionString(
-            "Data Source=tcp:db.example.com,1444;Initial Catalog=warehouse;UID=readonly;PWD=p;Encrypt=no",
-        )
+        val parsed =
+            parseConnectionString(
+                "Data Source=tcp:db.example.com,1444;Initial Catalog=warehouse;UID=readonly;PWD=p;Encrypt=no"
+            )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
         assertEquals("db.example.com", parsed.host)
@@ -180,9 +185,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun parsesSqlServerJdbcStrings() {
-        val parsed = parseConnectionString(
-            "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;trustServerCertificate=true",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;trustServerCertificate=true"
+            )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
         assertEquals("host", parsed.host)
@@ -195,12 +201,16 @@ class ParseConnectionStringTest {
 
     @Test
     fun importsSafeSqlServerPropertiesButKeepsSecurityManaged() {
-        val parsed = parseConnectionString(
-            "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;" +
-                "applicationName=Reporting;keyVaultProviderClientKey={do-not;store}",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;" +
+                    "applicationName=Reporting;keyVaultProviderClientKey={do-not;store}"
+            )
 
-        assertEquals(listOf(DriverProperty("applicationName", "Reporting")), parsed.driverProperties)
+        assertEquals(
+            listOf(DriverProperty("applicationName", "Reporting")),
+            parsed.driverProperties,
+        )
         assertFalse(parsed.driverProperties.any { it.name.equals("encrypt", ignoreCase = true) })
         assertTrue(parsed.warnings.single().contains("keyVaultProviderClientKey"))
         assertFalse(parsed.sanitizedInput.contains("do-not"))
@@ -208,9 +218,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun defaultsSqlServerJdbcLocalhostConnectionsWithoutEncryptToDisabledTransport() {
-        val parsed = parseConnectionString(
-            "jdbc:sqlserver://localhost:1433;databaseName=db;user=u;password=p",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:sqlserver://localhost:1433;databaseName=db;user=u;password=p"
+            )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
         assertEquals("localhost", parsed.host)
@@ -220,9 +231,7 @@ class ParseConnectionStringTest {
 
     @Test
     fun defaultsSqlServerAdoNetLoopbackConnectionsWithoutEncryptToDisabledTransport() {
-        val parsed = parseConnectionString(
-            "Server=127.0.0.1,1433;Database=db;User ID=u;Password=p",
-        )
+        val parsed = parseConnectionString("Server=127.0.0.1,1433;Database=db;User ID=u;Password=p")
 
         assertEquals(Dialect.Mssql, parsed.dialect)
         assertEquals("127.0.0.1", parsed.host)
@@ -232,9 +241,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun defaultsSqlServerRemoteConnectionsWithoutEncryptToVerifyIdentity() {
-        val parsed = parseConnectionString(
-            "jdbc:sqlserver://db.example.com:1433;databaseName=db;user=u;password=p",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:sqlserver://db.example.com:1433;databaseName=db;user=u;password=p"
+            )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
         assertEquals("db.example.com", parsed.host)
@@ -244,9 +254,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun preservesExplicitEncryptTrueOnSqlServerLocalhostAsVerifyIdentity() {
-        val parsed = parseConnectionString(
-            "Server=localhost,1433;Database=db;User ID=u;Password=p;Encrypt=True",
-        )
+        val parsed =
+            parseConnectionString(
+                "Server=localhost,1433;Database=db;User ID=u;Password=p;Encrypt=True"
+            )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
         assertEquals("localhost", parsed.host)
@@ -256,9 +267,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun parsesOracleTcpsWithWalletLocation() {
-        val parsed = parseConnectionString(
-            "jdbc:oracle:thin:@tcps:host:1521/svc?wallet_location=/path/to/wallet",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:oracle:thin:@tcps:host:1521/svc?wallet_location=/path/to/wallet"
+            )
 
         assertEquals(Dialect.Oracle, parsed.dialect)
         assertEquals("host", parsed.host)
@@ -271,9 +283,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun importsSafeOracleQueryProperties() {
-        val parsed = parseConnectionString(
-            "jdbc:oracle:thin:@//host:1521/svc?defaultRowPrefetch=50&apiToken=do-not-store",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:oracle:thin:@//host:1521/svc?defaultRowPrefetch=50&apiToken=do-not-store"
+            )
 
         assertEquals(listOf(DriverProperty("defaultRowPrefetch", "50")), parsed.driverProperties)
         assertFalse(parsed.sanitizedInput.contains("do-not-store"))
@@ -282,17 +295,18 @@ class ParseConnectionStringTest {
 
     @Test
     fun formatsCanonicalPasswordFreeConnectionStringsWithEncodedProperties() {
-        val def = ConnectionDef(
-            id = "c1",
-            name = "Test",
-            dialect = Dialect.Postgres,
-            host = "db.example.com",
-            port = 5432,
-            database = "analytics db",
-            username = "read only",
-            transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
-            driverProperties = listOf(DriverProperty("currentSchema", "team reports")),
-        )
+        val def =
+            ConnectionDef(
+                id = "c1",
+                name = "Test",
+                dialect = Dialect.Postgres,
+                host = "db.example.com",
+                port = 5432,
+                database = "analytics db",
+                username = "read only",
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+                driverProperties = listOf(DriverProperty("currentSchema", "team reports")),
+            )
 
         val formatted = formatConnectionString(def)
 
@@ -304,19 +318,19 @@ class ParseConnectionStringTest {
 
     @Test
     fun sqlServerFormattingRoundTripsEscapedValues() {
-        val def = ConnectionDef(
-            id = "c1",
-            name = "Test",
-            dialect = Dialect.Mssql,
-            host = "db.example.com",
-            port = 1433,
-            database = "analytics; archive",
-            username = "read only",
-            transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
-            driverProperties = listOf(
-                DriverProperty("applicationName", "North; {Ops} ; reporting"),
-            ),
-        )
+        val def =
+            ConnectionDef(
+                id = "c1",
+                name = "Test",
+                dialect = Dialect.Mssql,
+                host = "db.example.com",
+                port = 1433,
+                database = "analytics; archive",
+                username = "read only",
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+                driverProperties =
+                    listOf(DriverProperty("applicationName", "North; {Ops} ; reporting")),
+            )
 
         val formatted = formatConnectionString(def)
         val parsed = parseConnectionString(formatted)
@@ -332,16 +346,17 @@ class ParseConnectionStringTest {
 
     @Test
     fun oracleFormattingOmitsTheEntireCredentialPair() {
-        val def = ConnectionDef(
-            id = "c1",
-            name = "Test",
-            dialect = Dialect.Oracle,
-            host = "db.example.com",
-            port = 1521,
-            database = "service",
-            username = "readonly",
-            transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
-        )
+        val def =
+            ConnectionDef(
+                id = "c1",
+                name = "Test",
+                dialect = Dialect.Oracle,
+                host = "db.example.com",
+                port = 1521,
+                database = "service",
+                username = "readonly",
+                transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
+            )
 
         val formatted = formatConnectionString(def)
         val parsed = parseConnectionString(formatted)
@@ -381,9 +396,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun parsesOracleTcpsCredentialsWhenWalletLocationContainsAtSign() {
-        val parsed = parseConnectionString(
-            "jdbc:oracle:thin:user/pass@tcps:host:1521/svc?wallet_location=/wallets/team@example",
-        )
+        val parsed =
+            parseConnectionString(
+                "jdbc:oracle:thin:user/pass@tcps:host:1521/svc?wallet_location=/wallets/team@example"
+            )
 
         assertEquals(Dialect.Oracle, parsed.dialect)
         assertEquals("host", parsed.host)
@@ -441,9 +457,10 @@ class ParseConnectionStringTest {
 
     @Test
     fun rejectsAmbiguousSchemeLessUrls() {
-        val error = assertFailsWith<ConnectionStringParseError> {
-            parseConnectionString("//db.example.com:5432/app")
-        }
+        val error =
+            assertFailsWith<ConnectionStringParseError> {
+                parseConnectionString("//db.example.com:5432/app")
+            }
         assertEquals(
             "This connection string format is not recognized. Try the guided setup instead.",
             error.message,
@@ -452,11 +469,12 @@ class ParseConnectionStringTest {
 
     @Test
     fun rejectsUnsupportedOracleTnsDescriptionBlocks() {
-        val error = assertFailsWith<ConnectionStringParseError> {
-            parseConnectionString(
-                "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcps)(HOST=host)(PORT=1521)))",
-            )
-        }
+        val error =
+            assertFailsWith<ConnectionStringParseError> {
+                parseConnectionString(
+                    "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcps)(HOST=host)(PORT=1521)))"
+                )
+            }
         assertTrue(error.message!!.contains("Oracle TNS DESCRIPTION blocks are not supported"))
     }
 }

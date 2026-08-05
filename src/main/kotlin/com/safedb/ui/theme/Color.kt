@@ -7,28 +7,28 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.safedb.model.ThemePalette
 
-val VisualizationSeriesPalette = listOf(
-    Color(0xFF0B5ED7),
-    Color(0xFF087E8B),
-    Color(0xFFB76A00),
-    Color(0xFF6941C6),
-    Color(0xFFB4233C),
-    Color(0xFF1976A3),
-    Color(0xFF527A22),
-    Color(0xFFC14F18),
-)
+val VisualizationSeriesPalette =
+    listOf(
+        Color(0xFF0B5ED7),
+        Color(0xFF087E8B),
+        Color(0xFFB76A00),
+        Color(0xFF6941C6),
+        Color(0xFFB4233C),
+        Color(0xFF1976A3),
+        Color(0xFF527A22),
+        Color(0xFFC14F18),
+    )
 
 /**
  * Custom semantic color roles that extend the standard Material 3 [ColorScheme].
  *
  * Standard roles (primary, surface, outline, error, ...) are provided via
- * [MaterialTheme.colorScheme]; these custom roles (success, warning, info, uq,
- * action*) are exposed through [LocalSafeDbColors] and accessed via
- * `SafeDbTheme.colors`.
+ * [MaterialTheme.colorScheme]; these custom roles (success, warning, info, uq, action*) are exposed
+ * through [LocalSafeDbColors] and accessed via `SafeDbTheme.colors`.
  *
- * Control Plane palette: cool steel content planes, permanent graphite
- * navigation chrome, and a single cobalt interaction color. Navigation gets
- * explicit roles because it remains dark in both app themes.
+ * Control Plane palette: cool steel content planes, permanent graphite navigation chrome, and a
+ * single cobalt interaction color. Navigation gets explicit roles because it remains dark in both
+ * app themes.
  */
 @Immutable
 data class SafeDbColors(
@@ -242,40 +242,41 @@ private fun controlBlueLightScheme(): Pair<ColorScheme, SafeDbColors> =
         surfaceContainer = LightSurfaceContainer,
         surfaceContainerHigh = LightSurfaceContainerHigh,
         surfaceContainerHighest = LightSurfaceContainerHighest,
-    ) to SafeDbColors(
-        actionPrimary = LightActionPrimary,
-        onActionPrimary = LightOnActionPrimary,
-        actionPrimaryHover = LightActionPrimaryHover,
-        accentContainer = LightAccentContainer,
-        onAccentContainer = LightOnAccentContainer,
-        workspaceBackground = LightWorkspaceBackground,
-        workspaceHeader = LightWorkspaceHeader,
-        workspacePanel = LightWorkspacePanel,
-        workspaceCanvas = LightWorkspaceCanvas,
-        navigationBackground = LightNavigationBackground,
-        navigationBorder = LightNavigationBorder,
-        navigationHover = LightNavigationHover,
-        navigationSelected = LightNavigationSelected,
-        onNavigation = LightOnNavigation,
-        onNavigationMuted = LightOnNavigationMuted,
-        success = LightSuccess,
-        onSuccess = LightOnSuccess,
-        successContainer = LightSuccessContainer,
-        onSuccessContainer = LightOnSuccessContainer,
-        warning = LightWarning,
-        onWarning = LightOnWarning,
-        warningContainer = LightWarningContainer,
-        onWarningContainer = LightOnWarningContainer,
-        info = LightInfo,
-        onInfo = LightOnInfo,
-        infoContainer = LightInfoContainer,
-        onInfoContainer = LightOnInfoContainer,
-        uq = LightUq,
-        onUq = LightOnUq,
-        uqContainer = LightUqContainer,
-        onUqContainer = LightOnUqContainer,
-        series = VisualizationSeriesPalette,
-    )
+    ) to
+        SafeDbColors(
+            actionPrimary = LightActionPrimary,
+            onActionPrimary = LightOnActionPrimary,
+            actionPrimaryHover = LightActionPrimaryHover,
+            accentContainer = LightAccentContainer,
+            onAccentContainer = LightOnAccentContainer,
+            workspaceBackground = LightWorkspaceBackground,
+            workspaceHeader = LightWorkspaceHeader,
+            workspacePanel = LightWorkspacePanel,
+            workspaceCanvas = LightWorkspaceCanvas,
+            navigationBackground = LightNavigationBackground,
+            navigationBorder = LightNavigationBorder,
+            navigationHover = LightNavigationHover,
+            navigationSelected = LightNavigationSelected,
+            onNavigation = LightOnNavigation,
+            onNavigationMuted = LightOnNavigationMuted,
+            success = LightSuccess,
+            onSuccess = LightOnSuccess,
+            successContainer = LightSuccessContainer,
+            onSuccessContainer = LightOnSuccessContainer,
+            warning = LightWarning,
+            onWarning = LightOnWarning,
+            warningContainer = LightWarningContainer,
+            onWarningContainer = LightOnWarningContainer,
+            info = LightInfo,
+            onInfo = LightOnInfo,
+            infoContainer = LightInfoContainer,
+            onInfoContainer = LightOnInfoContainer,
+            uq = LightUq,
+            onUq = LightOnUq,
+            uqContainer = LightUqContainer,
+            onUqContainer = LightOnUqContainer,
+            series = VisualizationSeriesPalette,
+        )
 
 private fun controlBlueDarkScheme(): Pair<ColorScheme, SafeDbColors> =
     darkColorScheme(
@@ -313,40 +314,41 @@ private fun controlBlueDarkScheme(): Pair<ColorScheme, SafeDbColors> =
         surfaceContainer = DarkSurfaceContainer,
         surfaceContainerHigh = DarkSurfaceContainerHigh,
         surfaceContainerHighest = DarkSurfaceContainerHighest,
-    ) to SafeDbColors(
-        actionPrimary = DarkActionPrimary,
-        onActionPrimary = DarkOnActionPrimary,
-        actionPrimaryHover = DarkActionPrimaryHover,
-        accentContainer = DarkAccentContainer,
-        onAccentContainer = DarkOnAccentContainer,
-        workspaceBackground = DarkWorkspaceBackground,
-        workspaceHeader = DarkWorkspaceHeader,
-        workspacePanel = DarkWorkspacePanel,
-        workspaceCanvas = DarkWorkspaceCanvas,
-        navigationBackground = DarkNavigationBackground,
-        navigationBorder = DarkNavigationBorder,
-        navigationHover = DarkNavigationHover,
-        navigationSelected = DarkNavigationSelected,
-        onNavigation = DarkOnNavigation,
-        onNavigationMuted = DarkOnNavigationMuted,
-        success = DarkSuccess,
-        onSuccess = DarkOnSuccess,
-        successContainer = DarkSuccessContainer,
-        onSuccessContainer = DarkOnSuccessContainer,
-        warning = DarkWarning,
-        onWarning = DarkOnWarning,
-        warningContainer = DarkWarningContainer,
-        onWarningContainer = DarkOnWarningContainer,
-        info = DarkInfo,
-        onInfo = DarkOnInfo,
-        infoContainer = DarkInfoContainer,
-        onInfoContainer = DarkOnInfoContainer,
-        uq = DarkUq,
-        onUq = DarkOnUq,
-        uqContainer = DarkUqContainer,
-        onUqContainer = DarkOnUqContainer,
-        series = VisualizationSeriesPalette,
-    )
+    ) to
+        SafeDbColors(
+            actionPrimary = DarkActionPrimary,
+            onActionPrimary = DarkOnActionPrimary,
+            actionPrimaryHover = DarkActionPrimaryHover,
+            accentContainer = DarkAccentContainer,
+            onAccentContainer = DarkOnAccentContainer,
+            workspaceBackground = DarkWorkspaceBackground,
+            workspaceHeader = DarkWorkspaceHeader,
+            workspacePanel = DarkWorkspacePanel,
+            workspaceCanvas = DarkWorkspaceCanvas,
+            navigationBackground = DarkNavigationBackground,
+            navigationBorder = DarkNavigationBorder,
+            navigationHover = DarkNavigationHover,
+            navigationSelected = DarkNavigationSelected,
+            onNavigation = DarkOnNavigation,
+            onNavigationMuted = DarkOnNavigationMuted,
+            success = DarkSuccess,
+            onSuccess = DarkOnSuccess,
+            successContainer = DarkSuccessContainer,
+            onSuccessContainer = DarkOnSuccessContainer,
+            warning = DarkWarning,
+            onWarning = DarkOnWarning,
+            warningContainer = DarkWarningContainer,
+            onWarningContainer = DarkOnWarningContainer,
+            info = DarkInfo,
+            onInfo = DarkOnInfo,
+            infoContainer = DarkInfoContainer,
+            onInfoContainer = DarkOnInfoContainer,
+            uq = DarkUq,
+            onUq = DarkOnUq,
+            uqContainer = DarkUqContainer,
+            onUqContainer = DarkOnUqContainer,
+            series = VisualizationSeriesPalette,
+        )
 
 fun lightScheme(palette: ThemePalette = ThemePalette.DEFAULT): Pair<ColorScheme, SafeDbColors> =
     when (palette) {

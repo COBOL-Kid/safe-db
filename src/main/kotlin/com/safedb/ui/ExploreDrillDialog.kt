@@ -15,11 +15,7 @@ import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 
 @Composable
-internal fun ExploreDrillDialog(
-    result: QueryResult,
-    onExport: () -> Unit,
-    onDismiss: () -> Unit,
-) {
+internal fun ExploreDrillDialog(result: QueryResult, onExport: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(4.dp),
@@ -33,12 +29,7 @@ internal fun ExploreDrillDialog(
                 )
             }
         },
-        text = {
-            ResultsTable(
-                result = result,
-                modifier = Modifier.width(860.dp).height(480.dp),
-            )
-        },
+        text = { ResultsTable(result = result, modifier = Modifier.width(860.dp).height(480.dp)) },
         confirmButton = { PrimaryButton(onClick = onExport) { Text("Export rows") } },
         dismissButton = { SecondaryButton(onClick = onDismiss) { Text("Close") } },
     )

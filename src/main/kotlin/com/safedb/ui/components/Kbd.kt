@@ -22,8 +22,9 @@ fun Kbd(
         text = text,
         style = LabelMicro,
         color = contentColor,
-        modifier = modifier
-            .border(1.dp, borderColor, ChipShape)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier =
+            modifier
+                .border(1.dp, borderColor, ChipShape)
+                .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }

@@ -49,8 +49,8 @@ import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.DeleteIconButton
 import com.safedb.ui.components.MessageBanner
-import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.theme.CardShape
+import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 
 @Composable
@@ -84,16 +84,14 @@ fun HomeScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         contentAlignment = Alignment.TopCenter,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 896.dp)
-                .padding(horizontal = 32.dp, vertical = 48.dp),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .widthIn(max = 896.dp)
+                    .padding(horizontal = 32.dp, vertical = 48.dp)
         ) {
             Text("Welcome to Safe-DB", style = MaterialTheme.typography.headlineLarge)
             Text(
@@ -151,9 +149,8 @@ fun HomeScreen(
                 Spacer(Modifier.height(12.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 320.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(((savedQueries.size + 1) / 2 * 92).dp),
+                    modifier =
+                        Modifier.fillMaxWidth().height(((savedQueries.size + 1) / 2 * 92).dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     userScrollEnabled = false,
@@ -161,8 +158,9 @@ fun HomeScreen(
                     items(savedQueries, key = { it.id }) { query ->
                         SavedQueryCard(
                             name = query.name,
-                            subtitle = "${viewModel.connections.connectionName(query.connectionId)} · " +
-                                "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
+                            subtitle =
+                                "${viewModel.connections.connectionName(query.connectionId)} · " +
+                                    "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
                             onOpen = { onOpenSavedQuery(query) },
                             onDelete = { deleteTargetId = query.id },
                         )
@@ -175,7 +173,6 @@ fun HomeScreen(
             ProtectionInfoCard()
         }
     }
-
 }
 
 @Composable
@@ -189,22 +186,28 @@ private fun QuickLinkCard(
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
 
-    val borderColor by animateColorAsState(
-        if (hovered) {
-            SafeDbTheme.colors.actionPrimary
-        } else {
-            MaterialTheme.colorScheme.outline
-        },
-    )
-    val cardColor by animateColorAsState(
-        if (hovered) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
-    )
-    val tileColor by animateColorAsState(
-        if (hovered) SafeDbTheme.colors.actionPrimary else SafeDbTheme.colors.accentContainer,
-    )
-    val tileIconColor by animateColorAsState(
-        if (hovered) SafeDbTheme.colors.onActionPrimary else SafeDbTheme.colors.onAccentContainer,
-    )
+    val borderColor by
+        animateColorAsState(
+            if (hovered) {
+                SafeDbTheme.colors.actionPrimary
+            } else {
+                MaterialTheme.colorScheme.outline
+            }
+        )
+    val cardColor by
+        animateColorAsState(
+            if (hovered) MaterialTheme.colorScheme.surfaceContainerLow
+            else MaterialTheme.colorScheme.surface
+        )
+    val tileColor by
+        animateColorAsState(
+            if (hovered) SafeDbTheme.colors.actionPrimary else SafeDbTheme.colors.accentContainer
+        )
+    val tileIconColor by
+        animateColorAsState(
+            if (hovered) SafeDbTheme.colors.onActionPrimary
+            else SafeDbTheme.colors.onAccentContainer
+        )
 
     Surface(
         modifier = modifier.hoverable(interactionSource),
@@ -223,11 +226,20 @@ private fun QuickLinkCard(
                 color = tileColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = tileIconColor, modifier = Modifier.size(20.dp))
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = tileIconColor,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
@@ -247,17 +259,15 @@ private fun SavedQueryCard(
 ) {
     AppCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onOpen),
-            ) {
-                Text(name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Column(modifier = Modifier.weight(1f).clickable(onClick = onOpen)) {
+                Text(
+                    name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.labelSmall,
@@ -274,14 +284,23 @@ private fun SavedQueryCard(
 private fun ProtectionInfoCard() {
     AppCard(hoverLift = false) {
         Column(modifier = Modifier.padding(24.dp)) {
-            Text("How Safe-DB protects your database", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(16.dp))
-            val items = listOf(
-                "Non-locking reads" to "Dirty-read tolerant isolation — never blocks production writes.",
-                "Indexed joins only" to "Joins on non-indexed columns are rejected before execution.",
-                "Guided row limits & timeouts" to "Every query is bounded, with coaching when reporting needs more rows.",
-                "Read-only by construction" to "Writes are structurally impossible — no SQL injection surface.",
+            Text(
+                "How Safe-DB protects your database",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
             )
+            Spacer(Modifier.height(16.dp))
+            val items =
+                listOf(
+                    "Non-locking reads" to
+                        "Dirty-read tolerant isolation — never blocks production writes.",
+                    "Indexed joins only" to
+                        "Joins on non-indexed columns are rejected before execution.",
+                    "Guided row limits & timeouts" to
+                        "Every query is bounded, with coaching when reporting needs more rows.",
+                    "Read-only by construction" to
+                        "Writes are structurally impossible — no SQL injection surface.",
+                )
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 for ((title, body) in items) {
                     ProtectionItem(title, body)
@@ -310,7 +329,11 @@ private fun ProtectionItem(title: String, body: String) {
         }
         Column {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

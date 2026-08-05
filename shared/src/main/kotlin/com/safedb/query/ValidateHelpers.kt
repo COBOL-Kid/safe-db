@@ -23,14 +23,16 @@ internal fun collectNodeIds(group: FilterGroup, nodeIds: MutableSet<String>): Ou
     }
     for (child in group.children) {
         when (child) {
-            is FilterNode.Leaf -> when (val result = insertNodeId(child.spec.id, nodeIds)) {
-                is Outcome.Ok -> Unit
-                is Outcome.Err -> return result
-            }
-            is FilterNode.Group -> when (val result = collectNodeIds(child.group, nodeIds)) {
-                is Outcome.Ok -> Unit
-                is Outcome.Err -> return result
-            }
+            is FilterNode.Leaf ->
+                when (val result = insertNodeId(child.spec.id, nodeIds)) {
+                    is Outcome.Ok -> Unit
+                    is Outcome.Err -> return result
+                }
+            is FilterNode.Group ->
+                when (val result = collectNodeIds(child.group, nodeIds)) {
+                    is Outcome.Ok -> Unit
+                    is Outcome.Err -> return result
+                }
         }
     }
     return Outcome.ok(Unit)
@@ -49,7 +51,8 @@ internal fun validateNode(
     }
     return when (node) {
         is FilterNode.Leaf -> validateLeaf(node.spec, schema, spec, tableAliases, warnings)
-        is FilterNode.Group -> validateGroup(node.group, schema, spec, tableAliases, depth, warnings)
+        is FilterNode.Group ->
+            validateGroup(node.group, schema, spec, tableAliases, depth, warnings)
     }
 }
 
@@ -64,16 +67,20 @@ internal fun validateLeaf(
         return Outcome.err("Filter references unknown table alias '${filter.tableAlias}'")
     }
 
-    val table = findTableByAlias(schema, spec, filter.tableAlias)
-        ?: return Outcome.err("Cannot resolve table for alias '${filter.tableAlias}'")
+    val table =
+        findTableByAlias(schema, spec, filter.tableAlias)
+            ?: return Outcome.err("Cannot resolve table for alias '${filter.tableAlias}'")
 
-    val col = table.columns.find { it.name == filter.column }
-        ?: return Outcome.err("Filter column '${filter.tableAlias}.${filter.column}' does not exist")
+    val col =
+        table.columns.find { it.name == filter.column }
+            ?: return Outcome.err(
+                "Filter column '${filter.tableAlias}.${filter.column}' does not exist"
+            )
 
     val allowed = validOpsForColumn(col.dataType)
     if (!allowed.contains(filter.op)) {
         return Outcome.err(
-            "Operator '${opLabel(filter.op)}' is not applicable to column '${filter.tableAlias}.${filter.column}' (type: ${col.dataType})",
+            "Operator '${opLabel(filter.op)}' is not applicable to column '${filter.tableAlias}.${filter.column}' (type: ${col.dataType})"
         )
     }
 
@@ -89,31 +96,46 @@ internal fun validateLeaf(
         ValueKind.None -> {
             if (filter.value != null) {
                 Outcome.err(
-                    "Operator '${opLabel(filter.op)}' on '${filter.tableAlias}.${filter.column}' should not have a value",
+                    "Operator '${opLabel(filter.op)}' on '${filter.tableAlias}.${filter.column}' should not have a value"
                 )
             } else {
                 Outcome.ok(Unit)
             }
         }
         ValueKind.Single -> {
-            val value = filter.value
-                ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' requires a value")
-            val lit = expectSingle(value)
-                ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' expects a single value")
+            val value =
+                filter.value
+                    ?: return Outcome.err(
+                        "Filter on '${filter.tableAlias}.${filter.column}' requires a value"
+                    )
+            val lit =
+                expectSingle(value)
+                    ?: return Outcome.err(
+                        "Filter on '${filter.tableAlias}.${filter.column}' expects a single value"
+                    )
             validateLiteral(lit, col.dataType, filter.tableAlias, filter.column)
         }
         ValueKind.List -> {
-            val value = filter.value
-                ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' requires a value list")
-            val list = expectList(value)
-                ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' expects a list of values")
+            val value =
+                filter.value
+                    ?: return Outcome.err(
+                        "Filter on '${filter.tableAlias}.${filter.column}' requires a value list"
+                    )
+            val list =
+                expectList(value)
+                    ?: return Outcome.err(
+                        "Filter on '${filter.tableAlias}.${filter.column}' expects a list of values"
+                    )
             if (list.size > MAX_IN_LIST_SIZE) {
                 return Outcome.err(
-                    "Filter on '${filter.tableAlias}.${filter.column}' has too many values (max $MAX_IN_LIST_SIZE)",
+                    "Filter on '${filter.tableAlias}.${filter.column}' has too many values (max $MAX_IN_LIST_SIZE)"
                 )
             }
             for (lit in list) {
-                when (val result = validateLiteral(lit, col.dataType, filter.tableAlias, filter.column)) {
+                when (
+                    val result =
+                        validateLiteral(lit, col.dataType, filter.tableAlias, filter.column)
+                ) {
                     is Outcome.Ok -> Unit
                     is Outcome.Err -> return result
                 }
@@ -121,11 +143,20 @@ internal fun validateLeaf(
             Outcome.ok(Unit)
         }
         ValueKind.Pair -> {
-            val value = filter.value
-                ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' requires a range (from/to)")
-            val pair = expectPair(value)
-                ?: return Outcome.err("Filter on '${filter.tableAlias}.${filter.column}' expects a range (from/to)")
-            when (val fromResult = validateLiteral(pair.first, col.dataType, filter.tableAlias, filter.column)) {
+            val value =
+                filter.value
+                    ?: return Outcome.err(
+                        "Filter on '${filter.tableAlias}.${filter.column}' requires a range (from/to)"
+                    )
+            val pair =
+                expectPair(value)
+                    ?: return Outcome.err(
+                        "Filter on '${filter.tableAlias}.${filter.column}' expects a range (from/to)"
+                    )
+            when (
+                val fromResult =
+                    validateLiteral(pair.first, col.dataType, filter.tableAlias, filter.column)
+            ) {
                 is Outcome.Ok -> Unit
                 is Outcome.Err -> return fromResult
             }
@@ -166,14 +197,14 @@ internal fun validateLiteral(
     val expected = literalKindForColumn(dataType)
     if (lit.kind != expected) {
         return Outcome.err(
-            "Value for '$alias.$column' has type ${lit.kind}; expected $expected for column type $dataType",
+            "Value for '$alias.$column' has type ${lit.kind}; expected $expected for column type $dataType"
         )
     }
     return when (lit.kind) {
         LiteralKind.Text -> {
             if (lit.text.length > MAX_TEXT_LITERAL_LEN) {
                 Outcome.err(
-                    "Text value for '$alias.$column' exceeds maximum length of $MAX_TEXT_LITERAL_LEN characters",
+                    "Text value for '$alias.$column' exceeds maximum length of $MAX_TEXT_LITERAL_LEN characters"
                 )
             } else {
                 Outcome.ok(Unit)
@@ -198,12 +229,12 @@ internal fun validateLiteral(
         LiteralKind.Bool -> {
             if (
                 lit.text.equals("true", ignoreCase = true) ||
-                lit.text.equals("false", ignoreCase = true) ||
-                lit.text.equals("1", ignoreCase = true) ||
-                lit.text.equals("0", ignoreCase = true) ||
-                lit.text.equals("yes", ignoreCase = true) ||
-                lit.text.equals("no", ignoreCase = true) ||
-                lit.text.isEmpty()
+                    lit.text.equals("false", ignoreCase = true) ||
+                    lit.text.equals("1", ignoreCase = true) ||
+                    lit.text.equals("0", ignoreCase = true) ||
+                    lit.text.equals("yes", ignoreCase = true) ||
+                    lit.text.equals("no", ignoreCase = true) ||
+                    lit.text.isEmpty()
             ) {
                 Outcome.ok(Unit)
             } else {
@@ -211,16 +242,18 @@ internal fun validateLiteral(
             }
         }
         LiteralKind.Date -> {
-            parseDateLiteral(lit.text).fold(
-                onSuccess = { Outcome.ok(Unit) },
-                onFailure = { Outcome.err("${it.message} for '$alias.$column'") },
-            )
+            parseDateLiteral(lit.text)
+                .fold(
+                    onSuccess = { Outcome.ok(Unit) },
+                    onFailure = { Outcome.err("${it.message} for '$alias.$column'") },
+                )
         }
         LiteralKind.DateTime -> {
-            parseDateTimeLiteral(lit.text).fold(
-                onSuccess = { Outcome.ok(Unit) },
-                onFailure = { Outcome.err("${it.message} for '$alias.$column'") },
-            )
+            parseDateTimeLiteral(lit.text)
+                .fold(
+                    onSuccess = { Outcome.ok(Unit) },
+                    onFailure = { Outcome.err("${it.message} for '$alias.$column'") },
+                )
         }
     }
 }
@@ -253,29 +286,30 @@ private fun expectPair(value: FilterValue): Pair<FilterLiteral, FilterLiteral>? 
         else -> null
     }
 
-fun opLabel(op: FilterOp): String = when (op) {
-    FilterOp.Eq -> "="
-    FilterOp.Ne -> "<>"
-    FilterOp.Gt -> ">"
-    FilterOp.Gte -> ">="
-    FilterOp.Lt -> "<"
-    FilterOp.Lte -> "<="
-    FilterOp.Contains -> "contains"
-    FilterOp.ContainsIgnoreCase -> "contains (case-insensitive)"
-    FilterOp.NotContains -> "does not contain"
-    FilterOp.StartsWith -> "starts with"
-    FilterOp.EndsWith -> "ends with"
-    FilterOp.Like -> "LIKE"
-    FilterOp.NotLike -> "NOT LIKE"
-    FilterOp.Ilike -> "ILIKE"
-    FilterOp.In -> "IN"
-    FilterOp.NotIn -> "NOT IN"
-    FilterOp.Between -> "BETWEEN"
-    FilterOp.IsNull -> "IS NULL"
-    FilterOp.IsNotNull -> "IS NOT NULL"
-    FilterOp.IsEmpty -> "IS EMPTY"
-    FilterOp.IsNotEmpty -> "IS NOT EMPTY"
-}
+fun opLabel(op: FilterOp): String =
+    when (op) {
+        FilterOp.Eq -> "="
+        FilterOp.Ne -> "<>"
+        FilterOp.Gt -> ">"
+        FilterOp.Gte -> ">="
+        FilterOp.Lt -> "<"
+        FilterOp.Lte -> "<="
+        FilterOp.Contains -> "contains"
+        FilterOp.ContainsIgnoreCase -> "contains (case-insensitive)"
+        FilterOp.NotContains -> "does not contain"
+        FilterOp.StartsWith -> "starts with"
+        FilterOp.EndsWith -> "ends with"
+        FilterOp.Like -> "LIKE"
+        FilterOp.NotLike -> "NOT LIKE"
+        FilterOp.Ilike -> "ILIKE"
+        FilterOp.In -> "IN"
+        FilterOp.NotIn -> "NOT IN"
+        FilterOp.Between -> "BETWEEN"
+        FilterOp.IsNull -> "IS NULL"
+        FilterOp.IsNotNull -> "IS NOT NULL"
+        FilterOp.IsEmpty -> "IS EMPTY"
+        FilterOp.IsNotEmpty -> "IS NOT EMPTY"
+    }
 
 internal fun checkJoinConnectivity(spec: QuerySpec): Boolean {
     if (spec.tables.size <= 1) return true

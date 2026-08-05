@@ -8,25 +8,27 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlinx.kover")
+    id("com.ncorti.ktfmt.gradle")
 }
 
 group = "com.safedb"
+
 version = "0.0.1"
 
-kotlin {
-    jvmToolchain(25)
-}
+kotlin { jvmToolchain(25) }
 
 dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
-    implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
+    implementation("org.jetbrains.compose.material3:material3:1.9.0")
+    implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     kover(project(":shared"))
 }
+
+ktfmt { kotlinLangStyle() }
 
 kover {
     reports {
@@ -77,53 +79,54 @@ compose.desktop {
     }
 }
 
-tasks.test {
-    useJUnitPlatform()
-}
+tasks.test { useJUnitPlatform() }
 
-val verifyUnitTestDiscovery = tasks.register<VerifyUnitTestDiscovery>("verifyUnitTestDiscovery") {
-    group = "verification"
-    description = "Fails when JVM unit tests are missing from JUnit XML or contain failures or skips."
-    dependsOn(tasks.test, ":shared:test")
-    desktopResults.set(layout.buildDirectory.dir("test-results/test"))
-    sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-    minimumDesktopTests.set(160)
-    minimumSharedTests.set(341)
-}
+val verifyUnitTestDiscovery =
+    tasks.register<VerifyUnitTestDiscovery>("verifyUnitTestDiscovery") {
+        group = "verification"
+        description =
+            "Fails when JVM unit tests are missing from JUnit XML or contain failures or skips."
+        dependsOn(tasks.test, ":shared:test")
+        desktopResults.set(layout.buildDirectory.dir("test-results/test"))
+        sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
+        minimumDesktopTests.set(160)
+        minimumSharedTests.set(341)
+    }
 
-val verifyCoverageRatchet = tasks.register<VerifyCoverageRatchet>("verifyCoverageRatchet") {
-    group = "verification"
-    description = "Enforces checked-in line coverage floors for shared and desktop logic."
-    dependsOn("koverXmlReport")
-    reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
-    coverageFloors.set(mapOf("desktop" to 72, "shared" to 66))
-}
+val verifyCoverageRatchet =
+    tasks.register<VerifyCoverageRatchet>("verifyCoverageRatchet") {
+        group = "verification"
+        description = "Enforces checked-in line coverage floors for shared and desktop logic."
+        dependsOn("koverXmlReport")
+        reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
+        coverageFloors.set(mapOf("desktop" to 72, "shared" to 66))
+    }
 
-tasks.named("koverVerify") {
-    dependsOn(verifyCoverageRatchet)
-}
+tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet) }
 
-tasks.check {
-    dependsOn(verifyUnitTestDiscovery, "koverVerify")
-}
+tasks.check { dependsOn(verifyUnitTestDiscovery, "koverVerify") }
 
 val verifyIntegrationTestDiscovery =
     tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {
-    group = "verification"
-    description = "Ensures required JDBC engine suites executed instead of silently skipping."
-    dependsOn(":shared:integrationTest")
-    resultsDirectory.set(project(":shared").layout.buildDirectory.dir("test-results/integrationTest"))
-    requireMysql.set(
-        providers.environmentVariable("SAFEDB_TEST_REQUIRE_MYSQL")
-            .map { it.equals("true", ignoreCase = true) }
-            .orElse(false),
-    )
-    requirePostgres.set(
-        providers.environmentVariable("SAFEDB_TEST_REQUIRE_POSTGRES")
-            .map { it.equals("true", ignoreCase = true) }
-            .orElse(false),
-    )
-}
+        group = "verification"
+        description = "Ensures required JDBC engine suites executed instead of silently skipping."
+        dependsOn(":shared:integrationTest")
+        resultsDirectory.set(
+            project(":shared").layout.buildDirectory.dir("test-results/integrationTest")
+        )
+        requireMysql.set(
+            providers
+                .environmentVariable("SAFEDB_TEST_REQUIRE_MYSQL")
+                .map { it.equals("true", ignoreCase = true) }
+                .orElse(false)
+        )
+        requirePostgres.set(
+            providers
+                .environmentVariable("SAFEDB_TEST_REQUIRE_POSTGRES")
+                .map { it.equals("true", ignoreCase = true) }
+                .orElse(false)
+        )
+    }
 
 tasks.register("integrationTest") {
     group = "verification"
