@@ -17,12 +17,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -123,7 +131,9 @@ fun ExploreWindowContent(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            if (session.sample.truncated) StatusChip("Truncated", StatusChipKind.WARNING)
+            exploreTruncationExplanation(session.sample.truncated)?.let { explanation ->
+                ExploreTruncationBadge(explanation)
+            }
             if (activePreviewLoading) {
                 Text(
                     "Refreshing…",
@@ -245,8 +255,10 @@ fun ExploreWindowContent(
                                     ExploreExportBar(
                                         viewModel,
                                         enabled = enabled,
+                                        horizontalPadding = 14.dp,
                                         verticalPadding = 4.dp,
                                         showStatus = false,
+                                        alignExportButtonStart = true,
                                         onExport = export,
                                     )
                                 }
@@ -340,6 +352,35 @@ fun ExploreWindowContent(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ExploreTruncationBadge(explanation: String) {
+    val colors = SafeDbTheme.colors
+    TooltipBox(
+        positionProvider =
+            TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
+        tooltip = {
+            PlainTooltip(
+                maxWidth = 320.dp,
+                containerColor = colors.warningContainer,
+                contentColor = colors.onWarningContainer,
+            ) {
+                Text(explanation)
+            }
+        },
+        state = rememberTooltipState(),
+    ) {
+        StatusChip(
+            "Truncated",
+            StatusChipKind.WARNING,
+            modifier =
+                Modifier.semantics(mergeDescendants = true) {
+                    contentDescription = "Truncated. $explanation"
+                },
+        )
+    }
+}
+
+@Composable
 private fun CollapsedExploreRail(mode: ExploreMode, onShow: () -> Unit) {
     Surface(
         modifier = Modifier.width(48.dp).fillMaxHeight(),
@@ -424,12 +465,16 @@ private fun ExploreStaleSampleWarning(
 private fun ExploreExportBar(
     viewModel: ExploreViewModel,
     enabled: Boolean,
+    horizontalPadding: Dp = 16.dp,
     verticalPadding: Dp = 12.dp,
     showStatus: Boolean = true,
+    alignExportButtonStart: Boolean = false,
     onExport: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding),
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showStatus) {
@@ -448,14 +493,14 @@ private fun ExploreExportBar(
                 )
             }
         }
-        Box(modifier = Modifier.weight(1f))
+        if (!alignExportButtonStart) Box(modifier = Modifier.weight(1f))
         if (showStatus && (viewModel.exportMessage != null || viewModel.exportError != null)) {
             SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
         }
         if (showStatus && viewModel.exporting)
             Text("Exporting…", style = MaterialTheme.typography.bodySmall)
         PrimaryButton(
-            modifier = Modifier.padding(start = 8.dp),
+            modifier = Modifier.padding(start = if (alignExportButtonStart) 0.dp else 8.dp),
             onClick = onExport,
             enabled = enabled && !viewModel.exporting,
         ) {

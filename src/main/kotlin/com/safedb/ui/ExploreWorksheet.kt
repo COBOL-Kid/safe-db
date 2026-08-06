@@ -947,6 +947,7 @@ private fun CalculationRail(
                         .verticalScroll(scroll)
                         .padding(start = 14.dp, top = 14.dp, end = 20.dp, bottom = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.Start,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -1382,18 +1383,12 @@ private fun WorksheetCalculationEditor(
                         grain == reconciledSelection.grain
             }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.Start),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             calculationTabOrder.forEach { choice ->
-                SelectPill(
-                    label = choice.tabLabel,
-                    selected = kind == choice,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    kind = choice
-                }
+                SelectPill(label = choice.tabLabel, selected = kind == choice) { kind = choice }
             }
         }
         Text(
@@ -1426,7 +1421,7 @@ private fun WorksheetCalculationEditor(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.Start),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     formulaTokens.forEach { (token, display) ->
@@ -1520,7 +1515,7 @@ private fun WorksheetCalculationEditor(
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
         ) {
             SecondaryButton(onClick = onCancel) { Text("Cancel") }
             PrimaryButton(
@@ -1659,7 +1654,7 @@ private fun <T> SelectRow(
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         SectionLabel(label)
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.Start),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             choices.forEach { choice ->

@@ -15,9 +15,19 @@ import com.safedb.model.TableRef
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ExploreUiModelTest {
+    @Test
+    fun truncationExplanationIsSelectedOnlyForTruncatedSamples() {
+        assertEquals(
+            "You’re viewing a sample, so totals may not represent the full result.",
+            exploreTruncationExplanation(truncated = true),
+        )
+        assertNull(exploreTruncationExplanation(truncated = false))
+    }
+
     @Test
     fun fieldOptionsQualifyOnlyDuplicateJoinedLabels() {
         val options =

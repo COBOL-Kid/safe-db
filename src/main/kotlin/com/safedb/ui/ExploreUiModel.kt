@@ -39,6 +39,14 @@ internal data class ExploreFieldOption(
 
 internal data class ExploreFieldGroup(val label: String, val fields: List<ExploreFieldOption>)
 
+internal const val ExploreTruncationExplanation =
+    "You’re viewing a sample, so totals may not represent the full result."
+
+internal fun exploreTruncationExplanation(truncated: Boolean): String? =
+    ExploreTruncationExplanation.takeIf {
+        truncated
+    }
+
 internal fun groupExploreFields(fields: List<ExploreFieldOption>): List<ExploreFieldGroup> =
     fields
         .groupBy { it.sourceTableLabel ?: "Other fields" }
