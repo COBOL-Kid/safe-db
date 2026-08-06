@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -72,6 +73,7 @@ internal fun ExploreConfigPanel(
     memberOptionsFor: (String) -> List<MemberOption>,
     onReset: () -> Unit,
     resetEnabled: Boolean,
+    onHide: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var optionsExpanded by remember { mutableStateOf(false) }
@@ -168,6 +170,9 @@ internal fun ExploreConfigPanel(
                     )
                 }
                 TextButton(onClick = onReset, enabled = resetEnabled) { Text("Reset") }
+                IconButton(onClick = onHide) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Hide Pivot sidebar")
+                }
             }
 
             FieldWell(title = "Group rows by") {
