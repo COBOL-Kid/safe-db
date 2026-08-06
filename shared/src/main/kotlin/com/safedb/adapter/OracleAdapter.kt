@@ -185,24 +185,23 @@ object OracleAdapter {
                         readString(rs, "referenced_column"),
                     )
                 }
-            val tableSizes =
-                runCatching {
-                        conn
-                            .metadataRows(
-                                "SELECT owner, table_name, num_rows FROM all_tables WHERE owner NOT IN ($blocked)"
-                            ) { rs ->
-                                MetadataTableKey(
-                                    readString(rs, "owner"),
-                                    readString(rs, "table_name"),
-                                ) to
-                                    normalizeTableSize(
-                                        (rs.getObject("num_rows") as? Number)?.toDouble(),
-                                        EvidenceConfidence.Low,
-                                    )
-                            }
-                            .toMap()
+            val tableSizes = runCatching {
+                conn
+                    .metadataRows(
+                        "SELECT owner, table_name, num_rows FROM all_tables WHERE owner NOT IN ($blocked)"
+                    ) { rs ->
+                        MetadataTableKey(
+                            readString(rs, "owner"),
+                            readString(rs, "table_name"),
+                        ) to
+                            normalizeTableSize(
+                                (rs.getObject("num_rows") as? Number)?.toDouble(),
+                                EvidenceConfidence.Low,
+                            )
                     }
-                    .getOrDefault(emptyMap())
+                    .toMap()
+            }
+                .getOrDefault(emptyMap())
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }
@@ -458,13 +457,11 @@ object OracleAdapter {
                         }
                 } finally {
                     runCatching {
-                            conn
-                                .prepareStatement("DELETE FROM plan_table WHERE statement_id = ?")
-                                .use {
-                                    it.setString(1, statementId)
-                                    it.execute()
-                                }
+                        conn.prepareStatement("DELETE FROM plan_table WHERE statement_id = ?").use {
+                            it.setString(1, statementId)
+                            it.execute()
                         }
+                    }
                         .onFailure { cleanupFailure = it }
                 }
             if (cleanupFailure != null) {

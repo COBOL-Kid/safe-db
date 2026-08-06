@@ -58,9 +58,9 @@ class RecipesViewModel(
     fun import(path: Path, onComplete: (ExploreRecipe?) -> Unit = {}) {
         scope.launch {
             runCatching {
-                    val json = withContext(ioDispatcher) { Files.readString(path) }
-                    service.importExploreRecipe(json, Instant.now().epochSecond.toString())
-                }
+                val json = withContext(ioDispatcher) { Files.readString(path) }
+                service.importExploreRecipe(json, Instant.now().epochSecond.toString())
+            }
                 .onSuccess { recipe ->
                     load()
                     onComplete(recipe)
@@ -75,9 +75,9 @@ class RecipesViewModel(
     fun export(recipe: ExploreRecipe, path: Path, onComplete: (Boolean) -> Unit = {}) {
         scope.launch {
             runCatching {
-                    val json = service.exportExploreRecipe(recipe)
-                    withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
-                }
+                val json = service.exportExploreRecipe(recipe)
+                withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
+            }
                 .onSuccess { onComplete(true) }
                 .onFailure {
                     _error.value = it.message ?: it.toString()

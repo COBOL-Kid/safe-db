@@ -29,14 +29,13 @@ internal class JavaKeyringDelegate(private val keyring: Any) : CredentialStore {
     override fun vendor(): String = "java-keyring"
 }
 
-internal fun createJavaKeyringDelegateOrNull(): CredentialStore? =
-    runCatching {
-            val keyringClass = Class.forName("com.github.javakeyring.Keyring")
-            val create = keyringClass.getMethod("create")
-            val keyring = create.invoke(null)
-            JavaKeyringDelegate(keyring)
-        }
-        .getOrNull()
+internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
+    val keyringClass = Class.forName("com.github.javakeyring.Keyring")
+    val create = keyringClass.getMethod("create")
+    val keyring = create.invoke(null)
+    JavaKeyringDelegate(keyring)
+}
+    .getOrNull()
 
 /**
  * A strict startup path for operational secrets; unlike connection credentials, it must not fall

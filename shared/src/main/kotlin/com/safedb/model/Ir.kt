@@ -323,9 +323,10 @@ data class QueryResult(
 
             for (row in rows) {
                 cellTruncated = cellTruncated || row.any { it.wasTruncated() }
-                val rowBytes =
-                    runCatching { rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size }
-                        .getOrDefault(MAX_RESULT_BYTES + 1)
+                val rowBytes = runCatching {
+                    rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size
+                }
+                    .getOrDefault(MAX_RESULT_BYTES + 1)
                 if (encodedBytes + rowBytes > MAX_RESULT_BYTES) {
                     resultTruncated = true
                     break

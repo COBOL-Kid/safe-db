@@ -61,8 +61,8 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
         for (element in array) {
             val (migrated, upgraded) = migrateLegacyConnection(element)
             runCatching {
-                    SafeDbJson.lenient.decodeFromJsonElement(ConnectionDef.serializer(), migrated)
-                }
+                SafeDbJson.lenient.decodeFromJsonElement(ConnectionDef.serializer(), migrated)
+            }
                 .onSuccess { def ->
                     connections.add(def)
                     if (upgraded) migratedCount++

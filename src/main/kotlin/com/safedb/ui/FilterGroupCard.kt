@@ -162,7 +162,10 @@ internal fun CompactFilterBuilderAction(
         shape = RoundedCornerShape(2.dp),
         color = Color.Transparent,
         border =
-            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant,
+            ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),

@@ -23,224 +23,216 @@ import org.xml.sax.InputSource
 
 private val planJson = Json { ignoreUnknownKeys = true }
 
-internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? =
-    runCatching {
-            val document = planJson.parseToJsonElement(raw)
-            val envelope =
-                (document as? JsonArray)?.firstOrNull()?.jsonObject ?: document.jsonObject
-            val root = envelope.objectValue("Plan") ?: return null
-            val relations = mutableListOf<PlanRelationAccess>()
-            val joins = mutableListOf<PlanJoinEvidence>()
-            val operations = mutableListOf<PlanBlockingOperation>()
+internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching {
+    val document = planJson.parseToJsonElement(raw)
+    val envelope = (document as? JsonArray)?.firstOrNull()?.jsonObject ?: document.jsonObject
+    val root = envelope.objectValue("Plan") ?: return null
+    val relations = mutableListOf<PlanRelationAccess>()
+    val joins = mutableListOf<PlanJoinEvidence>()
+    val operations = mutableListOf<PlanBlockingOperation>()
 
-            fun visit(node: JsonObject): Set<String> {
-                val childAliases =
-                    node
-                        .arrayValue("Plans")
-                        .orEmpty()
-                        .mapNotNull { it as? JsonObject }
-                        .flatMapTo(linkedSetOf()) { visit(it) }
-                val alias = node.string("Alias")
-                val aliases = childAliases + listOfNotNull(alias)
-                val nodeType = node.string("Node Type").orEmpty()
-                val rows = node.long("Plan Rows")
-                val relation = node.string("Relation Name")
-                if (relation != null) {
-                    val condition =
-                        listOfNotNull(
-                                node.string("Index Cond"),
-                                node.string("Recheck Cond"),
-                                node.string("Filter"),
-                            )
-                            .joinToString(" ")
+    fun visit(node: JsonObject): Set<String> {
+        val childAliases =
+            node
+                .arrayValue("Plans")
+                .orEmpty()
+                .mapNotNull { it as? JsonObject }
+                .flatMapTo(linkedSetOf()) { visit(it) }
+        val alias = node.string("Alias")
+        val aliases = childAliases + listOfNotNull(alias)
+        val nodeType = node.string("Node Type").orEmpty()
+        val rows = node.long("Plan Rows")
+        val relation = node.string("Relation Name")
+        if (relation != null) {
+            val condition =
+                listOfNotNull(
+                        node.string("Index Cond"),
+                        node.string("Recheck Cond"),
+                        node.string("Filter"),
+                    )
+                    .joinToString(" ")
+            val method =
+                when {
+                    nodeType == "Seq Scan" -> PlanAccessMethod.TableScan
+                    nodeType == "Bitmap Heap Scan" || nodeType == "Bitmap Index Scan" ->
+                        PlanAccessMethod.BoundedRange
+                    nodeType.contains("Index Only Scan") || nodeType.contains("Index Scan") ->
+                        if (condition.contains(" = ")) PlanAccessMethod.BoundedLookup
+                        else PlanAccessMethod.BoundedRange
+                    nodeType.contains("Scan") -> PlanAccessMethod.Other
+                    else -> PlanAccessMethod.Unknown
+                }
+            relations +=
+                PlanRelationAccess(
+                    schema = node.string("Schema"),
+                    table = relation,
+                    alias = alias,
+                    method = method,
+                    estimatedRows = rows,
+                    specializedTextEvidence =
+                        "@@" in condition ||
+                            "gin" in node.string("Index Name").orEmpty().lowercase(),
+                )
+        }
+        if (nodeType == "Nested Loop" || nodeType.endsWith(" Join")) {
+            joins += PlanJoinEvidence(aliases, rows)
+        }
+        val kind =
+            when (nodeType) {
+                "Sort",
+                "Incremental Sort" -> PlanOperationKind.Sort
+                "Aggregate",
+                "Group",
+                "GroupAggregate",
+                "HashAggregate" -> PlanOperationKind.Grouping
+                "Unique" -> PlanOperationKind.Distinct
+                else -> null
+            }
+        if (kind != null) operations += PlanBlockingOperation(kind, aliases, rows)
+        return aliases
+    }
+
+    visit(root)
+    NormalizedQueryPlan(
+        relations,
+        joins,
+        operations,
+        envelope.double("Total Cost") ?: root.double("Total Cost"),
+    )
+}
+    .getOrNull()
+
+internal fun parseMySqlPlan(raw: String): NormalizedQueryPlan? = runCatching {
+    val document = planJson.parseToJsonElement(raw)
+    val relations = mutableListOf<PlanRelationAccess>()
+    val joins = mutableListOf<PlanJoinEvidence>()
+    val operations = mutableListOf<PlanBlockingOperation>()
+
+    fun visit(
+        element: JsonElement,
+        inheritedOperation: PlanOperationKind? = null,
+    ): Set<String> {
+        return when (element) {
+            is JsonArray -> element.flatMapTo(linkedSetOf()) { visit(it, inheritedOperation) }
+            is JsonObject -> {
+                val tableNode =
+                    element.objectValue("table") ?: element.takeIf { "table_name" in it }
+                val localAliases = linkedSetOf<String>()
+                if (tableNode != null) {
+                    val table = tableNode.string("table_name")
+                    val operation = tableNode.string("operation").orEmpty()
+                    val alias =
+                        tableNode.string("table_alias") ?: mysqlOperationAlias(operation) ?: table
+                    if (alias != null) localAliases += alias
+                    val accessType = tableNode.string("access_type")?.lowercase()
+                    val indexAccessType = tableNode.string("index_access_type")?.lowercase()
                     val method =
                         when {
-                            nodeType == "Seq Scan" -> PlanAccessMethod.TableScan
-                            nodeType == "Bitmap Heap Scan" || nodeType == "Bitmap Index Scan" ->
+                            indexAccessType?.contains("single") == true ||
+                                indexAccessType?.contains("lookup") == true ||
+                                operation.startsWith("Single-row index lookup", true) ||
+                                operation.startsWith("Index lookup", true) ->
+                                PlanAccessMethod.BoundedLookup
+                            indexAccessType?.contains("range") == true ||
+                                indexAccessType?.contains("fulltext") == true ||
+                                operation.startsWith("Index range scan", true) ||
+                                operation.contains("full-text", true) ->
                                 PlanAccessMethod.BoundedRange
-                            nodeType.contains("Index Only Scan") ||
-                                nodeType.contains("Index Scan") ->
-                                if (condition.contains(" = ")) PlanAccessMethod.BoundedLookup
-                                else PlanAccessMethod.BoundedRange
-                            nodeType.contains("Scan") -> PlanAccessMethod.Other
-                            else -> PlanAccessMethod.Unknown
+                            indexAccessType?.contains("scan") == true ||
+                                operation.startsWith("Index scan", true) ||
+                                operation.startsWith("Covering index scan", true) ->
+                                PlanAccessMethod.FullIndexScan
+                            operation.startsWith("Table scan", true) -> PlanAccessMethod.TableScan
+                            accessType == "table" -> PlanAccessMethod.TableScan
+                            else ->
+                                when (accessType) {
+                                    "system",
+                                    "const",
+                                    "eq_ref",
+                                    "ref" -> PlanAccessMethod.BoundedLookup
+                                    "range",
+                                    "index_merge",
+                                    "fulltext" -> PlanAccessMethod.BoundedRange
+                                    "index" -> PlanAccessMethod.FullIndexScan
+                                    "all" -> PlanAccessMethod.TableScan
+                                    null -> PlanAccessMethod.Unknown
+                                    else -> PlanAccessMethod.Other
+                                }
                         }
                     relations +=
                         PlanRelationAccess(
-                            schema = node.string("Schema"),
-                            table = relation,
+                            schema = tableNode.string("schema_name"),
+                            table = table,
                             alias = alias,
                             method = method,
-                            estimatedRows = rows,
+                            estimatedRows =
+                                tableNode.long("rows_examined_per_scan")
+                                    ?: tableNode.long("rows")
+                                    ?: tableNode.long("estimated_rows"),
                             specializedTextEvidence =
-                                "@@" in condition ||
-                                    "gin" in node.string("Index Name").orEmpty().lowercase(),
+                                accessType == "fulltext" ||
+                                    indexAccessType?.contains("fulltext") == true ||
+                                    operation.contains("full-text", true),
                         )
                 }
-                if (nodeType == "Nested Loop" || nodeType.endsWith(" Join")) {
-                    joins += PlanJoinEvidence(aliases, rows)
-                }
-                val kind =
-                    when (nodeType) {
-                        "Sort",
-                        "Incremental Sort" -> PlanOperationKind.Sort
-                        "Aggregate",
-                        "Group",
-                        "GroupAggregate",
-                        "HashAggregate" -> PlanOperationKind.Grouping
-                        "Unique" -> PlanOperationKind.Distinct
-                        else -> null
+                val descendantAliases =
+                    element.entries.flatMapTo(linkedSetOf()) { (key, value) ->
+                        if (key == "table") emptySet()
+                        else
+                            visit(
+                                value,
+                                operationKindForMysqlKey(key) ?: inheritedOperation,
+                            )
                     }
-                if (kind != null) operations += PlanBlockingOperation(kind, aliases, rows)
-                return aliases
-            }
-
-            visit(root)
-            NormalizedQueryPlan(
-                relations,
-                joins,
-                operations,
-                envelope.double("Total Cost") ?: root.double("Total Cost"),
-            )
-        }
-        .getOrNull()
-
-internal fun parseMySqlPlan(raw: String): NormalizedQueryPlan? =
-    runCatching {
-            val document = planJson.parseToJsonElement(raw)
-            val relations = mutableListOf<PlanRelationAccess>()
-            val joins = mutableListOf<PlanJoinEvidence>()
-            val operations = mutableListOf<PlanBlockingOperation>()
-
-            fun visit(
-                element: JsonElement,
-                inheritedOperation: PlanOperationKind? = null,
-            ): Set<String> {
-                return when (element) {
-                    is JsonArray ->
-                        element.flatMapTo(linkedSetOf()) { visit(it, inheritedOperation) }
-                    is JsonObject -> {
-                        val tableNode =
-                            element.objectValue("table") ?: element.takeIf { "table_name" in it }
-                        val localAliases = linkedSetOf<String>()
-                        if (tableNode != null) {
-                            val table = tableNode.string("table_name")
-                            val operation = tableNode.string("operation").orEmpty()
-                            val alias =
-                                tableNode.string("table_alias")
-                                    ?: mysqlOperationAlias(operation)
-                                    ?: table
-                            if (alias != null) localAliases += alias
-                            val accessType = tableNode.string("access_type")?.lowercase()
-                            val indexAccessType = tableNode.string("index_access_type")?.lowercase()
-                            val method =
-                                when {
-                                    indexAccessType?.contains("single") == true ||
-                                        indexAccessType?.contains("lookup") == true ||
-                                        operation.startsWith("Single-row index lookup", true) ||
-                                        operation.startsWith("Index lookup", true) ->
-                                        PlanAccessMethod.BoundedLookup
-                                    indexAccessType?.contains("range") == true ||
-                                        indexAccessType?.contains("fulltext") == true ||
-                                        operation.startsWith("Index range scan", true) ||
-                                        operation.contains("full-text", true) ->
-                                        PlanAccessMethod.BoundedRange
-                                    indexAccessType?.contains("scan") == true ||
-                                        operation.startsWith("Index scan", true) ||
-                                        operation.startsWith("Covering index scan", true) ->
-                                        PlanAccessMethod.FullIndexScan
-                                    operation.startsWith("Table scan", true) ->
-                                        PlanAccessMethod.TableScan
-                                    accessType == "table" -> PlanAccessMethod.TableScan
-                                    else ->
-                                        when (accessType) {
-                                            "system",
-                                            "const",
-                                            "eq_ref",
-                                            "ref" -> PlanAccessMethod.BoundedLookup
-                                            "range",
-                                            "index_merge",
-                                            "fulltext" -> PlanAccessMethod.BoundedRange
-                                            "index" -> PlanAccessMethod.FullIndexScan
-                                            "all" -> PlanAccessMethod.TableScan
-                                            null -> PlanAccessMethod.Unknown
-                                            else -> PlanAccessMethod.Other
-                                        }
-                                }
-                            relations +=
-                                PlanRelationAccess(
-                                    schema = tableNode.string("schema_name"),
-                                    table = table,
-                                    alias = alias,
-                                    method = method,
-                                    estimatedRows =
-                                        tableNode.long("rows_examined_per_scan")
-                                            ?: tableNode.long("rows")
-                                            ?: tableNode.long("estimated_rows"),
-                                    specializedTextEvidence =
-                                        accessType == "fulltext" ||
-                                            indexAccessType?.contains("fulltext") == true ||
-                                            operation.contains("full-text", true),
-                                )
-                        }
-                        val descendantAliases =
-                            element.entries.flatMapTo(linkedSetOf()) { (key, value) ->
-                                if (key == "table") emptySet()
-                                else
-                                    visit(
-                                        value,
-                                        operationKindForMysqlKey(key) ?: inheritedOperation,
-                                    )
-                            }
-                        val aliases = localAliases + descendantAliases
-                        val nestedLoop = element.arrayValue("nested_loop")
-                        val inputs = element.arrayValue("inputs")
-                        val operationText = element.string("operation").orEmpty()
-                        if (
-                            nestedLoop != null ||
-                                (inputs != null &&
-                                    inputs.size > 1 &&
-                                    (operationText.contains("join", true) ||
-                                        operationText.contains("nested loop", true)))
-                        ) {
-                            joins +=
-                                PlanJoinEvidence(
-                                    aliases,
-                                    element.long("rows_produced_per_join")
-                                        ?: element.long("estimated_rows")
-                                        ?: maximumRows(relations, aliases),
-                                )
-                        }
-                        val ownKind =
-                            element.keys.firstNotNullOfOrNull(::operationKindForMysqlKey)
-                                ?: operationKindForMysqlText(operationText)
-                                ?: inheritedOperation
-                        if (ownKind != null && aliases.isNotEmpty()) {
-                            operations +=
-                                PlanBlockingOperation(
-                                    ownKind,
-                                    aliases,
-                                    element.long("rows_produced_per_join")
-                                        ?: element.long("estimated_rows")
-                                        ?: maximumRows(relations, aliases),
-                                )
-                        }
-                        aliases
-                    }
-                    else -> emptySet()
+                val aliases = localAliases + descendantAliases
+                val nestedLoop = element.arrayValue("nested_loop")
+                val inputs = element.arrayValue("inputs")
+                val operationText = element.string("operation").orEmpty()
+                if (
+                    nestedLoop != null ||
+                        (inputs != null &&
+                            inputs.size > 1 &&
+                            (operationText.contains("join", true) ||
+                                operationText.contains("nested loop", true)))
+                ) {
+                    joins +=
+                        PlanJoinEvidence(
+                            aliases,
+                            element.long("rows_produced_per_join")
+                                ?: element.long("estimated_rows")
+                                ?: maximumRows(relations, aliases),
+                        )
                 }
+                val ownKind =
+                    element.keys.firstNotNullOfOrNull(::operationKindForMysqlKey)
+                        ?: operationKindForMysqlText(operationText)
+                        ?: inheritedOperation
+                if (ownKind != null && aliases.isNotEmpty()) {
+                    operations +=
+                        PlanBlockingOperation(
+                            ownKind,
+                            aliases,
+                            element.long("rows_produced_per_join")
+                                ?: element.long("estimated_rows")
+                                ?: maximumRows(relations, aliases),
+                        )
+                }
+                aliases
             }
-
-            visit(document)
-            if (relations.isEmpty() && joins.isEmpty() && operations.isEmpty()) return null
-            NormalizedQueryPlan(
-                relations,
-                joins.distinct(),
-                operations.distinct(),
-                findJsonCost(document),
-            )
+            else -> emptySet()
         }
-        .getOrNull()
+    }
+
+    visit(document)
+    if (relations.isEmpty() && joins.isEmpty() && operations.isEmpty()) return null
+    NormalizedQueryPlan(
+        relations,
+        joins.distinct(),
+        operations.distinct(),
+        findJsonCost(document),
+    )
+}
+    .getOrNull()
 
 private fun operationKindForMysqlKey(key: String): PlanOperationKind? =
     when (key) {
@@ -281,105 +273,95 @@ private fun findJsonCost(element: JsonElement): Double? =
         else -> null
     }
 
-internal fun parseSqlServerPlan(raw: String): NormalizedQueryPlan? =
-    runCatching {
-            val factory =
-                DocumentBuilderFactory.newInstance().apply {
-                    isNamespaceAware = true
-                    setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-                    setFeature("http://xml.org/sax/features/external-general-entities", false)
-                    setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-                    setFeature(
-                        "http://apache.org/xml/features/nonvalidating/load-external-dtd",
-                        false,
-                    )
-                    setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
-                    setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
-                    isXIncludeAware = false
-                    setExpandEntityReferences(false)
-                }
-            val document = factory.newDocumentBuilder().parse(InputSource(StringReader(raw)))
-            val relationNodes = document.getElementsByTagNameNS("*", "RelOp")
-            val relations = mutableListOf<PlanRelationAccess>()
-            val joins = mutableListOf<PlanJoinEvidence>()
-            val operations = mutableListOf<PlanBlockingOperation>()
-            for (index in 0 until relationNodes.length) {
-                val relOp = relationNodes.item(index) as? Element ?: continue
-                val physical = relOp.getAttribute("PhysicalOp")
-                val logical = relOp.getAttribute("LogicalOp")
-                val rows = relOp.getAttribute("EstimateRows").toDoubleOrNull()?.toLong()
-                val objects = relOp.getElementsByTagNameNS("*", "Object")
-                val aliases = linkedSetOf<String>()
-                for (objectIndex in 0 until objects.length) {
-                    val objectNode = objects.item(objectIndex) as? Element ?: continue
-                    val alias =
-                        objectNode.getAttribute("Alias").unquoteSqlServer().ifBlank {
-                            objectNode.getAttribute("Table").unquoteSqlServer()
-                        }
-                    if (alias.isNotBlank()) aliases += alias
-                }
-                val firstObject = objects.item(0) as? Element
-                if (
-                    firstObject != null &&
-                        physical in
-                            setOf(
-                                "Index Seek",
-                                "Index Scan",
-                                "Table Scan",
-                                "Clustered Index Scan",
-                                "Clustered Index Seek",
-                            )
-                ) {
-                    val method =
-                        when (physical) {
-                            "Index Seek",
-                            "Clustered Index Seek" -> sqlServerSeekMethod(relOp)
-                            "Index Scan",
-                            "Clustered Index Scan" -> PlanAccessMethod.FullIndexScan
-                            "Table Scan" -> PlanAccessMethod.TableScan
-                            else -> PlanAccessMethod.Other
-                        }
-                    relations +=
-                        PlanRelationAccess(
-                            schema =
-                                firstObject.getAttribute("Schema").unquoteSqlServer().ifBlank {
-                                    null
-                                },
-                            table =
-                                firstObject.getAttribute("Table").unquoteSqlServer().ifBlank {
-                                    null
-                                },
-                            alias =
-                                firstObject.getAttribute("Alias").unquoteSqlServer().ifBlank {
-                                    null
-                                },
-                            method = method,
-                            estimatedRows = rows,
-                        )
-                }
-                if (
-                    logical.contains("Join") ||
-                        physical.contains("Join") ||
-                        physical in setOf("Nested Loops", "Merge Join")
-                ) {
-                    joins += PlanJoinEvidence(aliases, rows)
-                }
-                val kind =
-                    when {
-                        physical == "Sort" -> PlanOperationKind.Sort
-                        physical.contains("Aggregate") || logical.contains("Aggregate") ->
-                            PlanOperationKind.Grouping
-                        physical == "Distinct Sort" -> PlanOperationKind.Distinct
-                        else -> null
-                    }
-                if (kind != null) operations += PlanBlockingOperation(kind, aliases, rows)
-            }
-            val statement = document.getElementsByTagNameNS("*", "StmtSimple").item(0) as? Element
-            val cost = statement?.getAttribute("StatementSubTreeCost")?.toDoubleOrNull()
-            if (relations.isEmpty() && joins.isEmpty() && operations.isEmpty()) return null
-            NormalizedQueryPlan(relations.distinct(), joins.distinct(), operations.distinct(), cost)
+internal fun parseSqlServerPlan(raw: String): NormalizedQueryPlan? = runCatching {
+    val factory =
+        DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = true
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            setFeature(
+                "http://apache.org/xml/features/nonvalidating/load-external-dtd",
+                false,
+            )
+            setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
+            setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
+            isXIncludeAware = false
+            setExpandEntityReferences(false)
         }
-        .getOrNull()
+    val document = factory.newDocumentBuilder().parse(InputSource(StringReader(raw)))
+    val relationNodes = document.getElementsByTagNameNS("*", "RelOp")
+    val relations = mutableListOf<PlanRelationAccess>()
+    val joins = mutableListOf<PlanJoinEvidence>()
+    val operations = mutableListOf<PlanBlockingOperation>()
+    for (index in 0 until relationNodes.length) {
+        val relOp = relationNodes.item(index) as? Element ?: continue
+        val physical = relOp.getAttribute("PhysicalOp")
+        val logical = relOp.getAttribute("LogicalOp")
+        val rows = relOp.getAttribute("EstimateRows").toDoubleOrNull()?.toLong()
+        val objects = relOp.getElementsByTagNameNS("*", "Object")
+        val aliases = linkedSetOf<String>()
+        for (objectIndex in 0 until objects.length) {
+            val objectNode = objects.item(objectIndex) as? Element ?: continue
+            val alias =
+                objectNode.getAttribute("Alias").unquoteSqlServer().ifBlank {
+                    objectNode.getAttribute("Table").unquoteSqlServer()
+                }
+            if (alias.isNotBlank()) aliases += alias
+        }
+        val firstObject = objects.item(0) as? Element
+        if (
+            firstObject != null &&
+                physical in
+                    setOf(
+                        "Index Seek",
+                        "Index Scan",
+                        "Table Scan",
+                        "Clustered Index Scan",
+                        "Clustered Index Seek",
+                    )
+        ) {
+            val method =
+                when (physical) {
+                    "Index Seek",
+                    "Clustered Index Seek" -> sqlServerSeekMethod(relOp)
+                    "Index Scan",
+                    "Clustered Index Scan" -> PlanAccessMethod.FullIndexScan
+                    "Table Scan" -> PlanAccessMethod.TableScan
+                    else -> PlanAccessMethod.Other
+                }
+            relations +=
+                PlanRelationAccess(
+                    schema = firstObject.getAttribute("Schema").unquoteSqlServer().ifBlank { null },
+                    table = firstObject.getAttribute("Table").unquoteSqlServer().ifBlank { null },
+                    alias = firstObject.getAttribute("Alias").unquoteSqlServer().ifBlank { null },
+                    method = method,
+                    estimatedRows = rows,
+                )
+        }
+        if (
+            logical.contains("Join") ||
+                physical.contains("Join") ||
+                physical in setOf("Nested Loops", "Merge Join")
+        ) {
+            joins += PlanJoinEvidence(aliases, rows)
+        }
+        val kind =
+            when {
+                physical == "Sort" -> PlanOperationKind.Sort
+                physical.contains("Aggregate") || logical.contains("Aggregate") ->
+                    PlanOperationKind.Grouping
+                physical == "Distinct Sort" -> PlanOperationKind.Distinct
+                else -> null
+            }
+        if (kind != null) operations += PlanBlockingOperation(kind, aliases, rows)
+    }
+    val statement = document.getElementsByTagNameNS("*", "StmtSimple").item(0) as? Element
+    val cost = statement?.getAttribute("StatementSubTreeCost")?.toDoubleOrNull()
+    if (relations.isEmpty() && joins.isEmpty() && operations.isEmpty()) return null
+    NormalizedQueryPlan(relations.distinct(), joins.distinct(), operations.distinct(), cost)
+}
+    .getOrNull()
 
 private fun String.unquoteSqlServer(): String = removePrefix("[").removeSuffix("]")
 

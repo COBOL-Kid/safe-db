@@ -44,7 +44,11 @@ class SafeDbServicePostgresIntegrationTest {
             service.runQuery(
                 QueryRunRequest(
                     def.id,
-                    IntegrationFixtures.customersQuery(schema, limit = 2, expectedSchema = "public"),
+                    IntegrationFixtures.customersQuery(
+                        schema,
+                        limit = 2,
+                        expectedSchema = "public",
+                    ),
                 )
             )
 

@@ -99,9 +99,10 @@ private constructor(
 
         for (element in array) {
             val (upgradedValue, upgraded) = upgradeEntryToV3(element)
-            val decoded =
-                runCatching { SafeDbJson.lenient.decodeFromJsonElement(serializer, upgradedValue) }
-                    .getOrNull()
+            val decoded = runCatching {
+                SafeDbJson.lenient.decodeFromJsonElement(serializer, upgradedValue)
+            }
+                .getOrNull()
             if (decoded != null) {
                 valid.add(decoded)
                 if (upgraded) migratedCount++
@@ -205,8 +206,8 @@ internal fun migrateV1Entry(value: JsonElement): JsonElement? {
             val opElement = filterObject["op"] ?: return null
             val op =
                 runCatching {
-                        SafeDbJson.lenient.decodeFromJsonElement(FilterOp.serializer(), opElement)
-                    }
+                    SafeDbJson.lenient.decodeFromJsonElement(FilterOp.serializer(), opElement)
+                }
                     .getOrNull() ?: return null
             val rawValue = filterObject["value"]
             val valueElement =

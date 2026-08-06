@@ -130,11 +130,10 @@ object MssqlAdapter {
                         readString(rs, "referenced_column"),
                     )
                 }
-            val tableSizes =
-                runCatching {
-                        conn
-                            .metadataRows(
-                                """
+            val tableSizes = runCatching {
+                conn
+                    .metadataRows(
+                        """
                     SELECT s.name AS table_schema, t.name AS table_name, SUM(p.row_count) AS row_count
                     FROM sys.tables t
                     JOIN sys.schemas s ON t.schema_id = s.schema_id
@@ -142,20 +141,20 @@ object MssqlAdapter {
                     WHERE s.name NOT IN $excluded
                     GROUP BY s.name, t.name
                     """
-                                    .trimIndent()
-                            ) { rs ->
-                                MetadataTableKey(
-                                    readString(rs, "table_schema"),
-                                    readString(rs, "table_name"),
-                                ) to
-                                    normalizeTableSize(
-                                        (rs.getObject("row_count") as? Number)?.toDouble(),
-                                        EvidenceConfidence.Medium,
-                                    )
-                            }
-                            .toMap()
+                            .trimIndent()
+                    ) { rs ->
+                        MetadataTableKey(
+                            readString(rs, "table_schema"),
+                            readString(rs, "table_name"),
+                        ) to
+                            normalizeTableSize(
+                                (rs.getObject("row_count") as? Number)?.toDouble(),
+                                EvidenceConfidence.Medium,
+                            )
                     }
-                    .getOrDefault(emptyMap())
+                    .toMap()
+            }
+                .getOrDefault(emptyMap())
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }
@@ -391,10 +390,10 @@ object MssqlAdapter {
                         if (!showplanRestored) {
                             showplanRestored =
                                 runCatching {
-                                        conn.createStatement().use {
-                                            it.execute("SET SHOWPLAN_XML OFF")
-                                        }
+                                    conn.createStatement().use {
+                                        it.execute("SET SHOWPLAN_XML OFF")
                                     }
+                                }
                                     .isSuccess
                         }
                     }

@@ -115,25 +115,24 @@ object MySqlAdapter {
                         readString(rs, "REFERENCED_COLUMN_NAME"),
                     )
                 }
-            val tableSizes =
-                runCatching {
-                        conn
-                            .metadataRows(
-                                "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES " +
-                                    "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN $excluded"
-                            ) { rs ->
-                                MetadataTableKey(
-                                    readString(rs, "TABLE_SCHEMA"),
-                                    readString(rs, "TABLE_NAME"),
-                                ) to
-                                    normalizeTableSize(
-                                        (rs.getObject("TABLE_ROWS") as? Number)?.toDouble(),
-                                        EvidenceConfidence.Low,
-                                    )
-                            }
-                            .toMap()
+            val tableSizes = runCatching {
+                conn
+                    .metadataRows(
+                        "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES " +
+                            "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN $excluded"
+                    ) { rs ->
+                        MetadataTableKey(
+                            readString(rs, "TABLE_SCHEMA"),
+                            readString(rs, "TABLE_NAME"),
+                        ) to
+                            normalizeTableSize(
+                                (rs.getObject("TABLE_ROWS") as? Number)?.toDouble(),
+                                EvidenceConfidence.Low,
+                            )
                     }
-                    .getOrDefault(emptyMap())
+                    .toMap()
+            }
+                .getOrDefault(emptyMap())
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }

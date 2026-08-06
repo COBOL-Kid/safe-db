@@ -94,7 +94,17 @@ class PlanParsersTest {
                         4.0,
                     ),
                     OraclePlanRow(4, 3, "INDEX", "UNIQUE SCAN", "APP", "ORDERS_PK", null, 1, 1.0),
-                    OraclePlanRow(5, 2, "TABLE ACCESS", "FULL", "APP", "ITEMS", "t1", 120_000, 12.0),
+                    OraclePlanRow(
+                        5,
+                        2,
+                        "TABLE ACCESS",
+                        "FULL",
+                        "APP",
+                        "ITEMS",
+                        "t1",
+                        120_000,
+                        12.0,
+                    ),
                 )
             )
 

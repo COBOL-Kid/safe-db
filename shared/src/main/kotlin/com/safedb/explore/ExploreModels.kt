@@ -388,5 +388,7 @@ private fun defaultMeasureLabel(fn: MeasureFn, sourceColumn: String?): String {
     }
 }
 
-private fun defaultCurrencyCode(): String =
-    runCatching { Currency.getInstance(Locale.getDefault()).currencyCode }.getOrDefault("USD")
+private fun defaultCurrencyCode(): String = runCatching {
+    Currency.getInstance(Locale.getDefault()).currencyCode
+}
+    .getOrDefault("USD")

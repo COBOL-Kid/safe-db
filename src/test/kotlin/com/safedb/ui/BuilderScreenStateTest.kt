@@ -231,7 +231,9 @@ class BuilderScreenStateTest {
                             ),
                     ),
                 reasons =
-                    listOf(RiskDecisionReason("plan_unavailable", "The query plan is unavailable.")),
+                    listOf(
+                        RiskDecisionReason("plan_unavailable", "The query plan is unavailable.")
+                    ),
             )
         val evaluation =
             QueryRiskEvaluation(

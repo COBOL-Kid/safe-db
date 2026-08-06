@@ -182,7 +182,9 @@ class QueryPlanRefinementTest {
                 NormalizedQueryPlan(
                     joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 50)),
                     blockingOperations =
-                        listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50)),
+                        listOf(
+                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50)
+                        ),
                 ),
                 spec,
                 schema,

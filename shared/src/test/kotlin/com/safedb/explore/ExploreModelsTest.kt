@@ -27,7 +27,8 @@ class ExploreModelsTest {
                             label = "Margin",
                             formula = "[revenue] - [cost]",
                             showAs = PivotShowAs(ShowAsMode.PercentGrandTotal),
-                            numberFormat = PivotNumberFormat(NumberFormatKind.Percent, decimals = 1),
+                            numberFormat =
+                                PivotNumberFormat(NumberFormatKind.Percent, decimals = 1),
                         )
                     ),
                 filters = listOf(PivotFilter.Members("f1", "status", "Status", setOf("shipped"))),
