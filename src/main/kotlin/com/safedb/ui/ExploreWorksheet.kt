@@ -131,6 +131,7 @@ internal fun ExploreWorksheet(
     onConfigChange: (WorksheetConfig) -> Unit,
     onColumnLayoutChange: (List<WorksheetColumnLayout>) -> Unit,
     onToggleGroup: (String) -> Unit,
+    configReplacementRevision: Int,
     railVisible: Boolean,
     onRailVisibilityChange: (Boolean) -> Unit,
     railFooter: @Composable (collapsed: Boolean) -> Unit = {},
@@ -138,8 +139,9 @@ internal fun ExploreWorksheet(
 ) {
     var editingFilter by remember { mutableStateOf<String?>(null) }
     var editingGroup by remember { mutableStateOf<String?>(null) }
-    var editingCalculation by remember { mutableStateOf<WorksheetCalculation?>(null) }
-    var calculationEditorRevision by remember { mutableStateOf(0) }
+    var editingCalculation by
+        remember(configReplacementRevision) { mutableStateOf<WorksheetCalculation?>(null) }
+    var calculationEditorRevision by remember(configReplacementRevision) { mutableStateOf(0) }
 
     editingFilter?.let { column ->
         val existing = config.filters.firstOrNull { it.column == column }

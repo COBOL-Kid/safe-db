@@ -217,6 +217,8 @@ fun ExploreWindowContent(
                             onConfigChange = { next -> viewModel.updateWorksheet { next } },
                             onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
                             onToggleGroup = viewModel::toggleWorksheetGroup,
+                            configReplacementRevision =
+                                viewModel.worksheetConfigReplacementRevision,
                             railVisible = worksheetRailVisible,
                             onRailVisibilityChange = { worksheetRailVisible = it },
                             railFooter = { collapsed ->

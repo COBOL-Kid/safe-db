@@ -346,7 +346,9 @@ class ExploreViewModelTest {
                 requiredFields = listOf(RecipeField("t0__status", "status", "varchar", "orders")),
             )
 
+        assertEquals(0, viewModel.worksheetConfigReplacementRevision)
         viewModel.requestRecipe(recipe)
+        assertEquals(1, viewModel.worksheetConfigReplacementRevision)
         assertEquals("r1", viewModel.appliedRecipeId)
         assertEquals(ExploreMode.Worksheet, viewModel.workspace.activeMode)
         assertFalse(viewModel.config.showSubtotals)
@@ -357,11 +359,13 @@ class ExploreViewModelTest {
                 .first { it.kind == com.safedb.explore.WorksheetRowKind.Group }
                 .pathKey
         viewModel.toggleWorksheetGroup(path)
+        assertEquals(1, viewModel.worksheetConfigReplacementRevision)
         assertFalse(viewModel.recipeDirty())
 
         viewModel.updateWorksheet {
             it.copy(filters = listOf(com.safedb.explore.WorksheetFilter("f", "t0__status")))
         }
+        assertEquals(1, viewModel.worksheetConfigReplacementRevision)
         assertTrue(viewModel.recipeDirty())
         viewModel.clearAppliedRecipe()
         assertEquals(null, viewModel.appliedRecipeId)
