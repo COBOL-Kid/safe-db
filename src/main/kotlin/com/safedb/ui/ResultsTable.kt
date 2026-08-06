@@ -1,5 +1,7 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -97,91 +101,110 @@ fun ResultsTable(
             val horizontalScroll = rememberScrollState()
             val listState = rememberLazyListState()
             val tableWidth = columns.sumOf { it.widthDp }.dp
-            Column(modifier = Modifier.fillMaxSize().horizontalScroll(horizontalScroll)) {
-                Row(
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(
                     modifier =
-                        Modifier.width(tableWidth)
-                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                            .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        Modifier.fillMaxSize()
+                            .padding(end = 8.dp, bottom = 8.dp)
+                            .horizontalScroll(horizontalScroll)
                 ) {
-                    for (column in columns) {
-                        Text(
-                            column.label,
-                            modifier =
-                                Modifier.width(column.widthDp.dp)
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = DataMono.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = column.alignment.textAlign,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                if (result.rows.isEmpty()) {
-                    Text(
-                        "No rows returned.",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.width(tableWidth).weight(1f),
+                    Row(
+                        modifier =
+                            Modifier.width(tableWidth)
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        itemsIndexed(result.rows, key = { index, _ -> index }) { rowIdx, row ->
-                            val interactionSource = remember { MutableInteractionSource() }
-                            val hovered by interactionSource.collectIsHoveredAsState()
-                            val rowBg =
-                                when {
-                                    hovered ->
-                                        SafeDbTheme.colors.accentContainer.copy(alpha = 0.55f)
-                                    rowIdx % 2 == 1 ->
-                                        MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                                            alpha = 0.6f
-                                        )
-                                    else -> MaterialTheme.colorScheme.surface
-                                }
-                            Row(
+                        for (column in columns) {
+                            Text(
+                                column.label,
                                 modifier =
-                                    Modifier.width(tableWidth)
-                                        .background(rowBg)
-                                        .hoverable(interactionSource),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                columns.forEach { column ->
-                                    val cell = row.getOrNull(column.index)
-                                    Text(
-                                        if (cell == ResultCell.Null) "null" else formatCell(cell),
-                                        modifier =
-                                            Modifier.width(column.widthDp.dp)
-                                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        style = DataMono,
-                                        fontStyle =
-                                            if (cell == ResultCell.Null) FontStyle.Italic
-                                            else FontStyle.Normal,
-                                        textAlign = column.alignment.textAlign,
-                                        color =
-                                            if (cell == ResultCell.Null) {
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                                    alpha = 0.6f
-                                                )
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                                    Modifier.width(column.widthDp.dp)
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = DataMono.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = column.alignment.textAlign,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (result.rows.isEmpty()) {
+                        Text(
+                            "No rows returned.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.width(tableWidth).weight(1f),
+                        ) {
+                            itemsIndexed(result.rows, key = { index, _ -> index }) { rowIdx, row ->
+                                val interactionSource = remember { MutableInteractionSource() }
+                                val hovered by interactionSource.collectIsHoveredAsState()
+                                val rowBg =
+                                    when {
+                                        hovered ->
+                                            SafeDbTheme.colors.accentContainer.copy(alpha = 0.55f)
+                                        rowIdx % 2 == 1 ->
+                                            MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                                                alpha = 0.6f
+                                            )
+                                        else -> MaterialTheme.colorScheme.surface
+                                    }
+                                Row(
+                                    modifier =
+                                        Modifier.width(tableWidth)
+                                            .background(rowBg)
+                                            .hoverable(interactionSource),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    columns.forEach { column ->
+                                        val cell = row.getOrNull(column.index)
+                                        Text(
+                                            if (cell == ResultCell.Null) "null"
+                                            else formatCell(cell),
+                                            modifier =
+                                                Modifier.width(column.widthDp.dp)
+                                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                            style = DataMono,
+                                            fontStyle =
+                                                if (cell == ResultCell.Null) FontStyle.Italic
+                                                else FontStyle.Normal,
+                                            textAlign = column.alignment.textAlign,
+                                            color =
+                                                if (cell == ResultCell.Null) {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                        alpha = 0.6f
+                                                    )
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                HorizontalDivider(
+                                    color =
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                                )
+                            }
+                        }
+                    }
                 }
+                HorizontalScrollbar(
+                    adapter = rememberScrollbarAdapter(horizontalScroll),
+                    modifier =
+                        Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
+                )
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(listState),
+                    modifier =
+                        Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(bottom = 8.dp),
+                )
             }
         }
     }
