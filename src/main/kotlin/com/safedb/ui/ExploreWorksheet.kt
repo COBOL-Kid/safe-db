@@ -191,43 +191,7 @@ internal fun ExploreWorksheet(
         )
     }
     Row(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            if (preview.warnings.isNotEmpty() || preview.calculationErrorCount > 0) {
-                Surface(color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)) {
-                    Text(
-                        buildList {
-                                addAll(preview.warnings)
-                                if (preview.calculationErrorCount > 0)
-                                    add(
-                                        "${preview.calculationErrorCount} calculation error${if (preview.calculationErrorCount == 1) "" else "s"}"
-                                    )
-                            }
-                            .joinToString(" · "),
-                        modifier =
-                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-            WorksheetTable(
-                config = config,
-                preview = preview,
-                onColumnLayoutChange = onColumnLayoutChange,
-                onSort = { ref ->
-                    onConfigChange(config.copy(sorts = cycleSort(config.sorts, ref)))
-                },
-                onGroup = { column -> editingGroup = column },
-                onFilter = { column -> editingFilter = column },
-                onToggleGroup = onToggleGroup,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
-        }
-
         if (railVisible) {
-            HorizontalDivider(
-                modifier = Modifier.width(1.dp).fillMaxHeight(),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
             Column(modifier = Modifier.width(380.dp).fillMaxHeight()) {
                 CalculationRail(
                     sample = sample,
@@ -295,7 +259,7 @@ internal fun ExploreWorksheet(
                     )
                     IconButton(onClick = { onRailVisibilityChange(true) }) {
                         Icon(
-                            Icons.Default.ChevronLeft,
+                            Icons.Default.ChevronRight,
                             contentDescription = "Show Worksheet sidebar",
                         )
                     }
@@ -303,6 +267,42 @@ internal fun ExploreWorksheet(
                     railFooter(true)
                 }
             }
+        }
+        HorizontalDivider(
+            modifier = Modifier.width(1.dp).fillMaxHeight(),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            if (preview.warnings.isNotEmpty() || preview.calculationErrorCount > 0) {
+                Surface(color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)) {
+                    Text(
+                        buildList {
+                                addAll(preview.warnings)
+                                if (preview.calculationErrorCount > 0)
+                                    add(
+                                        "${preview.calculationErrorCount} calculation error${if (preview.calculationErrorCount == 1) "" else "s"}"
+                                    )
+                            }
+                            .joinToString(" · "),
+                        modifier =
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+            WorksheetTable(
+                config = config,
+                preview = preview,
+                onColumnLayoutChange = onColumnLayoutChange,
+                onSort = { ref ->
+                    onConfigChange(config.copy(sorts = cycleSort(config.sorts, ref)))
+                },
+                onGroup = { column -> editingGroup = column },
+                onFilter = { column -> editingFilter = column },
+                onToggleGroup = onToggleGroup,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            )
         }
     }
 }
@@ -960,7 +960,7 @@ private fun CalculationRail(
                     }
                     IconButton(onClick = onCollapse) {
                         Icon(
-                            Icons.Default.ChevronRight,
+                            Icons.Default.ChevronLeft,
                             contentDescription = "Hide Worksheet sidebar",
                         )
                     }
