@@ -12,6 +12,7 @@ enum class AppRoute {
     Home,
     Connections,
     Builder,
+    Map,
     History,
 }
 

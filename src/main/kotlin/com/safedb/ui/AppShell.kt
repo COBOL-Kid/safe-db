@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -226,6 +227,41 @@ fun AppShell(
                             }
                         },
                     )
+                AppRoute.Map ->
+                    SchemaMapScreen(
+                        connection = activeConnection,
+                        connections = connections,
+                        mapViewModel = viewModel.schemaMap,
+                        schemaViewModel = viewModel.schema,
+                        schemaSelection = schemaSelection,
+                        schemaHistoryError = schemaHistoryError,
+                        onConnectionSelected = { connection ->
+                            appState.setActiveConnection(
+                                connection.id,
+                                com.safedb.resolveConnectionSchemaSelection(
+                                    connection.id,
+                                    settings,
+                                ),
+                            )
+                        },
+                        onSchemaSelected = { schema ->
+                            val connectionId = activeConnection?.id ?: return@SchemaMapScreen
+                            appState.setActiveSchema(schema)
+                            viewModel.settings.rememberLastSchema(connectionId, schema)
+                        },
+                        onUnavailableSchemaSelection = { selection ->
+                            val connectionId = activeConnection?.id ?: return@SchemaMapScreen
+                            if (
+                                selection.source ==
+                                    com.safedb.SchemaSelectionSource.ConnectionHistory
+                            ) {
+                                viewModel.settings.forgetLastSchema(connectionId)
+                            }
+                        },
+                        onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
+                        onRetry = viewModel.schema::clear,
+                        onOpenConnections = { appState.navigate(AppRoute.Connections) },
+                    )
                 AppRoute.History ->
                     HistoryScreen(
                         viewModel = viewModel,
@@ -254,6 +290,7 @@ private fun Sidebar(
             NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
             NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
             NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
+            NavItem(AppRoute.Map, "Map", Icons.Outlined.Hub),
             NavItem(AppRoute.History, "History", Icons.Outlined.History),
         )
     // Keep the content mode stable while the rail changes width. This leaves a clean gap
@@ -757,9 +794,9 @@ private const val SidebarUtilityFadeInMillis = 120
 private const val SidebarUtilityFadeOutMillis = 80
 private const val SidebarRevealHeader = 1
 private const val SidebarRevealFirstNav = 2
-private const val SidebarRevealStatus = 6
-private const val SidebarRevealSettings = 7
-private const val SidebarRevealTheme = 8
+private const val SidebarRevealStatus = 7
+private const val SidebarRevealSettings = 8
+private const val SidebarRevealTheme = 9
 private const val SidebarRevealAll = SidebarRevealTheme
 private const val SidebarCompactRevealCommand = 1
 private const val SidebarCompactRevealStatus = 2

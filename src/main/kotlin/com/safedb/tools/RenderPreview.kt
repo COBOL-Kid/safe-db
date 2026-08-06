@@ -49,9 +49,12 @@ import com.safedb.model.FilterValue
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.GroupSpec
 import com.safedb.model.HistoryEntry
+import com.safedb.model.IndexCapabilities
 import com.safedb.model.IndexInfo
+import com.safedb.model.IndexKey
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
+import com.safedb.model.MetadataCoverage
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
@@ -118,14 +121,19 @@ private class FakeService(private val settings: Settings = Settings()) : SafeDbS
         indexes: List<IndexInfo>,
         foreignKeys: List<ForeignKeyInfo> = emptyList(),
     ): TableInfo {
+        val normalizedIndexes = indexes.map { index ->
+            if (index.isPartial == null) index.copy(isPartial = false) else index
+        }
         val mutable = cols.toMutableList()
-        markIndexedColumns(mutable, indexes)
+        markIndexedColumns(mutable, normalizedIndexes)
         return TableInfo(
             schema = "public",
             name = name,
             columns = mutable,
-            indexes = indexes,
+            indexes = normalizedIndexes,
             foreignKeys = foreignKeys,
+            indexMetadata = MetadataCoverage.complete(),
+            foreignKeyMetadata = MetadataCoverage.complete(),
         )
     }
 
@@ -139,6 +147,7 @@ private class FakeService(private val settings: Settings = Settings()) : SafeDbS
                             ColumnInfo("id", "bigint", false),
                             ColumnInfo("email", "varchar", false),
                             ColumnInfo("full_name", "varchar", true),
+                            ColumnInfo("preferred_product_id", "bigint", true),
                             ColumnInfo("created_at", "timestamp", false),
                         ),
                         listOf(
@@ -147,6 +156,27 @@ private class FakeService(private val settings: Settings = Settings()) : SafeDbS
                                 listOf("id"),
                                 isPrimary = true,
                                 isUnique = true,
+                            ),
+                            IndexInfo(
+                                name = "customers_email_key",
+                                columns = listOf("email"),
+                                kind = "btree",
+                                isUnique = true,
+                                keys = listOf(IndexKey("email", SortDirection.Asc)),
+                            ),
+                            IndexInfo(
+                                name = "customers_preferred_product_idx",
+                                columns = listOf("preferred_product_id"),
+                                kind = "btree",
+                            ),
+                        ),
+                        listOf(
+                            ForeignKeyInfo(
+                                name = "customers_preferred_product_id_fkey",
+                                columns = listOf("preferred_product_id"),
+                                referencedSchema = "public",
+                                referencedTable = "products",
+                                referencedColumns = listOf("id"),
                             )
                         ),
                     ),
@@ -158,6 +188,7 @@ private class FakeService(private val settings: Settings = Settings()) : SafeDbS
                             ColumnInfo("status", "varchar", false),
                             ColumnInfo("total_cents", "bigint", false),
                             ColumnInfo("placed_at", "timestamp", false),
+                            ColumnInfo("created_by_user_id", "bigint", true),
                         ),
                         listOf(
                             IndexInfo(
@@ -167,6 +198,31 @@ private class FakeService(private val settings: Settings = Settings()) : SafeDbS
                                 isUnique = true,
                             ),
                             IndexInfo("orders_customer_idx", listOf("customer_id")),
+                            IndexInfo(
+                                name = "orders_status_placed_idx",
+                                columns = listOf("status", "placed_at"),
+                                includedColumns = listOf("total_cents"),
+                                kind = "btree",
+                                keys =
+                                    listOf(
+                                        IndexKey("status", SortDirection.Asc),
+                                        IndexKey("placed_at", SortDirection.Desc),
+                                    ),
+                                capabilities =
+                                    IndexCapabilities(
+                                        equality = true,
+                                        ordering = true,
+                                        expressionKeys = false,
+                                        partialPredicate = true,
+                                        includedColumns = true,
+                                    ),
+                                isPartial = true,
+                            ),
+                            IndexInfo(
+                                name = "orders_created_by_user_idx",
+                                columns = listOf("created_by_user_id"),
+                                kind = "btree",
+                            ),
                         ),
                         listOf(
                             ForeignKeyInfo(
@@ -175,7 +231,14 @@ private class FakeService(private val settings: Settings = Settings()) : SafeDbS
                                 referencedSchema = "public",
                                 referencedTable = "customers",
                                 referencedColumns = listOf("id"),
-                            )
+                            ),
+                            ForeignKeyInfo(
+                                name = "orders_created_by_user_id_fkey",
+                                columns = listOf("created_by_user_id"),
+                                referencedSchema = "identity",
+                                referencedTable = "users",
+                                referencedColumns = listOf("id"),
+                            ),
                         ),
                     ),
                     table(
@@ -192,6 +255,44 @@ private class FakeService(private val settings: Settings = Settings()) : SafeDbS
                                 listOf("id"),
                                 isPrimary = true,
                                 isUnique = true,
+                            ),
+                            IndexInfo(
+                                name = "products_sku_key",
+                                columns = listOf("sku"),
+                                kind = "btree",
+                                isUnique = true,
+                            ),
+                        ),
+                    ),
+                    table(
+                        "customer_profiles",
+                        listOf(
+                            ColumnInfo("id", "bigint", false),
+                            ColumnInfo("customer_id", "bigint", false),
+                            ColumnInfo("timezone", "varchar", false),
+                            ColumnInfo("marketing_opt_in", "boolean", false),
+                        ),
+                        listOf(
+                            IndexInfo(
+                                name = "customer_profiles_pkey",
+                                columns = listOf("id"),
+                                isPrimary = true,
+                                isUnique = true,
+                            ),
+                            IndexInfo(
+                                name = "customer_profiles_customer_id_key",
+                                columns = listOf("customer_id"),
+                                kind = "btree",
+                                isUnique = true,
+                            ),
+                        ),
+                        listOf(
+                            ForeignKeyInfo(
+                                name = "customer_profiles_customer_id_fkey",
+                                columns = listOf("customer_id"),
+                                referencedSchema = "public",
+                                referencedTable = "customers",
+                                referencedColumns = listOf("id"),
                             )
                         ),
                     ),
@@ -327,6 +428,7 @@ internal fun render(
     editConnectionPreview: ConnectionDef? = null,
     width: Int = 1280,
     height: Int = 832,
+    additionalSettleFrames: Int = 0,
     prepare: (AppState, AppViewModel) -> Unit,
 ) {
     val service =
@@ -362,7 +464,13 @@ internal fun render(
         .use { scene ->
             scene.render(0L)
             Thread.sleep(300)
-            val image = scene.render(300_000_000L)
+            var renderTime = 300_000_000L
+            var image = scene.render(renderTime)
+            repeat(additionalSettleFrames) {
+                Thread.sleep(200)
+                renderTime += 200_000_000L
+                image = scene.render(renderTime)
+            }
             val out = File("/tmp/safedb-preview/$name.png")
             out.parentFile.mkdirs()
             out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
@@ -778,6 +886,15 @@ fun main() {
                     vm.query.run("c1")
                 }
             }
+            Thread.sleep(900)
+        }
+
+        render("map-$suffix", dark, additionalSettleFrames = 1) { state, vm ->
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
+            vm.schemaMap.activate("c1", "public")
+            state.navigate(AppRoute.Map)
+            vm.schema.load("c1", selection = selection)
             Thread.sleep(900)
         }
 

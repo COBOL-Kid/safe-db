@@ -46,6 +46,7 @@ kover {
                     "com.safedb.model.*",
                     "com.safedb.persist.*",
                     "com.safedb.query.*",
+                    "com.safedb.schema.*",
                     "com.safedb.secrets.*",
                     "com.safedb.service.*",
                     "com.safedb.store.*",
@@ -89,7 +90,7 @@ val verifyUnitTestDiscovery =
         dependsOn(tasks.test, ":shared:test")
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(162)
+        minimumDesktopTests.set(180)
         minimumSharedTests.set(341)
     }
 

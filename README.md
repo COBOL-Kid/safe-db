@@ -1,6 +1,6 @@
 # safe-db
 
-Desktop app for safely exploring production databases on macOS and Windows. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, browse schema visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN-informed risk scoring.
+Desktop app for safely exploring production databases on macOS and Windows. Connect to PostgreSQL, MySQL, SQL Server, or Oracle, map schemas and relationships visually, build read-only queries in a canvas UI, and run them with guardrails: non-locking reads, enforced row limits, blocked system schemas, and EXPLAIN-informed risk scoring.
 
 safe-db is a **Jetpack Compose Desktop** app with a Kotlin/JDBC backend. The Gradle project lives at the repository root.
 
@@ -41,6 +41,7 @@ The Durability workflow runs every Monday at 09:00 UTC and on manual dispatch. I
 
 - **Connections** — save named profiles; passwords are stored in the OS credential store when available, never in profile JSON. Advanced settings expose explicit SSL verification modes, Oracle wallet configuration, and optional JDBC driver parameters.
 - **Schema browser** — tables, columns, and indexes with system/catalog schemas filtered out.
+- **Database map** — search and navigate a read-only schema diagram with draggable table cards, key and index markers, plain-language hover descriptions, and relationship cardinalities. Pan, zoom, or fit the entire schema without changing the query under construction.
 - **Visual query builder** — drag tables onto a canvas, join, filter, select columns, and set row limits; recursive filter groups support per-child AND/OR connector overrides.
 - **Explore modes** — analyze the current immutable result sample as a nested pivot, worksheet, or visualization. Worksheet mode adds direct sort/group/filter controls, row and group formulas, summaries, and window calculations such as running totals, previous values, percentages, and ranks. Visualization offers templates and editable field shelves for bar, line, scatter, histogram, and KPI charts, with contributing-row drill-through plus PNG and chart-data CSV exports.
 - **Explore recipes** — save any combination of Pivot, Worksheet, and Visualization configurations, optionally with the Builder query, then reuse locally or share through versioned `.safedb-recipe.json` files.
