@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -94,6 +95,7 @@ internal fun VisualizationConfigPanel(
     onConfigChange: (VisualizationConfig) -> Unit,
     onApplyTemplate: (VisualizationConfig) -> Unit,
     onReset: () -> Unit,
+    onHide: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var templatesOpen by remember { mutableStateOf(false) }
@@ -146,6 +148,12 @@ internal fun VisualizationConfigPanel(
                 }
                 TextButton(onClick = { templatesOpen = true }) { Text("Templates") }
                 TextButton(onClick = onReset, enabled = config.isConfigured()) { Text("Reset") }
+                IconButton(onClick = onHide) {
+                    Icon(
+                        Icons.Default.ChevronLeft,
+                        contentDescription = "Hide Visualization sidebar",
+                    )
+                }
             }
 
             if (!config.isConfigured() && suggested.isNotEmpty()) {

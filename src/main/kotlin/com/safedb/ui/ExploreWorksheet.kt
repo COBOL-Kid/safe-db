@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,13 +30,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
@@ -56,7 +59,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,6 +80,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.explore.DateGroupUnit
+import com.safedb.explore.ExploreMode
 import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotNumberFormat
@@ -125,14 +132,17 @@ internal fun ExploreWorksheet(
     onConfigChange: (WorksheetConfig) -> Unit,
     onColumnLayoutChange: (List<WorksheetColumnLayout>) -> Unit,
     onToggleGroup: (String) -> Unit,
+    configReplacementRevision: Int,
+    railVisible: Boolean,
+    onRailVisibilityChange: (Boolean) -> Unit,
     railFooter: @Composable (collapsed: Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var railVisible by remember { mutableStateOf(true) }
     var editingFilter by remember { mutableStateOf<String?>(null) }
     var editingGroup by remember { mutableStateOf<String?>(null) }
-    var editingCalculation by remember { mutableStateOf<WorksheetCalculation?>(null) }
-    var addingCalculation by remember { mutableStateOf(false) }
+    var editingCalculation by
+        remember(configReplacementRevision) { mutableStateOf<WorksheetCalculation?>(null) }
+    var calculationEditorRevision by remember(configReplacementRevision) { mutableStateOf(0) }
 
     editingFilter?.let { column ->
         val existing = config.filters.firstOrNull { it.column == column }
@@ -183,35 +193,89 @@ internal fun ExploreWorksheet(
             onDismiss = { editingGroup = null },
         )
     }
-    if (addingCalculation || editingCalculation != null) {
-        WorksheetCalculationDialog(
-            sample = sample,
-            config = config,
-            existing = editingCalculation,
-            onSave = { calculation, requiredSort ->
-                val calculations =
-                    if (editingCalculation == null) {
-                        config.calculations + calculation
-                    } else {
-                        config.calculations.map { if (it.id == calculation.id) calculation else it }
-                    }
-                val sorts =
-                    requiredSort?.let { sort ->
-                        if (config.sorts.any { it.target == sort.target }) config.sorts
-                        else config.sorts + sort
-                    } ?: config.sorts
-                onConfigChange(config.copy(calculations = calculations, sorts = sorts))
-                addingCalculation = false
-                editingCalculation = null
-            },
-            onDismiss = {
-                addingCalculation = false
-                editingCalculation = null
-            },
-        )
-    }
-
     Row(modifier = modifier.fillMaxSize()) {
+        if (railVisible) {
+            Column(modifier = Modifier.width(380.dp).fillMaxHeight()) {
+                CalculationRail(
+                    sample = sample,
+                    config = config,
+                    existing = editingCalculation,
+                    editorRevision = calculationEditorRevision,
+                    onAdd = {
+                        editingCalculation = null
+                        calculationEditorRevision += 1
+                    },
+                    onEdit = {
+                        editingCalculation = it
+                        calculationEditorRevision += 1
+                    },
+                    onSave = { calculation, requiredSort ->
+                        val calculations =
+                            if (editingCalculation == null) {
+                                config.calculations + calculation
+                            } else {
+                                config.calculations.map {
+                                    if (it.id == calculation.id) calculation else it
+                                }
+                            }
+                        val sorts =
+                            requiredSort?.let { sort ->
+                                if (config.sorts.any { it.target == sort.target }) config.sorts
+                                else config.sorts + sort
+                            } ?: config.sorts
+                        onConfigChange(config.copy(calculations = calculations, sorts = sorts))
+                        editingCalculation = null
+                        calculationEditorRevision += 1
+                    },
+                    onCancel = {
+                        editingCalculation = null
+                        calculationEditorRevision += 1
+                    },
+                    onRemove = { calculation ->
+                        onConfigChange(
+                            config.copy(
+                                calculations = config.calculations - calculation,
+                                columnLayout =
+                                    config.columnLayout.filterNot {
+                                        it.ref == WorksheetValueRef.Calculation(calculation.id)
+                                    },
+                            )
+                        )
+                        if (editingCalculation?.id == calculation.id) {
+                            editingCalculation = null
+                            calculationEditorRevision += 1
+                        }
+                    },
+                    onCollapse = { onRailVisibilityChange(false) },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+                railFooter(false)
+            }
+        } else {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Column(modifier = Modifier.fillMaxHeight()) {
+                    ModeIcon(
+                        ExploreMode.Worksheet,
+                        Modifier.padding(top = 14.dp)
+                            .size(18.dp)
+                            .align(Alignment.CenterHorizontally),
+                    )
+                    IconButton(onClick = { onRailVisibilityChange(true) }) {
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = "Show Worksheet sidebar",
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    railFooter(true)
+                }
+            }
+        }
+        HorizontalDivider(
+            modifier = Modifier.width(1.dp).fillMaxHeight(),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
             if (preview.warnings.isNotEmpty() || preview.calculationErrorCount > 0) {
                 Surface(color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)) {
@@ -242,44 +306,6 @@ internal fun ExploreWorksheet(
                 onToggleGroup = onToggleGroup,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
-        }
-
-        if (railVisible) {
-            HorizontalDivider(
-                modifier = Modifier.width(1.dp).fillMaxHeight(),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            Column(modifier = Modifier.width(300.dp).fillMaxHeight()) {
-                CalculationRail(
-                    calculations = config.calculations,
-                    onAdd = { addingCalculation = true },
-                    onEdit = { editingCalculation = it },
-                    onRemove = { calculation ->
-                        onConfigChange(
-                            config.copy(
-                                calculations = config.calculations - calculation,
-                                columnLayout =
-                                    config.columnLayout.filterNot {
-                                        it.ref == WorksheetValueRef.Calculation(calculation.id)
-                                    },
-                            )
-                        )
-                    },
-                    onCollapse = { railVisible = false },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-                railFooter(false)
-            }
-        } else {
-            Surface(color = MaterialTheme.colorScheme.surface) {
-                Column(modifier = Modifier.fillMaxHeight()) {
-                    IconButton(onClick = { railVisible = true }) {
-                        Icon(Icons.Default.Calculate, contentDescription = "Show calculations")
-                    }
-                    Spacer(Modifier.weight(1f))
-                    railFooter(true)
-                }
-            }
         }
     }
 }
@@ -324,144 +350,147 @@ private fun WorksheetTable(
                 )
             }
         } else {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                Column(
-                    modifier =
-                        Modifier.fillMaxSize()
-                            .padding(end = 8.dp)
-                            .horizontalScroll(scroll)
-                            .width(tableWidth.dp)
-                ) {
-                    Row(
+            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Column(
                         modifier =
-                            Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
+                            Modifier.fillMaxSize().horizontalScroll(scroll).width(tableWidth.dp)
                     ) {
-                        if (projection.hasRowLabels) {
-                            WorksheetGroupHeader()
-                        }
-                        visibleColumns.forEachIndexed { visibleIndex, column ->
-                            WorksheetHeader(
-                                column = column,
-                                width = widths.getValue(column.id),
-                                sortIndex =
-                                    config.sorts.indexOfFirst { it.target == column.valueRef },
-                                sort = config.sorts.firstOrNull { it.target == column.valueRef },
-                                grouped =
-                                    column.sourceColumn?.let { source ->
-                                        config.groups.any { it.column == source }
-                                    } == true,
-                                filtered =
-                                    column.sourceColumn?.let { source ->
-                                        config.filters.any { it.column == source }
-                                    } == true,
-                                canMoveLeft = visibleIndex > 0,
-                                canMoveRight = visibleIndex < visibleColumns.lastIndex,
-                                onSort = { onSort(column.valueRef) },
-                                onGroup = column.sourceColumn?.let { { onGroup(it) } },
-                                onFilter = column.sourceColumn?.let { { onFilter(it) } },
-                                onHide = {
-                                    onColumnLayoutChange(
-                                        setWorksheetColumnVisibility(
-                                            resolvedColumns.toWorksheetColumnLayout(),
-                                            column.valueRef,
-                                            visible = false,
-                                        )
-                                    )
-                                },
-                                onMoveLeft = {
-                                    onColumnLayoutChange(
-                                        moveVisibleWorksheetColumn(
-                                            resolvedColumns.toWorksheetColumnLayout(),
-                                            visibleIndex,
-                                            visibleIndex - 1,
-                                        )
-                                    )
-                                },
-                                onMoveRight = {
-                                    onColumnLayoutChange(
-                                        moveVisibleWorksheetColumn(
-                                            resolvedColumns.toWorksheetColumnLayout(),
-                                            visibleIndex,
-                                            visibleIndex + 1,
-                                        )
-                                    )
-                                },
-                            )
-                        }
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    if (preview.rows.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
+                        Row(
+                            modifier =
+                                Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
                         ) {
-                            Text(
-                                "No rows match the worksheet filters.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                            if (projection.hasRowLabels) {
+                                WorksheetGroupHeader()
+                            }
+                            visibleColumns.forEachIndexed { visibleIndex, column ->
+                                WorksheetHeader(
+                                    column = column,
+                                    width = widths.getValue(column.id),
+                                    sortIndex =
+                                        config.sorts.indexOfFirst { it.target == column.valueRef },
+                                    sort =
+                                        config.sorts.firstOrNull { it.target == column.valueRef },
+                                    grouped =
+                                        column.sourceColumn?.let { source ->
+                                            config.groups.any { it.column == source }
+                                        } == true,
+                                    filtered =
+                                        column.sourceColumn?.let { source ->
+                                            config.filters.any { it.column == source }
+                                        } == true,
+                                    canMoveLeft = visibleIndex > 0,
+                                    canMoveRight = visibleIndex < visibleColumns.lastIndex,
+                                    onSort = { onSort(column.valueRef) },
+                                    onGroup = column.sourceColumn?.let { { onGroup(it) } },
+                                    onFilter = column.sourceColumn?.let { { onFilter(it) } },
+                                    onHide = {
+                                        onColumnLayoutChange(
+                                            setWorksheetColumnVisibility(
+                                                resolvedColumns.toWorksheetColumnLayout(),
+                                                column.valueRef,
+                                                visible = false,
+                                            )
+                                        )
+                                    },
+                                    onMoveLeft = {
+                                        onColumnLayoutChange(
+                                            moveVisibleWorksheetColumn(
+                                                resolvedColumns.toWorksheetColumnLayout(),
+                                                visibleIndex,
+                                                visibleIndex - 1,
+                                            )
+                                        )
+                                    },
+                                    onMoveRight = {
+                                        onColumnLayoutChange(
+                                            moveVisibleWorksheetColumn(
+                                                resolvedColumns.toWorksheetColumnLayout(),
+                                                visibleIndex,
+                                                visibleIndex + 1,
+                                            )
+                                        )
+                                    },
+                                )
+                            }
                         }
-                    } else {
-                        LazyColumn(state = verticalScroll, modifier = Modifier.fillMaxSize()) {
-                            itemsIndexed(
-                                projection.rows,
-                                key = { _, row -> "${row.kind}:${row.pathKey}" },
-                            ) { index, row ->
-                                val background =
-                                    when {
-                                        row.kind != WorksheetRowKind.Detail ->
-                                            MaterialTheme.colorScheme.primaryContainer.copy(
-                                                alpha = 0.35f
-                                            )
-                                        index % 2 == 1 ->
-                                            MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                                                alpha = 0.55f
-                                            )
-                                        else -> MaterialTheme.colorScheme.surface
-                                    }
-                                Row(modifier = Modifier.background(background)) {
-                                    if (projection.hasRowLabels) {
-                                        WorksheetGroupCell(row, onToggleGroup)
-                                    }
-                                    visibleColumns.forEachIndexed { visibleIndex, column ->
-                                        val cell = row.cells[visibleIndex]
-                                        Box(
-                                            modifier =
-                                                Modifier.width(widths.getValue(column.id).dp)
-                                                    .height(34.dp)
-                                                    .padding(horizontal = 10.dp),
-                                            contentAlignment =
-                                                if (
-                                                    cell.value is ResultCell.IntegerCell ||
-                                                        cell.value is ResultCell.FloatCell
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        if (preview.rows.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "No rows match the worksheet filters.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        } else {
+                            LazyColumn(state = verticalScroll, modifier = Modifier.fillMaxSize()) {
+                                itemsIndexed(
+                                    projection.rows,
+                                    key = { _, row -> "${row.kind}:${row.pathKey}" },
+                                ) { index, row ->
+                                    val background =
+                                        when {
+                                            row.kind != WorksheetRowKind.Detail ->
+                                                MaterialTheme.colorScheme.primaryContainer.copy(
+                                                    alpha = 0.35f
                                                 )
-                                                    Alignment.CenterEnd
-                                                else Alignment.CenterStart,
-                                        ) {
-                                            WorksheetCellText(
-                                                cell.value,
-                                                cell.error,
-                                                column.numberFormat,
-                                            )
+                                            index % 2 == 1 ->
+                                                MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                                                    alpha = 0.55f
+                                                )
+                                            else -> MaterialTheme.colorScheme.surface
+                                        }
+                                    Row(modifier = Modifier.background(background)) {
+                                        if (projection.hasRowLabels) {
+                                            WorksheetGroupCell(row, onToggleGroup)
+                                        }
+                                        visibleColumns.forEachIndexed { visibleIndex, column ->
+                                            val cell = row.cells[visibleIndex]
+                                            Box(
+                                                modifier =
+                                                    Modifier.width(widths.getValue(column.id).dp)
+                                                        .height(34.dp)
+                                                        .padding(horizontal = 10.dp),
+                                                contentAlignment =
+                                                    if (
+                                                        cell.value is ResultCell.IntegerCell ||
+                                                            cell.value is ResultCell.FloatCell
+                                                    )
+                                                        Alignment.CenterEnd
+                                                    else Alignment.CenterStart,
+                                            ) {
+                                                WorksheetCellText(
+                                                    cell.value,
+                                                    cell.error,
+                                                    column.numberFormat,
+                                                )
+                                            }
                                         }
                                     }
+                                    HorizontalDivider(
+                                        color =
+                                            MaterialTheme.colorScheme.outlineVariant.copy(
+                                                alpha = 0.65f
+                                            )
+                                    )
                                 }
-                                HorizontalDivider(
-                                    color =
-                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-                                )
                             }
                         }
                     }
                 }
-                VerticalScrollbar(
-                    adapter = rememberScrollbarAdapter(verticalScroll),
-                    modifier =
-                        Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = 4.dp),
-                )
+                Box(modifier = Modifier.width(12.dp).fillMaxHeight()) {
+                    VerticalScrollbar(
+                        adapter = rememberScrollbarAdapter(verticalScroll),
+                        modifier = Modifier.align(Alignment.Center).fillMaxHeight(),
+                    )
+                }
             }
             HorizontalScrollbar(
                 adapter = rememberScrollbarAdapter(scroll),
-                modifier = Modifier.fillMaxWidth().padding(end = 8.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(end = 12.dp, bottom = 4.dp),
             )
         }
     }
@@ -897,92 +926,149 @@ private fun WorksheetCellText(value: ResultCell, error: String?, numberFormat: P
 
 @Composable
 private fun CalculationRail(
-    calculations: List<WorksheetCalculation>,
+    sample: QueryResult,
+    config: WorksheetConfig,
+    existing: WorksheetCalculation?,
+    editorRevision: Int,
     onAdd: () -> Unit,
     onEdit: (WorksheetCalculation) -> Unit,
+    onSave: (WorksheetCalculation, WorksheetSort?) -> Unit,
+    onCancel: () -> Unit,
     onRemove: (WorksheetCalculation) -> Unit,
     onCollapse: () -> Unit,
     modifier: Modifier,
 ) {
+    val scroll = rememberScrollState()
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Calculations",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier =
+                    Modifier.fillMaxSize()
+                        .verticalScroll(scroll)
+                        .padding(start = 14.dp, top = 14.dp, end = 20.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Calculations",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Add summaries, formulas, and windows.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = onCollapse) {
+                        Icon(
+                            Icons.Default.ChevronLeft,
+                            contentDescription = "Hide Worksheet sidebar",
+                        )
+                    }
+                }
+                PrimaryButton(
+                    onClick = onAdd,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        "Add summaries, formulas, and windows.",
-                        style = MaterialTheme.typography.labelSmall,
+                        "Add calculation",
+                        modifier = Modifier.padding(start = 5.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                key(existing?.id, editorRevision) {
+                    WorksheetCalculationEditor(
+                        sample = sample,
+                        config = config,
+                        existing = existing,
+                        onSave = onSave,
+                        onCancel = onCancel,
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text(
+                    "Saved calculations",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (config.calculations.isEmpty()) {
+                    Text(
+                        "Calculated columns will appear here and to the right of the sample fields.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onCollapse) {
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Hide calculations")
-                }
-            }
-            PrimaryButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                Text("Add calculation", modifier = Modifier.padding(start = 5.dp))
-            }
-            if (calculations.isEmpty()) {
-                Text(
-                    "Calculated columns will appear here and to the right of the sample fields.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            calculations.forEach { calculation ->
-                Surface(
-                    shape = RoundedCornerShape(3.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth().clickable { onEdit(calculation) },
-                ) {
-                    Row(
-                        modifier =
-                            Modifier.padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                config.calculations.forEach { calculation ->
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color =
+                            if (existing?.id == calculation.id) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            },
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth().clickable { onEdit(calculation) },
                     ) {
-                        Icon(
-                            Icons.Default.Functions,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                            tint = SafeDbTheme.colors.actionPrimary,
-                        )
-                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                            Text(
-                                calculation.label,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                calculationSummary(calculation),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                            )
-                        }
-                        IconButton(
-                            onClick = { onRemove(calculation) },
-                            modifier = Modifier.size(30.dp),
+                        Row(
+                            modifier =
+                                Modifier.padding(
+                                    start = 10.dp,
+                                    top = 8.dp,
+                                    bottom = 8.dp,
+                                    end = 3.dp,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Remove ${calculation.label}",
-                                modifier = Modifier.size(16.dp),
+                                Icons.Default.Functions,
+                                contentDescription = null,
+                                modifier = Modifier.size(17.dp),
+                                tint = SafeDbTheme.colors.actionPrimary,
                             )
+                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                                Text(
+                                    calculation.label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    calculationSummary(calculation),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                )
+                            }
+                            IconButton(
+                                onClick = { onRemove(calculation) },
+                                modifier = Modifier.size(30.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove ${calculation.label}",
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                     }
                 }
             }
+            VerticalScrollbar(
+                adapter = rememberScrollbarAdapter(scroll),
+                modifier =
+                    Modifier.align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(end = 4.dp, top = 4.dp, bottom = 4.dp),
+            )
         }
     }
 }
@@ -1164,12 +1250,12 @@ private fun WorksheetGroupDialog(
 }
 
 @Composable
-private fun WorksheetCalculationDialog(
+private fun WorksheetCalculationEditor(
     sample: QueryResult,
     config: WorksheetConfig,
     existing: WorksheetCalculation?,
     onSave: (WorksheetCalculation, WorksheetSort?) -> Unit,
-    onDismiss: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     var kind by remember { mutableStateOf(calculationKind(existing)) }
     var label by remember { mutableStateOf(existing?.label.orEmpty()) }
@@ -1209,8 +1295,39 @@ private fun WorksheetCalculationDialog(
     var formatKind by remember {
         mutableStateOf(existing?.numberFormat?.kind ?: NumberFormatKind.Auto)
     }
-    val id = existing?.id ?: "calc_${UUID.randomUUID().toString().take(8)}"
+    val id =
+        remember(existing?.id) { existing?.id ?: "calc_${UUID.randomUUID().toString().take(8)}" }
     val numericColumns = sample.columns.filter { isNumericType(it.dataType) }
+    val sourceOptions =
+        when (kind) {
+            CalculationKind.Aggregate ->
+                if (aggregateFn == WorksheetAggregateFn.Count) {
+                    listOf("") + numericColumns.map { it.name }
+                } else {
+                    numericColumns.map { it.name }
+                }
+            CalculationKind.Window ->
+                (numericColumns.map { it.name } +
+                        config.calculations.filterNot { it.id == id }.map { it.id })
+                    .distinct()
+            CalculationKind.RowFormula,
+            CalculationKind.GroupFormula -> emptyList()
+        }
+    val groupColumns = config.groups.map { it.column }
+    val reconciledSelection =
+        reconcileWorksheetCalculationEditorSelection(
+            WorksheetCalculationEditorSelection(source, groupColumn, grain),
+            sourceOptions =
+                sourceOptions.takeUnless {
+                    kind in setOf(CalculationKind.RowFormula, CalculationKind.GroupFormula)
+                },
+            groupColumns = groupColumns,
+        )
+    LaunchedEffect(sourceOptions, groupColumns) {
+        source = reconciledSelection.source
+        groupColumn = reconciledSelection.groupColumn
+        grain = reconciledSelection.grain
+    }
     val groupCalculations =
         config.calculations.filter {
             it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
@@ -1246,168 +1363,166 @@ private fun WorksheetCalculationDialog(
                 WorksheetWindowFn.PreviousValue,
                 WorksheetWindowFn.DifferenceFromPrevious,
             )
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Add calculation" else "Edit calculation") },
-        text = {
-            Column(
-                modifier = Modifier.widthIn(min = 560.dp, max = 620.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    CalculationKind.entries.forEach { choice ->
-                        SelectPill(choice.label, kind == choice) { kind = choice }
-                    }
-                }
-                OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                when (kind) {
-                    CalculationKind.RowFormula,
-                    CalculationKind.GroupFormula -> {
-                        OutlinedTextField(
-                            value = formula,
-                            onValueChange = { formula = it },
-                            label = { Text("Formula") },
-                            placeholder = { Text("[amount] - [discount]") },
-                            supportingText = {
-                                Text(
-                                    formulaValidation
-                                        ?: "Use field tokens, numbers, parentheses, and +, -, *, /."
-                                )
-                            },
-                            isError = formulaValidation != null,
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(
-                            "Insert field or calculation",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            formulaTokens.forEach { (token, display) ->
-                                SelectPill(display, false) {
-                                    formula += if (formula.isBlank()) "[$token]" else " [$token]"
-                                }
-                            }
-                        }
-                    }
-                    CalculationKind.Aggregate -> {
-                        SelectRow(
-                            "Summary",
-                            WorksheetAggregateFn.entries,
-                            aggregateFn,
-                            { it.name.toDisplayWords() },
-                        ) {
-                            aggregateFn = it
-                        }
-                        val aggregateSources =
-                            if (aggregateFn == WorksheetAggregateFn.Count)
-                                listOf("") + numericColumns.map { it.name }
-                            else numericColumns.map { it.name }
-                        SelectRow(
-                            "Value",
-                            aggregateSources,
-                            source,
-                            { if (it.isBlank()) "Rows" else displayColumnLabel(it) },
-                        ) {
-                            source = it
-                        }
-                    }
-                    CalculationKind.Window -> {
-                        SelectRow(
-                            "Quick calculation",
-                            WorksheetWindowFn.entries,
-                            windowFn,
-                            { it.name.toDisplayWords() },
-                        ) {
-                            windowFn = it
-                        }
-                        SelectRow(
-                            "Value",
-                            numericColumns.map { it.name } + config.calculations.map { it.id },
-                            source,
-                            { token ->
-                                config.calculations.firstOrNull { it.id == token }?.label
-                                    ?: displayColumnLabel(token)
-                            },
-                        ) {
-                            source = it
-                        }
-                        if (config.groups.isNotEmpty()) {
-                            SelectRow(
-                                "Calculate over",
-                                WorksheetGrain.entries,
-                                grain,
-                                {
-                                    if (it == WorksheetGrain.DetailRows) "Detail rows"
-                                    else "Group rows"
-                                },
-                            ) {
-                                grain = it
-                            }
-                        }
-                        if (
-                            windowFn in
-                                setOf(
-                                    WorksheetWindowFn.PreviousValue,
-                                    WorksheetWindowFn.DifferenceFromPrevious,
-                                )
-                        )
-                            OutlinedTextField(
-                                value = offset,
-                                onValueChange = { offset = it },
-                                label = { Text("Offset") },
-                                singleLine = true,
-                            )
-                        if (orderedWindow && config.sorts.isEmpty())
-                            Text(
-                                "The worksheet will be sorted by the selected value in ascending order.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                    }
-                }
-                if (kind != CalculationKind.RowFormula && config.groups.isNotEmpty()) {
-                    SelectRow(
-                        "Group level",
-                        listOf("") + config.groups.map { it.column },
-                        groupColumn,
-                        { if (it.isBlank()) "All / grand total" else displayColumnLabel(it) },
-                    ) {
-                        groupColumn = it
-                    }
-                }
-                SelectRow(
-                    "Format",
-                    NumberFormatKind.entries,
-                    formatKind,
-                    { it.name.toDisplayWords() },
+    val enabled =
+        label.isNotBlank() &&
+            when (kind) {
+                CalculationKind.RowFormula -> formula.isNotBlank() && formulaValidation == null
+                CalculationKind.GroupFormula ->
+                    formula.isNotBlank() &&
+                        formulaValidation == null &&
+                        groupColumn == reconciledSelection.groupColumn
+                CalculationKind.Aggregate ->
+                    source == reconciledSelection.source &&
+                        source in sourceOptions &&
+                        groupColumn == reconciledSelection.groupColumn
+                CalculationKind.Window ->
+                    source == reconciledSelection.source &&
+                        source in sourceOptions &&
+                        groupColumn == reconciledSelection.groupColumn &&
+                        grain == reconciledSelection.grain
+            }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            calculationTabOrder.forEach { choice ->
+                SelectPill(
+                    label = choice.tabLabel,
+                    selected = kind == choice,
+                    modifier = Modifier.weight(1f),
                 ) {
-                    formatKind = it
+                    kind = choice
                 }
             }
-        },
-        confirmButton = {
-            val enabled =
-                label.isNotBlank() &&
-                    when (kind) {
-                        CalculationKind.RowFormula,
-                        CalculationKind.GroupFormula ->
-                            formula.isNotBlank() && formulaValidation == null
-                        CalculationKind.Aggregate ->
-                            aggregateFn == WorksheetAggregateFn.Count || source.isNotBlank()
-                        CalculationKind.Window ->
-                            source.isNotBlank() && (!orderedWindow || source.isNotBlank())
+        }
+        Text(
+            if (existing == null) "New calculation" else "Editing ${existing.label}",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        CompactWorksheetInput(
+            value = label,
+            onValueChange = { label = it },
+            placeholder = "Name",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        when (kind) {
+            CalculationKind.RowFormula,
+            CalculationKind.GroupFormula -> {
+                CompactWorksheetInput(
+                    value = formula,
+                    onValueChange = { formula = it },
+                    placeholder = "Formula · [amount] - [discount]",
+                    supportingText =
+                        formulaValidation
+                            ?: "Use field tokens, numbers, parentheses, and +, -, *, /.",
+                    isError = formulaValidation != null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Insert field or calculation",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    formulaTokens.forEach { (token, display) ->
+                        SelectPill(display, false) {
+                            formula += if (formula.isBlank()) "[$token]" else " [$token]"
+                        }
                     }
+                }
+            }
+            CalculationKind.Aggregate -> {
+                SelectRow(
+                    "Summary",
+                    WorksheetAggregateFn.entries,
+                    aggregateFn,
+                    { it.name.toDisplayWords() },
+                ) {
+                    aggregateFn = it
+                }
+                SelectRow(
+                    "Value",
+                    sourceOptions,
+                    source,
+                    { if (it.isBlank()) "Rows" else displayColumnLabel(it) },
+                ) {
+                    source = it
+                }
+            }
+            CalculationKind.Window -> {
+                SelectRow(
+                    "Quick calculation",
+                    WorksheetWindowFn.entries,
+                    windowFn,
+                    { it.name.toDisplayWords() },
+                ) {
+                    windowFn = it
+                }
+                SelectRow(
+                    "Value",
+                    sourceOptions,
+                    source,
+                    { token ->
+                        config.calculations.firstOrNull { it.id == token }?.label
+                            ?: displayColumnLabel(token)
+                    },
+                ) {
+                    source = it
+                }
+                if (config.groups.isNotEmpty()) {
+                    SelectRow(
+                        "Calculate over",
+                        WorksheetGrain.entries,
+                        grain,
+                        { if (it == WorksheetGrain.DetailRows) "Detail rows" else "Group rows" },
+                    ) {
+                        grain = it
+                    }
+                }
+                if (
+                    windowFn in
+                        setOf(
+                            WorksheetWindowFn.PreviousValue,
+                            WorksheetWindowFn.DifferenceFromPrevious,
+                        )
+                )
+                    CompactWorksheetInput(
+                        value = offset,
+                        onValueChange = { offset = it },
+                        placeholder = "Offset",
+                        modifier = Modifier.width(120.dp),
+                    )
+                if (orderedWindow && config.sorts.isEmpty())
+                    Text(
+                        "The worksheet will be sorted by the selected value in ascending order.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+            }
+        }
+        if (kind != CalculationKind.RowFormula && config.groups.isNotEmpty()) {
+            SelectRow(
+                "Group level",
+                listOf("") + config.groups.map { it.column },
+                groupColumn,
+                { if (it.isBlank()) "All / grand total" else displayColumnLabel(it) },
+            ) {
+                groupColumn = it
+            }
+        }
+        SelectRow("Format", NumberFormatKind.entries, formatKind, { it.name.toDisplayWords() }) {
+            formatKind = it
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        ) {
+            SecondaryButton(onClick = onCancel) { Text("Cancel") }
             PrimaryButton(
                 onClick = {
                     val calculation =
@@ -1475,9 +1590,62 @@ private fun WorksheetCalculationDialog(
             ) {
                 Text(if (existing == null) "Add" else "Apply")
             }
-        },
-        dismissButton = { SecondaryButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+        }
+    }
+}
+
+@Composable
+private fun CompactWorksheetInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+    supportingText: String? = null,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val borderColor =
+            if (isError) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.outlineVariant
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle =
+                MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+            cursorBrush = SolidColor(SafeDbTheme.colors.actionPrimary),
+            modifier =
+                modifier
+                    .height(38.dp)
+                    .border(1.dp, borderColor, RoundedCornerShape(3.dp))
+                    .padding(horizontal = 10.dp, vertical = 9.dp),
+            decorationBox = { innerTextField ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) {
+                        Text(
+                            placeholder,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+        supportingText?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    if (isError) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable
@@ -1502,16 +1670,48 @@ private fun <T> SelectRow(
 }
 
 @Composable
-private fun SelectPill(label: String, selected: Boolean, onClick: () -> Unit) {
-    SelectablePill(label, selected, onClick)
+private fun SelectPill(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    SelectablePill(label, selected, onClick, modifier)
 }
 
-private enum class CalculationKind(val label: String) {
-    RowFormula("Row formula"),
+internal data class WorksheetCalculationEditorSelection(
+    val source: String,
+    val groupColumn: String,
+    val grain: WorksheetGrain,
+)
+
+internal fun reconcileWorksheetCalculationEditorSelection(
+    selection: WorksheetCalculationEditorSelection,
+    sourceOptions: List<String>?,
+    groupColumns: List<String>,
+): WorksheetCalculationEditorSelection =
+    selection.copy(
+        source =
+            sourceOptions?.let { selection.source.takeIf { source -> source in it }.orEmpty() }
+                ?: selection.source,
+        groupColumn = selection.groupColumn.takeIf { it in groupColumns }.orEmpty(),
+        grain = if (groupColumns.isEmpty()) WorksheetGrain.DetailRows else selection.grain,
+    )
+
+private enum class CalculationKind(val tabLabel: String) {
+    RowFormula("Row"),
     Aggregate("Summary"),
-    GroupFormula("Group formula"),
-    Window("Quick calculation"),
+    GroupFormula("Group"),
+    Window("Quick"),
 }
+
+private val calculationTabOrder =
+    listOf(
+        CalculationKind.Window,
+        CalculationKind.RowFormula,
+        CalculationKind.Aggregate,
+        CalculationKind.GroupFormula,
+    )
 
 private fun calculationKind(calculation: WorksheetCalculation?): CalculationKind =
     when (calculation) {

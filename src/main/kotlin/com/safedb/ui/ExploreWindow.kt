@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.HorizontalDivider
@@ -80,6 +81,9 @@ fun ExploreWindowContent(
         }
     val stale = viewModel.isStale(currentSpec)
     var drillResult by remember { mutableStateOf<QueryResult?>(null) }
+    var pivotRailVisible by remember { mutableStateOf(true) }
+    var worksheetRailVisible by remember { mutableStateOf(true) }
+    var visualizationRailVisible by remember { mutableStateOf(true) }
 
     drillResult?.let { result ->
         ExploreDrillDialog(
@@ -140,8 +144,7 @@ fun ExploreWindowContent(
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            ExploreSampleWarnings(
-                truncated = session.sample.truncated,
+            ExploreStaleSampleWarning(
                 stale = stale,
                 sampleRefreshEnabled = sampleRefreshEnabled,
                 onRefreshSample = onRefreshSample,
@@ -149,15 +152,20 @@ fun ExploreWindowContent(
             when (viewModel.workspace.activeMode) {
                 ExploreMode.Pivot ->
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        ExploreConfigPanel(
-                            config = config,
-                            fields = fields,
-                            onConfigChange = { next -> viewModel.updateConfig { next } },
-                            memberOptionsFor = viewModel::memberOptions,
-                            onReset = viewModel::resetConfig,
-                            resetEnabled = !viewModel.isDefaultConfig(),
-                            modifier = Modifier.width(320.dp).fillMaxHeight(),
-                        )
+                        if (pivotRailVisible) {
+                            ExploreConfigPanel(
+                                config = config,
+                                fields = fields,
+                                onConfigChange = { next -> viewModel.updateConfig { next } },
+                                memberOptionsFor = viewModel::memberOptions,
+                                onReset = viewModel::resetConfig,
+                                resetEnabled = !viewModel.isDefaultConfig(),
+                                onHide = { pivotRailVisible = false },
+                                modifier = Modifier.width(320.dp).fillMaxHeight(),
+                            )
+                        } else {
+                            CollapsedExploreRail(ExploreMode.Pivot) { pivotRailVisible = true }
+                        }
                         Box(
                             modifier =
                                 Modifier.width(1.dp)
@@ -209,6 +217,10 @@ fun ExploreWindowContent(
                             onConfigChange = { next -> viewModel.updateWorksheet { next } },
                             onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
                             onToggleGroup = viewModel::toggleWorksheetGroup,
+                            configReplacementRevision =
+                                viewModel.worksheetConfigReplacementRevision,
+                            railVisible = worksheetRailVisible,
+                            onRailVisibilityChange = { worksheetRailVisible = it },
                             railFooter = { collapsed ->
                                 val enabled =
                                     !viewModel.worksheetPreviewState.loading &&
@@ -246,17 +258,26 @@ fun ExploreWindowContent(
                 ExploreMode.Visualization ->
                     Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            VisualizationConfigPanel(
-                                config = viewModel.visualizationConfig,
-                                sample = session.sample,
-                                tables = session.baseSpec.tables,
-                                fields = fields,
-                                memberOptionsFor = viewModel::memberOptions,
-                                onConfigChange = { next -> viewModel.updateVisualization { next } },
-                                onApplyTemplate = viewModel::applyVisualizationTemplate,
-                                onReset = viewModel::resetVisualization,
-                                modifier = Modifier.width(320.dp).fillMaxHeight(),
-                            )
+                            if (visualizationRailVisible) {
+                                VisualizationConfigPanel(
+                                    config = viewModel.visualizationConfig,
+                                    sample = session.sample,
+                                    tables = session.baseSpec.tables,
+                                    fields = fields,
+                                    memberOptionsFor = viewModel::memberOptions,
+                                    onConfigChange = { next ->
+                                        viewModel.updateVisualization { next }
+                                    },
+                                    onApplyTemplate = viewModel::applyVisualizationTemplate,
+                                    onReset = viewModel::resetVisualization,
+                                    onHide = { visualizationRailVisible = false },
+                                    modifier = Modifier.width(320.dp).fillMaxHeight(),
+                                )
+                            } else {
+                                CollapsedExploreRail(ExploreMode.Visualization) {
+                                    visualizationRailVisible = true
+                                }
+                            }
                             Box(
                                 modifier =
                                     Modifier.width(1.dp)
@@ -319,6 +340,24 @@ fun ExploreWindowContent(
 }
 
 @Composable
+private fun CollapsedExploreRail(mode: ExploreMode, onShow: () -> Unit) {
+    Surface(
+        modifier = Modifier.width(48.dp).fillMaxHeight(),
+        color = SafeDbTheme.colors.workspacePanel,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            ModeIcon(mode, Modifier.padding(top = 14.dp).size(18.dp))
+            IconButton(onClick = onShow) {
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = "Show ${mode.displayName()} sidebar",
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ExploreModeSelector(
     selected: ExploreMode,
     onSelect: (ExploreMode) -> Unit,
@@ -359,33 +398,25 @@ private fun ExploreModeSelector(
 }
 
 @Composable
-private fun ExploreSampleWarnings(
-    truncated: Boolean,
+private fun ExploreStaleSampleWarning(
     stale: Boolean,
     sampleRefreshEnabled: Boolean,
     onRefreshSample: (() -> Unit)?,
 ) {
-    if (!truncated && !stale) return
+    if (!stale) return
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-        if (truncated)
-            MessageBanner(
-                text = "You’re viewing a sample, so totals may not represent the full result.",
-                kind = BannerKind.WARNING,
-            )
-        if (stale) {
-            MessageBanner(
-                text =
-                    if (sampleRefreshEnabled)
-                        "The builder query changed. Refresh the Explore sample from the latest Builder results."
-                    else
-                        "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
-                kind = BannerKind.WARNING,
-                action =
-                    if (sampleRefreshEnabled && onRefreshSample != null) {
-                        { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
-                    } else null,
-            )
-        }
+        MessageBanner(
+            text =
+                if (sampleRefreshEnabled)
+                    "The builder query changed. Refresh the Explore sample from the latest Builder results."
+                else
+                    "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
+            kind = BannerKind.WARNING,
+            action =
+                if (sampleRefreshEnabled && onRefreshSample != null) {
+                    { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
+                } else null,
+        )
     }
 }
 

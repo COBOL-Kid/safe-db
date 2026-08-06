@@ -99,6 +99,9 @@ class ExploreViewModel(
     var appliedRecipeId by mutableStateOf<String?>(null)
         private set
 
+    var worksheetConfigReplacementRevision by mutableStateOf(0)
+        private set
+
     var pendingRecipe by mutableStateOf<ExploreRecipe?>(null)
         private set
 
@@ -183,6 +186,8 @@ class ExploreViewModel(
     }
 
     fun applyRecipe(recipe: ExploreRecipe) {
+        val worksheetWasReplaced =
+            recipe.worksheet?.let { replacement -> replacement != workspace.worksheet } == true
         workspace =
             workspace.copy(
                 activeMode = recipe.defaultMode,
@@ -190,6 +195,7 @@ class ExploreViewModel(
                 worksheet = recipe.worksheet ?: workspace.worksheet,
                 visualization = recipe.visualization ?: workspace.visualization,
             )
+        if (worksheetWasReplaced) worksheetConfigReplacementRevision += 1
         dirtyModes += setOf(ExploreMode.Pivot, ExploreMode.Worksheet, ExploreMode.Visualization)
         refreshMode(workspace.activeMode)
         appliedRecipeId = recipe.id
