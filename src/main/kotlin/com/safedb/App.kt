@@ -168,7 +168,10 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
                                 appState.setActiveConnection(
                                     connection.id,
                                     recipe.querySpec?.let(::resolveQuerySchemaSelection)
-                                        ?: resolveConnectionSchemaSelection(connection.id, settings),
+                                        ?: resolveConnectionSchemaSelection(
+                                            connection.id,
+                                            settings,
+                                        ),
                                 )
                                 viewModel.closeExplore()
                                 viewModel.runRecipe(connection, recipe)

@@ -60,9 +60,8 @@ private fun replaceFile(source: Path, destination: Path) {
     )
 }
 
-private fun isPosix(): Boolean =
-    runCatching {
-            Files.getPosixFilePermissions(Path.of("."))
-            true
-        }
-        .getOrDefault(false)
+private fun isPosix(): Boolean = runCatching {
+    Files.getPosixFilePermissions(Path.of("."))
+    true
+}
+    .getOrDefault(false)

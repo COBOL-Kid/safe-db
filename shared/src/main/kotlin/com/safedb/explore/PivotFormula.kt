@@ -6,11 +6,13 @@ import java.math.MathContext
 data class FormulaResult(val value: BigDecimal?, val error: String? = null)
 
 fun evaluatePivotFormula(formula: String, values: Map<String, BigDecimal?>): FormulaResult =
-    runCatching { PivotFormulaParser(formula, values).parse() }
-        .fold(
-            onSuccess = { FormulaResult(it) },
-            onFailure = { FormulaResult(null, it.message ?: "Invalid formula") },
-        )
+    runCatching {
+        PivotFormulaParser(formula, values).parse()
+    }
+    .fold(
+        onSuccess = { FormulaResult(it) },
+        onFailure = { FormulaResult(null, it.message ?: "Invalid formula") },
+    )
 
 private class PivotFormulaParser(
     private val source: String,

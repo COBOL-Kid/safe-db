@@ -214,7 +214,12 @@ internal fun visualizationGeometry(
                 regions +=
                     VisualizationHitRegion(
                         mark.id,
-                        Rect(point.x - radius, point.y - radius, point.x + radius, point.y + radius),
+                        Rect(
+                            point.x - radius,
+                            point.y - radius,
+                            point.x + radius,
+                            point.y + radius,
+                        ),
                     )
             }
         }

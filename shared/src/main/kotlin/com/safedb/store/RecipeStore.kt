@@ -62,10 +62,10 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
         val document = readJsonList(path) ?: return emptyList()
         return document.entries.mapNotNull { element ->
             runCatching {
-                    SafeDbJson.lenient
-                        .decodeFromJsonElement(ExploreRecipe.serializer(), element)
-                        .validate()
-                }
+                SafeDbJson.lenient
+                    .decodeFromJsonElement(ExploreRecipe.serializer(), element)
+                    .validate()
+            }
                 .getOrNull()
         }
     }

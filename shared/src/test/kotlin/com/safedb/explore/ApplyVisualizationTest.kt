@@ -145,7 +145,10 @@ class ApplyVisualizationTest {
         val incomplete =
             applyVisualization(
                 sample(),
-                VisualizationConfig(chartType = ChartType.Scatter, x = VisualizationField("status")),
+                VisualizationConfig(
+                    chartType = ChartType.Scatter,
+                    x = VisualizationField("status"),
+                ),
             )
         assertFalse(incomplete.ready)
         assertTrue(incomplete.blockingMessage.orEmpty().contains("numeric X"))

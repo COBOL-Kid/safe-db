@@ -329,7 +329,10 @@ private fun CompactSelectSurface(
         shape = RoundedCornerShape(2.dp),
         color = MaterialTheme.colorScheme.surface,
         border =
-            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant,
+            ),
     ) {
         Row(
             modifier = Modifier.padding(start = 8.dp, end = 4.dp),

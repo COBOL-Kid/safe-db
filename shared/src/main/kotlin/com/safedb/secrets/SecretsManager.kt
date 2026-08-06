@@ -113,15 +113,16 @@ object SecretsManager {
                         "Password not found for this connection. Delete and add the connection again to store the password."
                     )
                 )
-        val record =
-            runCatching { json.decodeFromString<BoundCredential>(raw) }
-                .getOrElse {
-                    return Result.failure(
-                        IllegalStateException(
-                            "This credential predates endpoint binding. Delete and add the connection again before use."
-                        )
+        val record = runCatching {
+            json.decodeFromString<BoundCredential>(raw)
+        }
+            .getOrElse {
+                return Result.failure(
+                    IllegalStateException(
+                        "This credential predates endpoint binding. Delete and add the connection again before use."
                     )
-                }
+                )
+            }
         if (record.version != 1 || record.fingerprint != def.credentialFingerprint()) {
             return Result.failure(
                 IllegalStateException(
@@ -135,19 +136,18 @@ object SecretsManager {
 
     fun savePasswordForDefinition(def: ConnectionDef, password: String): Result<Unit> =
         runCatching {
-                val record = BoundCredential(1, def.credentialFingerprint(), password)
-                writeToStore(def.id, json.encodeToString(BoundCredential.serializer(), record))
-                CredentialSession.invalidate(def.id)
-                CredentialSession.put("${def.id}:${def.credentialFingerprint()}", password)
-            }
-            .mapError(::formatSaveCredentialError)
+            val record = BoundCredential(1, def.credentialFingerprint(), password)
+            writeToStore(def.id, json.encodeToString(BoundCredential.serializer(), record))
+            CredentialSession.invalidate(def.id)
+            CredentialSession.put("${def.id}:${def.credentialFingerprint()}", password)
+        }
+        .mapError(::formatSaveCredentialError)
 
-    fun savePassword(connectionId: String, password: String): Result<Unit> =
-        runCatching {
-                writeToStore(connectionId, password)
-                CredentialSession.put(connectionId, password)
-            }
-            .mapError(::formatSaveCredentialError)
+    fun savePassword(connectionId: String, password: String): Result<Unit> = runCatching {
+        writeToStore(connectionId, password)
+        CredentialSession.put(connectionId, password)
+    }
+        .mapError(::formatSaveCredentialError)
 
     fun getPassword(connectionId: String): Result<String?> {
         CredentialSession.get(connectionId)?.let {

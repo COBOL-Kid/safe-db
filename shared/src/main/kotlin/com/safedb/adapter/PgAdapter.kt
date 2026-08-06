@@ -145,30 +145,29 @@ object PgAdapter {
                         readString(rs, "referenced_column"),
                     )
                 }
-            val tableSizes =
-                runCatching {
-                        conn
-                            .metadataRows(
-                                """
+            val tableSizes = runCatching {
+                conn
+                    .metadataRows(
+                        """
                     SELECT n.nspname AS table_schema, c.relname AS table_name, c.reltuples
                     FROM pg_class c
                     JOIN pg_namespace n ON n.oid = c.relnamespace
                     WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN $excluded
                     """
-                                    .trimIndent()
-                            ) { rs ->
-                                MetadataTableKey(
-                                    readString(rs, "table_schema"),
-                                    readString(rs, "table_name"),
-                                ) to
-                                    normalizeTableSize(
-                                        (rs.getObject("reltuples") as? Number)?.toDouble(),
-                                        EvidenceConfidence.Low,
-                                    )
-                            }
-                            .toMap()
+                            .trimIndent()
+                    ) { rs ->
+                        MetadataTableKey(
+                            readString(rs, "table_schema"),
+                            readString(rs, "table_name"),
+                        ) to
+                            normalizeTableSize(
+                                (rs.getObject("reltuples") as? Number)?.toDouble(),
+                                EvidenceConfidence.Low,
+                            )
                     }
-                    .getOrDefault(emptyMap())
+                    .toMap()
+            }
+                .getOrDefault(emptyMap())
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }

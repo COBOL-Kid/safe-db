@@ -840,8 +840,10 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             NumberFormatKind.Number -> DecimalFormat(pattern, symbols).format(decimal)
             NumberFormatKind.Percent -> DecimalFormat("$pattern%", symbols).format(decimal)
             NumberFormatKind.Currency -> {
-                val currency =
-                    runCatching { Currency.getInstance(configured.currencyCode) }.getOrNull()
+                val currency = runCatching {
+                    Currency.getInstance(configured.currencyCode)
+                }
+                    .getOrNull()
                 val formatter = DecimalFormat("¤$pattern", symbols)
                 currency?.let { formatter.currency = it }
                 formatter.format(decimal)
