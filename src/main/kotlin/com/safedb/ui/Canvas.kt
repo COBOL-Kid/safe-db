@@ -1,18 +1,23 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -272,6 +277,7 @@ fun Canvas(
         Box(
             modifier =
                 Modifier.fillMaxSize()
+                    .padding(end = 8.dp, bottom = 8.dp)
                     .verticalScroll(verticalScroll)
                     .horizontalScroll(horizontalScroll)
         ) {
@@ -516,6 +522,15 @@ fun Canvas(
                 }
             }
         }
+
+        HorizontalScrollbar(
+            adapter = rememberScrollbarAdapter(horizontalScroll),
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
+        )
+        VerticalScrollbar(
+            adapter = rememberScrollbarAdapter(verticalScroll),
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(bottom = 8.dp),
+        )
 
         if (queryViewModel.canvasTables.isNotEmpty()) {
             Text(
