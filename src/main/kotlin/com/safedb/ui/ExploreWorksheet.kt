@@ -59,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -1297,6 +1298,36 @@ private fun WorksheetCalculationEditor(
     val id =
         remember(existing?.id) { existing?.id ?: "calc_${UUID.randomUUID().toString().take(8)}" }
     val numericColumns = sample.columns.filter { isNumericType(it.dataType) }
+    val sourceOptions =
+        when (kind) {
+            CalculationKind.Aggregate ->
+                if (aggregateFn == WorksheetAggregateFn.Count) {
+                    listOf("") + numericColumns.map { it.name }
+                } else {
+                    numericColumns.map { it.name }
+                }
+            CalculationKind.Window ->
+                (numericColumns.map { it.name } +
+                        config.calculations.filterNot { it.id == id }.map { it.id })
+                    .distinct()
+            CalculationKind.RowFormula,
+            CalculationKind.GroupFormula -> emptyList()
+        }
+    val groupColumns = config.groups.map { it.column }
+    val reconciledSelection =
+        reconcileWorksheetCalculationEditorSelection(
+            WorksheetCalculationEditorSelection(source, groupColumn, grain),
+            sourceOptions =
+                sourceOptions.takeUnless {
+                    kind in setOf(CalculationKind.RowFormula, CalculationKind.GroupFormula)
+                },
+            groupColumns = groupColumns,
+        )
+    LaunchedEffect(sourceOptions, groupColumns) {
+        source = reconciledSelection.source
+        groupColumn = reconciledSelection.groupColumn
+        grain = reconciledSelection.grain
+    }
     val groupCalculations =
         config.calculations.filter {
             it is WorksheetCalculation.Aggregate || it is WorksheetCalculation.GroupFormula
@@ -1335,11 +1366,20 @@ private fun WorksheetCalculationEditor(
     val enabled =
         label.isNotBlank() &&
             when (kind) {
-                CalculationKind.RowFormula,
-                CalculationKind.GroupFormula -> formula.isNotBlank() && formulaValidation == null
+                CalculationKind.RowFormula -> formula.isNotBlank() && formulaValidation == null
+                CalculationKind.GroupFormula ->
+                    formula.isNotBlank() &&
+                        formulaValidation == null &&
+                        groupColumn == reconciledSelection.groupColumn
                 CalculationKind.Aggregate ->
-                    aggregateFn == WorksheetAggregateFn.Count || source.isNotBlank()
-                CalculationKind.Window -> source.isNotBlank()
+                    source == reconciledSelection.source &&
+                        source in sourceOptions &&
+                        groupColumn == reconciledSelection.groupColumn
+                CalculationKind.Window ->
+                    source == reconciledSelection.source &&
+                        source in sourceOptions &&
+                        groupColumn == reconciledSelection.groupColumn &&
+                        grain == reconciledSelection.grain
             }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
@@ -1405,13 +1445,9 @@ private fun WorksheetCalculationEditor(
                 ) {
                     aggregateFn = it
                 }
-                val aggregateSources =
-                    if (aggregateFn == WorksheetAggregateFn.Count)
-                        listOf("") + numericColumns.map { it.name }
-                    else numericColumns.map { it.name }
                 SelectRow(
                     "Value",
-                    aggregateSources,
+                    sourceOptions,
                     source,
                     { if (it.isBlank()) "Rows" else displayColumnLabel(it) },
                 ) {
@@ -1429,7 +1465,7 @@ private fun WorksheetCalculationEditor(
                 }
                 SelectRow(
                     "Value",
-                    numericColumns.map { it.name } + config.calculations.map { it.id },
+                    sourceOptions,
                     source,
                     { token ->
                         config.calculations.firstOrNull { it.id == token }?.label
@@ -1642,6 +1678,25 @@ private fun SelectPill(
 ) {
     SelectablePill(label, selected, onClick, modifier)
 }
+
+internal data class WorksheetCalculationEditorSelection(
+    val source: String,
+    val groupColumn: String,
+    val grain: WorksheetGrain,
+)
+
+internal fun reconcileWorksheetCalculationEditorSelection(
+    selection: WorksheetCalculationEditorSelection,
+    sourceOptions: List<String>?,
+    groupColumns: List<String>,
+): WorksheetCalculationEditorSelection =
+    selection.copy(
+        source =
+            sourceOptions?.let { selection.source.takeIf { source -> source in it }.orEmpty() }
+                ?: selection.source,
+        groupColumn = selection.groupColumn.takeIf { it in groupColumns }.orEmpty(),
+        grain = if (groupColumns.isEmpty()) WorksheetGrain.DetailRows else selection.grain,
+    )
 
 private enum class CalculationKind(val tabLabel: String) {
     RowFormula("Row"),
