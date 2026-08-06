@@ -144,8 +144,7 @@ fun ExploreWindowContent(
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            ExploreSampleWarnings(
-                truncated = session.sample.truncated,
+            ExploreStaleSampleWarning(
                 stale = stale,
                 sampleRefreshEnabled = sampleRefreshEnabled,
                 onRefreshSample = onRefreshSample,
@@ -397,33 +396,25 @@ private fun ExploreModeSelector(
 }
 
 @Composable
-private fun ExploreSampleWarnings(
-    truncated: Boolean,
+private fun ExploreStaleSampleWarning(
     stale: Boolean,
     sampleRefreshEnabled: Boolean,
     onRefreshSample: (() -> Unit)?,
 ) {
-    if (!truncated && !stale) return
+    if (!stale) return
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-        if (truncated)
-            MessageBanner(
-                text = "You’re viewing a sample, so totals may not represent the full result.",
-                kind = BannerKind.WARNING,
-            )
-        if (stale) {
-            MessageBanner(
-                text =
-                    if (sampleRefreshEnabled)
-                        "The builder query changed. Refresh the Explore sample from the latest Builder results."
-                    else
-                        "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
-                kind = BannerKind.WARNING,
-                action =
-                    if (sampleRefreshEnabled && onRefreshSample != null) {
-                        { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
-                    } else null,
-            )
-        }
+        MessageBanner(
+            text =
+                if (sampleRefreshEnabled)
+                    "The builder query changed. Refresh the Explore sample from the latest Builder results."
+                else
+                    "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
+            kind = BannerKind.WARNING,
+            action =
+                if (sampleRefreshEnabled && onRefreshSample != null) {
+                    { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
+                } else null,
+        )
     }
 }
 
