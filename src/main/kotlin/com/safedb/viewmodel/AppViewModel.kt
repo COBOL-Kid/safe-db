@@ -31,6 +31,7 @@ class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = D
     val recipes = RecipesViewModel(service, scope)
     val query = QueryViewModel(service, scope)
     val schema = SchemaViewModel(service, scope)
+    internal val schemaMap = SchemaMapViewModel()
 
     private val _explore = MutableStateFlow<ExploreViewModel?>(null)
     val explore: StateFlow<ExploreViewModel?> = _explore.asStateFlow()

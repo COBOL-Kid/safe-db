@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
@@ -102,6 +103,12 @@ fun CommandPalette(
                 Icons.Filled.Build,
             ) {
                 appState.navigate(AppRoute.Builder)
+                onDismiss()
+            }
+        )
+        add(
+            PaletteCommand("nav-map", "Go to Map", "Explore database schema", Icons.Filled.Hub) {
+                appState.navigate(AppRoute.Map)
                 onDismiss()
             }
         )

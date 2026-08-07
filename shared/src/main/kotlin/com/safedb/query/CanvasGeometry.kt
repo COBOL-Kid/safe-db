@@ -270,7 +270,7 @@ fun routeJoinEdge(
         tableBounds(it).expanded(scaled(JOIN_ROUTE_MARGIN, routeScale))
     }
 
-    val middle = routeOrthogonal(sourceExit, targetExit, obstacles)
+    val middle = routeOrthogonalPath(sourceExit, targetExit, obstacles)
     val points = mutableListOf(sourcePort.point)
     points.addIfDistinct(sourceSidePoint)
     points.addIfDistinct(sourceExit)
@@ -331,16 +331,17 @@ private fun distanceToSegmentSquared(
     return pointDx * pointDx + pointDy * pointDy
 }
 
-private fun routeOrthogonal(
+fun routeOrthogonalPath(
     start: CanvasPoint,
     target: CanvasPoint,
     obstacles: List<CanvasRect>,
+    preferredMiddleX: Float = (start.x + target.x) / 2f,
 ): List<CanvasPoint> {
     val direct =
         listOf(
             start,
-            CanvasPoint((start.x + target.x) / 2f, start.y),
-            CanvasPoint((start.x + target.x) / 2f, target.y),
+            CanvasPoint(preferredMiddleX, start.y),
+            CanvasPoint(preferredMiddleX, target.y),
             target,
         )
     if (direct.isClear(obstacles)) return direct

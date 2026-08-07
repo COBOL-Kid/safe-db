@@ -149,8 +149,8 @@ jobs:
         run: |
           rm -rf /tmp/safedb-preview
           xvfb-run -a ./gradlew renderPreview --rerun-tasks
-          test "$(find /tmp/safedb-preview -name '*.png' -type f -size +0c | wc -l | tr -d ' ')" = "34"
-          for image in /tmp/safedb-preview/{home,connections,connections-new,connections-edit,builder,builder-collapsed,history}-{light,dark}.png; do
+          test "$(find /tmp/safedb-preview -name '*.png' -type f -size +0c | wc -l | tr -d ' ')" = "36"
+          for image in /tmp/safedb-preview/{home,connections,connections-new,connections-edit,builder,builder-collapsed,map,history}-{light,dark}.png; do
             test "$(identify -format '%wx%h' "$image")" = "1280x832"
           done
           for image in /tmp/safedb-preview/connections-new-narrow-{light,dark}.png; do
