@@ -134,7 +134,7 @@ import com.safedb.viewmodel.SchemaMapViewModel
 import com.safedb.viewmodel.SchemaViewModel
 import com.safedb.viewmodel.schemaMapAxisScrollState
 import com.safedb.viewmodel.schemaMapConstrainedPan
-import com.safedb.viewmodel.schemaMapPanForScrollDelta
+import com.safedb.viewmodel.schemaMapPanForScrollEvent
 import kotlin.math.roundToInt
 
 @Composable
@@ -587,8 +587,9 @@ private fun SchemaMapCanvas(
     val renderHeight =
         ((contentBounds.height + renderPaddingPx * 2f) / density.density).coerceAtLeast(1f)
 
-    LaunchedEffect(connectionId, selectedSchema, viewport, contextReady) {
-        if (viewport.width > 0 && viewport.height > 0) {
+    val viewportReady = viewport.width > 0 && viewport.height > 0
+    LaunchedEffect(connectionId, selectedSchema, contextReady, viewportReady) {
+        if (viewportReady && viewModel.consumeInitialFitRequest(connectionId, selectedSchema)) {
             viewModel.fit(contentBounds, viewportSize)
         }
     }
@@ -610,21 +611,23 @@ private fun SchemaMapCanvas(
                 .onPointerEvent(PointerEventType.Scroll) { event ->
                     event.changes.firstOrNull()?.let { change ->
                         if (
-                            event.keyboardModifiers.isCtrlPressed ||
-                                event.keyboardModifiers.isMetaPressed
+                            !change.isConsumed &&
+                                (event.keyboardModifiers.isCtrlPressed ||
+                                    event.keyboardModifiers.isMetaPressed)
                         ) {
                             val delta = if (change.scrollDelta.y < 0f) 0.1f else -0.1f
                             viewModel.setZoom(viewModel.zoom + delta, change.position)
                             change.consume()
                         } else {
                             val target =
-                                schemaMapPanForScrollDelta(
+                                schemaMapPanForScrollEvent(
                                     horizontal = horizontalScroll,
                                     vertical = verticalScroll,
                                     delta = change.scrollDelta,
                                     shiftPressed = event.keyboardModifiers.isShiftPressed,
+                                    consumed = change.isConsumed,
                                 )
-                            if (target != viewModel.pan) {
+                            if (target != null && target != viewModel.pan) {
                                 viewModel.updatePan(target)
                                 change.consume()
                             }

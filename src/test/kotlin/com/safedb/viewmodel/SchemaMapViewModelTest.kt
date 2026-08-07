@@ -107,4 +107,23 @@ class SchemaMapViewModelTest {
         assertEquals(1f, viewModel.zoom)
         assertEquals(Offset(SCHEMA_MAP_DEFAULT_INSET, SCHEMA_MAP_DEFAULT_INSET), viewModel.pan)
     }
+
+    @Test
+    fun initialFitIsRequestedOncePerContextActivation() {
+        val viewModel = SchemaMapViewModel()
+
+        viewModel.activate("c1", "public")
+        assertTrue(viewModel.consumeInitialFitRequest("c1", "public"))
+        assertFalse(viewModel.consumeInitialFitRequest("c1", "public"))
+
+        viewModel.updatePan(Offset(-120f, -80f))
+        viewModel.setZoom(1.4f)
+        viewModel.activate("c1", "public")
+        assertFalse(viewModel.consumeInitialFitRequest("c1", "public"))
+        assertEquals(1.4f, viewModel.zoom)
+
+        viewModel.activate("c1", "reporting")
+        assertFalse(viewModel.consumeInitialFitRequest("c1", "public"))
+        assertTrue(viewModel.consumeInitialFitRequest("c1", "reporting"))
+    }
 }

@@ -227,6 +227,38 @@ class SchemaMapGraphTest {
     }
 
     @Test
+    fun dottedIdentifiersRemainDistinctRelationshipTargets() {
+        val localDottedTable =
+            table("placeholder", listOf(column("id"))).copy(schema = "a", name = "b.c")
+        val source =
+            table(
+                    "source",
+                    listOf(column("external_id")),
+                    foreignKeys =
+                        listOf(
+                            ForeignKeyInfo(
+                                "source_external_fk",
+                                listOf("external_id"),
+                                "a.b",
+                                "c",
+                                listOf("id"),
+                            )
+                        ),
+                )
+                .copy(schema = "a")
+
+        val graph = buildSchemaMapGraph(Schema(listOf(localDottedTable, source)), "a")
+        val relationship = graph.relationships.single()
+        val localNode = graph.nodes.single { it.table?.name == "b.c" }
+        val externalNode = graph.nodes.single { it.isExternal }
+
+        assertEquals("a.b.c", externalNode.qualifiedLabel)
+        assertFalse(localNode.id == externalNode.id)
+        assertEquals(externalNode.id, relationship.targetNodeId)
+        assertFalse(localNode.id == relationship.targetNodeId)
+    }
+
+    @Test
     fun markersSeparatePrimaryUniqueForeignAndOrdinaryIndexes() {
         val table =
             table(

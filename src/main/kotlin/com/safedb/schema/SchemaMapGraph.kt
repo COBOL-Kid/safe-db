@@ -5,7 +5,6 @@ import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
-import com.safedb.model.qualifiedName
 
 internal enum class SchemaMapCardinality {
     OneToOne,
@@ -39,6 +38,7 @@ internal data class SchemaMapColumn(
 internal data class SchemaMapNode(
     val id: String,
     val label: String,
+    val qualifiedLabel: String,
     val table: TableInfo? = null,
     val externalColumns: List<String> = emptyList(),
     val columns: List<SchemaMapColumn> = emptyList(),
@@ -82,8 +82,9 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
         schema.tables
             .filter { it.schema == selectedSchema }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-    val selectedById = selectedTables.associateBy(TableInfo::qualifiedName)
+    val selectedById = selectedTables.associateBy { qualifiedId(it.schema, it.name) }
     val externalColumns = linkedMapOf<String, LinkedHashSet<String>>()
+    val externalLabels = linkedMapOf<String, String>()
     val relationships = mutableListOf<SchemaMapRelationship>()
 
     for (table in selectedTables) {
@@ -95,16 +96,25 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                 externalColumns
                     .getOrPut(targetId, ::linkedSetOf)
                     .addAll(foreignKey.referencedColumns)
+                externalLabels[targetId] =
+                    qualifiedDisplayName(
+                        foreignKey.referencedSchema,
+                        foreignKey.referencedTable,
+                    )
             }
             val cardinality = relationshipCardinality(table, foreignKey)
             val optionality = relationshipOptionality(table, foreignKey)
             relationships +=
                 SchemaMapRelationship(
                     id =
-                        "${table.qualifiedName()}|${foreignKey.name}|$targetId|" +
-                            foreignKey.columns.joinToString(","),
+                        stableId(
+                            qualifiedId(table.schema, table.name),
+                            foreignKey.name,
+                            targetId,
+                            *foreignKey.columns.toTypedArray(),
+                        ),
                     name = foreignKey.name,
-                    sourceNodeId = table.qualifiedName(),
+                    sourceNodeId = qualifiedId(table.schema, table.name),
                     targetNodeId = targetId,
                     sourceColumns = foreignKey.columns,
                     targetColumns = foreignKey.referencedColumns,
@@ -119,8 +129,9 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
         selectedTables.forEach { table ->
             add(
                 SchemaMapNode(
-                    id = table.qualifiedName(),
+                    id = qualifiedId(table.schema, table.name),
                     label = table.name,
+                    qualifiedLabel = qualifiedDisplayName(table.schema, table.name),
                     table = table,
                     columns = table.columns.map { column -> projectColumn(table, column) },
                 )
@@ -132,7 +143,8 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                 add(
                     SchemaMapNode(
                         id = id,
-                        label = id,
+                        label = externalLabels.getValue(id),
+                        qualifiedLabel = externalLabels.getValue(id),
                         externalColumns = columns.toList(),
                     )
                 )
@@ -177,6 +189,7 @@ internal fun searchSchemaMap(graph: SchemaMapGraph, query: String): SchemaMapSea
                 } == true
         if (
             node.id.lowercase().contains(needle) ||
+                node.qualifiedLabel.lowercase().contains(needle) ||
                 node.label.lowercase().contains(needle) ||
                 matchingColumns.isNotEmpty() ||
                 metadataMatches
@@ -360,7 +373,21 @@ private fun exactIndexKeyColumns(index: IndexInfo): List<String>? =
         index.columns
     }
 
-private fun qualifiedId(schema: String, table: String) = "$schema.$table"
+/** Stable identity encoding; quoted database identifiers may contain both dots and backslashes. */
+private fun qualifiedId(schema: String, table: String): String =
+    "${escapeIdentityPart(schema)}.${escapeIdentityPart(table)}"
+
+private fun escapeIdentityPart(value: String): String = buildString {
+    value.forEach { character ->
+        if (character == '.' || character == '\\') append('\\')
+        append(character)
+    }
+}
+
+private fun qualifiedDisplayName(schema: String, table: String): String = "$schema.$table"
+
+private fun stableId(vararg parts: String): String =
+    parts.joinToString(separator = "") { part -> "${part.length}:$part" }
 
 private fun connectedComponents(
     nodeIds: Set<String>,

@@ -3,6 +3,7 @@ package com.safedb.viewmodel
 import androidx.compose.ui.geometry.Offset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class SchemaMapScrollStateTest {
     @Test
@@ -112,6 +113,23 @@ class SchemaMapScrollStateTest {
 
         assertEquals(Offset(16f, -94f), panned)
         assertEquals(Offset(6f, -64f), shifted)
+    }
+
+    @Test
+    fun consumedChildScrollDoesNotPanTheMap() {
+        val horizontal = overflowState(pan = 36f)
+        val vertical = overflowState(pan = -64f)
+
+        val target =
+            schemaMapPanForScrollEvent(
+                horizontal = horizontal,
+                vertical = vertical,
+                delta = Offset(0f, 3f),
+                shiftPressed = false,
+                consumed = true,
+            )
+
+        assertNull(target)
     }
 
     private fun overflowState(pan: Float): SchemaMapAxisScrollState =

@@ -90,12 +90,33 @@ internal fun schemaMapPanForScrollDelta(
     )
 }
 
+internal fun schemaMapPanForScrollEvent(
+    horizontal: SchemaMapAxisScrollState,
+    vertical: SchemaMapAxisScrollState,
+    delta: Offset,
+    shiftPressed: Boolean,
+    consumed: Boolean,
+    pixelsPerScrollUnit: Float = 40f,
+): Offset? =
+    if (consumed) {
+        null
+    } else {
+        schemaMapPanForScrollDelta(
+            horizontal = horizontal,
+            vertical = vertical,
+            delta = delta,
+            shiftPressed = shiftPressed,
+            pixelsPerScrollUnit = pixelsPerScrollUnit,
+        )
+    }
+
 /** Session-only interaction state for the schema map. */
 internal class SchemaMapViewModel {
     private var activeContext by mutableStateOf<SchemaMapContext?>(null)
     private var expandedByContext by mutableStateOf<Map<SchemaMapContext, Set<String>>>(emptyMap())
     private var offsetsByContext by
         mutableStateOf<Map<SchemaMapContext, Map<String, Offset>>>(emptyMap())
+    private var initialFitPending by mutableStateOf(false)
 
     var query by mutableStateOf("")
     var zoom by mutableFloatStateOf(1f)
@@ -110,6 +131,7 @@ internal class SchemaMapViewModel {
             else SchemaMapContext(connectionId, schema)
         if (next == activeContext) return
         activeContext = next
+        initialFitPending = next != null
         query = ""
         zoom = 1f
         pan = Offset(SCHEMA_MAP_DEFAULT_INSET, SCHEMA_MAP_DEFAULT_INSET)
@@ -117,6 +139,12 @@ internal class SchemaMapViewModel {
 
     fun isActive(connectionId: String, schema: String): Boolean =
         activeContext == SchemaMapContext(connectionId, schema)
+
+    fun consumeInitialFitRequest(connectionId: String, schema: String): Boolean {
+        if (!initialFitPending || !isActive(connectionId, schema)) return false
+        initialFitPending = false
+        return true
+    }
 
     fun isExpanded(nodeId: String): Boolean =
         activeContext?.let { context -> nodeId in expandedByContext[context].orEmpty() } == true
