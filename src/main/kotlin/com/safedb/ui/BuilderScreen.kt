@@ -165,6 +165,23 @@ internal fun joinLabel(join: JoinSpec, tableNamesByAlias: Map<String, String>): 
 internal fun queryOptionEmptyLabel(labels: List<String>): String? =
     "None".takeIf { labels.isEmpty() }
 
+internal enum class BuilderConnectionSwitchDecision {
+    NoOp,
+    SwitchImmediately,
+    ConfirmClear,
+}
+
+internal fun builderConnectionSwitchDecision(
+    activeConnectionId: String?,
+    targetConnectionId: String,
+    hasDraft: Boolean,
+): BuilderConnectionSwitchDecision =
+    when {
+        activeConnectionId == targetConnectionId -> BuilderConnectionSwitchDecision.NoOp
+        hasDraft -> BuilderConnectionSwitchDecision.ConfirmClear
+        else -> BuilderConnectionSwitchDecision.SwitchImmediately
+    }
+
 internal fun riskGateIndicatorText(gate: QueryRiskGate): String =
     when (gate) {
         QueryRiskGate.Disabled -> "Risk gate: Off"
@@ -683,6 +700,7 @@ internal fun BuilderScreen(
     schemaSelection: SchemaSelectionIntent,
     schemaHistoryError: String?,
     settings: Settings,
+    onConnectionSelected: (ConnectionDef) -> Unit,
     onSchemaSelected: (String) -> Unit,
     onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
     onDismissSchemaHistoryError: () -> Unit,
@@ -697,6 +715,7 @@ internal fun BuilderScreen(
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
     var queryControlsHeightPx by remember { mutableIntStateOf(0) }
+    var pendingConnectionSwitch by remember { mutableStateOf<ConnectionDef?>(null) }
     val density = LocalDensity.current
     val limitChoices = BUILDER_LIMIT_CHOICES
     val schema = schemaViewModel.schema
@@ -717,6 +736,26 @@ internal fun BuilderScreen(
         queryViewModel.pendingConfirmation?.takeIf {
             it.confirmation.connectionId == connection?.id
         }
+
+    fun switchConnection(target: ConnectionDef) {
+        queryViewModel.clear()
+        pendingConnectionSwitch = null
+        onConnectionSelected(target)
+    }
+
+    fun requestConnectionSwitch(target: ConnectionDef) {
+        when (
+            builderConnectionSwitchDecision(
+                activeConnectionId = connection?.id,
+                targetConnectionId = target.id,
+                hasDraft = queryViewModel.canvasTables.isNotEmpty(),
+            )
+        ) {
+            BuilderConnectionSwitchDecision.NoOp -> Unit
+            BuilderConnectionSwitchDecision.SwitchImmediately -> switchConnection(target)
+            BuilderConnectionSwitchDecision.ConfirmClear -> pendingConnectionSwitch = target
+        }
+    }
 
     LaunchedEffect(connection?.id, schemaSelection) {
         val connectionId = connection?.id
@@ -764,6 +803,29 @@ internal fun BuilderScreen(
             },
             dismissButton = {
                 SecondaryButton(onClick = queryViewModel::dismissError) { Text("Cancel") }
+            },
+        )
+    }
+
+    pendingConnectionSwitch?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingConnectionSwitch = null },
+            shape = RoundedCornerShape(4.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("Switch connection?", style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Text(
+                    "Switching to ${target.name} clears the current query canvas and results. " +
+                        "Saved queries are not affected."
+                )
+            },
+            confirmButton = {
+                PrimaryButton(onClick = { switchConnection(target) }) { Text("Switch and clear") }
+            },
+            dismissButton = {
+                SecondaryButton(onClick = { pendingConnectionSwitch = null }) { Text("Cancel") }
             },
         )
     }
@@ -989,12 +1051,34 @@ internal fun BuilderScreen(
         }
 
         if (connection == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "Connect to a database to start building queries.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Row(modifier = Modifier.fillMaxSize()) {
+                Surface(
+                    modifier = Modifier.width(288.dp).fillMaxHeight(),
+                    color = SafeDbTheme.colors.workspacePanel,
+                    tonalElevation = 0.dp,
+                ) {
+                    SchemaBrowser(
+                        schemaViewModel = schemaViewModel,
+                        connection = null,
+                        connections = connections,
+                        onConnectionSelected = ::requestConnectionSwitch,
+                        onSchemaSelected = onSchemaSelected,
+                    )
+                }
+                Box(
+                    modifier =
+                        Modifier.width(1.dp)
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.outline)
                 )
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Choose a connection to start building queries.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         } else {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -1006,6 +1090,9 @@ internal fun BuilderScreen(
                 ) {
                     SchemaBrowser(
                         schemaViewModel = schemaViewModel,
+                        connection = connection,
+                        connections = connections,
+                        onConnectionSelected = ::requestConnectionSwitch,
                         onAddTable = { queryViewModel.addTable(it) },
                         onSchemaSelected = onSchemaSelected,
                     )

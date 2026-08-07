@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,16 +33,12 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TableChart
@@ -121,6 +116,8 @@ import com.safedb.schema.buildSchemaMapGraph
 import com.safedb.schema.layoutSchemaMap
 import com.safedb.schema.searchSchemaMap
 import com.safedb.ui.components.BannerKind
+import com.safedb.ui.components.CanvasZoomControls
+import com.safedb.ui.components.ConnectionPicker
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.SafeDropdownMenu
@@ -135,7 +132,6 @@ import com.safedb.viewmodel.SchemaViewModel
 import com.safedb.viewmodel.schemaMapAxisScrollState
 import com.safedb.viewmodel.schemaMapConstrainedPan
 import com.safedb.viewmodel.schemaMapPanForScrollEvent
-import kotlin.math.roundToInt
 
 @Composable
 internal fun SchemaMapScreen(
@@ -286,7 +282,6 @@ private fun SchemaMapHeader(
     onSchemaSelected: (String) -> Unit,
     onQueryChange: (String) -> Unit,
 ) {
-    var connectionMenuOpen by remember { mutableStateOf(false) }
     var schemaMenuOpen by remember { mutableStateOf(false) }
     Column(
         modifier =
@@ -330,37 +325,11 @@ private fun SchemaMapHeader(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box {
-                    SecondaryButton(
-                        onClick = { connectionMenuOpen = true },
-                        enabled = connections.isNotEmpty(),
-                        modifier = Modifier.width(216.dp),
-                    ) {
-                        Text(
-                            connection?.name ?: "Choose connection",
-                            modifier = Modifier.weight(1f, fill = false),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Icon(Icons.Default.ExpandMore, contentDescription = null)
-                    }
-                    SafeDropdownMenu(
-                        expanded = connectionMenuOpen,
-                        onDismissRequest = { connectionMenuOpen = false },
-                    ) {
-                        connections.forEach { option ->
-                            MenuActionRow(
-                                text = option.name,
-                                supportingText = "${option.dialect} · ${option.database}",
-                                selected = option.id == connection?.id,
-                                onClick = {
-                                    connectionMenuOpen = false
-                                    onConnectionSelected(option)
-                                },
-                            )
-                        }
-                    }
-                }
+                ConnectionPicker(
+                    connection = connection,
+                    connections = connections,
+                    onConnectionSelected = onConnectionSelected,
+                )
                 Box {
                     SecondaryButton(
                         onClick = { schemaMenuOpen = true },
@@ -760,8 +729,12 @@ private fun SchemaMapCanvas(
                     .zIndex(10f),
         )
 
-        SchemaMapControls(
+        CanvasZoomControls(
             zoom = viewModel.zoom,
+            minZoom = SCHEMA_MAP_MIN_ZOOM,
+            maxZoom = SCHEMA_MAP_MAX_ZOOM,
+            fitDescription = "Fit map to screen",
+            resetDescription = "Reset layout",
             onZoomOut = {
                 viewModel.setZoom(
                     viewModel.zoom - 0.1f,
@@ -1299,62 +1272,6 @@ private fun RelationshipTooltipAnchor(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun SchemaMapControls(
-    zoom: Float,
-    onZoomOut: () -> Unit,
-    onZoomIn: () -> Unit,
-    onFit: () -> Unit,
-    onReset: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.small,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-    ) {
-        Row(
-            modifier = Modifier.height(38.dp).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MapControl(Icons.Default.Remove, "Zoom out", zoom > SCHEMA_MAP_MIN_ZOOM, onZoomOut)
-            Text(
-                "${(zoom * 100).roundToInt()}%",
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.width(44.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-            MapControl(Icons.Default.Add, "Zoom in", zoom < SCHEMA_MAP_MAX_ZOOM, onZoomIn)
-            Spacer(Modifier.width(3.dp))
-            MapControl(Icons.Default.CenterFocusStrong, "Fit map to screen", true, onFit)
-            MapControl(Icons.Default.RestartAlt, "Reset layout", true, onReset)
-        }
-    }
-}
-
-@Composable
-private fun MapControl(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    SchemaMapTooltip(description) {
-        Icon(
-            icon,
-            contentDescription = description,
-            tint =
-                if (enabled) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-            modifier =
-                Modifier.size(30.dp)
-                    .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-                    .padding(6.dp),
-        )
     }
 }
 

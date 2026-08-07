@@ -1,7 +1,10 @@
 package com.safedb.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,7 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.safedb.model.ConnectionDef
 import com.safedb.model.TableInfo
 import com.safedb.model.qualifiedName
 import com.safedb.ui.components.MenuActionRow
@@ -49,23 +55,83 @@ import com.safedb.viewmodel.SchemaViewModel
 @Composable
 fun SchemaBrowser(
     schemaViewModel: SchemaViewModel,
+    connection: ConnectionDef?,
+    connections: List<ConnectionDef>,
+    onConnectionSelected: (ConnectionDef) -> Unit,
     onAddTable: ((TableInfo) -> Unit)? = null,
     onSchemaSelected: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(setOf<String>()) }
     var schemaMenuOpen by remember { mutableStateOf(false) }
+    var connectionMenuOpen by remember { mutableStateOf(false) }
+    val connectionChevronRotation by
+        animateFloatAsState(
+            targetValue = if (connectionMenuOpen) 90f else 0f,
+            animationSpec = tween(durationMillis = 160),
+            label = "connectionChevronRotation",
+        )
 
     Column(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)
         ) {
-            Text(
-                "Schema",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Row(
                 modifier = Modifier.padding(bottom = 6.dp),
-            )
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Schema",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Box {
+                    Row(
+                        modifier =
+                            Modifier.clickable(
+                                    enabled = connections.isNotEmpty(),
+                                    role = Role.Button,
+                                    onClick = { connectionMenuOpen = true },
+                                )
+                                .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Connection",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SafeDbTheme.colors.actionPrimary,
+                        )
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription =
+                                if (connectionMenuOpen) "Hide connections" else "Choose connection",
+                            tint = SafeDbTheme.colors.actionPrimary,
+                            modifier =
+                                Modifier.size(16.dp).graphicsLayer {
+                                    rotationZ = connectionChevronRotation
+                                },
+                        )
+                    }
+                    SafeDropdownMenu(
+                        expanded = connectionMenuOpen,
+                        onDismissRequest = { connectionMenuOpen = false },
+                        modifier = Modifier.width(240.dp),
+                    ) {
+                        connections.forEach { option ->
+                            MenuActionRow(
+                                text = option.name,
+                                supportingText = "${option.dialect} · ${option.database}",
+                                selected = option.id == connection?.id,
+                                onClick = {
+                                    connectionMenuOpen = false
+                                    onConnectionSelected(option)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 SecondaryButton(
                     onClick = { schemaMenuOpen = true },
@@ -182,6 +248,14 @@ fun SchemaBrowser(
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
+                }
+            }
+            connection == null -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Choose a connection to view schemas.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
             schemaViewModel.selectedSchema == null -> {

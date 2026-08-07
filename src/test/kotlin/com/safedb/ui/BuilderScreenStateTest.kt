@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.safedb.model.GroupSpec
@@ -7,6 +8,12 @@ import com.safedb.model.JoinSpec
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
+import com.safedb.model.TableInfo
+import com.safedb.query.CanvasPoint
+import com.safedb.query.CanvasTableLike
+import com.safedb.query.ColumnJoinPort
+import com.safedb.query.JoinPortSide
+import com.safedb.query.JoinPortVisibility
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -18,11 +25,62 @@ import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
+import com.safedb.query.RoutedJoinEdge
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class BuilderScreenStateTest {
+    @Test
+    fun connectionSwitchIgnoresTheAlreadyActiveConnection() {
+        assertEquals(
+            BuilderConnectionSwitchDecision.NoOp,
+            builderConnectionSwitchDecision("c1", "c1", hasDraft = true),
+        )
+    }
+
+    @Test
+    fun connectionSwitchIsImmediateForAnEmptyCanvas() {
+        assertEquals(
+            BuilderConnectionSwitchDecision.SwitchImmediately,
+            builderConnectionSwitchDecision("c1", "c2", hasDraft = false),
+        )
+    }
+
+    @Test
+    fun connectionSwitchRequiresConfirmationForAnExistingDraft() {
+        assertEquals(
+            BuilderConnectionSwitchDecision.ConfirmClear,
+            builderConnectionSwitchDecision("c1", "c2", hasDraft = true),
+        )
+    }
+
+    @Test
+    fun builderContentBoundsIncludeTablesAndRoutedJoinLanes() {
+        val table =
+            CanvasTableLike(
+                alias = "t0",
+                x = 100f,
+                y = 200f,
+                width = 300f,
+                height = 400f,
+                tableInfo = TableInfo("public", "orders", emptyList(), emptyList()),
+            )
+        val first = CanvasPoint(50f, 150f)
+        val last = CanvasPoint(500f, 700f)
+        val edge =
+            RoutedJoinEdge(
+                points = listOf(first, CanvasPoint(500f, 150f), last),
+                sourcePort = ColumnJoinPort(first, JoinPortSide.Left, JoinPortVisibility.Visible),
+                targetPort = ColumnJoinPort(last, JoinPortSide.Right, JoinPortVisibility.Visible),
+            )
+
+        assertEquals(
+            Rect(50f, 150f, 500f, 700f),
+            builderCanvasContentBounds(listOf(table), listOf(edge)),
+        )
+    }
+
     @Test
     fun downArrowRestoresMaximizedResultsPaneToMinimumHeight() {
         val state = toggleResultsPane(ResultsPaneMode.Maximized, height = 240f)
