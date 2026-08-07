@@ -1,45 +1,44 @@
 # External trust stores
 
-safe-db can use an administrator-managed PKCS12 trust store without saving its path or password in a database connection profile. The configuration is read once at startup, before any JDBC or TLS objects are created.
+Managed installations can load a PKCS12 trust store at startup without putting its path or password in a saved connection. The selected profile is read before Compose or JDBC initializes; an invalid profile fails startup rather than weakening trust.
 
-## Launch profiles
+## Profile and launch
 
-Start the installed executable with an absolute profile path:
+Copy a packaged template from `packaging/resources/common/trust-profiles/` outside the application installation, then launch with an absolute path:
 
 ```text
 safe-db --launch-profile /absolute/path/to/production.json
 ```
 
-Examples are included in the packaged application resources under `trust-profiles/`. An active profile and all files it references must live outside the application installation so installer upgrades do not replace environment-specific configuration.
+Profiles use schema version 1. `trustStore.type` is `PKCS12`; profile, store, and password-file paths must be absolute readable regular files; unknown fields are rejected.
 
-When no launch profile is selected, MySQL and SQL Server use the bundled JVM's normal certificates, while PostgreSQL keeps pgjdbc's standard trust and client-certificate behavior. When a profile is selected, any missing or invalid profile, password source, or PKCS12 file stops startup; safe-db never silently changes trust policy.
+```json
+{
+  "schemaVersion": 1,
+  "trustStore": {
+    "type": "PKCS12",
+    "path": "/absolute/path/to/company-roots.p12",
+    "password": { "source": "credentialStore", "reference": "company-roots" }
+  }
+}
+```
 
-## Managed desktop launch
+For a protected password file, replace `password` with:
 
-The macOS package includes `launch-safe-db-managed.sh`, and the Windows package includes `Launch-SafeDbManaged.ps1`. Each wrapper accepts the installed executable and launch-profile paths, then starts safe-db with `--launch-profile`. Deployment tooling may invoke the executable directly when it can supply the same argument securely.
+```json
+{ "source": "file", "path": "/absolute/path/to/company-roots.password" }
+```
 
-## Credential-store passwords
+`credentialStore` requires a nonblank `reference` and no path; `file` requires a path and no reference. The macOS package includes `launch-safe-db-managed.sh`; the Windows package includes `Launch-SafeDbManaged.ps1`.
 
-For desktop installations, use `source: "credentialStore"`. The fixed service name is `com.safedb.app.trust-store`; the profile's `reference` is the credential account. Provision that generic credential with macOS Keychain or Windows Credential Manager before starting safe-db.
+## Password provisioning
 
-On Windows, the generic Credential Manager target is the service and account joined with `|`, for example `com.safedb.app.trust-store|company-roots`. On macOS, create a generic password whose service is `com.safedb.app.trust-store` and account is `company-roots`. Use the platform UI, MDM, or a secret-management workflow that does not place the password in command history.
+For `credentialStore`, create a generic platform credential with service `com.safedb.app.trust-store` and the profile reference as its account. Windows uses the target `service|account`; macOS uses the same values as service and account. Use Keychain, Credential Manager, MDM, or a secret-management workflow—not command history. This lookup is strict and never falls back to the in-memory connection store.
 
-The trust-store credential lookup is strict. Unlike saved database credentials, it never falls back to an in-memory store when the platform backend is unavailable.
+For `file`, store one UTF-8 line. A final LF or CRLF is removed; other whitespace is preserved. Keep it outside the application and source tree, normally mode `0600` on macOS or an ACL limited to the user, SYSTEM, and required administrators on Windows.
 
-## Protected password files
+## Trust behavior
 
-For managed launches that cannot use a desktop credential store, use `source: "file"` and an absolute password-file path. The file must contain one UTF-8 line; a single final LF or CRLF is removed, while other spaces are preserved.
+For verified PostgreSQL, MySQL, and SQL Server connections, launch profiles are the only custom trust-store path. Without one, MySQL and SQL Server use normal JVM trust, PostgreSQL retains pgjdbc's standard trust and client-certificate behavior, and Oracle remains wallet-based. Profile passwords never appear in JSON, command arguments, environment variables, or logs. PostgreSQL receives a temporary trusted-roots PEM; MySQL and SQL Server use JSSE properties.
 
-Provision the file so only the safe-db user and administrators can read it. On macOS, mode `0600` owned by that user is the normal baseline. On Windows, use an ACL limited to the user, SYSTEM, and the required administrators. Do not place the file under the application installation or source tree.
-
-## Trust precedence
-
-For verified PostgreSQL, MySQL, and SQL Server connections, launch-profile JSON is the only custom trust-store configuration path. With no launch profile, MySQL and SQL Server use the bundled JVM trust store; PostgreSQL uses pgjdbc's standard certificate locations and preserves its standard client-certificate loading. Saved database connections cannot override this trust configuration. Oracle remains wallet-based.
-
-The password is retrieved only during startup and is never logged or placed in process arguments or environment variables. MySQL and SQL Server consume the standard JSSE trust-store properties. PostgreSQL receives a temporary PEM containing only the trusted certificates, allowing pgjdbc to retain its normal client-certificate handling. The resolved password remains in JVM memory for the life of the process.
-
-## Creating the trust store
-
-Import only CA certificates that the organization intends safe-db to trust. Verify certificate fingerprints through an independent channel before importing them. Do not add private keys: this interface is a trust store, not a client-certificate keystore.
-
-Restart safe-db after changing a profile, PKCS12 file, or stored password.
+Import only independently verified CA certificates—never private keys—and restart after changing the profile, store, or password.
