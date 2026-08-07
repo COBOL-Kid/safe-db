@@ -57,4 +57,4 @@ App data lives in `~/Library/Application Support/com.safedb.app/` on macOS and `
 
 Managed installations can supply a PKCS12 trust store only through startup launch-profile JSON. It is never saved with a connection, and its password must come from the platform credential store or a protected file. See [external trust stores](docs/trust-stores.md).
 
-CI runs `check` on relevant pull requests, required MySQL integration where applicable, and a weekly durability suite across macOS, Windows, and Ubuntu. See [workflows](.github/workflows/) for exact triggers and path filters.
+CI is on demand: a maintainer applies the `ci:run` label to a pull request to run `check` and the required static-MySQL integration suite. Remove and reapply the label after new commits to request another run. The cross-platform durability suite is available through **Run workflow** in GitHub Actions, while dependency submission continues automatically for qualifying trusted `main` changes. See [workflows](.github/workflows/) for details.

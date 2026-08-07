@@ -1,8 +1,6 @@
-name: Durability (Scheduled)
+name: Durability (On demand)
 
 on:
-  schedule:
-    - cron: '0 9 * * 1'
   workflow_dispatch:
 
 permissions:

@@ -8,109 +8,13 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'shared/**'
-      - 'buildSrc/**'
-      - 'gradle/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - 'scripts/**'
-      - 'testdata_mysql.sql'
-      - 'testdata_postgres.sql'
-      - '.github/workflows/compose.yml'
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
-    paths:
-      - 'src/**'
-      - 'shared/**'
-      - 'buildSrc/**'
-      - 'gradle/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - 'scripts/**'
-      - 'testdata_mysql.sql'
-      - 'testdata_postgres.sql'
-      - '.github/workflows/compose.yml'
-  merge_group:
-    types: [checks_requested]
+    types: [labeled]
 
 jobs:
-  changes:
-    # Drafts and unrelated label events do not need a classifier runner.
-    if: >-
-      github.event_name == 'push' ||
-      github.event_name == 'merge_group' ||
-      (
-        github.event.pull_request.draft == false &&
-        (github.event.action != 'labeled' || github.event.label.name == 'ci:integration')
-      )
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      integration: ${{ steps.classify.outputs.integration }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - id: classify
-        name: Classify integration-relevant changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "${{ github.event_name }}" in
-            pull_request)
-              base="${{ github.event.pull_request.base.sha }}"
-              head="${{ github.event.pull_request.head.sha }}"
-              ;;
-            merge_group)
-              base="${{ github.event.merge_group.base_sha }}"
-              head="${{ github.event.merge_group.head_sha }}"
-              ;;
-            push)
-              base="${{ github.event.before }}"
-              head="${{ github.sha }}"
-              ;;
-            *)
-              echo "Unsupported event: ${{ github.event_name }}" >&2
-              exit 1
-              ;;
-          esac
-
-          changed_files="$RUNNER_TEMP/changed-files.txt"
-          if [[ "$base" == "0000000000000000000000000000000000000000" ]]; then
-            git diff-tree --no-commit-id --name-only -r "$head" > "$changed_files"
-          else
-            git diff --name-only "$base" "$head" > "$changed_files"
-          fi
-
-          integration=false
-          while IFS= read -r path; do
-            case "$path" in
-              shared/*|buildSrc/*|gradle/*|build.gradle.kts|settings.gradle.kts|gradle.properties|gradlew|gradlew.bat|scripts/*|testdata_mysql.sql)
-                integration=true
-                break
-                ;;
-            esac
-          done < "$changed_files"
-          echo "integration=$integration" >> "$GITHUB_OUTPUT"
-
   test:
-    # Label events exist only to opt fork PRs into integration; do not repeat the fast gate.
-    if: >-
-      github.event_name == 'push' ||
-      github.event_name == 'merge_group' ||
-      (github.event.pull_request.draft == false && github.event.action != 'labeled')
+    # Maintainers apply ci:run to request the full CI gate for a pull request.
+    if: github.event.label.name == 'ci:run'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -142,23 +46,8 @@ jobs:
             build/reports/kover/
 
   integration:
-    # Forks need the exact maintainer label; unrelated label changes must not rerun this job.
-    if: >-
-      always() &&
-      needs.changes.outputs.integration == 'true' &&
-      (
-        github.event_name == 'push' ||
-        github.event_name == 'merge_group' ||
-        (
-          github.event.pull_request.draft == false &&
-          (github.event.action != 'labeled' || github.event.label.name == 'ci:integration') &&
-          (
-            github.event.pull_request.head.repo.full_name == github.repository ||
-            contains(github.event.pull_request.labels.*.name, 'ci:integration')
-          )
-        )
-      )
-    needs: changes
+    # ci:run is maintainer-applied, including for pull requests from forks.
+    if: github.event.label.name == 'ci:run'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
