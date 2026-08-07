@@ -124,14 +124,15 @@ import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.CANVAS_ZOOM_STEP
+import com.safedb.viewmodel.CanvasAxisScrollState
 import com.safedb.viewmodel.SCHEMA_MAP_MAX_ZOOM
 import com.safedb.viewmodel.SCHEMA_MAP_MIN_ZOOM
-import com.safedb.viewmodel.SchemaMapAxisScrollState
 import com.safedb.viewmodel.SchemaMapViewModel
 import com.safedb.viewmodel.SchemaViewModel
-import com.safedb.viewmodel.schemaMapAxisScrollState
-import com.safedb.viewmodel.schemaMapConstrainedPan
-import com.safedb.viewmodel.schemaMapPanForScrollEvent
+import com.safedb.viewmodel.canvasAxisScrollState
+import com.safedb.viewmodel.canvasConstrainedPan
+import com.safedb.viewmodel.canvasPanForScrollEvent
 
 @Composable
 internal fun SchemaMapScreen(
@@ -503,7 +504,7 @@ private fun SchemaMapCanvas(
         )
     val viewportSize = Size(viewport.width.toFloat(), viewport.height.toFloat())
     val horizontalScroll =
-        schemaMapAxisScrollState(
+        canvasAxisScrollState(
             contentStart = contentBounds.left,
             contentEnd = contentBounds.right,
             viewportSize = viewportSize.width,
@@ -511,7 +512,7 @@ private fun SchemaMapCanvas(
             pan = viewModel.pan.x,
         )
     val verticalScroll =
-        schemaMapAxisScrollState(
+        canvasAxisScrollState(
             contentStart = contentBounds.top,
             contentEnd = contentBounds.bottom,
             viewportSize = viewportSize.height,
@@ -565,8 +566,7 @@ private fun SchemaMapCanvas(
 
     LaunchedEffect(horizontalScroll, verticalScroll, viewport) {
         if (viewport.width > 0 && viewport.height > 0) {
-            val constrained =
-                schemaMapConstrainedPan(viewModel.pan, horizontalScroll, verticalScroll)
+            val constrained = canvasConstrainedPan(viewModel.pan, horizontalScroll, verticalScroll)
             if (constrained != viewModel.pan) viewModel.updatePan(constrained)
         }
     }
@@ -584,12 +584,14 @@ private fun SchemaMapCanvas(
                                 (event.keyboardModifiers.isCtrlPressed ||
                                     event.keyboardModifiers.isMetaPressed)
                         ) {
-                            val delta = if (change.scrollDelta.y < 0f) 0.1f else -0.1f
+                            val delta =
+                                if (change.scrollDelta.y < 0f) CANVAS_ZOOM_STEP
+                                else -CANVAS_ZOOM_STEP
                             viewModel.setZoom(viewModel.zoom + delta, change.position)
                             change.consume()
                         } else {
                             val target =
-                                schemaMapPanForScrollEvent(
+                                canvasPanForScrollEvent(
                                     horizontal = horizontalScroll,
                                     vertical = verticalScroll,
                                     delta = change.scrollDelta,
@@ -614,7 +616,7 @@ private fun SchemaMapCanvas(
                         if (!change.isConsumed) {
                             change.consume()
                             viewModel.updatePan(
-                                schemaMapConstrainedPan(
+                                canvasConstrainedPan(
                                     viewModel.pan + dragAmount,
                                     horizontalScroll,
                                     verticalScroll,
@@ -737,13 +739,13 @@ private fun SchemaMapCanvas(
             resetDescription = "Reset layout",
             onZoomOut = {
                 viewModel.setZoom(
-                    viewModel.zoom - 0.1f,
+                    viewModel.zoom - CANVAS_ZOOM_STEP,
                     Offset(viewport.width / 2f, viewport.height / 2f),
                 )
             },
             onZoomIn = {
                 viewModel.setZoom(
-                    viewModel.zoom + 0.1f,
+                    viewModel.zoom + CANVAS_ZOOM_STEP,
                     Offset(viewport.width / 2f, viewport.height / 2f),
                 )
             },
@@ -1387,7 +1389,7 @@ private fun SchemaMapTooltip(text: String, content: @Composable () -> Unit) {
 }
 
 private class SchemaMapScrollbarAdapter(
-    private val state: () -> SchemaMapAxisScrollState,
+    private val state: () -> CanvasAxisScrollState,
     private val onScrollTo: (Float) -> Unit,
 ) : ScrollbarAdapter {
     override val scrollOffset: Double

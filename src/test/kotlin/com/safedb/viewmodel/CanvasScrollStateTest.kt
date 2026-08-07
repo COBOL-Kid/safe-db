@@ -5,11 +5,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-class SchemaMapScrollStateTest {
+class CanvasScrollStateTest {
     @Test
     fun axisCentersContentWhenItFitsInsideThePaddedViewport() {
         val state =
-            schemaMapAxisScrollState(
+            canvasAxisScrollState(
                 contentStart = 100f,
                 contentEnd = 500f,
                 viewportSize = 1_000f,
@@ -26,7 +26,7 @@ class SchemaMapScrollStateTest {
     @Test
     fun overflowingAxisConvertsBetweenPanAndScrollbarOffset() {
         val state =
-            schemaMapAxisScrollState(
+            canvasAxisScrollState(
                 contentStart = 100f,
                 contentEnd = 1_100f,
                 viewportSize = 500f,
@@ -44,7 +44,7 @@ class SchemaMapScrollStateTest {
     @Test
     fun overflowingAxisClampsPanAtBothContentEdges() {
         val state =
-            schemaMapAxisScrollState(
+            canvasAxisScrollState(
                 contentStart = 100f,
                 contentEnd = 1_100f,
                 viewportSize = 500f,
@@ -59,7 +59,7 @@ class SchemaMapScrollStateTest {
     @Test
     fun axisRangeRecomputesForZoomAndChangedContentBounds() {
         val fitted =
-            schemaMapAxisScrollState(
+            canvasAxisScrollState(
                 contentStart = 0f,
                 contentEnd = 400f,
                 viewportSize = 500f,
@@ -67,7 +67,7 @@ class SchemaMapScrollStateTest {
                 pan = 50f,
             )
         val zoomed =
-            schemaMapAxisScrollState(
+            canvasAxisScrollState(
                 contentStart = 0f,
                 contentEnd = 400f,
                 viewportSize = 500f,
@@ -75,7 +75,7 @@ class SchemaMapScrollStateTest {
                 pan = fitted.constrainPan(50f),
             )
         val moved =
-            schemaMapAxisScrollState(
+            canvasAxisScrollState(
                 contentStart = -100f,
                 contentEnd = 600f,
                 viewportSize = 500f,
@@ -95,7 +95,7 @@ class SchemaMapScrollStateTest {
         val vertical = overflowState(pan = -64f)
 
         val panned =
-            schemaMapPanForScrollDelta(
+            canvasPanForScrollDelta(
                 horizontal = horizontal,
                 vertical = vertical,
                 delta = Offset(2f, 3f),
@@ -103,7 +103,7 @@ class SchemaMapScrollStateTest {
                 pixelsPerScrollUnit = 10f,
             )
         val shifted =
-            schemaMapPanForScrollDelta(
+            canvasPanForScrollDelta(
                 horizontal = horizontal,
                 vertical = vertical,
                 delta = Offset(0f, 3f),
@@ -121,7 +121,7 @@ class SchemaMapScrollStateTest {
         val vertical = overflowState(pan = -64f)
 
         val target =
-            schemaMapPanForScrollEvent(
+            canvasPanForScrollEvent(
                 horizontal = horizontal,
                 vertical = vertical,
                 delta = Offset(0f, 3f),
@@ -132,8 +132,8 @@ class SchemaMapScrollStateTest {
         assertNull(target)
     }
 
-    private fun overflowState(pan: Float): SchemaMapAxisScrollState =
-        schemaMapAxisScrollState(
+    private fun overflowState(pan: Float): CanvasAxisScrollState =
+        canvasAxisScrollState(
             contentStart = 0f,
             contentEnd = 1_000f,
             viewportSize = 500f,

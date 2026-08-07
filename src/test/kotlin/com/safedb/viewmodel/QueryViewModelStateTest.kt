@@ -368,6 +368,28 @@ class QueryViewModelStateTest {
         assertTrue(viewModel.canvasTables.isEmpty())
     }
 
+    @Test
+    fun removingTheLastTableResetsTheViewportForTheNextDraft() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id"))
+        val alias = viewModel.canvasTables.single().alias
+        viewModel.canvasViewport.setZoom(1.5f, Offset(400f, 300f))
+        viewModel.canvasViewport.updatePan(Offset(-1_200f, -900f))
+
+        viewModel.removeTable(alias)
+
+        assertTrue(viewModel.canvasTables.isEmpty())
+        assertEquals(1f, viewModel.canvasViewport.zoom)
+        assertEquals(Offset.Zero, viewModel.canvasViewport.pan)
+
+        viewModel.addTable(table("customers", "id"))
+
+        assertEquals(40f, viewModel.canvasTables.single().x)
+        assertEquals(0f, viewModel.canvasTables.single().y)
+        assertEquals(1f, viewModel.canvasViewport.zoom)
+        assertEquals(Offset.Zero, viewModel.canvasViewport.pan)
+    }
+
     private fun filter(id: String, alias: String, column: String) =
         FilterSpec(
             id = id,

@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.safedb.model.GroupSpec
@@ -26,9 +27,13 @@ import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
 import com.safedb.query.RoutedJoinEdge
+import com.safedb.viewmodel.CanvasViewportState
+import com.safedb.viewmodel.canvasAxisScrollState
+import com.safedb.viewmodel.canvasConstrainedPan
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class BuilderScreenStateTest {
     @Test
@@ -79,6 +84,58 @@ class BuilderScreenStateTest {
             Rect(50f, 150f, 500f, 700f),
             builderCanvasContentBounds(listOf(table), listOf(edge)),
         )
+    }
+
+    @Test
+    fun builderWorkspaceIncludesNegativeContentAndPreservesTheMinimumLayoutArea() {
+        val workspace =
+            builderCanvasWorkspaceBounds(
+                contentBounds = Rect(-240f, -80f, 500f, 700f),
+                minimumSize = Size(2_400f, 1_800f),
+                padding = 36f,
+            )
+
+        assertEquals(Rect(-276f, -116f, 2_400f, 1_800f), workspace)
+    }
+
+    @Test
+    fun fittedBuilderPanSurvivesWorkspaceConstraintForNegativeContent() {
+        val content = Rect(-240f, -80f, 500f, 700f)
+        val workspace =
+            builderCanvasWorkspaceBounds(
+                contentBounds = content,
+                minimumSize = Size(2_400f, 1_800f),
+                padding = 36f,
+            )
+        val viewportSize = Size(1_000f, 600f)
+        val viewport = CanvasViewportState()
+        viewport.fit(content, viewportSize, padding = 40f)
+        val horizontal =
+            canvasAxisScrollState(
+                contentStart = workspace.left,
+                contentEnd = workspace.right,
+                viewportSize = viewportSize.width,
+                zoom = viewport.zoom,
+                pan = viewport.pan.x,
+                padding = viewportSize.width / 2f,
+            )
+        val vertical =
+            canvasAxisScrollState(
+                contentStart = workspace.top,
+                contentEnd = workspace.bottom,
+                viewportSize = viewportSize.height,
+                zoom = viewport.zoom,
+                pan = viewport.pan.y,
+                padding = viewportSize.height / 2f,
+            )
+
+        val constrained = canvasConstrainedPan(viewport.pan, horizontal, vertical)
+        assertEquals(viewport.pan.x, constrained.x, 0.001f)
+        assertEquals(viewport.pan.y, constrained.y, 0.001f)
+        assertTrue(content.left * viewport.zoom + constrained.x >= 40f - 0.001f)
+        assertTrue(content.top * viewport.zoom + constrained.y >= 40f - 0.001f)
+        assertTrue(content.right * viewport.zoom + constrained.x <= 960f + 0.001f)
+        assertTrue(content.bottom * viewport.zoom + constrained.y <= 560f + 0.001f)
     }
 
     @Test

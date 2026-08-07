@@ -10,9 +10,11 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
@@ -74,20 +76,21 @@ import com.safedb.query.tableBounds
 import com.safedb.query.tableRightX
 import com.safedb.ui.components.CanvasZoomControls
 import com.safedb.ui.theme.SafeDbTheme
-import com.safedb.viewmodel.BUILDER_CANVAS_MAX_ZOOM
-import com.safedb.viewmodel.BUILDER_CANVAS_MIN_ZOOM
-import com.safedb.viewmodel.BUILDER_CANVAS_ZOOM_STEP
+import com.safedb.viewmodel.CANVAS_MAX_ZOOM
+import com.safedb.viewmodel.CANVAS_MIN_ZOOM
+import com.safedb.viewmodel.CANVAS_ZOOM_STEP
+import com.safedb.viewmodel.CanvasAxisScrollState
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
-import com.safedb.viewmodel.SchemaMapAxisScrollState
+import com.safedb.viewmodel.canvasAxisScrollState
+import com.safedb.viewmodel.canvasConstrainedPan
+import com.safedb.viewmodel.canvasPanForScrollEvent
 import com.safedb.viewmodel.matchesJoin
-import com.safedb.viewmodel.schemaMapAxisScrollState
-import com.safedb.viewmodel.schemaMapConstrainedPan
-import com.safedb.viewmodel.schemaMapPanForScrollEvent
 import kotlin.math.roundToInt
 
 private const val CANVAS_MIN_WIDTH_DP = 2400
 private const val CANVAS_MIN_HEIGHT_DP = 1800
+private const val CANVAS_FOOTER_HEIGHT_DP = 62
 
 private data class DragJoinState(
     val sourceAlias: String,
@@ -200,7 +203,7 @@ fun Canvas(
 
     val dragJoin = (gesture as? CanvasGesture.JoinDrag)?.state
 
-    fun clickableJoinLines(): List<ClickableJoinLine> {
+    fun routedJoinLines(): List<ClickableJoinLine> {
         val tablesLike = canvasTablesLike()
         val existingLines =
             queryViewModel.joins.mapIndexedNotNull { index, join ->
@@ -250,6 +253,8 @@ fun Canvas(
         return existingLines + suggestedLines
     }
 
+    val joinLines = routedJoinLines()
+
     fun joinLineAt(offset: Offset): ClickableJoinLine? {
         if (gesture != null) return null
 
@@ -258,14 +263,13 @@ fun Canvas(
         if (tablesLike.any { tableBounds(it).contains(point) }) return null
 
         val tolerance = JOIN_LINE_HIT_TOLERANCE * density.density
-        val lines = clickableJoinLines()
         val existingHit =
-            lines.filterIsInstance<ClickableJoinLine.Existing>().lastOrNull {
+            joinLines.filterIsInstance<ClickableJoinLine.Existing>().lastOrNull {
                 routedEdgeContainsPoint(it.edge, offset.x, offset.y, tolerance)
             }
         if (existingHit != null) return existingHit
 
-        return lines.filterIsInstance<ClickableJoinLine.Suggested>().lastOrNull {
+        return joinLines.filterIsInstance<ClickableJoinLine.Suggested>().lastOrNull {
             routedEdgeContainsPoint(it.edge, offset.x, offset.y, tolerance)
         }
     }
@@ -290,13 +294,20 @@ fun Canvas(
     val currentJoinLineHoverHandler by
         rememberUpdatedState<(Offset) -> Boolean> { offset -> joinLineAt(offset) != null }
 
-    val routedEdges = clickableJoinLines().map(ClickableJoinLine::edge)
+    val routedEdges = joinLines.map(ClickableJoinLine::edge)
     val contentBounds = builderCanvasContentBounds(canvasTablesLike(), routedEdges)
     val canvasPaddingPx = with(density) { 36.dp.toPx() }
     val minimumWidthPx = with(density) { CANVAS_MIN_WIDTH_DP.dp.toPx() }
     val minimumHeightPx = with(density) { CANVAS_MIN_HEIGHT_DP.dp.toPx() }
-    val canvasWidthPx = maxOf(minimumWidthPx, contentBounds.right + canvasPaddingPx)
-    val canvasHeightPx = maxOf(minimumHeightPx, contentBounds.bottom + canvasPaddingPx)
+    val workspaceBounds =
+        builderCanvasWorkspaceBounds(
+            contentBounds = contentBounds,
+            minimumSize = Size(minimumWidthPx, minimumHeightPx),
+            padding = canvasPaddingPx,
+        )
+    val renderOrigin = workspaceBounds.topLeft
+    val canvasWidthPx = workspaceBounds.width
+    val canvasHeightPx = workspaceBounds.height
     val viewportSize =
         Size(
             viewport.width.toFloat(),
@@ -304,22 +315,22 @@ fun Canvas(
         )
     val viewportState = queryViewModel.canvasViewport
     val horizontalScroll =
-        schemaMapAxisScrollState(
-            contentStart = 0f,
-            contentEnd = canvasWidthPx,
+        canvasAxisScrollState(
+            contentStart = workspaceBounds.left,
+            contentEnd = workspaceBounds.right,
             viewportSize = viewportSize.width,
             zoom = viewportState.zoom,
             pan = viewportState.pan.x,
-            padding = 0f,
+            padding = viewportSize.width / 2f,
         )
     val verticalScroll =
-        schemaMapAxisScrollState(
-            contentStart = 0f,
-            contentEnd = canvasHeightPx,
+        canvasAxisScrollState(
+            contentStart = workspaceBounds.top,
+            contentEnd = workspaceBounds.bottom,
             viewportSize = viewportSize.height,
             zoom = viewportState.zoom,
             pan = viewportState.pan.y,
-            padding = 0f,
+            padding = viewportSize.height / 2f,
         )
     val currentHorizontalScroll = rememberUpdatedState(horizontalScroll)
     val currentVerticalScroll = rememberUpdatedState(verticalScroll)
@@ -351,384 +362,376 @@ fun Canvas(
     LaunchedEffect(horizontalScroll, verticalScroll, viewport) {
         if (viewport.width > 0 && viewport.height > 0) {
             val constrained =
-                schemaMapConstrainedPan(viewportState.pan, horizontalScroll, verticalScroll)
+                canvasConstrainedPan(viewportState.pan, horizontalScroll, verticalScroll)
             if (constrained != viewportState.pan) viewportState.updatePan(constrained)
         }
     }
 
-    Box(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .clipToBounds()
-                .background(SafeDbTheme.colors.workspaceCanvas)
-                .onSizeChanged { viewport = it }
-                .onPointerEvent(PointerEventType.Scroll) { event ->
-                    event.changes.firstOrNull()?.let { change ->
-                        if (
-                            !change.isConsumed &&
-                                (event.keyboardModifiers.isCtrlPressed ||
-                                    event.keyboardModifiers.isMetaPressed)
-                        ) {
-                            val delta =
-                                if (change.scrollDelta.y < 0f) BUILDER_CANVAS_ZOOM_STEP
-                                else -BUILDER_CANVAS_ZOOM_STEP
-                            viewportState.setZoom(
-                                viewportState.zoom + delta,
-                                Offset(
-                                    change.position.x,
-                                    (change.position.y - contentTopInsetPx).coerceAtLeast(0f),
-                                ),
-                            )
-                            change.consume()
-                        } else {
-                            val target =
-                                schemaMapPanForScrollEvent(
-                                    horizontal = horizontalScroll,
-                                    vertical = verticalScroll,
-                                    delta = change.scrollDelta,
-                                    shiftPressed = event.keyboardModifiers.isShiftPressed,
-                                    consumed = change.isConsumed,
+    Column(modifier = modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas)) {
+        Box(
+            modifier =
+                Modifier.weight(1f)
+                    .fillMaxWidth()
+                    .clipToBounds()
+                    .onSizeChanged { viewport = it }
+                    .onPointerEvent(PointerEventType.Scroll) { event ->
+                        event.changes.firstOrNull()?.let { change ->
+                            if (
+                                !change.isConsumed &&
+                                    (event.keyboardModifiers.isCtrlPressed ||
+                                        event.keyboardModifiers.isMetaPressed)
+                            ) {
+                                val delta =
+                                    if (change.scrollDelta.y < 0f) CANVAS_ZOOM_STEP
+                                    else -CANVAS_ZOOM_STEP
+                                viewportState.setZoom(
+                                    viewportState.zoom + delta,
+                                    Offset(
+                                        change.position.x,
+                                        (change.position.y - contentTopInsetPx).coerceAtLeast(0f),
+                                    ),
                                 )
-                            if (target != null && target != viewportState.pan) {
-                                viewportState.updatePan(target)
                                 change.consume()
+                            } else {
+                                val target =
+                                    canvasPanForScrollEvent(
+                                        horizontal = horizontalScroll,
+                                        vertical = verticalScroll,
+                                        delta = change.scrollDelta,
+                                        shiftPressed = event.keyboardModifiers.isShiftPressed,
+                                        consumed = change.isConsumed,
+                                    )
+                                if (target != null && target != viewportState.pan) {
+                                    viewportState.updatePan(target)
+                                    change.consume()
+                                }
                             }
                         }
                     }
-                }
-                .pointerInput(
-                    canvasWidthPx,
-                    canvasHeightPx,
-                    viewportSize,
-                    viewportState.zoom,
-                ) {
-                    detectDragGestures { change, dragAmount ->
-                        if (!change.isConsumed) {
-                            change.consume()
-                            viewportState.updatePan(
-                                schemaMapConstrainedPan(
-                                    viewportState.pan + dragAmount,
-                                    horizontalScroll,
-                                    verticalScroll,
+                    .pointerInput(
+                        canvasWidthPx,
+                        canvasHeightPx,
+                        viewportSize,
+                        viewportState.zoom,
+                    ) {
+                        detectDragGestures { change, dragAmount ->
+                            if (!change.isConsumed) {
+                                change.consume()
+                                viewportState.updatePan(
+                                    canvasConstrainedPan(
+                                        viewportState.pan + dragAmount,
+                                        horizontalScroll,
+                                        verticalScroll,
+                                    )
                                 )
-                            )
-                        }
-                    }
-                }
-    ) {
-        Box(
-            modifier =
-                Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)
-                    .requiredSize(
-                        (canvasWidthPx / density.density).dp,
-                        (canvasHeightPx / density.density).dp,
-                    )
-                    .graphicsLayer {
-                        scaleX = viewportState.zoom
-                        scaleY = viewportState.zoom
-                        translationX = viewportState.pan.x
-                        translationY = canvasDisplayY(viewportState.pan.y, contentTopInsetPx)
-                        transformOrigin = TransformOrigin(0f, 0f)
-                    }
-                    .pointerHoverIcon(
-                        if (joinLineHovered) PointerIcon.Hand else PointerIcon.Default
-                    )
-                    .onPointerEvent(PointerEventType.Move) { event ->
-                        event.changes.firstOrNull()?.position?.let { offset ->
-                            joinLineHovered = currentJoinLineHoverHandler(offset)
-                        }
-                    }
-                    .onPointerEvent(PointerEventType.Exit) { joinLineHovered = false }
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            val up = waitForUpOrCancellation()
-                            if (up != null && currentJoinLineClickHandler(up.position)) {
-                                up.consume()
                             }
                         }
                     }
         ) {
-            val joinColor = SafeDbTheme.colors.actionPrimary
-            val haloColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
-            Canvas(modifier = Modifier.fillMaxSize().zIndex(1f)) {
-                fun drawRoutedEdge(
-                    edge: RoutedJoinEdge,
-                    alpha: Float,
-                    dashed: Boolean,
-                    endpointRadius: Float,
-                ) {
-                    fun drawPort(port: ColumnJoinPort) {
-                        val point = Offset(port.point.x, port.point.y)
-                        drawCircle(joinColor.copy(alpha = alpha), endpointRadius, point)
-                        val markerLength = 7f
-                        when (port.visibility) {
-                            JoinPortVisibility.HiddenAbove ->
-                                drawLine(
-                                    color = joinColor.copy(alpha = alpha),
-                                    start = Offset(point.x, point.y - markerLength),
-                                    end = Offset(point.x, point.y - 1f),
-                                    strokeWidth = 2f,
-                                    cap = StrokeCap.Round,
+            Box(
+                modifier =
+                    Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .requiredSize(
+                            (canvasWidthPx / density.density).dp,
+                            (canvasHeightPx / density.density).dp,
+                        )
+                        .graphicsLayer {
+                            scaleX = viewportState.zoom
+                            scaleY = viewportState.zoom
+                            translationX = viewportState.pan.x + renderOrigin.x * viewportState.zoom
+                            translationY =
+                                canvasDisplayY(
+                                    viewportState.pan.y + renderOrigin.y * viewportState.zoom,
+                                    contentTopInsetPx,
                                 )
-                            JoinPortVisibility.HiddenBelow ->
-                                drawLine(
-                                    color = joinColor.copy(alpha = alpha),
-                                    start = Offset(point.x, point.y + 1f),
-                                    end = Offset(point.x, point.y + markerLength),
-                                    strokeWidth = 2f,
-                                    cap = StrokeCap.Round,
-                                )
-                            JoinPortVisibility.Visible -> Unit
+                            transformOrigin = TransformOrigin(0f, 0f)
                         }
-                    }
-
-                    val points = edge.points
-                    if (points.size < 2) return
-                    val path =
-                        Path().apply {
-                            moveTo(points.first().x, points.first().y)
-                            for (point in points.drop(1)) {
-                                lineTo(point.x, point.y)
+                        .pointerHoverIcon(
+                            if (joinLineHovered) PointerIcon.Hand else PointerIcon.Default
+                        )
+                        .onPointerEvent(PointerEventType.Move) { event ->
+                            event.changes.firstOrNull()?.position?.let { offset ->
+                                joinLineHovered = currentJoinLineHoverHandler(offset + renderOrigin)
                             }
                         }
-                    val pathEffect =
-                        if (dashed) PathEffect.dashPathEffect(floatArrayOf(8f, 7f)) else null
-                    drawPath(
-                        path = path,
-                        color = haloColor,
-                        style = Stroke(width = 5f, cap = StrokeCap.Round, pathEffect = pathEffect),
-                    )
-                    drawPath(
-                        path = path,
-                        color = joinColor.copy(alpha = alpha),
-                        style = Stroke(width = 2f, cap = StrokeCap.Round, pathEffect = pathEffect),
-                    )
-                    drawPort(edge.sourcePort)
-                    drawPort(edge.targetPort)
-                }
-
-                val tablesLike = canvasTablesLike()
-                suggestedRelationships(tablesLike, queryViewModel.joins)
-                    .flatMap { relationship ->
-                        relationship.joins.filterNot { suggested ->
-                            queryViewModel.joins.any { it.matchesJoin(suggested) }
-                        }
-                    }
-                    .forEachIndexed { index, suggested ->
-                        val foreign =
-                            queryViewModel.canvasTables.find { it.alias == suggested.leftAlias }
-                                ?: return@forEachIndexed
-                        val referenced =
-                            queryViewModel.canvasTables.find { it.alias == suggested.rightAlias }
-                                ?: return@forEachIndexed
-                        val edge =
-                            routeJoinEdge(
-                                canvasTableLike(foreign),
-                                suggested.leftColumn,
-                                canvasTableLike(referenced),
-                                suggested.rightColumn,
-                                allTables = tablesLike,
-                                laneIndex = index,
-                            )
-                        if (edge != null) {
-                            drawRoutedEdge(
-                                edge,
-                                alpha = 0.5f,
-                                dashed = true,
-                                endpointRadius = 3f,
-                            )
-                        }
-                    }
-
-                queryViewModel.joins.forEachIndexed { index, join ->
-                    val left =
-                        queryViewModel.canvasTables.find { it.alias == join.leftAlias }
-                            ?: return@forEachIndexed
-                    val right =
-                        queryViewModel.canvasTables.find { it.alias == join.rightAlias }
-                            ?: return@forEachIndexed
-                    val edge =
-                        routeJoinEdge(
-                            canvasTableLike(left),
-                            join.leftColumn,
-                            canvasTableLike(right),
-                            join.rightColumn,
-                            allTables = tablesLike,
-                            laneIndex = index,
-                        )
-                    if (edge != null) {
-                        drawRoutedEdge(edge, alpha = 1f, dashed = false, endpointRadius = 4f)
-                    }
-                }
-
-                dragJoin?.let { state ->
-                    val source = queryViewModel.canvasTables.find { it.alias == state.sourceAlias }
-                    if (source != null) {
-                        val like = canvasTableLike(source)
-                        val port = columnJoinPort(like, state.sourceColumn, JoinPortSide.Right)
-                        val start = port?.point
-                        drawLine(
-                            color = joinColor.copy(alpha = 0.6f),
-                            start =
-                                Offset(
-                                    x = start?.x ?: tableRightX(like),
-                                    y = start?.y ?: columnY(like, state.sourceColumn),
-                                ),
-                            end = Offset(state.mouseX, state.mouseY),
-                            strokeWidth = 2f,
-                            cap = StrokeCap.Round,
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f)),
-                        )
-                    }
-                }
-            }
-
-            for (canvasTable in queryViewModel.canvasTables) {
-                TableCard(
-                    canvasTable = canvasTable,
-                    queryViewModel = queryViewModel,
-                    fieldScrollState = fieldScrollStates.getValue(canvasTable.alias),
-                    joinDragActive = dragJoin != null,
-                    highlightJoinTargets = dragJoin?.let { it.sourceAlias to it.sourceColumn },
-                    onStartDrag = { gesture = CanvasGesture.TableMove(canvasTable.alias) },
-                    onDragTable = { delta ->
-                        val active = gesture as? CanvasGesture.TableMove
-                        if (active?.alias == canvasTable.alias) {
-                            val current =
-                                queryViewModel.canvasTables.find { it.alias == canvasTable.alias }
-                            if (current != null) {
-                                queryViewModel.moveTable(
-                                    canvasTable.alias,
-                                    current.x + delta.x,
-                                    current.y + delta.y,
-                                )
+                        .onPointerEvent(PointerEventType.Exit) { joinLineHovered = false }
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                val up = waitForUpOrCancellation()
+                                if (
+                                    up != null &&
+                                        currentJoinLineClickHandler(up.position + renderOrigin)
+                                ) {
+                                    up.consume()
+                                }
                             }
                         }
-                    },
-                    onStartJoin = { column -> startJoin(canvasTable, column) },
-                    onDragJoin = { delta ->
-                        val active = gesture as? CanvasGesture.JoinDrag
-                        if (active?.state?.sourceAlias == canvasTable.alias) {
-                            gesture =
-                                CanvasGesture.JoinDrag(
-                                    active.state.copy(
-                                        mouseX = active.state.mouseX + delta.x,
-                                        mouseY = active.state.mouseY + delta.y,
+            ) {
+                val joinColor = SafeDbTheme.colors.actionPrimary
+                val haloColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                Canvas(modifier = Modifier.fillMaxSize().zIndex(1f)) {
+                    fun drawRoutedEdge(
+                        edge: RoutedJoinEdge,
+                        alpha: Float,
+                        dashed: Boolean,
+                        endpointRadius: Float,
+                    ) {
+                        fun drawPort(port: ColumnJoinPort) {
+                            val point = Offset(port.point.x, port.point.y)
+                            drawCircle(joinColor.copy(alpha = alpha), endpointRadius, point)
+                            val markerLength = 7f
+                            when (port.visibility) {
+                                JoinPortVisibility.HiddenAbove ->
+                                    drawLine(
+                                        color = joinColor.copy(alpha = alpha),
+                                        start = Offset(point.x, point.y - markerLength),
+                                        end = Offset(point.x, point.y - 1f),
+                                        strokeWidth = 2f,
+                                        cap = StrokeCap.Round,
                                     )
-                                )
-                        }
-                    },
-                    onJoinClick = { column ->
-                        val source = dragJoin
-                        if (source == null) {
-                            startJoin(canvasTable, column)
-                        } else {
-                            addJoin(source, canvasTable.alias, column)
-                            gesture = null
-                        }
-                    },
-                    onJoinTargetClick = { targetAlias, targetColumn ->
-                        val source = dragJoin ?: return@TableCard
-                        addJoin(source, targetAlias, targetColumn)
-                        gesture = null
-                    },
-                    onStartResize = { gesture = CanvasGesture.TableResize(canvasTable.alias) },
-                    onResizeTable = { delta ->
-                        val active = gesture as? CanvasGesture.TableResize
-                        if (active?.alias == canvasTable.alias) {
-                            val current =
-                                queryViewModel.canvasTables.find { it.alias == canvasTable.alias }
-                            if (current != null) {
-                                queryViewModel.resizeTable(
-                                    canvasTable.alias,
-                                    current.width + delta.x,
-                                    current.height + delta.y,
-                                )
+                                JoinPortVisibility.HiddenBelow ->
+                                    drawLine(
+                                        color = joinColor.copy(alpha = alpha),
+                                        start = Offset(point.x, point.y + 1f),
+                                        end = Offset(point.x, point.y + markerLength),
+                                        strokeWidth = 2f,
+                                        cap = StrokeCap.Round,
+                                    )
+                                JoinPortVisibility.Visible -> Unit
                             }
                         }
-                    },
-                    onEndGesture = { endGesture() },
-                    modifier =
-                        Modifier.offset {
-                            IntOffset(
-                                canvasTable.x.roundToInt(),
-                                canvasTable.y.roundToInt(),
+
+                        val points = edge.points
+                        if (points.size < 2) return
+                        val path =
+                            Path().apply {
+                                moveTo(points.first().x, points.first().y)
+                                for (point in points.drop(1)) {
+                                    lineTo(point.x, point.y)
+                                }
+                            }
+                        val pathEffect =
+                            if (dashed) PathEffect.dashPathEffect(floatArrayOf(8f, 7f)) else null
+                        drawPath(
+                            path = path,
+                            color = haloColor,
+                            style =
+                                Stroke(width = 5f, cap = StrokeCap.Round, pathEffect = pathEffect),
+                        )
+                        drawPath(
+                            path = path,
+                            color = joinColor.copy(alpha = alpha),
+                            style =
+                                Stroke(width = 2f, cap = StrokeCap.Round, pathEffect = pathEffect),
+                        )
+                        drawPort(edge.sourcePort)
+                        drawPort(edge.targetPort)
+                    }
+
+                    joinLines.filterIsInstance<ClickableJoinLine.Suggested>().forEach { line ->
+                        drawRoutedEdge(
+                            line.edge.translated(-renderOrigin.x, -renderOrigin.y),
+                            alpha = 0.5f,
+                            dashed = true,
+                            endpointRadius = 3f,
+                        )
+                    }
+
+                    joinLines.filterIsInstance<ClickableJoinLine.Existing>().forEach { line ->
+                        drawRoutedEdge(
+                            line.edge.translated(-renderOrigin.x, -renderOrigin.y),
+                            alpha = 1f,
+                            dashed = false,
+                            endpointRadius = 4f,
+                        )
+                    }
+
+                    dragJoin?.let { state ->
+                        val source =
+                            queryViewModel.canvasTables.find { it.alias == state.sourceAlias }
+                        if (source != null) {
+                            val like = canvasTableLike(source)
+                            val port = columnJoinPort(like, state.sourceColumn, JoinPortSide.Right)
+                            val start = port?.point
+                            drawLine(
+                                color = joinColor.copy(alpha = 0.6f),
+                                start =
+                                    Offset(
+                                        x = (start?.x ?: tableRightX(like)) - renderOrigin.x,
+                                        y =
+                                            (start?.y ?: columnY(like, state.sourceColumn)) -
+                                                renderOrigin.y,
+                                    ),
+                                end =
+                                    Offset(
+                                        state.mouseX - renderOrigin.x,
+                                        state.mouseY - renderOrigin.y,
+                                    ),
+                                strokeWidth = 2f,
+                                cap = StrokeCap.Round,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f)),
                             )
+                        }
+                    }
+                }
+
+                for (canvasTable in queryViewModel.canvasTables) {
+                    TableCard(
+                        canvasTable = canvasTable,
+                        queryViewModel = queryViewModel,
+                        fieldScrollState = fieldScrollStates.getValue(canvasTable.alias),
+                        joinDragActive = dragJoin != null,
+                        highlightJoinTargets = dragJoin?.let { it.sourceAlias to it.sourceColumn },
+                        onStartDrag = { gesture = CanvasGesture.TableMove(canvasTable.alias) },
+                        onDragTable = { delta ->
+                            val active = gesture as? CanvasGesture.TableMove
+                            if (active?.alias == canvasTable.alias) {
+                                val current =
+                                    queryViewModel.canvasTables.find {
+                                        it.alias == canvasTable.alias
+                                    }
+                                if (current != null) {
+                                    queryViewModel.moveTable(
+                                        canvasTable.alias,
+                                        current.x + delta.x,
+                                        current.y + delta.y,
+                                    )
+                                }
+                            }
                         },
-                )
+                        onStartJoin = { column -> startJoin(canvasTable, column) },
+                        onDragJoin = { delta ->
+                            val active = gesture as? CanvasGesture.JoinDrag
+                            if (active?.state?.sourceAlias == canvasTable.alias) {
+                                gesture =
+                                    CanvasGesture.JoinDrag(
+                                        active.state.copy(
+                                            mouseX = active.state.mouseX + delta.x,
+                                            mouseY = active.state.mouseY + delta.y,
+                                        )
+                                    )
+                            }
+                        },
+                        onJoinClick = { column ->
+                            val source = dragJoin
+                            if (source == null) {
+                                startJoin(canvasTable, column)
+                            } else {
+                                addJoin(source, canvasTable.alias, column)
+                                gesture = null
+                            }
+                        },
+                        onJoinTargetClick = { targetAlias, targetColumn ->
+                            val source = dragJoin ?: return@TableCard
+                            addJoin(source, targetAlias, targetColumn)
+                            gesture = null
+                        },
+                        onStartResize = { gesture = CanvasGesture.TableResize(canvasTable.alias) },
+                        onResizeTable = { delta ->
+                            val active = gesture as? CanvasGesture.TableResize
+                            if (active?.alias == canvasTable.alias) {
+                                val current =
+                                    queryViewModel.canvasTables.find {
+                                        it.alias == canvasTable.alias
+                                    }
+                                if (current != null) {
+                                    queryViewModel.resizeTable(
+                                        canvasTable.alias,
+                                        current.width + delta.x,
+                                        current.height + delta.y,
+                                    )
+                                }
+                            }
+                        },
+                        onEndGesture = { endGesture() },
+                        modifier =
+                            Modifier.offset {
+                                IntOffset(
+                                    (canvasTable.x - renderOrigin.x).roundToInt(),
+                                    (canvasTable.y - renderOrigin.y).roundToInt(),
+                                )
+                            },
+                    )
+                }
             }
+
+            HorizontalScrollbar(
+                adapter = horizontalScrollbarAdapter,
+                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
+            )
+            VerticalScrollbar(
+                adapter = verticalScrollbarAdapter,
+                modifier =
+                    Modifier.align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(top = contentTopInset, bottom = 8.dp),
+            )
         }
 
-        HorizontalScrollbar(
-            adapter = horizontalScrollbarAdapter,
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
-        )
-        VerticalScrollbar(
-            adapter = verticalScrollbarAdapter,
+        Box(
             modifier =
-                Modifier.align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .padding(top = contentTopInset, bottom = 8.dp),
-        )
-
-        CanvasZoomControls(
-            zoom = viewportState.zoom,
-            minZoom = BUILDER_CANVAS_MIN_ZOOM,
-            maxZoom = BUILDER_CANVAS_MAX_ZOOM,
-            fitDescription = "Fit query to screen",
-            resetDescription = "Reset view",
-            onZoomOut = {
-                viewportState.setZoom(
-                    viewportState.zoom - BUILDER_CANVAS_ZOOM_STEP,
-                    Offset(viewport.width / 2f, viewportSize.height / 2f),
-                )
-            },
-            onZoomIn = {
-                viewportState.setZoom(
-                    viewportState.zoom + BUILDER_CANVAS_ZOOM_STEP,
-                    Offset(viewport.width / 2f, viewportSize.height / 2f),
-                )
-            },
-            onFit = {
-                viewportState.fit(
-                    contentBounds = contentBounds,
-                    viewport = viewportSize,
-                )
-            },
-            onReset = viewportState::reset,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
-        )
-
-        if (queryViewModel.canvasTables.isNotEmpty()) {
-            Text(
-                buildString {
-                    append("${queryViewModel.canvasTables.size} table")
-                    if (queryViewModel.canvasTables.size != 1) append('s')
-                    if (queryViewModel.joins.isNotEmpty()) {
-                        append(" · ${queryViewModel.joins.size} join")
-                        if (queryViewModel.joins.size != 1) append('s')
-                    }
-                    if (queryViewModel.selectedColumns.isNotEmpty()) {
-                        append(" · ${queryViewModel.selectedColumns.size} column")
-                        if (queryViewModel.selectedColumns.size != 1) append('s')
-                    }
-                    if (queryViewModel.filterCount > 0) {
-                        append(" · ${queryViewModel.filterCount} filter")
-                        if (queryViewModel.filterCount != 1) append('s')
-                    }
+                Modifier.fillMaxWidth()
+                    .height(CANVAS_FOOTER_HEIGHT_DP.dp)
+                    .background(SafeDbTheme.colors.workspaceCanvas)
+        ) {
+            CanvasZoomControls(
+                zoom = viewportState.zoom,
+                minZoom = CANVAS_MIN_ZOOM,
+                maxZoom = CANVAS_MAX_ZOOM,
+                fitDescription = "Fit query to screen",
+                resetDescription = "Reset view",
+                onZoomOut = {
+                    viewportState.setZoom(
+                        viewportState.zoom - CANVAS_ZOOM_STEP,
+                        Offset(viewport.width / 2f, viewportSize.height / 2f),
+                    )
                 },
-                modifier =
-                    Modifier.align(Alignment.BottomStart)
-                        .padding(12.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            MaterialTheme.shapes.small,
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelSmall,
+                onZoomIn = {
+                    viewportState.setZoom(
+                        viewportState.zoom + CANVAS_ZOOM_STEP,
+                        Offset(viewport.width / 2f, viewportSize.height / 2f),
+                    )
+                },
+                onFit = {
+                    viewportState.fit(
+                        contentBounds = contentBounds,
+                        viewport = viewportSize,
+                    )
+                },
+                onReset = viewportState::reset,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(horizontal = 12.dp),
             )
+
+            if (queryViewModel.canvasTables.isNotEmpty()) {
+                Text(
+                    buildString {
+                        append("${queryViewModel.canvasTables.size} table")
+                        if (queryViewModel.canvasTables.size != 1) append('s')
+                        if (queryViewModel.joins.isNotEmpty()) {
+                            append(" · ${queryViewModel.joins.size} join")
+                            if (queryViewModel.joins.size != 1) append('s')
+                        }
+                        if (queryViewModel.selectedColumns.isNotEmpty()) {
+                            append(" · ${queryViewModel.selectedColumns.size} column")
+                            if (queryViewModel.selectedColumns.size != 1) append('s')
+                        }
+                        if (queryViewModel.filterCount > 0) {
+                            append(" · ${queryViewModel.filterCount} filter")
+                            if (queryViewModel.filterCount != 1) append('s')
+                        }
+                    },
+                    modifier =
+                        Modifier.align(Alignment.CenterStart)
+                            .padding(horizontal = 12.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                                MaterialTheme.shapes.small,
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }
@@ -765,8 +768,33 @@ internal fun builderCanvasContentBounds(
     return Rect(left, top, right, bottom)
 }
 
+internal fun builderCanvasWorkspaceBounds(
+    contentBounds: Rect,
+    minimumSize: Size,
+    padding: Float,
+): Rect =
+    Rect(
+        left = minOf(0f, contentBounds.left - padding),
+        top = minOf(0f, contentBounds.top - padding),
+        right = maxOf(minimumSize.width, contentBounds.right + padding),
+        bottom = maxOf(minimumSize.height, contentBounds.bottom + padding),
+    )
+
+private fun RoutedJoinEdge.translated(deltaX: Float, deltaY: Float): RoutedJoinEdge =
+    copy(
+        points = points.map { point -> CanvasPoint(point.x + deltaX, point.y + deltaY) },
+        sourcePort =
+            sourcePort.copy(
+                point = CanvasPoint(sourcePort.point.x + deltaX, sourcePort.point.y + deltaY)
+            ),
+        targetPort =
+            targetPort.copy(
+                point = CanvasPoint(targetPort.point.x + deltaX, targetPort.point.y + deltaY)
+            ),
+    )
+
 private class BuilderCanvasScrollbarAdapter(
-    private val state: () -> SchemaMapAxisScrollState,
+    private val state: () -> CanvasAxisScrollState,
     private val onScrollTo: (Float) -> Unit,
 ) : ScrollbarAdapter {
     override val scrollOffset: Double

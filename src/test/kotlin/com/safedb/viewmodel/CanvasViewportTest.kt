@@ -7,10 +7,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class BuilderCanvasViewportTest {
+class CanvasViewportStateTest {
     @Test
     fun zoomKeepsTheRequestedScreenAnchorStable() {
-        val viewport = BuilderCanvasViewport()
+        val viewport = CanvasViewportState()
         viewport.updatePan(Offset(-120f, -80f))
         val anchor = Offset(420f, 280f)
         val contentPointBefore = (anchor - viewport.pan) / viewport.zoom
@@ -23,39 +23,38 @@ class BuilderCanvasViewportTest {
     }
 
     @Test
-    fun zoomIsClampedToTheBuilderRange() {
-        val viewport = BuilderCanvasViewport()
+    fun zoomIsClampedToTheCanvasRange() {
+        val viewport = CanvasViewportState()
 
         viewport.setZoom(10f)
-        assertEquals(BUILDER_CANVAS_MAX_ZOOM, viewport.zoom)
+        assertEquals(CANVAS_MAX_ZOOM, viewport.zoom)
 
         viewport.setZoom(0f)
-        assertEquals(BUILDER_CANVAS_MIN_ZOOM, viewport.zoom)
+        assertEquals(CANVAS_MIN_ZOOM, viewport.zoom)
     }
 
     @Test
-    fun fitKeepsContentBelowReservedControlsAndInsidePadding() {
-        val viewport = BuilderCanvasViewport()
+    fun fitKeepsContentInsideThePaddedViewport() {
+        val viewport = CanvasViewportState()
         val content = Rect(100f, 50f, 900f, 450f)
-        val window = Size(1_000f, 700f)
-        val reservedTop = 200f
+        val window = Size(1_000f, 500f)
         val padding = 40f
 
-        viewport.fit(content, window, reservedTop, padding)
+        viewport.fit(content, window, padding)
 
         val left = content.left * viewport.zoom + viewport.pan.x
         val top = content.top * viewport.zoom + viewport.pan.y
         val right = content.right * viewport.zoom + viewport.pan.x
         val bottom = content.bottom * viewport.zoom + viewport.pan.y
         assertTrue(left >= padding - 0.001f)
-        assertTrue(top >= reservedTop + padding - 0.001f)
+        assertTrue(top >= padding - 0.001f)
         assertTrue(right <= window.width - padding + 0.001f)
         assertTrue(bottom <= window.height - padding + 0.001f)
     }
 
     @Test
     fun resetRestoresTheDefaultViewWithoutTouchingContent() {
-        val viewport = BuilderCanvasViewport()
+        val viewport = CanvasViewportState()
         viewport.setZoom(1.5f, Offset(300f, 200f))
         viewport.updatePan(Offset(-80f, -40f))
 
