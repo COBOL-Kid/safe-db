@@ -7,21 +7,23 @@ import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,19 +33,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.safedb.model.JoinSpec
@@ -62,14 +74,23 @@ import com.safedb.query.routedEdgeContainsPoint
 import com.safedb.query.suggestedRelationships
 import com.safedb.query.tableBounds
 import com.safedb.query.tableRightX
+import com.safedb.ui.components.CanvasZoomControls
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.CANVAS_MAX_ZOOM
+import com.safedb.viewmodel.CANVAS_MIN_ZOOM
+import com.safedb.viewmodel.CANVAS_ZOOM_STEP
+import com.safedb.viewmodel.CanvasAxisScrollState
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
+import com.safedb.viewmodel.canvasAxisScrollState
+import com.safedb.viewmodel.canvasConstrainedPan
+import com.safedb.viewmodel.canvasPanForScrollEvent
 import com.safedb.viewmodel.matchesJoin
 import kotlin.math.roundToInt
 
 private const val CANVAS_MIN_WIDTH_DP = 2400
 private const val CANVAS_MIN_HEIGHT_DP = 1800
+private const val CANVAS_FOOTER_HEIGHT_DP = 62
 
 private data class DragJoinState(
     val sourceAlias: String,
@@ -104,8 +125,7 @@ fun Canvas(
 ) {
     var gesture by remember { mutableStateOf<CanvasGesture?>(null) }
     var joinLineHovered by remember { mutableStateOf(false) }
-    val horizontalScroll = rememberScrollState()
-    val verticalScroll = rememberScrollState()
+    var viewport by remember { mutableStateOf(IntSize.Zero) }
     val fieldScrollStates = remember { mutableStateMapOf<String, ScrollState>() }
     val density = LocalDensity.current
     val contentTopInsetPx = with(density) { contentTopInset.toPx() }
@@ -124,7 +144,7 @@ fun Canvas(
             CanvasTableLike(
                 alias = table.alias,
                 x = table.x,
-                y = canvasDisplayY(table.y, contentTopInsetPx),
+                y = table.y,
                 width = table.width.dp.toPx(),
                 height = table.height.dp.toPx(),
                 fieldScrollOffset = fieldScrollStates[table.alias]?.value?.toFloat() ?: 0f,
@@ -183,7 +203,7 @@ fun Canvas(
 
     val dragJoin = (gesture as? CanvasGesture.JoinDrag)?.state
 
-    fun clickableJoinLines(): List<ClickableJoinLine> {
+    fun routedJoinLines(): List<ClickableJoinLine> {
         val tablesLike = canvasTablesLike()
         val existingLines =
             queryViewModel.joins.mapIndexedNotNull { index, join ->
@@ -233,6 +253,8 @@ fun Canvas(
         return existingLines + suggestedLines
     }
 
+    val joinLines = routedJoinLines()
+
     fun joinLineAt(offset: Offset): ClickableJoinLine? {
         if (gesture != null) return null
 
@@ -241,14 +263,13 @@ fun Canvas(
         if (tablesLike.any { tableBounds(it).contains(point) }) return null
 
         val tolerance = JOIN_LINE_HIT_TOLERANCE * density.density
-        val lines = clickableJoinLines()
         val existingHit =
-            lines.filterIsInstance<ClickableJoinLine.Existing>().lastOrNull {
+            joinLines.filterIsInstance<ClickableJoinLine.Existing>().lastOrNull {
                 routedEdgeContainsPoint(it.edge, offset.x, offset.y, tolerance)
             }
         if (existingHit != null) return existingHit
 
-        return lines.filterIsInstance<ClickableJoinLine.Suggested>().lastOrNull {
+        return joinLines.filterIsInstance<ClickableJoinLine.Suggested>().lastOrNull {
             routedEdgeContainsPoint(it.edge, offset.x, offset.y, tolerance)
         }
     }
@@ -273,23 +294,164 @@ fun Canvas(
     val currentJoinLineHoverHandler by
         rememberUpdatedState<(Offset) -> Boolean> { offset -> joinLineAt(offset) != null }
 
-    Box(modifier = modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas)) {
+    val routedEdges = joinLines.map(ClickableJoinLine::edge)
+    val contentBounds = builderCanvasContentBounds(canvasTablesLike(), routedEdges)
+    val canvasPaddingPx = with(density) { 36.dp.toPx() }
+    val minimumWidthPx = with(density) { CANVAS_MIN_WIDTH_DP.dp.toPx() }
+    val minimumHeightPx = with(density) { CANVAS_MIN_HEIGHT_DP.dp.toPx() }
+    val workspaceBounds =
+        builderCanvasWorkspaceBounds(
+            contentBounds = contentBounds,
+            minimumSize = Size(minimumWidthPx, minimumHeightPx),
+            padding = canvasPaddingPx,
+        )
+    val renderOrigin = workspaceBounds.topLeft
+    val canvasWidthPx = workspaceBounds.width
+    val canvasHeightPx = workspaceBounds.height
+    val viewportSize =
+        Size(
+            viewport.width.toFloat(),
+            (viewport.height.toFloat() - contentTopInsetPx).coerceAtLeast(0f),
+        )
+    val viewportState = queryViewModel.canvasViewport
+    val horizontalScroll =
+        canvasAxisScrollState(
+            contentStart = workspaceBounds.left,
+            contentEnd = workspaceBounds.right,
+            viewportSize = viewportSize.width,
+            zoom = viewportState.zoom,
+            pan = viewportState.pan.x,
+            padding = viewportSize.width / 2f,
+        )
+    val verticalScroll =
+        canvasAxisScrollState(
+            contentStart = workspaceBounds.top,
+            contentEnd = workspaceBounds.bottom,
+            viewportSize = viewportSize.height,
+            zoom = viewportState.zoom,
+            pan = viewportState.pan.y,
+            padding = viewportSize.height / 2f,
+        )
+    val currentHorizontalScroll = rememberUpdatedState(horizontalScroll)
+    val currentVerticalScroll = rememberUpdatedState(verticalScroll)
+    val horizontalScrollbarAdapter =
+        remember(viewportState) {
+            BuilderCanvasScrollbarAdapter(
+                state = { currentHorizontalScroll.value },
+                onScrollTo = { target ->
+                    val axis = currentHorizontalScroll.value
+                    viewportState.updatePan(
+                        Offset(axis.panForScrollOffset(target), viewportState.pan.y)
+                    )
+                },
+            )
+        }
+    val verticalScrollbarAdapter =
+        remember(viewportState) {
+            BuilderCanvasScrollbarAdapter(
+                state = { currentVerticalScroll.value },
+                onScrollTo = { target ->
+                    val axis = currentVerticalScroll.value
+                    viewportState.updatePan(
+                        Offset(viewportState.pan.x, axis.panForScrollOffset(target))
+                    )
+                },
+            )
+        }
+
+    LaunchedEffect(horizontalScroll, verticalScroll, viewport) {
+        if (viewport.width > 0 && viewport.height > 0) {
+            val constrained =
+                canvasConstrainedPan(viewportState.pan, horizontalScroll, verticalScroll)
+            if (constrained != viewportState.pan) viewportState.updatePan(constrained)
+        }
+    }
+
+    Column(modifier = modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas)) {
         Box(
             modifier =
-                Modifier.fillMaxSize()
-                    .padding(end = 8.dp, bottom = 8.dp)
-                    .verticalScroll(verticalScroll)
-                    .horizontalScroll(horizontalScroll)
+                Modifier.weight(1f)
+                    .fillMaxWidth()
+                    .clipToBounds()
+                    .onSizeChanged { viewport = it }
+                    .onPointerEvent(PointerEventType.Scroll) { event ->
+                        event.changes.firstOrNull()?.let { change ->
+                            if (
+                                !change.isConsumed &&
+                                    (event.keyboardModifiers.isCtrlPressed ||
+                                        event.keyboardModifiers.isMetaPressed)
+                            ) {
+                                val delta =
+                                    if (change.scrollDelta.y < 0f) CANVAS_ZOOM_STEP
+                                    else -CANVAS_ZOOM_STEP
+                                viewportState.setZoom(
+                                    viewportState.zoom + delta,
+                                    Offset(
+                                        change.position.x,
+                                        (change.position.y - contentTopInsetPx).coerceAtLeast(0f),
+                                    ),
+                                )
+                                change.consume()
+                            } else {
+                                val target =
+                                    canvasPanForScrollEvent(
+                                        horizontal = horizontalScroll,
+                                        vertical = verticalScroll,
+                                        delta = change.scrollDelta,
+                                        shiftPressed = event.keyboardModifiers.isShiftPressed,
+                                        consumed = change.isConsumed,
+                                    )
+                                if (target != null && target != viewportState.pan) {
+                                    viewportState.updatePan(target)
+                                    change.consume()
+                                }
+                            }
+                        }
+                    }
+                    .pointerInput(
+                        canvasWidthPx,
+                        canvasHeightPx,
+                        viewportSize,
+                        viewportState.zoom,
+                    ) {
+                        detectDragGestures { change, dragAmount ->
+                            if (!change.isConsumed) {
+                                change.consume()
+                                viewportState.updatePan(
+                                    canvasConstrainedPan(
+                                        viewportState.pan + dragAmount,
+                                        horizontalScroll,
+                                        verticalScroll,
+                                    )
+                                )
+                            }
+                        }
+                    }
         ) {
             Box(
                 modifier =
-                    Modifier.size(CANVAS_MIN_WIDTH_DP.dp, CANVAS_MIN_HEIGHT_DP.dp)
+                    Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .requiredSize(
+                            (canvasWidthPx / density.density).dp,
+                            (canvasHeightPx / density.density).dp,
+                        )
+                        .graphicsLayer {
+                            scaleX = viewportState.zoom
+                            scaleY = viewportState.zoom
+                            translationX = viewportState.pan.x + renderOrigin.x * viewportState.zoom
+                            translationY =
+                                canvasDisplayY(
+                                    viewportState.pan.y + renderOrigin.y * viewportState.zoom,
+                                    contentTopInsetPx,
+                                )
+                            transformOrigin = TransformOrigin(0f, 0f)
+                        }
                         .pointerHoverIcon(
                             if (joinLineHovered) PointerIcon.Hand else PointerIcon.Default
                         )
                         .onPointerEvent(PointerEventType.Move) { event ->
                             event.changes.firstOrNull()?.position?.let { offset ->
-                                joinLineHovered = currentJoinLineHoverHandler(offset)
+                                joinLineHovered = currentJoinLineHoverHandler(offset + renderOrigin)
                             }
                         }
                         .onPointerEvent(PointerEventType.Exit) { joinLineHovered = false }
@@ -297,7 +459,10 @@ fun Canvas(
                             awaitEachGesture {
                                 awaitFirstDown(requireUnconsumed = false)
                                 val up = waitForUpOrCancellation()
-                                if (up != null && currentJoinLineClickHandler(up.position)) {
+                                if (
+                                    up != null &&
+                                        currentJoinLineClickHandler(up.position + renderOrigin)
+                                ) {
                                     up.consume()
                                 }
                             }
@@ -364,59 +529,22 @@ fun Canvas(
                         drawPort(edge.targetPort)
                     }
 
-                    val tablesLike = canvasTablesLike()
-                    suggestedRelationships(tablesLike, queryViewModel.joins)
-                        .flatMap { relationship ->
-                            relationship.joins.filterNot { suggested ->
-                                queryViewModel.joins.any { it.matchesJoin(suggested) }
-                            }
-                        }
-                        .forEachIndexed { index, suggested ->
-                            val foreign =
-                                queryViewModel.canvasTables.find { it.alias == suggested.leftAlias }
-                                    ?: return@forEachIndexed
-                            val referenced =
-                                queryViewModel.canvasTables.find {
-                                    it.alias == suggested.rightAlias
-                                } ?: return@forEachIndexed
-                            val edge =
-                                routeJoinEdge(
-                                    canvasTableLike(foreign),
-                                    suggested.leftColumn,
-                                    canvasTableLike(referenced),
-                                    suggested.rightColumn,
-                                    allTables = tablesLike,
-                                    laneIndex = index,
-                                )
-                            if (edge != null) {
-                                drawRoutedEdge(
-                                    edge,
-                                    alpha = 0.5f,
-                                    dashed = true,
-                                    endpointRadius = 3f,
-                                )
-                            }
-                        }
+                    joinLines.filterIsInstance<ClickableJoinLine.Suggested>().forEach { line ->
+                        drawRoutedEdge(
+                            line.edge.translated(-renderOrigin.x, -renderOrigin.y),
+                            alpha = 0.5f,
+                            dashed = true,
+                            endpointRadius = 3f,
+                        )
+                    }
 
-                    queryViewModel.joins.forEachIndexed { index, join ->
-                        val left =
-                            queryViewModel.canvasTables.find { it.alias == join.leftAlias }
-                                ?: return@forEachIndexed
-                        val right =
-                            queryViewModel.canvasTables.find { it.alias == join.rightAlias }
-                                ?: return@forEachIndexed
-                        val edge =
-                            routeJoinEdge(
-                                canvasTableLike(left),
-                                join.leftColumn,
-                                canvasTableLike(right),
-                                join.rightColumn,
-                                allTables = tablesLike,
-                                laneIndex = index,
-                            )
-                        if (edge != null) {
-                            drawRoutedEdge(edge, alpha = 1f, dashed = false, endpointRadius = 4f)
-                        }
+                    joinLines.filterIsInstance<ClickableJoinLine.Existing>().forEach { line ->
+                        drawRoutedEdge(
+                            line.edge.translated(-renderOrigin.x, -renderOrigin.y),
+                            alpha = 1f,
+                            dashed = false,
+                            endpointRadius = 4f,
+                        )
                     }
 
                     dragJoin?.let { state ->
@@ -430,10 +558,16 @@ fun Canvas(
                                 color = joinColor.copy(alpha = 0.6f),
                                 start =
                                     Offset(
-                                        x = start?.x ?: tableRightX(like),
-                                        y = start?.y ?: columnY(like, state.sourceColumn),
+                                        x = (start?.x ?: tableRightX(like)) - renderOrigin.x,
+                                        y =
+                                            (start?.y ?: columnY(like, state.sourceColumn)) -
+                                                renderOrigin.y,
                                     ),
-                                end = Offset(state.mouseX, state.mouseY),
+                                end =
+                                    Offset(
+                                        state.mouseX - renderOrigin.x,
+                                        state.mouseY - renderOrigin.y,
+                                    ),
                                 strokeWidth = 2f,
                                 cap = StrokeCap.Round,
                                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f)),
@@ -514,55 +648,165 @@ fun Canvas(
                         modifier =
                             Modifier.offset {
                                 IntOffset(
-                                    canvasTable.x.roundToInt(),
-                                    canvasDisplayY(canvasTable.y, contentTopInsetPx).roundToInt(),
+                                    (canvasTable.x - renderOrigin.x).roundToInt(),
+                                    (canvasTable.y - renderOrigin.y).roundToInt(),
                                 )
                             },
                     )
                 }
             }
+
+            HorizontalScrollbar(
+                adapter = horizontalScrollbarAdapter,
+                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
+            )
+            VerticalScrollbar(
+                adapter = verticalScrollbarAdapter,
+                modifier =
+                    Modifier.align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(top = contentTopInset, bottom = 8.dp),
+            )
         }
 
-        HorizontalScrollbar(
-            adapter = rememberScrollbarAdapter(horizontalScroll),
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
-        )
-        VerticalScrollbar(
-            adapter = rememberScrollbarAdapter(verticalScroll),
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(bottom = 8.dp),
-        )
-
-        if (queryViewModel.canvasTables.isNotEmpty()) {
-            Text(
-                buildString {
-                    append("${queryViewModel.canvasTables.size} table")
-                    if (queryViewModel.canvasTables.size != 1) append('s')
-                    if (queryViewModel.joins.isNotEmpty()) {
-                        append(" · ${queryViewModel.joins.size} join")
-                        if (queryViewModel.joins.size != 1) append('s')
-                    }
-                    if (queryViewModel.selectedColumns.isNotEmpty()) {
-                        append(" · ${queryViewModel.selectedColumns.size} column")
-                        if (queryViewModel.selectedColumns.size != 1) append('s')
-                    }
-                    if (queryViewModel.filterCount > 0) {
-                        append(" · ${queryViewModel.filterCount} filter")
-                        if (queryViewModel.filterCount != 1) append('s')
-                    }
+        Box(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .height(CANVAS_FOOTER_HEIGHT_DP.dp)
+                    .background(SafeDbTheme.colors.workspaceCanvas)
+        ) {
+            CanvasZoomControls(
+                zoom = viewportState.zoom,
+                minZoom = CANVAS_MIN_ZOOM,
+                maxZoom = CANVAS_MAX_ZOOM,
+                fitDescription = "Fit query to screen",
+                resetDescription = "Reset view",
+                onZoomOut = {
+                    viewportState.setZoom(
+                        viewportState.zoom - CANVAS_ZOOM_STEP,
+                        Offset(viewport.width / 2f, viewportSize.height / 2f),
+                    )
                 },
-                modifier =
-                    Modifier.align(Alignment.BottomStart)
-                        .padding(12.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            MaterialTheme.shapes.small,
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelSmall,
+                onZoomIn = {
+                    viewportState.setZoom(
+                        viewportState.zoom + CANVAS_ZOOM_STEP,
+                        Offset(viewport.width / 2f, viewportSize.height / 2f),
+                    )
+                },
+                onFit = {
+                    viewportState.fit(
+                        contentBounds = contentBounds,
+                        viewport = viewportSize,
+                    )
+                },
+                onReset = viewportState::reset,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(horizontal = 12.dp),
             )
+
+            if (queryViewModel.canvasTables.isNotEmpty()) {
+                Text(
+                    buildString {
+                        append("${queryViewModel.canvasTables.size} table")
+                        if (queryViewModel.canvasTables.size != 1) append('s')
+                        if (queryViewModel.joins.isNotEmpty()) {
+                            append(" · ${queryViewModel.joins.size} join")
+                            if (queryViewModel.joins.size != 1) append('s')
+                        }
+                        if (queryViewModel.selectedColumns.isNotEmpty()) {
+                            append(" · ${queryViewModel.selectedColumns.size} column")
+                            if (queryViewModel.selectedColumns.size != 1) append('s')
+                        }
+                        if (queryViewModel.filterCount > 0) {
+                            append(" · ${queryViewModel.filterCount} filter")
+                            if (queryViewModel.filterCount != 1) append('s')
+                        }
+                    },
+                    modifier =
+                        Modifier.align(Alignment.CenterStart)
+                            .padding(horizontal = 12.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                                MaterialTheme.shapes.small,
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }
 
 internal fun canvasDisplayY(tableY: Float, contentTopInsetPx: Float): Float =
     tableY + contentTopInsetPx
+
+internal fun builderCanvasContentBounds(
+    tables: List<CanvasTableLike>,
+    edges: List<RoutedJoinEdge>,
+): Rect {
+    val tableRects = tables.map(::tableBounds)
+    val edgePoints = edges.flatMap(RoutedJoinEdge::points)
+    val left =
+        minOf(
+            tableRects.minOfOrNull { it.left } ?: 0f,
+            edgePoints.minOfOrNull { it.x } ?: Float.POSITIVE_INFINITY,
+        )
+    val top =
+        minOf(
+            tableRects.minOfOrNull { it.top } ?: 0f,
+            edgePoints.minOfOrNull { it.y } ?: Float.POSITIVE_INFINITY,
+        )
+    val right =
+        maxOf(
+            tableRects.maxOfOrNull { it.right } ?: 1f,
+            edgePoints.maxOfOrNull { it.x } ?: Float.NEGATIVE_INFINITY,
+        )
+    val bottom =
+        maxOf(
+            tableRects.maxOfOrNull { it.bottom } ?: 1f,
+            edgePoints.maxOfOrNull { it.y } ?: Float.NEGATIVE_INFINITY,
+        )
+    return Rect(left, top, right, bottom)
+}
+
+internal fun builderCanvasWorkspaceBounds(
+    contentBounds: Rect,
+    minimumSize: Size,
+    padding: Float,
+): Rect =
+    Rect(
+        left = minOf(0f, contentBounds.left - padding),
+        top = minOf(0f, contentBounds.top - padding),
+        right = maxOf(minimumSize.width, contentBounds.right + padding),
+        bottom = maxOf(minimumSize.height, contentBounds.bottom + padding),
+    )
+
+private fun RoutedJoinEdge.translated(deltaX: Float, deltaY: Float): RoutedJoinEdge =
+    copy(
+        points = points.map { point -> CanvasPoint(point.x + deltaX, point.y + deltaY) },
+        sourcePort =
+            sourcePort.copy(
+                point = CanvasPoint(sourcePort.point.x + deltaX, sourcePort.point.y + deltaY)
+            ),
+        targetPort =
+            targetPort.copy(
+                point = CanvasPoint(targetPort.point.x + deltaX, targetPort.point.y + deltaY)
+            ),
+    )
+
+private class BuilderCanvasScrollbarAdapter(
+    private val state: () -> CanvasAxisScrollState,
+    private val onScrollTo: (Float) -> Unit,
+) : ScrollbarAdapter {
+    override val scrollOffset: Double
+        get() = state().scrollOffset.toDouble()
+
+    override val contentSize: Double
+        get() = state().contentSize.toDouble()
+
+    override val viewportSize: Double
+        get() = state().viewportSize.toDouble()
+
+    override suspend fun scrollTo(scrollOffset: Double) {
+        onScrollTo(scrollOffset.toFloat())
+    }
+}

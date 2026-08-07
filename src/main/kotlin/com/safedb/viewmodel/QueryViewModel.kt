@@ -99,6 +99,8 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
     private var observedQueryRiskGate: QueryRiskGate? = null
     private var riskEvaluationConnectionId: String? = null
 
+    internal val canvasViewport = CanvasViewportState()
+
     val canvasTables: SnapshotStateList<CanvasTable> = mutableStateListOf()
     var selectedColumns by mutableStateOf(setOf<String>())
         private set
@@ -232,6 +234,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         sortState = emptyList()
         groupState = emptyList()
         requestedFilterFocusIdState = null
+        canvasViewport.reset()
         clearPendingConfirmation(settle = true)
     }
 
@@ -258,6 +261,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
         sortState = sorts.filterNot { it.tableAlias == alias }
         groupState = groups.filterNot { it.tableAlias == alias }
+        if (canvasTables.isEmpty()) canvasViewport.reset()
     }
 
     fun moveTable(alias: String, x: Float, y: Float) {

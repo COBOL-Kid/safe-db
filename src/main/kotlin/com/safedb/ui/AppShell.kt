@@ -183,6 +183,15 @@ fun AppShell(
                         schemaSelection = schemaSelection,
                         schemaHistoryError = schemaHistoryError,
                         settings = settings,
+                        onConnectionSelected = { connection ->
+                            appState.setActiveConnection(
+                                connection.id,
+                                com.safedb.resolveConnectionSchemaSelection(
+                                    connection.id,
+                                    settings,
+                                ),
+                            )
+                        },
                         onSchemaSelected = { schema ->
                             val connectionId = activeConnection?.id ?: return@BuilderScreen
                             appState.setActiveSchema(schema)
