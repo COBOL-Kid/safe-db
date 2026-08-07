@@ -28,7 +28,7 @@ scripts/seed_mysql.sh --static
 SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integrationTest --stacktrace
 ```
 
-CI runs `check` on selected application/build changes, required static-MySQL integration where applicable, workflow lint for workflow-only changes, and a weekly/on-demand cross-platform durability suite. Compose jobs skip drafts and support `merge_group`; fork integration additionally needs approval and a maintainer-applied `ci:integration` label.
+CI is on demand: a maintainer applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration; remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled. The cross-platform durability suite is on-demand through GitHub Actions, and dependency submission remains automatic for qualifying trusted `main` changes.
 
 ## Structure
 
