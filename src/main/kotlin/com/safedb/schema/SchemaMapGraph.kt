@@ -4,7 +4,6 @@ import com.safedb.model.ColumnInfo
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
 import com.safedb.model.Schema
-import com.safedb.model.SortDirection
 import com.safedb.model.TableInfo
 import com.safedb.model.qualifiedName
 
@@ -27,10 +26,7 @@ internal enum class SchemaMapColumnMarkerKind {
     Index,
 }
 
-internal data class SchemaMapColumnMarker(
-    val kind: SchemaMapColumnMarkerKind,
-    val tooltip: String,
-)
+internal data class SchemaMapColumnMarker(val kind: SchemaMapColumnMarkerKind)
 
 internal data class SchemaMapColumn(
     val column: ColumnInfo,
@@ -60,7 +56,7 @@ internal data class SchemaMapRelationship(
     val targetColumns: List<String>,
     val cardinality: SchemaMapCardinality,
     val optionality: SchemaMapOptionality,
-    val description: String,
+    val label: String,
 )
 
 internal data class SchemaMapGraph(
@@ -114,8 +110,7 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                     targetColumns = foreignKey.referencedColumns,
                     cardinality = cardinality,
                     optionality = optionality,
-                    description =
-                        relationshipDescription(table, foreignKey, cardinality, optionality),
+                    label = relationshipLabel(table, foreignKey, cardinality),
                 )
         }
     }
@@ -195,7 +190,7 @@ internal fun searchSchemaMap(graph: SchemaMapGraph, query: String): SchemaMapSea
         graph.relationships
             .filter { relationship ->
                 relationship.name.lowercase().contains(needle) ||
-                    relationship.description.lowercase().contains(needle) ||
+                    relationship.label.lowercase().contains(needle) ||
                     relationship.sourceColumns.any { it.lowercase().contains(needle) } ||
                     relationship.targetColumns.any { it.lowercase().contains(needle) }
             }
@@ -292,105 +287,65 @@ private fun relationshipOptionality(
     }
 }
 
-private fun relationshipDescription(
+private fun relationshipLabel(
     table: TableInfo,
     foreignKey: ForeignKeyInfo,
     cardinality: SchemaMapCardinality,
-    optionality: SchemaMapOptionality,
 ): String {
-    val kind =
-        when (cardinality) {
-            SchemaMapCardinality.OneToOne -> "one to one"
-            SchemaMapCardinality.ManyToOne -> "many to one"
-            SchemaMapCardinality.Unknown -> "cardinality unknown"
-        }
-    val requirement =
-        when (optionality) {
-            SchemaMapOptionality.Required -> "the referenced row is required"
-            SchemaMapOptionality.Optional -> "the referenced row is optional"
-            SchemaMapOptionality.Unknown -> "optionality is unknown"
-        }
-    return buildString {
-        append(foreignKey.name)
-        append(": ")
-        append(table.name)
-        append('.')
-        append(foreignKey.columns.joinToString(" + "))
-        append(" → ")
-        append(foreignKey.referencedSchema)
-        append('.')
-        append(foreignKey.referencedTable)
-        append('.')
-        append(foreignKey.referencedColumns.joinToString(" + "))
-        append(" · ")
-        append(kind)
-        append("; ")
-        append(requirement)
-        append('.')
+    val source =
+        relationshipEndpoint(
+            schema = table.schema,
+            table = table.name,
+            columns = foreignKey.columns,
+            localSchema = table.schema,
+        )
+    val target =
+        relationshipEndpoint(
+            schema = foreignKey.referencedSchema,
+            table = foreignKey.referencedTable,
+            columns = foreignKey.referencedColumns,
+            localSchema = table.schema,
+        )
+    return when (cardinality) {
+        SchemaMapCardinality.ManyToOne -> "$target has many $source."
+        SchemaMapCardinality.OneToOne -> "$target can have one $source."
+        SchemaMapCardinality.Unknown -> "$source is connected to $target."
+    }
+}
+
+private fun relationshipEndpoint(
+    schema: String,
+    table: String,
+    columns: List<String>,
+    localSchema: String,
+): String {
+    val tableLabel = if (schema == localSchema) table else "$schema.$table"
+    return if (columns.size == 1) {
+        "$tableLabel.${columns.single()}"
+    } else {
+        "$tableLabel (${columns.joinToString(" and ")})"
     }
 }
 
 private fun projectColumn(table: TableInfo, column: ColumnInfo): SchemaMapColumn {
-    fun marker(kind: SchemaMapColumnMarkerKind, lines: List<String>) =
-        lines.takeIf(List<String>::isNotEmpty)?.let {
-            SchemaMapColumnMarker(kind, it.joinToString("\n"))
-        }
-
-    val primary =
-        table.indexes
-            .filter { it.isPrimary && column.name in indexKeyColumns(it) }
-            .map(::indexTooltip)
+    val primary = table.indexes.any { it.isPrimary && column.name in indexKeyColumns(it) }
     val unique =
-        table.indexes
-            .filter { !it.isPrimary && it.isUnique && column.name in indexKeyColumns(it) }
-            .map(::indexTooltip)
-    val foreign =
-        table.foreignKeys
-            .filter { column.name in it.columns }
-            .map { key ->
-                val sourcePosition = key.columns.indexOf(column.name)
-                val target = key.referencedColumns.getOrNull(sourcePosition) ?: "?"
-                "Foreign key ${key.name}: ${column.name} → ${key.referencedSchema}.${key.referencedTable}.$target"
-            }
+        table.indexes.any { !it.isPrimary && it.isUnique && column.name in indexKeyColumns(it) }
+    val foreign = table.foreignKeys.any { column.name in it.columns }
     val indexes =
-        table.indexes
-            .filter { index ->
-                (!index.isPrimary && !index.isUnique && column.name in indexKeyColumns(index)) ||
-                    column.name in index.includedColumns
-            }
-            .map(::indexTooltip)
+        table.indexes.any { index ->
+            (!index.isPrimary && !index.isUnique && column.name in indexKeyColumns(index)) ||
+                column.name in index.includedColumns
+        }
     return SchemaMapColumn(
         column,
         listOfNotNull(
-            marker(SchemaMapColumnMarkerKind.PrimaryKey, primary),
-            marker(SchemaMapColumnMarkerKind.Unique, unique),
-            marker(SchemaMapColumnMarkerKind.ForeignKey, foreign),
-            marker(SchemaMapColumnMarkerKind.Index, indexes),
+            SchemaMapColumnMarker(SchemaMapColumnMarkerKind.PrimaryKey).takeIf { primary },
+            SchemaMapColumnMarker(SchemaMapColumnMarkerKind.Unique).takeIf { unique },
+            SchemaMapColumnMarker(SchemaMapColumnMarkerKind.ForeignKey).takeIf { foreign },
+            SchemaMapColumnMarker(SchemaMapColumnMarkerKind.Index).takeIf { indexes },
         ),
     )
-}
-
-internal fun indexTooltip(index: IndexInfo): String = buildString {
-    append(
-        when {
-            index.isPrimary -> "Primary key index"
-            index.isUnique && index.isPartial == true -> "Partial unique index"
-            index.isUnique -> "Unique index"
-            else -> "Index"
-        }
-    )
-    append(" ${index.name}")
-    index.kind.takeIf(String::isNotBlank)?.let { append(" · $it") }
-    val keys = indexKeyDescription(index)
-    if (keys.isNotBlank()) append(": $keys")
-    if (index.includedColumns.isNotEmpty()) {
-        append(" · includes ${index.includedColumns.joinToString(", ")}")
-    }
-    when (index.isPartial) {
-        true -> append(" · partial predicate")
-        null -> append(" · predicate details unavailable")
-        false -> Unit
-    }
 }
 
 private fun indexKeyColumns(index: IndexInfo): List<String> =
@@ -403,20 +358,6 @@ private fun exactIndexKeyColumns(index: IndexInfo): List<String>? =
             ?.map { requireNotNull(it.column) }
     } else {
         index.columns
-    }
-
-private fun indexKeyDescription(index: IndexInfo): String =
-    if (index.keys.isNotEmpty()) {
-        index.keys.joinToString(", ") { key ->
-            val label = key.column ?: "expression"
-            when (key.direction) {
-                SortDirection.Asc -> "$label ASC"
-                SortDirection.Desc -> "$label DESC"
-                null -> label
-            }
-        }
-    } else {
-        index.columns.joinToString(", ")
     }
 
 private fun qualifiedId(schema: String, table: String) = "$schema.$table"

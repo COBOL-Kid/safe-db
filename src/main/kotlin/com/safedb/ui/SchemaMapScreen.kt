@@ -1,6 +1,8 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,17 +17,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -60,6 +66,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -78,6 +85,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -96,6 +104,9 @@ import androidx.compose.ui.zIndex
 import com.safedb.SchemaSelectionIntent
 import com.safedb.model.ConnectionDef
 import com.safedb.model.IndexInfo
+import com.safedb.query.CanvasPoint
+import com.safedb.query.CanvasRect
+import com.safedb.query.routeOrthogonalPath
 import com.safedb.schema.SchemaMapCardinality
 import com.safedb.schema.SchemaMapColumnMarker
 import com.safedb.schema.SchemaMapColumnMarkerKind
@@ -107,7 +118,6 @@ import com.safedb.schema.SchemaMapRelationship
 import com.safedb.schema.SchemaMapSearchResult
 import com.safedb.schema.SchemaMapSize
 import com.safedb.schema.buildSchemaMapGraph
-import com.safedb.schema.indexTooltip
 import com.safedb.schema.layoutSchemaMap
 import com.safedb.schema.searchSchemaMap
 import com.safedb.ui.components.BannerKind
@@ -119,8 +129,12 @@ import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.SCHEMA_MAP_MAX_ZOOM
 import com.safedb.viewmodel.SCHEMA_MAP_MIN_ZOOM
+import com.safedb.viewmodel.SchemaMapAxisScrollState
 import com.safedb.viewmodel.SchemaMapViewModel
 import com.safedb.viewmodel.SchemaViewModel
+import com.safedb.viewmodel.schemaMapAxisScrollState
+import com.safedb.viewmodel.schemaMapConstrainedPan
+import com.safedb.viewmodel.schemaMapPanForScrollDelta
 import kotlin.math.roundToInt
 
 @Composable
@@ -519,10 +533,71 @@ private fun SchemaMapCanvas(
             relationshipGeometry,
         )
     val viewportSize = Size(viewport.width.toFloat(), viewport.height.toFloat())
+    val horizontalScroll =
+        schemaMapAxisScrollState(
+            contentStart = contentBounds.left,
+            contentEnd = contentBounds.right,
+            viewportSize = viewportSize.width,
+            zoom = viewModel.zoom,
+            pan = viewModel.pan.x,
+        )
+    val verticalScroll =
+        schemaMapAxisScrollState(
+            contentStart = contentBounds.top,
+            contentEnd = contentBounds.bottom,
+            viewportSize = viewportSize.height,
+            zoom = viewModel.zoom,
+            pan = viewModel.pan.y,
+        )
+    val currentHorizontalScroll = rememberUpdatedState(horizontalScroll)
+    val currentVerticalScroll = rememberUpdatedState(verticalScroll)
+    val horizontalScrollbarAdapter =
+        remember(viewModel) {
+            SchemaMapScrollbarAdapter(
+                state = { currentHorizontalScroll.value },
+                onScrollTo = { target ->
+                    val axis = currentHorizontalScroll.value
+                    viewModel.updatePan(Offset(axis.panForScrollOffset(target), viewModel.pan.y))
+                },
+            )
+        }
+    val verticalScrollbarAdapter =
+        remember(viewModel) {
+            SchemaMapScrollbarAdapter(
+                state = { currentVerticalScroll.value },
+                onScrollTo = { target ->
+                    val axis = currentVerticalScroll.value
+                    viewModel.updatePan(Offset(viewModel.pan.x, axis.panForScrollOffset(target)))
+                },
+            )
+        }
+    val renderPaddingPx = SCHEMA_MAP_RENDER_PADDING_DP * density.density
+    val renderOrigin =
+        Offset(contentBounds.left - renderPaddingPx, contentBounds.top - renderPaddingPx)
+    val renderOriginDp =
+        SchemaMapPoint(renderOrigin.x / density.density, renderOrigin.y / density.density)
+    val renderPositions = positions.mapValues { (_, point) ->
+        point.translated(-renderOriginDp.x, -renderOriginDp.y)
+    }
+    val renderRelationshipGeometry = relationshipGeometry.mapValues { (_, geometry) ->
+        geometry.translated(-renderOriginDp.x, -renderOriginDp.y)
+    }
+    val renderWidth =
+        ((contentBounds.width + renderPaddingPx * 2f) / density.density).coerceAtLeast(1f)
+    val renderHeight =
+        ((contentBounds.height + renderPaddingPx * 2f) / density.density).coerceAtLeast(1f)
 
     LaunchedEffect(connectionId, selectedSchema, viewport, contextReady) {
         if (viewport.width > 0 && viewport.height > 0) {
             viewModel.fit(contentBounds, viewportSize)
+        }
+    }
+
+    LaunchedEffect(horizontalScroll, verticalScroll, viewport) {
+        if (viewport.width > 0 && viewport.height > 0) {
+            val constrained =
+                schemaMapConstrainedPan(viewModel.pan, horizontalScroll, verticalScroll)
+            if (constrained != viewModel.pan) viewModel.updatePan(constrained)
         }
     }
 
@@ -533,50 +608,71 @@ private fun SchemaMapCanvas(
                 .background(SafeDbTheme.colors.workspaceCanvas)
                 .onSizeChanged { viewport = it }
                 .onPointerEvent(PointerEventType.Scroll) { event ->
-                    if (
-                        event.keyboardModifiers.isCtrlPressed ||
-                            event.keyboardModifiers.isMetaPressed
-                    ) {
-                        event.changes.firstOrNull()?.let { change ->
+                    event.changes.firstOrNull()?.let { change ->
+                        if (
+                            event.keyboardModifiers.isCtrlPressed ||
+                                event.keyboardModifiers.isMetaPressed
+                        ) {
                             val delta = if (change.scrollDelta.y < 0f) 0.1f else -0.1f
                             viewModel.setZoom(viewModel.zoom + delta, change.position)
                             change.consume()
+                        } else {
+                            val target =
+                                schemaMapPanForScrollDelta(
+                                    horizontal = horizontalScroll,
+                                    vertical = verticalScroll,
+                                    delta = change.scrollDelta,
+                                    shiftPressed = event.keyboardModifiers.isShiftPressed,
+                                )
+                            if (target != viewModel.pan) {
+                                viewModel.updatePan(target)
+                                change.consume()
+                            }
                         }
                     }
                 }
-                .pointerInput(connectionId, selectedSchema) {
+                .pointerInput(
+                    connectionId,
+                    selectedSchema,
+                    contentBounds,
+                    viewportSize,
+                    viewModel.zoom,
+                ) {
                     detectDragGestures { change, dragAmount ->
                         if (!change.isConsumed) {
                             change.consume()
-                            viewModel.panBy(dragAmount)
+                            viewModel.updatePan(
+                                schemaMapConstrainedPan(
+                                    viewModel.pan + dragAmount,
+                                    horizontalScroll,
+                                    verticalScroll,
+                                )
+                            )
                         }
                     }
                 }
     ) {
         Box(
             modifier =
-                Modifier.fillMaxSize().graphicsLayer {
-                    scaleX = viewModel.zoom
-                    scaleY = viewModel.zoom
-                    translationX = viewModel.pan.x
-                    translationY = viewModel.pan.y
-                    transformOrigin = TransformOrigin(0f, 0f)
-                }
+                Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)
+                    .requiredSize(renderWidth.dp, renderHeight.dp)
+                    .graphicsLayer {
+                        scaleX = viewModel.zoom
+                        scaleY = viewModel.zoom
+                        translationX = viewModel.pan.x + renderOrigin.x * viewModel.zoom
+                        translationY = viewModel.pan.y + renderOrigin.y * viewModel.zoom
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    }
         ) {
             SchemaRelationships(
                 graph = graph,
-                geometries = relationshipGeometry,
+                geometries = renderRelationshipGeometry,
                 search = search,
                 searchActive = viewModel.query.isNotBlank(),
             )
 
             graph.relationships.forEach { relationship ->
-                val geometry = relationshipGeometry.getValue(relationship.id)
-                RelationshipTooltipHitTargets(
-                    relationship = relationship,
-                    geometry = geometry,
-                    zoom = viewModel.zoom,
-                )
+                val geometry = renderRelationshipGeometry.getValue(relationship.id)
                 val midpoint = geometry.anchor
                 val targetSize = 24f / viewModel.zoom
                 RelationshipTooltipAnchor(
@@ -595,7 +691,7 @@ private fun SchemaMapCanvas(
             }
 
             graph.nodes.forEach { node ->
-                val point = positions.getValue(node.id)
+                val point = renderPositions.getValue(node.id)
                 val size = nodeSizes.getValue(node.id)
                 val highlighted = viewModel.query.isBlank() || node.id in search.nodeIds
                 if (node.isExternal) {
@@ -643,6 +739,23 @@ private fun SchemaMapCanvas(
                 }
             }
         }
+
+        HorizontalScrollbar(
+            adapter = horizontalScrollbarAdapter,
+            modifier =
+                Modifier.align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(end = SCHEMA_MAP_SCROLLBAR_CORNER.dp)
+                    .zIndex(10f),
+        )
+        VerticalScrollbar(
+            adapter = verticalScrollbarAdapter,
+            modifier =
+                Modifier.align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(bottom = SCHEMA_MAP_SCROLLBAR_CORNER.dp)
+                    .zIndex(10f),
+        )
 
         SchemaMapControls(
             zoom = viewModel.zoom,
@@ -1016,61 +1129,55 @@ private fun SchemaColumnMarker(marker: SchemaMapColumnMarker) {
             SchemaMapColumnMarkerKind.Index ->
                 Triple(Icons.Default.Storage, MaterialTheme.colorScheme.onSurfaceVariant, "Index")
         }
-    SchemaMapTooltip(marker.tooltip) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = tint,
-            modifier =
-                Modifier.padding(start = 3.dp)
-                    .size(15.dp)
-                    .semantics {
-                        role = Role.Image
-                        contentDescription = "$description. ${marker.tooltip}"
-                    }
-                    .focusable(),
-        )
-    }
+    Icon(
+        icon,
+        contentDescription = description,
+        tint = tint,
+        modifier = Modifier.padding(start = 3.dp).size(15.dp),
+    )
 }
 
 @Composable
 private fun IndexDetailRow(index: IndexInfo) {
-    SchemaMapTooltip(indexTooltip(index)) {
-        Row(
-            modifier =
-                Modifier.fillMaxWidth()
-                    .height(24.dp)
-                    .semantics(mergeDescendants = true) {
-                        role = Role.Image
-                        contentDescription = indexTooltip(index)
-                    }
-                    .focusable()
-                    .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                when {
-                    index.isPrimary -> Icons.Default.Key
-                    index.isUnique -> Icons.Default.Verified
-                    else -> Icons.Default.Storage
-                },
-                contentDescription = null,
-                tint =
-                    when {
-                        index.isPrimary -> SafeDbTheme.colors.actionPrimary
-                        index.isUnique -> SafeDbTheme.colors.uq
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                modifier = Modifier.size(14.dp),
-            )
-            Text(
-                index.name,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(start = 6.dp).weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+    val type =
+        when {
+            index.isPrimary -> "Primary key"
+            index.isUnique -> "Unique index"
+            else -> "Index"
         }
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .height(24.dp)
+                .semantics(mergeDescendants = true) {
+                    role = Role.Image
+                    contentDescription = "$type ${index.name}"
+                }
+                .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            when {
+                index.isPrimary -> Icons.Default.Key
+                index.isUnique -> Icons.Default.Verified
+                else -> Icons.Default.Storage
+            },
+            contentDescription = null,
+            tint =
+                when {
+                    index.isPrimary -> SafeDbTheme.colors.actionPrimary
+                    index.isUnique -> SafeDbTheme.colors.uq
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            index.name,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(start = 6.dp).weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1081,31 +1188,28 @@ private fun MetadataCoverageRow(indexesIncomplete: Boolean, relationshipsIncompl
         if (indexesIncomplete && relationshipsIncomplete) append(' ')
         if (relationshipsIncomplete) append("Relationship metadata is unavailable or incomplete.")
     }
-    SchemaMapTooltip(description) {
-        Row(
-            modifier =
-                Modifier.fillMaxWidth()
-                    .semantics(mergeDescendants = true) {
-                        role = Role.Image
-                        contentDescription = description
-                    }
-                    .focusable()
-                    .padding(horizontal = 10.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Default.Info,
-                contentDescription = null,
-                tint = SafeDbTheme.colors.warning,
-                modifier = Modifier.size(14.dp),
-            )
-            Text(
-                "Some metadata unavailable",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 6.dp),
-            )
-        }
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    role = Role.Image
+                    contentDescription = description
+                }
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Default.Info,
+            contentDescription = null,
+            tint = SafeDbTheme.colors.warning,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            "Some metadata unavailable",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 6.dp),
+        )
     }
 }
 
@@ -1159,30 +1263,6 @@ private fun ExternalSchemaNode(
 }
 
 @Composable
-private fun RelationshipTooltipHitTargets(
-    relationship: SchemaMapRelationship,
-    geometry: SchemaMapRelationshipGeometry,
-    zoom: Float,
-) {
-    val density = LocalDensity.current
-    schemaMapRelationshipHitRegions(geometry, zoom).forEach { region ->
-        Box(
-            Modifier.offset {
-                    IntOffset(
-                        with(density) { region.left.dp.roundToPx() },
-                        with(density) { region.top.dp.roundToPx() },
-                    )
-                }
-                .width(region.width.dp)
-                .height(region.height.dp)
-                .zIndex(1.5f)
-        ) {
-            SchemaMapTooltip(relationship.description) { Box(Modifier.fillMaxSize()) }
-        }
-    }
-}
-
-@Composable
 private fun RelationshipTooltipAnchor(
     relationship: SchemaMapRelationship,
     targetSize: Float,
@@ -1193,14 +1273,14 @@ private fun RelationshipTooltipAnchor(
     val hovered by interactionSource.collectIsHoveredAsState()
     val focused by interactionSource.collectIsFocusedAsState()
     Box(modifier = modifier.size(targetSize.dp)) {
-        SchemaMapTooltip(relationship.description) {
+        SchemaMapTooltip(relationship.label) {
             Box(
                 modifier =
                     Modifier.fillMaxSize()
                         .hoverable(interactionSource)
                         .semantics {
                             role = Role.Image
-                            contentDescription = relationship.description
+                            contentDescription = relationship.label
                         }
                         .focusable(interactionSource = interactionSource),
                 contentAlignment = Alignment.Center,
@@ -1381,9 +1461,27 @@ private fun SchemaMapTooltip(text: String, content: @Composable () -> Unit) {
                 Text(text, style = MaterialTheme.typography.bodySmall)
             }
         },
-        state = rememberTooltipState(),
+        state = rememberTooltipState(isPersistent = true),
         content = content,
     )
+}
+
+private class SchemaMapScrollbarAdapter(
+    private val state: () -> SchemaMapAxisScrollState,
+    private val onScrollTo: (Float) -> Unit,
+) : ScrollbarAdapter {
+    override val scrollOffset: Double
+        get() = state().scrollOffset.toDouble()
+
+    override val contentSize: Double
+        get() = state().contentSize.toDouble()
+
+    override val viewportSize: Double
+        get() = state().viewportSize.toDouble()
+
+    override suspend fun scrollTo(scrollOffset: Double) {
+        onScrollTo(scrollOffset.toFloat())
+    }
 }
 
 internal data class SchemaMapRelationshipGeometry(
@@ -1395,44 +1493,19 @@ internal data class SchemaMapRelationshipGeometry(
     val targetTowardRight: Boolean,
 )
 
-internal data class SchemaMapRelationshipHitRegion(
-    val left: Float,
-    val top: Float,
-    val width: Float,
-    val height: Float,
-) {
-    fun contains(point: SchemaMapPoint): Boolean =
-        point.x in left..(left + width) && point.y in top..(top + height)
-}
+private fun SchemaMapPoint.translated(deltaX: Float, deltaY: Float): SchemaMapPoint =
+    SchemaMapPoint(x + deltaX, y + deltaY)
 
-internal fun schemaMapRelationshipHitRegions(
-    geometry: SchemaMapRelationshipGeometry,
-    zoom: Float,
-): List<SchemaMapRelationshipHitRegion> {
-    val hitWidth = 14f / zoom.coerceAtLeast(SCHEMA_MAP_MIN_ZOOM)
-    val points = listOf(geometry.source) + geometry.bends + geometry.target
-    return points.zipWithNext().mapNotNull { (start, end) ->
-        val horizontal = kotlin.math.abs(end.x - start.x) >= kotlin.math.abs(end.y - start.y)
-        val length =
-            if (horizontal) kotlin.math.abs(end.x - start.x) else kotlin.math.abs(end.y - start.y)
-        if (length < 0.5f) return@mapNotNull null
-        if (horizontal) {
-            SchemaMapRelationshipHitRegion(
-                left = minOf(start.x, end.x),
-                top = (start.y + end.y) / 2f - hitWidth / 2f,
-                width = length,
-                height = hitWidth,
-            )
-        } else {
-            SchemaMapRelationshipHitRegion(
-                left = (start.x + end.x) / 2f - hitWidth / 2f,
-                top = minOf(start.y, end.y),
-                width = hitWidth,
-                height = length,
-            )
-        }
-    }
-}
+private fun SchemaMapRelationshipGeometry.translated(
+    deltaX: Float,
+    deltaY: Float,
+): SchemaMapRelationshipGeometry =
+    copy(
+        source = source.translated(deltaX, deltaY),
+        target = target.translated(deltaX, deltaY),
+        bends = bends.map { it.translated(deltaX, deltaY) },
+        anchor = anchor.translated(deltaX, deltaY),
+    )
 
 internal fun schemaMapRelationshipGeometries(
     graph: SchemaMapGraph,
@@ -1443,8 +1516,21 @@ internal fun schemaMapRelationshipGeometries(
         graph.relationships.groupBy { relationship ->
             listOf(relationship.sourceNodeId, relationship.targetNodeId).sorted().joinToString("|")
         }
+    val tableObstacles =
+        graph.nodes.map { node ->
+            val point = positions.getValue(node.id)
+            val size = sizes.getValue(node.id)
+            CanvasRect(
+                    left = point.x,
+                    top = point.y,
+                    right = point.x + size.width,
+                    bottom = point.y + size.height,
+                )
+                .expanded(RELATIONSHIP_TABLE_CLEARANCE)
+        }
+    val occupiedVerticalLanes = mutableListOf<SchemaMapVerticalLane>()
     return buildMap {
-        grouped.values.forEach { relationships ->
+        grouped.toSortedMap().values.forEach { relationships ->
             relationships.sortedBy(SchemaMapRelationship::id).forEachIndexed { index, relationship
                 ->
                 val lane = index - (relationships.size - 1) / 2f
@@ -1454,7 +1540,7 @@ internal fun schemaMapRelationshipGeometries(
                 val targetSize = sizes.getValue(relationship.targetNodeId)
                 val sameNode = relationship.sourceNodeId == relationship.targetNodeId
                 val sameColumn = !sameNode && kotlin.math.abs(source.x - target.x) < 1f
-                val geometry =
+                val route =
                     if (sameNode || sameColumn) {
                         val right = maxOf(source.x + sourceSize.width, target.x + targetSize.width)
                         val outerX = right + 54f + index * 18f
@@ -1464,17 +1550,13 @@ internal fun schemaMapRelationshipGeometries(
                         val targetY =
                             if (sameNode) target.y + targetSize.height * 0.64f + lane * 9f
                             else target.y + targetSize.height / 2f + lane * 18f
-                        SchemaMapRelationshipGeometry(
+                        schemaMapObstacleAvoidingRoute(
                             source = SchemaMapPoint(source.x + sourceSize.width, sourceY),
                             target = SchemaMapPoint(target.x + targetSize.width, targetY),
-                            bends =
-                                listOf(
-                                    SchemaMapPoint(outerX, sourceY),
-                                    SchemaMapPoint(outerX, targetY),
-                                ),
-                            anchor = SchemaMapPoint(outerX, (sourceY + targetY) / 2f),
                             sourceTowardRight = true,
                             targetTowardRight = true,
+                            preferredMiddleX = outerX,
+                            obstacles = tableObstacles,
                         )
                     } else {
                         val sourceOnRight = source.x < target.x
@@ -1489,29 +1571,146 @@ internal fun schemaMapRelationshipGeometries(
                                 target.x + if (sourceOnRight) 0f else targetSize.width,
                                 target.y + targetSize.height / 2f + laneOffset,
                             )
-                        val middleX = (sourcePoint.x + targetPoint.x) / 2f + lane * 4f
-                        SchemaMapRelationshipGeometry(
+                        val middleX =
+                            separatedRelationshipLane(
+                                source = sourcePoint,
+                                target = targetPoint,
+                                preferredX = (sourcePoint.x + targetPoint.x) / 2f + lane * 4f,
+                                occupied = occupiedVerticalLanes,
+                            )
+                        schemaMapObstacleAvoidingRoute(
                             source = sourcePoint,
                             target = targetPoint,
-                            bends =
-                                listOf(
-                                    SchemaMapPoint(middleX, sourcePoint.y),
-                                    SchemaMapPoint(middleX, targetPoint.y),
-                                ),
-                            anchor =
-                                SchemaMapPoint(
-                                    middleX,
-                                    (sourcePoint.y + targetPoint.y) / 2f,
-                                ),
                             sourceTowardRight = sourceOnRight,
                             targetTowardRight = !sourceOnRight,
+                            preferredMiddleX = middleX,
+                            obstacles = tableObstacles,
                         )
                     }
-                put(relationship.id, geometry)
+                recordVerticalLanes(route, occupiedVerticalLanes)
+                put(relationship.id, route)
             }
         }
     }
 }
+
+private fun schemaMapObstacleAvoidingRoute(
+    source: SchemaMapPoint,
+    target: SchemaMapPoint,
+    sourceTowardRight: Boolean,
+    targetTowardRight: Boolean,
+    preferredMiddleX: Float,
+    obstacles: List<CanvasRect>,
+): SchemaMapRelationshipGeometry {
+    val sourceExit = source.horizontalExit(sourceTowardRight)
+    val targetExit = target.horizontalExit(targetTowardRight)
+    val middle =
+        routeOrthogonalPath(
+                start = sourceExit.toCanvasPoint(),
+                target = targetExit.toCanvasPoint(),
+                obstacles = obstacles,
+                preferredMiddleX = preferredMiddleX,
+            )
+            .map(CanvasPoint::toSchemaMapPoint)
+    val points = buildList {
+        add(source)
+        addAll(middle)
+        add(target)
+    }
+        .distinctAdjacent()
+    return SchemaMapRelationshipGeometry(
+        source = source,
+        target = target,
+        bends = points.drop(1).dropLast(1),
+        anchor = relationshipPathMidpoint(points),
+        sourceTowardRight = sourceTowardRight,
+        targetTowardRight = targetTowardRight,
+    )
+}
+
+private fun SchemaMapPoint.horizontalExit(towardRight: Boolean): SchemaMapPoint =
+    copy(x = x + if (towardRight) RELATIONSHIP_TABLE_CLEARANCE else -RELATIONSHIP_TABLE_CLEARANCE)
+
+private fun SchemaMapPoint.toCanvasPoint(): CanvasPoint = CanvasPoint(x, y)
+
+private fun CanvasPoint.toSchemaMapPoint(): SchemaMapPoint = SchemaMapPoint(x, y)
+
+private fun List<SchemaMapPoint>.distinctAdjacent(): List<SchemaMapPoint> =
+    fold(mutableListOf<SchemaMapPoint>()) { result, point ->
+        if (result.lastOrNull() != point) result += point
+        result
+    }
+
+private fun relationshipPathMidpoint(points: List<SchemaMapPoint>): SchemaMapPoint {
+    val segmentLengths =
+        points.zipWithNext().map { (start, end) ->
+            kotlin.math.abs(end.x - start.x) + kotlin.math.abs(end.y - start.y)
+        }
+    var remaining = segmentLengths.sum() / 2f
+    points.zipWithNext().forEachIndexed { index, (start, end) ->
+        val length = segmentLengths[index]
+        if (remaining <= length) {
+            if (length == 0f) return start
+            val progress = remaining / length
+            return SchemaMapPoint(
+                x = start.x + (end.x - start.x) * progress,
+                y = start.y + (end.y - start.y) * progress,
+            )
+        }
+        remaining -= length
+    }
+    return points.lastOrNull() ?: SchemaMapPoint(0f, 0f)
+}
+
+private fun recordVerticalLanes(
+    geometry: SchemaMapRelationshipGeometry,
+    occupied: MutableList<SchemaMapVerticalLane>,
+) {
+    val points = listOf(geometry.source) + geometry.bends + geometry.target
+    points.zipWithNext().forEach { (start, end) ->
+        if (start.x == end.x && start.y != end.y) {
+            occupied += SchemaMapVerticalLane(start.x, minOf(start.y, end.y), maxOf(start.y, end.y))
+        }
+    }
+}
+
+private data class SchemaMapVerticalLane(val x: Float, val top: Float, val bottom: Float)
+
+private fun separatedRelationshipLane(
+    source: SchemaMapPoint,
+    target: SchemaMapPoint,
+    preferredX: Float,
+    occupied: MutableList<SchemaMapVerticalLane>,
+): Float {
+    val top = minOf(source.y, target.y)
+    val bottom = maxOf(source.y, target.y)
+    val minimumX = minOf(source.x, target.x) + RELATIONSHIP_MIN_HORIZONTAL_RUN
+    val maximumX = maxOf(source.x, target.x) - RELATIONSHIP_MIN_HORIZONTAL_RUN
+    if (minimumX > maximumX) return preferredX
+    val candidates = buildList {
+        add(preferredX)
+        for (distance in 1..RELATIONSHIP_LANE_SEARCH_LIMIT) {
+            add(preferredX + distance * RELATIONSHIP_LANE_SPACING)
+            add(preferredX - distance * RELATIONSHIP_LANE_SPACING)
+        }
+    }
+    val selected =
+        candidates.firstOrNull { candidate ->
+            candidate in minimumX..maximumX &&
+                occupied.none { lane ->
+                    verticalRangesOverlap(top, bottom, lane.top, lane.bottom) &&
+                        kotlin.math.abs(candidate - lane.x) < RELATIONSHIP_LANE_SPACING
+                }
+        } ?: preferredX.coerceIn(minimumX, maximumX)
+    return selected
+}
+
+private fun verticalRangesOverlap(
+    firstTop: Float,
+    firstBottom: Float,
+    secondTop: Float,
+    secondBottom: Float,
+) = maxOf(firstTop, secondTop) < minOf(firstBottom, secondBottom)
 
 private fun SchemaMapPoint.toPxOffset(scope: DrawScope): Offset =
     with(scope) { Offset(x.dp.toPx(), y.dp.toPx()) }
@@ -1573,3 +1772,9 @@ private fun Int?.orZero(): Int = this ?: 0
 private const val MAP_CARD_HEADER = 48f
 private const val MAP_CARD_ROW = 29f
 private const val MAP_CARD_FOOTER = 32f
+private const val SCHEMA_MAP_RENDER_PADDING_DP = 20f
+private const val SCHEMA_MAP_SCROLLBAR_CORNER = 10f
+private const val RELATIONSHIP_LANE_SPACING = 18f
+private const val RELATIONSHIP_MIN_HORIZONTAL_RUN = 24f
+private const val RELATIONSHIP_LANE_SEARCH_LIMIT = 24
+private const val RELATIONSHIP_TABLE_CLEARANCE = 12f

@@ -8,8 +8,8 @@ import com.safedb.model.MetadataCoverage
 import com.safedb.model.Schema
 import com.safedb.model.SortDirection
 import com.safedb.model.TableInfo
+import com.safedb.query.CanvasRect
 import com.safedb.ui.schemaMapRelationshipGeometries
-import com.safedb.ui.schemaMapRelationshipHitRegions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -38,8 +38,7 @@ class SchemaMapGraphTest {
         val relationship = graph.relationships.single()
         assertEquals(SchemaMapCardinality.ManyToOne, relationship.cardinality)
         assertEquals(SchemaMapOptionality.Required, relationship.optionality)
-        assertTrue(relationship.description.contains("many to one"))
-        assertTrue(relationship.description.contains("required"))
+        assertEquals("customers.id has many orders.customer_id.", relationship.label)
     }
 
     @Test
@@ -86,6 +85,10 @@ class SchemaMapGraphTest {
         val relationship = graph.relationships.single()
         assertEquals(SchemaMapCardinality.OneToOne, relationship.cardinality)
         assertEquals(SchemaMapOptionality.Optional, relationship.optionality)
+        assertEquals(
+            "customers (tenant_id and id) can have one profile (tenant_id and customer_id).",
+            relationship.label,
+        )
     }
 
     @Test
@@ -102,7 +105,10 @@ class SchemaMapGraphTest {
             buildSchemaMapGraph(Schema(listOf(parent(), child)), "public").relationships.single()
 
         assertEquals(SchemaMapCardinality.Unknown, relationship.cardinality)
-        assertTrue(relationship.description.contains("cardinality unknown"))
+        assertEquals(
+            "orders.customer_id is connected to customers.id.",
+            relationship.label,
+        )
     }
 
     @Test
@@ -130,7 +136,6 @@ class SchemaMapGraphTest {
             buildSchemaMapGraph(Schema(listOf(parent(), child)), "public").relationships.single()
 
         assertEquals(SchemaMapCardinality.ManyToOne, relationship.cardinality)
-        assertTrue(indexTooltip(expressionIndex).contains("expression, customer_id DESC"))
 
         fun cardinalityFor(index: IndexInfo): SchemaMapCardinality {
             val indexedChild =
@@ -266,14 +271,6 @@ class SchemaMapGraphTest {
         )
         assertEquals(listOf(SchemaMapColumnMarkerKind.Index), kinds("covering_value"))
         assertFalse(SchemaMapColumnMarkerKind.Unique in kinds("id"))
-        val uniqueTooltip =
-            node.columns
-                .single { it.column.name == "email" }
-                .markers
-                .single { it.kind == SchemaMapColumnMarkerKind.Unique }
-                .tooltip
-        assertTrue(uniqueTooltip.contains("Partial unique index orders_email_key"))
-        assertTrue(uniqueTooltip.contains("partial predicate"))
     }
 
     @Test
@@ -382,7 +379,7 @@ class SchemaMapGraphTest {
         assertTrue(geometries.all { geometry -> geometry.bends.all { it.x > 210f } })
         assertTrue(geometries.all { it.anchor.x > 210f })
         assertTrue(geometries.all { it.source != it.target })
-        assertEquals(2, geometries.map { it.bends.first().x }.toSet().size)
+        assertEquals(2, geometries.flatMap(::verticalLaneXs).toSet().size)
     }
 
     @Test
@@ -418,26 +415,107 @@ class SchemaMapGraphTest {
     }
 
     @Test
-    fun relationshipHitRegionsCoverHorizontalAndVerticalLineSegments() {
-        val geometry =
-            com.safedb.ui.SchemaMapRelationshipGeometry(
-                source = SchemaMapPoint(10f, 20f),
-                target = SchemaMapPoint(210f, 120f),
-                bends = listOf(SchemaMapPoint(110f, 20f), SchemaMapPoint(110f, 120f)),
-                anchor = SchemaMapPoint(110f, 70f),
-                sourceTowardRight = true,
-                targetTowardRight = false,
+    fun crossingRelationshipsReceiveSeparatedVerticalLanes() {
+        val categories =
+            table(
+                "categories",
+                listOf(column("id")),
+                indexes = listOf(primary("categories_pkey", "id")),
+            )
+        val customers = parent()
+        val orders =
+            table(
+                "orders",
+                listOf(column("customer_id")),
+                foreignKeys = listOf(foreignKey("orders_customer_fk", "customer_id")),
+            )
+        val products =
+            table(
+                "products",
+                listOf(column("category_id")),
+                foreignKeys =
+                    listOf(
+                        ForeignKeyInfo(
+                            "products_category_fk",
+                            listOf("category_id"),
+                            "public",
+                            "categories",
+                            listOf("id"),
+                        )
+                    ),
+            )
+        val graph =
+            buildSchemaMapGraph(Schema(listOf(categories, customers, orders, products)), "public")
+        val positions =
+            mapOf(
+                "public.categories" to SchemaMapPoint(0f, 0f),
+                "public.orders" to SchemaMapPoint(400f, 0f),
+                "public.customers" to SchemaMapPoint(0f, 250f),
+                "public.products" to SchemaMapPoint(400f, 250f),
+            )
+        val sizes = graph.nodes.associate { it.id to SchemaMapSize(200f, 100f) }
+
+        val geometry = schemaMapRelationshipGeometries(graph, positions, sizes).values.toList()
+        val verticalLanes = geometry.flatMap(::verticalLaneXs)
+
+        assertEquals(2, verticalLanes.toSet().size)
+        assertTrue(kotlin.math.abs(verticalLanes[0] - verticalLanes[1]) >= 18f)
+        assertTrue(verticalLanes.all { it in 224f..376f })
+    }
+
+    @Test
+    fun relationshipRoutesAroundTableBounds() {
+        val orders =
+            table(
+                "orders",
+                listOf(column("customer_id")),
+                foreignKeys = listOf(foreignKey("orders_customer_fk", "customer_id")),
+            )
+        val customers = parent()
+        val blocker = table("audit", listOf(column("id")))
+        val graph = buildSchemaMapGraph(Schema(listOf(orders, customers, blocker)), "public")
+        val positions =
+            mapOf(
+                "public.orders" to SchemaMapPoint(0f, 0f),
+                "public.audit" to SchemaMapPoint(300f, -20f),
+                "public.customers" to SchemaMapPoint(600f, 0f),
+            )
+        val sizes = graph.nodes.associate { it.id to SchemaMapSize(200f, 100f) }
+
+        val geometry = schemaMapRelationshipGeometries(graph, positions, sizes).values.single()
+        val path = listOf(geometry.source) + geometry.bends + geometry.target
+        val blockerBounds = CanvasRect(300f, -20f, 500f, 80f)
+
+        assertFalse(pathIntersects(path, blockerBounds))
+        assertTrue(path.any { it.y < blockerBounds.top || it.y > blockerBounds.bottom })
+    }
+
+    @Test
+    fun compositeExternalRelationshipUsesReadableQualifiedLabel() {
+        val memberships =
+            table(
+                "memberships",
+                listOf(column("account_id"), column("member_id")),
+                foreignKeys =
+                    listOf(
+                        ForeignKeyInfo(
+                            "memberships_member_fk",
+                            listOf("account_id", "member_id"),
+                            "identity",
+                            "members",
+                            listOf("account_id", "id"),
+                        )
+                    ),
             )
 
-        val regions = schemaMapRelationshipHitRegions(geometry, zoom = 0.5f)
+        val relationship =
+            buildSchemaMapGraph(Schema(listOf(memberships)), "public").relationships.single()
 
-        assertEquals(3, regions.size)
-        assertTrue(regions[0].contains(SchemaMapPoint(60f, 20f)))
-        assertTrue(regions[1].contains(SchemaMapPoint(110f, 70f)))
-        assertTrue(regions[2].contains(SchemaMapPoint(160f, 120f)))
-        assertTrue(regions.none { it.contains(SchemaMapPoint(60f, 70f)) })
-        assertEquals(28f, regions[0].height)
-        assertEquals(28f, regions[1].width)
+        assertEquals(
+            "identity.members (account_id and id) has many " +
+                "memberships (account_id and member_id).",
+            relationship.label,
+        )
     }
 
     @Test
@@ -470,6 +548,22 @@ class SchemaMapGraphTest {
             columns,
             listOf(primary("customers_pkey", *columns.map { it.name }.toTypedArray())),
         )
+
+    private fun pathIntersects(points: List<SchemaMapPoint>, bounds: CanvasRect): Boolean =
+        points.zipWithNext().any { (start, end) ->
+            when {
+                start.y == end.y -> bounds.intersectsHorizontal(start.y, start.x, end.x)
+                start.x == end.x -> bounds.intersectsVertical(start.x, start.y, end.y)
+                else -> true
+            }
+        }
+
+    private fun verticalLaneXs(geometry: com.safedb.ui.SchemaMapRelationshipGeometry): List<Float> {
+        val points = listOf(geometry.source) + geometry.bends + geometry.target
+        return points.zipWithNext().mapNotNull { (start, end) ->
+            start.x.takeIf { start.x == end.x && start.y != end.y }
+        }
+    }
 
     private fun table(
         name: String,

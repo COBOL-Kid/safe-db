@@ -85,6 +85,16 @@ class SchemaMapViewModelTest {
     }
 
     @Test
+    fun scrollDrivenPanUpdateCanChangeOneAxisWithoutMovingTheOther() {
+        val viewModel = SchemaMapViewModel()
+        viewModel.activate("c1", "public")
+
+        viewModel.updatePan(Offset(-240f, viewModel.pan.y))
+
+        assertEquals(Offset(-240f, SCHEMA_MAP_DEFAULT_INSET), viewModel.pan)
+    }
+
+    @Test
     fun resetClearsOnlyTheActiveContextsManualLayout() {
         val viewModel = SchemaMapViewModel()
         viewModel.activate("c1", "public")
