@@ -3,6 +3,7 @@ package com.safedb.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -58,7 +59,9 @@ import com.safedb.explore.visualizationTemplates
 import com.safedb.explore.withoutTransientState
 import com.safedb.model.ConnectionDef
 import com.safedb.ui.components.ConfirmDialog
+import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.SafeDbTheme
@@ -78,6 +81,7 @@ internal fun ExploreRecipeActions(
     var libraryOpen by remember { mutableStateOf(false) }
     var saveOpen by remember { mutableStateOf(false) }
     var updateExisting by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
     var pendingApply by remember { mutableStateOf<ExploreRecipe?>(null) }
     var runConnectionId by
         remember(explore.session.connectionId) { mutableStateOf(explore.session.connectionId) }
@@ -123,8 +127,8 @@ internal fun ExploreRecipeActions(
         onCancel = { pendingApply = null },
     )
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { libraryOpen = true }) {
+    Box {
+        TextButton(onClick = { menuOpen = true }) {
             Icon(
                 Icons.Default.Bookmarks,
                 contentDescription = null,
@@ -132,33 +136,62 @@ internal fun ExploreRecipeActions(
             )
             Text("Recipes", modifier = Modifier.padding(start = 5.dp))
         }
-        if (applied != null && explore.recipeDirty()) {
-            TextButton(
+        SafeDropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+            minWidth = 200.dp,
+        ) {
+            MenuActionRow(
+                text = "Recipe library",
+                supportingText = "Built-in templates and saved recipes",
                 onClick = {
-                    updateExisting = true
-                    saveOpen = true
-                }
-            ) {
-                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(17.dp))
-                Text("Update recipe", modifier = Modifier.padding(start = 5.dp))
-            }
-            TextButton(
-                onClick = {
-                    updateExisting = false
-                    saveOpen = true
-                }
-            ) {
-                Text("Save as new")
-            }
-        } else {
-            TextButton(
-                onClick = {
-                    updateExisting = false
-                    saveOpen = true
-                }
-            ) {
-                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(17.dp))
-                Text("Save recipe", modifier = Modifier.padding(start = 5.dp))
+                    menuOpen = false
+                    libraryOpen = true
+                },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (applied != null && explore.recipeDirty()) {
+                MenuActionRow(
+                    text = "Update “${applied.name}”",
+                    supportingText = "Overwrite the applied recipe",
+                    leading = {
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        updateExisting = true
+                        saveOpen = true
+                    },
+                )
+                MenuActionRow(
+                    text = "Save as new recipe",
+                    onClick = {
+                        menuOpen = false
+                        updateExisting = false
+                        saveOpen = true
+                    },
+                )
+            } else {
+                MenuActionRow(
+                    text = "Save recipe",
+                    supportingText = "Save the current Explore setup",
+                    leading = {
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        updateExisting = false
+                        saveOpen = true
+                    },
+                )
             }
         }
     }

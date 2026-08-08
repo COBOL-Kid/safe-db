@@ -27,12 +27,19 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -100,11 +107,7 @@ internal fun ExplorePivotTable(
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text(
-                "Double-click a value or use View rows to show sampled rows",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            PivotDrillHint()
         }
 
         if (result.warnings.isNotEmpty()) {
@@ -179,6 +182,26 @@ internal fun ExplorePivotTable(
                     Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(bottom = 8.dp),
             )
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun PivotDrillHint() {
+    TooltipBox(
+        positionProvider =
+            TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
+        tooltip = {
+            PlainTooltip { Text("Double-click a value or use View rows to show sampled rows") }
+        },
+        state = rememberTooltipState(),
+    ) {
+        Icon(
+            Icons.Default.Info,
+            contentDescription = "Double-click a value or use View rows to show sampled rows",
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,8 +40,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
@@ -121,14 +118,6 @@ fun ExploreWindowContent(
                     "${session.connectionLabel} · Based on ${session.sample.rowCount} sampled rows",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    exploreWorkspaceSummary(viewModel),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
             exploreTruncationExplanation(session.sample.truncated)?.let { explanation ->
@@ -231,41 +220,17 @@ fun ExploreWindowContent(
                                 viewModel.worksheetConfigReplacementRevision,
                             railVisible = worksheetRailVisible,
                             onRailVisibilityChange = { worksheetRailVisible = it },
-                            railFooter = { collapsed ->
-                                val enabled =
-                                    !viewModel.worksheetPreviewState.loading &&
-                                        viewModel.hasVisibleWorksheetColumns()
-                                val export: () -> Unit = export@{
-                                    val path =
-                                        chooseCsvFile("${session.connectionLabel}-worksheet")
-                                            ?: return@export
-                                    viewModel.saveWorksheetCsv(path)
-                                }
-                                if (collapsed) {
-                                    IconButton(
-                                        onClick = export,
-                                        enabled = enabled && !viewModel.exporting,
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Download,
-                                            contentDescription = "Export CSV",
-                                        )
-                                    }
-                                } else {
-                                    ExploreExportBar(
-                                        viewModel,
-                                        enabled = enabled,
-                                        horizontalPadding = 14.dp,
-                                        verticalPadding = 4.dp,
-                                        showStatus = false,
-                                        alignExportButtonStart = true,
-                                        onExport = export,
-                                    )
-                                }
-                            },
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
-                        ExploreExportStatus(viewModel)
+                        ExploreExportBar(
+                            viewModel,
+                            enabled =
+                                !viewModel.worksheetPreviewState.loading &&
+                                    viewModel.hasVisibleWorksheetColumns(),
+                        ) {
+                            chooseCsvFile("${session.connectionLabel}-worksheet")
+                                ?.let(viewModel::saveWorksheetCsv)
+                        }
                     }
                 ExploreMode.Visualization ->
                     Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -381,7 +346,7 @@ private fun ExploreTruncationBadge(explanation: String) {
 }
 
 @Composable
-private fun CollapsedExploreRail(mode: ExploreMode, onShow: () -> Unit) {
+internal fun CollapsedExploreRail(mode: ExploreMode, onShow: () -> Unit) {
     Surface(
         modifier = Modifier.width(48.dp).fillMaxHeight(),
         color = SafeDbTheme.colors.workspacePanel,
@@ -465,56 +430,10 @@ private fun ExploreStaleSampleWarning(
 private fun ExploreExportBar(
     viewModel: ExploreViewModel,
     enabled: Boolean,
-    horizontalPadding: Dp = 16.dp,
-    verticalPadding: Dp = 12.dp,
-    showStatus: Boolean = true,
-    alignExportButtonStart: Boolean = false,
     onExport: () -> Unit,
 ) {
     Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (showStatus) {
-            viewModel.exportMessage?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            viewModel.exportError?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
-        if (!alignExportButtonStart) Box(modifier = Modifier.weight(1f))
-        if (showStatus && (viewModel.exportMessage != null || viewModel.exportError != null)) {
-            SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
-        }
-        if (showStatus && viewModel.exporting)
-            Text("Exporting…", style = MaterialTheme.typography.bodySmall)
-        PrimaryButton(
-            modifier = Modifier.padding(start = if (alignExportButtonStart) 0.dp else 8.dp),
-            onClick = onExport,
-            enabled = enabled && !viewModel.exporting,
-        ) {
-            Text("Export CSV")
-        }
-    }
-}
-
-@Composable
-private fun ExploreExportStatus(viewModel: ExploreViewModel) {
-    if (viewModel.exportMessage == null && viewModel.exportError == null && !viewModel.exporting)
-        return
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         viewModel.exportMessage?.let {
@@ -531,12 +450,17 @@ private fun ExploreExportStatus(viewModel: ExploreViewModel) {
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (viewModel.exporting) {
-            Text("Exporting…", style = MaterialTheme.typography.bodySmall)
-        }
         Box(modifier = Modifier.weight(1f))
         if (viewModel.exportMessage != null || viewModel.exportError != null) {
             SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
+        }
+        if (viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+        PrimaryButton(
+            modifier = Modifier.padding(start = 8.dp),
+            onClick = onExport,
+            enabled = enabled && !viewModel.exporting,
+        ) {
+            Text("Export CSV")
         }
     }
 }
@@ -587,19 +511,6 @@ private fun VisualizationExportBar(
         }
     }
 }
-
-private fun exploreWorkspaceSummary(viewModel: ExploreViewModel): String =
-    when (viewModel.workspace.activeMode) {
-        ExploreMode.Pivot -> exploreConfigSummary(viewModel.config)
-        ExploreMode.Worksheet ->
-            "${viewModel.worksheetConfig.groups.size} groups · ${viewModel.worksheetConfig.filters.size} filters · ${viewModel.worksheetConfig.calculations.size} calculations"
-        ExploreMode.Visualization ->
-            if (viewModel.visualizationConfig.isConfigured()) {
-                "${viewModel.visualizationConfig.chartType.name} · ${viewModel.visualizationPreview.marks.size} plotted values"
-            } else {
-                "No chart configured"
-            }
-    }
 
 private fun chooseCsvFile(connectionLabel: String): java.nio.file.Path? {
     val safeName =

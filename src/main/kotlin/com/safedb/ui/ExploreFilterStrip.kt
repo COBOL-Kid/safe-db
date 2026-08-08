@@ -103,7 +103,11 @@ private fun SlicerControl(
             minWidth = 280.dp,
         ) {
             Column(modifier = Modifier.widthIn(min = 280.dp).heightIn(max = 440.dp)) {
-                ExploreSlicerSearch(query, onQueryChange = { query = it })
+                ExploreSearchField(
+                    query,
+                    onQueryChange = { query = it },
+                    placeholder = "Search values",
+                )
                 MenuActionRow(
                     text = if (selected.isEmpty()) "Clear selection" else "Select all",
                     supportingText = "${options.size} sample values",
@@ -132,17 +136,4 @@ private fun SlicerControl(
             }
         }
     }
-}
-
-@Composable
-private fun ExploreSlicerSearch(query: String, onQueryChange: (String) -> Unit) {
-    // Reuse the same quiet search treatment as the field picker without exposing
-    // its private implementation.
-    androidx.compose.material3.OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        placeholder = { Text("Search values") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-    )
 }

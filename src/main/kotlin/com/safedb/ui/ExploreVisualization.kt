@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -46,7 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -688,7 +685,7 @@ private fun VisualizationValuePicker(
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
-                VisualizationSearch(query) { query = it }
+                ExploreSearchField(query, onQueryChange = { query = it })
                 groupExploreFields(fields.filter { it.matchesSearch(query) }).forEach { group ->
                     MenuSectionLabel(group.label)
                     group.fields.forEach { field ->
@@ -754,7 +751,7 @@ private fun VisualizationFieldPicker(
             minWidth = 286.dp,
         ) {
             Column(modifier = Modifier.widthIn(min = 286.dp).heightIn(max = 420.dp)) {
-                VisualizationSearch(query) { query = it }
+                ExploreSearchField(query, onQueryChange = { query = it })
                 groupExploreFields(fields.filter { it.matchesSearch(query) }).forEach { group ->
                     MenuSectionLabel(group.label)
                     group.fields.forEach { field ->
@@ -781,43 +778,6 @@ private fun VisualizationFieldPicker(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun VisualizationSearch(value: String, onChange: (String) -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(8.dp),
-        shape = RoundedCornerShape(3.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
-            BasicTextField(
-                value = value,
-                onValueChange = onChange,
-                modifier = Modifier.weight(1f).padding(start = 7.dp),
-                singleLine = true,
-                textStyle =
-                    MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                cursorBrush = SolidColor(SafeDbTheme.colors.actionPrimary),
-                decorationBox = { content ->
-                    if (value.isBlank())
-                        Text(
-                            "Search fields",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    content()
-                },
-            )
         }
     }
 }
