@@ -42,3 +42,16 @@ For `file`, store one UTF-8 line. A final LF or CRLF is removed; other whitespac
 For verified PostgreSQL, MySQL, and SQL Server connections, launch profiles are the only custom trust-store path. Without one, MySQL and SQL Server use normal JVM trust, PostgreSQL retains pgjdbc's standard trust and client-certificate behavior, and Oracle remains wallet-based. Profile passwords never appear in JSON, command arguments, environment variables, or logs. PostgreSQL receives a temporary trusted-roots PEM; MySQL and SQL Server use JSSE properties.
 
 Import only independently verified CA certificates—never private keys—and restart after changing the profile, store, or password.
+
+## Compatibility verification
+
+For non-UI checks of launch-profile trust and dialect SSL mapping, run the environment-gated suite:
+
+```sh
+SAFEDB_TEST_REQUIRE_SSL=true \
+SAFEDB_TEST_SSL_LAUNCH_PROFILE=/absolute/path/to/production.json \
+SAFEDB_TEST_SSL_WRONG_LAUNCH_PROFILE=/absolute/path/to/wrong.json \
+./scripts/verify_ssl_compat.sh
+```
+
+`SslCompatIntegrationTest` covers PKCS12 launch-profile application, reserved TLS driver properties, JDBC URL/property mapping for all four dialects, live EncryptOnly/VerifyCa/VerifyIdentity against MySQL, PostgreSQL, and SQL Server when those endpoints are provisioned, Oracle TCP plus wallet-required TCPS configuration, and rejection of an untrusted launch-profile CA. Oracle remains wallet-based: a generic PKCS12 file is not a substitute for an Oracle wallet.

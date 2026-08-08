@@ -17,6 +17,7 @@ safe-db is a root Gradle Jetpack Compose Desktop app for safely exploring Postgr
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
 | `./gradlew seedMysql` | Generate the default 50,000-order MySQL fixture. |
 | `scripts/seed_mysql.sh --static` | Load the smaller checked-in MySQL fixture. |
+| `scripts/verify_ssl_compat.sh` | Environment-gated SSL/TLS launch-profile and dialect compatibility suite. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 
 Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 191 desktop and 341 shared tests, with 72% and 66% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
