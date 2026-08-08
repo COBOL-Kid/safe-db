@@ -732,7 +732,11 @@ private fun MeasurePickerButton(
 }
 
 @Composable
-private fun ExploreSearchField(query: String, onQueryChange: (String) -> Unit) {
+internal fun ExploreSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String = "Search fields",
+) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         shape = RoundedCornerShape(3.dp),
@@ -762,7 +766,7 @@ private fun ExploreSearchField(query: String, onQueryChange: (String) -> Unit) {
                 decorationBox = { inner ->
                     if (query.isEmpty()) {
                         Text(
-                            "Search fields",
+                            placeholder,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

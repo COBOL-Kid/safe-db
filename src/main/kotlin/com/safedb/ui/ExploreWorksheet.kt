@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -111,6 +112,7 @@ import com.safedb.model.ResultCell
 import com.safedb.model.classifyColumn
 import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
+import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
@@ -135,7 +137,6 @@ internal fun ExploreWorksheet(
     configReplacementRevision: Int,
     railVisible: Boolean,
     onRailVisibilityChange: (Boolean) -> Unit,
-    railFooter: @Composable (collapsed: Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var editingFilter by remember { mutableStateOf<String?>(null) }
@@ -143,6 +144,7 @@ internal fun ExploreWorksheet(
     var editingCalculation by
         remember(configReplacementRevision) { mutableStateOf<WorksheetCalculation?>(null) }
     var calculationEditorRevision by remember(configReplacementRevision) { mutableStateOf(0) }
+    var calculationEditorActive by remember(configReplacementRevision) { mutableStateOf(false) }
 
     editingFilter?.let { column ->
         val existing = config.filters.firstOrNull { it.column == column }
@@ -195,18 +197,21 @@ internal fun ExploreWorksheet(
     }
     Row(modifier = modifier.fillMaxSize()) {
         if (railVisible) {
-            Column(modifier = Modifier.width(380.dp).fillMaxHeight()) {
+            Column(modifier = Modifier.width(320.dp).fillMaxHeight()) {
                 CalculationRail(
                     sample = sample,
                     config = config,
                     existing = editingCalculation,
+                    editorActive = calculationEditorActive,
                     editorRevision = calculationEditorRevision,
                     onAdd = {
                         editingCalculation = null
+                        calculationEditorActive = true
                         calculationEditorRevision += 1
                     },
                     onEdit = {
                         editingCalculation = it
+                        calculationEditorActive = true
                         calculationEditorRevision += 1
                     },
                     onSave = { calculation, requiredSort ->
@@ -225,10 +230,12 @@ internal fun ExploreWorksheet(
                             } ?: config.sorts
                         onConfigChange(config.copy(calculations = calculations, sorts = sorts))
                         editingCalculation = null
+                        calculationEditorActive = false
                         calculationEditorRevision += 1
                     },
                     onCancel = {
                         editingCalculation = null
+                        calculationEditorActive = false
                         calculationEditorRevision += 1
                     },
                     onRemove = { calculation ->
@@ -243,33 +250,16 @@ internal fun ExploreWorksheet(
                         )
                         if (editingCalculation?.id == calculation.id) {
                             editingCalculation = null
+                            calculationEditorActive = false
                             calculationEditorRevision += 1
                         }
                     },
                     onCollapse = { onRailVisibilityChange(false) },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
-                railFooter(false)
             }
         } else {
-            Surface(color = MaterialTheme.colorScheme.surface) {
-                Column(modifier = Modifier.fillMaxHeight()) {
-                    ModeIcon(
-                        ExploreMode.Worksheet,
-                        Modifier.padding(top = 14.dp)
-                            .size(18.dp)
-                            .align(Alignment.CenterHorizontally),
-                    )
-                    IconButton(onClick = { onRailVisibilityChange(true) }) {
-                        Icon(
-                            Icons.Default.ChevronRight,
-                            contentDescription = "Show Worksheet sidebar",
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    railFooter(true)
-                }
-            }
+            CollapsedExploreRail(ExploreMode.Worksheet) { onRailVisibilityChange(true) }
         }
         HorizontalDivider(
             modifier = Modifier.width(1.dp).fillMaxHeight(),
@@ -773,11 +763,6 @@ private fun WorksheetColumnMenu(
                 }
             }
         }
-        Text(
-            "Drag or use arrows to set the table and CSV order.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -799,6 +784,7 @@ private fun WorksheetHeader(
     onMoveLeft: () -> Unit,
     onMoveRight: () -> Unit,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     Column(modifier = Modifier.width(width.dp).padding(horizontal = 8.dp, vertical = 5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -809,44 +795,138 @@ private fun WorksheetHeader(
                 modifier = Modifier.weight(1f),
             )
             IconButton(
-                onClick = onHide,
+                onClick = onSort,
                 modifier = Modifier.size(24.dp).pointerHoverIcon(PointerIcon.Hand),
             ) {
-                Icon(
-                    Icons.Default.VisibilityOff,
-                    contentDescription = "Hide ${column.label}",
-                    modifier = Modifier.size(15.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector =
+                            when (sort?.dir) {
+                                SortDir.Asc -> Icons.Default.KeyboardArrowUp
+                                SortDir.Desc -> Icons.Default.KeyboardArrowDown
+                                null -> Icons.AutoMirrored.Filled.Sort
+                            },
+                        contentDescription = "Sort ${column.label}",
+                        modifier = Modifier.size(16.dp),
+                        tint =
+                            if (sort != null) SafeDbTheme.colors.actionPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (sortIndex >= 0) {
+                        Text(
+                            "${sortIndex + 1}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SafeDbTheme.colors.actionPrimary,
+                        )
+                    }
+                }
             }
-            IconButton(
-                onClick = onMoveLeft,
-                enabled = canMoveLeft,
-                modifier =
-                    Modifier.size(24.dp)
-                        .pointerHoverIcon(
-                            if (canMoveLeft) PointerIcon.Hand else PointerIcon.Default
-                        ),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                    contentDescription = "Move ${column.label} left",
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            IconButton(
-                onClick = onMoveRight,
-                enabled = canMoveRight,
-                modifier =
-                    Modifier.size(24.dp)
-                        .pointerHoverIcon(
-                            if (canMoveRight) PointerIcon.Hand else PointerIcon.Default
-                        ),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = "Move ${column.label} right",
-                    modifier = Modifier.size(16.dp),
-                )
+            Box {
+                IconButton(
+                    onClick = { menuOpen = true },
+                    modifier = Modifier.size(24.dp).pointerHoverIcon(PointerIcon.Hand),
+                ) {
+                    Icon(
+                        Icons.Default.ArrowDropDown,
+                        contentDescription = "Column actions for ${column.label}",
+                        modifier = Modifier.size(18.dp),
+                        tint =
+                            if (grouped || filtered) SafeDbTheme.colors.actionPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                SafeDropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                    minWidth = 190.dp,
+                ) {
+                    onGroup?.let { group ->
+                        MenuActionRow(
+                            text = "Group",
+                            selected = grouped,
+                            supportingText = if (grouped) "Grouping is on" else null,
+                            leading = {
+                                Icon(
+                                    Icons.Default.GroupWork,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                group()
+                            },
+                        )
+                    }
+                    onFilter?.let { filter ->
+                        MenuActionRow(
+                            text = "Filter",
+                            selected = filtered,
+                            supportingText = if (filtered) "Filter is on" else null,
+                            leading = {
+                                Icon(
+                                    Icons.Default.FilterAlt,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                filter()
+                            },
+                        )
+                    }
+                    if (canMoveLeft || canMoveRight) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                    if (canMoveLeft) {
+                        MenuActionRow(
+                            text = "Move left",
+                            leading = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onMoveLeft()
+                            },
+                        )
+                    }
+                    if (canMoveRight) {
+                        MenuActionRow(
+                            text = "Move right",
+                            leading = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onMoveRight()
+                            },
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    MenuActionRow(
+                        text = "Hide column",
+                        leading = {
+                            Icon(
+                                Icons.Default.VisibilityOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onHide()
+                        },
+                    )
+                }
             }
         }
         Text(
@@ -855,46 +935,6 @@ private fun WorksheetHeader(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            HeaderAction(
-                icon =
-                    when (sort?.dir) {
-                        SortDir.Asc -> Icons.Default.KeyboardArrowUp
-                        SortDir.Desc -> Icons.Default.KeyboardArrowDown
-                        null -> Icons.AutoMirrored.Filled.Sort
-                    },
-                label = if (sortIndex >= 0) "Sort ${sortIndex + 1}" else "Sort",
-                active = sort != null,
-                onClick = onSort,
-            )
-            onGroup?.let { HeaderAction(Icons.Default.GroupWork, "Group", grouped, it) }
-            onFilter?.let { HeaderAction(Icons.Default.FilterAlt, "Filter", filtered, it) }
-        }
-    }
-}
-
-@Composable
-private fun HeaderAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit,
-) {
-    TextButton(
-        onClick = onClick,
-        contentPadding =
-            androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-    ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            modifier = Modifier.size(15.dp),
-            tint =
-                if (active) SafeDbTheme.colors.actionPrimary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (active && label.startsWith("Sort "))
-            Text(label.substringAfter(' '), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -929,6 +969,7 @@ private fun CalculationRail(
     sample: QueryResult,
     config: WorksheetConfig,
     existing: WorksheetCalculation?,
+    editorActive: Boolean,
     editorRevision: Int,
     onAdd: () -> Unit,
     onEdit: (WorksheetCalculation) -> Unit,
@@ -969,29 +1010,32 @@ private fun CalculationRail(
                         )
                     }
                 }
-                PrimaryButton(
-                    onClick = onAdd,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        "Add calculation",
-                        modifier = Modifier.padding(start = 5.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-                key(existing?.id, editorRevision) {
-                    WorksheetCalculationEditor(
-                        sample = sample,
-                        config = config,
-                        existing = existing,
-                        onSave = onSave,
-                        onCancel = onCancel,
-                    )
+                if (editorActive) {
+                    key(existing?.id, editorRevision) {
+                        WorksheetCalculationEditor(
+                            sample = sample,
+                            config = config,
+                            existing = existing,
+                            onSave = onSave,
+                            onCancel = onCancel,
+                        )
+                    }
+                } else {
+                    PrimaryButton(
+                        onClick = onAdd,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            "Add calculation",
+                            modifier = Modifier.padding(start = 5.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Text(

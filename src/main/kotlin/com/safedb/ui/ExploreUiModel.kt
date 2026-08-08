@@ -175,26 +175,6 @@ internal fun moveDimension(
     }
 }
 
-internal fun exploreConfigSummary(config: ExploreConfig): String {
-    val parts = mutableListOf<String>()
-    val rowLabels = config.rowDimensions.map { it.label }
-    val columnLabels = config.effectiveColumnDimensions.map { it.label }
-    when {
-        rowLabels.isNotEmpty() && columnLabels.isNotEmpty() ->
-            parts += "${rowLabels.joinToString(" → ")} × ${columnLabels.joinToString(" → ")}"
-        rowLabels.isNotEmpty() -> parts += rowLabels.joinToString(" → ")
-        columnLabels.isNotEmpty() -> parts += columnLabels.joinToString(" → ")
-    }
-    if (config.measures.isNotEmpty()) {
-        parts += config.measures.joinToString(", ") { it.label }
-    }
-    if (config.filters.isNotEmpty()) {
-        val count = config.filters.size
-        parts += "$count filter${if (count == 1) "" else "s"}"
-    }
-    return parts.joinToString(" · ").ifEmpty { "No grouping configured" }
-}
-
 internal fun filterSupportingText(filter: PivotFilter, memberCount: Int? = null): String =
     when (filter) {
         is PivotFilter.Members -> {
