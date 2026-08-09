@@ -548,7 +548,6 @@ class ApplyExploreTest {
                     ),
             )
 
-        // Label desc display order: West, East, (blank) — not source insertion (East, West, blank).
         assertEquals(
             listOf("West", "East", "(blank)"),
             preview.result.rows.map { (it.first() as ResultCell.TextCell).value.text },

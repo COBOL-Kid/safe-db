@@ -13,10 +13,6 @@ import com.safedb.ui.theme.LabelMicro
 import com.safedb.ui.theme.PillShape
 import com.safedb.ui.theme.SafeDbTheme
 
-/**
- * AND/OR connector pill between filter group children. AND uses the neutral primary container; OR
- * uses warning amber. Clickable to toggle.
- */
 @Composable
 fun AndOrConnector(connector: GroupConnector, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val c = SafeDbTheme.colors

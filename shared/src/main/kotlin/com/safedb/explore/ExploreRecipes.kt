@@ -60,10 +60,7 @@ fun resolveRecipeFields(
 fun compatibleTypes(left: String, right: String): Boolean =
     dataTypeFamily(left) == dataTypeFamily(right)
 
-/**
- * The single traversal for every persisted column reference in a recipe. Keep new field-bearing
- * configuration properties here so discovery and remapping cannot silently drift apart.
- */
+// Keep every persisted column-bearing field in this traversal so discovery and remapping agree.
 fun ExploreRecipe.mapColumnReferences(transform: (String) -> String): ExploreRecipe =
     copy(
         pivot = pivot?.mapColumnReferences(transform),

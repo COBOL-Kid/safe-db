@@ -23,7 +23,6 @@ fun ensurePrivateDir(path: Path) {
     }
 }
 
-/** Write through an exclusively-created private sibling and atomically replace [path]. */
 fun atomicWrite(path: Path, content: String) {
     val parent = path.parent ?: error("path has no parent: $path")
     ensurePrivateDir(parent)
@@ -31,6 +30,8 @@ fun atomicWrite(path: Path, content: String) {
     val fileName = path.fileName?.toString() ?: error("invalid path: $path")
     val tmpPath = parent.resolve(".${fileName}.${UUID.randomUUID()}.tmp")
 
+    // Fsync the temporary file before renaming and the directory afterward so success survives a
+    // crash.
     try {
         FileChannel.open(tmpPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW).use {
             channel ->

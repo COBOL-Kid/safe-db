@@ -13,7 +13,6 @@ internal const val SCHEMA_MAP_DEFAULT_INSET = CANVAS_DEFAULT_PADDING
 
 internal data class SchemaMapContext(val connectionId: String, val schema: String)
 
-/** Session-only interaction state for the schema map. */
 internal class SchemaMapViewModel {
     private var activeContext by mutableStateOf<SchemaMapContext?>(null)
     private var expandedByContext by mutableStateOf<Map<SchemaMapContext, Set<String>>>(emptyMap())

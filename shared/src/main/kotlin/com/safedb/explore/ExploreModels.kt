@@ -30,7 +30,7 @@ data class ExploreConfig(
     val schemaVersion: Int = EXPLORE_SCHEMA_VERSION,
     val rowDimensions: List<PivotDimension> = emptyList(),
     val columnDimensions: List<PivotDimension> = emptyList(),
-    /** Compatibility bridge for v1 callers; new code uses [columnDimensions]. */
+    // Kept for v1 callers; new code uses columnDimensions.
     val columnDimension: PivotDimension? = null,
     val measures: List<PivotMeasure> = listOf(PivotMeasure.countRows()),
     val filters: List<PivotFilter> = emptyList(),
@@ -326,10 +326,6 @@ data class PivotHeaderCell(
 
 fun displayColumnLabel(raw: String): String = raw.replace(Regex("^t\\d+__(.+)$"), "$1")
 
-/**
- * Produces short labels for ordinary results and table-qualified labels only where a joined result
- * would otherwise show duplicate field names.
- */
 fun displayColumnLabels(
     columns: List<ResultColumn>,
     tables: List<TableRef> = emptyList(),

@@ -187,6 +187,7 @@ internal fun buildAssessment(
                 .coerceAtMost(caps.getValue(category))
         }
     val dominant = categoryScores.values.maxOrNull() ?: 0
+    // Count the dominant category fully and the remaining categories at half weight.
     val score = dominant + (categoryScores.values.sum() - dominant) / 2
     return QueryRiskAssessment(
         scoreVersion = QUERY_RISK_SCORE_VERSION,

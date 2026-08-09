@@ -7,11 +7,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Font
 import androidx.compose.ui.unit.sp
 
-/**
- * Inter for all UI text; JetBrains Mono for data, code, and identifiers (result cells, schema
- * names, connection hosts). Both are bundled so the app renders identically across platforms
- * instead of falling back to whatever the OS default happens to be.
- */
 val InterFontFamily =
     FontFamily(
         Font(resource = "fonts/Inter-Regular.ttf", weight = FontWeight.Normal),
@@ -115,10 +110,6 @@ private val LabelSmall =
         letterSpacing = 0.1.sp,
     )
 
-/**
- * Uppercase technical micro-label for "FILTER WHERE", "INDEXES", AND/OR connectors, kbd hints, and
- * other quiet structural labels.
- */
 val LabelMicro =
     TextStyle(
         fontFamily = InterFontFamily,
@@ -128,7 +119,6 @@ val LabelMicro =
         letterSpacing = 0.7.sp,
     )
 
-/** Monospace style for data cells, identifiers, hosts, and schema names. */
 val DataMono =
     TextStyle(
         fontFamily = MonoFontFamily,

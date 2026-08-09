@@ -188,6 +188,7 @@ suspend fun runQueryCore(
     }
 
     val requirement = confirmationRequirement(def, fingerprint, explain)
+    // Accept only an exact match across connection, credentials, query, and plan condition.
     val confirmationAccepted = requirement != null && confirmation == requirement.confirmation
     val evaluation =
         when {

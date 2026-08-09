@@ -260,9 +260,6 @@ class CanvasInteractionTest {
 
     @Test
     fun clickingSuggestedRelationshipCreatesAJoinAfterTableMovesPostComposition() {
-        // Regression: the click handler must not hit-test through closures captured at first
-        // composition. Moving a table after the canvas has composed re-routes the suggested
-        // line; clicking the new position must still create the join.
         val viewModel =
             QueryViewModel(CanvasInteractionService, CoroutineScope(Dispatchers.Unconfined))
         viewModel.addTable(
@@ -390,7 +387,6 @@ class CanvasInteractionTest {
                 (segment.first.x + segment.second.x) / 2f,
                 (segment.first.y + segment.second.y) / 2f,
             )
-        // Drift far outside join-line tolerance before release.
         val up = Offset(down.x, down.y + 80f)
 
         ImageComposeScene(width = 800, height = 500, density = Density(1f)) {

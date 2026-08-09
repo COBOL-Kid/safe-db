@@ -3,7 +3,6 @@ package com.safedb.tools
 import com.safedb.AppRoute
 import com.safedb.model.ThemePalette
 
-/** Dev-only comparison render for the persisted Control Plane color schemes. */
 fun main() {
     System.setProperty("java.awt.headless", "false")
 

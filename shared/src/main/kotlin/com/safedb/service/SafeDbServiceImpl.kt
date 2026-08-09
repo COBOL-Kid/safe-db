@@ -44,7 +44,6 @@ internal fun interface AdapterFactory {
     suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter
 }
 
-/** Adapts a live JDBC [Adapter] with introspection/explain timeouts for the service layer. */
 private class TimeoutAwareAdapter(private val adapter: Adapter) : ConnectedAdapter {
     override suspend fun test(): String = adapter.test()
 

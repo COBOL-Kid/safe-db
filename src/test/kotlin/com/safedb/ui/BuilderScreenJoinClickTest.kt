@@ -32,11 +32,6 @@ import kotlin.test.assertEquals
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
-/**
- * Regression coverage for join-line clicks through the full Builder chrome (schema sidebar, query
- * controls overlay, results pane), not just a bare canvas. Guards against overlays installed above
- * the canvas swallowing pointer events before they reach the join-line gesture handler.
- */
 @OptIn(ExperimentalComposeUiApi::class)
 class BuilderScreenJoinClickTest {
 

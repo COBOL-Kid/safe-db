@@ -83,10 +83,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.EncodedImageFormat
 
-/**
- * Dev-only utility: renders the main screens headlessly to PNG files in /tmp/safedb-preview for
- * visual verification without a display.
- */
 private class FakeService(private val settings: Settings = Settings()) :
     FakeSafeDbServiceSupport() {
     val connections =

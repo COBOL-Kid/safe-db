@@ -32,7 +32,6 @@ data class HistoryEntry(
     @SerialName("risk_plan_reason") val riskPlanReason: String? = null,
     @SerialName("risk_gate_state") val riskGateState: String? = null,
     @SerialName("risk_optimizer_cost") val riskOptimizerCost: Double? = null,
-    /** Legacy audit metadata retained when older history entries are loaded. */
     @SerialName("risk_optimizer_cost_threshold") val riskOptimizerCostThreshold: Double? = null,
     @SerialName("risk_confirmation_codes") val riskConfirmationCodes: List<String> = emptyList(),
     @SerialName("risk_confirmation_accepted") val riskConfirmationAccepted: Boolean? = null,

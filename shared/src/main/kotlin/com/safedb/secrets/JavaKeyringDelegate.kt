@@ -37,10 +37,7 @@ internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
 }
     .getOrNull()
 
-/**
- * A strict startup path for operational secrets; unlike connection credentials, it must not fall
- * back.
- */
+// Operational startup secrets must not use the fallback allowed for connection credentials.
 internal fun createStrictPlatformCredentialStoreOrNull(
     platform: DesktopPlatform = DesktopPlatform.current()
 ): CredentialStore? =

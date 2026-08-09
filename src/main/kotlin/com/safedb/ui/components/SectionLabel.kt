@@ -7,10 +7,6 @@ import androidx.compose.ui.Modifier
 import com.safedb.ui.theme.LabelMicro
 import java.util.Locale
 
-/**
- * Uppercase technical micro-label for section headers like "FILTER WHERE", "INDEXES", "SAVED
- * QUERIES".
- */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(

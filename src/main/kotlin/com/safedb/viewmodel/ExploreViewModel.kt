@@ -549,7 +549,6 @@ private fun memberLabel(cell: com.safedb.model.ResultCell?): String =
         is com.safedb.model.ResultCell.BinaryCell -> cell.value.base64
     }
 
-/** Latest-result-wins scheduling shared by the independent Explore evaluators. */
 private class PreviewTask<T> {
     private var generation = 0
     private var job: Job? = null

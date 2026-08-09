@@ -27,7 +27,6 @@ class QueryFailureException(val queryError: QueryError, val warnings: List<Strin
 internal fun QueryFailureException(coreError: QueryCoreError): QueryFailureException =
     QueryFailureException(coreError.error, coreError.warnings)
 
-/** Desktop service surface used by the Compose UI. */
 interface SafeDbService {
     suspend fun testConnection(def: ConnectionDef, password: String?): String
 
@@ -70,7 +69,6 @@ interface SafeDbService {
     suspend fun saveSettings(settings: Settings)
 }
 
-/** Shared no-op recipe + empty defaults for unit/preview fakes. */
 open class FakeSafeDbServiceSupport : SafeDbService {
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         throw UnsupportedOperationException("testConnection")

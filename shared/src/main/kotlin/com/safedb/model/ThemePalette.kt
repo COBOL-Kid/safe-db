@@ -1,11 +1,5 @@
 package com.safedb.model
 
-/**
- * A selectable color treatment for the Control Plane design system.
- *
- * Geometry, typography, and component behavior stay fixed across palettes so the app keeps one
- * coherent design language.
- */
 enum class ThemePalette(val id: String, val label: String, val tagline: String) {
     ControlBlue(
         id = "control-blue",
