@@ -106,6 +106,93 @@ class SeedMysqlTest {
     }
 
     @Test
+    fun relationalSeedPasswordsPreferTestThenDockerThenDefault() {
+        val repoRoot = Path.of("/repo")
+
+        assertEquals(
+            "postgres",
+            relationalSeedSettings(GeneratedSqlDialect.Postgres, emptyMap(), repoRoot)
+                .clientEnvironment
+                .getValue("PGPASSWORD"),
+        )
+        assertEquals(
+            "docker-postgres",
+            relationalSeedSettings(
+                    GeneratedSqlDialect.Postgres,
+                    mapOf("SAFEDB_DOCKER_POSTGRES_PASSWORD" to "docker-postgres"),
+                    repoRoot,
+                )
+                .clientEnvironment
+                .getValue("PGPASSWORD"),
+        )
+        assertEquals(
+            "test-postgres",
+            relationalSeedSettings(
+                    GeneratedSqlDialect.Postgres,
+                    mapOf(
+                        "SAFEDB_DOCKER_POSTGRES_PASSWORD" to "docker-postgres",
+                        "SAFEDB_TEST_POSTGRES_PASSWORD" to "test-postgres",
+                    ),
+                    repoRoot,
+                )
+                .clientEnvironment
+                .getValue("PGPASSWORD"),
+        )
+        assertEquals(
+            "postgres",
+            relationalSeedSettings(
+                    GeneratedSqlDialect.Postgres,
+                    mapOf("SAFEDB_DOCKER_POSTGRES_PASSWORD" to ""),
+                    repoRoot,
+                )
+                .clientEnvironment
+                .getValue("PGPASSWORD"),
+        )
+        assertEquals(
+            "",
+            relationalSeedSettings(
+                    GeneratedSqlDialect.Postgres,
+                    mapOf(
+                        "SAFEDB_DOCKER_POSTGRES_PASSWORD" to "docker-postgres",
+                        "SAFEDB_TEST_POSTGRES_PASSWORD" to "",
+                    ),
+                    repoRoot,
+                )
+                .clientEnvironment
+                .getValue("PGPASSWORD"),
+        )
+        assertEquals(
+            "SafeDb_Ssl_Passw0rd!",
+            relationalSeedSettings(GeneratedSqlDialect.Mssql, emptyMap(), repoRoot)
+                .clientEnvironment
+                .getValue("SQLCMDPASSWORD"),
+        )
+        assertEquals(
+            "docker-mssql",
+            relationalSeedSettings(
+                    GeneratedSqlDialect.Mssql,
+                    mapOf("SAFEDB_DOCKER_MSSQL_PASSWORD" to "docker-mssql"),
+                    repoRoot,
+                )
+                .clientEnvironment
+                .getValue("SQLCMDPASSWORD"),
+        )
+        assertEquals(
+            "test-mssql",
+            relationalSeedSettings(
+                    GeneratedSqlDialect.Mssql,
+                    mapOf(
+                        "SAFEDB_DOCKER_MSSQL_PASSWORD" to "docker-mssql",
+                        "SAFEDB_TEST_MSSQL_PASSWORD" to "test-mssql",
+                    ),
+                    repoRoot,
+                )
+                .clientEnvironment
+                .getValue("SQLCMDPASSWORD"),
+        )
+    }
+
+    @Test
     fun escapesSqlStringsAndRecognizesMysqlContainerImages() {
         assertEquals("'O''Brien\\\\path'", sqlString("O'Brien\\path"))
         assertEquals("NULL", sqlString(null))

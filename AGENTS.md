@@ -37,6 +37,8 @@ SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integr
 
 For a self-contained local harness, `scripts/docker_test_databases.sh up` generates disposable trusted/wrong CAs, server certificates, PKCS12 launch profiles, and the Oracle wallet-path fixture under `.docker/safedb-ssl`, then starts ordinary MySQL plus the four dialect endpoints used by the SSL suite. Checked-in fixtures seed every dialect; `scripts/docker_test_databases.sh seed` reloads the SQL Server and Oracle sample schemas without recreating the stack. Database data directories use anonymous volumes that the helper renews on `up` and removes on `down`; generated TLS inputs remain on the host. `scripts/docker_test_databases.sh verify` runs both the required PostgreSQL/MySQL contracts and SSL compatibility checks with fresh, uncached integration-test execution.
 
+PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `SAFEDB_TEST_*_PASSWORD`, then the matching `SAFEDB_DOCKER_*_PASSWORD`, then the development default. `scripts/docker_test_databases.sh certs` is an offline operation and refuses to replace certificates while project services are running; use `reset` to rotate certificates and recreate an active stack safely.
+
 CI is on demand: a maintainer applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration; remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled. The cross-platform durability suite is on-demand through GitHub Actions, and dependency submission remains automatic for qualifying trusted `main` changes.
 
 ## Structure

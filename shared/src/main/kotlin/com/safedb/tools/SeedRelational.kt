@@ -35,7 +35,7 @@ private class SeedRelational(
     private val options = parseArgs(rawArgs)
     private val repoRoot = Path.of("").toAbsolutePath()
     private val env = System.getenv()
-    private val settings = settingsFor(dialect)
+    private val settings = relationalSeedSettings(dialect, env, repoRoot)
 
     fun run() {
         if (options.help) {
@@ -220,57 +220,9 @@ private class SeedRelational(
             sql.newLine()
         }
     }
-
-    private fun settingsFor(dialect: GeneratedSqlDialect): SeedSettings {
-        fun value(name: String, fallback: String) = env[name] ?: fallback
-        return when (dialect) {
-            GeneratedSqlDialect.Postgres ->
-                SeedSettings(
-                    database = value("SAFEDB_TEST_POSTGRES_DATABASE", "safedb_test"),
-                    databaseVariable = "SAFEDB_TEST_POSTGRES_DATABASE",
-                    user = value("SAFEDB_TEST_POSTGRES_USER", "postgres"),
-                    userVariable = "SAFEDB_TEST_POSTGRES_USER",
-                    container = value("SAFEDB_TEST_POSTGRES_DOCKER", "safedb-test-postgres"),
-                    containerVariable = "SAFEDB_TEST_POSTGRES_DOCKER",
-                    staticSql = repoRoot.resolve("testdata_postgres.sql"),
-                    clientEnvironment =
-                        mapOf("PGPASSWORD" to value("SAFEDB_TEST_POSTGRES_PASSWORD", "postgres")),
-                )
-            GeneratedSqlDialect.Mssql ->
-                SeedSettings(
-                    database = value("SAFEDB_TEST_MSSQL_DATABASE", "safedb_ssl"),
-                    databaseVariable = "SAFEDB_TEST_MSSQL_DATABASE",
-                    user = value("SAFEDB_TEST_MSSQL_USER", "sa"),
-                    userVariable = "SAFEDB_TEST_MSSQL_USER",
-                    container = value("SAFEDB_TEST_MSSQL_DOCKER", "safedb-test-mssql"),
-                    containerVariable = "SAFEDB_TEST_MSSQL_DOCKER",
-                    staticSql = repoRoot.resolve("testdata_mssql.sql"),
-                    clientEnvironment =
-                        mapOf(
-                            "SQLCMDPASSWORD" to
-                                value(
-                                    "SAFEDB_TEST_MSSQL_PASSWORD",
-                                    "SafeDb_Ssl_Passw0rd!",
-                                )
-                        ),
-                )
-            GeneratedSqlDialect.Oracle ->
-                SeedSettings(
-                    database = value("SAFEDB_TEST_ORACLE_DATABASE", "FREEPDB1"),
-                    databaseVariable = "SAFEDB_TEST_ORACLE_DATABASE",
-                    user = value("SAFEDB_TEST_ORACLE_USER", "safedb").uppercase(),
-                    userVariable = "SAFEDB_TEST_ORACLE_USER",
-                    container = value("SAFEDB_TEST_ORACLE_DOCKER", "safedb-test-oracle"),
-                    containerVariable = "SAFEDB_TEST_ORACLE_DOCKER",
-                    staticSql = repoRoot.resolve("testdata_oracle.sql"),
-                    clientEnvironment = emptyMap(),
-                )
-            GeneratedSqlDialect.Mysql -> error("MySQL uses SeedMysql")
-        }
-    }
 }
 
-private data class SeedSettings(
+internal data class SeedSettings(
     val database: String,
     val databaseVariable: String,
     val user: String,
@@ -280,6 +232,70 @@ private data class SeedSettings(
     val staticSql: Path,
     val clientEnvironment: Map<String, String>,
 )
+
+internal fun relationalSeedSettings(
+    dialect: GeneratedSqlDialect,
+    env: Map<String, String>,
+    repoRoot: Path,
+): SeedSettings {
+    fun value(name: String, fallback: String) = env[name] ?: fallback
+
+    fun password(testName: String, dockerName: String, fallback: String) =
+        env[testName] ?: env[dockerName]?.takeIf(String::isNotEmpty) ?: fallback
+
+    return when (dialect) {
+        GeneratedSqlDialect.Postgres ->
+            SeedSettings(
+                database = value("SAFEDB_TEST_POSTGRES_DATABASE", "safedb_test"),
+                databaseVariable = "SAFEDB_TEST_POSTGRES_DATABASE",
+                user = value("SAFEDB_TEST_POSTGRES_USER", "postgres"),
+                userVariable = "SAFEDB_TEST_POSTGRES_USER",
+                container = value("SAFEDB_TEST_POSTGRES_DOCKER", "safedb-test-postgres"),
+                containerVariable = "SAFEDB_TEST_POSTGRES_DOCKER",
+                staticSql = repoRoot.resolve("testdata_postgres.sql"),
+                clientEnvironment =
+                    mapOf(
+                        "PGPASSWORD" to
+                            password(
+                                "SAFEDB_TEST_POSTGRES_PASSWORD",
+                                "SAFEDB_DOCKER_POSTGRES_PASSWORD",
+                                "postgres",
+                            )
+                    ),
+            )
+        GeneratedSqlDialect.Mssql ->
+            SeedSettings(
+                database = value("SAFEDB_TEST_MSSQL_DATABASE", "safedb_ssl"),
+                databaseVariable = "SAFEDB_TEST_MSSQL_DATABASE",
+                user = value("SAFEDB_TEST_MSSQL_USER", "sa"),
+                userVariable = "SAFEDB_TEST_MSSQL_USER",
+                container = value("SAFEDB_TEST_MSSQL_DOCKER", "safedb-test-mssql"),
+                containerVariable = "SAFEDB_TEST_MSSQL_DOCKER",
+                staticSql = repoRoot.resolve("testdata_mssql.sql"),
+                clientEnvironment =
+                    mapOf(
+                        "SQLCMDPASSWORD" to
+                            password(
+                                "SAFEDB_TEST_MSSQL_PASSWORD",
+                                "SAFEDB_DOCKER_MSSQL_PASSWORD",
+                                "SafeDb_Ssl_Passw0rd!",
+                            )
+                    ),
+            )
+        GeneratedSqlDialect.Oracle ->
+            SeedSettings(
+                database = value("SAFEDB_TEST_ORACLE_DATABASE", "FREEPDB1"),
+                databaseVariable = "SAFEDB_TEST_ORACLE_DATABASE",
+                user = value("SAFEDB_TEST_ORACLE_USER", "safedb").uppercase(),
+                userVariable = "SAFEDB_TEST_ORACLE_USER",
+                container = value("SAFEDB_TEST_ORACLE_DOCKER", "safedb-test-oracle"),
+                containerVariable = "SAFEDB_TEST_ORACLE_DOCKER",
+                staticSql = repoRoot.resolve("testdata_oracle.sql"),
+                clientEnvironment = emptyMap(),
+            )
+        GeneratedSqlDialect.Mysql -> error("MySQL uses SeedMysql")
+    }
+}
 
 private fun validateSqlIdentifier(value: String, label: String) {
     if (!Regex("""^[A-Za-z][A-Za-z0-9_]*$""").matches(value)) {

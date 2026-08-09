@@ -64,7 +64,7 @@ scripts/seed_mssql.sh --orders 20000 --customers 5000 --seed 7
 scripts/seed_oracle.sh --orders 20000 --customers 5000 --seed 7
 ```
 
-Each also accepts `--products`, `--categories`, `--batch-size`, `--static`, and `--reset-state`. The equivalent Gradle properties are `seedPostgresArgs`, `seedMssqlArgs`, and `seedOracleArgs`. Override the default Compose container with `SAFEDB_TEST_POSTGRES_DOCKER`, `SAFEDB_TEST_MSSQL_DOCKER`, or `SAFEDB_TEST_ORACLE_DOCKER`.
+Each also accepts `--products`, `--categories`, `--batch-size`, `--static`, and `--reset-state`. The equivalent Gradle properties are `seedPostgresArgs`, `seedMssqlArgs`, and `seedOracleArgs`. Override the default Compose container with `SAFEDB_TEST_POSTGRES_DOCKER`, `SAFEDB_TEST_MSSQL_DOCKER`, or `SAFEDB_TEST_ORACLE_DOCKER`. PostgreSQL and SQL Server seeders prefer `SAFEDB_TEST_*_PASSWORD` when set, then the matching `SAFEDB_DOCKER_*_PASSWORD`, then the development default.
 
 Integration tests skip when no selected fixture is available. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to require execution; PostgreSQL uses matching `SAFEDB_TEST_POSTGRES_*` variables and `testdata_postgres.sql`.
 
@@ -92,9 +92,10 @@ scripts/docker_test_databases.sh seed     # reload SQL Server and Oracle sample 
 scripts/docker_test_databases.sh verify   # required JDBC suite, then SSL compatibility suite
 scripts/docker_test_databases.sh down     # stop the stack and discard all database data
 scripts/docker_test_databases.sh reset    # regenerate certificates and recreate everything
+scripts/docker_test_databases.sh certs    # regenerate certificates while the stack is stopped
 ```
 
-Every database data directory uses an anonymous Docker volume. The helper renews those volumes on every `up` and removes them on `down`, so database state never survives between stack runs. Use the helper rather than raw `docker compose stop`, which leaves a stopped container and its anonymous volume in place. Generated TLS fixtures remain under `.docker/safedb-ssl/` so the host-side launch profiles continue to work. The `verify` command supplies the ordinary and TLS test environment variables automatically and forces fresh execution so cached results from an unavailable endpoint cannot mask the live checks. The stack uses disposable development credentials by default; override them with the `SAFEDB_DOCKER_*_PASSWORD` variables declared in `compose.yaml`. SQL Server runs as `linux/amd64`, so its first start is slower on Apple Silicon; Oracle is also a large image and can take several minutes to become healthy.
+Every database data directory uses an anonymous Docker volume. The helper renews those volumes on every `up` and removes them on `down`, so database state never survives between stack runs. Use the helper rather than raw `docker compose stop`, which leaves a stopped container and its anonymous volume in place. Generated TLS fixtures remain under `.docker/safedb-ssl/` so the host-side launch profiles continue to work. The `verify` command supplies the ordinary and TLS test environment variables automatically and forces fresh execution so cached results from an unavailable endpoint cannot mask the live checks. Certificate rotation refuses to run while project services are active because running servers would continue using the previous certificates; use `reset` to rotate certificates and recreate the stack safely. The stack uses disposable development credentials by default; override them with the `SAFEDB_DOCKER_*_PASSWORD` variables declared in `compose.yaml`. SQL Server runs as `linux/amd64`, so its first start is slower on Apple Silicon; Oracle is also a large image and can take several minutes to become healthy.
 
 ## Safety, data, and trust
 

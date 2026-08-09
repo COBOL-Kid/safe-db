@@ -120,7 +120,16 @@ val verifyCoverageRatchet =
 
 tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet) }
 
-tasks.check { dependsOn(verifyUnitTestDiscovery, "koverVerify") }
+val testDockerDatabaseHarness =
+    tasks.register<Exec>("testDockerDatabaseHarness") {
+        group = "verification"
+        description = "Tests Docker database harness orchestration without live containers."
+        workingDir = projectDir
+        commandLine("bash", "scripts/test_docker_test_databases.sh")
+        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+    }
+
+tasks.check { dependsOn(verifyUnitTestDiscovery, testDockerDatabaseHarness, "koverVerify") }
 
 val verifyIntegrationTestDiscovery =
     tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {

@@ -54,7 +54,7 @@ scripts/docker_test_databases.sh verify
 
 Run `scripts/docker_test_databases.sh seed` to reload only the SQL Server and Oracle fixtures in an already-running stack.
 
-All generated private keys and trust artifacts remain under the Git-ignored `.docker/safedb-ssl/` directory. They are disposable test credentials and must not be reused outside this local stack.
+All generated private keys and trust artifacts remain under the Git-ignored `.docker/safedb-ssl/` directory. They are disposable test credentials and must not be reused outside this local stack. Run `scripts/docker_test_databases.sh certs` only while the project services are stopped. It refuses to replace certificates for an active stack because MySQL, PostgreSQL, and SQL Server would continue serving the previous certificate chain; use `reset` to rotate certificates and safely recreate the stack.
 
 For externally provisioned endpoints, run the environment-gated suite directly for non-UI checks of launch-profile trust and dialect SSL mapping:
 

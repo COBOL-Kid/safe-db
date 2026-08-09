@@ -22,10 +22,12 @@ Commands:
   down     Remove the containers and their anonymous database volumes.
   reset    Regenerate certificates and recreate the ephemeral stack.
   verify   Run required PostgreSQL/MySQL JDBC tests and the four-dialect TLS suite.
-  certs    Regenerate all disposable test certificates and launch profiles.
+  certs    Regenerate certificates and profiles while the stack is stopped.
 
 The generated CA keys, server keys, trust stores, profiles, and reports live under
 .docker/safedb-ssl (or SAFEDB_SSL_ROOT) and are excluded from Git.
+Certificate rotation refuses to run while project services are active; use reset
+to rotate certificates and recreate the ephemeral stack safely.
 EOF
 }
 
@@ -128,11 +130,40 @@ generate_certificates() {
   echo "Generated disposable TLS fixtures in $SSL_ROOT"
 }
 
+certificates_missing() {
+  [[ ! -f "$SSL_ROOT/trust/production.p12" ||
+     ! -f "$SSL_ROOT/servers/mysql/server.crt" ||
+     ! -f "$SSL_ROOT/servers/postgres/server.crt" ||
+     ! -f "$SSL_ROOT/servers/mssql/server.crt" ]]
+}
+
+running_stack_services() {
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+  "${COMPOSE[@]}" ps --status running --services 2>/dev/null || true
+}
+
+refuse_certificate_rotation_if_running() {
+  local running
+  running="$(running_stack_services)"
+  if [[ -z "$running" ]]; then
+    return
+  fi
+  echo "Refusing to rotate safe-db TLS fixtures while project services are running:" >&2
+  while IFS= read -r service; do
+    [[ -z "$service" ]] || echo "  $service" >&2
+  done <<<"$running"
+  echo "Run scripts/docker_test_databases.sh reset to rotate certificates safely." >&2
+  exit 1
+}
+
 ensure_certificates() {
-  if [[ ! -f "$SSL_ROOT/trust/production.p12" ||
-        ! -f "$SSL_ROOT/servers/mysql/server.crt" ||
-        ! -f "$SSL_ROOT/servers/postgres/server.crt" ||
-        ! -f "$SSL_ROOT/servers/mssql/server.crt" ]]; then
+  local allow_running_rotation="${1:-false}"
+  if certificates_missing; then
+    if [[ "$allow_running_rotation" != "true" ]]; then
+      refuse_certificate_rotation_if_running
+    fi
     generate_certificates
   else
     write_profiles
@@ -141,7 +172,7 @@ ensure_certificates() {
 
 start_stack() {
   require_tool docker
-  ensure_certificates
+  ensure_certificates true
   "${COMPOSE[@]}" up -d --wait --renew-anon-volumes \
     mysql-connectivity mysql postgres mssql oracle
   seed_mssql_and_oracle
@@ -149,7 +180,7 @@ start_stack() {
 }
 
 seed_mssql_and_oracle() {
-  "${COMPOSE[@]}" up --no-deps mssql-init
+  "${COMPOSE[@]}" up --no-deps --exit-code-from mssql-init mssql-init
   "${COMPOSE[@]}" exec -T oracle /usr/local/bin/safedb-oracle-init.sh
 }
 
@@ -201,6 +232,7 @@ case "$command" in
     verify_stack
     ;;
   certs)
+    refuse_certificate_rotation_if_running
     generate_certificates
     ;;
   *)
