@@ -759,11 +759,10 @@ private fun VisualizationFieldPicker(
                         MenuActionRow(
                             text = field.label,
                             supportingText =
-                                listOf(
+                                listOfNotNull(
                                         field.supportingText(),
                                         incompatibleReason(field).takeIf { !enabled },
                                     )
-                                    .filterNotNull()
                                     .filter { it.isNotBlank() }
                                     .joinToString(" · "),
                             modifier = Modifier.alpha(if (enabled) 1f else 0.45f),

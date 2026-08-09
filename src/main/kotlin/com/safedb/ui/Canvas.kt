@@ -141,8 +141,8 @@ fun Canvas(
         .toList()
         .filter { it !in aliases }
         .forEach { fieldScrollStates.remove(it) }
-    for (table in queryViewModel.canvasTables) {
-        fieldScrollStates.getOrPut(table.alias) { ScrollState(0) }
+    for ((_, alias, _, _, _, _) in queryViewModel.canvasTables) {
+        fieldScrollStates.getOrPut(alias) { ScrollState(0) }
     }
 
     fun canvasTableLike(table: CanvasTable): CanvasTableLike =
@@ -566,8 +566,8 @@ fun Canvas(
                         val path =
                             Path().apply {
                                 moveTo(points.first().x, points.first().y)
-                                for (point in points.drop(1)) {
-                                    lineTo(point.x, point.y)
+                                for ((x, y) in points.drop(1)) {
+                                    lineTo(x, y)
                                 }
                             }
                         val pathEffect =
@@ -673,11 +673,10 @@ fun Canvas(
                             }
                         },
                         onJoinClick = { column ->
-                            val source = dragJoin
-                            if (source == null) {
+                            if (dragJoin == null) {
                                 startJoin(canvasTable, column)
                             } else {
-                                addJoin(source, canvasTable.alias, column)
+                                addJoin(dragJoin, canvasTable.alias, column)
                                 gesture = null
                             }
                         },

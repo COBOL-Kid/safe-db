@@ -62,16 +62,6 @@ fun tableBottomY(
     cardHeight: Float = CANVAS_CARD_HEIGHT * ct.layoutScale,
 ): Float = ct.y + (ct.height ?: cardHeight)
 
-fun tableCenterX(
-    ct: CanvasTableLike,
-    cardWidth: Float = CANVAS_CARD_WIDTH * ct.layoutScale,
-): Float = ct.x + (ct.width ?: cardWidth) / 2f
-
-fun tableCenterY(
-    ct: CanvasTableLike,
-    cardHeight: Float = CANVAS_CARD_HEIGHT * ct.layoutScale,
-): Float = ct.y + (ct.height ?: cardHeight) / 2f
-
 data class CanvasPoint(val x: Float, val y: Float)
 
 data class CanvasRect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
@@ -347,11 +337,11 @@ fun routeOrthogonalPath(
 
     val xCandidates = mutableSetOf(start.x, target.x)
     val yCandidates = mutableSetOf(start.y, target.y)
-    for (obstacle in obstacles) {
-        xCandidates.add(obstacle.left)
-        xCandidates.add(obstacle.right)
-        yCandidates.add(obstacle.top)
-        yCandidates.add(obstacle.bottom)
+    for ((left, top, right, bottom) in obstacles) {
+        xCandidates.add(left)
+        xCandidates.add(right)
+        yCandidates.add(top)
+        yCandidates.add(bottom)
     }
     val xs = xCandidates.sorted()
     val ys = yCandidates.sorted()
@@ -480,13 +470,14 @@ fun indexedJoinTargetAt(
     sourceAlias: String,
     sourceColumn: String,
 ): Pair<String, String>? {
-    for (table in tables.asReversed()) {
-        for (column in table.tableInfo.columns) {
-            if (!column.isIndexed) continue
-            if (table.alias == sourceAlias && column.name == sourceColumn) continue
-            val bounds = columnHitBounds(table, column.name) ?: continue
+    for (canvasTable in tables.asReversed()) {
+        val (alias, _, _, _, _, _, _, tableInfo) = canvasTable
+        for ((name, _, _, isIndexed, _, _) in tableInfo.columns) {
+            if (!isIndexed) continue
+            if (alias == sourceAlias && name == sourceColumn) continue
+            val bounds = columnHitBounds(canvasTable, name) ?: continue
             if (bounds.contains(x, y)) {
-                return table.alias to column.name
+                return alias to name
             }
         }
     }
@@ -504,30 +495,30 @@ fun suggestedRelationships(
     }
     val suggestions = mutableListOf<SuggestedRelationship>()
 
-    for (foreignTable in tables) {
-        for (foreignKey in foreignTable.tableInfo.foreignKeys) {
-            if (foreignKey.columns.size != foreignKey.referencedColumns.size) continue
-            if (foreignKey.columns.isEmpty()) continue
+    for ((foreignAlias, _, _, _, _, _, _, foreignTableInfo) in tables) {
+        for ((foreignKeyName, columns, referencedSchema, referencedTableName, referencedColumns) in
+            foreignTableInfo.foreignKeys) {
+            if (columns.size != referencedColumns.size) continue
+            if (columns.isEmpty()) continue
 
-            val referencedTable =
-                tableByQualifiedName[
-                    qualifiedTableKey(foreignKey.referencedSchema, foreignKey.referencedTable)]
+            val referencedCanvasTable =
+                tableByQualifiedName[qualifiedTableKey(referencedSchema, referencedTableName)]
                     ?: continue
 
-            val columnPairs = foreignKey.columns.zip(foreignKey.referencedColumns)
+            val columnPairs = columns.zip(referencedColumns)
             if (
                 columnPairs.any { (foreignColumn, referencedColumn) ->
-                    !foreignTable.tableInfo.hasColumn(foreignColumn) ||
-                        !referencedTable.tableInfo.hasColumn(referencedColumn)
+                    !foreignTableInfo.hasColumn(foreignColumn) ||
+                        !referencedCanvasTable.tableInfo.hasColumn(referencedColumn)
                 }
             )
                 continue
 
             val relationshipJoins = columnPairs.map { (foreignColumn, referencedColumn) ->
                 JoinSpec(
-                    leftAlias = foreignTable.alias,
+                    leftAlias = foreignAlias,
                     leftColumn = foreignColumn,
-                    rightAlias = referencedTable.alias,
+                    rightAlias = referencedCanvasTable.alias,
                     rightColumn = referencedColumn,
                 )
             }
@@ -542,9 +533,7 @@ fun suggestedRelationships(
                 }
             )
                 continue
-            suggestions.add(
-                SuggestedRelationship(name = foreignKey.name, joins = relationshipJoins)
-            )
+            suggestions.add(SuggestedRelationship(name = foreignKeyName, joins = relationshipJoins))
         }
     }
 
@@ -570,17 +559,6 @@ private fun List<JoinSpec>.hasJoin(
 }
 
 private fun qualifiedTableKey(schema: String, table: String): String = "$schema.$table"
-
-fun joinEdgePath(
-    left: CanvasTableLike,
-    leftColumn: String,
-    right: CanvasTableLike,
-    rightColumn: String,
-    cardWidth: Float = CANVAS_CARD_WIDTH,
-): String {
-    val points = joinEdgePoints(left, leftColumn, right, rightColumn, cardWidth)
-    return "M ${points.sourceX} ${points.sourceY} C ${points.control1X} ${points.control1Y}, ${points.control2X} ${points.control2Y}, ${points.targetX} ${points.targetY}"
-}
 
 data class JoinEdgePoints(
     val sourceX: Float,

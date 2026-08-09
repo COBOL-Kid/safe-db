@@ -9,6 +9,7 @@ plugins {
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlinx.kover")
     id("com.ncorti.ktfmt.gradle")
+    id("org.jetbrains.qodana")
 }
 
 group = "com.safedb"
@@ -29,6 +30,20 @@ dependencies {
 }
 
 ktfmt { kotlinLangStyle() }
+
+qodana { resultsPath.set(layout.buildDirectory.dir("qodana/results").get().asFile.absolutePath) }
+
+tasks.qodanaScan {
+    arguments.set(
+        listOf(
+            "--linter",
+            "qodana-jvm-community",
+            "--within-docker",
+            "false",
+            "--print-problems",
+        )
+    )
+}
 
 kover {
     reports {

@@ -326,25 +326,25 @@ fun SchemaBrowser(
                         }
                         if (isOpen) {
                             Column(modifier = Modifier.padding(start = 32.dp, bottom = 8.dp)) {
-                                for (col in table.columns) {
+                                for ((name, dataType, nullable, isIndexed, _, _) in table.columns) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        Text(col.name, style = DataMono)
+                                        Text(name, style = DataMono)
                                         Text(
-                                            col.dataType,
+                                            dataType,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
-                                        if (col.isIndexed) {
+                                        if (isIndexed) {
                                             Text(
                                                 "indexed",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary,
                                             )
                                         }
-                                        if (col.nullable) {
+                                        if (nullable) {
                                             Text(
                                                 "null",
                                                 style = MaterialTheme.typography.labelSmall,
@@ -360,14 +360,13 @@ fun SchemaBrowser(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                                     )
-                                    for (idx in table.indexes) {
+                                    for ((name, columns, _, _, _, isUnique, isPrimary, _, _, _) in
+                                        table.indexes) {
                                         val (badge, badgeColor) =
                                             when {
-                                                idx.isPrimary ->
+                                                isPrimary ->
                                                     "PK" to MaterialTheme.colorScheme.tertiary
-                                                idx.isUnique ->
-                                                    "UQ" to
-                                                        com.safedb.ui.theme.SafeDbTheme.colors.uq
+                                                isUnique -> "UQ" to SafeDbTheme.colors.uq
                                                 else ->
                                                     "IDX" to
                                                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -385,7 +384,7 @@ fun SchemaBrowser(
                                                         .SemiBold,
                                             )
                                             Text(
-                                                "${idx.name} (${idx.columns.joinToString(", ")})",
+                                                "$name (${columns.joinToString(", ")})",
                                                 style = MaterialTheme.typography.labelSmall,
                                             )
                                         }

@@ -33,11 +33,11 @@ internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching 
 
     fun visit(node: JsonObject): Set<String> {
         val childAliases =
-            node
-                .arrayValue("Plans")
-                .orEmpty()
-                .mapNotNull { it as? JsonObject }
-                .flatMapTo(linkedSetOf()) { visit(it) }
+            node.arrayValue("Plans").orEmpty().filterIsInstance<JsonObject>().flatMapTo(
+                linkedSetOf()
+            ) {
+                visit(it)
+            }
         val alias = node.string("Alias")
         val aliases = childAliases + listOfNotNull(alias)
         val nodeType = node.string("Node Type").orEmpty()
@@ -287,7 +287,7 @@ internal fun parseSqlServerPlan(raw: String): NormalizedQueryPlan? = runCatching
             setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
             setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
             isXIncludeAware = false
-            setExpandEntityReferences(false)
+            isExpandEntityReferences = false
         }
     val document = factory.newDocumentBuilder().parse(InputSource(StringReader(raw)))
     val relationNodes = document.getElementsByTagNameNS("*", "RelOp")
@@ -425,15 +425,16 @@ internal fun normalizeOraclePlan(rows: List<OraclePlanRow>): NormalizedQueryPlan
         val options = row.options.uppercase()
         val tableRow = if (operation == "INDEX") tableAncestor(row) ?: row else row
         val method =
-            when {
-                operation == "INDEX" && options.contains("UNIQUE SCAN") ->
-                    PlanAccessMethod.BoundedLookup
-                operation == "INDEX" && options.contains("RANGE SCAN") ->
-                    PlanAccessMethod.BoundedRange
-                operation == "INDEX" && options.contains("FULL") -> PlanAccessMethod.FullIndexScan
-                operation == "TABLE ACCESS" && options.contains("FULL") ->
-                    PlanAccessMethod.TableScan
-                operation == "TABLE ACCESS" && row.id !in indexParentIds -> PlanAccessMethod.Other
+            when (operation) {
+                "INDEX" ->
+                    when {
+                        options.contains("UNIQUE SCAN") -> PlanAccessMethod.BoundedLookup
+                        options.contains("RANGE SCAN") -> PlanAccessMethod.BoundedRange
+                        options.contains("FULL") -> PlanAccessMethod.FullIndexScan
+                        else -> return@mapNotNull null
+                    }
+                "TABLE ACCESS" if options.contains("FULL") -> PlanAccessMethod.TableScan
+                "TABLE ACCESS" if row.id !in indexParentIds -> PlanAccessMethod.Other
                 else -> return@mapNotNull null
             }
         PlanRelationAccess(

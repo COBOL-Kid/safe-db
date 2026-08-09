@@ -120,8 +120,7 @@ private fun SlicerControl(
                         supportingText = "${option.count} row${if (option.count == 1) "" else "s"}",
                         leading = { Checkbox(checked = checked, onCheckedChange = null) },
                         onClick = {
-                            val baseline =
-                                if (selected.isEmpty()) options.map { it.key }.toSet() else selected
+                            val baseline = selected.ifEmpty { options.map { it.key }.toSet() }
                             val next =
                                 if (option.key in baseline) baseline - option.key
                                 else baseline + option.key

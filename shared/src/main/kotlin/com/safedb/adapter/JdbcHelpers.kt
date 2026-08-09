@@ -13,7 +13,6 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Types
-import java.util.Base64
 
 const val DEFAULT_TIMEOUT_MS = 10_000
 const val CONNECT_TIMEOUT_MS = 10_000L
@@ -305,21 +304,3 @@ fun <T> withQueryTimeout(connection: Connection, timeoutMs: Int, block: (Connect
         connection.setNetworkTimeout({ _ -> }, previous)
     }
 }
-
-fun base64Cell(bytes: ByteArray): com.safedb.model.ResultCell =
-    com.safedb.model.ResultCell.binary(bytes)
-
-fun textCell(value: String): com.safedb.model.ResultCell = com.safedb.model.ResultCell.text(value)
-
-fun integerCell(value: Long): com.safedb.model.ResultCell =
-    com.safedb.model.ResultCell.IntegerCell(value)
-
-fun floatCell(value: Double): com.safedb.model.ResultCell =
-    com.safedb.model.ResultCell.FloatCell(value)
-
-fun boolCell(value: Boolean): com.safedb.model.ResultCell =
-    com.safedb.model.ResultCell.BoolCell(value)
-
-fun nullCell(): com.safedb.model.ResultCell = com.safedb.model.ResultCell.Null
-
-fun encodeBase64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)

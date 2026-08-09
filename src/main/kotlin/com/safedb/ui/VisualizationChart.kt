@@ -82,12 +82,11 @@ internal fun visualizationGeometry(
         } else {
             preview.marks.maxOf { max(0.0, it.y) }
         }
-    val yMin = rawMin
     val yMax = if (rawMax == rawMin) rawMax + 1.0 else rawMax
     fun yPosition(value: Double): Float =
-        (plot.bottom - ((value - yMin) / (yMax - yMin) * plot.height)).toFloat()
+        (plot.bottom - ((value - rawMin) / (yMax - rawMin) * plot.height)).toFloat()
     fun xPosition(value: Double): Float =
-        (plot.left + ((value - yMin) / (yMax - yMin) * plot.width)).toFloat()
+        (plot.left + ((value - rawMin) / (yMax - rawMin) * plot.width)).toFloat()
 
     val regions = mutableListOf<VisualizationHitRegion>()
     val points = linkedMapOf<String, Offset>()
@@ -227,7 +226,7 @@ internal fun visualizationGeometry(
         ChartType.Auto,
         null -> Unit
     }
-    return VisualizationGeometry(regions, points, plot, yMin, yMax)
+    return VisualizationGeometry(regions, points, plot, rawMin, yMax)
 }
 
 @Composable

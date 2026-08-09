@@ -58,7 +58,7 @@ fun ResultsTable(
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 "${result.rowCount} row${if (result.rowCount != 1) "s" else ""}",
@@ -93,7 +93,7 @@ fun ResultsTable(
         if (result.rows.isEmpty() && result.columns.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = androidx.compose.ui.Alignment.Center,
+                contentAlignment = Alignment.Center,
             ) {
                 Text("No rows returned.", style = MaterialTheme.typography.bodySmall)
             }
@@ -115,15 +115,15 @@ fun ResultsTable(
                                 .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        for (column in columns) {
+                        for ((_, label, widthDp, alignment) in columns) {
                             Text(
-                                column.label,
+                                label,
                                 modifier =
-                                    Modifier.width(column.widthDp.dp)
+                                    Modifier.width(widthDp.dp)
                                         .padding(horizontal = 12.dp, vertical = 6.dp),
                                 style = DataMono.copy(fontWeight = FontWeight.Medium),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = column.alignment.textAlign,
+                                textAlign = alignment.textAlign,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )

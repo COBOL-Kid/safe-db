@@ -25,8 +25,6 @@ import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -121,7 +119,7 @@ data class FilterSpec(
 sealed class FilterValue {
     data class Single(val literal: FilterLiteral) : FilterValue()
 
-    data class ListValue(val literals: kotlin.collections.List<FilterLiteral>) : FilterValue()
+    data class ListValue(val literals: List<FilterLiteral>) : FilterValue()
 
     data class Pair(val first: FilterLiteral, val second: FilterLiteral) : FilterValue()
 }
@@ -183,8 +181,6 @@ fun FilterOp.valueKind(): ValueKind =
         else -> ValueKind.Single
     }
 
-fun FilterOp.needsValue(): Boolean = valueKind() != ValueKind.None
-
 fun FilterOp.sqlOperator(): String? =
     when (this) {
         FilterOp.Eq -> "="
@@ -218,32 +214,31 @@ sealed class BindValue {
     companion object {
         fun fromLiteral(literal: FilterLiteral): Result<BindValue> = runCatching {
             when (literal.kind) {
-                LiteralKind.Text -> BindValue.Text(literal.text)
+                LiteralKind.Text -> Text(literal.text)
                 LiteralKind.Int ->
-                    BindValue.Int(
+                    Int(
                         literal.text.toLongOrNull()
                             ?: throw IllegalArgumentException(
                                 "'${literal.text}' is not a valid integer"
                             )
                     )
                 LiteralKind.Decimal ->
-                    BindValue.Decimal(
+                    Decimal(
                         literal.text.toBigDecimalOrNull()
                             ?: throw IllegalArgumentException(
                                 "'${literal.text}' is not a valid decimal"
                             )
                     )
                 LiteralKind.Float ->
-                    BindValue.Float(
+                    Float(
                         literal.text.toDoubleOrNull()
                             ?: throw IllegalArgumentException(
                                 "'${literal.text}' is not a valid number"
                             )
                     )
-                LiteralKind.Bool -> BindValue.Bool(parseBoolLiteral(literal.text))
-                LiteralKind.Date -> BindValue.Date(parseDateLiteral(literal.text).getOrThrow())
-                LiteralKind.DateTime ->
-                    BindValue.DateTime(parseDateTimeLiteral(literal.text).getOrThrow())
+                LiteralKind.Bool -> Bool(parseBoolLiteral(literal.text))
+                LiteralKind.Date -> Date(parseDateLiteral(literal.text).getOrThrow())
+                LiteralKind.DateTime -> DateTime(parseDateTimeLiteral(literal.text).getOrThrow())
             }
         }
     }
@@ -396,8 +391,6 @@ sealed class ResultCell {
                 )
             )
         }
-
-        fun nullCell(): ResultCell = Null
 
         fun bool(value: Boolean): ResultCell = BoolCell(value)
 
@@ -576,13 +569,6 @@ internal object FilterValueSerializer : KSerializer<FilterValue> {
 }
 
 object SafeDbJson {
-    val pretty: Json = Json {
-        prettyPrint = true
-        encodeDefaults = false
-        ignoreUnknownKeys = true
-        isLenient = true
-    }
-
     // Store files emit defaults so older and newer readers see a stable persisted shape.
     val store: Json = Json {
         prettyPrint = true

@@ -67,6 +67,4 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
 
     fun connectionName(id: String): String =
         _connections.value.firstOrNull { it.id == id }?.name ?: "Unknown"
-
-    fun connectionById(id: String): ConnectionDef? = _connections.value.firstOrNull { it.id == id }
 }

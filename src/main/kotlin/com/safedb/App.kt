@@ -109,7 +109,7 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
                 },
             color = MaterialTheme.colorScheme.background,
         ) {
-            com.safedb.ui.AppShell(
+            AppShell(
                 appState = appState,
                 viewModel = viewModel,
                 paletteOpen = paletteOpen,

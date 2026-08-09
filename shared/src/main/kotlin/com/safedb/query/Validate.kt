@@ -54,7 +54,7 @@ internal val BLOCKED_SCHEMAS =
         "DBSFWUSER",
         "APPQOSSYS",
         "ORACLE_OCM",
-        "XS\$NULL",
+        $$"XS$NULL",
         "DVSYS",
         "LBACSYS",
     )
@@ -83,14 +83,12 @@ fun validateQuery(
         }
 
     val selections =
-        if (normalizedSpec.columns.isEmpty()) {
+        normalizedSpec.columns.ifEmpty {
             normalizedSpec.tables.flatMap { tableRef ->
                 findTable(schema, tableRef.schema, tableRef.name)?.columns.orEmpty().map { column ->
                     ColumnSel(tableAlias = tableRef.alias, column = column.name)
                 }
             }
-        } else {
-            normalizedSpec.columns
         }
 
     val aliases = mutableSetOf<String>()
@@ -223,85 +221,78 @@ fun validate(
     }
 
     val tableAliases = mutableSetOf<String>()
-    for (table in spec.tables) {
-        if (isBlocked(table.schema, customBlocked)) {
-            return Outcome.err("Schema '${table.schema}' is blocked (system/catalog schema)")
+    for ((tableSchema, tableName, alias) in spec.tables) {
+        if (isBlocked(tableSchema, customBlocked)) {
+            return Outcome.err("Schema '$tableSchema' is blocked (system/catalog schema)")
         }
 
-        if (findTable(schema, table.schema, table.name) == null) {
-            return Outcome.err("Table '${table.schema}.${table.name}' not found in schema")
+        if (findTable(schema, tableSchema, tableName) == null) {
+            return Outcome.err("Table '$tableSchema.$tableName' not found in schema")
         }
 
-        if (!tableAliases.add(table.alias)) {
-            return Outcome.err("Duplicate table alias '${table.alias}'")
+        if (!tableAliases.add(alias)) {
+            return Outcome.err("Duplicate table alias '$alias'")
         }
 
-        for (col in spec.columns) {
-            if (col.tableAlias == table.alias) {
+        for ((tableAlias, column) in spec.columns) {
+            if (tableAlias == alias) {
                 val exists =
-                    findTable(schema, table.schema, table.name)?.columns?.any {
-                        it.name == col.column
-                    } ?: false
+                    findTable(schema, tableSchema, tableName)?.columns?.any { it.name == column }
+                        ?: false
                 if (!exists) {
-                    return Outcome.err("Column '${table.alias}.${col.column}' does not exist")
+                    return Outcome.err("Column '$alias.$column' does not exist")
                 }
             }
         }
     }
 
-    for (col in spec.columns) {
-        if (!tableAliases.contains(col.tableAlias)) {
-            return Outcome.err(
-                "Column selection references unknown table alias '${col.tableAlias}'"
-            )
+    for ((tableAlias, _) in spec.columns) {
+        if (!tableAliases.contains(tableAlias)) {
+            return Outcome.err("Column selection references unknown table alias '$tableAlias'")
         }
     }
 
     val groupedColumns = mutableSetOf<Pair<String, String>>()
-    for (group in spec.groups) {
-        if (!tableAliases.contains(group.tableAlias)) {
-            return Outcome.err("Group references unknown table alias '${group.tableAlias}'")
+    for ((tableAlias, column) in spec.groups) {
+        if (!tableAliases.contains(tableAlias)) {
+            return Outcome.err("Group references unknown table alias '$tableAlias'")
         }
         val table =
-            findTableByAlias(schema, spec, group.tableAlias)
-                ?: return Outcome.err("Cannot resolve table for group alias '${group.tableAlias}'")
-        val column =
-            table.columns.find { it.name == group.column }
-                ?: return Outcome.err(
-                    "Group column '${group.tableAlias}.${group.column}' does not exist"
-                )
-        if (dialect != null && !supportsGroupingAndSorting(column.dataType, dialect)) {
+            findTableByAlias(schema, spec, tableAlias)
+                ?: return Outcome.err("Cannot resolve table for group alias '$tableAlias'")
+        val groupColumn =
+            table.columns.find { it.name == column }
+                ?: return Outcome.err("Group column '$tableAlias.$column' does not exist")
+        if (dialect != null && !supportsGroupingAndSorting(groupColumn.dataType, dialect)) {
             return Outcome.err(
-                "Group column '${group.tableAlias}.${group.column}' has type '${column.dataType}', " +
+                "Group column '$tableAlias.$column' has type '${groupColumn.dataType}', " +
                     "which cannot be grouped by ${dialect.displayName()}"
             )
         }
-        if (!groupedColumns.add(group.tableAlias to group.column)) {
-            return Outcome.err("Group column '${group.tableAlias}.${group.column}' is duplicated")
+        if (!groupedColumns.add(tableAlias to column)) {
+            return Outcome.err("Group column '$tableAlias.$column' is duplicated")
         }
     }
 
     val sortedColumns = mutableSetOf<Pair<String, String>>()
-    for (sort in spec.sorts) {
-        if (!tableAliases.contains(sort.tableAlias)) {
-            return Outcome.err("Sort references unknown table alias '${sort.tableAlias}'")
+    for ((tableAlias, column, _) in spec.sorts) {
+        if (!tableAliases.contains(tableAlias)) {
+            return Outcome.err("Sort references unknown table alias '$tableAlias'")
         }
         val table =
-            findTableByAlias(schema, spec, sort.tableAlias)
-                ?: return Outcome.err("Cannot resolve table for sort alias '${sort.tableAlias}'")
-        val column =
-            table.columns.find { it.name == sort.column }
-                ?: return Outcome.err(
-                    "Sort column '${sort.tableAlias}.${sort.column}' does not exist"
-                )
-        if (dialect != null && !supportsGroupingAndSorting(column.dataType, dialect)) {
+            findTableByAlias(schema, spec, tableAlias)
+                ?: return Outcome.err("Cannot resolve table for sort alias '$tableAlias'")
+        val sortColumn =
+            table.columns.find { it.name == column }
+                ?: return Outcome.err("Sort column '$tableAlias.$column' does not exist")
+        if (dialect != null && !supportsGroupingAndSorting(sortColumn.dataType, dialect)) {
             return Outcome.err(
-                "Sort column '${sort.tableAlias}.${sort.column}' has type '${column.dataType}', " +
+                "Sort column '$tableAlias.$column' has type '${sortColumn.dataType}', " +
                     "which cannot be sorted by ${dialect.displayName()}"
             )
         }
-        if (!sortedColumns.add(sort.tableAlias to sort.column)) {
-            return Outcome.err("Sort column '${sort.tableAlias}.${sort.column}' is duplicated")
+        if (!sortedColumns.add(tableAlias to column)) {
+            return Outcome.err("Sort column '$tableAlias.$column' is duplicated")
         }
     }
 
@@ -317,18 +308,16 @@ fun validate(
         if (spec.columns.isEmpty()) {
             return Outcome.err("Grouping requires explicitly selected output columns")
         }
-        for (column in spec.columns) {
-            if ((column.tableAlias to column.column) !in groupedColumns) {
+        for ((tableAlias, column) in spec.columns) {
+            if ((tableAlias to column) !in groupedColumns) {
                 return Outcome.err(
-                    "Selected output column '${column.tableAlias}.${column.column}' must appear in GROUP BY"
+                    "Selected output column '$tableAlias.$column' must appear in GROUP BY"
                 )
             }
         }
-        for (sort in spec.sorts) {
-            if ((sort.tableAlias to sort.column) !in groupedColumns) {
-                return Outcome.err(
-                    "Sort column '${sort.tableAlias}.${sort.column}' must appear in GROUP BY"
-                )
+        for ((tableAlias, column, _) in spec.sorts) {
+            if ((tableAlias to column) !in groupedColumns) {
+                return Outcome.err("Sort column '$tableAlias.$column' must appear in GROUP BY")
             }
         }
     }
@@ -450,27 +439,22 @@ private fun Dialect.displayName(): String =
     }
 
 private fun isPartOfCompleteForeignKey(schema: Schema, spec: QuerySpec, join: JoinSpec): Boolean {
-    for (foreignRef in spec.tables) {
-        val foreignTable = findTable(schema, foreignRef.schema, foreignRef.name) ?: continue
-        for (foreignKey in foreignTable.foreignKeys) {
-            if (
-                foreignKey.columns.isEmpty() ||
-                    foreignKey.columns.size != foreignKey.referencedColumns.size
-            )
-                continue
+    for ((tableSchema, tableName, alias) in spec.tables) {
+        val foreignTable = findTable(schema, tableSchema, tableName) ?: continue
+        for ((_, columns, referencedSchema, referencedTable, referencedColumns) in
+            foreignTable.foreignKeys) {
+            if (columns.isEmpty() || columns.size != referencedColumns.size) continue
             val referencedRefs =
-                spec.tables.filter { tableRef ->
-                    tableRef.schema == foreignKey.referencedSchema &&
-                        tableRef.name == foreignKey.referencedTable
+                spec.tables.filter { (refSchema, refName, _) ->
+                    refSchema == referencedSchema && refName == referencedTable
                 }
-            for (referencedRef in referencedRefs) {
+            for ((_, _, referencedAlias) in referencedRefs) {
                 val expected =
-                    foreignKey.columns.zip(foreignKey.referencedColumns).map {
-                        (foreignColumn, referencedColumn) ->
+                    columns.zip(referencedColumns).map { (foreignColumn, referencedColumn) ->
                         JoinSpec(
-                            foreignRef.alias,
+                            alias,
                             foreignColumn,
-                            referencedRef.alias,
+                            referencedAlias,
                             referencedColumn,
                         )
                     }

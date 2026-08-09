@@ -161,7 +161,7 @@ private class WorksheetEngine(
     private fun passesFilters(record: WorksheetRecord): Boolean =
         config.filters.all { filter ->
             val cell = record.source(filter.column)
-            val text = cellText(cell)
+            val text = resultCellText(cell)
             val comparison = compareTextOrNumber(text, filter.value)
             when (filter.op) {
                 WorksheetFilterOp.Members ->
@@ -185,15 +185,12 @@ private class WorksheetEngine(
     private fun applyRowFormulas(record: WorksheetRecord) {
         config.calculations.filterIsInstance<WorksheetCalculation.RowFormula>().forEach {
             calculation ->
-            val values =
-                buildMap<String, BigDecimal?> {
-                    sample.columns.forEach { column ->
-                        put(column.name, record.source(column.name).decimalOrNull())
-                    }
-                    record.calculations.forEach { (id, cell) ->
-                        put(id, cell.value.decimalOrNull())
-                    }
+            val values = buildMap {
+                sample.columns.forEach { column ->
+                    put(column.name, record.source(column.name).decimalOrNull())
                 }
+                record.calculations.forEach { (id, cell) -> put(id, cell.value.decimalOrNull()) }
+            }
             val result = evaluatePivotFormula(calculation.formula, values)
             record.calculations[calculation.id] =
                 if (result.error != null) {
@@ -206,10 +203,9 @@ private class WorksheetEngine(
     }
 
     private fun recordComparator(): Comparator<WorksheetRecord> = Comparator { left, right ->
-        for (sort in config.sorts) {
-            val compared = compareCells(left.value(sort.target), right.value(sort.target))
-            if (compared != 0)
-                return@Comparator if (sort.dir == SortDir.Desc) -compared else compared
+        for ((target, dir) in config.sorts) {
+            val compared = compareCells(left.value(target), right.value(target))
+            if (compared != 0) return@Comparator if (dir == SortDir.Desc) -compared else compared
         }
         left.index.compareTo(right.index)
     }
@@ -234,27 +230,31 @@ private class WorksheetEngine(
         }
         val orderedBuckets =
             buckets.entries.sortedWith(
-                Comparator { left, right ->
-                    for (sort in config.sorts) {
+                Comparator { (leftKey, leftRecords), (rightKey, rightRecords) ->
+                    for ((target, dir) in config.sorts) {
                         val compared =
-                            when (val target = sort.target) {
+                            when (target) {
                                 is WorksheetValueRef.Column ->
                                     if (target.column == group.column) {
-                                        compareCells(left.key.sortValue, right.key.sortValue)
+                                        compareCells(leftKey.sortValue, rightKey.sortValue)
                                     } else {
                                         compareCells(
-                                            left.value.firstOrNull()?.source(target.column),
-                                            right.value.firstOrNull()?.source(target.column),
+                                            leftRecords.firstOrNull()?.source(target.column),
+                                            rightRecords.firstOrNull()?.source(target.column),
                                         )
                                     }
                                 is WorksheetValueRef.Calculation ->
                                     compareCells(
-                                        groupCalculationValue(left.value, group.column, target.id),
-                                        groupCalculationValue(right.value, group.column, target.id),
+                                        groupCalculationValue(leftRecords, group.column, target.id),
+                                        groupCalculationValue(
+                                            rightRecords,
+                                            group.column,
+                                            target.id,
+                                        ),
                                     )
                             }
                         if (compared != 0)
-                            return@Comparator if (sort.dir == SortDir.Desc) -compared else compared
+                            return@Comparator if (dir == SortDir.Desc) -compared else compared
                     }
                     0
                 }
@@ -360,9 +360,14 @@ private class WorksheetEngine(
         if (calculation.fn == WorksheetAggregateFn.Count && calculation.sourceColumn == null) {
             return ResultCell.IntegerCell(records.size.toLong())
         }
-        val cells =
-            calculation.sourceColumn?.let { column -> records.map { it.source(column) } }.orEmpty()
-        val concrete = cells.filterNotNull().filterNot { it is ResultCell.Null }
+        val concrete =
+            calculation.sourceColumn
+                ?.let { column ->
+                    records.mapNotNull { row ->
+                        row.source(column).takeUnless { it is ResultCell.Null }
+                    }
+                }
+                .orEmpty()
         return when (calculation.fn) {
             WorksheetAggregateFn.Count -> ResultCell.IntegerCell(concrete.size.toLong())
             WorksheetAggregateFn.CountDistinct ->
@@ -622,7 +627,7 @@ private fun compareCells(left: ResultCell?, right: ResultCell?): Int {
     val leftNumber = left.decimalOrNull()
     val rightNumber = right.decimalOrNull()
     return if (leftNumber != null && rightNumber != null) leftNumber.compareTo(rightNumber)
-    else cellText(left).compareTo(cellText(right), ignoreCase = true)
+    else resultCellText(left).compareTo(resultCellText(right), ignoreCase = true)
 }
 
 private fun compareTextOrNumber(left: String, right: String): Int {
@@ -641,7 +646,5 @@ private fun filterEquals(cell: ResultCell, text: String, expected: String): Bool
     }
     return text.equals(expected, ignoreCase = true)
 }
-
-private fun cellText(cell: ResultCell?): String = resultCellText(cell)
 
 private fun escapeGroupPath(value: String): String = value.replace("%", "%25").replace("/", "%2F")

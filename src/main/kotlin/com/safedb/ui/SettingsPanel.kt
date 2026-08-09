@@ -68,17 +68,15 @@ fun SettingsPanel(
     var databaseMenuOpen by remember { mutableStateOf(false) }
     var schemaMenuOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(open) {
-        if (open) {
-            viewModel.clearSaveError()
-            candidateConnectionId = settings.defaultConnectionId
-            val candidateExists = connections.any { it.id == settings.defaultConnectionId }
-            val defaultConnectionId = settings.defaultConnectionId
-            if (candidateExists && defaultConnectionId != null) {
-                viewModel.loadDefaultSchemaOptions(defaultConnectionId)
-            } else {
-                viewModel.clearDefaultSchemaOptions()
-            }
+    LaunchedEffect(Unit) {
+        viewModel.clearSaveError()
+        candidateConnectionId = settings.defaultConnectionId
+        val candidateExists = connections.any { it.id == settings.defaultConnectionId }
+        val defaultConnectionId = settings.defaultConnectionId
+        if (candidateExists && defaultConnectionId != null) {
+            viewModel.loadDefaultSchemaOptions(defaultConnectionId)
+        } else {
+            viewModel.clearDefaultSchemaOptions()
         }
     }
 

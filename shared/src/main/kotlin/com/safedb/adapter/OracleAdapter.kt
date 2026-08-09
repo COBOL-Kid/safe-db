@@ -23,7 +23,7 @@ object OracleAdapter {
             "DBSFWUSER",
             "ORACLE_OCM",
             "ANONYMOUS",
-            "XS\$NULL",
+            $$"XS$NULL",
             "GSMADMIN_INTERNAL",
             "AUDSYS",
             "DVSYS",
@@ -71,7 +71,7 @@ object OracleAdapter {
         dataSource.connection.use { conn ->
             conn.createStatement().use { stmt ->
                 stmt
-                    .executeQuery("SELECT banner FROM v\$version WHERE banner LIKE 'Oracle%'")
+                    .executeQuery($$"SELECT banner FROM v$version WHERE banner LIKE 'Oracle%'")
                     .use { rs ->
                         rs.next()
                         rs.getString(1)

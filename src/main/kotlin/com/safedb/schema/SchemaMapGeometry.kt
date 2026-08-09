@@ -64,7 +64,7 @@ internal fun schemaMapRelationshipGeometries(
                 val sourceSize = sizes.getValue(relationship.sourceNodeId)
                 val targetSize = sizes.getValue(relationship.targetNodeId)
                 val sameNode = relationship.sourceNodeId == relationship.targetNodeId
-                val sameColumn = !sameNode && kotlin.math.abs(source.x - target.x) < 1f
+                val sameColumn = !sameNode && abs(source.x - target.x) < 1f
                 val route =
                     if (sameNode || sameColumn) {
                         val right = maxOf(source.x + sourceSize.width, target.x + targetSize.width)
@@ -161,16 +161,14 @@ private fun SchemaMapPoint.toCanvasPoint(): CanvasPoint = CanvasPoint(x, y)
 private fun CanvasPoint.toSchemaMapPoint(): SchemaMapPoint = SchemaMapPoint(x, y)
 
 private fun List<SchemaMapPoint>.distinctAdjacent(): List<SchemaMapPoint> =
-    fold(mutableListOf<SchemaMapPoint>()) { result, point ->
+    fold(mutableListOf()) { result, point ->
         if (result.lastOrNull() != point) result += point
         result
     }
 
 private fun relationshipPathMidpoint(points: List<SchemaMapPoint>): SchemaMapPoint {
     val segmentLengths =
-        points.zipWithNext().map { (start, end) ->
-            kotlin.math.abs(end.x - start.x) + kotlin.math.abs(end.y - start.y)
-        }
+        points.zipWithNext().map { (start, end) -> abs(end.x - start.x) + abs(end.y - start.y) }
     var remaining = segmentLengths.sum() / 2f
     points.zipWithNext().forEachIndexed { index, (start, end) ->
         val length = segmentLengths[index]
@@ -224,7 +222,7 @@ private fun separatedRelationshipLane(
             candidate in minimumX..maximumX &&
                 occupied.none { lane ->
                     verticalRangesOverlap(top, bottom, lane.top, lane.bottom) &&
-                        kotlin.math.abs(candidate - lane.x) < RELATIONSHIP_LANE_SPACING
+                        abs(candidate - lane.x) < RELATIONSHIP_LANE_SPACING
                 }
         } ?: preferredX.coerceIn(minimumX, maximumX)
     return selected

@@ -3,7 +3,6 @@ package com.safedb.export
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
@@ -20,7 +19,6 @@ import org.jetbrains.skia.EncodedImageFormat
 const val VISUALIZATION_EXPORT_WIDTH = 1600
 const val VISUALIZATION_EXPORT_HEIGHT = 900
 
-@OptIn(ExperimentalComposeUiApi::class)
 fun writeVisualizationPng(
     preview: VisualizationPreview,
     config: VisualizationConfig,

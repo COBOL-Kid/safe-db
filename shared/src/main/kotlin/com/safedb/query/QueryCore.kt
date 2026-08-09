@@ -18,12 +18,6 @@ data class QueryCoreError(
     val warnings: List<String> = emptyList(),
     val riskEvaluation: QueryRiskEvaluation? = null,
 ) {
-    constructor(
-        message: String,
-        warnings: List<String> = emptyList(),
-        historySpec: QuerySpec? = null,
-    ) : this(QueryError.Execution(message, historySpec), warnings, null)
-
     val message: String
         get() = error.message
 

@@ -58,8 +58,4 @@ class SavedQueriesViewModel(private val service: SafeDbService, private val scop
             }
         }
     }
-
-    fun clearError() {
-        _error.value = null
-    }
 }

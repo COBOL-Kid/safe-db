@@ -345,11 +345,20 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
 
     private fun buildRowSlices(root: AxisNode): List<RowSlice> {
         if (rowDimensions.isEmpty())
-            return listOf(RowSlice(root, "", PivotRowKind.Leaf, false, true))
+            return listOf(
+                RowSlice(root, "", PivotRowKind.Leaf, hasChildren = false, expanded = true)
+            )
         val out = mutableListOf<RowSlice>()
         orderedChildren(root, rowDimensions.first()).forEach { flattenRowNode(it, out) }
         if (config.showColumnTotals && root.rows.cardinality() > 0) {
-            out += RowSlice(root, "Total", PivotRowKind.GrandTotal, false, true)
+            out +=
+                RowSlice(
+                    root,
+                    "Total",
+                    PivotRowKind.GrandTotal,
+                    hasChildren = false,
+                    expanded = true,
+                )
         }
         return out
     }
@@ -358,27 +367,47 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         val hasChildren = node.children.isNotEmpty()
         val collapsed = node.pathKey in config.collapsedRowPaths
         if (!hasChildren) {
-            out += RowSlice(node, node.bucket?.label.orEmpty(), PivotRowKind.Leaf, false, true)
+            out +=
+                RowSlice(
+                    node,
+                    node.bucket?.label.orEmpty(),
+                    PivotRowKind.Leaf,
+                    hasChildren = false,
+                    expanded = true,
+                )
             return
         }
         val dimension = rowDimensions.getOrNull(node.depth - 1)
         val showSubtotal = config.showSubtotals && dimension?.showSubtotals != false
         if (collapsed) {
-            out += RowSlice(node, node.bucket?.label.orEmpty(), PivotRowKind.Subtotal, true, false)
+            out +=
+                RowSlice(
+                    node,
+                    node.bucket?.label.orEmpty(),
+                    PivotRowKind.Subtotal,
+                    hasChildren = true,
+                    expanded = false,
+                )
             return
         }
-        if (config.subtotalPosition == SubtotalPosition.Top && showSubtotal) {
-            out +=
+        out +=
+            if (config.subtotalPosition == SubtotalPosition.Top && showSubtotal) {
                 RowSlice(
                     node,
                     "${node.bucket?.label.orEmpty()} total",
                     PivotRowKind.Subtotal,
-                    true,
-                    true,
+                    hasChildren = true,
+                    expanded = true,
                 )
-        } else {
-            out += RowSlice(node, node.bucket?.label.orEmpty(), PivotRowKind.Group, true, true)
-        }
+            } else {
+                RowSlice(
+                    node,
+                    node.bucket?.label.orEmpty(),
+                    PivotRowKind.Group,
+                    hasChildren = true,
+                    expanded = true,
+                )
+            }
         val childDimension = rowDimensions.getOrNull(node.depth)
         val children =
             if (childDimension == null) node.children.values.toList()
@@ -390,17 +419,19 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     node,
                     "${node.bucket?.label.orEmpty()} total",
                     PivotRowKind.Subtotal,
-                    false,
-                    true,
+                    hasChildren = false,
+                    expanded = true,
                 )
         }
     }
 
     private fun buildColumnSlices(root: AxisNode): List<ColumnSlice> {
-        if (columnDimensions.isEmpty()) return listOf(ColumnSlice(root, emptyList(), false, false))
+        if (columnDimensions.isEmpty())
+            return listOf(ColumnSlice(root, emptyList(), isSubtotal = false, isGrandTotal = false))
         val out = mutableListOf<ColumnSlice>()
         orderedChildren(root, columnDimensions.first()).forEach { flattenColumnNode(it, out) }
-        if (config.showRowTotals) out += ColumnSlice(root, listOf("Total"), false, true)
+        if (config.showRowTotals)
+            out += ColumnSlice(root, listOf("Total"), isSubtotal = false, isGrandTotal = true)
         return out
     }
 
@@ -409,7 +440,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         val hasChildren = node.children.isNotEmpty()
         val collapsed = node.pathKey in config.collapsedColumnPaths
         if (!hasChildren || collapsed) {
-            out += ColumnSlice(node, labels, collapsed, false)
+            out += ColumnSlice(node, labels, isSubtotal = collapsed, isGrandTotal = false)
             return
         }
         val childDimension = columnDimensions.getOrNull(node.depth)
@@ -419,7 +450,13 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         children.forEach { flattenColumnNode(it, out) }
         val dimension = columnDimensions.getOrNull(node.depth - 1)
         if (config.showSubtotals && dimension?.showSubtotals != false) {
-            out += ColumnSlice(node, labels.dropLast(1) + "${labels.last()} total", true, false)
+            out +=
+                ColumnSlice(
+                    node,
+                    labels.dropLast(1) + "${labels.last()} total",
+                    isSubtotal = true,
+                    isGrandTotal = false,
+                )
         }
     }
 
@@ -456,7 +493,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             when (val target = sort?.target) {
                 is ExploreSortTarget.Dimension ->
                     if (target.column == dimension.column) {
-                        compareBy<AxisNode> { it.bucket?.sortKey.orEmpty() }
+                        compareBy { it.bucket?.sortKey.orEmpty() }
                     } else {
                         dimensionComparator(dimension).also {
                             descending =
@@ -771,9 +808,9 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
     ): List<ResultColumn> = buildList {
         if (includeRowHeader)
             add(ResultColumn(rowDimensions.firstOrNull()?.label ?: "Row labels", "text"))
-        for (column in columns) {
+        for ((_, labels, _, _) in columns) {
             for (measure in measures) {
-                val prefix = column.labels.joinToString(" / ")
+                val prefix = labels.joinToString(" / ")
                 add(
                     ResultColumn(
                         if (prefix.isEmpty()) measure.label else "$prefix ${measure.label}",
@@ -847,7 +884,6 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             }
             NumberFormatKind.Scientific ->
                 DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(decimal)
-            NumberFormatKind.Auto -> decimal.toPlainString()
         }
     }
 }

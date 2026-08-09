@@ -165,19 +165,15 @@ internal fun searchSchemaMap(graph: SchemaMapGraph, query: String): SchemaMapSea
 
     val nodeIds = linkedSetOf<String>()
     val columns = linkedMapOf<String, List<String>>()
-    for (node in graph.nodes) {
-        val table = node.table
+    for ((id, label, qualifiedLabel, table, externalColumns, _) in graph.nodes) {
         val matchingColumns =
-            if (table == null) {
-                node.externalColumns.filter { it.lowercase().contains(needle) }
-            } else {
-                table.columns
-                    .filter { column ->
-                        column.name.lowercase().contains(needle) ||
-                            column.dataType.lowercase().contains(needle)
-                    }
-                    .map(ColumnInfo::name)
-            }
+            table
+                ?.columns
+                ?.filter { (name, dataType, _, _, _, _) ->
+                    name.lowercase().contains(needle) || dataType.lowercase().contains(needle)
+                }
+                ?.map(ColumnInfo::name)
+                ?: externalColumns.filter { it.lowercase().contains(needle) }
         val metadataMatches =
             table?.indexes?.any { index ->
                 index.name.lowercase().contains(needle) ||
@@ -188,14 +184,14 @@ internal fun searchSchemaMap(graph: SchemaMapGraph, query: String): SchemaMapSea
                         foreignKey.referencedTable.lowercase().contains(needle)
                 } == true
         if (
-            node.id.lowercase().contains(needle) ||
-                node.qualifiedLabel.lowercase().contains(needle) ||
-                node.label.lowercase().contains(needle) ||
+            id.lowercase().contains(needle) ||
+                qualifiedLabel.lowercase().contains(needle) ||
+                label.lowercase().contains(needle) ||
                 matchingColumns.isNotEmpty() ||
                 metadataMatches
         ) {
-            nodeIds += node.id
-            if (matchingColumns.isNotEmpty()) columns[node.id] = matchingColumns
+            nodeIds += id
+            if (matchingColumns.isNotEmpty()) columns[id] = matchingColumns
         }
     }
 

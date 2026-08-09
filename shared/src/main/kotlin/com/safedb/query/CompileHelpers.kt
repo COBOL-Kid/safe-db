@@ -62,9 +62,7 @@ internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
     while (remaining.isNotEmpty()) {
         var found: Pair<Int, String>? = null
         for ((i, alias) in remaining.withIndex()) {
-            for (join in spec.joins) {
-                val left = join.leftAlias
-                val right = join.rightAlias
+            for ((left, _, right, _) in spec.joins) {
                 if (
                     (left == alias && included.contains(right)) ||
                         (right == alias && included.contains(left))
@@ -148,9 +146,10 @@ private fun joinChildren(
     for ((i, child) in group.children.withIndex()) {
         when (val result = buildWhereNode(child, overrides, dialect, params, currentIdx)) {
             is Outcome.Ok -> {
-                currentIdx = result.value.second
-                if (result.value.first.isNotEmpty()) {
-                    parts.add(i to result.value.first)
+                val (clause, nextIdx) = result.value
+                currentIdx = nextIdx
+                if (clause.isNotEmpty()) {
+                    parts.add(i to clause)
                 }
             }
             is Outcome.Err -> return Outcome.err(result.message)

@@ -206,11 +206,11 @@ internal fun migrateV1Entry(value: JsonElement): JsonElement? {
                     SafeDbJson.lenient.decodeFromJsonElement(FilterOp.serializer(), opElement)
                 }
                     .getOrNull() ?: return null
-            val rawValue = filterObject["value"]
             val valueElement =
-                when {
-                    rawValue == null || rawValue is JsonNull -> null
-                    rawValue is JsonPrimitive && rawValue.isString ->
+                when (val rawValue = filterObject["value"]) {
+                    null,
+                    is JsonNull -> null
+                    is JsonPrimitive if rawValue.isString ->
                         buildJsonObject {
                             put(
                                 "Single",

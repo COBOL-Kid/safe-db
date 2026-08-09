@@ -507,9 +507,9 @@ internal fun groupingLabel(grouping: PivotGrouping): String =
     }
 
 internal fun sameGroupingKind(left: PivotGrouping, right: PivotGrouping): Boolean =
-    when {
-        left is PivotGrouping.Date && right is PivotGrouping.Date -> left.unit == right.unit
-        left is PivotGrouping.NumberBin && right is PivotGrouping.NumberBin -> true
+    when (left) {
+        is PivotGrouping.Date if right is PivotGrouping.Date -> left.unit == right.unit
+        is PivotGrouping.NumberBin if right is PivotGrouping.NumberBin -> true
         else -> left == right
     }
 
@@ -538,7 +538,6 @@ internal fun formatWorksheetValue(value: ResultCell, format: PivotNumberFormat?)
             runCatching { Currency.getInstance(applied.currencyCode).symbol }
                 .getOrDefault(applied.currencyCode) + formatter.format(number)
         NumberFormatKind.Number -> formatter.format(number)
-        NumberFormatKind.Auto,
-        NumberFormatKind.Scientific -> formatCell(value)
+        else -> formatCell(value)
     }
 }

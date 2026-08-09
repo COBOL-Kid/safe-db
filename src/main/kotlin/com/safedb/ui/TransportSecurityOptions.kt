@@ -66,10 +66,10 @@ internal fun displayedTransportMode(
     dialect: Dialect,
     mode: TransportSecurityMode,
 ): TransportSecurityMode =
-    when {
-        dialect == Dialect.Mssql && mode == TransportSecurityMode.VerifyCa ->
+    when (dialect) {
+        Dialect.Mssql if mode == TransportSecurityMode.VerifyCa ->
             TransportSecurityMode.VerifyIdentity
-        dialect == Dialect.Oracle && mode == TransportSecurityMode.EncryptOnly ->
+        Dialect.Oracle if mode == TransportSecurityMode.EncryptOnly ->
             TransportSecurityMode.VerifyCa
         else -> mode
     }
@@ -80,10 +80,10 @@ internal fun normalizedTransportMode(
 ): TransportSecurityMode = displayedTransportMode(dialect, mode)
 
 internal fun transportCompatibilityWarning(dialect: Dialect, mode: TransportSecurityMode): String? =
-    when {
-        dialect == Dialect.Mssql && mode == TransportSecurityMode.VerifyCa ->
+    when (dialect) {
+        Dialect.Mssql if mode == TransportSecurityMode.VerifyCa ->
             "SQL Server validates the certificate hostname in this mode; it is shown as certificate and hostname verification."
-        dialect == Dialect.Oracle && mode == TransportSecurityMode.EncryptOnly ->
+        Dialect.Oracle if mode == TransportSecurityMode.EncryptOnly ->
             "Oracle wallet-based TCPS validates certificate trust; this legacy mode is shown as certificate-only verification."
         else -> null
     }

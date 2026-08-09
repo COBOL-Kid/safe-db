@@ -122,9 +122,9 @@ internal fun nodeId(node: FilterNode): String =
 
 internal fun constantForLeaf(node: FilterNode.Leaf): PredicateConstant {
     val values = (node.spec.value as? FilterValue.ListValue)?.literals
-    return when {
-        node.spec.op == FilterOp.In && values?.isEmpty() == true -> PredicateConstant.False
-        node.spec.op == FilterOp.NotIn && values?.isEmpty() == true -> PredicateConstant.True
+    return when (node.spec.op) {
+        FilterOp.In if values?.isEmpty() == true -> PredicateConstant.False
+        FilterOp.NotIn if values?.isEmpty() == true -> PredicateConstant.True
         else -> PredicateConstant.Unknown
     }
 }
@@ -244,8 +244,8 @@ internal fun knownCompatiblePath(
             continue
         }
         var constrainedPrefix = 0
-        for (key in keys) {
-            val column = key.column ?: break
+        for ((column, _, _) in keys) {
+            if (column == null) break
             val filter = leaves.firstOrNull { it.column == column } ?: break
             if (
                 filter.op in equalityOps &&

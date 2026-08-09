@@ -10,6 +10,7 @@ import com.zaxxer.hikari.HikariDataSource
 import java.sql.SQLException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -128,7 +129,7 @@ sealed class Adapter {
     companion object {
         suspend fun connect(def: ConnectionDef, password: String): Adapter {
             def.validate().getOrElse { throw IllegalArgumentException(it.message) }
-            return withTimeout(CONNECT_TIMEOUT_MS) {
+            return withTimeout(CONNECT_TIMEOUT_MS.milliseconds) {
                 withContext(Dispatchers.IO) {
                     when (def.dialect) {
                         Dialect.Postgres -> Postgres(createDataSource(def, password))
@@ -142,11 +143,11 @@ sealed class Adapter {
         }
 
         suspend fun introspectWithTimeout(adapter: Adapter): Schema =
-            withTimeout(INTROSPECTION_TIMEOUT_MS) { adapter.introspect() }
+            withTimeout(INTROSPECTION_TIMEOUT_MS.milliseconds) { adapter.introspect() }
 
         suspend fun explainWithTimeout(adapter: Adapter, compiled: CompiledQuery): ExplainResult =
             try {
-                withTimeoutOrNull(DEFAULT_TIMEOUT_MS.toLong()) { adapter.explain(compiled) }
+                withTimeoutOrNull(DEFAULT_TIMEOUT_MS.milliseconds) { adapter.explain(compiled) }
                     ?: ExplainResult.Unavailable(
                         com.safedb.model.PlanUnavailableReason.TimedOut,
                         "Query plan assessment timed out",

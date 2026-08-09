@@ -56,7 +56,7 @@ import java.util.UUID
 fun HistoryScreen(
     viewModel: AppViewModel,
     onRerun: (HistoryEntry) -> Unit,
-    onNavigate: (com.safedb.AppRoute) -> Unit,
+    onNavigate: (AppRoute) -> Unit,
 ) {
     val entries by viewModel.history.entries.collectAsState()
     val loading by viewModel.history.loading.collectAsState()
@@ -155,7 +155,7 @@ fun HistoryScreen(
                     title = "No query history yet",
                     subtitle = "Run your first query to see it here.",
                 ) {
-                    PrimaryButton(onClick = { onNavigate(com.safedb.AppRoute.Builder) }) {
+                    PrimaryButton(onClick = { onNavigate(AppRoute.Builder) }) {
                         Text("Build a Query")
                     }
                 }

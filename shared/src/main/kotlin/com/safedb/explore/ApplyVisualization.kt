@@ -23,17 +23,15 @@ fun applyVisualization(
     sample: QueryResult,
     config: VisualizationConfig,
     tables: List<TableRef> = emptyList(),
-): VisualizationPreview = VisualizationPlanner(sample, config, tables).apply()
+): VisualizationPreview = VisualizationPlanner(sample, config).apply()
 
 private class VisualizationPlanner(
     private val sample: QueryResult,
     private val config: VisualizationConfig,
-    tables: List<TableRef>,
 ) {
     private val indexes =
         sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
     private val types = sample.columns.associate { it.name to classifyColumn(it.dataType) }
-    private val labels = displayColumnLabels(sample.columns, tables)
     private val warnings = linkedSetOf<String>()
 
     fun apply(): VisualizationPreview {
@@ -318,8 +316,6 @@ private class VisualizationPlanner(
                                         first != null && mark.y <= first
                                     ValueFilterOp.Between ->
                                         first != null && second != null && mark.y in first..second
-                                    ValueFilterOp.Top,
-                                    ValueFilterOp.Bottom -> true
                                 }
                             }
                         }
@@ -574,6 +570,5 @@ private fun formatNumber(value: BigDecimal, format: PivotNumberFormat): String {
                 .format(value)
         NumberFormatKind.Scientific ->
             DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(value)
-        NumberFormatKind.Auto -> plain(value)
     }
 }
