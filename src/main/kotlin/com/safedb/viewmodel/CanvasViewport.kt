@@ -13,7 +13,6 @@ internal const val CANVAS_MAX_ZOOM = 2f
 internal const val CANVAS_ZOOM_STEP = 0.1f
 internal const val CANVAS_DEFAULT_PADDING = 36f
 
-/** Mutable pan/zoom state shared by interactive canvases. Screen ownership remains external. */
 internal class CanvasViewportState(
     private val initialPan: Offset = Offset.Zero,
     private val minZoom: Float = CANVAS_MIN_ZOOM,

@@ -178,7 +178,7 @@ fun opsForColumn(dataType: String): List<FilterOp> =
             listOf(FilterOp.Eq, FilterOp.Ne, FilterOp.IsNull, FilterOp.IsNotNull)
     }
 
-/** Includes historical raw LIKE operators so saved queries continue to validate and run. */
+// Includes historical raw LIKE operators so saved queries continue to validate and run.
 internal fun validOpsForColumn(dataType: String): List<FilterOp> =
     opsForColumn(dataType) +
         when (classifyColumn(dataType)) {
@@ -186,7 +186,6 @@ internal fun validOpsForColumn(dataType: String): List<FilterOp> =
             else -> emptyList()
         }
 
-/** Returns sorts that are invalid because SELECT DISTINCT does not project their columns. */
 fun distinctSortProjectionConflicts(spec: QuerySpec): List<SortSpec> {
     if (!spec.distinct || spec.columns.isEmpty()) return emptyList()
     val selectedColumns = spec.columns.mapTo(mutableSetOf()) { it.tableAlias to it.column }

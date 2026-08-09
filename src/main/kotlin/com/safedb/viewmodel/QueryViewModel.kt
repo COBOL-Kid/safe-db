@@ -88,10 +88,7 @@ data class BuilderQuerySample(
 
 typealias NewFilterSpec = FilterSpec
 
-/**
- * Ownership token retained until the service call settles; blocking JDBC work may not cancel
- * promptly.
- */
+// Retain ownership until the service settles because blocking JDBC work may ignore cancellation.
 private class ActiveQueryRun
 
 class QueryViewModel(private val service: SafeDbService, private val scope: CoroutineScope) :
@@ -128,12 +125,10 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         get() = connectorOverrideState
 
     private var sortState by mutableStateOf(emptyList<SortSpec>())
-    /** Ordered builder-level sorts; the first one is the primary ordering. */
     val sorts: List<SortSpec>
         get() = sortState
 
     private var groupState by mutableStateOf(emptyList<GroupSpec>())
-    /** Ordered builder-level groups; the first one is the primary grouping. */
     val groups: List<GroupSpec>
         get() = groupState
 
@@ -160,7 +155,6 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         private set
 
     private var pendingRiskGateState by mutableStateOf(false)
-    /** True while the latest settled query failure is a structured risk-gate block. */
     val pendingRiskGate: Boolean
         get() = pendingRiskGateState
 
@@ -350,9 +344,6 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
-    /**
-     * Adds a type-aware filter for the exact canvas column and focuses its value when available.
-     */
     fun addFilterForColumn(
         tableAlias: String,
         columnName: String,
@@ -368,7 +359,6 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         requestedFilterFocusIdState = filter.id.takeIf { hasTextValueInput(op, dataType) }
     }
 
-    /** Cycles an ordered sort through ascending, descending, and removed. */
     fun cycleSort(tableAlias: String, columnName: String) {
         invalidateSettledRunFailure()
         val existing = sorts.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
@@ -696,10 +686,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         run(request.copy(confirmation = requirement.confirmation), onSettled)
     }
 
-    /**
-     * Drops state scoped to the previously visible database. An in-flight operation keeps [running]
-     * true until it actually settles, preventing a second concurrent JDBC operation.
-     */
+    // Do not clear running here; the prior JDBC call still owns the single-operation slot.
     fun onActiveConnectionChanged(connectionId: String?) {
         if (observedActiveConnection && activeConnectionId == connectionId) return
         observedActiveConnection = true
@@ -715,10 +702,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         clearPendingConfirmation(settle = true)
     }
 
-    /**
-     * Invalidates decisions made under a different descriptive risk gate. Hard plan-confirmation
-     * requirements remain valid and are rechecked by the service against the current gate.
-     */
+    // Gate changes invalidate descriptive decisions, but the service rechecks hard plan conditions.
     fun onQueryRiskGateChanged(gate: QueryRiskGate) {
         val previous = observedQueryRiskGate ?: riskEvaluation?.decision?.effectiveGate
         observedQueryRiskGate = gate
@@ -745,10 +729,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         connectionId != null && connectionId == riskEvaluationConnectionId
     }
 
-    /**
-     * Descriptive static risk preview for the current draft. Execution still goes through
-     * `runQuery` / `runQueryCore` for plan refinement and confirmation.
-     */
+    // This is only a static preview; execution still performs plan refinement and confirmation.
     fun evaluatePreliminaryRisk(
         schema: Schema?,
         settings: Settings,
@@ -774,7 +755,6 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         invalidateSettledRunFailure()
     }
 
-    /** Clears last-run failure state when the executable query draft changes. */
     private fun invalidateSettledRunFailure() {
         if (running) {
             runGeneration += 1

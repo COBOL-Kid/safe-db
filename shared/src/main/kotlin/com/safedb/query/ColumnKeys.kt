@@ -1,6 +1,5 @@
 package com.safedb.query
 
-/** Separator between table alias and column name in selected-column keys. */
 const val COLUMN_KEY_SEP = '\u0000'
 
 fun columnKey(alias: String, column: String): String = "$alias$COLUMN_KEY_SEP$column"

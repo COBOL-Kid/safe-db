@@ -14,10 +14,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 
-/**
- * Subtle delete/remove icon button that renders in a faint slate tint and turns red on hover — the
- * universal "faint X → red" motif from the legacy app.
- */
 @Composable
 fun DeleteIconButton(
     onClick: () -> Unit,

@@ -121,13 +121,10 @@ enum class QueryConfirmationReasonCode {
 
 data class QueryConfirmationCondition(
     val reasonCode: QueryConfirmationReasonCode,
-    /**
-     * Stable condition identity, excluding optimizer observations that may vary between retries.
-     */
+    // Excludes optimizer observations that can vary between retries.
     val conditionKey: String,
 )
 
-/** An acknowledgement scoped to the exact connection, query, and exceptional plan conditions. */
 data class QueryExecutionConfirmation(
     val connectionId: String,
     val connectionFingerprint: String,

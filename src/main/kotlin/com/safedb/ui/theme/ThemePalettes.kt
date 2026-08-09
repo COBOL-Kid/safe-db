@@ -7,10 +7,6 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.safedb.model.ThemePalette
 
-/**
- * Raw color input for one Control Plane palette and one light/dark mode. Layout, type, shapes, and
- * density deliberately do not vary here.
- */
 @Immutable
 internal data class ThemePaletteSpec(
     val background: Color,

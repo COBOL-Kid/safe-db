@@ -101,7 +101,6 @@ private fun remapFilterGroup(
     return group.copy(children = children)
 }
 
-/** Restore a saved or history query spec into the query store, remapping table aliases. */
 fun hydrateQueryFromSpec(
     spec: QuerySpec,
     schemaTables: List<TableInfo>,

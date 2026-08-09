@@ -14,6 +14,7 @@ enum class RequestedBackend {
     Protected,
 }
 
+// Bind credentials to endpoint and transport settings so edited profiles cannot reuse old secrets.
 @Serializable
 private data class BoundCredential(val version: Int, val fingerprint: String, val password: String)
 

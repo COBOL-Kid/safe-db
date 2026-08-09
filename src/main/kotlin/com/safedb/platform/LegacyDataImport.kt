@@ -3,10 +3,7 @@ package com.safedb.platform
 import java.nio.file.Files
 import java.nio.file.Path
 
-/**
- * Prefer an existing safe-db data directory when present so upgrades can read the same connections,
- * settings, and query stores.
- */
+// Reuse an existing data directory so upgrades retain connections, settings, and query stores.
 object LegacyDataImport {
     private val DATA_MARKERS =
         listOf(

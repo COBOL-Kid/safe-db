@@ -644,6 +644,7 @@ private fun passwordFromUrl(raw: String, url: ParsedUrl): String? {
         listOf('/', '?', '#').map { char -> raw.indexOf(char, authorityStart) }.filter { it >= 0 }
     val authorityEnd = authorityEndCandidates.minOrNull() ?: raw.length
     val authority = raw.substring(authorityStart, authorityEnd)
+    // Use the final @ because an unescaped password may contain @.
     val atIndex = authority.lastIndexOf('@')
     if (atIndex < 0) return null
     val auth = authority.substring(0, atIndex)

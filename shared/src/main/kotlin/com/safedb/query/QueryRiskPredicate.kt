@@ -20,9 +20,7 @@ internal enum class PredicateConstant {
 internal data class PredicateAnalysis(
     val constant: PredicateConstant,
     val leaves: List<com.safedb.model.FilterSpec>,
-    /**
-     * Disjunctive branches after constant folding; null means expansion exceeded the safety cap.
-     */
+    // Null means disjunctive expansion exceeded the safety cap.
     val branches: List<List<com.safedb.model.FilterSpec>>?,
 )
 
@@ -155,7 +153,6 @@ internal fun combine(
             }
     }
 
-/** Keep only filter leaves that still affect execution after constant folding. */
 internal fun combineLeaves(
     leftConstant: PredicateConstant,
     leftLeaves: List<com.safedb.model.FilterSpec>,

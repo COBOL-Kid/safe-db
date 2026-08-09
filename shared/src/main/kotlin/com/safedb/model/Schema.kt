@@ -39,9 +39,7 @@ data class IndexInfo(
     @SerialName("supports_equality") val supportsEquality: Boolean = true,
     @SerialName("is_unique") val isUnique: Boolean = false,
     @SerialName("is_primary") val isPrimary: Boolean = false,
-    /**
-     * Ordered key positions. A null column deliberately preserves an expression-key placeholder.
-     */
+    // Null columns preserve expression-key positions instead of collapsing index ordinals.
     val keys: List<IndexKey> = emptyList(),
     val capabilities: IndexCapabilities = IndexCapabilities(),
     @SerialName("is_partial") val isPartial: Boolean? = null,
@@ -71,13 +69,12 @@ enum class MetadataCoverageState {
 
 @Serializable
 data class IndexKey(
-    /** Null represents an expression key whose ordinal position must not be discarded. */
     val column: String? = null,
     val direction: SortDirection? = null,
     val expression: Boolean = column == null,
 )
 
-/** Null means the adapter could not normalize the capability safely. */
+// Null capabilities mean the adapter could not normalize them safely.
 @Serializable
 data class IndexCapabilities(
     val equality: Boolean? = null,
@@ -133,7 +130,6 @@ enum class ColumnCategory {
     Other,
 }
 
-/** Semantic helpers shared by query and Explore surfaces. */
 fun ColumnCategory?.isNumeric(): Boolean =
     this == ColumnCategory.Integer || this == ColumnCategory.Decimal
 
@@ -205,7 +201,6 @@ fun classifyColumn(dataType: String): ColumnCategory {
     }
 }
 
-/** Mark which columns appear in at least one index, mutating [columns] in place. */
 fun markIndexedColumns(columns: MutableList<ColumnInfo>, indexes: List<IndexInfo>) {
     val indexed =
         indexes

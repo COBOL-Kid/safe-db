@@ -163,6 +163,5 @@ data class PendingRecipeRun(
     val specHash: String,
 )
 
-/** Settle a pending recipe whenever its query fails; risk details remain visible in the builder. */
 internal fun shouldCancelPendingRecipeOnQuerySettle(running: Boolean, hasError: Boolean): Boolean =
     !running && hasError

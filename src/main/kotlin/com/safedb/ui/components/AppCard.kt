@@ -18,10 +18,6 @@ import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.SafeDbTheme
 
-/**
- * Flat Control Plane panel. Hover is expressed through a cobalt border and cool surface shift
- * rather than Material elevation.
- */
 @Composable
 fun AppCard(
     modifier: Modifier = Modifier,

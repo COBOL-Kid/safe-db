@@ -24,12 +24,6 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
-/**
- * Live SSL/TLS compatibility checks for all four dialects.
- *
- * Enable with SAFEDB_TEST_REQUIRE_SSL=true and the SAFEDB_TEST_*_SSL_* endpoints prepared by
- * scripts/verify_ssl_compat.sh.
- */
 @Tag("integration")
 class SslCompatIntegrationTest {
     private val env: Map<String, String> = System.getenv()
@@ -66,7 +60,6 @@ class SslCompatIntegrationTest {
         val pem = Path.of(properties.getValue(POSTGRES_LAUNCH_ROOT_CERT_PROPERTY))
         assertTrue(Files.isRegularFile(pem))
         assertTrue(Files.readString(pem).contains("BEGIN CERTIFICATE"))
-        // Password must never appear in the profile JSON itself.
         assertFalse(
             Files.readString(profile)
                 .contains(properties.getValue("javax.net.ssl.trustStorePassword"))
@@ -150,7 +143,6 @@ class SslCompatIntegrationTest {
             connectAndTest(mysql(TransportSecurityMode.VerifyCa), mysqlPassword())
             connectAndTest(mysql(TransportSecurityMode.VerifyIdentity), mysqlPassword())
 
-            // Disabled cannot satisfy require_secure_transport servers.
             assertFails { connectAndTest(mysql(TransportSecurityMode.Disabled), mysqlPassword()) }
 
             applyLaunchProfile(requireNotNull(wrongProfilePath))
@@ -209,9 +201,7 @@ class SslCompatIntegrationTest {
             val walletPath = oracleWallet
             if (!walletPath.isNullOrBlank() && Files.isDirectory(Path.of(walletPath))) {
                 applyLaunchProfile(requireNotNull(profilePath))
-                // Live TCPS is optional: only attempted when a wallet directory and TCPS listener
-                // are
-                // provisioned. A PKCS12 placeholder is not an Oracle wallet.
+                // Live TCPS needs a provisioned listener; a PKCS12 placeholder is not a wallet.
                 val def = oracle(TransportSecurityMode.VerifyIdentity, wallet = walletPath)
                 val result = runCatching { connectAndTest(def, oraclePassword()) }
                 if (result.isFailure) {

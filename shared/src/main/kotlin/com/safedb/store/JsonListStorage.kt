@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonArray
 
 internal data class JsonListDocument(val originalContent: String, val entries: JsonArray)
 
-/** Shared file mechanics only; each store still owns its validation and migrations. */
 internal fun readJsonList(path: Path): JsonListDocument? {
     if (!Files.exists(path)) return null
     val content = Files.readString(path)

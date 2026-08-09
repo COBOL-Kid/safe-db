@@ -28,12 +28,6 @@ private fun flatElevation() =
         disabledElevation = 0.dp,
     )
 
-/**
- * Primary action button — flat indigo fill with a slightly deeper hover shade, no Material
- * elevation.
- *
- * Pass [destructive] to render in the error color (for delete/confirm-destructive).
- */
 @Composable
 fun PrimaryButton(
     onClick: () -> Unit,
@@ -74,7 +68,6 @@ fun PrimaryButton(
     )
 }
 
-/** Secondary/outline button — bordered, subtle surface fill on hover, flat. */
 @Composable
 fun SecondaryButton(
     onClick: () -> Unit,

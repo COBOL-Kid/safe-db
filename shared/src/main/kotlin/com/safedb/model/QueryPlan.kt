@@ -1,6 +1,5 @@
 package com.safedb.model
 
-/** Dialect-neutral optimizer evidence. Raw plans never leave the adapter layer. */
 data class NormalizedQueryPlan(
     val relations: List<PlanRelationAccess> = emptyList(),
     val joins: List<PlanJoinEvidence> = emptyList(),

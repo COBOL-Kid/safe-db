@@ -3,7 +3,6 @@ package com.safedb.platform
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** Resolves the safe-db app data directory. */
 object DataDirectory {
     const val APP_ID: String = "com.safedb.app"
 

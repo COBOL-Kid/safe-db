@@ -44,10 +44,7 @@ class LaunchProfileException(message: String, cause: Throwable? = null) : Except
 object LaunchProfileBootstrap {
     private val json = Json { ignoreUnknownKeys = false }
 
-    /**
-     * Applies a selected profile and returns false when normal bundled trust should remain
-     * untouched.
-     */
+    // False means no profile was selected and bundled trust must remain untouched.
     fun configure(args: Array<String>): Boolean =
         configure(
             args = args,

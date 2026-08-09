@@ -215,10 +215,7 @@ internal fun searchSchemaMap(graph: SchemaMapGraph, query: String): SchemaMapSea
     return SchemaMapSearchResult(nodeIds, relationshipIds, columns)
 }
 
-/**
- * Deterministic component-aware layout. Referenced tables are placed before dependent tables;
- * cycles are collapsed into a single layer before nodes are ordered within that layer.
- */
+// Keep layout deterministic: referenced tables precede dependents, and cycles share one layer.
 internal fun layoutSchemaMap(
     graph: SchemaMapGraph,
     nodeSizes: Map<String, SchemaMapSize> = emptyMap(),
@@ -373,7 +370,7 @@ private fun exactIndexKeyColumns(index: IndexInfo): List<String>? =
         index.columns
     }
 
-/** Stable identity encoding; quoted database identifiers may contain both dots and backslashes. */
+// Escape separators because quoted database identifiers may contain dots and backslashes.
 private fun qualifiedId(schema: String, table: String): String =
     "${escapeIdentityPart(schema)}.${escapeIdentityPart(table)}"
 

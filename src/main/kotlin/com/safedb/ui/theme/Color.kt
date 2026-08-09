@@ -19,17 +19,6 @@ val VisualizationSeriesPalette =
         Color(0xFFC14F18),
     )
 
-/**
- * Custom semantic color roles that extend the standard Material 3 [ColorScheme].
- *
- * Standard roles (primary, surface, outline, error, ...) are provided via
- * [MaterialTheme.colorScheme]; these custom roles (success, warning, info, uq, action*) are exposed
- * through [LocalSafeDbColors] and accessed via `SafeDbTheme.colors`.
- *
- * Control Plane palette: cool steel content planes, permanent graphite navigation chrome, and a
- * single cobalt interaction color. Navigation gets explicit roles because it remains dark in both
- * app themes.
- */
 @Immutable
 data class SafeDbColors(
     val actionPrimary: Color,
@@ -66,10 +55,6 @@ data class SafeDbColors(
     val series: List<Color>,
 )
 
-// ------------------------------------------------------------------
-// Light — cool steel content planes, graphite rail, cobalt signal
-// ------------------------------------------------------------------
-
 private val LightBackground = Color(0xFFF7F9FB)
 private val LightSurface = Color(0xFFFFFFFF)
 private val LightSurfaceContainerLowest = Color(0xFFFFFFFF)
@@ -92,15 +77,15 @@ private val LightOnSecondary = Color(0xFFFFFFFF)
 private val LightSecondaryContainer = Color(0xFFEDF1F5)
 private val LightOnSecondaryContainer = Color(0xFF354454)
 
-private val LightTertiary = Color(0xFFB45309) // amber-700
+private val LightTertiary = Color(0xFFB45309)
 private val LightOnTertiary = Color(0xFFFFFFFF)
-private val LightTertiaryContainer = Color(0xFFFFFBEB) // amber-50
-private val LightOnTertiaryContainer = Color(0xFF92400E) // amber-800
+private val LightTertiaryContainer = Color(0xFFFFFBEB)
+private val LightOnTertiaryContainer = Color(0xFF92400E)
 
-private val LightError = Color(0xFFDC2626) // red-600
+private val LightError = Color(0xFFDC2626)
 private val LightOnError = Color(0xFFFFFFFF)
-private val LightErrorContainer = Color(0xFFFEF2F2) // red-50
-private val LightOnErrorContainer = Color(0xFFB91C1C) // red-700
+private val LightErrorContainer = Color(0xFFFEF2F2)
+private val LightOnErrorContainer = Color(0xFFB91C1C)
 
 private val LightScrim = Color(0x66000000)
 
@@ -119,26 +104,22 @@ private val LightNavigationHover = Color(0xFF222F3C)
 private val LightNavigationSelected = Color(0xFF202D3A)
 private val LightOnNavigation = Color(0xFFEAF0F5)
 private val LightOnNavigationMuted = Color(0xFFA2B1C0)
-private val LightSuccess = Color(0xFF047857) // emerald-700
+private val LightSuccess = Color(0xFF047857)
 private val LightOnSuccess = Color(0xFFFFFFFF)
-private val LightSuccessContainer = Color(0xFFECFDF5) // emerald-50
-private val LightOnSuccessContainer = Color(0xFF047857) // emerald-700
-private val LightWarning = Color(0xFFB45309) // amber-700
+private val LightSuccessContainer = Color(0xFFECFDF5)
+private val LightOnSuccessContainer = Color(0xFF047857)
+private val LightWarning = Color(0xFFB45309)
 private val LightOnWarning = Color(0xFFFFFFFF)
-private val LightWarningContainer = Color(0xFFFFFBEB) // amber-50
-private val LightOnWarningContainer = Color(0xFF92400E) // amber-800
-private val LightInfo = Color(0xFF475569) // slate-600
+private val LightWarningContainer = Color(0xFFFFFBEB)
+private val LightOnWarningContainer = Color(0xFF92400E)
+private val LightInfo = Color(0xFF475569)
 private val LightOnInfo = Color(0xFFFFFFFF)
-private val LightInfoContainer = Color(0xFFF1F5F9) // slate-100
-private val LightOnInfoContainer = Color(0xFF334155) // slate-700
-private val LightUq = Color(0xFF7C3AED) // violet-600
+private val LightInfoContainer = Color(0xFFF1F5F9)
+private val LightOnInfoContainer = Color(0xFF334155)
+private val LightUq = Color(0xFF7C3AED)
 private val LightOnUq = Color(0xFFFFFFFF)
-private val LightUqContainer = Color(0xFFF5F3FF) // violet-50
-private val LightOnUqContainer = Color(0xFF5B21B6) // violet-800
-
-// ------------------------------------------------------------------
-// Dark — deep graphite content planes, matching rail, brighter cobalt signal
-// ------------------------------------------------------------------
+private val LightUqContainer = Color(0xFFF5F3FF)
+private val LightOnUqContainer = Color(0xFF5B21B6)
 
 private val DarkBackground = Color(0xFF0D141C)
 private val DarkSurface = Color(0xFF121B25)
@@ -162,15 +143,15 @@ private val DarkOnSecondary = Color(0xFF0D141C)
 private val DarkSecondaryContainer = Color(0xFF1B2733)
 private val DarkOnSecondaryContainer = Color(0xFFD9E2EA)
 
-private val DarkTertiary = Color(0xFFFCD34D) // amber-300
+private val DarkTertiary = Color(0xFFFCD34D)
 private val DarkOnTertiary = Color(0xFF0B1120)
 private val DarkTertiaryContainer = Color(0xFF2A1F0A)
-private val DarkOnTertiaryContainer = Color(0xFFFDE68A) // amber-200
+private val DarkOnTertiaryContainer = Color(0xFFFDE68A)
 
-private val DarkError = Color(0xFFF87171) // red-400
+private val DarkError = Color(0xFFF87171)
 private val DarkOnError = Color(0xFF0B1120)
 private val DarkErrorContainer = Color(0xFF2A1414)
-private val DarkOnErrorContainer = Color(0xFFFCA5A5) // red-300
+private val DarkOnErrorContainer = Color(0xFFFCA5A5)
 
 private val DarkScrim = Color(0x99000000)
 
@@ -189,22 +170,22 @@ private val DarkNavigationHover = Color(0xFF141F29)
 private val DarkNavigationSelected = Color(0xFF172430)
 private val DarkOnNavigation = Color(0xFFE8EEF4)
 private val DarkOnNavigationMuted = Color(0xFF91A3B3)
-private val DarkSuccess = Color(0xFF34D399) // emerald-400
+private val DarkSuccess = Color(0xFF34D399)
 private val DarkOnSuccess = Color(0xFF0B1120)
 private val DarkSuccessContainer = Color(0xFF0A2818)
-private val DarkOnSuccessContainer = Color(0xFF6EE7B7) // emerald-300
-private val DarkWarning = Color(0xFFFCD34D) // amber-300
+private val DarkOnSuccessContainer = Color(0xFF6EE7B7)
+private val DarkWarning = Color(0xFFFCD34D)
 private val DarkOnWarning = Color(0xFF0B1120)
 private val DarkWarningContainer = Color(0xFF2A1F0A)
-private val DarkOnWarningContainer = Color(0xFFFDE68A) // amber-200
-private val DarkInfo = Color(0xFFCBD5E1) // slate-300
+private val DarkOnWarningContainer = Color(0xFFFDE68A)
+private val DarkInfo = Color(0xFFCBD5E1)
 private val DarkOnInfo = Color(0xFF0B1120)
 private val DarkInfoContainer = Color(0xFF1B2436)
-private val DarkOnInfoContainer = Color(0xFFCBD5E1) // slate-300
-private val DarkUq = Color(0xFFC4B5FD) // violet-300
+private val DarkOnInfoContainer = Color(0xFFCBD5E1)
+private val DarkUq = Color(0xFFC4B5FD)
 private val DarkOnUq = Color(0xFF0B1120)
 private val DarkUqContainer = Color(0xFF221840)
-private val DarkOnUqContainer = Color(0xFFC4B5FD) // violet-300
+private val DarkOnUqContainer = Color(0xFFC4B5FD)
 
 private fun controlBlueLightScheme(): Pair<ColorScheme, SafeDbColors> =
     lightColorScheme(

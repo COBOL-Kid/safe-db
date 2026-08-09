@@ -70,6 +70,8 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
                 .onFailure { dropped++ }
         }
 
+        // Never rewrite after a partial decode; doing so would persist only the surviving
+        // connections.
         if (migratedCount > 0 && dropped == 0) {
             val backup = migrationBackupPath(path)
             if (!Files.exists(backup)) {
@@ -88,10 +90,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     }
 }
 
-/**
- * Pre-transport-security profiles omitted `transport_security` from JSON. Upgrade them to
- * plaintext-compatible settings so local databases keep working.
- */
+// Pre-transport-security profiles omitted transport_security. Preserve their plaintext behavior.
 internal fun migrateLegacyConnection(value: JsonElement): Pair<JsonElement, Boolean> {
     val objectValue = value as? JsonObject ?: return value to false
     if ("transport_security" in objectValue) {

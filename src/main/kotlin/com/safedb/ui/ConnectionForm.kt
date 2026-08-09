@@ -629,8 +629,6 @@ private fun ResponsiveFieldRow(
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth < 430.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // The approved narrow state stacks controls; callers use only fields with fill
-                // behavior.
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

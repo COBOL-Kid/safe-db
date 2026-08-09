@@ -22,7 +22,6 @@ data class Settings(
     }
 }
 
-/** Normalize user-supplied settings before persistence. */
 fun normalizeSettings(settings: Settings): Settings {
     val seen = LinkedHashSet<String>()
     val blockedSchemas =

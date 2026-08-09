@@ -37,7 +37,6 @@ fun clampDimension(value: Float, min: Float, max: Float): Float {
     return value.coerceIn(min, max).let { kotlin.math.round(it) }
 }
 
-/** Top of the row containing [columnName] inside the given table card. */
 fun columnY(
     ct: CanvasTableLike,
     columnName: String,
@@ -572,7 +571,6 @@ private fun List<JoinSpec>.hasJoin(
 
 private fun qualifiedTableKey(schema: String, table: String): String = "$schema.$table"
 
-/** Cubic Bezier path between two tables' join endpoints (SVG path data). */
 fun joinEdgePath(
     left: CanvasTableLike,
     leftColumn: String,

@@ -17,7 +17,7 @@ safe-db is a root Gradle Jetpack Compose Desktop app for safely exploring Postgr
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
 | `./gradlew seedMysql` | Generate the default 50,000-order MySQL fixture. |
 | `scripts/seed_mysql.sh --static` | Load the smaller checked-in MySQL fixture. |
-| `scripts/verify_ssl_compat.sh` | Environment-gated SSL/TLS launch-profile and dialect compatibility suite. |
+| `scripts/verify_ssl_compat.sh` | Environment-gated SSL/TLS launch-profile and dialect-compatibility suite. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 
 Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 191 desktop and 341 shared tests, with 72% and 66% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
@@ -29,6 +29,8 @@ scripts/seed_mysql.sh --static
 SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integrationTest --stacktrace
 ```
 
+`scripts/verify_ssl_compat.sh` expects pre-provisioned TLS endpoints and profiles under `/tmp/safedb-ssl` unless `SAFEDB_SSL_ROOT` is set; it calls `:shared:integrationTest` directly and, by default, writes its report beneath that fixture root. It is not a substitute for the normal optional JDBC suite.
+
 CI is on demand: a maintainer applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration; remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled. The cross-platform durability suite is on-demand through GitHub Actions, and dependency submission remains automatic for qualifying trusted `main` changes.
 
 ## Structure
@@ -36,7 +38,7 @@ CI is on demand: a maintainer applies the `ci:run` label to a pull request to ru
 ```text
 src/main/kotlin/com/safedb/     App/Main, ui/, viewmodel/, schema/, export/, platform/, tools/
 shared/src/main/kotlin/com/safedb/
-  adapter/, connection/, explore/, launch/, model/, persist/, platform/, query/, secrets/, service/, store/, tools/
+  adapter/, canvas/, connection/, explore/, launch/, model/, persist/, platform/, query/, secrets/, service/, store/, tools/
 shared/src/integrationTest/     live JDBC tests
 buildSrc/                       verification tasks
 docs/trust-stores.md            managed trust-store guide
@@ -53,7 +55,7 @@ packaging/resources/            distribution and launch-profile examples
 
 ### Transport and trust
 
-`TransportSecurity` owns JDBC TLS settings; block TLS driver properties in generic properties and preserve legacy hydration/dialect normalization. Launch-profile JSON is the sole custom trust-store path for verified PostgreSQL, MySQL, and SQL Server. It runs before Compose/JDBC and strictly rejects bad or missing inputs without fallback; passwords must never reach JSON, arguments, environment, or logs. PostgreSQL gets only a generated trusted-roots PEM and retains its normal SSL factory/client-certificate behavior; Oracle stays wallet-based. Keep [docs/trust-stores.md](docs/trust-stores.md), packaged examples, `LaunchProfileTest`, and adapter TLS tests aligned.
+`TransportSecurity` owns JDBC TLS settings; block TLS driver properties in generic properties and preserve legacy hydration/dialect normalization. Launch-profile JSON is the sole custom trust-store path for verified PostgreSQL, MySQL, and SQL Server. It runs after the supported-platform check and before Compose/JDBC, credential-session, or data-directory initialization, and strictly rejects bad or missing inputs without fallback. Profiles contain a password source, never a password; secrets must never reach JSON, arguments, environment, or logs. PostgreSQL gets only a generated trusted-roots PEM and retains its normal SSL factory/client-certificate behavior; Oracle stays wallet-based. Keep [docs/trust-stores.md](docs/trust-stores.md), packaged examples, `LaunchProfileTest`, and adapter TLS tests aligned.
 
 ### Risk scoring
 
@@ -67,4 +69,4 @@ Never hand a composable-local function reference (`::someLocalFun`) to `remember
 
 ## Working conventions
 
-Inspect `git status --short` first and preserve unrelated work. Keep this file, the README, trust-store guide, and packaged examples aligned when their behavior changes. Never print or commit credentials, tokens, or user state. Keep changes focused, add regression coverage for fixes, and use the relevant render task for visual changes.
+Inspect `git status --short` first and preserve unrelated work. Keep this file, the README, trust-store guide, and packaged examples aligned when their behavior changes. Never print or commit credentials, tokens, or user state. Keep changes focused, add regression coverage for fixes, and use the relevant render task for visual changes. If you alter a documented command, environment variable, packaging path, or safety guarantee, update the corresponding documentation in the same change.

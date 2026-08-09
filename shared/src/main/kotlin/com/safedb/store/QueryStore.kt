@@ -189,10 +189,7 @@ internal fun ensureGroupIds(group: JsonElement): JsonElement {
     return JsonObject(updated)
 }
 
-/**
- * Attempt to migrate a legacy v1 entry (where `spec.filters` is a JSON array of `FilterSpec` with
- * string values) into the current v2 shape.
- */
+// V1 stored spec.filters as an array with string values instead of the current filter tree.
 internal fun migrateV1Entry(value: JsonElement): JsonElement? {
     val objectValue = value.asObjectOrNull() ?: return null
     val spec = objectValue["spec"]?.asObjectOrNull() ?: return null
