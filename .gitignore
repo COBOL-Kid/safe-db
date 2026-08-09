@@ -13,3 +13,6 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.test
+
+# Disposable local database/TLS fixtures
+.docker/

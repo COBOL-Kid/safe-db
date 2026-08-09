@@ -45,7 +45,16 @@ Import only independently verified CA certificates—never private keys—and re
 
 ## Compatibility verification
 
-For non-UI checks of launch-profile trust and dialect SSL mapping, run the environment-gated suite:
+For a self-contained local harness, start the root Docker Compose stack. It creates the endpoints, trusted and untrusted PKCS12 stores, password-file launch profiles, hostname/IP SAN certificates, and the Oracle wallet-path fixture expected by the integration test:
+
+```sh
+scripts/docker_test_databases.sh up
+scripts/docker_test_databases.sh verify
+```
+
+All generated private keys and trust artifacts remain under the Git-ignored `.docker/safedb-ssl/` directory. They are disposable test credentials and must not be reused outside this local stack.
+
+For externally provisioned endpoints, run the environment-gated suite directly for non-UI checks of launch-profile trust and dialect SSL mapping:
 
 ```sh
 SAFEDB_TEST_REQUIRE_SSL=true \

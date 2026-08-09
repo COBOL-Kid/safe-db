@@ -49,6 +49,7 @@ cd "$ROOT"
   --tests 'com.safedb.integration.SslCompatIntegrationTest' \
   --info \
   --stacktrace \
+  "$@" \
   2>&1 | tee "$REPORT_DIR/ssl-compat-integration.log"
 
 echo "SSL compatibility report: $REPORT_DIR/ssl-compat-integration.log"
