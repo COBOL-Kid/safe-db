@@ -29,9 +29,9 @@ import com.safedb.query.QueryRiskDecision
 import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
+import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
-import com.safedb.service.SafeDbService
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -820,7 +820,7 @@ private class FakeSafeDbService(
     private val connectionsLoadGate: CompletableDeferred<Unit>? = null,
     private val successfulRiskGate: QueryRiskGate = QueryRiskGate.Standard,
     private val schemaTables: List<TableInfo> = listOf(sampleTable()),
-) : SafeDbService {
+) : FakeSafeDbServiceSupport() {
     var locked = false
     var queryAttempts = 0
         private set

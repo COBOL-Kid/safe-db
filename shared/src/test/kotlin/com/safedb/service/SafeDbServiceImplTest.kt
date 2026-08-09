@@ -346,6 +346,105 @@ class SafeDbServiceImplTest {
     }
 
     @Test
+    fun getSchemaThenRunQueryReusesCachedSchema() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = QueryStore.new(dir),
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
+            )
+
+        service.getSchema("c1")
+        service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
+        service.getSchema("c1")
+
+        assertEquals(1, adapter.introspectionCount)
+        assertEquals(2, adapter.closeCount)
+    }
+
+    @Test
+    fun connectionUpdateInvalidatesCachedSchema() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = QueryStore.new(dir),
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
+            )
+
+        service.getSchema("c1")
+        service.updateConnection(sampleConnection().copy(name = "Renamed"), password = null)
+        service.getSchema("c1")
+
+        assertEquals(2, adapter.introspectionCount)
+    }
+
+    @Test
+    fun fingerprintChangeForcesSchemaRefresh() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = QueryStore.new(dir),
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
+            )
+
+        service.getSchema("c1")
+        val updated = sampleConnection().copy(host = "db.example.com")
+        service.updateConnection(updated, password = "secret")
+        service.getSchema("c1")
+
+        assertEquals(2, adapter.introspectionCount)
+    }
+
+    @Test
+    fun lockCredentialsClearsCachedSchema() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = QueryStore.new(dir),
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
+            )
+
+        service.getSchema("c1")
+        service.lockCredentials()
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        service.getSchema("c1")
+
+        assertEquals(2, adapter.introspectionCount)
+    }
+
+    @Test
     fun runQueryIntrospectionFailureClosesAdapter() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")

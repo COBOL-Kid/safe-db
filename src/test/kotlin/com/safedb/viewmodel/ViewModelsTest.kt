@@ -16,7 +16,7 @@ import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.ThemePalette
 import com.safedb.model.TransportSecurity
-import com.safedb.service.SafeDbService
+import com.safedb.service.FakeSafeDbServiceSupport
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -499,7 +499,7 @@ class ViewModelsTest {
         }
 }
 
-private class RecordingSafeDbService : SafeDbService {
+private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     val deletedIds = mutableListOf<String>()
     val deletedSavedIds = mutableListOf<String>()
     var historyCleared = false

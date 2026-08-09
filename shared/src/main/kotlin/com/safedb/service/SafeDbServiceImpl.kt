@@ -22,11 +22,14 @@ import com.safedb.store.RecipeStore
 import com.safedb.store.SettingsStore
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 
 internal fun interface QuerySessionFactory {
     suspend fun open(def: ConnectionDef, password: String): QuerySession
 }
+
+private data class CachedSchema(val fingerprint: String, val schema: Schema)
 
 internal interface ConnectedAdapter {
     suspend fun test(): String
@@ -44,25 +47,24 @@ internal fun interface AdapterFactory {
     suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter
 }
 
+/** Adapts a live JDBC [Adapter] with introspection/explain timeouts for the service layer. */
+private class TimeoutAwareAdapter(private val adapter: Adapter) : ConnectedAdapter {
+    override suspend fun test(): String = adapter.test()
+
+    override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
+
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+        Adapter.explainWithTimeout(adapter, compiled)
+
+    override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
+        adapter.executeQuery(compiled, timeoutMs)
+
+    override fun close() = adapter.close()
+}
+
 private object DefaultAdapterFactory : AdapterFactory {
-    override suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter {
-        val adapter = Adapter.connect(def, password)
-        return object : ConnectedAdapter {
-            override suspend fun test(): String = adapter.test()
-
-            override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
-
-            override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-                Adapter.explainWithTimeout(adapter, compiled)
-
-            override suspend fun executeQuery(
-                compiled: CompiledQuery,
-                timeoutMs: Int,
-            ): QueryResult = adapter.executeQuery(compiled, timeoutMs)
-
-            override fun close() = adapter.close()
-        }
-    }
+    override suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter =
+        TimeoutAwareAdapter(Adapter.connect(def, password))
 }
 
 internal class QuerySession(
@@ -82,6 +84,7 @@ internal constructor(
     private val adapterFactory: AdapterFactory = DefaultAdapterFactory,
     private val recipeStore: RecipeStore? = null,
 ) : SafeDbService {
+    private val schemaCache = ConcurrentHashMap<String, CachedSchema>()
 
     constructor(
         configStore: ConfigStore,
@@ -139,17 +142,24 @@ internal constructor(
             }
             throw IllegalStateException(error.message ?: error.toString())
         }
+        invalidateSchemaCache(id)
     }
 
-    override suspend fun lockCredentials() = SecretsManager.lockCredentials()
+    override suspend fun lockCredentials() {
+        SecretsManager.lockCredentials()
+        clearSchemaCache()
+    }
 
     override suspend fun getSchema(connectionId: String): Schema {
         val def =
             configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        cachedSchema(def)?.let {
+            return it
+        }
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val adapter = adapterFactory.connect(def, password)
         return try {
-            adapter.introspect()
+            loadAndCacheSchema(def, adapter)
         } finally {
             adapter.close()
         }
@@ -210,7 +220,7 @@ internal constructor(
         val adapter = adapterFactory.connect(def, password)
         val schema =
             try {
-                adapter.introspect()
+                cachedSchema(def) ?: loadAndCacheSchema(def, adapter)
             } catch (error: Throwable) {
                 runCatching { adapter.close() }.onFailure(error::addSuppressed)
                 throw error
@@ -220,6 +230,25 @@ internal constructor(
             runner = AdapterQueryRunner(adapter),
             onClose = { adapter.close() },
         )
+    }
+
+    private fun cachedSchema(def: ConnectionDef): Schema? {
+        val cached = schemaCache[def.id] ?: return null
+        return cached.schema.takeIf { cached.fingerprint == def.credentialFingerprint() }
+    }
+
+    private suspend fun loadAndCacheSchema(def: ConnectionDef, adapter: ConnectedAdapter): Schema {
+        val schema = adapter.introspect()
+        schemaCache[def.id] = CachedSchema(def.credentialFingerprint(), schema)
+        return schema
+    }
+
+    private fun invalidateSchemaCache(connectionId: String) {
+        schemaCache.remove(connectionId)
+    }
+
+    private fun clearSchemaCache() {
+        schemaCache.clear()
     }
 
     override suspend fun listSavedQueries(): List<SavedQuery> = queryStore.listSaved()
@@ -274,6 +303,7 @@ internal constructor(
                 throw IllegalStateException(error.message)
             }
         }
+        invalidateSchemaCache(def.id)
     }
 
     private fun recordHistory(

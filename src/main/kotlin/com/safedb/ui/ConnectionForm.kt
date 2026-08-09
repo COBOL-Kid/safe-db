@@ -57,11 +57,11 @@ import com.safedb.connection.DIALECTS
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurityMode
-import com.safedb.service.SafeDbService
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.viewmodel.ConnectionsViewModel
 import kotlinx.coroutines.launch
 
 // Leave a little vertical headroom beyond Material's 56 dp minimum. An exact
@@ -80,7 +80,7 @@ private fun CompactFieldPlaceholder(text: String) {
 
 @Composable
 fun ConnectionForm(
-    service: SafeDbService,
+    connectionsViewModel: ConnectionsViewModel,
     existingConnection: ConnectionDef? = null,
     onSaved: (ConnectionDef, Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -100,7 +100,10 @@ fun ConnectionForm(
         scope.launch {
             try {
                 form.testResult =
-                    service.testConnection(form.buildDef(), form.passwordForOperation())
+                    connectionsViewModel.testConnection(
+                        form.buildDef(),
+                        form.passwordForOperation(),
+                    )
             } catch (error: Exception) {
                 form.testError = error.message ?: error.toString()
             } finally {
@@ -125,9 +128,12 @@ fun ConnectionForm(
                         it != def.credentialFingerprint()
                     } ?: true
                 if (form.isEditing) {
-                    service.updateConnection(def, form.passwordForOperation())
+                    connectionsViewModel.updateConnection(def, form.passwordForOperation())
                 } else {
-                    service.createConnection(def, form.passwordForOperation() ?: "")
+                    connectionsViewModel.createConnection(
+                        def,
+                        form.passwordForOperation() ?: "",
+                    )
                 }
                 form.password = ""
                 form.showPassword = false

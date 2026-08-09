@@ -1,5 +1,6 @@
 package com.safedb.schema
 
+import com.safedb.canvas.CanvasRect
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
@@ -8,8 +9,6 @@ import com.safedb.model.MetadataCoverage
 import com.safedb.model.Schema
 import com.safedb.model.SortDirection
 import com.safedb.model.TableInfo
-import com.safedb.query.CanvasRect
-import com.safedb.ui.schemaMapRelationshipGeometries
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -590,7 +589,7 @@ class SchemaMapGraphTest {
             }
         }
 
-    private fun verticalLaneXs(geometry: com.safedb.ui.SchemaMapRelationshipGeometry): List<Float> {
+    private fun verticalLaneXs(geometry: SchemaMapRelationshipGeometry): List<Float> {
         val points = listOf(geometry.source) + geometry.bends + geometry.target
         return points.zipWithNext().mapNotNull { (start, end) ->
             start.x.takeIf { start.x == end.x && start.y != end.y }

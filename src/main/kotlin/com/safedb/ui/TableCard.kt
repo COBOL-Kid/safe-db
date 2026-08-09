@@ -70,10 +70,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.safedb.canvas.CANVAS_HEADER_HEIGHT
+import com.safedb.canvas.CANVAS_RESIZE_FOOTER_HEIGHT
+import com.safedb.canvas.CANVAS_ROW_HEIGHT
 import com.safedb.model.SortDirection
-import com.safedb.query.CANVAS_HEADER_HEIGHT
-import com.safedb.query.CANVAS_RESIZE_FOOTER_HEIGHT
-import com.safedb.query.CANVAS_ROW_HEIGHT
 import com.safedb.query.opLabel
 import com.safedb.query.opsForColumn
 import com.safedb.ui.components.MenuActionRow

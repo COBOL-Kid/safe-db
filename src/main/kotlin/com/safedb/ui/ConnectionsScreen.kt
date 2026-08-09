@@ -52,7 +52,6 @@ import com.safedb.viewmodel.ConnectionsViewModel
 
 @Composable
 fun ConnectionsScreen(
-    service: com.safedb.service.SafeDbService,
     viewModel: ConnectionsViewModel,
     onActivate: (String) -> Unit,
     onDeleted: (String) -> Unit,
@@ -149,7 +148,7 @@ fun ConnectionsScreen(
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     ConnectionForm(
-                        service = service,
+                        connectionsViewModel = viewModel,
                         existingConnection = editingConnection,
                         onSaved = { saved, credentialMaterialChanged ->
                             if (editingConnection != null && credentialMaterialChanged) {
