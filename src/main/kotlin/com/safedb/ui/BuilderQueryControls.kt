@@ -84,6 +84,12 @@ internal fun queryControlsCanvasInset(measuredContentHeight: Dp) =
         QueryControlsVerticalPadding + measuredContentHeight + QueryControlsTableGap,
     )
 
+internal fun queryControlsHeightPx(
+    filterCount: Int,
+    filterHeightPx: Int,
+    optionHeightPx: Int,
+): Int = if (filterCount > 0) maxOf(filterHeightPx, optionHeightPx) else optionHeightPx
+
 internal enum class ResultsPaneMode {
     Normal,
     Maximized,

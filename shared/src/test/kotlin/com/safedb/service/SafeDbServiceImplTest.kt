@@ -8,11 +8,15 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
+import com.safedb.model.EvidenceConfidence
 import com.safedb.model.ExplainResult
 import com.safedb.model.FilterGroup
 import com.safedb.model.IndexInfo
+import com.safedb.model.MetadataCoverage
 import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.Outcome
+import com.safedb.model.PlanAccessMethod
+import com.safedb.model.PlanRelationAccess
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
@@ -21,6 +25,8 @@ import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
+import com.safedb.model.TableSizeClass
+import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurity
 import com.safedb.query.QueryError
 import com.safedb.query.QueryRunner
@@ -346,7 +352,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun getSchemaAlwaysRefreshesWhileRunQueryReusesCachedSchema() = runBlocking {
+    fun getSchemaAndRunQueryAlwaysIntrospectFreshSchema() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
@@ -366,18 +372,18 @@ class SafeDbServiceImplTest {
         service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
         service.getSchema("c1")
 
-        assertEquals(2, adapter.introspectionCount)
+        assertEquals(3, adapter.introspectionCount)
         assertEquals(3, adapter.closeCount)
     }
 
     @Test
-    fun connectionUpdateInvalidatesCachedSchema() = runBlocking {
+    fun runQueryUsesFreshMetadataForMandatoryRiskBlocking() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
         configStore.save(sampleConnection())
         SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
-        val adapter = FakeConnectedAdapter()
+        val adapter = FakeConnectedAdapter(schema = sampleSchema(TableSizeClass.Small))
         val service =
             SafeDbServiceImpl(
                 configStore = configStore,
@@ -388,60 +394,32 @@ class SafeDbServiceImplTest {
             )
 
         service.getSchema("c1")
-        service.updateConnection(sampleConnection().copy(name = "Renamed"), password = null)
-        service.getSchema("c1")
-
-        assertEquals(2, adapter.introspectionCount)
-    }
-
-    @Test
-    fun fingerprintChangeForcesSchemaRefresh() = runBlocking {
-        SecretsManager.useStoreForTest(DisabledMemoryStore())
-        val dir = Files.createTempDirectory("safedb-service-test")
-        val configStore = ConfigStore.new(dir)
-        configStore.save(sampleConnection())
-        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
-        val adapter = FakeConnectedAdapter()
-        val service =
-            SafeDbServiceImpl(
-                configStore = configStore,
-                queryStore = QueryStore.new(dir),
-                settingsStore = SettingsStore.new(dir),
-                querySessionFactory = null,
-                adapterFactory = AdapterFactory { _, _ -> adapter },
+        adapter.schema = sampleSchema(TableSizeClass.Large)
+        adapter.explainResult =
+            ExplainResult.Available(
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                schema = "safedb_test",
+                                table = "customers",
+                                alias = "t0",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 150_000,
+                            )
+                        ),
+                    rawOptimizerCost = 1.0,
+                )
             )
 
-        service.getSchema("c1")
-        val updated = sampleConnection().copy(host = "db.example.com")
-        service.updateConnection(updated, password = "secret")
-        service.getSchema("c1")
+        val failure =
+            assertFailsWith<QueryFailureException> {
+                service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
+            }
 
+        assertIs<QueryError.RiskGate>(failure.queryError)
         assertEquals(2, adapter.introspectionCount)
-    }
-
-    @Test
-    fun lockCredentialsClearsCachedSchema() = runBlocking {
-        SecretsManager.useStoreForTest(DisabledMemoryStore())
-        val dir = Files.createTempDirectory("safedb-service-test")
-        val configStore = ConfigStore.new(dir)
-        configStore.save(sampleConnection())
-        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
-        val adapter = FakeConnectedAdapter()
-        val service =
-            SafeDbServiceImpl(
-                configStore = configStore,
-                queryStore = QueryStore.new(dir),
-                settingsStore = SettingsStore.new(dir),
-                querySessionFactory = null,
-                adapterFactory = AdapterFactory { _, _ -> adapter },
-            )
-
-        service.getSchema("c1")
-        service.lockCredentials()
-        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
-        service.getSchema("c1")
-
-        assertEquals(2, adapter.introspectionCount)
+        assertEquals(0, adapter.executeCount)
     }
 
     @Test
@@ -520,7 +498,7 @@ private fun sampleQuerySpec() =
         schemaVersion = CURRENT_SCHEMA_VERSION,
     )
 
-private fun sampleSchema() =
+private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
     Schema(
         tables =
             listOf(
@@ -547,6 +525,12 @@ private fun sampleSchema() =
                                 isUnique = true,
                                 isPrimary = true,
                             )
+                        ),
+                    tableSize =
+                        TableSizeEstimate(
+                            sizeClass = sizeClass,
+                            coverage = MetadataCoverage.complete(),
+                            confidence = EvidenceConfidence.High,
                         ),
                 )
             )
@@ -597,9 +581,12 @@ private class UnavailablePlanRunner : QueryRunner {
 private class FakeConnectedAdapter(
     private val introspectionFailure: Throwable? = null,
     private val executionFailure: Throwable? = null,
+    var schema: Schema = sampleSchema(),
+    var explainResult: ExplainResult = availablePlan(),
 ) : ConnectedAdapter {
     var closeCount = 0
     var introspectionCount = 0
+    var executeCount = 0
     var testFailure: Throwable? = null
 
     override suspend fun test(): String {
@@ -610,12 +597,13 @@ private class FakeConnectedAdapter(
     override suspend fun introspect(): Schema {
         introspectionCount += 1
         introspectionFailure?.let { throw it }
-        return sampleSchema()
+        return schema
     }
 
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult = availablePlan()
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult = explainResult
 
     override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult {
+        executeCount += 1
         executionFailure?.let { throw it }
         return QueryResult(emptyList(), emptyList(), 0, false, emptyList())
     }

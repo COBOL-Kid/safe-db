@@ -22,11 +22,52 @@ import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.QueryViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
 @OptIn(ExperimentalComposeUiApi::class)
 class CanvasInteractionTest {
+    @Test
+    fun horizontalScrollbarDragWinsOverUnderlyingSuggestedJoin() {
+        val viewModel = suggestedJoinViewModel()
+        viewModel.moveTable("t0", 0f, 360f)
+        viewModel.moveTable("t1", 360f, 360f)
+
+        ImageComposeScene(width = 800, height = 500, density = Density(1f)) {
+                SafeDbTheme(isDark = false) { Canvas(viewModel) }
+            }
+            .use { scene ->
+                scene.render(0L)
+                scene.drag(Offset(250f, 431f), Offset(330f, 431f))
+                scene.render(100_000_000L)
+            }
+
+        assertTrue(viewModel.canvasViewport.pan.x < 0f)
+        assertEquals(0f, viewModel.canvasViewport.pan.y)
+        assertTrue(viewModel.joins.isEmpty())
+    }
+
+    @Test
+    fun verticalScrollbarDragWinsOverUnderlyingSuggestedJoin() {
+        val viewModel = suggestedJoinViewModel()
+        viewModel.moveTable("t0", 540f, 0f)
+        viewModel.moveTable("t1", 540f, 300f)
+
+        ImageComposeScene(width = 800, height = 500, density = Density(1f)) {
+                SafeDbTheme(isDark = false) { Canvas(viewModel) }
+            }
+            .use { scene ->
+                scene.render(0L)
+                scene.drag(Offset(796f, 80f), Offset(796f, 160f))
+                scene.render(100_000_000L)
+            }
+
+        assertEquals(0f, viewModel.canvasViewport.pan.x)
+        assertTrue(viewModel.canvasViewport.pan.y < 0f)
+        assertTrue(viewModel.joins.isEmpty())
+    }
+
     @Test
     fun clickingIndexedColumnsCreatesAJoin() {
         val viewModel =
@@ -376,6 +417,19 @@ class CanvasInteractionTest {
     }
 }
 
+private fun suggestedJoinViewModel(): QueryViewModel =
+    QueryViewModel(CanvasInteractionService, CoroutineScope(Dispatchers.Unconfined)).apply {
+        addTable(
+            indexedTable(
+                "orders",
+                "customer_id",
+                referencedTable = "customers",
+                referencedColumn = "id",
+            )
+        )
+        addTable(indexedTable("customers", "id"))
+    }
+
 @OptIn(ExperimentalComposeUiApi::class)
 private fun ImageComposeScene.click(x: Float, y: Float) {
     val position = Offset(x, y)
@@ -394,6 +448,33 @@ private fun ImageComposeScene.clickWithMotion(x: Float, y: Float) {
         buttons = PointerButtons(isPrimaryPressed = true),
     )
     sendPointerEvent(PointerEventType.Release, up, button = PointerButton.Primary)
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun ImageComposeScene.drag(from: Offset, to: Offset) {
+    sendPointerEvent(PointerEventType.Move, from)
+    render(5_000_000L)
+    sendPointerEvent(
+        PointerEventType.Press,
+        from,
+        button = PointerButton.Primary,
+        buttons = PointerButtons(isPrimaryPressed = true),
+    )
+    render(10_000_000L)
+    val midpoint = (from + to) / 2f
+    sendPointerEvent(
+        PointerEventType.Move,
+        midpoint,
+        buttons = PointerButtons(isPrimaryPressed = true),
+    )
+    render(20_000_000L)
+    sendPointerEvent(
+        PointerEventType.Move,
+        to,
+        buttons = PointerButtons(isPrimaryPressed = true),
+    )
+    render(30_000_000L)
+    sendPointerEvent(PointerEventType.Release, to, button = PointerButton.Primary)
 }
 
 private fun indexedTable(

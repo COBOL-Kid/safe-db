@@ -58,14 +58,11 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
         service.testConnection(def, password)
 
     suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef {
-        val created = service.createConnection(def, password)
-        _connections.value = service.listConnections()
-        return created
+        return service.createConnection(def, password)
     }
 
     suspend fun updateConnection(def: ConnectionDef, password: String?) {
         service.updateConnection(def, password)
-        _connections.value = service.listConnections()
     }
 
     fun connectionName(id: String): String =

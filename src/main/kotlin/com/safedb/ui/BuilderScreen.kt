@@ -105,7 +105,8 @@ internal fun BuilderScreen(
     var resultsHeight by remember { mutableFloatStateOf(240f) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
-    var queryControlsHeightPx by remember { mutableIntStateOf(0) }
+    var filterControlsHeightPx by remember { mutableIntStateOf(0) }
+    var optionControlsHeightPx by remember { mutableIntStateOf(0) }
     var pendingConnectionSwitch by remember { mutableStateOf<ConnectionDef?>(null) }
     val density = LocalDensity.current
     val limitChoices = BUILDER_LIMIT_CHOICES
@@ -535,7 +536,15 @@ internal fun BuilderScreen(
                                         queryViewModel = queryViewModel,
                                         contentTopInset =
                                             queryControlsCanvasInset(
-                                                with(density) { queryControlsHeightPx.toDp() }
+                                                with(density) {
+                                                    queryControlsHeightPx(
+                                                            filterCount =
+                                                                queryViewModel.filterCount,
+                                                            filterHeightPx = filterControlsHeightPx,
+                                                            optionHeightPx = optionControlsHeightPx,
+                                                        )
+                                                        .toDp()
+                                                }
                                             ),
                                         modifier = Modifier.fillMaxSize(),
                                     )
@@ -558,7 +567,7 @@ internal fun BuilderScreen(
                                                     .fillMaxWidth()
                                                     .heightIn(max = QueryControlsMaxHeight)
                                                     .onSizeChanged {
-                                                        queryControlsHeightPx = it.height
+                                                        filterControlsHeightPx = it.height
                                                     }
                                                     .verticalScroll(rememberScrollState())
                                                     .horizontalScroll(rememberScrollState()),
@@ -573,9 +582,7 @@ internal fun BuilderScreen(
                                                 )
                                                 .widthIn(min = 208.dp, max = 256.dp)
                                                 .onSizeChanged {
-                                                    if (queryViewModel.filterCount == 0) {
-                                                        queryControlsHeightPx = it.height
-                                                    }
+                                                    optionControlsHeightPx = it.height
                                                 },
                                         verticalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {

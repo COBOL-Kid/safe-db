@@ -87,7 +87,7 @@ internal fun comparableCells(rows: List<List<ResultCell>>, index: Int?): List<Re
     return rows.mapNotNull { it.getOrNull(index) }.filterNot { it is ResultCell.Null }
 }
 
-internal fun compareCells(left: ResultCell, right: ResultCell): Int {
+internal fun comparePivotCells(left: ResultCell, right: ResultCell): Int {
     val leftDecimal = left.toDecimalOrNull()
     val rightDecimal = right.toDecimalOrNull()
     if (leftDecimal != null && rightDecimal != null) return leftDecimal.compareTo(rightDecimal)

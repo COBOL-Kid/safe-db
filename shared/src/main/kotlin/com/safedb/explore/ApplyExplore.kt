@@ -714,9 +714,9 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             MeasureFn.Avg ->
                 decimalCells(rows, index, measure).average()?.toPivotResultCell() ?: ResultCell.Null
             MeasureFn.Min ->
-                comparableCells(rows, index).minWithOrNull(::compareCells) ?: ResultCell.Null
+                comparableCells(rows, index).minWithOrNull(::comparePivotCells) ?: ResultCell.Null
             MeasureFn.Max ->
-                comparableCells(rows, index).maxWithOrNull(::compareCells) ?: ResultCell.Null
+                comparableCells(rows, index).maxWithOrNull(::comparePivotCells) ?: ResultCell.Null
             MeasureFn.Product ->
                 decimalCells(rows, index, measure)
                     .takeIf { it.isNotEmpty() }

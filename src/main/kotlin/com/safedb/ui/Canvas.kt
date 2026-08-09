@@ -48,10 +48,13 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -127,6 +130,8 @@ fun Canvas(
     var gesture by remember { mutableStateOf<CanvasGesture?>(null) }
     var joinLineHovered by remember { mutableStateOf(false) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
+    var horizontalScrollbarBounds by remember { mutableStateOf<Rect?>(null) }
+    var verticalScrollbarBounds by remember { mutableStateOf<Rect?>(null) }
     val fieldScrollStates = remember { mutableStateMapOf<String, ScrollState>() }
     val density = LocalDensity.current
     val contentTopInsetPx = with(density) { contentTopInset.toPx() }
@@ -284,6 +289,11 @@ fun Canvas(
         rememberUpdatedState<(CanvasPoint) -> Boolean> { point ->
             canvasTablesLike().any { tableBounds(it).contains(point) }
         }
+    val currentScrollbarHitTester by
+        rememberUpdatedState<(Offset) -> Boolean> { position ->
+            horizontalScrollbarBounds?.contains(position) == true ||
+                verticalScrollbarBounds?.contains(position) == true
+        }
 
     val routedEdges = joinLines.map(ClickableJoinLine::edge)
     val contentBounds = builderCanvasContentBounds(canvasTablesLike(), routedEdges)
@@ -423,6 +433,12 @@ fun Canvas(
                                     requireUnconsumed = false,
                                     pass = PointerEventPass.Initial,
                                 )
+                            if (
+                                !currentEvent.buttons.isPrimaryPressed ||
+                                    currentScrollbarHitTester(down.position)
+                            ) {
+                                return@awaitEachGesture
+                            }
                             val worldPosition =
                                 canvasPointForViewportPosition(
                                     position = down.position,
@@ -701,14 +717,19 @@ fun Canvas(
 
             HorizontalScrollbar(
                 adapter = horizontalScrollbarAdapter,
-                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
+                modifier =
+                    Modifier.align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(end = 8.dp)
+                        .onGloballyPositioned { horizontalScrollbarBounds = it.boundsInParent() },
             )
             VerticalScrollbar(
                 adapter = verticalScrollbarAdapter,
                 modifier =
                     Modifier.align(Alignment.CenterEnd)
                         .fillMaxHeight()
-                        .padding(top = contentTopInset, bottom = 8.dp),
+                        .padding(top = contentTopInset, bottom = 8.dp)
+                        .onGloballyPositioned { verticalScrollbarBounds = it.boundsInParent() },
             )
         }
 

@@ -237,6 +237,22 @@ class BuilderScreenStateTest {
     }
 
     @Test
+    fun queryControlsHeightUsesTheTallestVisibleOverlay() {
+        assertEquals(
+            310,
+            queryControlsHeightPx(filterCount = 1, filterHeightPx = 208, optionHeightPx = 310),
+        )
+        assertEquals(
+            260,
+            queryControlsHeightPx(filterCount = 1, filterHeightPx = 260, optionHeightPx = 208),
+        )
+        assertEquals(
+            208,
+            queryControlsHeightPx(filterCount = 0, filterHeightPx = 310, optionHeightPx = 208),
+        )
+    }
+
+    @Test
     fun queryOrderMoveTargetsRespectCurrentListBounds() {
         assertEquals(2, queryOrderMoveTarget(index = 1, offset = 1, lastIndex = 2))
         assertNull(queryOrderMoveTarget(index = 1, offset = 1, lastIndex = 1))
