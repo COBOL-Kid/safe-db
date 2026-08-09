@@ -114,39 +114,39 @@ fun hydrateQueryFromSpec(
     val droppedTables = mutableListOf<String>()
     val droppedColumns = mutableListOf<String>()
 
-    for (table in spec.tables) {
-        val tableInfo = schemaByKey[schemaKey(table.schema, table.name)]
+    for ((tableSchema, tableName, alias) in spec.tables) {
+        val tableInfo = schemaByKey[schemaKey(tableSchema, tableName)]
         if (tableInfo == null) {
-            droppedTables.add("${table.schema}.${table.name}")
+            droppedTables.add("$tableSchema.$tableName")
             continue
         }
 
         target.addTable(tableInfo)
         val newAlias = target.tables.lastOrNull()?.alias
         if (newAlias != null) {
-            aliasMap[table.alias] = newAlias
+            aliasMap[alias] = newAlias
             tableByNewAlias[newAlias] = tableInfo
         }
     }
 
-    for (col in spec.columns) {
-        val newAlias = aliasMap[col.tableAlias]
+    for ((tableAlias, column) in spec.columns) {
+        val newAlias = aliasMap[tableAlias]
         val tableInfo = newAlias?.let { tableByNewAlias[it] }
-        if (newAlias != null && tableInfo?.columns?.any { it.name == col.column } == true) {
-            target.toggleColumn(newAlias, col.column)
+        if (newAlias != null && tableInfo?.columns?.any { it.name == column } == true) {
+            target.toggleColumn(newAlias, column)
         } else {
-            droppedColumns.add("${col.tableAlias}.${col.column}")
+            droppedColumns.add("$tableAlias.$column")
         }
     }
 
     var droppedJoins = 0
-    for (join in spec.joins) {
-        val leftAlias = aliasMap[join.leftAlias]
-        val rightAlias = aliasMap[join.rightAlias]
+    for ((joinLeftAlias, leftColumn, joinRightAlias, rightColumn) in spec.joins) {
+        val leftAlias = aliasMap[joinLeftAlias]
+        val rightAlias = aliasMap[joinRightAlias]
         val leftTable = leftAlias?.let { tableByNewAlias[it] }
         val rightTable = rightAlias?.let { tableByNewAlias[it] }
-        val leftColumnExists = leftTable?.columns?.any { it.name == join.leftColumn } == true
-        val rightColumnExists = rightTable?.columns?.any { it.name == join.rightColumn } == true
+        val leftColumnExists = leftTable?.columns?.any { it.name == leftColumn } == true
+        val rightColumnExists = rightTable?.columns?.any { it.name == rightColumn } == true
         if (leftAlias == null || rightAlias == null || !leftColumnExists || !rightColumnExists) {
             droppedJoins += 1
             continue
@@ -155,9 +155,9 @@ fun hydrateQueryFromSpec(
         target.addJoin(
             JoinSpec(
                 leftAlias = leftAlias,
-                leftColumn = join.leftColumn,
+                leftColumn = leftColumn,
                 rightAlias = rightAlias,
-                rightColumn = join.rightColumn,
+                rightColumn = rightColumn,
             )
         )
     }
@@ -220,7 +220,7 @@ fun formatHydrationWarning(warnings: HydrationWarnings): String? {
     }
     if (warnings.droppedJoins > 0) {
         val count = warnings.droppedJoins
-        parts.add("${count} join${if (count != 1) "s" else ""} could not be restored")
+        parts.add("$count join${if (count != 1) "s" else ""} could not be restored")
     }
     if (warnings.droppedFilters) {
         parts.add("some filters were dropped")

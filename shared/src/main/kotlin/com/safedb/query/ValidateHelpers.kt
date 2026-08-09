@@ -318,9 +318,7 @@ internal fun checkJoinConnectivity(spec: QuerySpec): Boolean {
     var changed = true
     while (changed) {
         changed = false
-        for (join in spec.joins) {
-            val left = join.leftAlias
-            val right = join.rightAlias
+        for ((left, _, right, _) in spec.joins) {
             if (connected.contains(left) && !connected.contains(right)) {
                 connected.add(right)
                 changed = true

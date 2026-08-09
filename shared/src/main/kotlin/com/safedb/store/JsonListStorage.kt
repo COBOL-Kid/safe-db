@@ -8,7 +8,6 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 
 internal data class JsonListDocument(val originalContent: String, val entries: JsonArray)

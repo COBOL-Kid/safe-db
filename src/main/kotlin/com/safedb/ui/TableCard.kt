@@ -210,25 +210,25 @@ fun TableCard(
                             .padding(horizontal = 4.dp, vertical = 3.dp)
                             .verticalScroll(fieldScrollState)
                 ) {
-                    for (column in table.columns) {
-                        val selected = queryViewModel.isColumnSelected(alias, column.name)
-                        val filterActive = queryViewModel.hasFilterForColumn(alias, column.name)
-                        val group = queryViewModel.groupForColumn(alias, column.name)
+                    for ((columnName, columnDataType, _, isIndexed, _, _) in table.columns) {
+                        val selected = queryViewModel.isColumnSelected(alias, columnName)
+                        val filterActive = queryViewModel.hasFilterForColumn(alias, columnName)
+                        val group = queryViewModel.groupForColumn(alias, columnName)
                         val groupIndex = queryViewModel.groups.indexOf(group)
-                        val sort = queryViewModel.sortForColumn(alias, column.name)
+                        val sort = queryViewModel.sortForColumn(alias, columnName)
                         val sortIndex = queryViewModel.sorts.indexOf(sort)
-                        val columnHovered = hoveredColumn == column.name
+                        val columnHovered = hoveredColumn == columnName
                         val columnSelectionInteractionSource =
-                            remember(alias, column.name) { MutableInteractionSource() }
+                            remember(alias, columnName) { MutableInteractionSource() }
                         val joinTargetInteractionSource =
-                            remember(alias, column.name, "join-target") {
+                            remember(alias, columnName, "join-target") {
                                 MutableInteractionSource()
                             }
                         val joinTarget =
                             highlightJoinTargets != null &&
-                                column.isIndexed &&
+                                isIndexed &&
                                 !(highlightJoinTargets.first == alias &&
-                                    highlightJoinTargets.second == column.name)
+                                    highlightJoinTargets.second == columnName)
 
                         Row(
                             modifier =
@@ -239,17 +239,17 @@ fun TableCard(
                                             Modifier.clickable(
                                                 interactionSource = joinTargetInteractionSource,
                                                 indication = null,
-                                                onClick = { onJoinTargetClick(alias, column.name) },
+                                                onClick = { onJoinTargetClick(alias, columnName) },
                                             )
                                         } else {
                                             Modifier
                                         }
                                     )
                                     .onPointerEvent(PointerEventType.Enter) {
-                                        hoveredColumn = column.name
+                                        hoveredColumn = columnName
                                     }
                                     .onPointerEvent(PointerEventType.Exit) {
-                                        if (hoveredColumn == column.name) hoveredColumn = null
+                                        if (hoveredColumn == columnName) hoveredColumn = null
                                     }
                                     .background(
                                         when {
@@ -273,9 +273,9 @@ fun TableCard(
                                             indication = null,
                                             onClick = {
                                                 if (joinTarget && joinDragActive) {
-                                                    onJoinTargetClick(alias, column.name)
+                                                    onJoinTargetClick(alias, columnName)
                                                 } else {
-                                                    queryViewModel.toggleColumn(alias, column.name)
+                                                    queryViewModel.toggleColumn(alias, columnName)
                                                 }
                                             },
                                         ),
@@ -289,7 +289,7 @@ fun TableCard(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
-                                        column.name,
+                                        columnName,
                                         style = DataMono.copy(fontWeight = FontWeight.Medium),
                                         modifier = Modifier.weight(1f, fill = false),
                                         maxLines = 1,
@@ -297,7 +297,7 @@ fun TableCard(
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                     Text(
-                                        column.dataType,
+                                        columnDataType,
                                         style =
                                             DataMono.copy(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -321,33 +321,33 @@ fun TableCard(
                                     if (
                                         columnHovered ||
                                             filterActive ||
-                                            filterMenuColumn == column.name
+                                            filterMenuColumn == columnName
                                     ) {
                                         Box {
                                             ColumnActionButton(
                                                 icon = Icons.Default.FilterAlt,
                                                 contentDescription =
                                                     if (filterActive) {
-                                                        "Filter ${column.name}; this column already has a filter"
+                                                        "Filter $columnName; this column already has a filter"
                                                     } else {
-                                                        "Filter ${column.name}"
+                                                        "Filter $columnName"
                                                     },
                                                 active = filterActive,
-                                                onClick = { filterMenuColumn = column.name },
+                                                onClick = { filterMenuColumn = columnName },
                                             )
                                             SafeDropdownMenu(
-                                                expanded = filterMenuColumn == column.name,
+                                                expanded = filterMenuColumn == columnName,
                                                 onDismissRequest = { filterMenuColumn = null },
                                             ) {
                                                 MenuSectionLabel("Filter where")
-                                                for (op in opsForColumn(column.dataType)) {
+                                                for (op in opsForColumn(columnDataType)) {
                                                     MenuActionRow(
-                                                        text = "${column.name} ${opLabel(op)}",
+                                                        text = "$columnName ${opLabel(op)}",
                                                         onClick = {
                                                             queryViewModel.addFilterForColumn(
                                                                 alias,
-                                                                column.name,
-                                                                column.dataType,
+                                                                columnName,
+                                                                columnDataType,
                                                                 op,
                                                             )
                                                             filterMenuColumn = null
@@ -362,13 +362,13 @@ fun TableCard(
                                             icon = Icons.Default.GridView,
                                             contentDescription =
                                                 groupDescription(
-                                                    column.name,
+                                                    columnName,
                                                     groupIndex,
                                                     group != null,
                                                 ),
                                             active = group != null,
                                             onClick = {
-                                                queryViewModel.toggleGroup(alias, column.name)
+                                                queryViewModel.toggleGroup(alias, columnName)
                                             },
                                         )
                                     }
@@ -382,31 +382,31 @@ fun TableCard(
                                                 },
                                             contentDescription =
                                                 sortDescription(
-                                                    column.name,
+                                                    columnName,
                                                     sort?.direction,
                                                     sortIndex,
                                                 ),
                                             active = sort != null,
                                             onClick = {
-                                                queryViewModel.cycleSort(alias, column.name)
+                                                queryViewModel.cycleSort(alias, columnName)
                                             },
                                         )
                                     }
                                 }
 
-                                if (column.isIndexed) {
+                                if (isIndexed) {
                                     JoinActionButton(
-                                        column = column.name,
+                                        column = columnName,
                                         selectingTarget = joinDragActive,
                                         tint = joinColor,
                                         onClick = {
                                             if (joinDragActive) {
-                                                onJoinTargetClick(alias, column.name)
+                                                onJoinTargetClick(alias, columnName)
                                             } else {
-                                                onJoinClick(column.name)
+                                                onJoinClick(columnName)
                                             }
                                         },
-                                        onStartDrag = { onStartJoin(column.name) },
+                                        onStartDrag = { onStartJoin(columnName) },
                                         onDrag = onDragJoin,
                                         onEndGesture = onEndGesture,
                                     )

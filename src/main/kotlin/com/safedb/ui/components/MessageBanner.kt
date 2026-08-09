@@ -1,7 +1,5 @@
 package com.safedb.ui.components
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,28 +44,6 @@ fun MessageBanner(
                 modifier = Modifier.weight(1f),
             )
             action?.invoke()
-        }
-    }
-}
-
-@Composable
-fun MessageBannerColumn(
-    text: String,
-    kind: BannerKind = BannerKind.INFO,
-    modifier: Modifier = Modifier,
-) {
-    val (container, content) = bannerColors(kind)
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = container,
-        tonalElevation = 0.dp,
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(text = text, color = content, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

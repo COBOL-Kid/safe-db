@@ -34,6 +34,7 @@ import com.safedb.model.ResultCell
 import com.safedb.model.ThemePalette
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -171,12 +172,6 @@ class ExploreViewModel(
     fun isDefaultVisualization(): Boolean = workspace.visualization == VisualizationConfig()
 
     fun isDirty(): Boolean = !isDefaultConfig()
-
-    fun applyTemplate(templateConfig: ExploreConfig) {
-        workspace = workspace.copy(activeMode = ExploreMode.Pivot, pivot = templateConfig)
-        refreshMode(ExploreMode.Pivot)
-        clearExportMessages()
-    }
 
     fun applyVisualizationTemplate(templateConfig: VisualizationConfig) {
         workspace =
@@ -538,15 +533,15 @@ private fun Set<String>.toggle(value: String): Set<String> =
 private fun ExploreWorkspaceState.recipeSnapshot(): ExploreWorkspaceState =
     copy(pivot = pivot.withoutTransientState(), worksheet = worksheet.withoutTransientState())
 
-private fun memberLabel(cell: com.safedb.model.ResultCell?): String =
+private fun memberLabel(cell: ResultCell?): String =
     when (cell) {
         null,
-        is com.safedb.model.ResultCell.Null -> "(blank)"
-        is com.safedb.model.ResultCell.BoolCell -> cell.value.toString()
-        is com.safedb.model.ResultCell.IntegerCell -> cell.value.toString()
-        is com.safedb.model.ResultCell.FloatCell -> cell.value.toString()
-        is com.safedb.model.ResultCell.TextCell -> cell.value.text
-        is com.safedb.model.ResultCell.BinaryCell -> cell.value.base64
+        is ResultCell.Null -> "(blank)"
+        is ResultCell.BoolCell -> cell.value.toString()
+        is ResultCell.IntegerCell -> cell.value.toString()
+        is ResultCell.FloatCell -> cell.value.toString()
+        is ResultCell.TextCell -> cell.value.text
+        is ResultCell.BinaryCell -> cell.value.base64
     }
 
 private class PreviewTask<T> {
@@ -565,7 +560,7 @@ private class PreviewTask<T> {
         job?.cancel()
         loading()
         job = scope.launch {
-            delay(PREVIEW_DEBOUNCE_MS)
+            delay(PREVIEW_DEBOUNCE_MS.milliseconds)
             val outcome = runCatching { withContext(dispatcher) { compute() } }
             if (scheduledGeneration != generation) return@launch
             outcome.onSuccess(success).onFailure { error ->

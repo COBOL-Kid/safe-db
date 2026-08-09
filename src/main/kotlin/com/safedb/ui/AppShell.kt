@@ -74,6 +74,7 @@ import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
 private data class ConnectionSchemaHandlers(
@@ -198,7 +199,7 @@ fun AppShell(
                         onActivate = { id ->
                             appState.setActiveConnection(
                                 id,
-                                com.safedb.resolveConnectionSchemaSelection(id, settings),
+                                resolveConnectionSchemaSelection(id, settings),
                             )
                             appState.navigate(AppRoute.Builder)
                         },
@@ -231,10 +232,9 @@ fun AppShell(
                         onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
                         onDismissSchemaHistoryError = schemaHandlers.onDismissSchemaHistoryError,
                         onOpenExplore = {
-                            val connection = activeConnection
-                            val sample = viewModel.query.currentSample(connection?.id)
-                            if (connection != null && sample != null) {
-                                viewModel.openExplore(connection, sample.spec, sample.result)
+                            val sample = viewModel.query.currentSample(activeConnection?.id)
+                            if (activeConnection != null && sample != null) {
+                                viewModel.openExplore(activeConnection, sample.spec, sample.result)
                             }
                         },
                         onOpenSettings = appState::openSettings,
@@ -337,33 +337,33 @@ private fun Sidebar(
                 val hadExpandedContent = revealStep > 0
                 for (step in sidebarRevealSteps(revealStep, 0)) {
                     revealStep = step
-                    delay(SidebarRevealStaggerMillis.toLong())
+                    delay(SidebarRevealStaggerMillis.milliseconds)
                 }
                 if (hadExpandedContent) {
-                    delay((SidebarExpandedExitMillis - SidebarRevealStaggerMillis).toLong())
+                    delay((SidebarExpandedExitMillis - SidebarRevealStaggerMillis).milliseconds)
                 }
 
                 val widthWasExpanded = !widthCollapsed
                 widthCollapsed = true
                 if (widthWasExpanded) {
-                    delay(SidebarWidthAnimationMillis.toLong())
+                    delay(SidebarWidthAnimationMillis.milliseconds)
                 }
                 layoutCollapsed = true
             }
 
             for (step in sidebarRevealSteps(compactRevealStep, SidebarCompactRevealAll)) {
                 compactRevealStep = step
-                delay(SidebarRevealStaggerMillis.toLong())
+                delay(SidebarRevealStaggerMillis.milliseconds)
             }
         } else {
             if (layoutCollapsed) {
                 val hadCompactContent = compactRevealStep > 0
                 for (step in sidebarRevealSteps(compactRevealStep, 0)) {
                     compactRevealStep = step
-                    delay(SidebarRevealStaggerMillis.toLong())
+                    delay(SidebarRevealStaggerMillis.milliseconds)
                 }
                 if (hadCompactContent) {
-                    delay((SidebarUtilityFadeOutMillis - SidebarRevealStaggerMillis).toLong())
+                    delay((SidebarUtilityFadeOutMillis - SidebarRevealStaggerMillis).milliseconds)
                 }
                 layoutCollapsed = false
             }
@@ -371,12 +371,12 @@ private fun Sidebar(
             val widthWasCollapsed = widthCollapsed
             widthCollapsed = false
             if (widthWasCollapsed) {
-                delay(SidebarWidthAnimationMillis.toLong())
+                delay(SidebarWidthAnimationMillis.milliseconds)
             }
 
             for (step in sidebarRevealSteps(revealStep, SidebarRevealAll)) {
                 revealStep = step
-                delay(SidebarRevealStaggerMillis.toLong())
+                delay(SidebarRevealStaggerMillis.milliseconds)
             }
         }
     }

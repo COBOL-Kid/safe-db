@@ -1,0 +1,31 @@
+version: "1.0"
+linter: qodana-jvm-community
+withinDocker: false
+projectJDK: "25"
+profile:
+  name: qodana.recommended
+  inspections:
+    - inspection: FunctionName
+      options:
+        namePattern: "[A-Za-z][A-Za-z\\d]*"
+exclude:
+  - name: UnstableApiUsage
+    paths:
+      - settings.gradle.kts
+  - name: CanConvertToMultiDollarString
+    paths:
+      - build.gradle.kts
+  - name: CanUnescapeDollarLiteral
+    paths:
+      - build.gradle.kts
+  - name: All
+    paths:
+      - build
+      - shared/build
+      - buildSrc
+      - src/test
+      - shared/src/test
+      - shared/src/integrationTest
+      - scripts
+      - packaging
+      - docs

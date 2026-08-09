@@ -23,7 +23,3 @@ sealed class Outcome<out T> {
         fun err(message: String): Outcome<Nothing> = Err(message)
     }
 }
-
-fun <T> Outcome<T>.isOk(): Boolean = this is Outcome.Ok
-
-fun <T> Outcome<T>.isErr(): Boolean = this is Outcome.Err

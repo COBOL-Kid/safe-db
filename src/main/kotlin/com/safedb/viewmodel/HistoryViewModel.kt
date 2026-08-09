@@ -46,8 +46,4 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
             }
         }
     }
-
-    fun clearError() {
-        _error.value = null
-    }
 }

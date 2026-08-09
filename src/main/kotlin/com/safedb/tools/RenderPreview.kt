@@ -1,6 +1,5 @@
 package com.safedb.tools
 
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
@@ -415,7 +414,6 @@ private class FakeService(private val settings: Settings = Settings()) :
     override suspend fun saveSettings(settings: Settings) {}
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 internal fun render(
     name: String,
     isDark: Boolean,
@@ -475,7 +473,6 @@ internal fun render(
         }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 private fun renderExplore(
     name: String,
     isDark: Boolean,
@@ -693,7 +690,6 @@ private fun renderExplore(
         }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 private fun renderRecipeLibrary(name: String, isDark: Boolean) {
     val service = FakeService()
     val spec =

@@ -16,6 +16,7 @@ pluginManagement {
         id("org.jetbrains.compose") version "1.11.1"
         id("org.jetbrains.kotlinx.kover") version "0.9.9"
         id("com.ncorti.ktfmt.gradle") version "0.27.0"
+        id("org.jetbrains.qodana") version "2026.2.0"
     }
 }
 

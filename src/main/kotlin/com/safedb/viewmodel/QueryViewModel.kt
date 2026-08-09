@@ -437,7 +437,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
                         .filterNot { (alias, column) ->
                             alias == tableAlias && column == columnName
                         }
-                        .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+                        .sortedWith(compareBy({ it.first }, { it.second }))
                 groupState =
                     listOf(GroupSpec(tableAlias, columnName)) +
                         existingSelections.map { (alias, column) -> GroupSpec(alias, column) }
@@ -526,26 +526,6 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         val specWithId = spec.copy(id = existingId ?: spec.id.ifEmpty { newNodeId() })
         filterGroupState = updateFilterNode(filters, path, FilterNode.Leaf(specWithId))
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
-    }
-
-    fun setGroupConnector(path: List<Int>, connector: GroupConnector) {
-        invalidateSettledRunFailure()
-        filterGroupState =
-            if (path.isEmpty()) {
-                filters.copy(connector = connector)
-            } else {
-                val group = filterGroupAtPath(filters, path)
-                if (group != null) {
-                    updateFilterNode(
-                        filters,
-                        path,
-                        FilterNode.Group(group.copy(connector = connector)),
-                    )
-                } else {
-                    filters
-                }
-            }
-        connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides, path)
     }
 
     override fun setConnectorOverrides(map: Map<String, GroupConnector>) {
@@ -641,8 +621,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
                 }
             } catch (failure: QueryFailureException) {
                 if (generation != runGeneration) return@launch
-                val queryError = failure.queryError
-                when (queryError) {
+                when (val queryError = failure.queryError) {
                     is QueryError.RiskGate -> {
                         pendingRiskGateState = true
                         riskEvaluation = queryError.evaluation

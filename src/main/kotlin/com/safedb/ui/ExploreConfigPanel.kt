@@ -319,11 +319,10 @@ internal fun ExploreConfigPanel(
                     FieldChip(
                         label = filter.label,
                         supportingText =
-                            listOf(
+                            listOfNotNull(
                                     field?.supportingText(),
                                     filterSupportingText(filter, memberCount),
                                 )
-                                .filterNotNull()
                                 .joinToString(" · "),
                         onClick = { editingFilter = filter },
                         onRemove = {
@@ -624,13 +623,12 @@ private fun MeasurePickerButton(
     var query by remember { mutableStateOf("") }
     var selectedField by remember { mutableStateOf<ExploreFieldOption?>(null) }
     val countRowsAvailable = true
-    val availableFields = fields
-    val filteredFields = availableFields.filter { it.matchesSearch(query) }
+    val filteredFields = fields.filter { it.matchesSearch(query) }
 
     Box {
         TextButton(
             onClick = { expanded = true },
-            enabled = countRowsAvailable || availableFields.isNotEmpty(),
+            enabled = countRowsAvailable || fields.isNotEmpty(),
         ) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
             Text("Add value", modifier = Modifier.padding(start = 4.dp))

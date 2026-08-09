@@ -1,7 +1,5 @@
 package com.safedb.ui
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import com.safedb.model.QueryRiskGate
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement

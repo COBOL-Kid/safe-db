@@ -162,8 +162,7 @@ private class SeedMysql(rawArgs: List<String>) {
                     )
                     .stdout
                     .lineSequence()
-                    .mapNotNull { parseMysqlContainerLine(it) }
-                    .firstOrNull()
+                    .firstNotNullOfOrNull { parseMysqlContainerLine(it) }
             if (hostDocker != null) {
                 password = dockerEnvVar(hostDocker, "MYSQL_ROOT_PASSWORD")
             }

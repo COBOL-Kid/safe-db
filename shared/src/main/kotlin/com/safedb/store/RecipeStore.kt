@@ -8,7 +8,6 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
-import kotlinx.serialization.encodeToString
 
 class RecipeStore
 private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {

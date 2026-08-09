@@ -319,18 +319,18 @@ internal fun joinedColumns(alias: String, joins: List<com.safedb.model.JoinSpec>
         }
     }
 
-internal fun exactUniqueJoinKey(table: TableInfo, joinedColumns: Set<String>): Boolean {
-    if (!table.indexMetadata.isComplete || joinedColumns.isEmpty()) return false
-    return table.indexes.any { index ->
-        val keys = normalizedKeys(index)
-        index.isUnique &&
-            index.isPartial == false &&
-            keys.isNotEmpty() &&
-            keys.none { it.expression || it.column == null } &&
-            keys.mapNotNull(IndexKey::column).toSet() == joinedColumns &&
-            keys.size == joinedColumns.size
-    }
-}
+internal fun exactUniqueJoinKey(table: TableInfo, joinedColumns: Set<String>): Boolean =
+    table.indexMetadata.isComplete &&
+        joinedColumns.isNotEmpty() &&
+        table.indexes.any { index ->
+            val keys = normalizedKeys(index)
+            index.isUnique &&
+                index.isPartial == false &&
+                keys.isNotEmpty() &&
+                keys.none { it.expression || it.column == null } &&
+                keys.mapNotNull(IndexKey::column).toSet() == joinedColumns &&
+                keys.size == joinedColumns.size
+        }
 
 private fun matchingForeignKey(
     firstAlias: String,
@@ -420,22 +420,21 @@ private fun addOperationSignals(
                     )
         }
     }
-    for (operation in operations) {
-        val bounded =
-            operation.aliases.all { alias ->
-                alias in boundedAliases ||
-                    tablesByAlias[alias]?.tableSize?.sizeClass == TableSizeClass.Small
-            }
+    for ((kind, aliases, _) in operations) {
+        val bounded = aliases.all { alias ->
+            alias in boundedAliases ||
+                tablesByAlias[alias]?.tableSize?.sizeClass == TableSizeClass.Small
+        }
         signals +=
             RiskSignal(
                 if (bounded) RiskSignalCode.BoundedBlockingOperation
                 else RiskSignalCode.LimitCannotBoundWork,
                 RiskCategory.Operations,
-                RiskSubject(operation = operation.kind.name.lowercase()),
+                RiskSubject(operation = kind.name.lowercase()),
                 if (bounded) 1 else 3,
                 SignalBasis.StaticSchema,
                 EvidenceConfidence.Medium,
-                target = RiskTarget.Operation(operation.kind, operation.aliases),
+                target = RiskTarget.Operation(kind, aliases),
             )
     }
 }

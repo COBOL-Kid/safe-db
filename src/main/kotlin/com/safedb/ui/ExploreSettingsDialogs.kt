@@ -663,10 +663,9 @@ internal fun FilterSettingsDialog(
                                 Row(
                                     modifier =
                                         Modifier.fillMaxWidth().clickable {
-                                            val baseline =
-                                                if (includedKeys.isEmpty())
-                                                    memberOptions.map { it.key }.toSet()
-                                                else includedKeys
+                                            val baseline = includedKeys.ifEmpty {
+                                                memberOptions.map { it.key }.toSet()
+                                            }
                                             val next =
                                                 if (option.key in baseline) baseline - option.key
                                                 else baseline + option.key

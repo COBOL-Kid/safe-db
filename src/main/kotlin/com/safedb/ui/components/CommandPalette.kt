@@ -166,17 +166,17 @@ fun CommandPalette(
                 }
             )
         }
-        for (connection in connections) {
+        for ((_, id, name, dialect, _, _, database, _, _, _) in connections) {
             add(
                 PaletteCommand(
-                    id = "conn-${connection.id}",
-                    label = "Explore: ${connection.name}",
-                    hint = "${connection.dialect} · ${connection.database}",
+                    id = "conn-$id",
+                    label = "Explore: $name",
+                    hint = "$dialect · $database",
                     icon = Icons.Filled.Link,
                 ) {
                     appState.setActiveConnection(
-                        connection.id,
-                        com.safedb.resolveConnectionSchemaSelection(connection.id, settings),
+                        id,
+                        com.safedb.resolveConnectionSchemaSelection(id, settings),
                     )
                     appState.navigate(AppRoute.Builder)
                     onDismiss()

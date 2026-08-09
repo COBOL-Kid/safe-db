@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -187,19 +186,22 @@ internal fun QueryOptionsCard(
                         .mapIndexed { index, label -> "${index + 1} $label" }
                         .joinToString(prefix = "Sorting order: ")
                 contentDescription =
-                    listOf(
-                            "Distinct rows: ${if (distinct) "on" else "off"}",
-                            groupingDescription.takeIf { groups.isNotEmpty() }
-                                ?: "Grouping order: none",
-                            sortingDescription.takeIf { sorts.isNotEmpty() }
-                                ?: "Sorting order: none",
+                    buildList {
+                            add("Distinct rows: ${if (distinct) "on" else "off"}")
+                            add(
+                                groupingDescription.takeIf { groups.isNotEmpty() }
+                                    ?: "Grouping order: none"
+                            )
+                            add(
+                                sortingDescription.takeIf { sorts.isNotEmpty() }
+                                    ?: "Sorting order: none"
+                            )
                             if (distinctSortConflicts.isNotEmpty()) {
-                                "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}"
-                            } else {
-                                null
-                            },
-                        )
-                        .filterNotNull()
+                                add(
+                                    "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}"
+                                )
+                            }
+                        }
                         .joinToString(". ")
             },
         shape = RoundedCornerShape(4.dp),

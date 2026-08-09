@@ -18,7 +18,7 @@ private fun compileSpec(
     validatedColumns: List<ValidatedColumn>?,
 ): Outcome<CompiledQuery> {
     val params = mutableListOf<BindValue>()
-    var paramIdx = 1
+    val paramIdx = 1
 
     val selectClause = buildSelectClause(spec, dialect, validatedColumns)
     val fromClause = buildFromClause(spec, dialect)
@@ -34,10 +34,7 @@ private fun compileSpec(
                     paramIdx = paramIdx,
                 )
         ) {
-            is Outcome.Ok -> {
-                paramIdx = result.value.second
-                result.value.first
-            }
+            is Outcome.Ok -> result.value.first
             is Outcome.Err -> return Outcome.err(result.message)
         }
     val orderByClause = buildOrderByClause(spec, dialect)

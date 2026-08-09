@@ -47,22 +47,23 @@ fun refineRiskWithPlan(
         }
     }
 
-    for (step in plan.relations) {
-        val alias = resolvePlanAlias(step.alias, step.schema, step.table, spec)
+    for ((schema, table, planAlias, method, estimatedRows, specializedTextEvidence) in
+        plan.relations) {
+        val alias = resolvePlanAlias(planAlias, schema, table, spec)
         if (alias == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_relation_unmapped",
-                    RiskSubject(schema = step.schema, table = step.table, tableAlias = step.alias),
+                    RiskSubject(schema = schema, table = table, tableAlias = planAlias),
                     "ambiguous_or_unmapped_relation",
                 )
             continue
         }
-        val table = tablesByAlias[alias]
+        val tableInfo = tablesByAlias[alias]
         val subject =
-            table?.subject(alias)
-                ?: RiskSubject(tableAlias = alias, schema = step.schema, table = step.table)
-        if (step.specializedTextEvidence) {
+            tableInfo?.subject(alias)
+                ?: RiskSubject(tableAlias = alias, schema = schema, table = table)
+        if (specializedTextEvidence) {
             val textTarget = RiskTarget.Access(alias, AccessRiskKind.Text)
             replace(
                 textTarget,
@@ -78,9 +79,9 @@ fun refineRiskWithPlan(
             )
         }
         val target = RiskTarget.Access(alias)
-        val band = step.estimatedRows?.let(::estimatedRowBand)
+        val band = estimatedRows?.let(::estimatedRowBand)
         val replacement =
-            when (step.method) {
+            when (method) {
                 PlanAccessMethod.BoundedLookup -> null
                 PlanAccessMethod.BoundedRange ->
                     when (band) {
@@ -120,7 +121,7 @@ fun refineRiskWithPlan(
                                 EvidenceConfidence.High,
                                 target,
                                 mandatoryBlockWhenGateEnabled =
-                                    band == EstimatedRowBand.High && table.isConfidentLarge(),
+                                    band == EstimatedRowBand.High && tableInfo.isConfidentLarge(),
                             )
                         null -> {
                             uncertainties +=
@@ -139,7 +140,7 @@ fun refineRiskWithPlan(
                         RiskUncertainty(
                             "plan_access_method_unknown",
                             subject,
-                            step.method.name.lowercase(),
+                            method.name.lowercase(),
                         )
                     continue
                 }
@@ -147,33 +148,33 @@ fun refineRiskWithPlan(
         replace(target, replacement)
     }
 
-    for (step in plan.blockingOperations) {
-        val aliases = resolvePlanAliases(step.aliases, spec)
-        if (step.aliases.isEmpty() || aliases.size != step.aliases.size) {
+    for ((kind, planAliases, estimatedRows) in plan.blockingOperations) {
+        val aliases = resolvePlanAliases(planAliases, spec)
+        if (planAliases.isEmpty() || aliases.size != planAliases.size) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_operation_unmapped",
-                    RiskSubject(operation = step.kind.name.lowercase()),
+                    RiskSubject(operation = kind.name.lowercase()),
                     "ambiguous_or_unmapped_operation_alias",
                 )
             continue
         }
-        val target = matchingOperationTarget(step.kind, aliases, staticAssessment.signals)
+        val target = matchingOperationTarget(kind, aliases, staticAssessment.signals)
         if (target == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_operation_unmapped",
-                    RiskSubject(operation = step.kind.name.lowercase()),
+                    RiskSubject(operation = kind.name.lowercase()),
                     "ambiguous_or_unmapped_operation",
                 )
             continue
         }
-        val band = step.estimatedRows?.let(::estimatedRowBand)
+        val band = estimatedRows?.let(::estimatedRowBand)
         if (band == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_operation_rows_unknown",
-                    RiskSubject(operation = step.kind.name.lowercase()),
+                    RiskSubject(operation = kind.name.lowercase()),
                     "missing_estimated_rows",
                 )
             continue
@@ -184,7 +185,7 @@ fun refineRiskWithPlan(
                 if (band == EstimatedRowBand.Low) RiskSignalCode.BoundedBlockingOperation
                 else RiskSignalCode.LimitCannotBoundWork,
                 RiskCategory.Operations,
-                RiskSubject(operation = step.kind.name.lowercase()),
+                RiskSubject(operation = kind.name.lowercase()),
                 if (band == EstimatedRowBand.Low) 1 else 3,
                 SignalBasis.PlanEvidence,
                 EvidenceConfidence.High,
@@ -193,9 +194,9 @@ fun refineRiskWithPlan(
         )
     }
 
-    for (step in plan.joins) {
-        val aliases = resolvePlanAliases(step.aliases, spec)
-        if (step.aliases.isEmpty() || aliases.size != step.aliases.size) {
+    for ((planAliases, estimatedOutputRows) in plan.joins) {
+        val aliases = resolvePlanAliases(planAliases, spec)
+        if (planAliases.isEmpty() || aliases.size != planAliases.size) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_join_unmapped",
@@ -214,7 +215,7 @@ fun refineRiskWithPlan(
                 )
             continue
         }
-        when (step.estimatedOutputRows?.let(::estimatedRowBand)) {
+        when (estimatedOutputRows?.let(::estimatedRowBand)) {
             EstimatedRowBand.Low -> replace(target, null)
             EstimatedRowBand.Material -> Unit
             EstimatedRowBand.High ->
@@ -323,9 +324,10 @@ private fun joinUniquenessProvesNeitherSideUnique(
 ): Boolean {
     if (aliases.size != 2) return false
     val joins = spec.joins.filter { setOf(it.leftAlias, it.rightAlias) == aliases }
-    if (joins.isEmpty()) return false
-    return aliases.all { alias ->
-        val table = tablesByAlias[alias] ?: return false
-        table.indexMetadata.isComplete && !exactUniqueJoinKey(table, joinedColumns(alias, joins))
-    }
+    return joins.isNotEmpty() &&
+        aliases.all { alias ->
+            val table = tablesByAlias[alias] ?: return false
+            table.indexMetadata.isComplete &&
+                !exactUniqueJoinKey(table, joinedColumns(alias, joins))
+        }
 }

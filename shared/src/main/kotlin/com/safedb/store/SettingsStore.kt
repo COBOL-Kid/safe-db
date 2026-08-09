@@ -9,7 +9,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
-import kotlinx.serialization.encodeToString
 
 class SettingsStore
 private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {

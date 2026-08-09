@@ -133,7 +133,7 @@ internal fun BuilderRecipeButton(
                                                 val result =
                                                     resolveExploreTemplate(
                                                         item.id,
-                                                        requireNotNull(currentSample),
+                                                        currentSample,
                                                         fields,
                                                     )
                                                 if (result is ExploreTemplateBuildResult.Ready) {

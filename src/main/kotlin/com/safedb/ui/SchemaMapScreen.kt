@@ -566,7 +566,7 @@ private fun SchemaMapCanvas(
         ((contentBounds.height + renderPaddingPx * 2f) / density.density).coerceAtLeast(1f)
 
     val viewportReady = viewport.width > 0 && viewport.height > 0
-    LaunchedEffect(connectionId, selectedSchema, contextReady, viewportReady) {
+    LaunchedEffect(connectionId, selectedSchema, viewportReady) {
         if (viewportReady && viewModel.consumeInitialFitRequest(connectionId, selectedSchema)) {
             viewModel.fit(contentBounds, viewportSize)
         }

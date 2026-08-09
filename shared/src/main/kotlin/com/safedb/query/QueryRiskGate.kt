@@ -7,33 +7,32 @@ fun applyRiskGate(
     userSetting: QueryRiskGate,
     validationBlocked: Boolean = false,
 ): QueryRiskDecision {
-    val effective = userSetting
     val fingerprint = assessment?.queryFingerprint.orEmpty()
     if (validationBlocked) {
         return QueryRiskDecision(
             fingerprint,
             RiskGateState.Blocked,
-            effective,
-            blockingBand(effective),
+            userSetting,
+            blockingBand(userSetting),
             listOf(
                 RiskDecisionReason("validation_block", "Query validation blocks this query.", true)
             ),
         )
     }
-    if (effective == QueryRiskGate.Disabled) {
-        return QueryRiskDecision(fingerprint, RiskGateState.Allowed, effective, null, emptyList())
+    if (userSetting == QueryRiskGate.Disabled) {
+        return QueryRiskDecision(fingerprint, RiskGateState.Allowed, userSetting, null, emptyList())
     }
     if (assessment == null) {
         return QueryRiskDecision(
             fingerprint,
             RiskGateState.AssessmentPending,
-            effective,
-            blockingBand(effective),
+            userSetting,
+            blockingBand(userSetting),
             listOf(RiskDecisionReason("assessment_pending", "Query risk assessment is pending.")),
         )
     }
     val mandatory = assessment.signals.filter(RiskSignal::mandatoryBlockWhenGateEnabled)
-    val band = blockingBand(effective)!!
+    val band = blockingBand(userSetting)!!
     val blocked = mandatory.isNotEmpty() || assessment.severity.ordinal >= band.ordinal
     val reasons =
         if (blocked) {
@@ -65,7 +64,7 @@ fun applyRiskGate(
     return QueryRiskDecision(
         fingerprint,
         if (blocked) RiskGateState.Blocked else RiskGateState.Allowed,
-        effective,
+        userSetting,
         band,
         reasons,
     )

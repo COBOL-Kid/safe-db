@@ -431,9 +431,7 @@ private fun rebuildValue(op: FilterOp, dataType: String, oldValue: FilterValue?)
         ValueKind.Single -> FilterValue.Single(FilterLiteral(kind, extractSingleText(oldValue)))
         ValueKind.List -> {
             val items = extractList(oldValue)
-            FilterValue.ListValue(
-                if (items.isNotEmpty()) items else listOf(FilterLiteral(kind, ""))
-            )
+            FilterValue.ListValue(items.ifEmpty { listOf(FilterLiteral(kind, "")) })
         }
         ValueKind.Pair -> {
             val (from, to) = extractPair(oldValue)
