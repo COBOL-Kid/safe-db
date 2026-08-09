@@ -44,25 +44,24 @@ internal fun interface AdapterFactory {
     suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter
 }
 
+/** Adapts a live JDBC [Adapter] with introspection/explain timeouts for the service layer. */
+private class TimeoutAwareAdapter(private val adapter: Adapter) : ConnectedAdapter {
+    override suspend fun test(): String = adapter.test()
+
+    override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
+
+    override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+        Adapter.explainWithTimeout(adapter, compiled)
+
+    override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
+        adapter.executeQuery(compiled, timeoutMs)
+
+    override fun close() = adapter.close()
+}
+
 private object DefaultAdapterFactory : AdapterFactory {
-    override suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter {
-        val adapter = Adapter.connect(def, password)
-        return object : ConnectedAdapter {
-            override suspend fun test(): String = adapter.test()
-
-            override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
-
-            override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-                Adapter.explainWithTimeout(adapter, compiled)
-
-            override suspend fun executeQuery(
-                compiled: CompiledQuery,
-                timeoutMs: Int,
-            ): QueryResult = adapter.executeQuery(compiled, timeoutMs)
-
-            override fun close() = adapter.close()
-        }
-    }
+    override suspend fun connect(def: ConnectionDef, password: String): ConnectedAdapter =
+        TimeoutAwareAdapter(Adapter.connect(def, password))
 }
 
 internal class QuerySession(
@@ -82,7 +81,6 @@ internal constructor(
     private val adapterFactory: AdapterFactory = DefaultAdapterFactory,
     private val recipeStore: RecipeStore? = null,
 ) : SafeDbService {
-
     constructor(
         configStore: ConfigStore,
         queryStore: QueryStore,
@@ -141,7 +139,9 @@ internal constructor(
         }
     }
 
-    override suspend fun lockCredentials() = SecretsManager.lockCredentials()
+    override suspend fun lockCredentials() {
+        SecretsManager.lockCredentials()
+    }
 
     override suspend fun getSchema(connectionId: String): Schema {
         val def =

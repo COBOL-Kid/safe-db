@@ -8,7 +8,7 @@ import com.safedb.model.HistoryEntry
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
-import com.safedb.service.SafeDbService
+import com.safedb.service.FakeSafeDbServiceSupport
 import java.nio.file.Files
 import kotlin.io.path.readText
 import kotlin.test.Test
@@ -73,7 +73,7 @@ class RecipesViewModelTest {
         )
 }
 
-private class RecipeFakeService(private val fail: Boolean = false) : SafeDbService {
+private class RecipeFakeService(private val fail: Boolean = false) : FakeSafeDbServiceSupport() {
     private val recipes = mutableListOf<ExploreRecipe>()
     private var lastExported: ExploreRecipe? = null
 

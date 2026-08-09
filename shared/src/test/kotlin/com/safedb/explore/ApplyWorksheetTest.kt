@@ -9,6 +9,70 @@ import kotlin.test.assertTrue
 
 class ApplyWorksheetTest {
     @Test
+    fun textSortsRemainCaseInsensitiveForRowsAndGroups() {
+        val mixedCase =
+            QueryResult(
+                columns = listOf(ResultColumn("name", "varchar")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("Banana")),
+                        listOf(ResultCell.text("apple")),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val sort = WorksheetSort(WorksheetValueRef.Column("name"), SortDir.Asc)
+
+        val rows = applyWorksheet(mixedCase, WorksheetConfig(sorts = listOf(sort)))
+        val groups =
+            applyWorksheet(
+                mixedCase,
+                WorksheetConfig(
+                    groups = listOf(WorksheetGroup("name-group", "name")),
+                    sorts = listOf(sort),
+                ),
+            )
+
+        assertEquals(listOf("apple", "Banana"), rows.detailValues("name"))
+        assertEquals(
+            listOf("name: apple", "name: Banana"),
+            groups.rows.filter { it.kind == WorksheetRowKind.Group }.map { it.label },
+        )
+    }
+
+    @Test
+    fun nullSortsBeforeEmptyText() {
+        val nullAndEmpty =
+            QueryResult(
+                columns = listOf(ResultColumn("name", "varchar")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("")),
+                        listOf(ResultCell.Null),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        val preview =
+            applyWorksheet(
+                nullAndEmpty,
+                WorksheetConfig(
+                    sorts = listOf(WorksheetSort(WorksheetValueRef.Column("name"), SortDir.Asc))
+                ),
+            )
+        val values =
+            preview.rows
+                .filter { it.kind == WorksheetRowKind.Detail }
+                .map { it.cells.single().value }
+
+        assertTrue(values[0] is ResultCell.Null)
+        assertEquals("", (values[1] as ResultCell.TextCell).value.text)
+    }
+
+    @Test
     fun filtersAndStableMultiSortSourceRows() {
         val preview =
             applyWorksheet(

@@ -65,12 +65,52 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.SchemaSelectionIntent
+import com.safedb.SchemaSelectionSource
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
+import com.safedb.model.Settings
+import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import kotlinx.coroutines.delay
+
+private data class ConnectionSchemaHandlers(
+    val onConnectionSelected: (ConnectionDef) -> Unit,
+    val onSchemaSelected: (String) -> Unit,
+    val onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
+    val onDismissSchemaHistoryError: () -> Unit,
+)
+
+private fun connectionSchemaHandlers(
+    appState: AppState,
+    viewModel: AppViewModel,
+    settings: Settings,
+    activeConnectionId: String?,
+): ConnectionSchemaHandlers =
+    ConnectionSchemaHandlers(
+        onConnectionSelected = { connection ->
+            appState.setActiveConnection(
+                connection.id,
+                resolveConnectionSchemaSelection(connection.id, settings),
+            )
+        },
+        onSchemaSelected = { schema ->
+            activeConnectionId?.let { connectionId ->
+                appState.setActiveSchema(schema)
+                viewModel.settings.rememberLastSchema(connectionId, schema)
+            }
+        },
+        onUnavailableSchemaSelection = { selection ->
+            activeConnectionId?.let { connectionId ->
+                if (selection.source == SchemaSelectionSource.ConnectionHistory) {
+                    viewModel.settings.forgetLastSchema(connectionId)
+                }
+            }
+        },
+        onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
+    )
 
 @Composable
 fun AppShell(
@@ -93,6 +133,10 @@ fun AppShell(
     val connections by viewModel.connections.connections.collectAsState()
     val isDark = settings.theme == "dark"
     val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
+    val schemaHandlers =
+        remember(settings, activeConnectionId) {
+            connectionSchemaHandlers(appState, viewModel, settings, activeConnectionId)
+        }
     var sidebarCollapsed by rememberSaveable { mutableStateOf(initialSidebarCollapsed) }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
@@ -150,7 +194,6 @@ fun AppShell(
                     )
                 AppRoute.Connections ->
                     ConnectionsScreen(
-                        service = appState.service,
                         viewModel = viewModel.connections,
                         onActivate = { id ->
                             appState.setActiveConnection(
@@ -183,30 +226,10 @@ fun AppShell(
                         schemaSelection = schemaSelection,
                         schemaHistoryError = schemaHistoryError,
                         settings = settings,
-                        onConnectionSelected = { connection ->
-                            appState.setActiveConnection(
-                                connection.id,
-                                com.safedb.resolveConnectionSchemaSelection(
-                                    connection.id,
-                                    settings,
-                                ),
-                            )
-                        },
-                        onSchemaSelected = { schema ->
-                            val connectionId = activeConnection?.id ?: return@BuilderScreen
-                            appState.setActiveSchema(schema)
-                            viewModel.settings.rememberLastSchema(connectionId, schema)
-                        },
-                        onUnavailableSchemaSelection = { selection ->
-                            val connectionId = activeConnection?.id ?: return@BuilderScreen
-                            if (
-                                selection.source ==
-                                    com.safedb.SchemaSelectionSource.ConnectionHistory
-                            ) {
-                                viewModel.settings.forgetLastSchema(connectionId)
-                            }
-                        },
-                        onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
+                        onConnectionSelected = schemaHandlers.onConnectionSelected,
+                        onSchemaSelected = schemaHandlers.onSchemaSelected,
+                        onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
+                        onDismissSchemaHistoryError = schemaHandlers.onDismissSchemaHistoryError,
                         onOpenExplore = {
                             val connection = activeConnection
                             val sample = viewModel.query.currentSample(connection?.id)
@@ -244,30 +267,10 @@ fun AppShell(
                         schemaViewModel = viewModel.schema,
                         schemaSelection = schemaSelection,
                         schemaHistoryError = schemaHistoryError,
-                        onConnectionSelected = { connection ->
-                            appState.setActiveConnection(
-                                connection.id,
-                                com.safedb.resolveConnectionSchemaSelection(
-                                    connection.id,
-                                    settings,
-                                ),
-                            )
-                        },
-                        onSchemaSelected = { schema ->
-                            val connectionId = activeConnection?.id ?: return@SchemaMapScreen
-                            appState.setActiveSchema(schema)
-                            viewModel.settings.rememberLastSchema(connectionId, schema)
-                        },
-                        onUnavailableSchemaSelection = { selection ->
-                            val connectionId = activeConnection?.id ?: return@SchemaMapScreen
-                            if (
-                                selection.source ==
-                                    com.safedb.SchemaSelectionSource.ConnectionHistory
-                            ) {
-                                viewModel.settings.forgetLastSchema(connectionId)
-                            }
-                        },
-                        onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
+                        onConnectionSelected = schemaHandlers.onConnectionSelected,
+                        onSchemaSelected = schemaHandlers.onSchemaSelected,
+                        onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
+                        onDismissSchemaHistoryError = schemaHandlers.onDismissSchemaHistoryError,
                         onRetry = viewModel.schema::clear,
                         onOpenConnections = { appState.navigate(AppRoute.Connections) },
                     )

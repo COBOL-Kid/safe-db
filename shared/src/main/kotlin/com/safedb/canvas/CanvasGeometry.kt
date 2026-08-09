@@ -1,4 +1,4 @@
-package com.safedb.query
+package com.safedb.canvas
 
 import com.safedb.model.JoinSpec
 import com.safedb.model.TableInfo

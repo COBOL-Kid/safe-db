@@ -16,7 +16,7 @@ import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.ThemePalette
 import com.safedb.model.TransportSecurity
-import com.safedb.service.SafeDbService
+import com.safedb.service.FakeSafeDbServiceSupport
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -64,6 +64,60 @@ class ViewModelsTest {
             advanceUntilIdle()
             assertTrue(viewModel.connections.value.isEmpty())
             assertEquals("c1", service.deletedIds.single())
+        }
+
+    @Test
+    fun connectionCreateSuccessIsIndependentFromRefreshFailure() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService().apply { failConnectionList = true }
+            val viewModel = ConnectionsViewModel(service, TestScope(dispatcher))
+            val created =
+                ConnectionDef(
+                    id = "created",
+                    name = "Created",
+                    dialect = Dialect.Postgres,
+                    host = "localhost",
+                    port = 5432,
+                    database = "db",
+                    username = "user",
+                )
+
+            assertEquals(created, viewModel.createConnection(created, "secret"))
+            assertEquals(listOf(created), service.createdConnections)
+            assertEquals(0, service.connectionListCalls)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            assertEquals(1, service.connectionListCalls)
+            assertEquals("connection list failed", viewModel.error.value)
+        }
+
+    @Test
+    fun connectionUpdateSuccessIsIndependentFromRefreshFailure() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService().apply { failConnectionList = true }
+            val viewModel = ConnectionsViewModel(service, TestScope(dispatcher))
+            val updated =
+                ConnectionDef(
+                    id = "c1",
+                    name = "Updated",
+                    dialect = Dialect.MySql,
+                    host = "localhost",
+                    port = 3306,
+                    database = "db",
+                    username = "user",
+                )
+
+            viewModel.updateConnection(updated, null)
+            assertEquals(listOf(updated), service.updatedConnections)
+            assertEquals(0, service.connectionListCalls)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            assertEquals(1, service.connectionListCalls)
+            assertEquals("connection list failed", viewModel.error.value)
         }
 
     @Test
@@ -499,7 +553,7 @@ class ViewModelsTest {
         }
 }
 
-private class RecordingSafeDbService : SafeDbService {
+private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     val deletedIds = mutableListOf<String>()
     val deletedSavedIds = mutableListOf<String>()
     var historyCleared = false
@@ -508,6 +562,10 @@ private class RecordingSafeDbService : SafeDbService {
     var failSavedMutation = false
     var failSettingsSave = false
     var failSchemaLoad = false
+    var failConnectionList = false
+    var connectionListCalls = 0
+    val createdConnections = mutableListOf<ConnectionDef>()
+    val updatedConnections = mutableListOf<ConnectionDef>()
     var schemaLoadCount = 0
     val schemaResponses = mutableMapOf<String, CompletableDeferred<Schema>>()
     var settingsSaveCount = 0
@@ -528,12 +586,20 @@ private class RecordingSafeDbService : SafeDbService {
 
     override suspend fun testConnection(def: ConnectionDef, password: String?): String = "ok"
 
-    override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef = def
+    override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef {
+        createdConnections += def
+        return def
+    }
 
-    override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
+    override suspend fun updateConnection(def: ConnectionDef, password: String?) {
+        updatedConnections += def
+    }
 
-    override suspend fun listConnections(): List<ConnectionDef> =
-        if (deletedIds.isEmpty()) listOf(connection) else emptyList()
+    override suspend fun listConnections(): List<ConnectionDef> {
+        connectionListCalls += 1
+        if (failConnectionList) error("connection list failed")
+        return if (deletedIds.isEmpty()) listOf(connection) else emptyList()
+    }
 
     override suspend fun deleteConnection(id: String) {
         deletedIds.add(id)

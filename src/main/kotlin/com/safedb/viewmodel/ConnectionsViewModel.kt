@@ -54,6 +54,17 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
         _deleteError.value = null
     }
 
+    suspend fun testConnection(def: ConnectionDef, password: String?): String =
+        service.testConnection(def, password)
+
+    suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef {
+        return service.createConnection(def, password)
+    }
+
+    suspend fun updateConnection(def: ConnectionDef, password: String?) {
+        service.updateConnection(def, password)
+    }
+
     fun connectionName(id: String): String =
         _connections.value.firstOrNull { it.id == id }?.name ?: "Unknown"
 

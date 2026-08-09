@@ -6,8 +6,16 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import com.safedb.canvas.CANVAS_CARD_HEIGHT
+import com.safedb.canvas.CANVAS_CARD_WIDTH
+import com.safedb.canvas.MAX_TABLE_HEIGHT
+import com.safedb.canvas.MAX_TABLE_WIDTH
+import com.safedb.canvas.MIN_TABLE_HEIGHT
+import com.safedb.canvas.MIN_TABLE_WIDTH
+import com.safedb.canvas.clampDimension
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ColumnSel
+import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
@@ -18,9 +26,12 @@ import com.safedb.model.GroupConnector
 import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
+import com.safedb.model.Outcome
 import com.safedb.model.QueryResult
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
+import com.safedb.model.Schema
+import com.safedb.model.Settings
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
@@ -28,25 +39,19 @@ import com.safedb.model.TableRef
 import com.safedb.model.ValueKind
 import com.safedb.model.valueKind
 import com.safedb.query.AliasRef
-import com.safedb.query.CANVAS_CARD_HEIGHT
-import com.safedb.query.CANVAS_CARD_WIDTH
 import com.safedb.query.DEFAULT_LIMIT
-import com.safedb.query.MAX_TABLE_HEIGHT
-import com.safedb.query.MAX_TABLE_WIDTH
-import com.safedb.query.MIN_TABLE_HEIGHT
-import com.safedb.query.MIN_TABLE_WIDTH
 import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.QueryError
 import com.safedb.query.QueryHydrationTarget
 import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.addFilterGroup
 import com.safedb.query.addFilterLeaf
-import com.safedb.query.clampDimension
 import com.safedb.query.columnKey
 import com.safedb.query.columnKeyPrefix
 import com.safedb.query.countFilterLeaves
 import com.safedb.query.distinctSortProjectionConflicts
 import com.safedb.query.ensureFilterNodeIds
+import com.safedb.query.evaluateQueryRisk
 import com.safedb.query.filterGroupAtPath
 import com.safedb.query.filterLeafIdAtPath
 import com.safedb.query.filterNodeIdAtPath
@@ -738,6 +743,19 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
 
     fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? = riskEvaluation.takeIf {
         connectionId != null && connectionId == riskEvaluationConnectionId
+    }
+
+    /**
+     * Descriptive static risk preview for the current draft. Execution still goes through
+     * `runQuery` / `runQueryCore` for plan refinement and confirmation.
+     */
+    fun evaluatePreliminaryRisk(
+        schema: Schema?,
+        settings: Settings,
+        dialect: Dialect?,
+    ): Outcome<QueryRiskEvaluation>? {
+        if (schema == null || dialect == null || canvasTables.isEmpty()) return null
+        return evaluateQueryRisk(spec, schema, settings, dialect)
     }
 
     fun currentSample(connectionId: String?): BuilderQuerySample? {

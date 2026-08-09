@@ -24,7 +24,7 @@ import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
-import com.safedb.service.SafeDbService
+import com.safedb.service.FakeSafeDbServiceSupport
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -411,7 +411,7 @@ class QueryViewModelStateTest {
         )
 }
 
-private class NoOpService : SafeDbService {
+private class NoOpService : FakeSafeDbServiceSupport() {
     override suspend fun testConnection(def: ConnectionDef, password: String?) = "ok"
 
     override suspend fun createConnection(def: ConnectionDef, password: String) = def

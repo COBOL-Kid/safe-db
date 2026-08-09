@@ -331,7 +331,7 @@ class SslCompatIntegrationTest {
             id = "ssl-mssql",
             name = "SSL SQL Server",
             dialect = Dialect.Mssql,
-            host = env["SAFEDB_TEST_MSSQL_SSL_HOST"] ?: "127.0.0.1",
+            host = env["SAFEDB_TEST_MSSQL_SSL_HOST"] ?: "localhost",
             port = env["SAFEDB_TEST_MSSQL_SSL_PORT"]?.toIntOrNull() ?: 14333,
             database = env["SAFEDB_TEST_MSSQL_SSL_DATABASE"] ?: "safedb_ssl",
             username = env["SAFEDB_TEST_MSSQL_SSL_USER"] ?: "sa",

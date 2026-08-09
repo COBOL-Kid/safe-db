@@ -1,20 +1,22 @@
 package com.safedb.ui
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.safedb.canvas.CanvasPoint
+import com.safedb.canvas.CanvasTableLike
+import com.safedb.canvas.ColumnJoinPort
+import com.safedb.canvas.JoinPortSide
+import com.safedb.canvas.JoinPortVisibility
+import com.safedb.canvas.RoutedJoinEdge
 import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
-import com.safedb.query.CanvasPoint
-import com.safedb.query.CanvasTableLike
-import com.safedb.query.ColumnJoinPort
-import com.safedb.query.JoinPortSide
-import com.safedb.query.JoinPortVisibility
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -26,7 +28,6 @@ import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
-import com.safedb.query.RoutedJoinEdge
 import com.safedb.viewmodel.CanvasViewportState
 import com.safedb.viewmodel.canvasAxisScrollState
 import com.safedb.viewmodel.canvasConstrainedPan
@@ -216,9 +217,39 @@ class BuilderScreenStateTest {
     }
 
     @Test
+    fun canvasPointForViewportPositionAccountsForPanZoomAndInset() {
+        val point =
+            canvasPointForViewportPosition(
+                position = Offset(220f, 180f),
+                zoom = 2f,
+                pan = Offset(20f, 40f),
+                contentTopInset = 60f,
+            )
+
+        assertEquals(100f, point.x)
+        assertEquals(40f, point.y)
+    }
+
+    @Test
     fun queryControlsCanvasInsetKeepsBaselineAndExpandsForTallerOverlays() {
         assertEquals(QueryControlsCanvasInset, queryControlsCanvasInset(120.dp))
         assertEquals(324.dp, queryControlsCanvasInset(300.dp))
+    }
+
+    @Test
+    fun queryControlsHeightUsesTheTallestVisibleOverlay() {
+        assertEquals(
+            310,
+            queryControlsHeightPx(filterCount = 1, filterHeightPx = 208, optionHeightPx = 310),
+        )
+        assertEquals(
+            260,
+            queryControlsHeightPx(filterCount = 1, filterHeightPx = 260, optionHeightPx = 208),
+        )
+        assertEquals(
+            208,
+            queryControlsHeightPx(filterCount = 0, filterHeightPx = 310, optionHeightPx = 208),
+        )
     }
 
     @Test

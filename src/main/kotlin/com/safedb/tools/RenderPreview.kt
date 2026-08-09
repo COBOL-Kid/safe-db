@@ -68,7 +68,7 @@ import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ThemePalette
 import com.safedb.model.markIndexedColumns
-import com.safedb.service.SafeDbService
+import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.RecipeLibraryDialog
@@ -87,7 +87,8 @@ import org.jetbrains.skia.EncodedImageFormat
  * Dev-only utility: renders the main screens headlessly to PNG files in /tmp/safedb-preview for
  * visual verification without a display.
  */
-private class FakeService(private val settings: Settings = Settings()) : SafeDbService {
+private class FakeService(private val settings: Settings = Settings()) :
+    FakeSafeDbServiceSupport() {
     val connections =
         listOf(
             ConnectionDef(

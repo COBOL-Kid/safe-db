@@ -7,9 +7,6 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 import java.util.BitSet
@@ -567,7 +564,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                 ShowAsMode.RankDescending ->
                     siblingTransform(rowNode, columnNode, measure, rawDecimal)
             }
-        return value?.toResultCell() ?: ResultCell.Null
+        return value?.toPivotResultCell() ?: ResultCell.Null
     }
 
     private fun siblingTransform(
@@ -673,7 +670,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                         }
                         val result = evaluatePivotFormula(measure.formula, values)
                         result.error?.let { warnings += "${measure.label}: $it" }
-                        result.value?.toResultCell() ?: ResultCell.Null
+                        result.value?.toPivotResultCell() ?: ResultCell.Null
                     }
                 resolving.remove(measure.alias)
                 resolved[measure.alias] = value
@@ -713,18 +710,18 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             MeasureFn.Sum ->
                 decimalCells(rows, index, measure)
                     .fold(BigDecimal.ZERO, BigDecimal::add)
-                    .toResultCell()
+                    .toPivotResultCell()
             MeasureFn.Avg ->
-                decimalCells(rows, index, measure).average()?.toResultCell() ?: ResultCell.Null
+                decimalCells(rows, index, measure).average()?.toPivotResultCell() ?: ResultCell.Null
             MeasureFn.Min ->
-                comparableCells(rows, index).minWithOrNull(::compareCells) ?: ResultCell.Null
+                comparableCells(rows, index).minWithOrNull(::comparePivotCells) ?: ResultCell.Null
             MeasureFn.Max ->
-                comparableCells(rows, index).maxWithOrNull(::compareCells) ?: ResultCell.Null
+                comparableCells(rows, index).maxWithOrNull(::comparePivotCells) ?: ResultCell.Null
             MeasureFn.Product ->
                 decimalCells(rows, index, measure)
                     .takeIf { it.isNotEmpty() }
                     ?.fold(BigDecimal.ONE, BigDecimal::multiply)
-                    ?.toResultCell() ?: ResultCell.Null
+                    ?.toPivotResultCell() ?: ResultCell.Null
             MeasureFn.StdDev ->
                 statistic(decimalCells(rows, index, measure), sample = true, squareRoot = true)
             MeasureFn.StdDevPopulation ->
@@ -855,67 +852,6 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
     }
 }
 
-private data class PivotRecord(
-    val index: Int,
-    val row: List<ResultCell>,
-    val rowBuckets: List<PivotBucket>,
-    val columnBuckets: List<PivotBucket>,
-)
-
-private data class PivotBucket(val key: String, val label: String, val sortKey: String)
-
-private class AxisNode(
-    val bucket: PivotBucket?,
-    val depth: Int,
-    val pathKey: String,
-    val parent: AxisNode?,
-    val rows: BitSet = BitSet(),
-) {
-    val children = linkedMapOf<String, AxisNode>()
-
-    fun labels(): List<String> =
-        generateSequence(this) { it.parent }.mapNotNull { it.bucket?.label }.toList().asReversed()
-
-    fun ancestorAtDepth(targetDepth: Int): AxisNode? {
-        var node: AxisNode? = this
-        while (node != null && node.depth > targetDepth) node = node.parent
-        return node?.takeIf { it.depth == targetDepth }
-    }
-}
-
-private data class RowSlice(
-    val node: AxisNode,
-    val label: String,
-    val kind: PivotRowKind,
-    val hasChildren: Boolean,
-    val expanded: Boolean,
-) {
-    val pathKey: String
-        get() = if (kind == PivotRowKind.GrandTotal) "<grand>" else node.pathKey
-
-    fun toEntry() =
-        PivotRowEntry(
-            pathKey = pathKey,
-            label = label,
-            depth = (node.depth - 1).coerceAtLeast(0),
-            kind = kind,
-            hasChildren = hasChildren,
-            expanded = expanded,
-        )
-}
-
-private data class ColumnSlice(
-    val node: AxisNode,
-    val labels: List<String>,
-    val isSubtotal: Boolean,
-    val isGrandTotal: Boolean,
-) {
-    val pathKey: String
-        get() = if (isGrandTotal) "<grand>" else node.pathKey
-
-    fun toLeaf() = PivotColumnLeaf(pathKey, labels, isSubtotal, isGrandTotal)
-}
-
 fun pivotCellKey(cell: ResultCell?): String =
     when (cell) {
         null,
@@ -925,109 +861,3 @@ fun pivotCellKey(cell: ResultCell?): String =
 
 fun pivotCellLineageKey(rowPath: String, columnPath: String, measureAlias: String): String =
     cellKey(rowPath, columnPath, measureAlias)
-
-private fun cellKey(rowPath: String, columnPath: String, measureAlias: String): String =
-    "$rowPath|$columnPath|$measureAlias"
-
-private fun List<PivotDimension>.filterKnown(
-    indexes: Map<String, Int>,
-    warnings: MutableSet<String>,
-    kind: String,
-): List<PivotDimension> = filter { dimension ->
-    val known = indexes.containsKey(dimension.column)
-    if (!known)
-        warnings += "Unknown $kind dimension '${displayColumnLabel(dimension.column)}' was ignored"
-    known
-}
-
-private fun List<PivotMeasure>.filterValid(
-    indexes: Map<String, Int>,
-    warnings: MutableSet<String>,
-): List<PivotMeasure> = filter { measure ->
-    val valid =
-        !measure.formula.isNullOrBlank() ||
-            measure.fn == MeasureFn.Count ||
-            measure.sourceColumn?.let(indexes::containsKey) == true
-    if (!valid) warnings += "Measure '${measure.label}' references an unknown source column"
-    valid
-}
-
-private fun parseDateTime(raw: String): LocalDateTime? {
-    val text = raw.trim()
-    return runCatching { OffsetDateTime.parse(text).toLocalDateTime() }.getOrNull()
-        ?: runCatching { LocalDateTime.parse(text) }.getOrNull()
-        ?: runCatching { LocalDateTime.parse(text.replace(' ', 'T')) }.getOrNull()
-        ?: runCatching { LocalDate.parse(text).atStartOfDay() }.getOrNull()
-}
-
-private fun escapePath(raw: String): String = raw.replace("%", "%25").replace("/", "%2F")
-
-private fun intersect(left: BitSet, right: BitSet): BitSet =
-    (left.clone() as BitSet).apply { and(right) }
-
-private fun BitSet.toIndexList(): List<Int> = buildList {
-    var index = nextSetBit(0)
-    while (index >= 0) {
-        add(index)
-        index = nextSetBit(index + 1)
-    }
-}
-
-private fun List<BigDecimal>.average(): BigDecimal? =
-    if (isEmpty()) null
-    else
-        fold(BigDecimal.ZERO, BigDecimal::add)
-            .divide(BigDecimal(size), 8, RoundingMode.HALF_UP)
-            .stripTrailingZeros()
-
-private fun ratio(numerator: BigDecimal, denominator: BigDecimal?): BigDecimal? =
-    denominator
-        ?.takeUnless { it.compareTo(BigDecimal.ZERO) == 0 }
-        ?.let { numerator.divide(it, 10, RoundingMode.HALF_UP).stripTrailingZeros() }
-
-private fun measureReferences(formula: String): Set<String> =
-    Regex("\\[([^]]+)]")
-        .findAll(formula)
-        .map { it.groupValues[1].trim() }
-        .filter { it.isNotEmpty() }
-        .toSet()
-
-private fun ResultCell.toDecimalOrNull(): BigDecimal? = resultCellDecimal(this)
-
-private fun BigDecimal.toResultCell(): ResultCell {
-    val normalized = stripTrailingZeros()
-    return runCatching { ResultCell.IntegerCell(normalized.longValueExact()) }
-        .getOrElse { ResultCell.FloatCell(normalized.toDouble()) }
-}
-
-private fun comparableCells(rows: List<List<ResultCell>>, index: Int?): List<ResultCell> {
-    if (index == null) return emptyList()
-    return rows.mapNotNull { it.getOrNull(index) }.filterNot { it is ResultCell.Null }
-}
-
-private fun compareCells(left: ResultCell, right: ResultCell): Int {
-    val leftDecimal = left.toDecimalOrNull()
-    val rightDecimal = right.toDecimalOrNull()
-    if (leftDecimal != null && rightDecimal != null) return leftDecimal.compareTo(rightDecimal)
-    return cellText(left).compareTo(cellText(right))
-}
-
-private fun cellText(cell: ResultCell): String = resultCellText(cell)
-
-private fun resultType(measure: PivotMeasure): String =
-    when {
-        measure.formula != null -> "decimal"
-        measure.showAs.mode in
-            setOf(
-                ShowAsMode.PercentGrandTotal,
-                ShowAsMode.PercentRowTotal,
-                ShowAsMode.PercentColumnTotal,
-                ShowAsMode.PercentParent,
-                ShowAsMode.PercentDifferenceFrom,
-                ShowAsMode.PercentRunningTotal,
-            ) -> "decimal"
-        measure.fn in setOf(MeasureFn.Count, MeasureFn.CountNumbers, MeasureFn.CountDistinct) ->
-            "bigint"
-        measure.fn in setOf(MeasureFn.Min, MeasureFn.Max) -> "text"
-        else -> "decimal"
-    }
