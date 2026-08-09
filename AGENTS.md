@@ -62,6 +62,10 @@ packaging/resources/            distribution and launch-profile examples
 
 Standard is the default gate: Cautious blocks Elevated+, Standard High+, Flexible Very high; Disabled removes descriptive scoring only. High-confidence mandatory plan findings block whenever a descriptive gate is enabled. Decisions are query-fingerprint-scoped; plan confirmation also binds connection, credential fingerprint, and exceptional plan condition. Treat scoring changes as safety-sensitive: update `QueryRiskTest`, `QueryCoreTest`, and `shared/src/test/resources/query-risk/v2/normalized-corpus.json`; change the score version only when semantics require it.
 
+### Compose gesture-handler gotcha (join-line click regression, Aug 2026)
+
+Never hand a composable-local function reference (`::someLocalFun`) to `rememberUpdatedState` or long-lived pointer-input callbacks. The Compose compiler memoizes the reference with the scope captured at first composition, so it silently reads stale locals (the join-line click handler kept hit-testing routes from the tables' original positions after a drag, while the explicit-lambda hover handler stayed fresh). Use lambda literals, and have gesture handlers resolve their target once at pointer-down and act on that captured value at release — never re-hit-test on up. `ImageComposeScene` tests miss input-pipeline bugs and any bug requiring state changes after first composition; arrange state post-composition in tests (see `clickingSuggestedRelationshipCreatesAJoinAfterTableMovesPostComposition`) and use `./gradlew joinClickProof` for real-window verification.
+
 ## Working conventions
 
 Inspect `git status --short` first and preserve unrelated work. Keep this file, the README, trust-store guide, and packaged examples aligned when their behavior changes. Never print or commit credentials, tokens, or user state. Keep changes focused, add regression coverage for fixes, and use the relevant render task for visual changes.
