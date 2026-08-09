@@ -153,9 +153,6 @@ internal constructor(
     override suspend fun getSchema(connectionId: String): Schema {
         val def =
             configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
-        cachedSchema(def)?.let {
-            return it
-        }
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val adapter = adapterFactory.connect(def, password)
         return try {

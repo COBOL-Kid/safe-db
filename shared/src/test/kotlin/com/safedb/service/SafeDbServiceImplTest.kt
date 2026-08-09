@@ -346,7 +346,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun getSchemaThenRunQueryReusesCachedSchema() = runBlocking {
+    fun getSchemaAlwaysRefreshesWhileRunQueryReusesCachedSchema() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
@@ -366,8 +366,8 @@ class SafeDbServiceImplTest {
         service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
         service.getSchema("c1")
 
-        assertEquals(1, adapter.introspectionCount)
-        assertEquals(2, adapter.closeCount)
+        assertEquals(2, adapter.introspectionCount)
+        assertEquals(3, adapter.closeCount)
     }
 
     @Test
