@@ -45,12 +45,14 @@ Import only independently verified CA certificates—never private keys—and re
 
 ## Compatibility verification
 
-For a self-contained local harness, start the root Docker Compose stack. It creates the endpoints, trusted and untrusted PKCS12 stores, password-file launch profiles, hostname/IP SAN certificates, and the Oracle wallet-path fixture expected by the integration test:
+For a self-contained local harness, start the root Docker Compose stack. It creates the endpoints, seeds each dialect (including the SQL Server and Oracle sample schemas), and creates trusted and untrusted PKCS12 stores, password-file launch profiles, hostname/IP SAN certificates, and the Oracle wallet-path fixture expected by the integration test:
 
 ```sh
 scripts/docker_test_databases.sh up
 scripts/docker_test_databases.sh verify
 ```
+
+Run `scripts/docker_test_databases.sh seed` to reload only the SQL Server and Oracle fixtures in an already-running stack.
 
 All generated private keys and trust artifacts remain under the Git-ignored `.docker/safedb-ssl/` directory. They are disposable test credentials and must not be reused outside this local stack.
 

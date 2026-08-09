@@ -162,6 +162,34 @@ tasks.register<JavaExec>("seedMysql") {
     args(splitSeedMysqlArgs(providers.gradleProperty("seedMysqlArgs").orElse("").get()))
 }
 
+fun registerRelationalSeedTask(
+    taskName: String,
+    dialect: String,
+) {
+    tasks.register<JavaExec>(taskName) {
+        group = "safe-db"
+        description = "Seed the local safe-db $dialect test database."
+        val shared = project(":shared")
+        val sharedJar = shared.tasks.named("jar")
+        dependsOn(sharedJar)
+        classpath = files(sharedJar, shared.configurations.named("runtimeClasspath"))
+        mainClass.set("com.safedb.tools.SeedRelationalKt")
+        workingDir = projectDir
+        val propertyName = "${taskName}Args"
+        args(
+            dialect,
+            *splitSeedMysqlArgs(providers.gradleProperty(propertyName).orElse("").get())
+                .toTypedArray(),
+        )
+    }
+}
+
+registerRelationalSeedTask("seedPostgres", "postgres")
+
+registerRelationalSeedTask("seedMssql", "mssql")
+
+registerRelationalSeedTask("seedOracle", "oracle")
+
 fun splitSeedMysqlArgs(raw: String): List<String> {
     val args = mutableListOf<String>()
     val current = StringBuilder()

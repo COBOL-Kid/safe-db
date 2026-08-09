@@ -119,6 +119,7 @@ services:
       MSSQL_SA_PASSWORD: ${SAFEDB_DOCKER_MSSQL_PASSWORD:-SafeDb_Ssl_Passw0rd!}
     volumes:
       - ./docker/test-databases/mssql-init.sh:/usr/local/bin/safedb-mssql-init.sh:ro
+      - ./testdata_mssql.sql:/fixtures/testdata_mssql.sql:ro
     entrypoint: ["/usr/local/bin/safedb-mssql-init.sh"]
     restart: "no"
 
@@ -134,6 +135,8 @@ services:
       - "1522:1521"
     volumes:
       - /opt/oracle/oradata
+      - ./docker/test-databases/oracle-init.sh:/usr/local/bin/safedb-oracle-init.sh:ro
+      - ./testdata_oracle.sql:/fixtures/testdata_oracle.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
       interval: 10s

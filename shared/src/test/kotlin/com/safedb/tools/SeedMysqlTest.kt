@@ -81,6 +81,31 @@ class SeedMysqlTest {
     }
 
     @Test
+    fun generatesDialectSpecificSchemasAndInserts() {
+        val options =
+            GeneratorOptions(
+                categories = 2,
+                products = 4,
+                customers = 5,
+                orders = 7,
+                seed = 9,
+                batchSize = 2,
+            )
+
+        val postgres = generate(options, GeneratedSqlDialect.Postgres)
+        val mssql = generate(options, GeneratedSqlDialect.Mssql)
+        val oracle = generate(options, GeneratedSqlDialect.Oracle)
+
+        assertTrue(postgres.contains("DROP TABLE IF EXISTS order_items"))
+        assertTrue(postgres.contains("is_active BOOLEAN DEFAULT TRUE NOT NULL"))
+        assertTrue(mssql.contains("SET XACT_ABORT ON"))
+        assertTrue(mssql.contains("order_date DATETIME2(0)"))
+        assertTrue(oracle.contains("DROP TABLE order_items CASCADE CONSTRAINTS PURGE"))
+        assertTrue(oracle.contains("INSERT ALL\nINTO categories"))
+        assertEquals(oracle, generate(options, GeneratedSqlDialect.Oracle))
+    }
+
+    @Test
     fun escapesSqlStringsAndRecognizesMysqlContainerImages() {
         assertEquals("'O''Brien\\\\path'", sqlString("O'Brien\\path"))
         assertEquals("NULL", sqlString(null))
@@ -138,6 +163,14 @@ class SeedMysqlTest {
     private fun generate(options: GeneratorOptions): String {
         val output = StringWriter()
         BufferedWriter(output).use { writer -> MysqlFixtureGenerator(options, writer).generate() }
+        return output.toString()
+    }
+
+    private fun generate(options: GeneratorOptions, dialect: GeneratedSqlDialect): String {
+        val output = StringWriter()
+        BufferedWriter(output).use { writer ->
+            RelationalFixtureGenerator(options, dialect, writer).generate()
+        }
         return output.toString()
     }
 }

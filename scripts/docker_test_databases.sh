@@ -18,6 +18,7 @@ Usage: scripts/docker_test_databases.sh <command>
 
 Commands:
   up       Generate local test certificates and start all four databases.
+  seed     Reload the SQL Server and Oracle sample schemas and data.
   down     Remove the containers and their anonymous database volumes.
   reset    Regenerate certificates and recreate the ephemeral stack.
   verify   Run required PostgreSQL/MySQL JDBC tests and the four-dialect TLS suite.
@@ -143,8 +144,13 @@ start_stack() {
   ensure_certificates
   "${COMPOSE[@]}" up -d --wait --renew-anon-volumes \
     mysql-connectivity mysql postgres mssql oracle
+  seed_mssql_and_oracle
+  echo "All safe-db test databases are healthy and seeded."
+}
+
+seed_mssql_and_oracle() {
   "${COMPOSE[@]}" up --no-deps mssql-init
-  echo "All safe-db test databases are healthy."
+  "${COMPOSE[@]}" exec -T oracle /usr/local/bin/safedb-oracle-init.sh
 }
 
 verify_stack() {
@@ -176,6 +182,10 @@ command="${1:-}"
 case "$command" in
   up)
     start_stack
+    ;;
+  seed)
+    require_tool docker
+    seed_mssql_and_oracle
     ;;
   down)
     require_tool docker

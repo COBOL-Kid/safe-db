@@ -11,10 +11,32 @@ internal class MysqlFixtureGenerator(
     private val options: GeneratorOptions,
     private val out: BufferedWriter,
 ) {
+    private val delegate = RelationalFixtureGenerator(options, GeneratedSqlDialect.Mysql, out)
+
+    fun generate() = delegate.generate()
+}
+
+internal enum class GeneratedSqlDialect {
+    Mysql,
+    Postgres,
+    Mssql,
+    Oracle,
+}
+
+internal class RelationalFixtureGenerator(
+    private val options: GeneratorOptions,
+    private val dialect: GeneratedSqlDialect,
+    private val out: BufferedWriter,
+) {
     private val random = SeededRandom(options.seed)
 
     fun generate() {
-        emitSchema()
+        when (dialect) {
+            GeneratedSqlDialect.Mysql -> emitMysqlSchema()
+            GeneratedSqlDialect.Postgres -> emitPostgresSchema()
+            GeneratedSqlDialect.Mssql -> emitMssqlSchema()
+            GeneratedSqlDialect.Oracle -> emitOracleSchema()
+        }
         emitBatched("categories", listOf("id", "name", "description"), makeCategories())
         emitBatched(
             "products",
@@ -55,7 +77,7 @@ internal class MysqlFixtureGenerator(
         out.flush()
     }
 
-    private fun emitSchema() {
+    private fun emitMysqlSchema() {
         write("-- Generated safe-db MySQL fixture")
         write("CREATE DATABASE IF NOT EXISTS `${options.database}`;")
         write("USE `${options.database}`;")
@@ -186,6 +208,204 @@ internal class MysqlFixtureGenerator(
         write()
     }
 
+    private fun emitPostgresSchema() {
+        write("-- Generated safe-db PostgreSQL fixture")
+        write("DROP VIEW IF EXISTS customer_order_summary;")
+        write(
+            "DROP TABLE IF EXISTS order_items, inventory_log, orders, products, customers, categories CASCADE;"
+        )
+        write()
+        emitPortableSchema(
+            integerType = "INTEGER",
+            textType = "TEXT",
+            booleanType = "BOOLEAN",
+            timestampType = "TIMESTAMP",
+            floatType = "DOUBLE PRECISION",
+        )
+    }
+
+    private fun emitMssqlSchema() {
+        write("-- Generated safe-db SQL Server fixture")
+        write("SET NOCOUNT ON;")
+        write("SET XACT_ABORT ON;")
+        write("DROP VIEW IF EXISTS customer_order_summary;")
+        write("DROP TABLE IF EXISTS order_items;")
+        write("DROP TABLE IF EXISTS inventory_log;")
+        write("DROP TABLE IF EXISTS orders;")
+        write("DROP TABLE IF EXISTS products;")
+        write("DROP TABLE IF EXISTS customers;")
+        write("DROP TABLE IF EXISTS categories;")
+        write("GO")
+        write()
+        emitPortableSchema(
+            integerType = "INT",
+            textType = "NVARCHAR(MAX)",
+            booleanType = "BIT",
+            timestampType = "DATETIME2(0)",
+            floatType = "FLOAT",
+        )
+        write("GO")
+    }
+
+    private fun emitOracleSchema() {
+        write("-- Generated safe-db Oracle fixture")
+        write("SET DEFINE OFF")
+        write("BEGIN")
+        write("    EXECUTE IMMEDIATE 'DROP VIEW customer_order_summary';")
+        write("EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;")
+        write("END;")
+        write("/")
+        for (table in
+            listOf(
+                "order_items",
+                "inventory_log",
+                "orders",
+                "products",
+                "customers",
+                "categories",
+            )) {
+            write("BEGIN")
+            write("    EXECUTE IMMEDIATE 'DROP TABLE $table CASCADE CONSTRAINTS PURGE';")
+            write("EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF;")
+            write("END;")
+            write("/")
+        }
+        write()
+        emitPortableSchema(
+            integerType = "NUMBER(10)",
+            textType = "CLOB",
+            booleanType = "NUMBER(1)",
+            timestampType = "TIMESTAMP(0)",
+            floatType = "BINARY_DOUBLE",
+        )
+    }
+
+    private fun emitPortableSchema(
+        integerType: String,
+        textType: String,
+        booleanType: String,
+        timestampType: String,
+        floatType: String,
+    ) {
+        val bigIntegerType = if (dialect == GeneratedSqlDialect.Oracle) "NUMBER(19)" else "BIGINT"
+        val varchar = if (dialect == GeneratedSqlDialect.Oracle) "VARCHAR2" else "VARCHAR"
+        write(
+            """
+            CREATE TABLE categories (
+                id $integerType PRIMARY KEY,
+                name $varchar(100) NOT NULL,
+                description $textType,
+                created_at $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL
+            );
+            """
+                .trimIndent()
+        )
+        write("CREATE INDEX idx_categories_name ON categories(name);")
+        write()
+        write(
+            """
+            CREATE TABLE products (
+                id $integerType PRIMARY KEY,
+                category_id $integerType NOT NULL,
+                sku $varchar(50) NOT NULL UNIQUE,
+                name $varchar(200) NOT NULL,
+                description $textType,
+                price DECIMAL(10,2) NOT NULL,
+                cost DECIMAL(10,2) NOT NULL,
+                stock_qty $integerType DEFAULT 0 NOT NULL,
+                is_active $booleanType DEFAULT ${booleanLiteral(true)} NOT NULL,
+                weight_kg $floatType NULL,
+                created_at $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at $timestampType NULL,
+                CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id)
+            );
+            """
+                .trimIndent()
+        )
+        write("CREATE INDEX idx_products_category ON products(category_id);")
+        write("CREATE INDEX idx_products_active ON products(is_active);")
+        write("CREATE INDEX idx_products_price ON products(price);")
+        write()
+        write(
+            """
+            CREATE TABLE customers (
+                id $integerType PRIMARY KEY,
+                first_name $varchar(100) NOT NULL,
+                last_name $varchar(100) NOT NULL,
+                email $varchar(255) NOT NULL UNIQUE,
+                phone $varchar(30) NULL,
+                address_line1 $varchar(255) NULL,
+                city $varchar(100) DEFAULT 'Unknown',
+                state_province $varchar(100) NULL,
+                postal_code $varchar(20) NULL,
+                country $varchar(100) DEFAULT 'US' NOT NULL,
+                loyalty_points $integerType DEFAULT 0 NOT NULL,
+                is_vip $booleanType DEFAULT ${booleanLiteral(false)} NOT NULL,
+                signed_up_at $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL
+            );
+            """
+                .trimIndent()
+        )
+        write("CREATE INDEX idx_customers_name ON customers(last_name, first_name);")
+        write("CREATE INDEX idx_customers_city ON customers(city);")
+        write("CREATE INDEX idx_customers_vip ON customers(is_vip);")
+        write()
+        write(
+            """
+            CREATE TABLE orders (
+                id $bigIntegerType PRIMARY KEY,
+                customer_id $integerType NOT NULL,
+                order_date $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                status $varchar(30) DEFAULT 'pending' NOT NULL,
+                subtotal DECIMAL(12,2) NOT NULL,
+                tax DECIMAL(12,2) DEFAULT 0.00 NOT NULL,
+                shipping_cost DECIMAL(12,2) DEFAULT 0.00 NOT NULL,
+                total DECIMAL(12,2) NOT NULL,
+                shipping_city $varchar(100) NULL,
+                notes $textType NULL,
+                CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
+            );
+            """
+                .trimIndent()
+        )
+        write("CREATE INDEX idx_orders_customer ON orders(customer_id);")
+        write("CREATE INDEX idx_orders_status ON orders(status);")
+        write("CREATE INDEX idx_orders_date ON orders(order_date);")
+        write()
+        write(
+            """
+            CREATE TABLE order_items (
+                id $bigIntegerType PRIMARY KEY,
+                order_id $bigIntegerType NOT NULL,
+                product_id $integerType NOT NULL,
+                quantity $integerType NOT NULL,
+                unit_price DECIMAL(10,2) NOT NULL,
+                line_total DECIMAL(12,2) NOT NULL,
+                CONSTRAINT fk_items_order FOREIGN KEY (order_id) REFERENCES orders(id),
+                CONSTRAINT fk_items_product FOREIGN KEY (product_id) REFERENCES products(id)
+            );
+            """
+                .trimIndent()
+        )
+        write("CREATE INDEX idx_items_order ON order_items(order_id);")
+        write("CREATE INDEX idx_items_product ON order_items(product_id);")
+        write()
+        write(
+            """
+            CREATE TABLE inventory_log (
+                id $bigIntegerType PRIMARY KEY,
+                product_id $integerType NOT NULL,
+                change_qty $integerType NOT NULL,
+                reason $varchar(100) NULL,
+                logged_by $varchar(100) NULL,
+                logged_at $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL
+            );
+            """
+                .trimIndent()
+        )
+        write()
+    }
+
     private fun makeCategories(): Sequence<List<String>> {
         val names =
             listOf(
@@ -244,7 +464,7 @@ internal class MysqlFixtureGenerator(
                 sqlNumber(basePrice),
                 sqlNumber(cost),
                 random.int(0, 1200).toString(),
-                if (random.chance(0.94)) "1" else "0",
+                booleanLiteral(random.chance(0.94)),
                 if (random.chance(0.08)) "NULL" else random.float(0.05, 30.0, 3).toString(),
             )
         }
@@ -308,8 +528,8 @@ internal class MysqlFixtureGenerator(
                 sqlString((90000 + random.int(0, 8999)).toString()),
                 sqlString(if (cityIndex == 9) "UK" else "US"),
                 random.int(0, 5000).toString(),
-                if (random.chance(0.12)) "1" else "0",
-                sqlString(timestamp(signedUpDaysAgo, random.int(0, 86400))),
+                booleanLiteral(random.chance(0.12)),
+                timestampLiteral(timestamp(signedUpDaysAgo, random.int(0, 86400))),
             )
         }
     }
@@ -396,7 +616,7 @@ internal class MysqlFixtureGenerator(
                         "-$quantity",
                         sqlString("generated order #$orderId"),
                         sqlString(random.pick(listOf("warehouse", "system", "batch-loader"))),
-                        sqlString(orderDate),
+                        timestampLiteral(orderDate),
                     )
                 )
                 itemId += 1
@@ -411,7 +631,7 @@ internal class MysqlFixtureGenerator(
                 listOf(
                     orderId.toString(),
                     random.int(1, options.customers).toString(),
-                    sqlString(orderDate),
+                    timestampLiteral(orderDate),
                     sqlString(random.pick(statuses)),
                     sqlNumber(subtotal),
                     sqlNumber(tax),
@@ -441,10 +661,37 @@ internal class MysqlFixtureGenerator(
 
     private fun emitInsert(table: String, columns: List<String>, rows: List<List<String>>) {
         if (rows.isEmpty()) return
-        write("INSERT INTO $table (${columns.joinToString(", ")}) VALUES")
-        write(rows.joinToString(",\n", postfix = ";") { row -> "(${row.joinToString(", ")})" })
+        val dialectLimit =
+            when (dialect) {
+                GeneratedSqlDialect.Mssql -> 1000
+                GeneratedSqlDialect.Oracle -> 500
+                else -> Int.MAX_VALUE
+            }
+        if (rows.size > dialectLimit) {
+            rows.chunked(dialectLimit).forEach { emitInsert(table, columns, it) }
+            return
+        }
+        if (dialect == GeneratedSqlDialect.Oracle) {
+            write("INSERT ALL")
+            write(
+                rows.joinToString("\n") { row ->
+                    "INTO $table (${columns.joinToString(", ")}) VALUES (${row.joinToString(", ")})"
+                }
+            )
+            write("SELECT 1 FROM dual;")
+        } else {
+            write("INSERT INTO $table (${columns.joinToString(", ")}) VALUES")
+            write(rows.joinToString(",\n", postfix = ";") { row -> "(${row.joinToString(", ")})" })
+        }
         write()
     }
+
+    private fun booleanLiteral(value: Boolean): String =
+        if (dialect == GeneratedSqlDialect.Postgres) value.toString().uppercase()
+        else if (value) "1" else "0"
+
+    private fun timestampLiteral(value: String): String =
+        if (dialect == GeneratedSqlDialect.Oracle) "TIMESTAMP '$value'" else sqlString(value)
 
     private fun write(line: String = "") {
         out.write(line)
