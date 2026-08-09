@@ -176,6 +176,13 @@ fun splitSeedMysqlArgs(raw: String): List<String> {
     return args
 }
 
+tasks.register<JavaExec>("joinClickProof") {
+    group = "safe-db"
+    description = "Dev-only: real-window AWT mouse event proof for dashed join-line clicks."
+    classpath = sourceSets.named("main").get().runtimeClasspath
+    mainClass.set("com.safedb.tools.JoinClickProofKt")
+}
+
 tasks.register<JavaExec>("renderPreview") {
     group = "safe-db"
     description = "Render main screens headlessly to /tmp/safedb-preview for visual checks."

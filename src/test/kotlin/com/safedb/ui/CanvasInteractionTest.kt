@@ -218,6 +218,82 @@ class CanvasInteractionTest {
     }
 
     @Test
+    fun clickingSuggestedRelationshipCreatesAJoinAfterTableMovesPostComposition() {
+        // Regression: the click handler must not hit-test through closures captured at first
+        // composition. Moving a table after the canvas has composed re-routes the suggested
+        // line; clicking the new position must still create the join.
+        val viewModel =
+            QueryViewModel(CanvasInteractionService, CoroutineScope(Dispatchers.Unconfined))
+        viewModel.addTable(
+            indexedTable(
+                "orders",
+                "customer_id",
+                referencedTable = "customers",
+                referencedColumn = "id",
+            )
+        )
+        viewModel.addTable(indexedTable("customers", "id"))
+
+        ImageComposeScene(width = 900, height = 600, density = Density(1f)) {
+                SafeDbTheme(isDark = false) { Canvas(viewModel) }
+            }
+            .use { scene ->
+                scene.render(0L)
+                // Tables start overlapped (default cascade); drag-apart happens after the
+                // canvas is already composed, exactly like a real user arranging tables.
+                viewModel.moveTable("t1", 420f, 60f)
+                scene.render(100_000_000L)
+
+                val tables =
+                    viewModel.canvasTables.map { table ->
+                        CanvasTableLike(
+                            alias = table.alias,
+                            x = table.x,
+                            y = table.y,
+                            width = table.width,
+                            height = table.height,
+                            tableInfo = table.tableInfo,
+                        )
+                    }
+                val edge =
+                    checkNotNull(
+                        routeJoinEdge(
+                            tables[0],
+                            "customer_id",
+                            tables[1],
+                            "id",
+                            allTables = tables,
+                        )
+                    )
+                val segment =
+                    edge.points
+                        .zipWithNext()
+                        .filter { (start, end) ->
+                            val midpoint =
+                                CanvasPoint((start.x + end.x) / 2f, (start.y + end.y) / 2f)
+                            midpoint.x >= 0f &&
+                                midpoint.y >= 0f &&
+                                tables.none { tableBounds(it).contains(midpoint) }
+                        }
+                        .maxBy { (start, end) ->
+                            (end.x - start.x) * (end.x - start.x) +
+                                (end.y - start.y) * (end.y - start.y)
+                        }
+                val click =
+                    Offset(
+                        (segment.first.x + segment.second.x) / 2f,
+                        (segment.first.y + segment.second.y) / 2f,
+                    )
+                scene.clickWithMotion(click.x, click.y)
+                scene.render(200_000_000L)
+            }
+
+        assertEquals(1, viewModel.joins.size)
+        assertEquals("customer_id", viewModel.joins.single().leftColumn)
+        assertEquals("id", viewModel.joins.single().rightColumn)
+    }
+
+    @Test
     fun clickingSuggestedRelationshipStillCreatesAJoinWhenPointerDriftsOffTheLine() {
         val viewModel =
             QueryViewModel(CanvasInteractionService, CoroutineScope(Dispatchers.Unconfined))

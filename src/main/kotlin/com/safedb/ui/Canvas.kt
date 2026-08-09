@@ -275,25 +275,11 @@ fun Canvas(
         }
     }
 
-    fun handleJoinLineClick(offset: Offset): Boolean {
-        val suggestedHit =
-            when (val hit = joinLineAt(offset)) {
-                is ClickableJoinLine.Existing -> {
-                    queryViewModel.removeJoin(hit.join)
-                    return true
-                }
-                is ClickableJoinLine.Suggested -> hit
-                null -> return false
-            }
-
-        suggestedHit.joins.forEach(queryViewModel::addJoin)
-        return true
-    }
-
-    val currentJoinLineClickHandler by
-        rememberUpdatedState<(Offset) -> Boolean>(::handleJoinLineClick)
-    val currentJoinLineHoverHandler by
-        rememberUpdatedState<(Offset) -> Boolean> { offset -> joinLineAt(offset) != null }
+    // Hit testing must go through a lambda literal updated on every recomposition. A function
+    // reference (::fun) here gets memoized by the Compose compiler with the scope captured at
+    // first composition, so it hit-tests against stale join lines once tables move.
+    val currentJoinLineHitTester by
+        rememberUpdatedState<(Offset) -> ClickableJoinLine?> { offset -> joinLineAt(offset) }
     val currentCanvasTableHitHandler by
         rememberUpdatedState<(CanvasPoint) -> Boolean> { point ->
             canvasTablesLike().any { tableBounds(it).contains(point) }
@@ -391,7 +377,8 @@ fun Canvas(
                                     pan = viewportState.pan,
                                     contentTopInset = contentTopInsetPx,
                                 )
-                            joinLineHovered = currentJoinLineHoverHandler(Offset(point.x, point.y))
+                            joinLineHovered =
+                                currentJoinLineHitTester(Offset(point.x, point.y)) != null
                         }
                     }
                     .onPointerEvent(PointerEventType.Exit) { joinLineHovered = false }
@@ -444,10 +431,8 @@ fun Canvas(
                                     contentTopInset = contentTopInsetPx,
                                 )
                             val pressedJoinLine =
-                                currentJoinLineHoverHandler(
-                                    Offset(worldPosition.x, worldPosition.y)
-                                )
-                            if (pressedJoinLine) {
+                                currentJoinLineHitTester(Offset(worldPosition.x, worldPosition.y))
+                            if (pressedJoinLine != null) {
                                 down.consume()
                                 var released = false
                                 while (!released) {
@@ -459,11 +444,15 @@ fun Canvas(
                                     }
                                     event.changes.forEach { it.consume() }
                                 }
-                                // Commit against the down hit. Re-testing on up fails when the
-                                // cursor drifts outside the thin join-line tolerance.
-                                currentJoinLineClickHandler(
-                                    Offset(worldPosition.x, worldPosition.y)
-                                )
+                                // Act on the line captured at press time. Re-hit-testing on
+                                // release misses when the cursor drifts off the thin line or
+                                // when the routed edges changed between press and release.
+                                when (pressedJoinLine) {
+                                    is ClickableJoinLine.Existing ->
+                                        queryViewModel.removeJoin(pressedJoinLine.join)
+                                    is ClickableJoinLine.Suggested ->
+                                        pressedJoinLine.joins.forEach(queryViewModel::addJoin)
+                                }
                             }
                         }
                     }
@@ -484,7 +473,7 @@ fun Canvas(
                                         contentTopInset = contentTopInsetPx,
                                     )
                                 panEnabled =
-                                    !currentJoinLineHoverHandler(Offset(point.x, point.y)) &&
+                                    currentJoinLineHitTester(Offset(point.x, point.y)) == null &&
                                         !currentCanvasTableHitHandler(point)
                             },
                             onDragEnd = { panEnabled = false },

@@ -14,6 +14,7 @@ safe-db is a root Gradle Jetpack Compose Desktop app for safely exploring Postgr
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh coverage proof for broad Kotlin/build changes. |
 | `./gradlew integrationTest` | Environment-gated `:shared` JDBC suite. |
 | `./gradlew renderPreview --rerun-tasks` | Render 36 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
+| `./gradlew joinClickProof` | Real-window AWT-event proof of dashed join-line clicks (env-configurable: `SAFEDB_PROOF_MODE`, `SAFEDB_PROOF_ZOOM`, `SAFEDB_PROOF_PAN`, `SAFEDB_PROOF_DRAG`, `SAFEDB_PROOF_TABLEDRAG`). |
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
 | `./gradlew seedMysql` | Generate the default 50,000-order MySQL fixture. |
 | `scripts/seed_mysql.sh --static` | Load the smaller checked-in MySQL fixture. |
