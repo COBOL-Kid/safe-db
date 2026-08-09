@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
@@ -213,6 +214,20 @@ class BuilderScreenStateTest {
         assertEquals(464f, insetPx)
         assertEquals(464f, canvasDisplayY(tableY = 0f, contentTopInsetPx = insetPx))
         assertEquals(494f, canvasDisplayY(tableY = 30f, contentTopInsetPx = insetPx))
+    }
+
+    @Test
+    fun canvasPointForViewportPositionAccountsForPanZoomAndInset() {
+        val point =
+            canvasPointForViewportPosition(
+                position = Offset(220f, 180f),
+                zoom = 2f,
+                pan = Offset(20f, 40f),
+                contentTopInset = 60f,
+            )
+
+        assertEquals(100f, point.x)
+        assertEquals(40f, point.y)
     }
 
     @Test

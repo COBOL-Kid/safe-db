@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -43,8 +42,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
@@ -293,6 +294,10 @@ fun Canvas(
         rememberUpdatedState<(Offset) -> Boolean>(::handleJoinLineClick)
     val currentJoinLineHoverHandler by
         rememberUpdatedState<(Offset) -> Boolean> { offset -> joinLineAt(offset) != null }
+    val currentCanvasTableHitHandler by
+        rememberUpdatedState<(CanvasPoint) -> Boolean> { point ->
+            canvasTablesLike().any { tableBounds(it).contains(point) }
+        }
 
     val routedEdges = joinLines.map(ClickableJoinLine::edge)
     val contentBounds = builderCanvasContentBounds(canvasTablesLike(), routedEdges)
@@ -374,6 +379,22 @@ fun Canvas(
                     .fillMaxWidth()
                     .clipToBounds()
                     .onSizeChanged { viewport = it }
+                    .pointerHoverIcon(
+                        if (joinLineHovered) PointerIcon.Hand else PointerIcon.Default
+                    )
+                    .onPointerEvent(PointerEventType.Move) { event ->
+                        event.changes.firstOrNull()?.position?.let { position ->
+                            val point =
+                                canvasPointForViewportPosition(
+                                    position = position,
+                                    zoom = viewportState.zoom,
+                                    pan = viewportState.pan,
+                                    contentTopInset = contentTopInsetPx,
+                                )
+                            joinLineHovered = currentJoinLineHoverHandler(Offset(point.x, point.y))
+                        }
+                    }
+                    .onPointerEvent(PointerEventType.Exit) { joinLineHovered = false }
                     .onPointerEvent(PointerEventType.Scroll) { event ->
                         event.changes.firstOrNull()?.let { change ->
                             if (
@@ -408,14 +429,68 @@ fun Canvas(
                             }
                         }
                     }
+                    .pointerInput(contentTopInsetPx, viewportState.zoom) {
+                        awaitEachGesture {
+                            val down =
+                                awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial,
+                                )
+                            val worldPosition =
+                                canvasPointForViewportPosition(
+                                    position = down.position,
+                                    zoom = viewportState.zoom,
+                                    pan = viewportState.pan,
+                                    contentTopInset = contentTopInsetPx,
+                                )
+                            val pressedJoinLine =
+                                currentJoinLineHoverHandler(
+                                    Offset(worldPosition.x, worldPosition.y)
+                                )
+                            if (pressedJoinLine) {
+                                down.consume()
+                                var released = false
+                                while (!released) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change =
+                                        event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (change.changedToUpIgnoreConsumed() || !change.pressed) {
+                                        released = true
+                                    }
+                                    event.changes.forEach { it.consume() }
+                                }
+                                // Commit against the down hit. Re-testing on up fails when the
+                                // cursor drifts outside the thin join-line tolerance.
+                                currentJoinLineClickHandler(
+                                    Offset(worldPosition.x, worldPosition.y)
+                                )
+                            }
+                        }
+                    }
                     .pointerInput(
                         canvasWidthPx,
                         canvasHeightPx,
                         viewportSize,
                         viewportState.zoom,
                     ) {
-                        detectDragGestures { change, dragAmount ->
-                            if (!change.isConsumed) {
+                        var panEnabled = false
+                        detectDragGestures(
+                            onDragStart = { position ->
+                                val point =
+                                    canvasPointForViewportPosition(
+                                        position = position,
+                                        zoom = viewportState.zoom,
+                                        pan = viewportState.pan,
+                                        contentTopInset = contentTopInsetPx,
+                                    )
+                                panEnabled =
+                                    !currentJoinLineHoverHandler(Offset(point.x, point.y)) &&
+                                        !currentCanvasTableHitHandler(point)
+                            },
+                            onDragEnd = { panEnabled = false },
+                            onDragCancel = { panEnabled = false },
+                        ) { change, dragAmount ->
+                            if (panEnabled) {
                                 change.consume()
                                 viewportState.updatePan(
                                     canvasConstrainedPan(
@@ -445,27 +520,6 @@ fun Canvas(
                                     contentTopInsetPx,
                                 )
                             transformOrigin = TransformOrigin(0f, 0f)
-                        }
-                        .pointerHoverIcon(
-                            if (joinLineHovered) PointerIcon.Hand else PointerIcon.Default
-                        )
-                        .onPointerEvent(PointerEventType.Move) { event ->
-                            event.changes.firstOrNull()?.position?.let { offset ->
-                                joinLineHovered = currentJoinLineHoverHandler(offset + renderOrigin)
-                            }
-                        }
-                        .onPointerEvent(PointerEventType.Exit) { joinLineHovered = false }
-                        .pointerInput(Unit) {
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false)
-                                val up = waitForUpOrCancellation()
-                                if (
-                                    up != null &&
-                                        currentJoinLineClickHandler(up.position + renderOrigin)
-                                ) {
-                                    up.consume()
-                                }
-                            }
                         }
             ) {
                 val joinColor = SafeDbTheme.colors.actionPrimary
@@ -738,6 +792,19 @@ fun Canvas(
 
 internal fun canvasDisplayY(tableY: Float, contentTopInsetPx: Float): Float =
     tableY + contentTopInsetPx
+
+internal fun canvasPointForViewportPosition(
+    position: Offset,
+    zoom: Float,
+    pan: Offset,
+    contentTopInset: Float,
+): CanvasPoint {
+    val safeZoom = zoom.coerceAtLeast(CANVAS_MIN_ZOOM)
+    return CanvasPoint(
+        x = (position.x - pan.x) / safeZoom,
+        y = (position.y - pan.y - contentTopInset) / safeZoom,
+    )
+}
 
 internal fun builderCanvasContentBounds(
     tables: List<CanvasTableLike>,

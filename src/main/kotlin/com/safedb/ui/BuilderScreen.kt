@@ -539,76 +539,69 @@ internal fun BuilderScreen(
                                             ),
                                         modifier = Modifier.fillMaxSize(),
                                     )
-                                    Box(
+                                    val tableNamesByAlias =
+                                        queryViewModel.canvasTables.associate {
+                                            it.alias to it.tableInfo.name
+                                        }
+                                    // Keep controls as separate aligned siblings (no full-width
+                                    // empty parent) so dashed join-line clicks reach the canvas.
+                                    if (queryViewModel.filterCount > 0) {
+                                        FilterBuilder(
+                                            queryViewModel = queryViewModel,
+                                            modifier =
+                                                Modifier.align(Alignment.TopStart)
+                                                    .padding(
+                                                        start = 16.dp,
+                                                        top = QueryControlsVerticalPadding,
+                                                        end = 280.dp,
+                                                    )
+                                                    .fillMaxWidth()
+                                                    .heightIn(max = QueryControlsMaxHeight)
+                                                    .onSizeChanged {
+                                                        queryControlsHeightPx = it.height
+                                                    }
+                                                    .verticalScroll(rememberScrollState())
+                                                    .horizontalScroll(rememberScrollState()),
+                                        )
+                                    }
+                                    Column(
                                         modifier =
-                                            Modifier.align(Alignment.TopCenter)
-                                                .fillMaxWidth()
+                                            Modifier.align(Alignment.TopEnd)
                                                 .padding(
-                                                    start = 16.dp,
                                                     top = QueryControlsVerticalPadding,
                                                     end = 16.dp,
                                                 )
-                                    ) {
-                                        Row(
-                                            modifier =
-                                                Modifier.fillMaxWidth().onSizeChanged {
-                                                    queryControlsHeightPx = it.height
+                                                .widthIn(min = 208.dp, max = 256.dp)
+                                                .onSizeChanged {
+                                                    if (queryViewModel.filterCount == 0) {
+                                                        queryControlsHeightPx = it.height
+                                                    }
                                                 },
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                            verticalAlignment = Alignment.Top,
-                                        ) {
-                                            Box(modifier = Modifier.weight(1f)) {
-                                                if (queryViewModel.filterCount > 0) {
-                                                    FilterBuilder(
-                                                        queryViewModel = queryViewModel,
-                                                        modifier =
-                                                            Modifier.fillMaxWidth()
-                                                                .heightIn(
-                                                                    max = QueryControlsMaxHeight
-                                                                )
-                                                                .verticalScroll(
-                                                                    rememberScrollState()
-                                                                )
-                                                                .horizontalScroll(
-                                                                    rememberScrollState()
-                                                                ),
-                                                    )
-                                                }
-                                            }
-                                            val tableNamesByAlias =
-                                                queryViewModel.canvasTables.associate {
-                                                    it.alias to it.tableInfo.name
-                                                }
-                                            Column(
-                                                modifier =
-                                                    Modifier.widthIn(min = 208.dp, max = 256.dp),
-                                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                            ) {
-                                                QueryOptionsCard(
-                                                    distinct = queryViewModel.distinct,
-                                                    onDistinctChange = queryViewModel::setDistinct,
-                                                    groups = queryViewModel.groups,
-                                                    sorts = queryViewModel.sorts,
-                                                    distinctSortConflicts =
-                                                        queryViewModel.distinctSortConflicts,
-                                                    onSelectDistinctSortColumns =
-                                                        queryViewModel::selectDistinctSortColumns,
-                                                    onRemoveDistinctSortConflicts =
-                                                        queryViewModel::removeDistinctSortConflicts,
-                                                    onMoveGroup = queryViewModel::moveGroup,
-                                                    onMoveSort = queryViewModel::moveSort,
-                                                    tableNamesByAlias = tableNamesByAlias,
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                )
-                                                if (queryViewModel.joins.isNotEmpty()) {
-                                                    JoinItems(
-                                                        joins = queryViewModel.joins,
-                                                        tableNamesByAlias = tableNamesByAlias,
-                                                        onRemove = queryViewModel::removeJoin,
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                    )
-                                                }
-                                            }
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        QueryOptionsCard(
+                                            distinct = queryViewModel.distinct,
+                                            onDistinctChange = queryViewModel::setDistinct,
+                                            groups = queryViewModel.groups,
+                                            sorts = queryViewModel.sorts,
+                                            distinctSortConflicts =
+                                                queryViewModel.distinctSortConflicts,
+                                            onSelectDistinctSortColumns =
+                                                queryViewModel::selectDistinctSortColumns,
+                                            onRemoveDistinctSortConflicts =
+                                                queryViewModel::removeDistinctSortConflicts,
+                                            onMoveGroup = queryViewModel::moveGroup,
+                                            onMoveSort = queryViewModel::moveSort,
+                                            tableNamesByAlias = tableNamesByAlias,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        if (queryViewModel.joins.isNotEmpty()) {
+                                            JoinItems(
+                                                joins = queryViewModel.joins,
+                                                tableNamesByAlias = tableNamesByAlias,
+                                                onRemove = queryViewModel::removeJoin,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
                                         }
                                     }
                                 }
