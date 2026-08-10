@@ -1,0 +1,145 @@
+name: safedb-test-databases
+
+services:
+  mysql-connectivity:
+    image: mysql:8.4
+    container_name: safedb-test-mysql-connectivity
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SAFEDB_DOCKER_MYSQL_ROOT_PASSWORD:-safedb-root}
+      MYSQL_DATABASE: safedb_test
+      MYSQL_USER: safedb
+      MYSQL_PASSWORD: ${SAFEDB_DOCKER_MYSQL_PASSWORD:-safedb}
+    ports:
+      - "3306:3306"
+    volumes:
+      - /var/lib/mysql
+      - ./testdata_mysql.sql:/docker-entrypoint-initdb.d/10-safedb-test.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping --silent -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  mysql:
+    image: mysql:8.4
+    container_name: safedb-test-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SAFEDB_DOCKER_MYSQL_ROOT_PASSWORD:-safedb-root}
+      MYSQL_DATABASE: safedb_ssl
+      MYSQL_USER: safedb
+      MYSQL_PASSWORD: ${SAFEDB_DOCKER_MYSQL_PASSWORD:-safedb}
+    ports:
+      - "3307:3306"
+    volumes:
+      - /var/lib/mysql
+      - ${SAFEDB_SSL_ROOT:-./.docker/safedb-ssl}/servers/mysql:/safedb-certs:ro
+      - ./docker/test-databases/mysql-entrypoint.sh:/usr/local/bin/safedb-mysql-entrypoint.sh:ro
+    entrypoint: ["/usr/local/bin/safedb-mysql-entrypoint.sh"]
+    command:
+      - mysqld
+      - --require-secure-transport=ON
+      - --ssl-ca=/var/lib/safedb-tls/ca.crt
+      - --ssl-cert=/var/lib/safedb-tls/server.crt
+      - --ssl-key=/var/lib/safedb-tls/server.key
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping --silent -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  postgres:
+    image: postgres:17
+    container_name: safedb-test-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${SAFEDB_DOCKER_POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: safedb_ssl
+    ports:
+      - "5433:5432"
+    volumes:
+      - /var/lib/postgresql/data
+      - ${SAFEDB_SSL_ROOT:-./.docker/safedb-ssl}/servers/postgres:/safedb-certs:ro
+      - ./docker/test-databases/postgres-entrypoint.sh:/usr/local/bin/safedb-postgres-entrypoint.sh:ro
+      - ./docker/test-databases/postgres-init.sh:/docker-entrypoint-initdb.d/10-safedb-test.sh:ro
+      - ./testdata_postgres.sql:/fixtures/testdata_postgres.sql:ro
+    entrypoint: ["/usr/local/bin/safedb-postgres-entrypoint.sh"]
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_ca_file=/var/lib/safedb-tls/ca.crt
+      - -c
+      - ssl_cert_file=/var/lib/safedb-tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/safedb-tls/server.key
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d safedb_ssl"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: safedb-test-mssql
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${SAFEDB_DOCKER_MSSQL_PASSWORD:-SafeDb_Ssl_Passw0rd!}
+    ports:
+      - "14333:1433"
+    volumes:
+      - /var/opt/mssql
+      - ./docker/test-databases/mssql.conf:/var/opt/mssql/mssql.conf:ro
+      - ${SAFEDB_SSL_ROOT:-./.docker/safedb-ssl}/servers/mssql/server-fullchain.crt:/var/opt/mssql/tls/server.crt:ro
+      - ${SAFEDB_SSL_ROOT:-./.docker/safedb-ssl}/servers/mssql/server.key:/var/opt/mssql/tls/server.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null"]
+      interval: 10s
+      timeout: 8s
+      retries: 40
+      start_period: 30s
+
+  mssql-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: safedb-test-mssql-init
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      MSSQL_SA_PASSWORD: ${SAFEDB_DOCKER_MSSQL_PASSWORD:-SafeDb_Ssl_Passw0rd!}
+    volumes:
+      - ./docker/test-databases/mssql-init.sh:/usr/local/bin/safedb-mssql-init.sh:ro
+      - ./testdata_mssql.sql:/fixtures/testdata_mssql.sql:ro
+    entrypoint: ["/usr/local/bin/safedb-mssql-init.sh"]
+    restart: "no"
+
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart
+    container_name: safedb-test-oracle
+    restart: unless-stopped
+    environment:
+      ORACLE_PASSWORD: ${SAFEDB_DOCKER_ORACLE_ADMIN_PASSWORD:-SafeDb_Oracle_Passw0rd!}
+      APP_USER: safedb
+      APP_USER_PASSWORD: ${SAFEDB_DOCKER_ORACLE_PASSWORD:-safedb}
+    ports:
+      - "1522:1521"
+    volumes:
+      - /opt/oracle/oradata
+      - ./docker/test-databases/oracle-init.sh:/usr/local/bin/safedb-oracle-init.sh:ro
+      - ./testdata_oracle.sql:/fixtures/testdata_oracle.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s

@@ -1,6 +1,11 @@
 -- Minimal PostgreSQL fixture for scheduled JDBC contract tests.
+DROP VIEW IF EXISTS customer_order_summary;
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS inventory_log;
 DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS categories;
 
 CREATE TABLE customers (
     id BIGINT PRIMARY KEY,
