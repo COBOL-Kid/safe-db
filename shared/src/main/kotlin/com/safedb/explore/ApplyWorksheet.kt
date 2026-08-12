@@ -258,8 +258,8 @@ private class WorksheetEngine(
             )
         orderedBuckets.forEach { (bucket, bucketRecords) ->
             val path =
-                if (parentPath.isBlank()) escapeGroupPath(bucket.key)
-                else "$parentPath/${escapeGroupPath(bucket.key)}"
+                if (parentPath.isBlank()) escapePath(bucket.key)
+                else "$parentPath/${escapePath(bucket.key)}"
             val collapsed = path in config.collapsedGroupPaths
             val groupValues = inheritedGroups + (group.column to bucket.key)
             out +=
@@ -596,5 +596,3 @@ private fun filterEquals(cell: ResultCell, text: String, expected: String): Bool
     }
     return text.equals(expected, ignoreCase = true)
 }
-
-private fun escapeGroupPath(value: String): String = value.replace("%", "%25").replace("/", "%2F")

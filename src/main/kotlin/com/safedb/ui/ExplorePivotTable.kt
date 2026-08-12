@@ -59,6 +59,7 @@ import com.safedb.explore.ExplorePivotLayout
 import com.safedb.explore.ExplorePreviewResult
 import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.PivotHeaderCell
+import com.safedb.explore.PivotMeasure
 import com.safedb.explore.PivotRowEntry
 import com.safedb.explore.PivotRowKind
 import com.safedb.explore.ShowAsMode
@@ -280,29 +281,10 @@ private fun PivotLeafHeaderRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         columns.forEachIndexed { index, column ->
-            val rowHeader = layout.rowDimensions.isNotEmpty() && index == 0
-            val measureIndex =
-                if (rowHeader) -1
-                else
-                    (index - if (layout.rowDimensions.isNotEmpty()) 1 else 0) % layout.measures.size
-            val measure = layout.measures.getOrNull(measureIndex)
-            val target =
-                if (rowHeader) {
-                    layout.rowDimensions.firstOrNull()?.let {
-                        ExploreSortTarget.Dimension(it.column)
-                    }
-                } else {
-                    measure
-                        ?.takeUnless { it.showAs.mode in orderDependentModes }
-                        ?.let { ExploreSortTarget.Measure(it.alias) }
-                }
+            val target = pivotSortTarget(layout, index)
             val active = target != null && target == config.sort?.target
             val label =
-                if (rowHeader) {
-                    "Row labels"
-                } else {
-                    measure?.label ?: column.label
-                } +
+                pivotLeafLabel(layout, index, column.label) +
                     when {
                         active -> " ${if (config.sort?.dir == SortDir.Asc) "↑" else "↓"}"
                         target != null -> " ↕"
@@ -490,11 +472,10 @@ internal fun pivotSortTarget(layout: ExplorePivotLayout, columnIndex: Int): Expl
     if (layout.rowDimensions.isNotEmpty() && columnIndex == 0) {
         return layout.rowDimensions.firstOrNull()?.let { ExploreSortTarget.Dimension(it.column) }
     }
-    val offset = columnIndex - if (layout.rowDimensions.isNotEmpty()) 1 else 0
-    if (offset < 0 || layout.measures.isEmpty()) return null
-    return layout.measures.getOrNull(offset % layout.measures.size)?.let {
-        ExploreSortTarget.Measure(it.alias)
-    }
+    // Running totals and differences depend on the current order, so they cannot be sort targets.
+    return pivotLeafMeasure(layout, columnIndex)
+        ?.takeUnless { it.showAs.mode in orderDependentModes }
+        ?.let { ExploreSortTarget.Measure(it.alias) }
 }
 
 internal fun pivotLeafLabel(
@@ -503,9 +484,13 @@ internal fun pivotLeafLabel(
     fallback: String,
 ): String {
     if (layout.rowDimensions.isNotEmpty() && columnIndex == 0) return "Row labels"
-    val target =
-        pivotSortTarget(layout, columnIndex) as? ExploreSortTarget.Measure ?: return fallback
-    return layout.measures.firstOrNull { it.alias == target.alias }?.label ?: fallback
+    return pivotLeafMeasure(layout, columnIndex)?.label ?: fallback
+}
+
+private fun pivotLeafMeasure(layout: ExplorePivotLayout, columnIndex: Int): PivotMeasure? {
+    val offset = columnIndex - if (layout.rowDimensions.isNotEmpty()) 1 else 0
+    if (offset < 0 || layout.measures.isEmpty()) return null
+    return layout.measures.getOrNull(offset % layout.measures.size)
 }
 
 private val orderDependentModes =

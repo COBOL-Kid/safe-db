@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,7 +15,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +42,7 @@ import com.safedb.explore.evaluatePivotFormula
 import com.safedb.model.ColumnCategory
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.InputShape
 import com.safedb.viewmodel.MemberOption
 import java.math.BigDecimal
@@ -98,18 +97,21 @@ internal fun DimensionSettingsDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    ChoicePill("Exact", grouping == PivotGrouping.Exact) {
+                    SelectablePill("Exact", grouping == PivotGrouping.Exact) {
                         grouping = PivotGrouping.Exact
                     }
                     if (temporal) {
                         DateGroupUnit.entries.forEach { unit ->
-                            ChoicePill(dateUnitLabel(unit), grouping == PivotGrouping.Date(unit)) {
+                            SelectablePill(
+                                dateUnitLabel(unit),
+                                grouping == PivotGrouping.Date(unit),
+                            ) {
                                 grouping = PivotGrouping.Date(unit)
                             }
                         }
                     }
                     if (numeric) {
-                        ChoicePill("Number bins", grouping is PivotGrouping.NumberBin) {
+                        SelectablePill("Number bins", grouping is PivotGrouping.NumberBin) {
                             grouping =
                                 PivotGrouping.NumberBin(
                                     binSize.ifBlank { "100" },
@@ -153,7 +155,9 @@ internal fun DimensionSettingsDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     DimensionSortMode.entries.forEach { mode ->
-                        ChoicePill(dimensionSortLabel(mode), sortMode == mode) { sortMode = mode }
+                        SelectablePill(dimensionSortLabel(mode), sortMode == mode) {
+                            sortMode = mode
+                        }
                     }
                 }
                 if (
@@ -165,7 +169,7 @@ internal fun DimensionSettingsDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         measures.forEach { measure ->
-                            ChoicePill(measure.label, sortMeasureAlias == measure.alias) {
+                            SelectablePill(measure.label, sortMeasureAlias == measure.alias) {
                                 sortMeasureAlias = measure.alias
                             }
                         }
@@ -259,9 +263,7 @@ internal fun MeasureSettingsDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         availableFunctions.forEach { option ->
-                            ChoicePill(measureFunctionName(option), function == option) {
-                                function = option
-                            }
+                            SelectablePill(option.label, function == option) { function = option }
                         }
                     }
                 }
@@ -271,7 +273,7 @@ internal fun MeasureSettingsDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     showAsChoices.forEach { mode ->
-                        ChoicePill(showAsLabel(mode), showAs == mode) { showAs = mode }
+                        SelectablePill(showAsLabel(mode), showAs == mode) { showAs = mode }
                     }
                 }
                 if (showAs in modesNeedingBaseDimension && dimensions.isNotEmpty()) {
@@ -281,7 +283,7 @@ internal fun MeasureSettingsDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         dimensions.forEach { dimension ->
-                            ChoicePill(dimension.label, baseDimensionId == dimension.id) {
+                            SelectablePill(dimension.label, baseDimensionId == dimension.id) {
                                 baseDimensionId = dimension.id
                             }
                         }
@@ -293,7 +295,7 @@ internal fun MeasureSettingsDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     NumberFormatKind.entries.forEach { kind ->
-                        ChoicePill(numberFormatKindLabel(kind), formatKind == kind) {
+                        SelectablePill(numberFormatKindLabel(kind), formatKind == kind) {
                             formatKind = kind
                         }
                     }
@@ -409,7 +411,7 @@ internal fun CalculatedMeasureDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     existing.forEach { measure ->
-                        ChoicePill(measure.label, false) {
+                        SelectablePill(measure.label, false) {
                             formula +=
                                 if (formula.isBlank()) "[${measure.alias}]"
                                 else " [${measure.alias}]"
@@ -441,28 +443,6 @@ internal fun CalculatedMeasureDialog(
 }
 
 @Composable
-private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(3.dp),
-        color =
-            if (selected) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerLow,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Text(
-            label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color =
-                if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurface,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        )
-    }
-}
-
-@Composable
 private fun SettingsLabel(text: String) {
     Text(
         text.uppercase(),
@@ -471,15 +451,6 @@ private fun SettingsLabel(text: String) {
         fontWeight = FontWeight.SemiBold,
     )
 }
-
-private fun dateUnitLabel(unit: DateGroupUnit): String =
-    when (unit) {
-        DateGroupUnit.Year -> "Year"
-        DateGroupUnit.Quarter -> "Quarter"
-        DateGroupUnit.Month -> "Month"
-        DateGroupUnit.IsoWeek -> "ISO week"
-        DateGroupUnit.Day -> "Day"
-    }
 
 private fun dimensionSortLabel(mode: DimensionSortMode): String =
     when (mode) {
@@ -531,22 +502,6 @@ private fun showAsLabel(mode: ShowAsMode): String =
         ShowAsMode.RankDescending -> "Rank descending"
     }
 
-private fun measureFunctionName(function: MeasureFn): String =
-    when (function) {
-        MeasureFn.Count -> "Count"
-        MeasureFn.CountNumbers -> "Count numbers"
-        MeasureFn.CountDistinct -> "Count distinct"
-        MeasureFn.Sum -> "Sum"
-        MeasureFn.Avg -> "Average"
-        MeasureFn.Min -> "Minimum"
-        MeasureFn.Max -> "Maximum"
-        MeasureFn.Product -> "Product"
-        MeasureFn.StdDev -> "StdDev"
-        MeasureFn.StdDevPopulation -> "StdDevP"
-        MeasureFn.Variance -> "Variance"
-        MeasureFn.VariancePopulation -> "VarianceP"
-    }
-
 private fun numberFormatKindLabel(kind: NumberFormatKind): String =
     when (kind) {
         NumberFormatKind.Auto -> "Auto"
@@ -585,7 +540,7 @@ internal fun FilterSettingsDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     FilterEditorKind.entries.forEach { option ->
-                        ChoicePill(filterKindLabel(option), draft.kind == option) {
+                        SelectablePill(filterKindLabel(option), draft.kind == option) {
                             draft = draft.copy(kind = option)
                         }
                     }
@@ -614,7 +569,7 @@ internal fun FilterSettingsDialog(
                         SettingsLabel("Match")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             LabelFilterOp.entries.forEach { op ->
-                                ChoicePill(labelFilterLabel(op), draft.labelOp == op) {
+                                SelectablePill(labelFilterLabel(op), draft.labelOp == op) {
                                     draft = draft.copy(labelOp = op)
                                 }
                             }
@@ -635,17 +590,17 @@ internal fun FilterSettingsDialog(
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             measures.forEach { measure ->
-                                ChoicePill(measure.label, draft.measureAlias == measure.alias) {
+                                SelectablePill(measure.label, draft.measureAlias == measure.alias) {
                                     draft = draft.copy(measureAlias = measure.alias)
                                 }
                             }
                         }
                         if (draft.kind == FilterEditorKind.TopN) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                ChoicePill("Top", draft.valueOp == ValueFilterOp.Top) {
+                                SelectablePill("Top", draft.valueOp == ValueFilterOp.Top) {
                                     draft = draft.copy(valueOp = ValueFilterOp.Top)
                                 }
-                                ChoicePill("Bottom", draft.valueOp == ValueFilterOp.Bottom) {
+                                SelectablePill("Bottom", draft.valueOp == ValueFilterOp.Bottom) {
                                     draft = draft.copy(valueOp = ValueFilterOp.Bottom)
                                 }
                             }
@@ -666,7 +621,7 @@ internal fun FilterSettingsDialog(
                                 ValueFilterOp.entries
                                     .filterNot { it in topBottomOps }
                                     .forEach { op ->
-                                        ChoicePill(valueFilterLabel(op), draft.valueOp == op) {
+                                        SelectablePill(valueFilterLabel(op), draft.valueOp == op) {
                                             draft = draft.copy(valueOp = op)
                                         }
                                     }

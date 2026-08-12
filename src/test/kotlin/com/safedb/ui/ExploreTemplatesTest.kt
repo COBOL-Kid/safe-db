@@ -59,7 +59,7 @@ class ExploreTemplatesTest {
                 resolveExploreTemplate(ExploreBuiltinTemplateId.CompareCategories, sampleFields())
             )
         assertEquals("status", ready.config.rowDimensions.single().column)
-        assertEquals("region", ready.config.effectiveColumnDimensions.single().column)
+        assertEquals("region", ready.config.columnDimensions.single().column)
     }
 
     @Test

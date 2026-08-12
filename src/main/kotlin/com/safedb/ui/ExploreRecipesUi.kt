@@ -258,7 +258,7 @@ private fun RunRecipeDialog(
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     connections.forEach { connection ->
-                        RecipePill(connection.name, connection.id == selectedConnectionId) {
+                        SelectablePill(connection.name, connection.id == selectedConnectionId) {
                             onSelectConnection(connection.id)
                         }
                     }
@@ -340,7 +340,7 @@ private fun SaveRecipeDialog(
                     ExploreMode.entries
                         .filter { it in included }
                         .forEach { mode ->
-                            RecipePill(mode.displayName(), defaultMode == mode) {
+                            SelectablePill(mode.displayName(), defaultMode == mode) {
                                 defaultMode = mode
                             }
                         }
@@ -722,7 +722,7 @@ private fun RecipeMappingDialog(
                         ) {
                             recipeCandidateColumns(field, explore.session.sample.columns).forEach {
                                 column ->
-                                RecipePill(
+                                SelectablePill(
                                     displayColumnLabel(column.name),
                                     manual[field.column] == column.name,
                                 ) {
@@ -837,11 +837,6 @@ internal fun ExploreMode.displayName(): String =
         ExploreMode.Visualization -> "Visualization"
         ExploreMode.Worksheet -> "Worksheet"
     }
-
-@Composable
-private fun RecipePill(label: String, selected: Boolean, onClick: () -> Unit) {
-    SelectablePill(label, selected, onClick)
-}
 
 @Composable
 private fun RecipeLabel(text: String) {

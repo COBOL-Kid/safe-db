@@ -9,6 +9,12 @@ import java.security.MessageDigest
 import java.util.Currency
 import java.util.Locale
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonTransformingSerializer
 
 const val EXPLORE_SCHEMA_VERSION = 2
 const val MAX_VISIBLE_PIVOT_CELLS = 100_000
@@ -30,8 +36,6 @@ data class ExploreConfig(
     val schemaVersion: Int = EXPLORE_SCHEMA_VERSION,
     val rowDimensions: List<PivotDimension> = emptyList(),
     val columnDimensions: List<PivotDimension> = emptyList(),
-    // Kept for v1 callers; new code uses columnDimensions.
-    val columnDimension: PivotDimension? = null,
     val measures: List<PivotMeasure> = listOf(PivotMeasure.countRows()),
     val filters: List<PivotFilter> = emptyList(),
     val showRowTotals: Boolean = true,
@@ -43,8 +47,12 @@ data class ExploreConfig(
     val nullBucketLabel: String = "(blank)",
     val sort: ExploreSort? = null,
 ) {
-    val effectiveColumnDimensions: List<PivotDimension>
-        get() = columnDimensions.ifEmpty { listOfNotNull(columnDimension) }
+    fun validate(): ExploreConfig {
+        require(schemaVersion in 1..EXPLORE_SCHEMA_VERSION) {
+            "Unsupported Explore view version $schemaVersion"
+        }
+        return this
+    }
 
     companion object {
         fun defaultFor(sample: QueryResult, tables: List<TableRef> = emptyList()): ExploreConfig {
@@ -69,6 +77,24 @@ data class ExploreConfig(
             val label = displayColumnLabel(column).lowercase()
             return label == "id" || label.endsWith("_id") || label.endsWith(" id")
         }
+    }
+}
+
+// v1 stored a single columnDimension. Fold it into columnDimensions here so nothing downstream
+// has to know the legacy shape.
+object ExploreConfigMigration :
+    JsonTransformingSerializer<ExploreConfig>(ExploreConfig.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement {
+        val fields = element as? JsonObject ?: return element
+        val legacy = fields["columnDimension"]?.takeUnless { it is JsonNull } ?: return element
+        if (!(fields["columnDimensions"] as? JsonArray).isNullOrEmpty()) return element
+        return JsonObject(
+            fields +
+                mapOf(
+                    "columnDimensions" to JsonArray(listOf(legacy)),
+                    "schemaVersion" to JsonPrimitive(EXPLORE_SCHEMA_VERSION),
+                )
+        )
     }
 }
 
@@ -134,19 +160,19 @@ data class PivotMeasure(
 }
 
 @Serializable
-enum class MeasureFn {
-    Count,
-    CountNumbers,
-    CountDistinct,
-    Sum,
-    Avg,
-    Min,
-    Max,
-    Product,
-    StdDev,
-    StdDevPopulation,
-    Variance,
-    VariancePopulation,
+enum class MeasureFn(val shortLabel: String, val label: String) {
+    Count("Count", "Count rows"),
+    CountNumbers("Count numbers", "Count numbers"),
+    CountDistinct("Distinct", "Count distinct"),
+    Sum("Sum", "Sum"),
+    Avg("Avg", "Average"),
+    Min("Min", "Minimum"),
+    Max("Max", "Maximum"),
+    Product("Product", "Product"),
+    StdDev("StdDev", "Standard deviation"),
+    StdDevPopulation("StdDevP", "Population standard deviation"),
+    Variance("Variance", "Variance"),
+    VariancePopulation("VarianceP", "Population variance"),
 }
 
 @Serializable
@@ -368,20 +394,9 @@ fun exploreSpecHash(spec: QuerySpec): String {
 
 private fun defaultMeasureLabel(fn: MeasureFn, sourceColumn: String?): String {
     val source = sourceColumn?.let(::displayColumnLabel)
-    return when (fn) {
-        MeasureFn.Count -> source?.let { "Count $it" } ?: "Count"
-        MeasureFn.CountNumbers -> "Count numbers ${source ?: "values"}"
-        MeasureFn.CountDistinct -> "Distinct ${source ?: "values"}"
-        MeasureFn.Sum -> "Sum ${source ?: "value"}"
-        MeasureFn.Avg -> "Avg ${source ?: "value"}"
-        MeasureFn.Min -> "Min ${source ?: "value"}"
-        MeasureFn.Max -> "Max ${source ?: "value"}"
-        MeasureFn.Product -> "Product ${source ?: "value"}"
-        MeasureFn.StdDev -> "StdDev ${source ?: "value"}"
-        MeasureFn.StdDevPopulation -> "StdDevP ${source ?: "value"}"
-        MeasureFn.Variance -> "Variance ${source ?: "value"}"
-        MeasureFn.VariancePopulation -> "VarianceP ${source ?: "value"}"
-    }
+    if (fn == MeasureFn.Count) return source?.let { "Count $it" } ?: "Count"
+    val counting = fn == MeasureFn.CountNumbers || fn == MeasureFn.CountDistinct
+    return "${fn.shortLabel} ${source ?: if (counting) "values" else "value"}"
 }
 
 private fun defaultCurrencyCode(): String = runCatching {

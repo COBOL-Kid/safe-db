@@ -17,8 +17,8 @@ import com.safedb.ui.theme.SafeDbTheme
 fun SelectablePill(
     label: String,
     selected: Boolean,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit,
 ) {
     Surface(
         shape = RoundedCornerShape(3.dp),

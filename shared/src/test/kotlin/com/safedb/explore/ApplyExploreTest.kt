@@ -59,7 +59,7 @@ class ApplyExploreTest {
                 config =
                     ExploreConfig(
                         rowDimensions = listOf(PivotDimension("t0__region")),
-                        columnDimension = PivotDimension("t0__status"),
+                        columnDimensions = listOf(PivotDimension("t0__status")),
                         measures =
                             listOf(PivotMeasure("sum", MeasureFn.Sum, "t0__amount", "Revenue")),
                         showRowTotals = true,

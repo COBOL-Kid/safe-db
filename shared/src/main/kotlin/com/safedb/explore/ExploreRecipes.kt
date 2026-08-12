@@ -104,8 +104,7 @@ fun recipeColumnReferences(
 private fun ExploreConfig.mapColumnReferences(transform: (String) -> String): ExploreConfig =
     copy(
         rowDimensions = rowDimensions.map { it.copy(column = transform(it.column)) },
-        columnDimensions = effectiveColumnDimensions.map { it.copy(column = transform(it.column)) },
-        columnDimension = null,
+        columnDimensions = columnDimensions.map { it.copy(column = transform(it.column)) },
         measures =
             measures.map { measure ->
                 measure.copy(sourceColumn = measure.sourceColumn?.let(transform))

@@ -16,8 +16,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
     private val warnings = linkedSetOf<String>()
     private val rowDimensions = config.rowDimensions.filterKnown(indexes, warnings, "row")
-    private val columnDimensions =
-        config.effectiveColumnDimensions.filterKnown(indexes, warnings, "column")
+    private val columnDimensions = config.columnDimensions.filterKnown(indexes, warnings, "column")
     private val measures =
         config.measures
             .ifEmpty { listOf(PivotMeasure.countRows()) }
@@ -630,7 +629,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     if (measure.formula.isNullOrBlank()) {
                         computeMeasure(rowIndexes, measure)
                     } else {
-                        val references = measureReferences(measure.formula)
+                        val references = formulaReferences(measure.formula)
                         val values = references.associateWith { alias ->
                             val dependency = measures.firstOrNull { it.alias == alias }
                             if (dependency == null) {

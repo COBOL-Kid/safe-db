@@ -93,10 +93,9 @@ internal fun ExploreConfigPanel(
                         rowDimensions =
                             config.rowDimensions.map { if (it.id == updated.id) updated else it },
                         columnDimensions =
-                            config.effectiveColumnDimensions.map {
+                            config.columnDimensions.map {
                                 if (it.id == updated.id) updated else it
                             },
-                        columnDimension = null,
                     )
                 )
                 editingDimension = null
@@ -107,7 +106,7 @@ internal fun ExploreConfigPanel(
     editingMeasure?.let { measure ->
         MeasureSettingsDialog(
             measure = measure,
-            dimensions = config.rowDimensions + config.effectiveColumnDimensions,
+            dimensions = config.rowDimensions + config.columnDimensions,
             availableFunctions =
                 measure.sourceColumn
                     ?.let { source -> fields.firstOrNull { it.column == source } }
@@ -229,7 +228,7 @@ internal fun ExploreConfigPanel(
             }
 
             FieldWell(title = "Columns") {
-                val columnDimensions = config.effectiveColumnDimensions
+                val columnDimensions = config.columnDimensions
                 columnDimensions.forEachIndexed { index, dimension ->
                     val field = fields.firstOrNull { it.column == dimension.column }
                     FieldChip(
@@ -238,10 +237,7 @@ internal fun ExploreConfigPanel(
                         onClick = { editingDimension = dimension },
                         onRemove = {
                             onConfigChange(
-                                config.copy(
-                                    columnDimensions = columnDimensions - dimension,
-                                    columnDimension = null,
-                                )
+                                config.copy(columnDimensions = columnDimensions - dimension)
                             )
                         },
                         onMoveUp =
@@ -250,8 +246,7 @@ internal fun ExploreConfigPanel(
                                     onConfigChange(
                                         config.copy(
                                             columnDimensions =
-                                                moveDimension(columnDimensions, dimension, -1),
-                                            columnDimension = null,
+                                                moveDimension(columnDimensions, dimension, -1)
                                         )
                                     )
                                 }
@@ -264,8 +259,7 @@ internal fun ExploreConfigPanel(
                                     onConfigChange(
                                         config.copy(
                                             columnDimensions =
-                                                moveDimension(columnDimensions, dimension, 1),
-                                            columnDimension = null,
+                                                moveDimension(columnDimensions, dimension, 1)
                                         )
                                     )
                                 }
@@ -280,12 +274,7 @@ internal fun ExploreConfigPanel(
                     onSelect = { field ->
                         val dimension =
                             field.asDimension().copy(id = "${field.column}:${UUID.randomUUID()}")
-                        onConfigChange(
-                            config.copy(
-                                columnDimensions = columnDimensions + dimension,
-                                columnDimension = null,
-                            )
-                        )
+                        onConfigChange(config.copy(columnDimensions = columnDimensions + dimension))
                     },
                 )
             }
@@ -383,7 +372,7 @@ internal fun ExploreConfigPanel(
 
             if (optionsExpanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (config.effectiveColumnDimensions.isNotEmpty()) {
+                    if (config.columnDimensions.isNotEmpty()) {
                         ExploreToggleRow(
                             label = "Show row totals",
                             checked = config.showRowTotals,
@@ -714,7 +703,7 @@ private fun MeasurePickerButton(
                     availableMeasureFunctions(field).forEach { function ->
                         val candidate = measureFor(field, function)
                         MenuActionRow(
-                            text = measureFunctionLabel(function),
+                            text = function.label,
                             supportingText = candidate.label,
                             onClick = {
                                 expanded = false
@@ -812,10 +801,10 @@ private fun measureSupportingText(measure: PivotMeasure, fields: List<ExploreFie
 private fun optionsSummary(config: ExploreConfig): String {
     val totals =
         when {
-            config.effectiveColumnDimensions.isNotEmpty() &&
+            config.columnDimensions.isNotEmpty() &&
                 config.showRowTotals &&
                 config.showColumnTotals -> "Row and grand totals"
-            config.effectiveColumnDimensions.isNotEmpty() && config.showRowTotals -> "Row totals"
+            config.columnDimensions.isNotEmpty() && config.showRowTotals -> "Row totals"
             config.showColumnTotals -> "Grand total"
             else -> "Totals hidden"
         }

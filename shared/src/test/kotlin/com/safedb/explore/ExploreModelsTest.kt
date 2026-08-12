@@ -41,4 +41,19 @@ class ExploreModelsTest {
         assertEquals(EXPLORE_SCHEMA_VERSION, restored.schemaVersion)
         assertEquals(config, restored)
     }
+
+    @Test
+    fun measureLabelsComposeFromTheShortFormAndReadAsTheLongForm() {
+        assertEquals("Count", PivotMeasure("a", MeasureFn.Count).label)
+        assertEquals("Distinct values", PivotMeasure("b", MeasureFn.CountDistinct).label)
+        assertEquals("StdDevP value", PivotMeasure("c", MeasureFn.StdDevPopulation).label)
+        assertEquals("StdDev amount", PivotMeasure("d", MeasureFn.StdDev, "t0__amount").label)
+
+        assertEquals("Count rows", MeasureFn.Count.label)
+        assertEquals("Population standard deviation", MeasureFn.StdDevPopulation.label)
+        assertEquals(
+            MeasureFn.entries.size,
+            MeasureFn.entries.map { it.shortLabel }.distinct().size,
+        )
+    }
 }

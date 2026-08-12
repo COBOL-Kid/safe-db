@@ -583,7 +583,6 @@ private fun renderExplore(
                         ),
                     ),
                 columnDimensions = listOf(PivotDimension("t0__status", "Status", id = "status")),
-                columnDimension = null,
                 measures =
                     listOf(
                         PivotMeasure.countRows(),

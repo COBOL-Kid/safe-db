@@ -360,5 +360,5 @@ internal fun BuilderRecipeButton(
 
 @Composable
 private fun BuilderRecipePill(label: String, selected: Boolean, onClick: () -> Unit) {
-    SelectablePill(label, selected, onClick)
+    SelectablePill(label, selected, onClick = onClick)
 }

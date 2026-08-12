@@ -173,7 +173,7 @@ internal fun WorksheetGroupDialog(
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     choices.forEach { choice ->
-                        SelectPill(groupingLabel(choice), sameGroupingKind(grouping, choice)) {
+                        SelectablePill(groupingLabel(choice), sameGroupingKind(grouping, choice)) {
                             grouping = choice
                         }
                     }
@@ -288,18 +288,8 @@ internal fun <T> SelectRow(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             choices.forEach { choice ->
-                SelectPill(display(choice), choice == selected) { onSelect(choice) }
+                SelectablePill(display(choice), choice == selected) { onSelect(choice) }
             }
         }
     }
-}
-
-@Composable
-internal fun SelectPill(
-    label: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    SelectablePill(label, selected, onClick, modifier)
 }
