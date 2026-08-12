@@ -73,12 +73,8 @@ fun ExploreWindowContent(
 ) {
     val session = viewModel.session
     val preview = viewModel.preview
-    val activePreviewLoading =
-        when (viewModel.workspace.activeMode) {
-            ExploreMode.Pivot -> viewModel.pivotPreviewState.loading
-            ExploreMode.Worksheet -> viewModel.worksheetPreviewState.loading
-            ExploreMode.Visualization -> viewModel.visualizationPreviewState.loading
-        }
+    val activeMode = viewModel.workspace.activeMode
+    val activePreviewLoading = viewModel.isLoading(activeMode)
     val config = viewModel.config
     val fields =
         remember(session.sample.columns, session.baseSpec.tables) {
@@ -148,7 +144,8 @@ fun ExploreWindowContent(
                 sampleRefreshEnabled = sampleRefreshEnabled,
                 onRefreshSample = onRefreshSample,
             )
-            when (viewModel.workspace.activeMode) {
+            ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
+            when (activeMode) {
                 ExploreMode.Pivot ->
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         if (pivotRailVisible) {
@@ -187,7 +184,7 @@ fun ExploreWindowContent(
                                 onToggleRow = viewModel::toggleRowPath,
                                 onToggleColumn = viewModel::toggleColumnPath,
                                 onDrill = { rowPath, columnPath, measureAlias ->
-                                    if (!viewModel.pivotPreviewState.loading) {
+                                    if (!viewModel.isLoading(ExploreMode.Pivot)) {
                                         drillResult =
                                             viewModel.sourceRowsFor(
                                                 rowPath,
@@ -200,7 +197,7 @@ fun ExploreWindowContent(
                             )
                             ExploreExportBar(
                                 viewModel,
-                                enabled = !viewModel.pivotPreviewState.loading,
+                                enabled = !viewModel.isLoading(ExploreMode.Pivot),
                             ) {
                                 chooseCsvFile(session.connectionLabel)
                                     ?.let(viewModel::savePreviewCsv)
@@ -225,7 +222,7 @@ fun ExploreWindowContent(
                         ExploreExportBar(
                             viewModel,
                             enabled =
-                                !viewModel.worksheetPreviewState.loading &&
+                                !viewModel.isLoading(ExploreMode.Worksheet) &&
                                     viewModel.hasVisibleWorksheetColumns(),
                         ) {
                             chooseCsvFile("${session.connectionLabel}-worksheet")
@@ -275,7 +272,7 @@ fun ExploreWindowContent(
                                         sampleRowCount = session.sample.rowCount,
                                         sampleTruncated = session.sample.truncated,
                                         onMarkClick = { markId ->
-                                            if (!viewModel.visualizationPreviewState.loading) {
+                                            if (!viewModel.isLoading(ExploreMode.Visualization)) {
                                                 drillResult =
                                                     viewModel.sourceRowsForVisualizationMark(markId)
                                             }
@@ -289,7 +286,7 @@ fun ExploreWindowContent(
                                     viewModel = viewModel,
                                     enabled =
                                         viewModel.visualizationPreview.ready &&
-                                            !viewModel.visualizationPreviewState.loading,
+                                            !viewModel.isLoading(ExploreMode.Visualization),
                                     onExportCsv = {
                                         chooseExportFile(
                                                 "${session.connectionLabel}-chart-data",
@@ -422,6 +419,17 @@ private fun ExploreStaleSampleWarning(
                 if (sampleRefreshEnabled && onRefreshSample != null) {
                     { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
                 } else null,
+        )
+    }
+}
+
+@Composable
+private fun ExplorePreviewErrorBanner(error: String?) {
+    if (error == null) return
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        MessageBanner(
+            text = "This Explore view could not be refreshed: $error",
+            kind = BannerKind.ERROR,
         )
     }
 }
