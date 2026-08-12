@@ -15,8 +15,8 @@ import com.safedb.model.SortSpec
 import com.safedb.model.classifyColumn
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
-const val MAX_LIMIT = 5_000
-const val DEFAULT_LIMIT = 100
+const val MAX_LIMIT = 10_000
+const val DEFAULT_LIMIT = 500
 const val MAX_FILTER_DEPTH = 5
 const val MAX_IN_LIST_SIZE = 1000
 const val MAX_TEXT_LITERAL_LEN = 10_000

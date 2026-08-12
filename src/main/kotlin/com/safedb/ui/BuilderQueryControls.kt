@@ -69,7 +69,8 @@ import com.safedb.query.MAX_LIMIT
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 
-internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, MAX_LIMIT)
+internal val BUILDER_LIMIT_CHOICES =
+    listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000, MAX_LIMIT)
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
 internal val QueryControlsTableGap = 16.dp
