@@ -33,13 +33,8 @@ private data class MutableTransport(
     var oracleWalletLocation: String? = null,
 )
 
-private val DEFAULT_PORTS =
-    mapOf(
-        Dialect.Postgres to 5432,
-        Dialect.MySql to 3306,
-        Dialect.Mssql to 1433,
-        Dialect.Oracle to 1521,
-    )
+private fun defaultPortFor(dialect: Dialect): Int =
+    DIALECTS.first { it.value == dialect }.defaultPort
 
 fun parseConnectionString(input: String): ParsedConnection {
     val raw = input.trim()
@@ -85,7 +80,7 @@ private fun baseResult(
         throw ConnectionStringParseError("Connection string is missing a database name.")
     }
 
-    val resolvedPort = port ?: DEFAULT_PORTS.getValue(dialect)
+    val resolvedPort = port ?: defaultPortFor(dialect)
     if (resolvedPort !in 1..65535) {
         throw ConnectionStringParseError("Connection string has an invalid port.")
     }
@@ -327,7 +322,7 @@ private fun pathnameDatabase(pathname: String): String =
     decodeComponent(pathname.replace(Regex("^/+"), "").split('/').firstOrNull().orEmpty())
 
 private fun parsePort(url: ParsedUrl, dialect: Dialect): Int =
-    if (url.port != -1) url.port else DEFAULT_PORTS.getValue(dialect)
+    if (url.port != -1) url.port else defaultPortFor(dialect)
 
 private fun postgresTransport(sslmode: String?, host: String): MutableTransport =
     when (sslmode) {

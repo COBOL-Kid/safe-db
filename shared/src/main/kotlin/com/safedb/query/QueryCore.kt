@@ -38,12 +38,6 @@ sealed class QueryError {
 
     data class RiskGate(val evaluation: QueryRiskEvaluation, override val historySpec: QuerySpec) :
         QueryError() {
-        val decision: QueryRiskDecision
-            get() = evaluation.decision
-
-        val assessment: QueryRiskAssessment
-            get() = requireNotNull(evaluation.finalAssessment)
-
         override val message: String =
             evaluation.decision.reasons
                 .joinToString(separator = " ") { it.message }

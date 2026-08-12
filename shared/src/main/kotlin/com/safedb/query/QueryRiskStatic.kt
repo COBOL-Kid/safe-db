@@ -373,11 +373,7 @@ private fun addOperationSignals(
     signals: MutableList<RiskSignal>,
     uncertainties: MutableList<RiskUncertainty>,
 ) {
-    data class Operation(
-        val kind: PlanOperationKind,
-        val aliases: Set<String>,
-        val compatible: Boolean = false,
-    )
+    data class Operation(val kind: PlanOperationKind, val aliases: Set<String>)
     val operations = mutableListOf<Operation>()
     if (spec.groups.isNotEmpty()) {
         operations +=
@@ -420,7 +416,7 @@ private fun addOperationSignals(
                     )
         }
     }
-    for ((kind, aliases, _) in operations) {
+    for ((kind, aliases) in operations) {
         val bounded = aliases.all { alias ->
             alias in boundedAliases ||
                 tablesByAlias[alias]?.tableSize?.sizeClass == TableSizeClass.Small

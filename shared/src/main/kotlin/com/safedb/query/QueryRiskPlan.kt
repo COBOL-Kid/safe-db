@@ -10,13 +10,13 @@ import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.model.TableSizeClass
 
-enum class EstimatedRowBand {
+internal enum class EstimatedRowBand {
     Low,
     Material,
     High,
 }
 
-fun estimatedRowBand(rows: Long): EstimatedRowBand =
+internal fun estimatedRowBand(rows: Long): EstimatedRowBand =
     when {
         rows < 10_000 -> EstimatedRowBand.Low
         rows < 100_000 -> EstimatedRowBand.Material

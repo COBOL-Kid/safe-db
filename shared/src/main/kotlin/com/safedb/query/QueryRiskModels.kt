@@ -157,7 +157,4 @@ data class QueryRiskEvaluation(
     val optimizerCost: Double? = null,
     val confirmationRequirement: QueryConfirmationRequirement? = null,
     val confirmationAccepted: Boolean = false,
-) {
-    val assessment: QueryRiskAssessment?
-        get() = finalAssessment
-}
+)

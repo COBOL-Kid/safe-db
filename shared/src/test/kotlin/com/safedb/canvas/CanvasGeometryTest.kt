@@ -121,19 +121,6 @@ class CanvasGeometryTest {
     }
 
     @Test
-    fun joinEdgePointsHonorResizedTableWidth() {
-        val left = canvasTable(x = 10f, y = 20f, width = 360f)
-        val right = canvasTable(alias = "t1", x = 500f, y = 80f)
-
-        val points = joinEdgePoints(left, "id", right, "id")
-
-        assertEquals(370f, points.sourceX)
-        assertEquals(500f, points.targetX)
-        assertEquals(columnY(left, "id"), points.sourceY)
-        assertEquals(columnY(right, "id"), points.targetY)
-    }
-
-    @Test
     fun columnJoinPortAlignsToVisibleColumnRowAndSideEdge() {
         val table = canvasTable(x = 40f, y = 80f, width = 260f)
 

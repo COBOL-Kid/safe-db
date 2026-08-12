@@ -5,20 +5,8 @@ import com.safedb.model.QueryRiskGate
 fun applyRiskGate(
     assessment: QueryRiskAssessment?,
     userSetting: QueryRiskGate,
-    validationBlocked: Boolean = false,
 ): QueryRiskDecision {
     val fingerprint = assessment?.queryFingerprint.orEmpty()
-    if (validationBlocked) {
-        return QueryRiskDecision(
-            fingerprint,
-            RiskGateState.Blocked,
-            userSetting,
-            blockingBand(userSetting),
-            listOf(
-                RiskDecisionReason("validation_block", "Query validation blocks this query.", true)
-            ),
-        )
-    }
     if (userSetting == QueryRiskGate.Disabled) {
         return QueryRiskDecision(fingerprint, RiskGateState.Allowed, userSetting, null, emptyList())
     }

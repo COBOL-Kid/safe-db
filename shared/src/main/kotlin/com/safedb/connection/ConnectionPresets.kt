@@ -9,14 +9,6 @@ enum class DatabaseLocation {
     Organization,
 }
 
-data class SecurityLabel(val tone: SecurityTone, val text: String)
-
-enum class SecurityTone {
-    Success,
-    Warning,
-    Danger,
-}
-
 data class DialectInfo(val value: com.safedb.model.Dialect, val label: String, val defaultPort: Int)
 
 val DIALECTS: List<DialectInfo> =
@@ -40,22 +32,6 @@ fun transportPresetForLocation(location: DatabaseLocation): TransportSecurity =
             oracleWalletLocation = null,
             legacyImplicit = false,
         )
-    }
-
-fun securityLabelForMode(mode: TransportSecurityMode, host: String = ""): SecurityLabel =
-    when (mode) {
-        TransportSecurityMode.VerifyIdentity,
-        TransportSecurityMode.VerifyCa -> SecurityLabel(SecurityTone.Success, "Secure connection")
-
-        TransportSecurityMode.EncryptOnly ->
-            SecurityLabel(SecurityTone.Warning, "Encrypted (certificate not verified)")
-
-        TransportSecurityMode.Disabled ->
-            if (isLocalHost(host)) {
-                SecurityLabel(SecurityTone.Danger, "Not encrypted - local only")
-            } else {
-                SecurityLabel(SecurityTone.Danger, "Not encrypted")
-            }
     }
 
 fun isLocalHost(host: String): Boolean {

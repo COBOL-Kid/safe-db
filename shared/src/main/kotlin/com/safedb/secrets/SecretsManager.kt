@@ -84,24 +84,6 @@ object SecretsManager {
             DesktopPlatform.Windows -> WindowsCredentialStore.createOrFallback()
         }
 
-    fun passwordForConnection(connectionId: String): Result<String> {
-        CredentialSession.get(connectionId)?.let {
-            return Result.success(it)
-        }
-        return when (val password = readFromStore(connectionId)) {
-            null ->
-                Result.failure(
-                    IllegalStateException(
-                        "Password not found for this connection. Delete and add the connection again to store the password."
-                    )
-                )
-            else -> {
-                CredentialSession.put(connectionId, password)
-                Result.success(password)
-            }
-        }
-    }
-
     fun passwordForDefinition(def: ConnectionDef): Result<String> {
         val cacheKey = "${def.id}:${def.credentialFingerprint()}"
         CredentialSession.get(cacheKey)?.let {
@@ -143,21 +125,6 @@ object SecretsManager {
             CredentialSession.put("${def.id}:${def.credentialFingerprint()}", password)
         }
         .mapError(::formatSaveCredentialError)
-
-    fun savePassword(connectionId: String, password: String): Result<Unit> = runCatching {
-        writeToStore(connectionId, password)
-        CredentialSession.put(connectionId, password)
-    }
-        .mapError(::formatSaveCredentialError)
-
-    fun getPassword(connectionId: String): Result<String?> {
-        CredentialSession.get(connectionId)?.let {
-            return Result.success(it)
-        }
-        return Result.success(
-            readFromStore(connectionId)?.also { CredentialSession.put(connectionId, it) }
-        )
-    }
 
     fun deletePassword(connectionId: String): Result<Unit> = runCatching {
         CredentialSession.invalidate(connectionId)
