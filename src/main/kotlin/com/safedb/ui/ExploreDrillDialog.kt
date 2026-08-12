@@ -3,7 +3,6 @@ package com.safedb.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -13,12 +12,13 @@ import androidx.compose.ui.unit.dp
 import com.safedb.model.QueryResult
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.theme.DialogShape
 
 @Composable
 internal fun ExploreDrillDialog(result: QueryResult, onExport: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(4.dp),
+        shape = DialogShape,
         title = {
             Column {
                 Text("Source rows", style = MaterialTheme.typography.titleMedium)

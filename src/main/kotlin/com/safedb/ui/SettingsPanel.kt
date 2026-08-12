@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
@@ -44,6 +43,7 @@ import com.safedb.ui.components.ModeToggle
 import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
+import com.safedb.ui.theme.DialogShape
 import com.safedb.viewmodel.SettingsViewModel
 
 @Composable
@@ -99,7 +99,7 @@ fun SettingsPanel(
     AlertDialog(
         onDismissRequest = onClose,
         modifier = Modifier.widthIn(min = 520.dp, max = 660.dp),
-        shape = RoundedCornerShape(4.dp),
+        shape = DialogShape,
         containerColor = MaterialTheme.colorScheme.surface,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,

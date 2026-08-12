@@ -1,6 +1,7 @@
 import com.safedb.buildlogic.VerifyCoverageRatchet
 import com.safedb.buildlogic.VerifyIntegrationTestDiscovery
 import com.safedb.buildlogic.VerifyUnitTestDiscovery
+import com.safedb.buildlogic.splitSeedTaskArgs
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -183,13 +184,18 @@ fun sharedToolsRuntimeClasspath(): FileCollection =
         .getByName("tools")
         .runtimeClasspath
 
+fun seedTaskArgs(taskName: String): List<String> {
+    val propertyName = "${taskName}Args"
+    return splitSeedTaskArgs(providers.gradleProperty(propertyName).orElse("").get(), propertyName)
+}
+
 tasks.register<JavaExec>("seedMysql") {
     group = "safe-db"
     description = "Seed the local safe-db MySQL test database."
     classpath = sharedToolsRuntimeClasspath()
     mainClass.set("com.safedb.tools.SeedMysqlKt")
     workingDir = projectDir
-    args(splitSeedMysqlArgs(providers.gradleProperty("seedMysqlArgs").orElse("").get()))
+    args(seedTaskArgs("seedMysql"))
 }
 
 fun registerRelationalSeedTask(
@@ -202,12 +208,7 @@ fun registerRelationalSeedTask(
         classpath = sharedToolsRuntimeClasspath()
         mainClass.set("com.safedb.tools.SeedRelationalKt")
         workingDir = projectDir
-        val propertyName = "${taskName}Args"
-        args(
-            dialect,
-            *splitSeedMysqlArgs(providers.gradleProperty(propertyName).orElse("").get())
-                .toTypedArray(),
-        )
+        args(dialect, *seedTaskArgs(taskName).toTypedArray())
     }
 }
 
@@ -216,35 +217,6 @@ registerRelationalSeedTask("seedPostgres", "postgres")
 registerRelationalSeedTask("seedMssql", "mssql")
 
 registerRelationalSeedTask("seedOracle", "oracle")
-
-fun splitSeedMysqlArgs(raw: String): List<String> {
-    val args = mutableListOf<String>()
-    val current = StringBuilder()
-    var quote: Char? = null
-    var escaping = false
-    for (char in raw) {
-        when {
-            escaping -> {
-                current.append(char)
-                escaping = false
-            }
-            char == '\\' -> escaping = true
-            quote != null && char == quote -> quote = null
-            quote == null && (char == '\'' || char == '"') -> quote = char
-            quote == null && char.isWhitespace() -> {
-                if (current.isNotEmpty()) {
-                    args.add(current.toString())
-                    current.clear()
-                }
-            }
-            else -> current.append(char)
-        }
-    }
-    if (escaping) current.append('\\')
-    if (quote != null) throw GradleException("Unclosed quote in seedMysqlArgs")
-    if (current.isNotEmpty()) args.add(current.toString())
-    return args
-}
 
 tasks.register<JavaExec>("renderPreview") {
     group = "safe-db"

@@ -1,5 +1,6 @@
 package com.safedb.viewmodel
 
+import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -75,6 +76,24 @@ internal data class CanvasAxisScrollState(
         (leadingInset - contentStart * zoom - target).coerceIn(0f, maxScrollOffset)
 
     fun constrainPan(target: Float): Float = panForScrollOffset(scrollOffsetForPan(target))
+}
+
+internal class CanvasScrollbarAdapter(
+    private val state: () -> CanvasAxisScrollState,
+    private val onScrollTo: (Float) -> Unit,
+) : ScrollbarAdapter {
+    override val scrollOffset: Double
+        get() = state().scrollOffset.toDouble()
+
+    override val contentSize: Double
+        get() = state().contentSize.toDouble()
+
+    override val viewportSize: Double
+        get() = state().viewportSize.toDouble()
+
+    override suspend fun scrollTo(scrollOffset: Double) {
+        onScrollTo(scrollOffset.toFloat())
+    }
 }
 
 internal fun canvasAxisScrollState(

@@ -12,7 +12,7 @@ import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.LabelMicro
 
 @Composable
-fun Kbd(
+internal fun Kbd(
     text: String,
     modifier: Modifier = Modifier,
     contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -43,6 +42,7 @@ import com.safedb.model.ColumnCategory
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
+import com.safedb.ui.theme.DialogShape
 import com.safedb.ui.theme.InputShape
 import com.safedb.viewmodel.MemberOption
 import java.math.BigDecimal
@@ -80,7 +80,7 @@ internal fun DimensionSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(4.dp),
+        shape = DialogShape,
         title = { Text("Field settings", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -231,7 +231,7 @@ internal fun MeasureSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(4.dp),
+        shape = DialogShape,
         title = { Text("Value settings", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
@@ -376,7 +376,7 @@ internal fun CalculatedMeasureDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(4.dp),
+        shape = DialogShape,
         title = { Text("Calculated measure", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
@@ -527,7 +527,7 @@ internal fun FilterSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(4.dp),
+        shape = DialogShape,
         title = { Text("${filter.label} filter", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(
