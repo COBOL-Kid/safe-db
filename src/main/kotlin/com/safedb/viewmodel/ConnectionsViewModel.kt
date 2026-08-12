@@ -22,15 +22,7 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
     val deleteError: StateFlow<String?> = _deleteError.asStateFlow()
 
     suspend fun load() {
-        _loading.value = true
-        _error.value = null
-        try {
-            _connections.value = service.listConnections()
-        } catch (error: Exception) {
-            _error.value = error.message ?: error.toString()
-        } finally {
-            _loading.value = false
-        }
+        capturingFailure(_error, _loading) { _connections.value = service.listConnections() }
     }
 
     fun refresh() {
@@ -39,13 +31,10 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
 
     fun delete(id: String, onComplete: () -> Unit = {}) {
         scope.launch {
-            _deleteError.value = null
-            try {
+            capturingFailure(_deleteError) {
                 service.deleteConnection(id)
                 _connections.value = service.listConnections()
                 onComplete()
-            } catch (error: Exception) {
-                _deleteError.value = error.message ?: error.toString()
             }
         }
     }

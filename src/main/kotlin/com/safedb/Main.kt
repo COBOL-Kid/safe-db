@@ -32,7 +32,7 @@ fun main(args: Array<String>) {
             settingsStore = SettingsStore.new(dataDir),
             recipeStore = RecipeStore.new(dataDir),
         )
-    runApp(AppState(service))
+    runApp(AppState(), service)
 }
 
 internal fun requireSupportedDesktopPlatform(

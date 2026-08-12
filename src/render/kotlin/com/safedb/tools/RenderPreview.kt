@@ -473,7 +473,7 @@ internal fun render(
                 colorScheme = palette.id,
             )
         )
-    val appState = AppState(service)
+    val appState = AppState()
     val viewModel = AppViewModel(service)
     Thread.sleep(700)
     prepare(appState, viewModel)

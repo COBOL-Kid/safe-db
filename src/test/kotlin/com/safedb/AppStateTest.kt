@@ -6,8 +6,6 @@ import com.safedb.model.FilterGroup
 import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
-import com.safedb.service.SafeDbService
-import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -15,7 +13,7 @@ import kotlin.test.assertNull
 class AppStateTest {
     @Test
     fun defaultSelectionCanUpdateUntilExplicitConnectionTakesPrecedence() {
-        val state = AppState(unusedService())
+        val state = AppState()
 
         state.activateDefaultConnection("c1", "public")
         assertEquals("c1", state.activeConnectionId.value)
@@ -43,7 +41,7 @@ class AppStateTest {
 
     @Test
     fun clearingDeletedActiveConnectionResetsItsOriginAndSchema() {
-        val state = AppState(unusedService())
+        val state = AppState()
         state.activateDefaultConnection("c1", "public")
 
         state.clearActiveConnectionIf("other")
@@ -131,12 +129,4 @@ class AppStateTest {
             database = "database",
             username = "readonly",
         )
-
-    private fun unusedService(): SafeDbService =
-        Proxy.newProxyInstance(
-            SafeDbService::class.java.classLoader,
-            arrayOf(SafeDbService::class.java),
-        ) { _, method, _ ->
-            error("Unexpected service call: ${method.name}")
-        } as SafeDbService
 }

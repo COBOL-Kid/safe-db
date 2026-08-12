@@ -20,7 +20,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = Dispatchers.IO) {
+class AppViewModel(
+    service: SafeDbService,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
     private val service = DispatchingSafeDbService(service, ioDispatcher)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -28,7 +31,7 @@ class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = D
     val settings = SettingsViewModel(service, scope)
     val savedQueries = SavedQueriesViewModel(service, scope)
     val history = HistoryViewModel(service, scope)
-    val recipes = RecipesViewModel(service, scope)
+    val recipes = RecipesViewModel(service, scope, ioDispatcher)
     val query = QueryViewModel(service, scope)
     val schema = SchemaViewModel(service, scope)
     internal val schemaMap = SchemaMapViewModel()
@@ -82,6 +85,7 @@ class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = D
             ExploreViewModel(
                 createExploreSession(connection, spec, sample),
                 computationScope = scope,
+                ioDispatcher = ioDispatcher,
             )
     }
 
@@ -96,6 +100,7 @@ class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = D
             ExploreViewModel(
                     createExploreSession(connection, spec, sample),
                     computationScope = scope,
+                    ioDispatcher = ioDispatcher,
                 )
                 .also { it.requestRecipe(recipe) }
     }
@@ -114,23 +119,25 @@ class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = D
         }
     }
 
-    fun completePendingRecipeRun(connection: ConnectionDef, sample: QueryResult, spec: QuerySpec) {
+    // Advances the pending recipe run after the builder query settles: the spec-hash checks keep an
+    // Explore window from opening for a query other than the one the recipe asked for.
+    fun onQuerySettled(activeConnectionId: String?, connections: List<ConnectionDef>) {
         val pending = _pendingRecipeRun.value ?: return
-        if (pending.connectionId != connection.id || pending.specHash != exploreSpecHash(spec))
+        if (pending.connectionId != activeConnectionId) {
+            _pendingRecipeRun.value = null
             return
-        _pendingRecipeRun.value = null
-        openExploreRecipe(connection, spec, sample, pending.recipe)
-    }
-
-    fun cancelPendingRecipeRun() {
-        _pendingRecipeRun.value = null
-    }
-
-    fun cancelPendingRecipeRunIfConnectionChanged(activeConnectionId: String?): Boolean {
-        val pending = _pendingRecipeRun.value ?: return false
-        if (pending.connectionId == activeConnectionId) return false
-        _pendingRecipeRun.value = null
-        return true
+        }
+        val activeConnection = connections.firstOrNull { it.id == pending.connectionId }
+        val sample = query.currentSample(pending.connectionId)
+        when {
+            activeConnection != null && sample != null -> {
+                if (pending.specHash != exploreSpecHash(sample.spec)) return
+                _pendingRecipeRun.value = null
+                openExploreRecipe(activeConnection, sample.spec, sample.result, pending.recipe)
+            }
+            exploreSpecHash(query.spec) != pending.specHash -> _pendingRecipeRun.value = null
+            !query.running && query.error != null -> _pendingRecipeRun.value = null
+        }
     }
 
     fun refreshExploreSample(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
@@ -142,6 +149,7 @@ class AppViewModel(service: SafeDbService, ioDispatcher: CoroutineDispatcher = D
                     session = createExploreSession(connection, spec, sample),
                     initialWorkspace = current.workspace,
                     computationScope = scope,
+                    ioDispatcher = ioDispatcher,
                 )
                 .also { it.inheritRecipeTrackingFrom(current) }
     }
@@ -162,6 +170,3 @@ data class PendingRecipeRun(
     val connectionId: String,
     val specHash: String,
 )
-
-internal fun shouldCancelPendingRecipeOnQuerySettle(running: Boolean, hasError: Boolean): Boolean =
-    !running && hasError

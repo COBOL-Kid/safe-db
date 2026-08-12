@@ -8,6 +8,7 @@ import com.safedb.SchemaSelectionSource
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.service.SafeDbService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -88,6 +89,8 @@ class SchemaViewModel(private val service: SafeDbService, private val scope: Cor
                 loadedConnectionId = connectionId
                 applySelection(selection, onUnavailableSelection)
                 onComplete?.invoke(true)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (generation != requestGeneration) {
                     onComplete?.invoke(false)

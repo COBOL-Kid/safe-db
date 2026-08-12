@@ -502,6 +502,13 @@ Cheapest to most expensive; a worker climbs only as far as its package requires.
 - Per stage: `./gradlew check`
 - Visual packages (C1, C6c, E3, E4): `./gradlew renderPreview --rerun-tasks`, plus
   `renderThemeGallery` for E3
+
+  **The render harness is materially nondeterministic on animated scenes.** `map-light`, `map-dark`,
+  `explore-recipes-light`, `explore-recipes-dark`, and `scheme-settings-*` land on different
+  animation frames between runs of an *identical* tree, differing by 11–50% of pixels with max
+  channel deltas over 220 — not anti-aliasing jitter. A byte comparison against a single baseline
+  produces false positives on those scenes. To judge one of them, render the same tree twice, or
+  render a baseline in a separate `git worktree`, before concluding a change caused it.
 - Build-logic packages (B1, B2, B4, E5): `./gradlew help` first, since a configuration error there
   fails everything downstream
 - Adapters (D2): `./gradlew integrationTest`, engine-gated

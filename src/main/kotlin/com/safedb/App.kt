@@ -25,19 +25,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.safedb.explore.exploreSpecHash
 import com.safedb.secrets.SecretsManager
+import com.safedb.service.SafeDbService
 import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
-import com.safedb.viewmodel.shouldCancelPendingRecipeOnQuerySettle
 import java.awt.Dimension
 import kotlinx.coroutines.runBlocking
 
 @Composable
-fun App(appState: AppState, mainWindow: java.awt.Window) {
-    val viewModel = remember(appState) { AppViewModel(appState.service) }
+fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window) {
+    val viewModel = remember(appState, service) { AppViewModel(service) }
     DisposableEffect(viewModel) { onDispose(viewModel::close) }
     val settings by viewModel.settings.settings.collectAsState()
     val exploreViewModel by viewModel.explore.collectAsState()
@@ -74,21 +73,7 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
         viewModel.query.error,
         activeConnectionId,
     ) {
-        val pending = pendingRecipeRun ?: return@LaunchedEffect
-        if (viewModel.cancelPendingRecipeRunIfConnectionChanged(activeConnectionId))
-            return@LaunchedEffect
-        val activeConnection = connections.firstOrNull { it.id == pending.connectionId }
-        val sample = viewModel.query.currentSample(pending.connectionId)
-        when {
-            activeConnection != null && sample != null ->
-                viewModel.completePendingRecipeRun(activeConnection, sample.result, sample.spec)
-            exploreSpecHash(viewModel.query.spec) != pending.specHash ->
-                viewModel.cancelPendingRecipeRun()
-            shouldCancelPendingRecipeOnQuerySettle(
-                running = viewModel.query.running,
-                hasError = viewModel.query.error != null,
-            ) -> viewModel.cancelPendingRecipeRun()
-        }
+        viewModel.onQuerySettled(activeConnectionId, connections)
     }
 
     SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
@@ -184,7 +169,7 @@ fun App(appState: AppState, mainWindow: java.awt.Window) {
     }
 }
 
-fun runApp(appState: AppState) = application {
+fun runApp(appState: AppState, service: SafeDbService) = application {
     val windowState = rememberWindowState(width = 1280.dp, height = 832.dp)
 
     Window(
@@ -196,6 +181,6 @@ fun runApp(appState: AppState) = application {
         state = windowState,
     ) {
         LaunchedEffect(window) { window.minimumSize = Dimension(960, 600) }
-        App(appState, window)
+        App(appState, service, window)
     }
 }
