@@ -565,56 +565,9 @@ internal fun FilterSettingsDialog(
     onSave: (PivotFilter) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var kind by
+    var draft by
         remember(filter.id) {
-            mutableStateOf(
-                when (filter) {
-                    is PivotFilter.Members -> FilterEditorKind.Members
-                    is PivotFilter.Label -> FilterEditorKind.Label
-                    is PivotFilter.Value ->
-                        if (filter.op in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom))
-                            FilterEditorKind.TopN
-                        else FilterEditorKind.Value
-                }
-            )
-        }
-    var pinned by remember(filter.id) { mutableStateOf(filter.pinned) }
-    var textValue by
-        remember(filter.id) {
-            mutableStateOf(
-                when (filter) {
-                    is PivotFilter.Label -> filter.value
-                    is PivotFilter.Value -> filter.value
-                    else -> ""
-                }
-            )
-        }
-    var secondValue by
-        remember(filter.id) {
-            mutableStateOf((filter as? PivotFilter.Value)?.secondValue.orEmpty())
-        }
-    var labelOp by
-        remember(filter.id) {
-            mutableStateOf((filter as? PivotFilter.Label)?.op ?: LabelFilterOp.Contains)
-        }
-    var valueOp by
-        remember(filter.id) {
-            mutableStateOf((filter as? PivotFilter.Value)?.op ?: ValueFilterOp.GreaterThan)
-        }
-    var measureAlias by
-        remember(filter.id) {
-            mutableStateOf(
-                (filter as? PivotFilter.Value)?.measureAlias
-                    ?: measures.firstOrNull()?.alias.orEmpty()
-            )
-        }
-    var count by
-        remember(filter.id) {
-            mutableStateOf(((filter as? PivotFilter.Value)?.count ?: 10).toString())
-        }
-    var includedKeys by
-        remember(filter.id) {
-            mutableStateOf((filter as? PivotFilter.Members)?.includedKeys.orEmpty())
+            mutableStateOf(FilterDraft.from(filter, measures.firstOrNull()?.alias.orEmpty()))
         }
 
     AlertDialog(
@@ -632,75 +585,43 @@ internal fun FilterSettingsDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     FilterEditorKind.entries.forEach { option ->
-                        ChoicePill(filterKindLabel(option), kind == option) { kind = option }
+                        ChoicePill(filterKindLabel(option), draft.kind == option) {
+                            draft = draft.copy(kind = option)
+                        }
                     }
                 }
-                when (kind) {
+                when (draft.kind) {
                     FilterEditorKind.Members -> {
                         if (showPinnedOption) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().clickable { pinned = !pinned },
+                                modifier =
+                                    Modifier.fillMaxWidth().clickable {
+                                        draft = draft.copy(pinned = !draft.pinned)
+                                    },
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Checkbox(checked = pinned, onCheckedChange = null)
+                                Checkbox(checked = draft.pinned, onCheckedChange = null)
                                 Text("Pin this multi-select filter above the pivot")
                             }
                         }
-                        Text(
-                            if (includedKeys.isEmpty()) "All sample values selected"
-                            else "${includedKeys.size} selected",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        FilterMemberList(
+                            memberOptions = memberOptions,
+                            includedKeys = draft.includedKeys,
+                            onIncludedKeysChange = { draft = draft.copy(includedKeys = it) },
                         )
-                        Column(
-                            modifier =
-                                Modifier.fillMaxWidth()
-                                    .heightIn(max = 240.dp)
-                                    .verticalScroll(rememberScrollState())
-                        ) {
-                            memberOptions.forEach { option ->
-                                val checked = includedKeys.isEmpty() || option.key in includedKeys
-                                Row(
-                                    modifier =
-                                        Modifier.fillMaxWidth().clickable {
-                                            val baseline = includedKeys.ifEmpty {
-                                                memberOptions.map { it.key }.toSet()
-                                            }
-                                            val next =
-                                                if (option.key in baseline) baseline - option.key
-                                                else baseline + option.key
-                                            if (next.isNotEmpty()) {
-                                                includedKeys =
-                                                    if (next.size == memberOptions.size) emptySet()
-                                                    else next
-                                            }
-                                        },
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Checkbox(checked = checked, onCheckedChange = null)
-                                    Text(
-                                        option.label,
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                    Text(
-                                        "${option.count}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                }
-                            }
-                        }
                     }
                     FilterEditorKind.Label -> {
                         SettingsLabel("Match")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             LabelFilterOp.entries.forEach { op ->
-                                ChoicePill(labelFilterLabel(op), labelOp == op) { labelOp = op }
+                                ChoicePill(labelFilterLabel(op), draft.labelOp == op) {
+                                    draft = draft.copy(labelOp = op)
+                                }
                             }
                         }
                         OutlinedTextField(
-                            value = textValue,
-                            onValueChange = { textValue = it },
+                            value = draft.text,
+                            onValueChange = { draft = draft.copy(text = it) },
                             label = { Text("Text") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -714,23 +635,25 @@ internal fun FilterSettingsDialog(
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             measures.forEach { measure ->
-                                ChoicePill(measure.label, measureAlias == measure.alias) {
-                                    measureAlias = measure.alias
+                                ChoicePill(measure.label, draft.measureAlias == measure.alias) {
+                                    draft = draft.copy(measureAlias = measure.alias)
                                 }
                             }
                         }
-                        if (kind == FilterEditorKind.TopN) {
+                        if (draft.kind == FilterEditorKind.TopN) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                ChoicePill("Top", valueOp == ValueFilterOp.Top) {
-                                    valueOp = ValueFilterOp.Top
+                                ChoicePill("Top", draft.valueOp == ValueFilterOp.Top) {
+                                    draft = draft.copy(valueOp = ValueFilterOp.Top)
                                 }
-                                ChoicePill("Bottom", valueOp == ValueFilterOp.Bottom) {
-                                    valueOp = ValueFilterOp.Bottom
+                                ChoicePill("Bottom", draft.valueOp == ValueFilterOp.Bottom) {
+                                    draft = draft.copy(valueOp = ValueFilterOp.Bottom)
                                 }
                             }
                             OutlinedTextField(
-                                value = count,
-                                onValueChange = { count = it.filter(Char::isDigit).take(4) },
+                                value = draft.count,
+                                onValueChange = {
+                                    draft = draft.copy(count = it.filter(Char::isDigit).take(4))
+                                },
                                 label = { Text("Items") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
@@ -741,26 +664,24 @@ internal fun FilterSettingsDialog(
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 ValueFilterOp.entries
-                                    .filterNot {
-                                        it in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom)
-                                    }
+                                    .filterNot { it in topBottomOps }
                                     .forEach { op ->
-                                        ChoicePill(valueFilterLabel(op), valueOp == op) {
-                                            valueOp = op
+                                        ChoicePill(valueFilterLabel(op), draft.valueOp == op) {
+                                            draft = draft.copy(valueOp = op)
                                         }
                                     }
                             }
                             OutlinedTextField(
-                                value = textValue,
-                                onValueChange = { textValue = it },
+                                value = draft.text,
+                                onValueChange = { draft = draft.copy(text = it) },
                                 label = { Text("Value") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            if (valueOp == ValueFilterOp.Between) {
+                            if (draft.valueOp == ValueFilterOp.Between) {
                                 OutlinedTextField(
-                                    value = secondValue,
-                                    onValueChange = { secondValue = it },
+                                    value = draft.secondText,
+                                    onValueChange = { draft = draft.copy(secondText = it) },
                                     label = { Text("Second value") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
@@ -772,68 +693,7 @@ internal fun FilterSettingsDialog(
             }
         },
         confirmButton = {
-            val enabled =
-                when (kind) {
-                    FilterEditorKind.Members -> true
-                    FilterEditorKind.Label -> textValue.isNotBlank()
-                    FilterEditorKind.Value ->
-                        measureAlias.isNotBlank() &&
-                            textValue.toBigDecimalOrNull() != null &&
-                            (valueOp != ValueFilterOp.Between ||
-                                secondValue.toBigDecimalOrNull() != null)
-                    FilterEditorKind.TopN ->
-                        measureAlias.isNotBlank() && (count.toIntOrNull() ?: 0) > 0
-                }
-            PrimaryButton(
-                onClick = {
-                    val updated =
-                        when (kind) {
-                            FilterEditorKind.Members ->
-                                PivotFilter.Members(
-                                    filter.id,
-                                    filter.column,
-                                    filter.label,
-                                    includedKeys = includedKeys,
-                                    pinned = pinned,
-                                )
-                            FilterEditorKind.Label ->
-                                PivotFilter.Label(
-                                    filter.id,
-                                    filter.column,
-                                    filter.label,
-                                    labelOp,
-                                    textValue.trim(),
-                                    pinned,
-                                )
-                            FilterEditorKind.Value ->
-                                PivotFilter.Value(
-                                    filter.id,
-                                    filter.column,
-                                    filter.label,
-                                    measureAlias,
-                                    valueOp.takeUnless {
-                                        it in setOf(ValueFilterOp.Top, ValueFilterOp.Bottom)
-                                    } ?: ValueFilterOp.GreaterThan,
-                                    textValue.trim(),
-                                    secondValue.trim().ifEmpty { null },
-                                    pinned = false,
-                                )
-                            FilterEditorKind.TopN ->
-                                PivotFilter.Value(
-                                    filter.id,
-                                    filter.column,
-                                    filter.label,
-                                    measureAlias,
-                                    if (valueOp == ValueFilterOp.Bottom) ValueFilterOp.Bottom
-                                    else ValueFilterOp.Top,
-                                    count = count.toIntOrNull()?.coerceAtLeast(1) ?: 10,
-                                    pinned = false,
-                                )
-                        }
-                    onSave(updated)
-                },
-                enabled = enabled,
-            ) {
+            PrimaryButton(onClick = { onSave(draft.toFilter()) }, enabled = draft.isValid) {
                 Text("Apply")
             }
         },
@@ -841,11 +701,151 @@ internal fun FilterSettingsDialog(
     )
 }
 
-private enum class FilterEditorKind {
+@Composable
+private fun FilterMemberList(
+    memberOptions: List<MemberOption>,
+    includedKeys: Set<String>,
+    onIncludedKeysChange: (Set<String>) -> Unit,
+) {
+    Text(
+        if (includedKeys.isEmpty()) "All sample values selected"
+        else "${includedKeys.size} selected",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Column(
+        modifier =
+            Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState())
+    ) {
+        memberOptions.forEach { option ->
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth().clickable {
+                        val baseline = includedKeys.ifEmpty { memberOptions.map { it.key }.toSet() }
+                        val next =
+                            if (option.key in baseline) baseline - option.key
+                            else baseline + option.key
+                        if (next.isNotEmpty()) {
+                            onIncludedKeysChange(
+                                if (next.size == memberOptions.size) emptySet() else next
+                            )
+                        }
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = includedKeys.isEmpty() || option.key in includedKeys,
+                    onCheckedChange = null,
+                )
+                Text(
+                    option.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text("${option.count}", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+internal enum class FilterEditorKind {
     Members,
     Label,
     Value,
     TopN,
+}
+
+private val topBottomOps = setOf(ValueFilterOp.Top, ValueFilterOp.Bottom)
+
+internal data class FilterDraft(
+    val id: String,
+    val column: String,
+    val label: String,
+    val kind: FilterEditorKind,
+    val pinned: Boolean = false,
+    val includedKeys: Set<String> = emptySet(),
+    val labelOp: LabelFilterOp = LabelFilterOp.Contains,
+    val valueOp: ValueFilterOp = ValueFilterOp.GreaterThan,
+    val measureAlias: String = "",
+    val text: String = "",
+    val secondText: String = "",
+    val count: String = "10",
+) {
+    val isValid: Boolean
+        get() =
+            when (kind) {
+                FilterEditorKind.Members -> true
+                FilterEditorKind.Label -> text.isNotBlank()
+                FilterEditorKind.Value ->
+                    measureAlias.isNotBlank() &&
+                        text.toBigDecimalOrNull() != null &&
+                        (valueOp != ValueFilterOp.Between ||
+                            secondText.toBigDecimalOrNull() != null)
+                FilterEditorKind.TopN -> measureAlias.isNotBlank() && (count.toIntOrNull() ?: 0) > 0
+            }
+
+    fun toFilter(): PivotFilter =
+        when (kind) {
+            FilterEditorKind.Members ->
+                PivotFilter.Members(
+                    id,
+                    column,
+                    label,
+                    includedKeys = includedKeys,
+                    pinned = pinned,
+                )
+            FilterEditorKind.Label -> PivotFilter.Label(id, column, label, labelOp, text.trim())
+            FilterEditorKind.Value ->
+                PivotFilter.Value(
+                    id,
+                    column,
+                    label,
+                    measureAlias,
+                    valueOp.takeUnless { it in topBottomOps } ?: ValueFilterOp.GreaterThan,
+                    text.trim(),
+                    secondText.trim().ifEmpty { null },
+                )
+            FilterEditorKind.TopN ->
+                PivotFilter.Value(
+                    id,
+                    column,
+                    label,
+                    measureAlias,
+                    if (valueOp == ValueFilterOp.Bottom) ValueFilterOp.Bottom
+                    else ValueFilterOp.Top,
+                    count = count.toIntOrNull()?.coerceAtLeast(1) ?: 10,
+                )
+        }
+
+    companion object {
+        fun from(filter: PivotFilter, defaultMeasureAlias: String = ""): FilterDraft =
+            FilterDraft(
+                id = filter.id,
+                column = filter.column,
+                label = filter.label,
+                kind =
+                    when (filter) {
+                        is PivotFilter.Members -> FilterEditorKind.Members
+                        is PivotFilter.Label -> FilterEditorKind.Label
+                        is PivotFilter.Value ->
+                            if (filter.op in topBottomOps) FilterEditorKind.TopN
+                            else FilterEditorKind.Value
+                    },
+                pinned = filter.pinned,
+                includedKeys = (filter as? PivotFilter.Members)?.includedKeys.orEmpty(),
+                labelOp = (filter as? PivotFilter.Label)?.op ?: LabelFilterOp.Contains,
+                valueOp = (filter as? PivotFilter.Value)?.op ?: ValueFilterOp.GreaterThan,
+                measureAlias = (filter as? PivotFilter.Value)?.measureAlias ?: defaultMeasureAlias,
+                text =
+                    when (filter) {
+                        is PivotFilter.Label -> filter.value
+                        is PivotFilter.Value -> filter.value
+                        is PivotFilter.Members -> ""
+                    },
+                secondText = (filter as? PivotFilter.Value)?.secondValue.orEmpty(),
+                count = ((filter as? PivotFilter.Value)?.count ?: 10).toString(),
+            )
+    }
 }
 
 private fun filterKindLabel(kind: FilterEditorKind): String =
