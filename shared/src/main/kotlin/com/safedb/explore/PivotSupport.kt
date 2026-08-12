@@ -82,11 +82,6 @@ internal fun BigDecimal.toPivotResultCell(): ResultCell {
         .getOrElse { ResultCell.FloatCell(normalized.toDouble()) }
 }
 
-internal fun comparableCells(rows: List<List<ResultCell>>, index: Int?): List<ResultCell> {
-    if (index == null) return emptyList()
-    return rows.mapNotNull { it.getOrNull(index) }.filterNot { it is ResultCell.Null }
-}
-
 internal fun comparePivotCells(left: ResultCell, right: ResultCell): Int {
     val leftDecimal = left.toDecimalOrNull()
     val rightDecimal = right.toDecimalOrNull()

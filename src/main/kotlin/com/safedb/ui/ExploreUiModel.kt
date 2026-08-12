@@ -15,6 +15,7 @@ import com.safedb.model.ColumnCategory
 import com.safedb.model.QueryResult
 import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
+import com.safedb.model.isNumeric
 import java.util.UUID
 
 internal data class ExploreFieldOption(
@@ -105,6 +106,14 @@ internal fun availableMeasureFunctions(field: ExploreFieldOption): List<MeasureF
         ColumnCategory.Json,
         ColumnCategory.Other -> listOf(MeasureFn.CountDistinct)
     }
+
+// Charts plot a numeric Y, so only counting functions survive on a non-numeric column.
+internal fun availablePlottableMeasureFunctions(field: ExploreFieldOption): List<MeasureFn> =
+    if (field.category.isNumeric()) availableMeasureFunctions(field)
+    else
+        availableMeasureFunctions(field).filter {
+            it == MeasureFn.Count || it == MeasureFn.CountDistinct
+        }
 
 internal fun measureFor(field: ExploreFieldOption, function: MeasureFn): PivotMeasure {
     require(function != MeasureFn.Count) { "Count rows does not use a source field" }

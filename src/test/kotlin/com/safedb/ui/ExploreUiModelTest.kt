@@ -142,6 +142,15 @@ class ExploreUiModelTest {
             listOf(MeasureFn.CountDistinct, MeasureFn.Min, MeasureFn.Max),
             availableMeasureFunctions(text),
         )
+        assertEquals(
+            availableMeasureFunctions(numeric),
+            availablePlottableMeasureFunctions(numeric),
+        )
+        assertEquals(listOf(MeasureFn.CountDistinct), availablePlottableMeasureFunctions(text))
+        assertEquals(
+            listOf(MeasureFn.CountDistinct),
+            availablePlottableMeasureFunctions(buildField("created_at", "date")),
+        )
         assertEquals("Average amount", measureFor(numeric, MeasureFn.Avg).label)
     }
 

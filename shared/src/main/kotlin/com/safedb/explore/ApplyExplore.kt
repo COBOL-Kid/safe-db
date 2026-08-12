@@ -8,7 +8,6 @@ import java.math.RoundingMode
 import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 import java.util.BitSet
-import kotlin.math.sqrt
 
 fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResult {
     val engine = PivotEngine(sample, config)
@@ -716,86 +715,16 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
 
     private fun computeMeasure(rowIndexes: List<Int>, measure: PivotMeasure): ResultCell {
         val index = measure.sourceColumn?.let(indexes::get)
-        val rows = rowIndexes.map(sample.rows::get)
-        return when (measure.fn) {
-            MeasureFn.Count ->
-                ResultCell.IntegerCell(
-                    if (index == null) rows.size.toLong()
-                    else rows.count { it.getOrNull(index) !is ResultCell.Null }.toLong()
-                )
-            MeasureFn.CountNumbers ->
-                ResultCell.IntegerCell(decimalCells(rows, index, measure).size.toLong())
-            MeasureFn.CountDistinct -> {
-                if (index == null) ResultCell.IntegerCell(0)
-                else
-                    ResultCell.IntegerCell(
-                        rows
-                            .mapNotNull { row ->
-                                row.getOrNull(index)
-                                    ?.takeUnless { it is ResultCell.Null }
-                                    ?.let(::pivotCellKey)
-                            }
-                            .distinct()
-                            .size
-                            .toLong()
-                    )
-            }
-            MeasureFn.Sum ->
-                decimalCells(rows, index, measure)
-                    .fold(BigDecimal.ZERO, BigDecimal::add)
-                    .toPivotResultCell()
-            MeasureFn.Avg ->
-                decimalCells(rows, index, measure).average()?.toPivotResultCell() ?: ResultCell.Null
-            MeasureFn.Min ->
-                comparableCells(rows, index).minWithOrNull(::comparePivotCells) ?: ResultCell.Null
-            MeasureFn.Max ->
-                comparableCells(rows, index).maxWithOrNull(::comparePivotCells) ?: ResultCell.Null
-            MeasureFn.Product ->
-                decimalCells(rows, index, measure)
-                    .takeIf { it.isNotEmpty() }
-                    ?.fold(BigDecimal.ONE, BigDecimal::multiply)
-                    ?.toPivotResultCell() ?: ResultCell.Null
-            MeasureFn.StdDev ->
-                statistic(decimalCells(rows, index, measure), sample = true, squareRoot = true)
-            MeasureFn.StdDevPopulation ->
-                statistic(decimalCells(rows, index, measure), sample = false, squareRoot = true)
-            MeasureFn.Variance ->
-                statistic(decimalCells(rows, index, measure), sample = true, squareRoot = false)
-            MeasureFn.VariancePopulation ->
-                statistic(decimalCells(rows, index, measure), sample = false, squareRoot = false)
+        if (index == null) {
+            if (measure.fn == MeasureFn.Count)
+                return ResultCell.IntegerCell(rowIndexes.size.toLong())
+            return aggregateMeasure(emptyList(), measure.fn)
         }
-    }
-
-    private fun decimalCells(
-        rows: List<List<ResultCell>>,
-        index: Int?,
-        measure: PivotMeasure,
-    ): List<BigDecimal> {
-        if (index == null) return emptyList()
-        var skipped = 0
-        val values = rows.mapNotNull { row ->
-            val value = row.getOrNull(index)
-            val decimal = value?.toDecimalOrNull()
-            if (decimal == null && value != null && value !is ResultCell.Null) skipped++
-            decimal
-        }
-        if (skipped > 0)
+        val cells = rowIndexes.map { sample.rows[it].getOrNull(index) ?: ResultCell.Null }
+        return aggregateMeasure(cells, measure.fn) { skipped ->
             warnings +=
                 "Measure '${measure.label}' skipped $skipped non-numeric cell${if (skipped == 1) "" else "s"}"
-        return values
-    }
-
-    private fun statistic(
-        values: List<BigDecimal>,
-        sample: Boolean,
-        squareRoot: Boolean,
-    ): ResultCell {
-        if (values.isEmpty() || sample && values.size < 2) return ResultCell.Null
-        val doubles = values.map(BigDecimal::toDouble)
-        val mean = doubles.average()
-        val denominator = if (sample) doubles.size - 1 else doubles.size
-        val variance = doubles.sumOf { (it - mean) * (it - mean) } / denominator
-        return ResultCell.FloatCell(if (squareRoot) sqrt(variance) else variance)
+        }
     }
 
     private fun buildOutputColumns(

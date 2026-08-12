@@ -632,7 +632,7 @@ private fun AggregationPicker(
             onDismissRequest = { expanded = false },
             minWidth = 190.dp,
         ) {
-            availableMeasureFunctions(field).forEach { fn ->
+            availablePlottableMeasureFunctions(field).forEach { fn ->
                 MenuActionRow(
                     text = measureFunctionLabel(fn),
                     selected = value.fn == fn,

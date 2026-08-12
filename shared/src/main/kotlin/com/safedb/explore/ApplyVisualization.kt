@@ -422,50 +422,10 @@ private class VisualizationPlanner(
     }
 
     private fun aggregate(records: List<ChartRecord>, measure: VisualizationMeasure): BigDecimal? {
-        if (measure.fn == MeasureFn.Count && measure.sourceColumn == null)
-            return records.size.toBigDecimal()
-        val values =
-            measure.sourceColumn
-                ?.let { column -> records.mapNotNull { it.cell(column).decimalOrNull() } }
-                .orEmpty()
-        val concrete =
-            measure.sourceColumn
-                ?.let { column ->
-                    records.map { it.cell(column) }.filterNot { it is ResultCell.Null }
-                }
-                .orEmpty()
-        return when (measure.fn) {
-            MeasureFn.Count -> concrete.size.toBigDecimal()
-            MeasureFn.CountNumbers -> values.size.toBigDecimal()
-            MeasureFn.CountDistinct -> concrete.map(::pivotCellKey).distinct().size.toBigDecimal()
-            MeasureFn.Sum -> values.takeIf { it.isNotEmpty() }?.sumDecimals()
-            MeasureFn.Avg ->
-                values
-                    .takeIf { it.isNotEmpty() }
-                    ?.sumDecimals()
-                    ?.divide(values.size.toBigDecimal(), MathContext.DECIMAL128)
-            MeasureFn.Min -> values.minOrNull()
-            MeasureFn.Max -> values.maxOrNull()
-            MeasureFn.Product ->
-                values.takeIf { it.isNotEmpty() }?.fold(BigDecimal.ONE, BigDecimal::multiply)
-            MeasureFn.StdDev -> statistic(values, sample = true, squareRoot = true)
-            MeasureFn.StdDevPopulation -> statistic(values, sample = false, squareRoot = true)
-            MeasureFn.Variance -> statistic(values, sample = true, squareRoot = false)
-            MeasureFn.VariancePopulation -> statistic(values, sample = false, squareRoot = false)
-        }
-    }
-
-    private fun statistic(
-        values: List<BigDecimal>,
-        sample: Boolean,
-        squareRoot: Boolean,
-    ): BigDecimal? {
-        if (values.isEmpty() || sample && values.size < 2) return null
-        val doubles = values.map(BigDecimal::toDouble)
-        val mean = doubles.average()
-        val denominator = if (sample) doubles.size - 1 else doubles.size
-        val variance = doubles.sumOf { (it - mean) * (it - mean) } / denominator
-        return BigDecimal.valueOf(if (squareRoot) sqrt(variance) else variance)
+        val column = measure.sourceColumn
+        if (measure.fn == MeasureFn.Count && column == null) return records.size.toBigDecimal()
+        val cells = column?.let { records.map { record -> record.cell(it) } }.orEmpty()
+        return aggregateMeasure(cells, measure.fn).decimalOrNull()
     }
 
     private fun defaultTitle(type: ChartType): String {
@@ -540,7 +500,5 @@ private data class Bucket(val key: String, val label: String, val numeric: Doubl
 private fun ResultCell.decimalOrNull(): BigDecimal? = resultCellDecimal(this)
 
 private fun ResultCell.text(): String = resultCellText(this)
-
-private fun List<BigDecimal>.sumDecimals(): BigDecimal = fold(BigDecimal.ZERO, BigDecimal::add)
 
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()

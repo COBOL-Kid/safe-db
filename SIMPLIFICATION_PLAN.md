@@ -180,14 +180,28 @@ sites. Fixes: Scientific renders `1.23E3` not `1.23e+03`; currency uses locale-c
 placement via the `¤` pattern rather than an unconditional prefix; large `IntegerCell` values stop
 round-tripping through `Double`.
 
-**C2. One aggregator.** `computeMeasure` and `ApplyVisualization.aggregate` both switch over the same
-12-value `MeasureFn`, and two branches disagree. The chart's `Min`/`Max` operate on a list filtered to
-decimal-parsable cells, so on a date or text column they return `null`, the mark is dropped, and the
-user sees "No plottable values were found." The pivot uses
-`comparableCells(rows, index).minWithOrNull(::comparePivotCells)` and works. This is reachable:
-`availableMeasureFunctions` offers Min/Max for `Date`, `DateTime`, `Text`, and `Bool`. `Avg` also
-disagrees — `divide(size, 8, HALF_UP)` versus `MathContext.DECIMAL128`. Extract
-`aggregateMeasure(cells, fn)` into shared and delete both verbatim copies of `statistic`. Leave
+**C2. One aggregator.** `computeMeasure` and `ApplyVisualization.aggregate` both switched over the
+same 12-value `MeasureFn` and each carried a verbatim copy of `statistic`.
+
+**Correction found during C2:** the chart's `Min`/`Max` returning `null` on a date or text column is
+not drift to fix. `VisualizationMark.y` is a non-nullable `Double` and every chart type plots a
+numeric Y, so the decimal-only filter is the chart's contract. The real defect was upstream:
+`availableMeasureFunctions` in `ExploreUiModel.kt` serves both the pivot config panel and the
+visualization `AggregationPicker`, and it offers `Min`/`Max` for `Date`, `DateTime`, `Text`, and
+`Bool` — valid in the pivot, unplottable in a chart — so the UI let a user pick a measure that then
+reported "No plottable values were found."
+
+What landed: `aggregateMeasure(cells, fn, onNonNumericSkipped)` in
+`shared/src/main/kotlin/com/safedb/explore/ExploreAggregate.kt` returns the pivot's richer
+`ResultCell`, so `Min`/`Max` still compare text and dates through `comparePivotCells`. Each call site
+flattens its own input shape (pivot rows plus a column index, chart records plus a source column) to
+a flat `List<ResultCell>` and keeps the `Count`-with-no-source-column case; the chart coerces the
+returned cell to `BigDecimal?`, which preserves its numeric-only behavior. `Avg` is normalized on the
+pivot's `divide(size, 8, HALF_UP)`, so chart averages print fewer digits than the old
+`MathContext.DECIMAL128`. `Sum` over zero numeric cells now follows the pivot and yields `0` rather
+than dropping the chart mark. `availablePlottableMeasureFunctions` narrows the visualization picker to
+`Count`/`CountDistinct` on non-numeric fields; a saved config holding a now-unofferable function still
+just drops the mark. `statistic` and `comparableCells` are gone from both engines. Left
 `WorksheetAggregateFn` alone — collapsing it into `MeasureFn` is a serialization change and a
 separate decision.
 
@@ -250,9 +264,10 @@ header, e export bar).
 - Unify `dateUnitLabel` ("ISO week") with `groupingLabel` ("Iso week").
 
 Verify: extend the existing date-grouping tests in `ApplyExploreTest` / `ApplyWorksheetTest` /
-`ApplyVisualizationTest` to assert all three engines bucket identically; add a test asserting pivot
-and chart agree for every `MeasureFn` on a mixed-type column. Run `./gradlew renderPreview` — C1 and
-the pill change are visual.
+`ApplyVisualizationTest` to assert all three engines bucket identically; `ExploreAggregateTest`
+asserts pivot and chart agree for every `MeasureFn`, pins the `Avg` scale, and pins that a date or
+text `Min` aggregates for the pivot but never plots. Run `./gradlew renderPreview` — C1 and the pill
+change are visual.
 
 ---
 
