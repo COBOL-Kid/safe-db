@@ -1,6 +1,5 @@
 package com.safedb.adapter
 
-import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.EvidenceConfidence
@@ -24,15 +23,7 @@ internal fun mysqlIndexCapabilities(kind: String): IndexCapabilities =
     )
 
 object MySqlAdapter {
-    fun test(dataSource: HikariDataSource): String =
-        dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.executeQuery("SELECT VERSION()").use { rs ->
-                    rs.next()
-                    rs.getString(1)
-                }
-            }
-        }
+    fun test(dataSource: HikariDataSource): String = probeVersion(dataSource, "SELECT VERSION()")
 
     fun introspect(dataSource: HikariDataSource): Schema {
         dataSource.connection.use { conn ->
@@ -51,16 +42,13 @@ object MySqlAdapter {
                         "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA NOT IN $excluded " +
                         "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
                 ) { rs ->
-                    MetadataColumn(
-                        MetadataTableKey(
-                            readString(rs, "TABLE_SCHEMA"),
-                            readString(rs, "TABLE_NAME"),
-                        ),
-                        ColumnInfo(
-                            readString(rs, "COLUMN_NAME"),
-                            readString(rs, "DATA_TYPE"),
-                            readString(rs, "IS_NULLABLE") == "YES",
-                        ),
+                    columnRow(
+                        rs,
+                        schemaLabel = "TABLE_SCHEMA",
+                        tableLabel = "TABLE_NAME",
+                        columnLabel = "COLUMN_NAME",
+                        typeLabel = "DATA_TYPE",
+                        nullableLabel = "IS_NULLABLE",
                     )
                 }
             val indexes =
@@ -95,42 +83,27 @@ object MySqlAdapter {
                 }
             val foreignKeys =
                 conn.metadataRows(
-                    "SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, " +
-                        "REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE " +
+                    "SELECT TABLE_SCHEMA AS table_schema, TABLE_NAME AS table_name, " +
+                        "CONSTRAINT_NAME AS constraint_name, COLUMN_NAME AS column_name, " +
+                        "REFERENCED_TABLE_SCHEMA AS referenced_schema, " +
+                        "REFERENCED_TABLE_NAME AS referenced_table, " +
+                        "REFERENCED_COLUMN_NAME AS referenced_column " +
+                        "FROM information_schema.KEY_COLUMN_USAGE " +
                         "WHERE TABLE_SCHEMA NOT IN $excluded AND REFERENCED_TABLE_SCHEMA IS NOT NULL " +
                         "AND REFERENCED_TABLE_NAME IS NOT NULL AND REFERENCED_COLUMN_NAME IS NOT NULL " +
                         "ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION"
                 ) { rs ->
-                    MetadataForeignKey(
-                        MetadataTableKey(
-                            readString(rs, "TABLE_SCHEMA"),
-                            readString(rs, "TABLE_NAME"),
-                        ),
-                        readString(rs, "CONSTRAINT_NAME"),
-                        readString(rs, "COLUMN_NAME"),
-                        readString(rs, "REFERENCED_TABLE_SCHEMA"),
-                        readString(rs, "REFERENCED_TABLE_NAME"),
-                        readString(rs, "REFERENCED_COLUMN_NAME"),
-                    )
+                    foreignKeyRow(rs)
                 }
-            val tableSizes = runCatching {
-                conn
-                    .metadataRows(
-                        "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES " +
-                            "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN $excluded"
-                    ) { rs ->
-                        MetadataTableKey(
-                            readString(rs, "TABLE_SCHEMA"),
-                            readString(rs, "TABLE_NAME"),
-                        ) to
-                            normalizeTableSize(
-                                (rs.getObject("TABLE_ROWS") as? Number)?.toDouble(),
-                                EvidenceConfidence.Low,
-                            )
-                    }
-                    .toMap()
-            }
-                .getOrDefault(emptyMap())
+            val tableSizes =
+                conn.tableSizes(
+                    "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES " +
+                        "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN $excluded",
+                    rowEstimateLabel = "TABLE_ROWS",
+                    confidence = EvidenceConfidence.Low,
+                    schemaLabel = "TABLE_SCHEMA",
+                    tableLabel = "TABLE_NAME",
+                )
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }

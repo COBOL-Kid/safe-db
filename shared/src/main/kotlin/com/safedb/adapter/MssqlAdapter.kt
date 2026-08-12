@@ -1,6 +1,5 @@
 package com.safedb.adapter
 
-import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.EvidenceConfidence
@@ -13,14 +12,7 @@ import com.zaxxer.hikari.HikariDataSource
 
 object MssqlAdapter {
     fun test(dataSource: HikariDataSource): String =
-        dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.executeQuery("SELECT @@VERSION AS version").use { rs ->
-                    rs.next()
-                    readString(rs, "version").ifBlank { "Unknown" }
-                }
-            }
-        }
+        probeVersion(dataSource, "SELECT @@VERSION AS version").ifBlank { "Unknown" }
 
     fun introspect(dataSource: HikariDataSource): Schema {
         dataSource.connection.use { conn ->
@@ -39,16 +31,13 @@ object MssqlAdapter {
                         "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA NOT IN $excluded " +
                         "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
                 ) { rs ->
-                    MetadataColumn(
-                        MetadataTableKey(
-                            readString(rs, "TABLE_SCHEMA"),
-                            readString(rs, "TABLE_NAME"),
-                        ),
-                        ColumnInfo(
-                            readString(rs, "COLUMN_NAME"),
-                            readString(rs, "DATA_TYPE"),
-                            readString(rs, "IS_NULLABLE") == "YES",
-                        ),
+                    columnRow(
+                        rs,
+                        schemaLabel = "TABLE_SCHEMA",
+                        tableLabel = "TABLE_NAME",
+                        columnLabel = "COLUMN_NAME",
+                        typeLabel = "DATA_TYPE",
+                        nullableLabel = "IS_NULLABLE",
                     )
                 }
             val indexes =
@@ -115,22 +104,11 @@ object MssqlAdapter {
                 """
                         .trimIndent()
                 ) { rs ->
-                    MetadataForeignKey(
-                        MetadataTableKey(
-                            readString(rs, "table_schema"),
-                            readString(rs, "table_name"),
-                        ),
-                        readString(rs, "constraint_name"),
-                        readString(rs, "column_name"),
-                        readString(rs, "referenced_schema"),
-                        readString(rs, "referenced_table"),
-                        readString(rs, "referenced_column"),
-                    )
+                    foreignKeyRow(rs)
                 }
-            val tableSizes = runCatching {
-                conn
-                    .metadataRows(
-                        """
+            val tableSizes =
+                conn.tableSizes(
+                    """
                     SELECT s.name AS table_schema, t.name AS table_name, SUM(p.row_count) AS row_count
                     FROM sys.tables t
                     JOIN sys.schemas s ON t.schema_id = s.schema_id
@@ -138,20 +116,10 @@ object MssqlAdapter {
                     WHERE s.name NOT IN $excluded
                     GROUP BY s.name, t.name
                     """
-                            .trimIndent()
-                    ) { rs ->
-                        MetadataTableKey(
-                            readString(rs, "table_schema"),
-                            readString(rs, "table_name"),
-                        ) to
-                            normalizeTableSize(
-                                (rs.getObject("row_count") as? Number)?.toDouble(),
-                                EvidenceConfidence.Medium,
-                            )
-                    }
-                    .toMap()
-            }
-                .getOrDefault(emptyMap())
+                        .trimIndent(),
+                    rowEstimateLabel = "row_count",
+                    confidence = EvidenceConfidence.Medium,
+                )
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }

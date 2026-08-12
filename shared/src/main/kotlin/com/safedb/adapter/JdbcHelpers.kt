@@ -2,10 +2,15 @@ package com.safedb.adapter
 
 import com.safedb.launch.POSTGRES_LAUNCH_ROOT_CERT_PROPERTY
 import com.safedb.model.BindValue
+import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.EvidenceConfidence
+import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurityMode
+import com.safedb.model.mySqlSslMode
+import com.safedb.model.postgresSslMode
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import java.sql.Connection
@@ -59,14 +64,7 @@ internal fun createDataSourceConfig(
 
 private fun buildPostgresUrl(def: ConnectionDef): String {
     val base = "jdbc:postgresql://${def.host}:${def.port}/${def.database}"
-    val sslMode =
-        when (def.transportSecurity.mode) {
-            TransportSecurityMode.VerifyIdentity -> "verify-full"
-            TransportSecurityMode.VerifyCa -> "verify-ca"
-            TransportSecurityMode.EncryptOnly -> "require"
-            TransportSecurityMode.Disabled -> "disable"
-        }
-    return "$base?sslmode=$sslMode"
+    return "$base?sslmode=${def.transportSecurity.mode.postgresSslMode()}"
 }
 
 private fun applyPostgresSsl(
@@ -89,14 +87,7 @@ private fun applyPostgresSsl(
 }
 
 private fun buildMySqlUrl(def: ConnectionDef): String {
-    val sslMode =
-        when (def.transportSecurity.mode) {
-            TransportSecurityMode.VerifyIdentity -> "VERIFY_IDENTITY"
-            TransportSecurityMode.VerifyCa -> "VERIFY_CA"
-            TransportSecurityMode.EncryptOnly -> "REQUIRED"
-            TransportSecurityMode.Disabled -> "DISABLED"
-        }
-    val params = mutableListOf("sslMode=$sslMode")
+    val params = mutableListOf("sslMode=${def.transportSecurity.mode.mySqlSslMode()}")
     if (def.transportSecurity.mode == TransportSecurityMode.Disabled) {
         params += "allowPublicKeyRetrieval=true"
     }
@@ -106,6 +97,8 @@ private fun buildMySqlUrl(def: ConnectionDef): String {
 private fun buildMssqlUrl(def: ConnectionDef): String =
     "jdbc:sqlserver://${def.host}:${def.port};databaseName=${def.database};applicationName=$SERVICE_NAME"
 
+// Deliberately not shared with formatConnectionString: connecting pins the certificate host name,
+// while an exported string carries only the properties a driver needs to reproduce the mode.
 private fun applyMssqlSsl(config: HikariConfig, def: ConnectionDef) {
     when (def.transportSecurity.mode) {
         TransportSecurityMode.VerifyIdentity -> {
@@ -226,6 +219,66 @@ internal fun <T> Connection.metadataRows(sql: String, transform: (ResultSet) -> 
     createStatement().use { statement ->
         statement.executeQuery(sql).use { result ->
             buildList { while (result.next()) add(transform(result)) }
+        }
+    }
+
+// Every dialect's foreign-key query aliases its columns to this canonical set.
+internal fun foreignKeyRow(rs: ResultSet): MetadataForeignKey =
+    MetadataForeignKey(
+        MetadataTableKey(readString(rs, "table_schema"), readString(rs, "table_name")),
+        readString(rs, "constraint_name"),
+        readString(rs, "column_name"),
+        readString(rs, "referenced_schema"),
+        readString(rs, "referenced_table"),
+        readString(rs, "referenced_column"),
+    )
+
+internal fun columnRow(
+    rs: ResultSet,
+    schemaLabel: String = "table_schema",
+    tableLabel: String = "table_name",
+    columnLabel: String = "column_name",
+    typeLabel: String = "data_type",
+    nullableLabel: String = "is_nullable",
+    nullableValue: String = "YES",
+): MetadataColumn =
+    MetadataColumn(
+        MetadataTableKey(readString(rs, schemaLabel), readString(rs, tableLabel)),
+        ColumnInfo(
+            readString(rs, columnLabel),
+            readString(rs, typeLabel),
+            readString(rs, nullableLabel) == nullableValue,
+        ),
+    )
+
+// Row estimates are best-effort: a dialect that denies access to its statistics views still
+// produces a schema, just without size classes.
+internal fun Connection.tableSizes(
+    sql: String,
+    rowEstimateLabel: String,
+    confidence: EvidenceConfidence,
+    schemaLabel: String = "table_schema",
+    tableLabel: String = "table_name",
+): Map<MetadataTableKey, TableSizeEstimate> {
+    val rows = runCatching {
+        metadataRows(sql) { rs ->
+            MetadataTableKey(readString(rs, schemaLabel), readString(rs, tableLabel)) to
+                normalizeTableSize(
+                    (rs.getObject(rowEstimateLabel) as? Number)?.toDouble(),
+                    confidence,
+                )
+        }
+    }
+    return rows.getOrDefault(emptyList()).toMap()
+}
+
+internal fun probeVersion(dataSource: HikariDataSource, sql: String): String =
+    dataSource.connection.use { conn ->
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(sql).use { rs ->
+                rs.next()
+                readString(rs, 1)
+            }
         }
     }
 

@@ -1,6 +1,5 @@
 package com.safedb.adapter
 
-import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.EvidenceConfidence
@@ -68,16 +67,7 @@ object OracleAdapter {
     }
 
     fun test(dataSource: HikariDataSource): String =
-        dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt
-                    .executeQuery($$"SELECT banner FROM v$version WHERE banner LIKE 'Oracle%'")
-                    .use { rs ->
-                        rs.next()
-                        rs.getString(1)
-                    }
-            }
-        }
+        probeVersion(dataSource, $$"SELECT banner FROM v$version WHERE banner LIKE 'Oracle%'")
 
     fun introspect(dataSource: HikariDataSource): Schema {
         dataSource.connection.use { conn ->
@@ -93,13 +83,11 @@ object OracleAdapter {
                     "SELECT owner, table_name, column_name, data_type, nullable FROM all_tab_columns " +
                         "WHERE owner NOT IN ($blocked) ORDER BY owner, table_name, column_id"
                 ) { rs ->
-                    MetadataColumn(
-                        MetadataTableKey(readString(rs, "owner"), readString(rs, "table_name")),
-                        ColumnInfo(
-                            readString(rs, "column_name"),
-                            readString(rs, "data_type"),
-                            readString(rs, "nullable") == "Y",
-                        ),
+                    columnRow(
+                        rs,
+                        schemaLabel = "owner",
+                        nullableLabel = "nullable",
+                        nullableValue = "Y",
                     )
                 }
             val indexes =
@@ -170,35 +158,15 @@ object OracleAdapter {
                 """
                         .trimIndent()
                 ) { rs ->
-                    MetadataForeignKey(
-                        MetadataTableKey(
-                            readString(rs, "table_schema"),
-                            readString(rs, "table_name"),
-                        ),
-                        readString(rs, "constraint_name"),
-                        readString(rs, "column_name"),
-                        readString(rs, "referenced_schema"),
-                        readString(rs, "referenced_table"),
-                        readString(rs, "referenced_column"),
-                    )
+                    foreignKeyRow(rs)
                 }
-            val tableSizes = runCatching {
-                conn
-                    .metadataRows(
-                        "SELECT owner, table_name, num_rows FROM all_tables WHERE owner NOT IN ($blocked)"
-                    ) { rs ->
-                        MetadataTableKey(
-                            readString(rs, "owner"),
-                            readString(rs, "table_name"),
-                        ) to
-                            normalizeTableSize(
-                                (rs.getObject("num_rows") as? Number)?.toDouble(),
-                                EvidenceConfidence.Low,
-                            )
-                    }
-                    .toMap()
-            }
-                .getOrDefault(emptyMap())
+            val tableSizes =
+                conn.tableSizes(
+                    "SELECT owner, table_name, num_rows FROM all_tables WHERE owner NOT IN ($blocked)",
+                    rowEstimateLabel = "num_rows",
+                    confidence = EvidenceConfidence.Low,
+                    schemaLabel = "owner",
+                )
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }

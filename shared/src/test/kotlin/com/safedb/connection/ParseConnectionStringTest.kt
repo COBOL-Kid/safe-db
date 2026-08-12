@@ -319,6 +319,29 @@ class ParseConnectionStringTest {
     }
 
     @Test
+    fun everyPostgresAndMySqlTlsModeSurvivesFormattingAndReimport() {
+        for (mode in TransportSecurityMode.entries) {
+            for ((dialect, port) in listOf(Dialect.Postgres to 5432, Dialect.MySql to 3306)) {
+                val def =
+                    ConnectionDef(
+                        id = "c1",
+                        name = "Test",
+                        dialect = dialect,
+                        host = "db.example.com",
+                        port = port,
+                        database = "app",
+                        username = "readonly",
+                        transportSecurity = TransportSecurity(mode),
+                    )
+
+                val parsed = parseConnectionString(formatConnectionString(def))
+
+                assertEquals(mode, parsed.transportSecurity.mode, "$dialect $mode")
+            }
+        }
+    }
+
+    @Test
     fun sqlServerFormattingRoundTripsEscapedValues() {
         val def =
             ConnectionDef(

@@ -18,7 +18,7 @@
 | `scripts/docker_test_databases.sh up` | Start and seed all four engines and the plain/TLS test endpoints from the root Compose stack. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 222 desktop and 360 shared tests, with 72% and 66% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 222 desktop and 364 shared tests, with 72% and 66% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
 
 Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to require a configured engine. MySQL uses `SAFEDB_TEST_MYSQL_{HOST,PORT,USER,PASSWORD,DATABASE}` and optional `SAFEDB_TEST_MYSQL_DOCKER`; PostgreSQL has matching variables. Reproduce the required MySQL job with:
 
