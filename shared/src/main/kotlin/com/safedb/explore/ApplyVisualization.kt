@@ -10,8 +10,6 @@ import com.safedb.model.isTemporal
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
-import java.time.format.DateTimeFormatter
-import java.time.temporal.WeekFields
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -131,11 +129,12 @@ private class VisualizationPlanner(
         type: ChartType,
     ): List<VisualizationMark> {
         val x = config.x ?: return emptyList()
-        val groups = linkedMapOf<Pair<Bucket, Bucket>, MutableList<ChartRecord>>()
+        val groups = linkedMapOf<Pair<ExploreBucket, ExploreBucket>, MutableList<ChartRecord>>()
         records.forEach { record ->
             val xBucket = bucket(record.cell(x.column), x)
             val seriesBucket =
-                config.series?.let { bucket(record.cell(it.column), it) } ?: Bucket("", "", null)
+                config.series?.let { bucket(record.cell(it.column), it) }
+                    ?: ExploreBucket("", "", "", ordinal = null)
             groups.getOrPut(xBucket to seriesBucket, ::mutableListOf) += record
         }
         val marks = mutableListOf<VisualizationMark>()
@@ -150,7 +149,7 @@ private class VisualizationPlanner(
                         id = "${xBucket.key}|$seriesKey|${measure.alias}",
                         xKey = xBucket.key,
                         xLabel = xBucket.label,
-                        xValue = xBucket.numeric,
+                        xValue = xBucket.ordinal,
                         y = value.toDouble(),
                         formattedY = formatExploreNumber(value, measure.numberFormat),
                         seriesKey = seriesKey,
@@ -348,77 +347,12 @@ private class VisualizationPlanner(
         return limited.flatten()
     }
 
-    private fun bucket(cell: ResultCell, field: VisualizationField): Bucket {
-        if (cell is ResultCell.Null) return Bucket("<null>", "(blank)", null)
-        return when (val grouping = field.grouping) {
-            PivotGrouping.Exact ->
-                Bucket(pivotCellKey(cell), cell.text(), cell.decimalOrNull()?.toDouble())
-            is PivotGrouping.Date -> dateBucket(cell, field, grouping.unit)
-            is PivotGrouping.NumberBin -> numberBucket(cell, field, grouping)
+    private fun bucket(cell: ResultCell, field: VisualizationField): ExploreBucket {
+        if (cell is ResultCell.Null)
+            return ExploreBucket("<null>", "(blank)", "(blank)", ordinal = null)
+        return groupingBucket(cell, field.grouping, field.label, WeekKeyStyle.Unpadded) {
+            warnings += it
         }
-    }
-
-    private fun dateBucket(
-        cell: ResultCell,
-        field: VisualizationField,
-        unit: DateGroupUnit,
-    ): Bucket {
-        val date = parseExploreDate(cell.text())
-        if (date == null) {
-            warnings += "${field.label} contains values that could not be grouped as dates"
-            return Bucket("<invalid-date>", "(invalid date)", null)
-        }
-        return when (unit) {
-            DateGroupUnit.Year -> Bucket("${date.year}", "${date.year}", date.year.toDouble())
-            DateGroupUnit.Quarter -> {
-                val quarter = ((date.monthValue - 1) / 3) + 1
-                Bucket(
-                    "${date.year}-Q$quarter",
-                    "Q$quarter ${date.year}",
-                    (date.year * 4 + quarter).toDouble(),
-                )
-            }
-            DateGroupUnit.Month ->
-                Bucket(
-                    "%04d-%02d".format(date.year, date.monthValue),
-                    date.format(DateTimeFormatter.ofPattern("MMM yyyy")),
-                    (date.year * 12 + date.monthValue).toDouble(),
-                )
-            DateGroupUnit.IsoWeek -> {
-                val fields = WeekFields.ISO
-                val year = date.get(fields.weekBasedYear())
-                val week = date.get(fields.weekOfWeekBasedYear())
-                Bucket(
-                    "$year-W$week",
-                    "%04d-W%02d".format(year, week),
-                    (year * 53 + week).toDouble(),
-                )
-            }
-            DateGroupUnit.Day ->
-                Bucket(date.toString(), date.toString(), date.toEpochDay().toDouble())
-        }
-    }
-
-    private fun numberBucket(
-        cell: ResultCell,
-        field: VisualizationField,
-        grouping: PivotGrouping.NumberBin,
-    ): Bucket {
-        val value = cell.decimalOrNull()
-        val size = grouping.size.toBigDecimalOrNull()
-        val start = grouping.start?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        if (value == null || size == null || size <= BigDecimal.ZERO) {
-            warnings += "${field.label} needs a positive numeric bin size and numeric values"
-            return Bucket(pivotCellKey(cell), cell.text(), value?.toDouble())
-        }
-        val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
-        val lower = start.add(index.multiply(size))
-        val upper = lower.add(size)
-        return Bucket(
-            "${plain(lower)}:${plain(size)}",
-            "${plain(lower)} – ${plain(upper)}",
-            lower.toDouble(),
-        )
     }
 
     private fun aggregate(records: List<ChartRecord>, measure: VisualizationMeasure): BigDecimal? {
@@ -494,8 +428,6 @@ private class VisualizationPlanner(
 }
 
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
-
-private data class Bucket(val key: String, val label: String, val numeric: Double?)
 
 private fun ResultCell.decimalOrNull(): BigDecimal? = resultCellDecimal(this)
 

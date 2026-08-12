@@ -6,14 +6,12 @@ import java.util.BitSet
 internal data class PivotRecord(
     val index: Int,
     val row: List<ResultCell>,
-    val rowBuckets: List<PivotBucket>,
-    val columnBuckets: List<PivotBucket>,
+    val rowBuckets: List<ExploreBucket>,
+    val columnBuckets: List<ExploreBucket>,
 )
 
-internal data class PivotBucket(val key: String, val label: String, val sortKey: String)
-
 internal class AxisNode(
-    val bucket: PivotBucket?,
+    val bucket: ExploreBucket?,
     val depth: Int,
     val pathKey: String,
     val parent: AxisNode?,

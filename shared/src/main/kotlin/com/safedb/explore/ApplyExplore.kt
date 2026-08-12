@@ -4,9 +4,6 @@ import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import java.math.BigDecimal
-import java.math.RoundingMode
-import java.time.format.DateTimeFormatter
-import java.time.temporal.WeekFields
 import java.util.BitSet
 
 fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResult {
@@ -230,88 +227,31 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             }
         }
 
-    private fun bucketFor(row: List<ResultCell>, dimension: PivotDimension): PivotBucket {
+    private fun bucketFor(row: List<ResultCell>, dimension: PivotDimension): ExploreBucket {
         val cell = row.getOrNull(indexes.getValue(dimension.column))
         if (cell == null || cell is ResultCell.Null) {
-            return PivotBucket("<null>", config.nullBucketLabel, config.nullBucketLabel)
+            return ExploreBucket(
+                "<null>",
+                config.nullBucketLabel,
+                config.nullBucketLabel,
+                ordinal = null,
+            )
         }
-        return when (val grouping = dimension.grouping) {
-            PivotGrouping.Exact -> PivotBucket(pivotCellKey(cell), cellText(cell), cellText(cell))
-            is PivotGrouping.Date -> dateBucket(cell, dimension, grouping.unit)
-            is PivotGrouping.NumberBin -> numberBucket(cell, dimension, grouping)
+        return groupingBucket(
+            cell,
+            dimension.grouping,
+            dimension.label,
+            WeekKeyStyle.Unpadded,
+        ) {
+            warnings += it
         }
-    }
-
-    private fun dateBucket(
-        cell: ResultCell,
-        dimension: PivotDimension,
-        unit: DateGroupUnit,
-    ): PivotBucket {
-        val dateTime = parseDateTime(cellText(cell))
-        if (dateTime == null) {
-            warnings += "${dimension.label} contains values that could not be grouped as dates"
-            return PivotBucket("<invalid-date>", "(invalid date)", "9999")
-        }
-        val date = dateTime.toLocalDate()
-        return when (unit) {
-            DateGroupUnit.Year ->
-                PivotBucket("${date.year}", "${date.year}", "%04d".format(date.year))
-            DateGroupUnit.Quarter -> {
-                val quarter = ((date.monthValue - 1) / 3) + 1
-                PivotBucket(
-                    "${date.year}-Q$quarter",
-                    "Q$quarter ${date.year}",
-                    "%04d-%d".format(date.year, quarter),
-                )
-            }
-            DateGroupUnit.Month ->
-                PivotBucket(
-                    "%04d-%02d".format(date.year, date.monthValue),
-                    date.format(DateTimeFormatter.ofPattern("MMM yyyy")),
-                    "%04d-%02d".format(date.year, date.monthValue),
-                )
-            DateGroupUnit.IsoWeek -> {
-                val weekFields = WeekFields.ISO
-                val weekYear = date.get(weekFields.weekBasedYear())
-                val week = date.get(weekFields.weekOfWeekBasedYear())
-                PivotBucket(
-                    "$weekYear-W$week",
-                    "%04d-W%02d".format(weekYear, week),
-                    "%04d-%02d".format(weekYear, week),
-                )
-            }
-            DateGroupUnit.Day -> PivotBucket(date.toString(), date.toString(), date.toString())
-        }
-    }
-
-    private fun numberBucket(
-        cell: ResultCell,
-        dimension: PivotDimension,
-        grouping: PivotGrouping.NumberBin,
-    ): PivotBucket {
-        val value = cell.toDecimalOrNull()
-        val size = grouping.size.toBigDecimalOrNull()
-        val start = grouping.start?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        if (value == null || size == null || size <= BigDecimal.ZERO) {
-            warnings += "${dimension.label} needs a positive numeric bin size and numeric values"
-            return PivotBucket(pivotCellKey(cell), cellText(cell), cellText(cell))
-        }
-        val bucketIndex = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
-        val lower = start.add(bucketIndex.multiply(size)).stripTrailingZeros()
-        val upper = lower.add(size).stripTrailingZeros()
-        val label = "${lower.toPlainString()} – ${upper.toPlainString()}"
-        return PivotBucket(
-            "${lower.toPlainString()}:${size.toPlainString()}",
-            label,
-            lower.toPlainString().padStart(32, '0'),
-        )
     }
 
     private fun buildTree(
         records: List<PivotRecord>,
         dimensions: List<PivotDimension>,
         filteredRows: BitSet,
-        buckets: (PivotRecord) -> List<PivotBucket>,
+        buckets: (PivotRecord) -> List<ExploreBucket>,
     ): AxisNode {
         val root =
             AxisNode(

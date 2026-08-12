@@ -5,9 +5,6 @@ import com.safedb.model.ResultCell
 import com.safedb.model.TableRef
 import java.math.BigDecimal
 import java.math.MathContext
-import java.math.RoundingMode
-import java.time.format.DateTimeFormatter
-import java.time.temporal.WeekFields
 
 fun applyWorksheet(
     sample: QueryResult,
@@ -480,72 +477,25 @@ private class WorksheetEngine(
     private fun groupBucket(cell: ResultCell?, group: WorksheetGroup): GroupBucket {
         if (cell == null || cell is ResultCell.Null)
             return GroupBucket("<null>", "(blank)", ResultCell.Null)
-        return when (val grouping = group.grouping) {
-            PivotGrouping.Exact -> GroupBucket(pivotCellKey(cell), cellText(cell), cell)
-            is PivotGrouping.Date -> dateBucket(cell, grouping.unit, group.label)
-            is PivotGrouping.NumberBin -> numberBucket(cell, grouping, group.label)
-        }
+        // Saved collapsedGroupPaths hold zero-padded ISO-week keys; the pivot's are unpadded.
+        val bucket =
+            groupingBucket(cell, group.grouping, group.label, WeekKeyStyle.Padded) {
+                warnings += it
+            }
+        return GroupBucket(bucket.key, bucket.label, groupSortValue(cell, group.grouping, bucket))
     }
 
-    private fun dateBucket(cell: ResultCell, unit: DateGroupUnit, label: String): GroupBucket {
-        val date = parseExploreDate(cellText(cell))
-        if (date == null) {
-            warnings += "$label contains values that could not be grouped as dates"
-            return GroupBucket("<invalid-date>", "(invalid date)", ResultCell.Null)
-        }
-        return when (unit) {
-            DateGroupUnit.Year ->
-                GroupBucket(
-                    date.year.toString(),
-                    date.year.toString(),
-                    ResultCell.text(date.year.toString()),
-                )
-            DateGroupUnit.Quarter -> {
-                val quarter = ((date.monthValue - 1) / 3) + 1
-                val key = "${date.year}-Q$quarter"
-                GroupBucket(key, "Q$quarter ${date.year}", ResultCell.text(key))
-            }
-            DateGroupUnit.Month -> {
-                val key = "%04d-%02d".format(date.year, date.monthValue)
-                GroupBucket(
-                    key,
-                    date.format(DateTimeFormatter.ofPattern("MMM yyyy")),
-                    ResultCell.text(key),
-                )
-            }
-            DateGroupUnit.IsoWeek -> {
-                val fields = WeekFields.ISO
-                val year = date.get(fields.weekBasedYear())
-                val week = date.get(fields.weekOfWeekBasedYear())
-                val key = "%04d-W%02d".format(year, week)
-                GroupBucket(key, key, ResultCell.text(key))
-            }
-            DateGroupUnit.Day ->
-                GroupBucket(date.toString(), date.toString(), ResultCell.text(date.toString()))
-        }
-    }
-
-    private fun numberBucket(
+    private fun groupSortValue(
         cell: ResultCell,
-        grouping: PivotGrouping.NumberBin,
-        label: String,
-    ): GroupBucket {
-        val value = cell.decimalOrNull()
-        val size = grouping.size.toBigDecimalOrNull()
-        val start = grouping.start?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        if (value == null || size == null || size <= BigDecimal.ZERO) {
-            warnings += "$label needs a positive numeric bin size"
-            return GroupBucket(pivotCellKey(cell), cellText(cell), cell)
+        grouping: PivotGrouping,
+        bucket: ExploreBucket,
+    ): ResultCell =
+        when (grouping) {
+            PivotGrouping.Exact -> cell
+            is PivotGrouping.Date ->
+                if (bucket.ordinal == null) ResultCell.Null else ResultCell.text(bucket.key)
+            is PivotGrouping.NumberBin -> bucket.ordinal?.let(ResultCell::FloatCell) ?: cell
         }
-        val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
-        val lower = start.add(index.multiply(size)).stripTrailingZeros()
-        val upper = lower.add(size).stripTrailingZeros()
-        return GroupBucket(
-            "${lower.toPlainString()}:${size.toPlainString()}",
-            "${lower.toPlainString()} – ${upper.toPlainString()}",
-            ResultCell.FloatCell(lower.toDouble()),
-        )
-    }
 
     private fun WorksheetRecord.source(column: String): ResultCell =
         indexes[column]?.let(row::getOrNull) ?: ResultCell.Null
