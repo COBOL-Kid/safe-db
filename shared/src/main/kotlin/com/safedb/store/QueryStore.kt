@@ -9,9 +9,7 @@ import com.safedb.model.asObjectOrNull
 import com.safedb.model.isNullOrEmpty
 import com.safedb.model.stringOrEmpty
 import com.safedb.model.u64OrDefault
-import com.safedb.persist.atomicWrite
 import com.safedb.persist.ensurePrivateDir
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
@@ -88,49 +86,23 @@ private constructor(
         lock.withLock { writeJson(historyPath, emptyList(), HistoryEntry.serializer()) }
     }
 
-    private fun <T> readValid(path: Path, serializer: KSerializer<T>): List<T> {
-        val document = readJsonList(path) ?: return emptyList()
-        val content = document.originalContent
-        val array = document.entries
-
-        val valid = mutableListOf<T>()
-        var migratedCount = 0
-        var dropped = 0
-
-        for (element in array) {
+    private fun <T> readValid(path: Path, serializer: KSerializer<T>): List<T> =
+        readMigratedJsonList(path, serializer) { element ->
             val (upgradedValue, upgraded) = upgradeEntryToV3(element)
             val decoded = runCatching {
                 SafeDbJson.lenient.decodeFromJsonElement(serializer, upgradedValue)
             }
                 .getOrNull()
-            if (decoded != null) {
-                valid.add(decoded)
-                if (upgraded) migratedCount++
-                continue
-            }
+            if (decoded != null) return@readMigratedJsonList MigratedEntry(decoded, upgraded)
 
             val migrated = migrateV1Entry(element)?.let { upgradeEntryToV3(it).first }
-            val migratedDecoded = migrated?.let {
-                runCatching { SafeDbJson.lenient.decodeFromJsonElement(serializer, it) }.getOrNull()
-            }
-            if (migratedDecoded != null) {
-                valid.add(migratedDecoded)
-                migratedCount++
-            } else {
-                dropped++
-            }
+            migrated
+                ?.let {
+                    runCatching { SafeDbJson.lenient.decodeFromJsonElement(serializer, it) }
+                        .getOrNull()
+                }
+                ?.let { MigratedEntry(it, true) }
         }
-
-        if (migratedCount > 0 && dropped == 0) {
-            val backup = migrationBackupPath(path)
-            if (!Files.exists(backup)) {
-                atomicWrite(backup, content)
-            }
-            writeJson(path, valid, serializer)
-        }
-
-        return valid
-    }
 
     private fun <T> writeJson(path: Path, data: List<T>, serializer: KSerializer<T>) {
         writeJsonList(path, data, serializer)
@@ -153,9 +125,6 @@ internal fun upgradeEntryToV3(value: JsonElement): Pair<JsonElement, Boolean> {
         JsonObject(objectValue.toMutableMap().apply { put("spec", JsonObject(updatedSpec)) })
     return updated to true
 }
-
-internal fun migrationBackupPath(path: Path): Path =
-    path.resolveSibling("${path.fileName.toString().substringBeforeLast('.')}.migration.bak")
 
 internal fun ensureGroupIds(group: JsonElement): JsonElement {
     val objectValue = group.asObjectOrNull() ?: return group

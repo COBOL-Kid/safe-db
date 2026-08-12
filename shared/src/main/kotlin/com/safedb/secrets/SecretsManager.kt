@@ -67,22 +67,16 @@ object SecretsManager {
                     DisabledMemoryStore()
                 }
                 RequestedBackend.Protected,
-                RequestedBackend.Auto -> selectStore(platformResolver())
+                RequestedBackend.Auto ->
+                    PlatformCredentialStore.createOrFallback(platformResolver())
             }
         activeLabel =
-            when (activeStore) {
+            when (val store = activeStore) {
                 is DisabledMemoryStore -> "disabled"
-                is MacCredentialStore -> "protected"
-                is WindowsCredentialStore -> "windows"
+                is PlatformCredentialStore -> store.label
                 else -> "unknown"
             }
     }
-
-    private fun selectStore(platform: DesktopPlatform): CredentialStore =
-        when (platform) {
-            DesktopPlatform.MacOs -> MacCredentialStore.createOrFallback()
-            DesktopPlatform.Windows -> WindowsCredentialStore.createOrFallback()
-        }
 
     fun passwordForDefinition(def: ConnectionDef): Result<String> {
         val cacheKey = "${def.id}:${def.credentialFingerprint()}"

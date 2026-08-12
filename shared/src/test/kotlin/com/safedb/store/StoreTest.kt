@@ -524,16 +524,32 @@ class StoreTest {
     }
 
     @Test
-    fun configAndSettingsStoresSurfaceMalformedFilesWithoutOverwritingThem() {
+    fun settingsStoreSurfacesMalformedFileWithoutOverwritingIt() {
         val dir = tempDir()
-        val connections = dir.resolve("connections.json")
         val settings = dir.resolve("settings.json")
-        Files.writeString(connections, "{")
         Files.writeString(settings, "{")
 
-        assertFailsWith<Exception> { ConfigStore.new(dir).list() }
         assertFailsWith<Exception> { SettingsStore.new(dir).load() }
-        assertEquals("{", Files.readString(connections))
         assertEquals("{", Files.readString(settings))
+    }
+
+    @Test
+    fun configStoreQuarantinesMalformedWholeFileAndRecovers() {
+        val dir = tempDir()
+        val path = dir.resolve("connections.json")
+        Files.writeString(path, "{")
+        val store = ConfigStore.new(dir)
+
+        val failure = assertFailsWith<IllegalStateException> { store.list() }
+
+        assertTrue(failure.message?.contains("connections.json was corrupt") == true)
+        assertFalse(Files.exists(path))
+        assertEquals(
+            1L,
+            Files.list(dir).use { files ->
+                files.filter { it.fileName.toString().startsWith("connections.corrupt-") }.count()
+            },
+        )
+        assertTrue(store.list().isEmpty())
     }
 }
