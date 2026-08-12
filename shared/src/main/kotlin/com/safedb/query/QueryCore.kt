@@ -85,21 +85,13 @@ suspend fun runQueryCore(
     settings: Settings,
     confirmation: QueryExecutionConfirmation? = null,
 ): QueryCoreOutcome {
-    val (validated, outcome) =
-        when (val validation = validateQuery(spec, schema, settings.blockedSchemas, def.dialect)) {
-            is Outcome.Ok -> validation.value
+    val (validated, normalizedSpec, warnings, staticAssessment) =
+        when (val assessed = assessValidatedQueryRisk(spec, schema, settings, def.dialect)) {
+            is Outcome.Ok -> assessed.value
             is Outcome.Err ->
                 return QueryCoreOutcome.Failure(
-                    QueryCoreError(QueryError.Validation(validation.message))
+                    QueryCoreError(QueryError.Validation(assessed.message))
                 )
-        }
-    val normalizedSpec = validated.spec()
-
-    val staticAssessment =
-        if (settings.queryRiskGate == com.safedb.model.QueryRiskGate.Disabled) {
-            null
-        } else {
-            assessStaticQueryRisk(validated, schema, def.dialect)
         }
 
     val compiled =
@@ -109,7 +101,7 @@ suspend fun runQueryCore(
                 return QueryCoreOutcome.Failure(
                     QueryCoreError(
                         error = QueryError.Compilation(result.message, normalizedSpec),
-                        warnings = outcome.warnings,
+                        warnings = warnings,
                     )
                 )
         }
@@ -169,7 +161,7 @@ suspend fun runQueryCore(
         return QueryCoreOutcome.Failure(
             QueryCoreError(
                 error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
-                warnings = outcome.warnings,
+                warnings = warnings,
                 riskEvaluation = baseEvaluation,
             )
         )
@@ -200,13 +192,13 @@ suspend fun runQueryCore(
         return QueryCoreOutcome.Failure(
             QueryCoreError(
                 error = QueryError.ConfirmationRequired(evaluation, requirement, normalizedSpec),
-                warnings = outcome.warnings,
+                warnings = warnings,
                 riskEvaluation = evaluation,
             )
         )
     }
 
-    return executeCompiled(runner, compiled, outcome, normalizedSpec, evaluation)
+    return executeCompiled(runner, compiled, warnings, normalizedSpec, evaluation)
 }
 
 private fun confirmationRequirement(
@@ -261,12 +253,10 @@ private fun Double?.isUsableOptimizerCost(): Boolean = this != null && isFinite(
 private suspend fun executeCompiled(
     runner: QueryRunner,
     compiled: CompiledQuery,
-    outcome: ValidationOutcome,
+    warnings: List<String>,
     normalizedSpec: QuerySpec,
     evaluation: QueryRiskEvaluation,
 ): QueryCoreOutcome {
-    val warnings = outcome.warnings.toMutableList()
-
     val result =
         when (val execute = runner.executeQuery(compiled, DEFAULT_TIMEOUT_MS)) {
             is Outcome.Ok -> execute.value
@@ -274,22 +264,19 @@ private suspend fun executeCompiled(
                 return QueryCoreOutcome.Failure(
                     QueryCoreError(
                         error = QueryError.Execution(execute.message, normalizedSpec),
-                        warnings = warnings.toList(),
+                        warnings = warnings,
                         riskEvaluation = evaluation,
                     )
                 )
         }
 
-    val limitTruncated = result.rows.size > outcome.limit
+    val limitTruncated = result.rows.size > normalizedSpec.limit
     val rows =
         if (limitTruncated) {
-            result.rows.take(outcome.limit)
+            result.rows.take(normalizedSpec.limit)
         } else {
             result.rows
         }
-
-    val mergedWarnings = warnings.toMutableList()
-    mergedWarnings.addAll(result.warnings)
 
     return QueryCoreOutcome.Success(
         result =
@@ -297,7 +284,7 @@ private suspend fun executeCompiled(
                 rows = rows,
                 rowCount = rows.size,
                 truncated = result.truncated || limitTruncated,
-                warnings = mergedWarnings,
+                warnings = warnings + result.warnings,
             ),
         historySpec = normalizedSpec,
         riskEvaluation = evaluation,

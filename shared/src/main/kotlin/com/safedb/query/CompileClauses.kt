@@ -12,39 +12,10 @@ import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.sqlOperator
 
-internal fun quote(ident: String, dialect: Dialect): String =
-    when (dialect) {
-        Dialect.Postgres,
-        Dialect.Oracle -> "\"${ident.replace("\"", "\"\"")}\""
-        Dialect.MySql -> "`${ident.replace("`", "``")}`"
-        Dialect.Mssql -> "[${ident.replace("]", "]]")}]"
+internal fun buildSelectClause(columns: List<ValidatedColumn>, dialect: Dialect): String =
+    columns.joinToString(", ") { column ->
+        "${quote(column.tableAlias, dialect)}.${quote(column.column, dialect)} AS ${quote(column.resultAlias, dialect)}"
     }
-
-internal fun placeholder(idx: Int, dialect: Dialect): String =
-    when (dialect) {
-        Dialect.Postgres -> "$$idx"
-        Dialect.MySql -> "?"
-        Dialect.Mssql -> "@P$idx"
-        Dialect.Oracle -> ":$idx"
-    }
-
-internal fun buildSelectClause(
-    spec: QuerySpec,
-    dialect: Dialect,
-    validatedColumns: List<ValidatedColumn>?,
-): String {
-    if (validatedColumns != null) {
-        return validatedColumns.joinToString(", ") { column ->
-            "${quote(column.tableAlias, dialect)}.${quote(column.column, dialect)} AS ${quote(column.resultAlias, dialect)}"
-        }
-    }
-    if (spec.columns.isEmpty()) {
-        return "*"
-    }
-    return spec.columns.joinToString(", ") { col ->
-        "${quote(col.tableAlias, dialect)}.${quote(col.column, dialect)}"
-    }
-}
 
 internal fun buildFromClause(spec: QuerySpec, dialect: Dialect): String {
     if (spec.tables.isEmpty()) return ""
@@ -125,31 +96,25 @@ internal fun buildWhereRoot(
     overrides: Map<String, GroupConnector>,
     dialect: Dialect,
     params: MutableList<BindValue>,
-    paramIdx: Int,
-): Outcome<Pair<String, Int>> =
-    joinChildren(group, overrides, dialect, params, paramIdx, wrap = false)
+): Outcome<String> = joinChildren(group, overrides, dialect, params, wrap = false)
 
 private fun joinChildren(
     group: FilterGroup,
     overrides: Map<String, GroupConnector>,
     dialect: Dialect,
     params: MutableList<BindValue>,
-    paramIdx: Int,
     wrap: Boolean,
-): Outcome<Pair<String, Int>> {
+): Outcome<String> {
     if (group.children.isEmpty()) {
-        return Outcome.ok("" to paramIdx)
+        return Outcome.ok("")
     }
 
-    var currentIdx = paramIdx
     val parts = mutableListOf<Pair<Int, String>>()
     for ((i, child) in group.children.withIndex()) {
-        when (val result = buildWhereNode(child, overrides, dialect, params, currentIdx)) {
+        when (val result = buildWhereNode(child, overrides, dialect, params)) {
             is Outcome.Ok -> {
-                val (clause, nextIdx) = result.value
-                currentIdx = nextIdx
-                if (clause.isNotEmpty()) {
-                    parts.add(i to clause)
+                if (result.value.isNotEmpty()) {
+                    parts.add(i to result.value)
                 }
             }
             is Outcome.Err -> return Outcome.err(result.message)
@@ -157,28 +122,21 @@ private fun joinChildren(
     }
 
     if (parts.isEmpty()) {
-        return Outcome.ok("" to currentIdx)
+        return Outcome.ok("")
     }
 
     val joined = buildString {
         append(parts[0].second)
         for ((origI, part) in parts.drop(1)) {
             val child = group.children[origI]
-            val connector = overrides[childId(child)] ?: group.connector
+            val connector = overrides[filterNodeId(child)] ?: group.connector
             append(connectorSql(connector))
             append(part)
         }
     }
 
-    val rendered = if (wrap && parts.size > 1) "($joined)" else joined
-    return Outcome.ok(rendered to currentIdx)
+    return Outcome.ok(if (wrap && parts.size > 1) "($joined)" else joined)
 }
-
-private fun childId(node: FilterNode): String =
-    when (node) {
-        is FilterNode.Leaf -> node.spec.id
-        is FilterNode.Group -> node.group.id
-    }
 
 private fun connectorSql(connector: GroupConnector): String =
     when (connector) {
@@ -191,21 +149,11 @@ private fun buildWhereNode(
     overrides: Map<String, GroupConnector>,
     dialect: Dialect,
     params: MutableList<BindValue>,
-    paramIdx: Int,
-): Outcome<Pair<String, Int>> =
+): Outcome<String> =
     when (node) {
-        is FilterNode.Leaf -> buildLeaf(node.spec, dialect, params, paramIdx)
-        is FilterNode.Group -> buildGroup(node.group, overrides, dialect, params, paramIdx)
+        is FilterNode.Leaf -> buildLeaf(node.spec, dialect, params)
+        is FilterNode.Group -> joinChildren(node.group, overrides, dialect, params, wrap = true)
     }
-
-private fun buildGroup(
-    group: FilterGroup,
-    overrides: Map<String, GroupConnector>,
-    dialect: Dialect,
-    params: MutableList<BindValue>,
-    paramIdx: Int,
-): Outcome<Pair<String, Int>> =
-    joinChildren(group, overrides, dialect, params, paramIdx, wrap = true)
 
 private fun bindLiteral(literal: com.safedb.model.FilterLiteral): Outcome<BindValue> =
     BindValue.fromLiteral(literal)
@@ -218,10 +166,11 @@ private fun buildLeaf(
     filter: FilterSpec,
     dialect: Dialect,
     params: MutableList<BindValue>,
-    paramIdx: Int,
-): Outcome<Pair<String, Int>> {
+): Outcome<String> {
     val columnRef = "${quote(filter.tableAlias, dialect)}.${quote(filter.column, dialect)}"
-    var currentIdx = paramIdx
+    // Every placeholder must be rendered from the bind list as it stands before its own value is
+    // appended, so placeholder numbering stays one-to-one with the bound parameters.
+    fun nextPlaceholder(): String = placeholder(params.size + 1, dialect)
 
     if (filter.op.isFriendlyTextPattern()) {
         val literal =
@@ -235,8 +184,7 @@ private fun buildLeaf(
         val text =
             (bound as? BindValue.Text)?.value
                 ?: return Outcome.err("${opLabel(filter.op)} expects a text value")
-        val ph = placeholder(currentIdx, dialect)
-        currentIdx += 1
+        val ph = nextPlaceholder()
         params.add(BindValue.Text(friendlyPatternText(filter.op, text)))
         val predicate =
             if (filter.op == FilterOp.ContainsIgnoreCase) {
@@ -244,7 +192,7 @@ private fun buildLeaf(
             } else {
                 "$columnRef ${friendlyPatternOperator(filter.op)} $ph"
             }
-        return Outcome.ok("$predicate ESCAPE '!'" to currentIdx)
+        return Outcome.ok("$predicate ESCAPE '!'")
     }
 
     val sqlOp = filter.op.sqlOperator()
@@ -259,13 +207,12 @@ private fun buildLeaf(
                 is FilterValue.Single -> value.literal
                 else -> return Outcome.err("Operator '$sqlOp' expects a single value")
             }
-        val ph = placeholder(currentIdx, dialect)
-        currentIdx += 1
+        val ph = nextPlaceholder()
         when (val bind = bindLiteral(lit)) {
             is Outcome.Ok -> params.add(bind.value)
             is Outcome.Err -> return Outcome.err(bind.message)
         }
-        return Outcome.ok("$columnRef $sqlOp $ph" to currentIdx)
+        return Outcome.ok("$columnRef $sqlOp $ph")
     }
 
     return when (filter.op) {
@@ -280,13 +227,12 @@ private fun buildLeaf(
                     is FilterValue.Single -> value.literal
                     else -> return Outcome.err("ILIKE expects a single value")
                 }
-            val ph = placeholder(currentIdx, dialect)
-            currentIdx += 1
+            val ph = nextPlaceholder()
             when (val bind = bindLiteral(lit)) {
                 is Outcome.Ok -> params.add(bind.value)
                 is Outcome.Err -> return Outcome.err(bind.message)
             }
-            Outcome.ok(buildIlike(columnRef, ph, dialect) to currentIdx)
+            Outcome.ok(buildIlike(columnRef, ph, dialect))
         }
         FilterOp.In,
         FilterOp.NotIn -> {
@@ -301,13 +247,11 @@ private fun buildLeaf(
                     else -> return Outcome.err("IN expects a list of values")
                 }
             if (list.isEmpty()) {
-                val sql = if (filter.op == FilterOp.In) "1=0" else "1=1"
-                return Outcome.ok(sql to currentIdx)
+                return Outcome.ok(if (filter.op == FilterOp.In) "1=0" else "1=1")
             }
             val phs = mutableListOf<String>()
             for (lit in list) {
-                val ph = placeholder(currentIdx, dialect)
-                currentIdx += 1
+                val ph = nextPlaceholder()
                 when (val bind = bindLiteral(lit)) {
                     is Outcome.Ok -> params.add(bind.value)
                     is Outcome.Err -> return Outcome.err(bind.message)
@@ -315,7 +259,7 @@ private fun buildLeaf(
                 phs.add(ph)
             }
             val kw = if (filter.op == FilterOp.In) "IN" else "NOT IN"
-            Outcome.ok("$columnRef $kw (${phs.joinToString(", ")})" to currentIdx)
+            Outcome.ok("$columnRef $kw (${phs.joinToString(", ")})")
         }
         FilterOp.Between -> {
             val value =
@@ -328,24 +272,22 @@ private fun buildLeaf(
                     is FilterValue.Pair -> value.first to value.second
                     else -> return Outcome.err("BETWEEN expects a pair of values")
                 }
-            val ph1 = placeholder(currentIdx, dialect)
-            currentIdx += 1
+            val ph1 = nextPlaceholder()
             when (val bind1 = bindLiteral(from)) {
                 is Outcome.Ok -> params.add(bind1.value)
                 is Outcome.Err -> return Outcome.err(bind1.message)
             }
-            val ph2 = placeholder(currentIdx, dialect)
-            currentIdx += 1
+            val ph2 = nextPlaceholder()
             when (val bind2 = bindLiteral(to)) {
                 is Outcome.Ok -> params.add(bind2.value)
                 is Outcome.Err -> return Outcome.err(bind2.message)
             }
-            Outcome.ok("$columnRef BETWEEN $ph1 AND $ph2" to currentIdx)
+            Outcome.ok("$columnRef BETWEEN $ph1 AND $ph2")
         }
-        FilterOp.IsNull -> Outcome.ok("$columnRef IS NULL" to currentIdx)
-        FilterOp.IsNotNull -> Outcome.ok("$columnRef IS NOT NULL" to currentIdx)
-        FilterOp.IsEmpty -> Outcome.ok("$columnRef = ''" to currentIdx)
-        FilterOp.IsNotEmpty -> Outcome.ok("$columnRef <> ''" to currentIdx)
+        FilterOp.IsNull -> Outcome.ok("$columnRef IS NULL")
+        FilterOp.IsNotNull -> Outcome.ok("$columnRef IS NOT NULL")
+        FilterOp.IsEmpty -> Outcome.ok("$columnRef = ''")
+        FilterOp.IsNotEmpty -> Outcome.ok("$columnRef <> ''")
         else -> Outcome.err("Unsupported operator in compiler")
     }
 }
@@ -383,11 +325,3 @@ private fun friendlyPatternText(op: FilterOp, text: String): String {
 
 private fun escapeLikeLiteral(text: String): String =
     text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
-
-private fun buildIlike(columnRef: String, ph: String, dialect: Dialect): String =
-    when (dialect) {
-        Dialect.Postgres -> "$columnRef ILIKE $ph"
-        Dialect.Mssql,
-        Dialect.MySql -> "LOWER($columnRef) LIKE LOWER($ph)"
-        Dialect.Oracle -> "UPPER($columnRef) LIKE UPPER($ph)"
-    }

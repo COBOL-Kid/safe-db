@@ -60,7 +60,7 @@ internal fun analyzePredicate(
     val disjuncts = mutableListOf<PredicateAnalysis>()
     var conjunction = analyzed.first().second
     for ((node, analysis) in analyzed.drop(1)) {
-        val connector = overrides[nodeId(node)] ?: group.connector
+        val connector = overrides[filterNodeId(node)] ?: group.connector
         if (connector == GroupConnector.And) {
             conjunction = combineAnalysis(conjunction, analysis, GroupConnector.And)
         } else {
@@ -112,12 +112,6 @@ internal fun combineBranches(
                 left.branches.size + right.branches.size > MAX_PREDICATE_BRANCHES -> null
                 else -> left.branches + right.branches
             }
-    }
-
-internal fun nodeId(node: FilterNode): String =
-    when (node) {
-        is FilterNode.Leaf -> node.spec.id
-        is FilterNode.Group -> node.group.id
     }
 
 internal fun constantForLeaf(node: FilterNode.Leaf): PredicateConstant {

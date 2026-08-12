@@ -21,10 +21,7 @@ import com.safedb.model.IndexKey
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.MetadataCoverage
-import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.Outcome
-import com.safedb.model.PlanAccessMethod
-import com.safedb.model.PlanRelationAccess
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
@@ -93,59 +90,6 @@ class QueryRiskTest {
             RiskGateState.AssessmentPending,
             applyRiskGate(null, QueryRiskGate.Standard).state,
         )
-    }
-
-    @Test
-    fun corroboratedHighRowPlanScanIsMandatoryAtEveryEnabledGate() {
-        val base =
-            buildAssessment(
-                "f",
-                listOf(
-                    RiskSignal(
-                        RiskSignalCode.NoKnownCompatibleAccessPath,
-                        RiskCategory.Access,
-                        RiskSubject(tableAlias = "t0", table = "orders"),
-                        2,
-                        SignalBasis.StaticSchema,
-                        EvidenceConfidence.Medium,
-                        RiskTarget.Access("t0"),
-                    )
-                ),
-                emptyList(),
-            )
-        val refined =
-            refineRiskWithPlan(
-                base,
-                NormalizedQueryPlan(
-                    relations =
-                        listOf(
-                            PlanRelationAccess(
-                                table = "orders",
-                                alias = "t0",
-                                method = PlanAccessMethod.TableScan,
-                                estimatedRows = 100_000,
-                            )
-                        )
-                ),
-                spec(),
-                Schema(
-                    listOf(
-                        table()
-                            .copy(
-                                tableSize =
-                                    TableSizeEstimate(
-                                        TableSizeClass.Large,
-                                        MetadataCoverage.complete(),
-                                        EvidenceConfidence.High,
-                                    )
-                            )
-                    )
-                ),
-            )
-
-        assertTrue(refined.signals.single().mandatoryBlockWhenGateEnabled)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Flexible).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Disabled).state)
     }
 
     @Test
@@ -783,57 +727,6 @@ class QueryRiskTest {
 
         assertEquals(1, assessment.signals.count { it.category == RiskCategory.Volume })
         assertTrue(assessment.signals.any { it.code == RiskSignalCode.HighProjectedPayload })
-    }
-
-    @Test
-    fun targetSpecificPlanReplacementLeavesUnrelatedSignalsActive() {
-        val base =
-            buildAssessment(
-                "f",
-                listOf(
-                    RiskSignal(
-                        RiskSignalCode.NoKnownCompatibleAccessPath,
-                        RiskCategory.Access,
-                        RiskSubject(tableAlias = "t0"),
-                        2,
-                        SignalBasis.StaticSchema,
-                        EvidenceConfidence.Medium,
-                        RiskTarget.Access("t0"),
-                    ),
-                    RiskSignal(
-                        RiskSignalCode.ScanProneTextPredicate,
-                        RiskCategory.Access,
-                        RiskSubject(tableAlias = "t1"),
-                        3,
-                        SignalBasis.StaticSchema,
-                        EvidenceConfidence.High,
-                        RiskTarget.Access("t1", AccessRiskKind.Text),
-                    ),
-                ),
-                emptyList(),
-            )
-        val refined =
-            refineRiskWithPlan(
-                base,
-                NormalizedQueryPlan(
-                    relations =
-                        listOf(
-                            PlanRelationAccess(
-                                table = "orders",
-                                alias = "t0",
-                                method = PlanAccessMethod.BoundedLookup,
-                                estimatedRows = 1,
-                            )
-                        )
-                ),
-                spec(),
-                Schema(listOf(table())),
-            )
-
-        assertEquals(
-            listOf(RiskSignalCode.ScanProneTextPredicate),
-            refined.signals.map(RiskSignal::code),
-        )
     }
 
     @Test

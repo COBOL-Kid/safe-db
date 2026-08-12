@@ -4,23 +4,12 @@ import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.Outcome
-import com.safedb.model.QuerySpec
 
-fun compile(spec: QuerySpec, dialect: Dialect): Outcome<CompiledQuery> =
-    compileSpec(spec, dialect, validatedColumns = null)
-
-fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<CompiledQuery> =
-    compileSpec(validated.spec(), dialect, validated.columns())
-
-private fun compileSpec(
-    spec: QuerySpec,
-    dialect: Dialect,
-    validatedColumns: List<ValidatedColumn>?,
-): Outcome<CompiledQuery> {
+fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<CompiledQuery> {
+    val spec = validated.spec()
     val params = mutableListOf<BindValue>()
-    val paramIdx = 1
 
-    val selectClause = buildSelectClause(spec, dialect, validatedColumns)
+    val selectClause = buildSelectClause(validated.columns(), dialect)
     val fromClause = buildFromClause(spec, dialect)
     val joinClause = buildJoinClause(spec, dialect)
     val whereClause =
@@ -31,10 +20,9 @@ private fun compileSpec(
                     overrides = spec.connectorOverrides,
                     dialect = dialect,
                     params = params,
-                    paramIdx = paramIdx,
                 )
         ) {
-            is Outcome.Ok -> result.value.first
+            is Outcome.Ok -> result.value
             is Outcome.Err -> return Outcome.err(result.message)
         }
     val orderByClause = buildOrderByClause(spec, dialect)

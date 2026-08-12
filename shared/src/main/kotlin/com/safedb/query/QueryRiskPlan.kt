@@ -29,11 +29,7 @@ fun refineRiskWithPlan(
     spec: QuerySpec,
     schema: Schema,
 ): QueryRiskAssessment {
-    val tablesByAlias =
-        spec.tables.associate { ref ->
-            ref.alias to
-                schema.tables.firstOrNull { it.schema == ref.schema && it.name == ref.name }
-        }
+    val tablesByAlias = tablesByAlias(spec, schema)
     val replacements = mutableMapOf<RiskTarget, RiskSignal?>()
     val uncertainties = staticAssessment.uncertainties.toMutableList()
 
@@ -224,9 +220,7 @@ fun refineRiskWithPlan(
                     RiskSignal(
                         RiskSignalCode.PlanConfirmedJoinExpansion,
                         RiskCategory.Joins,
-                        RiskSubject(
-                            operation = "join ${target.aliases.sorted().joinToString("-")}"
-                        ),
+                        RiskSubject(operation = target.displayName()),
                         3,
                         SignalBasis.PlanEvidence,
                         EvidenceConfidence.High,
@@ -249,6 +243,8 @@ fun refineRiskWithPlan(
         }
     }
 
+    // Every static signal sharing a refined target drops out together, so several static signals
+    // collapse into the single strongest plan-based replacement for that target.
     val retained = staticAssessment.signals.filterNot { it.target in replacements }
     val active = retained + replacements.values.filterNotNull()
     return buildAssessment(staticAssessment.queryFingerprint, active, uncertainties)

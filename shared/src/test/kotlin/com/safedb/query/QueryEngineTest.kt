@@ -172,8 +172,13 @@ class QueryEngineTest {
                 limit = 100,
             )
 
-        val normalized = validate(spec, Schema(listOf(child, parent)), emptyList()).unwrap().first
-        val sql = compile(normalized, Dialect.Postgres).unwrap().sql
+        val sql =
+            compileValidated(
+                    validatedQuery(spec, Schema(listOf(child, parent))),
+                    Dialect.Postgres,
+                )
+                .unwrap()
+                .sql
 
         assertTrue(sql.contains("\"t0\".\"order_id\" = \"t1\".\"id\""))
         assertTrue(sql.contains("\"t0\".\"store_id\" = \"t1\".\"store_id\""))
@@ -195,24 +200,23 @@ class QueryEngineTest {
     @Test
     fun validateDefaultsZeroLimitAndCapsExcess() {
         var spec = sampleSpec().copy(limit = 0)
-        var (normalized, outcome) = validate(spec, sampleSchema(), emptyList()).unwrap()
+        val (normalized, outcome) = validate(spec, sampleSchema(), emptyList()).unwrap()
         assertEquals(DEFAULT_LIMIT, normalized.limit)
         assertTrue(outcome.warnings.any { it.contains("defaulted") })
 
         spec = sampleSpec().copy(limit = 5_000)
-        outcome = validate(spec, sampleSchema(), emptyList()).unwrap().second
-        assertEquals(5_000, outcome.limit)
-        assertTrue(outcome.warnings.any { it.contains("useful for reporting") })
+        var result = validate(spec, sampleSchema(), emptyList()).unwrap()
+        assertEquals(5_000, result.first.limit)
+        assertTrue(result.second.warnings.any { it.contains("useful for reporting") })
 
         spec = sampleSpec().copy(limit = MAX_LIMIT)
-        outcome = validate(spec, sampleSchema(), emptyList()).unwrap().second
-        assertEquals(MAX_LIMIT, outcome.limit)
-        assertTrue(outcome.warnings.any { it.contains("useful for reporting") })
+        result = validate(spec, sampleSchema(), emptyList()).unwrap()
+        assertEquals(MAX_LIMIT, result.first.limit)
+        assertTrue(result.second.warnings.any { it.contains("useful for reporting") })
 
         spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
         val capped = validate(spec, sampleSchema(), emptyList()).unwrap()
         assertEquals(MAX_LIMIT, capped.first.limit)
-        assertEquals(MAX_LIMIT, capped.second.limit)
         assertTrue(capped.second.warnings.any { it.contains("capped") })
     }
 
@@ -351,7 +355,7 @@ class QueryEngineTest {
 
         for ((op, sqlOperator, expectedValue) in cases) {
             val spec = textFilterSpec(op, "chair")
-            val compiled = compile(spec, Dialect.Postgres).unwrap()
+            val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
 
             assertTrue(compiled.sql.contains("\"t0\".\"name\" $sqlOperator \$1 ESCAPE '!'"))
             assertEquals(listOf(BindValue.Text(expectedValue)), compiled.params)
@@ -360,7 +364,7 @@ class QueryEngineTest {
 
     @Test
     fun friendlyTextPatternsEscapeWildcardsAcrossDialects() {
-        val spec = textFilterSpec(FilterOp.Contains, "50%_!")
+        val validated = validatedQuery(textFilterSpec(FilterOp.Contains, "50%_!"))
         val expectedSql =
             mapOf(
                 Dialect.Postgres to "\"t0\".\"name\" LIKE \$1 ESCAPE '!'",
@@ -370,7 +374,7 @@ class QueryEngineTest {
             )
 
         for ((dialect, fragment) in expectedSql) {
-            val compiled = compile(spec, dialect).unwrap()
+            val compiled = compileValidated(validated, dialect).unwrap()
 
             assertTrue(compiled.sql.contains(fragment))
             assertEquals(listOf(BindValue.Text("%50!%!_!!%")), compiled.params)
@@ -379,7 +383,7 @@ class QueryEngineTest {
 
     @Test
     fun caseInsensitiveContainsEscapesWildcardsAcrossDialects() {
-        val spec = textFilterSpec(FilterOp.ContainsIgnoreCase, "50%_!")
+        val validated = validatedQuery(textFilterSpec(FilterOp.ContainsIgnoreCase, "50%_!"))
         val expectedSql =
             mapOf(
                 Dialect.Postgres to "\"t0\".\"name\" ILIKE \$1 ESCAPE '!'",
@@ -389,7 +393,7 @@ class QueryEngineTest {
             )
 
         for ((dialect, fragment) in expectedSql) {
-            val compiled = compile(spec, dialect).unwrap()
+            val compiled = compileValidated(validated, dialect).unwrap()
 
             assertTrue(compiled.sql.contains(fragment))
             assertEquals(listOf(BindValue.Text("%50!%!_!!%")), compiled.params)
@@ -417,7 +421,9 @@ class QueryEngineTest {
                         )
                 )
         assertTrue(
-            compile(missingValue, Dialect.Postgres).unwrapErr().contains("single text value")
+            compileValidated(handValidated(missingValue), Dialect.Postgres)
+                .unwrapErr()
+                .contains("single text value")
         )
 
         val nonTextValue =
@@ -441,7 +447,11 @@ class QueryEngineTest {
                                 )
                         )
                 )
-        assertTrue(compile(nonTextValue, Dialect.Postgres).unwrapErr().contains("text value"))
+        assertTrue(
+            compileValidated(handValidated(nonTextValue), Dialect.Postgres)
+                .unwrapErr()
+                .contains("text value")
+        )
     }
 
     @Test
@@ -455,8 +465,7 @@ class QueryEngineTest {
 
         for ((op, value, fragment) in cases) {
             val spec = textFilterSpec(op, value)
-            validate(spec, sampleSchema(), emptyList()).unwrap()
-            val compiled = compile(spec, Dialect.Postgres).unwrap()
+            val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
 
             assertTrue(compiled.sql.contains(fragment))
             assertFalse(compiled.sql.contains("ESCAPE '!'"))
@@ -484,8 +493,7 @@ class QueryEngineTest {
                                         )
                             )
                 )
-        val normalized = validate(spec, sampleSchema(), emptyList()).unwrap().first
-        val compiled = compile(normalized, Dialect.Postgres).unwrap()
+        val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.contains("1=0"))
     }
 
@@ -696,7 +704,7 @@ class QueryEngineTest {
 
     @Test
     fun postgresCompilesQuotingPlaceholdersAndLimit() {
-        val compiled = compile(twoTableSpec(), Dialect.Postgres).unwrap()
+        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.contains("SELECT \"t0\".\"id\""))
         assertTrue(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""))
         assertTrue(compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""))
@@ -708,14 +716,28 @@ class QueryEngineTest {
 
     @Test
     fun distinctCompilesInDialectCorrectKeywordOrder() {
-        val spec = sampleSpec().copy(distinct = true)
+        val distinct = validatedQuery(sampleSpec().copy(distinct = true))
 
-        assertTrue(compile(spec, Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT "))
-        assertTrue(compile(spec, Dialect.MySql).unwrap().sql.startsWith("SELECT DISTINCT "))
-        assertTrue(compile(spec, Dialect.Oracle).unwrap().sql.startsWith("SELECT DISTINCT "))
-        assertTrue(compile(spec, Dialect.Mssql).unwrap().sql.startsWith("SELECT DISTINCT TOP 101 "))
+        assertTrue(
+            compileValidated(distinct, Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT ")
+        )
+        assertTrue(
+            compileValidated(distinct, Dialect.MySql).unwrap().sql.startsWith("SELECT DISTINCT ")
+        )
+        assertTrue(
+            compileValidated(distinct, Dialect.Oracle).unwrap().sql.startsWith("SELECT DISTINCT ")
+        )
+        assertTrue(
+            compileValidated(distinct, Dialect.Mssql)
+                .unwrap()
+                .sql
+                .startsWith("SELECT DISTINCT TOP 101 ")
+        )
         assertFalse(
-            compile(sampleSpec(), Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT ")
+            compileValidated(validatedQuery(sampleSpec()), Dialect.Postgres)
+                .unwrap()
+                .sql
+                .startsWith("SELECT DISTINCT ")
         )
     }
 
@@ -731,8 +753,7 @@ class QueryEngineTest {
                         )
                 )
 
-        val normalized = validate(spec, sampleSchema(), emptyList()).unwrap().first
-        val sql = compile(normalized, Dialect.Postgres).unwrap().sql
+        val sql = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap().sql
 
         assertTrue(sql.contains("ORDER BY \"t0\".\"name\" DESC, \"t0\".\"id\" ASC"))
         assertTrue(sql.indexOf("ORDER BY") < sql.indexOf("LIMIT 101"))
@@ -792,14 +813,14 @@ class QueryEngineTest {
                     sorts = listOf(SortSpec("t0", "name")),
                 )
 
-        val normalized = validate(spec, sampleSchema(), emptyList()).unwrap().first
-        val sql = compile(normalized, Dialect.Postgres).unwrap().sql
+        val validated = validatedQuery(spec)
+        val sql = compileValidated(validated, Dialect.Postgres).unwrap().sql
 
         assertTrue(sql.contains("GROUP BY \"t0\".\"name\", \"t0\".\"id\""))
         assertTrue(sql.indexOf("GROUP BY") < sql.indexOf("ORDER BY"))
         assertTrue(sql.indexOf("ORDER BY") < sql.indexOf("LIMIT 101"))
 
-        val mysql = compile(normalized, Dialect.MySql).unwrap().sql
+        val mysql = compileValidated(validated, Dialect.MySql).unwrap().sql
         assertTrue(mysql.contains("GROUP BY `t0`.`name`, `t0`.`id`"))
         assertTrue(mysql.indexOf("GROUP BY") < mysql.indexOf("ORDER BY"))
     }
@@ -897,13 +918,13 @@ class QueryEngineTest {
     @Test
     fun postgresCompilesLargeLimitPlusOneForTruncationDetection() {
         val spec = twoTableSpec().copy(limit = MAX_LIMIT)
-        val compiled = compile(spec, Dialect.Postgres).unwrap()
+        val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.endsWith("LIMIT 10001"))
     }
 
     @Test
     fun mysqlCompilesBackticksAndQuestionMarkParams() {
-        val compiled = compile(twoTableSpec(), Dialect.MySql).unwrap()
+        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.MySql).unwrap()
         assertTrue(compiled.sql.contains("SELECT `t0`.`id`"))
         assertTrue(compiled.sql.contains("`t0`.`name` = ?"))
         assertTrue(compiled.sql.endsWith("LIMIT 51"))
@@ -912,7 +933,7 @@ class QueryEngineTest {
 
     @Test
     fun mssqlCompilesTopInsteadOfLimit() {
-        val compiled = compile(twoTableSpec(), Dialect.Mssql).unwrap()
+        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Mssql).unwrap()
         assertTrue(compiled.sql.contains("SELECT TOP 51 "))
         assertTrue(compiled.sql.contains("[t0].[name] = @P1"))
         assertFalse(compiled.sql.contains("LIMIT"))
@@ -920,13 +941,13 @@ class QueryEngineTest {
 
     @Test
     fun oracleCompilesFetchFirst() {
-        val compiled = compile(twoTableSpec(), Dialect.Oracle).unwrap()
+        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Oracle).unwrap()
         assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"))
         assertTrue(compiled.sql.contains(":1"))
     }
 
     @Test
-    fun emptyColumnsSelectStar() {
+    fun emptyColumnsExpandToEveryColumnWithResultAliases() {
         val spec =
             twoTableSpec()
                 .copy(
@@ -940,8 +961,16 @@ class QueryEngineTest {
                             children = emptyList(),
                         ),
                 )
-        val compiled = compile(spec, Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.startsWith("SELECT *"))
+        val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
+
+        val projection =
+            sampleSchema()
+                .tables
+                .first { it.name == "products" }
+                .columns
+                .joinToString(", ") { "\"t0\".\"${it.name}\" AS \"t0__${it.name}\"" }
+        assertTrue(compiled.sql.startsWith("SELECT $projection\n"), compiled.sql)
+        assertFalse(compiled.sql.contains("*"))
     }
 
     @Test
@@ -995,7 +1024,7 @@ class QueryEngineTest {
                 limit = 100,
                 schemaVersion = CURRENT_SCHEMA_VERSION,
             )
-        val compiled = compile(spec, Dialect.Postgres).unwrap()
+        val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.contains("WHERE (\"t0\".\"id\" = \$1 OR \"t0\".\"id\" = \$2)"))
         assertEquals(2, compiled.params.size)
     }
@@ -1034,7 +1063,7 @@ class QueryEngineTest {
                 limit = 100,
                 schemaVersion = CURRENT_SCHEMA_VERSION,
             )
-        val compiled = compile(spec, Dialect.Postgres).unwrap()
+        val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.contains("\"t0\".\"id\" IN (\$1, \$2, \$3)"))
         assertEquals(3, compiled.params.size)
     }
@@ -1072,7 +1101,7 @@ class QueryEngineTest {
                 limit = 100,
                 schemaVersion = CURRENT_SCHEMA_VERSION,
             )
-        val compiled = compile(spec, Dialect.Postgres).unwrap()
+        val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.contains("\"t0\".\"id\" NOT IN (\$1, \$2)"))
     }
 
@@ -1107,7 +1136,7 @@ class QueryEngineTest {
                 limit = 100,
                 schemaVersion = CURRENT_SCHEMA_VERSION,
             )
-        val compiled = compile(spec, Dialect.Postgres).unwrap()
+        val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.contains("\"t0\".\"price\" BETWEEN \$1 AND \$2"))
         assertEquals(2, compiled.params.size)
     }
@@ -1312,7 +1341,81 @@ class QueryEngineTest {
                                 )
                             ),
                     ),
+                    TableInfo(
+                        schema = "public",
+                        name = "products",
+                        columns =
+                            listOf(
+                                ColumnInfo(
+                                    name = "id",
+                                    dataType = "int",
+                                    nullable = false,
+                                    isIndexed = true,
+                                    joinEligible = true,
+                                    category = ColumnCategory.Integer,
+                                ),
+                                ColumnInfo(
+                                    name = "name",
+                                    dataType = "text",
+                                    nullable = true,
+                                    isIndexed = false,
+                                    joinEligible = false,
+                                    category = ColumnCategory.Text,
+                                ),
+                                ColumnInfo(
+                                    name = "category_id",
+                                    dataType = "int",
+                                    nullable = true,
+                                    isIndexed = true,
+                                    joinEligible = true,
+                                    category = ColumnCategory.Integer,
+                                ),
+                                ColumnInfo(
+                                    name = "price",
+                                    dataType = "int",
+                                    nullable = true,
+                                    isIndexed = false,
+                                    joinEligible = false,
+                                    category = ColumnCategory.Integer,
+                                ),
+                                ColumnInfo(
+                                    name = "deleted_at",
+                                    dataType = "timestamp",
+                                    nullable = true,
+                                    isIndexed = false,
+                                    joinEligible = false,
+                                    category = ColumnCategory.DateTime,
+                                ),
+                            ),
+                        indexes =
+                            listOf(
+                                IndexInfo(
+                                    name = "products_pkey",
+                                    columns = listOf("id"),
+                                    supportsEquality = true,
+                                    isUnique = true,
+                                    isPrimary = true,
+                                ),
+                                IndexInfo(
+                                    name = "products_category_id_idx",
+                                    columns = listOf("category_id"),
+                                    supportsEquality = true,
+                                ),
+                            ),
+                    ),
                 )
+        )
+
+    private fun validatedQuery(spec: QuerySpec, schema: Schema = sampleSchema()): ValidatedQuery =
+        validateQuery(spec, schema, emptyList()).unwrap().first
+
+    // Compilation-failure cases carry values validation rejects, so they bypass validateQuery.
+    private fun handValidated(spec: QuerySpec): ValidatedQuery =
+        ValidatedQuery(
+            spec,
+            spec.columns.map {
+                ValidatedColumn(it.tableAlias, it.column, "${it.tableAlias}__${it.column}")
+            },
         )
 
     private fun sampleSpec() =

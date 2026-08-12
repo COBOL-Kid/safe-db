@@ -45,7 +45,9 @@ sealed interface RiskTarget {
     data class Access(val alias: String, val kind: AccessRiskKind = AccessRiskKind.General) :
         RiskTarget
 
-    data class Join(val aliases: Set<String>) : RiskTarget
+    data class Join(val aliases: Set<String>) : RiskTarget {
+        fun displayName(): String = "join " + aliases.sorted().joinToString("-")
+    }
 
     data class Operation(val kind: PlanOperationKind, val aliases: Set<String>) : RiskTarget
 }

@@ -15,6 +15,7 @@ import com.safedb.model.PlanBlockingOperation
 import com.safedb.model.PlanJoinEvidence
 import com.safedb.model.PlanOperationKind
 import com.safedb.model.PlanRelationAccess
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
@@ -57,6 +58,75 @@ class QueryPlanRefinementTest {
                 EvidenceConfidence.Medium,
             )
         assertTrue(high.signals.single().mandatoryBlockWhenGateEnabled)
+    }
+
+    @Test
+    fun corroboratedHighRowPlanScanIsMandatoryAtEveryEnabledGate() {
+        val refined =
+            refineAccess(
+                PlanAccessMethod.TableScan,
+                100_000,
+                TableSizeClass.Large,
+                EvidenceConfidence.High,
+            )
+
+        assertTrue(refined.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Disabled).state)
+    }
+
+    @Test
+    fun targetSpecificPlanReplacementLeavesUnrelatedSignalsActive() {
+        val refined =
+            refineAccess(
+                PlanAccessMethod.BoundedLookup,
+                1,
+                signals =
+                    listOf(
+                        genericAccessSignal(),
+                        RiskSignal(
+                            RiskSignalCode.ScanProneTextPredicate,
+                            RiskCategory.Access,
+                            RiskSubject(tableAlias = "t1"),
+                            3,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                            RiskTarget.Access("t1", AccessRiskKind.Text),
+                        ),
+                    ),
+            )
+
+        assertEquals(
+            listOf(RiskSignalCode.ScanProneTextPredicate),
+            refined.signals.map(RiskSignal::code),
+        )
+    }
+
+    @Test
+    fun everySignalSharingOneAccessTargetCollapsesIntoAtMostOneReplacement() {
+        val target = RiskTarget.Access("t0")
+        val shared =
+            listOf(
+                genericAccessSignal(),
+                RiskSignal(
+                    RiskSignalCode.ScanProneNegativePredicate,
+                    RiskCategory.Access,
+                    RiskSubject(tableAlias = "t0", table = "orders", column = "status"),
+                    1,
+                    SignalBasis.StaticSchema,
+                    EvidenceConfidence.Medium,
+                    target,
+                ),
+            )
+
+        val scanned = refineAccess(PlanAccessMethod.TableScan, 25_000, signals = shared)
+        assertEquals(
+            listOf(RiskSignalCode.PlanConfirmedLargeScan),
+            scanned.signals.map(RiskSignal::code),
+        )
+
+        val bounded = refineAccess(PlanAccessMethod.BoundedLookup, 1, signals = shared)
+        assertTrue(bounded.signals.isEmpty())
     }
 
     @Test
@@ -214,9 +284,10 @@ class QueryPlanRefinementTest {
         rows: Long,
         size: TableSizeClass = TableSizeClass.Medium,
         confidence: EvidenceConfidence = EvidenceConfidence.Medium,
+        signals: List<RiskSignal> = listOf(genericAccessSignal()),
     ): QueryRiskAssessment =
         refineRiskWithPlan(
-            buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
+            buildAssessment("f", signals, emptyList()),
             NormalizedQueryPlan(
                 relations =
                     listOf(

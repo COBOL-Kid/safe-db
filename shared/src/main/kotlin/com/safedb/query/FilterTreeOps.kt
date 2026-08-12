@@ -95,6 +95,12 @@ fun pruneFiltersForAlias(group: FilterGroup, alias: String): FilterGroup =
             }
     )
 
+internal fun filterNodeId(node: FilterNode): String =
+    when (node) {
+        is FilterNode.Leaf -> node.spec.id
+        is FilterNode.Group -> node.group.id
+    }
+
 fun filterNodeIdAtPath(group: FilterGroup, path: List<Int>): String? {
     if (path.isEmpty()) return group.id.ifEmpty { null }
     val child = group.children.getOrNull(path.first()) ?: return null
@@ -104,14 +110,8 @@ fun filterNodeIdAtPath(group: FilterGroup, path: List<Int>): String? {
     }
 }
 
-fun filterLeafIdAtPath(group: FilterGroup, path: List<Int>): String? {
-    if (path.isEmpty()) return null
-    val child = group.children.getOrNull(path.first()) ?: return null
-    return when (child) {
-        is FilterNode.Leaf -> child.spec.id.ifEmpty { null }.takeIf { path.size == 1 }
-        is FilterNode.Group -> filterLeafIdAtPath(child.group, path.drop(1))
-    }
-}
+fun filterLeafIdAtPath(group: FilterGroup, path: List<Int>): String? =
+    if (path.isEmpty()) null else filterNodeIdAtPath(group, path)
 
 fun ensureFilterNodeIds(
     group: FilterGroup,
@@ -143,11 +143,7 @@ fun rebuildConnectorOverrides(
 
     fun visit(parent: FilterGroup) {
         parent.children.forEachIndexed { index, child ->
-            val id =
-                when (child) {
-                    is FilterNode.Leaf -> child.spec.id
-                    is FilterNode.Group -> child.group.id
-                }
+            val id = filterNodeId(child)
             if (index > 0 && id.isNotEmpty()) {
                 eligibleIds += id
                 parents[id] = parent

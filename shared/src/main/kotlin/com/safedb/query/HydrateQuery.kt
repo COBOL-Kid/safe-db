@@ -45,7 +45,7 @@ data class HydrationWarnings(
     val droppedGroups: Int = 0,
 )
 
-private fun schemaKey(schema: String, name: String): String = "$schema\u0000$name"
+private fun schemaKey(schema: String, name: String): String = "$schema$COLUMN_KEY_SEP$name"
 
 fun countFilterLeaves(group: FilterGroup): Int =
     group.children.sumOf { child ->

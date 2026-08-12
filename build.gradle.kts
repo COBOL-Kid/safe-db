@@ -122,7 +122,7 @@ val verifyUnitTestDiscovery =
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         minimumDesktopTests.set(222)
-        minimumSharedTests.set(359)
+        minimumSharedTests.set(360)
     }
 
 val verifyCoverageRatchet =

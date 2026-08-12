@@ -10,9 +10,11 @@ import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
+import com.safedb.model.SafeDbJson
 import com.safedb.model.Schema
 import com.safedb.model.SortSpec
 import com.safedb.model.classifyColumn
+import java.security.MessageDigest
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
 const val MAX_LIMIT = 10_000
@@ -59,7 +61,7 @@ internal val BLOCKED_SCHEMAS =
         "LBACSYS",
     )
 
-data class ValidationOutcome(val warnings: List<String>, val limit: Int)
+data class ValidationOutcome(val warnings: List<String>)
 
 data class ValidatedColumn(val tableAlias: String, val column: String, val resultAlias: String)
 
@@ -68,6 +70,13 @@ internal constructor(private val spec: QuerySpec, private val columns: List<Vali
     fun spec(): QuerySpec = spec
 
     fun columns(): List<ValidatedColumn> = columns
+}
+
+fun queryFingerprint(validated: ValidatedQuery): String {
+    val canonical = SafeDbJson.lenient.encodeToString(QuerySpec.serializer(), validated.spec())
+    return MessageDigest.getInstance("SHA-256")
+        .digest(canonical.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 }
 
 fun validateQuery(
@@ -406,9 +415,7 @@ fun validate(
 
     val normalizedSpec = spec.copy(limit = limit)
 
-    return Outcome.ok(
-        normalizedSpec to ValidationOutcome(warnings = warnings.toList(), limit = limit)
-    )
+    return Outcome.ok(normalizedSpec to ValidationOutcome(warnings = warnings.toList()))
 }
 
 internal fun findTable(schema: Schema, tableSchema: String, tableName: String) =
