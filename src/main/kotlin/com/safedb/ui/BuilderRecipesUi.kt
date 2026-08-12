@@ -97,9 +97,7 @@ internal fun BuilderRecipeButton(
         remember(currentSample, currentSpec.tables) {
             currentSample?.let { buildExploreFieldOptions(it, currentSpec.tables) }.orEmpty()
         }
-    val builtins = currentSample?.let {
-        listExploreTemplates(it, fields).filterNot { item -> item.isUserTemplate }
-    }
+    val builtins = currentSample?.let { listExploreTemplates(fields) }
     AlertDialog(
         onDismissRequest = { open = false },
         title = { Text("Recipes") },
@@ -130,12 +128,7 @@ internal fun BuilderRecipeButton(
                                     .then(
                                         if (item.available)
                                             Modifier.clickable {
-                                                val result =
-                                                    resolveExploreTemplate(
-                                                        item.id,
-                                                        currentSample,
-                                                        fields,
-                                                    )
+                                                val result = resolveExploreTemplate(item.id, fields)
                                                 if (result is ExploreTemplateBuildResult.Ready) {
                                                     val now = Instant.now().epochSecond.toString()
                                                     selected =

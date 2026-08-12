@@ -24,10 +24,6 @@ internal class CanvasViewportState(
     var pan by mutableStateOf(initialPan)
         private set
 
-    fun panBy(screenDelta: Offset) {
-        pan += screenDelta
-    }
-
     fun updatePan(target: Offset) {
         pan = target
     }

@@ -132,10 +132,10 @@ import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.CANVAS_MAX_ZOOM
+import com.safedb.viewmodel.CANVAS_MIN_ZOOM
 import com.safedb.viewmodel.CANVAS_ZOOM_STEP
 import com.safedb.viewmodel.CanvasAxisScrollState
-import com.safedb.viewmodel.SCHEMA_MAP_MAX_ZOOM
-import com.safedb.viewmodel.SCHEMA_MAP_MIN_ZOOM
 import com.safedb.viewmodel.SchemaMapViewModel
 import com.safedb.viewmodel.SchemaViewModel
 import com.safedb.viewmodel.canvasAxisScrollState
@@ -741,8 +741,8 @@ private fun SchemaMapCanvas(
 
         CanvasZoomControls(
             zoom = viewModel.zoom,
-            minZoom = SCHEMA_MAP_MIN_ZOOM,
-            maxZoom = SCHEMA_MAP_MAX_ZOOM,
+            minZoom = CANVAS_MIN_ZOOM,
+            maxZoom = CANVAS_MAX_ZOOM,
             fitDescription = "Fit map to screen",
             resetDescription = "Reset layout",
             onZoomOut = {

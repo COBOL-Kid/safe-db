@@ -420,10 +420,7 @@ internal fun RecipeLibraryDialog(
         remember(explore.session.sample, explore.session.baseSpec) {
             buildExploreFieldOptions(explore.session.sample, explore.session.baseSpec.tables)
         }
-    val pivotTemplates =
-        remember(explore.session.sample, fields) {
-            listExploreTemplates(explore.session.sample, fields).filterNot { it.isUserTemplate }
-        }
+    val pivotTemplates = remember(fields) { listExploreTemplates(fields) }
     val visualizationTemplateCatalog =
         remember(explore.session.sample, explore.session.baseSpec.tables) {
             visualizationTemplates(explore.session.sample, explore.session.baseSpec.tables)
@@ -626,8 +623,7 @@ internal fun RecipeLibraryDialog(
             PrimaryButton(
                 onClick = {
                     selectedBuiltin?.let { selected ->
-                        val result =
-                            resolveExploreTemplate(selected, explore.session.sample, fields)
+                        val result = resolveExploreTemplate(selected, fields)
                         if (result !is ExploreTemplateBuildResult.Ready) return@let
                         val definition = pivotTemplates.first { it.id == selected }
                         val now = Instant.now().epochSecond.toString()
