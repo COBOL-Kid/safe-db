@@ -99,7 +99,7 @@ Every database data directory uses an anonymous Docker volume. The helper renews
 
 ## Safety, data, and trust
 
-Queries are validated against the loaded schema and compile with bound parameters. They are read-only, default to 100 rows, cannot exceed 5,000 rows, time out after 10 seconds, and show guidance above 1,000 rows. Missing plan evidence or optimizer cost requires an explicit confirmed retry.
+Queries are validated against the loaded schema and compile with bound parameters. They are read-only, default to 500 rows, cannot exceed 10,000 rows, time out after 10 seconds, and show guidance above 1,000 rows. Missing plan evidence or optimizer cost requires an explicit confirmed retry.
 
 App data lives in `~/Library/Application Support/com.safedb.app/` on macOS and `%APPDATA%\com.safedb.app\` on Windows. `SAFEDB_KEYCHAIN_BACKEND=disabled` uses in-memory credentials for development or CI; `Test Connection` does not write the keyring, while `Save Connection` does.
 

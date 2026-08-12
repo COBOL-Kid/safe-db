@@ -199,9 +199,9 @@ class QueryEngineTest {
         assertEquals(DEFAULT_LIMIT, normalized.limit)
         assertTrue(outcome.warnings.any { it.contains("defaulted") })
 
-        spec = sampleSpec().copy(limit = 5000)
+        spec = sampleSpec().copy(limit = 5_000)
         outcome = validate(spec, sampleSchema(), emptyList()).unwrap().second
-        assertEquals(5000, outcome.limit)
+        assertEquals(5_000, outcome.limit)
         assertTrue(outcome.warnings.any { it.contains("useful for reporting") })
 
         spec = sampleSpec().copy(limit = MAX_LIMIT)
@@ -891,13 +891,14 @@ class QueryEngineTest {
         assertTrue(decoded.sorts.isEmpty())
         assertTrue(decoded.groups.isEmpty())
         assertFalse(decoded.distinct)
+        assertEquals(100, decoded.limit)
     }
 
     @Test
     fun postgresCompilesLargeLimitPlusOneForTruncationDetection() {
         val spec = twoTableSpec().copy(limit = MAX_LIMIT)
         val compiled = compile(spec, Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.endsWith("LIMIT 5001"))
+        assertTrue(compiled.sql.endsWith("LIMIT 10001"))
     }
 
     @Test

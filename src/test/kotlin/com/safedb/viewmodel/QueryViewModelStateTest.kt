@@ -329,18 +329,31 @@ class QueryViewModelStateTest {
     @Test
     fun limitsAndClearRestoreStableDefaults() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        assertEquals(500, viewModel.limit)
+
         viewModel.addTable(table("customers", "id"))
         viewModel.setLimit(0)
-        assertEquals(1, viewModel.limit)
+        assertEquals(500, viewModel.limit)
         viewModel.setLimit(Int.MAX_VALUE)
-        assertEquals(5_000, viewModel.limit)
+        assertEquals(10_000, viewModel.limit)
 
         viewModel.clear()
 
-        assertEquals(100, viewModel.limit)
+        assertEquals(500, viewModel.limit)
         assertEquals(0, viewModel.tableCount)
         assertTrue(viewModel.filters.id.isNotEmpty())
         assertNotEquals("", viewModel.filters.id)
+
+        viewModel.restoreFromSpec(
+            QuerySpec(
+                tables = listOf(TableRef("app", "customers", "saved_customers")),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            ),
+            listOf(table("customers", "id")),
+        )
+
+        assertEquals(100, viewModel.limit)
     }
 
     @Test

@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 
 class BuilderLimitChoicesTest {
     @Test
-    fun builderUsesFixedLimitChoicesUpToFiveThousand() {
-        assertEquals(listOf(100, 1_000, 5_000), BUILDER_LIMIT_CHOICES)
+    fun builderUsesFixedLimitChoicesUpToTenThousand() {
+        assertEquals(listOf(500, 1_000, 5_000, 10_000), BUILDER_LIMIT_CHOICES)
     }
 }
