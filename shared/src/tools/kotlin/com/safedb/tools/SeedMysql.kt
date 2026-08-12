@@ -249,7 +249,11 @@ private class SeedMysql(rawArgs: List<String>) {
         println("-> generating fixture SQL and loading it into '$database'")
         mysqlRunWithInput(emptyList()) { writer ->
                 BufferedWriter(OutputStreamWriter(writer)).use { sql ->
-                    MysqlFixtureGenerator(options.generator.copy(database = database), sql)
+                    RelationalFixtureGenerator(
+                            options.generator.copy(database = database),
+                            GeneratedSqlDialect.Mysql,
+                            sql,
+                        )
                         .generate()
                 }
             }

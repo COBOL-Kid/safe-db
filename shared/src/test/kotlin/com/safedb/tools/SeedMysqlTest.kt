@@ -249,7 +249,9 @@ class SeedMysqlTest {
 
     private fun generate(options: GeneratorOptions): String {
         val output = StringWriter()
-        BufferedWriter(output).use { writer -> MysqlFixtureGenerator(options, writer).generate() }
+        BufferedWriter(output).use { writer ->
+            RelationalFixtureGenerator(options, GeneratedSqlDialect.Mysql, writer).generate()
+        }
         return output.toString()
     }
 
