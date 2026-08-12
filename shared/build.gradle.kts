@@ -1,5 +1,3 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
@@ -80,6 +78,10 @@ sourceSets.test.configure {
 
 tasks.test { useJUnitPlatform() }
 
+// Running the JDBC suite needs live engines, but compiling it does not; without this a source-set
+// change can break it and stay hidden until someone runs integrationTest by hand.
+tasks.check { dependsOn("compileIntegrationTestKotlin") }
+
 tasks.register<Test>("integrationTest") {
     description = "Runs JDBC integration tests tagged @Tag(\"integration\")."
     group = "verification"
@@ -96,20 +98,16 @@ tasks.register<Test>("integrationTest") {
     shouldRunAfter(tasks.test)
 }
 
-tasks.named<KotlinCompile>("compileIntegrationTestKotlin") {
-    friendPaths.from(
-        tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory }
-    )
+// Associate rather than set friendPaths by hand: applying java-test-fixtures adds compilations that
+// leave a raw friendPaths wiring unable to see `internal` members of main.
+kotlin.target.compilations.named("integrationTest") {
+    associateWith(kotlin.target.compilations.getByName("main"))
 }
 
-tasks.named<KotlinCompile>("compileToolsKotlin") {
-    friendPaths.from(
-        tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory }
-    )
+kotlin.target.compilations.named("tools") {
+    associateWith(kotlin.target.compilations.getByName("main"))
 }
 
-tasks.named<KotlinCompile>("compileTestKotlin") {
-    friendPaths.from(
-        tasks.named<KotlinCompile>("compileToolsKotlin").flatMap { it.destinationDirectory }
-    )
+kotlin.target.compilations.named("test") {
+    associateWith(kotlin.target.compilations.getByName("tools"))
 }
