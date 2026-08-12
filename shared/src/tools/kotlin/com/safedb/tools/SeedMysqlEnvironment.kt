@@ -1,21 +1,23 @@
 package com.safedb.tools
 
-import com.safedb.platform.DesktopPlatform
+import com.safedb.platform.DataDirectory
+import com.safedb.platform.PlatformEnvironment
 import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.nio.file.Path
 
+// baseDir() rejects a Windows environment without APPDATA; the seeder skips the app-state reset
+// instead of failing, so that one case becomes null here while unsupported platforms still throw.
 internal fun safeDbAppDataDir(
-    environment: SeedMysqlPlatformEnvironment = SeedMysqlPlatformEnvironment.current()
+    environment: PlatformEnvironment = PlatformEnvironment.current()
 ): Path? =
-    when (DesktopPlatform.resolve(environment.osName)) {
-        DesktopPlatform.MacOs ->
-            Path.of(environment.userHome, "Library", "Application Support", "com.safedb.app")
-        DesktopPlatform.Windows ->
-            environment.appData?.takeIf(String::isNotBlank)?.let { Path.of(it, "com.safedb.app") }
+    try {
+        DataDirectory.baseDir(environment).resolve(DataDirectory.APP_ID)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
 internal fun safeDbAppDataDirForStateReset(
-    environment: SeedMysqlPlatformEnvironment = SeedMysqlPlatformEnvironment.current(),
+    environment: PlatformEnvironment = PlatformEnvironment.current(),
     report: (String) -> Unit = ::println,
 ): Path? =
     try {
@@ -28,21 +30,6 @@ internal fun safeDbAppDataDirForStateReset(
         report("-> skipping safe-db app state reset (${error.message})")
         null
     }
-
-internal data class SeedMysqlPlatformEnvironment(
-    val osName: String,
-    val userHome: String,
-    val appData: String? = null,
-) {
-    companion object {
-        fun current(): SeedMysqlPlatformEnvironment =
-            SeedMysqlPlatformEnvironment(
-                osName = System.getProperty("os.name").orEmpty(),
-                userHome = System.getProperty("user.home").orEmpty(),
-                appData = System.getenv("APPDATA"),
-            )
-    }
-}
 
 internal fun runningMysqlContainers(): List<String> =
     runCommand(

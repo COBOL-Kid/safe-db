@@ -5,7 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-class PlatformPathsTest {
+class DataDirectoryTest {
     @Test
     fun rejectsUnsupportedPlatformBeforeResolvingADataPath() {
         val error =

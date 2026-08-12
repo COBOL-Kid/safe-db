@@ -48,9 +48,16 @@ coverageFloors.set(mapOf("desktop" to 72, "shared" to 66))
 
 - Deleting `SslErrorsTest.kt`, `ConnectionPresetsTest` label cases, `joinEdgePointsHonorResizedTableWidth`,
   and the `panBy` assertion drops the counts below the shared minimum.
-- Moving `DataDirectory.kt` from `src/` to `shared/` shifts its coverage from the `desktop` bucket to
-  `shared`; moving `tools/` out of `main` removes `com.safedb.tools.SeedMysql*` from the Kover include
-  list and makes the `RenderPreview*` exclude dead.
+- Moving `tools/` out of `main` removes `com.safedb.tools.SeedMysql*` from the Kover include list and
+  makes the `RenderPreview*` exclude dead.
+
+**Correction found during Stage B:** moving a file between modules does *not* move its coverage
+between buckets. `VerifyCoverageRatchet` assigns the `desktop` / `shared` bucket from the **package
+name** in the aggregate Kover XML — `com/safedb` plus `com/safedb/(platform|export|viewmodel|ui)` are
+`desktop`, everything else is `shared` — not from the Gradle module. So relocating
+`com.safedb.platform.DataDirectory` from `src/` to `shared/` left both percentages untouched. Test
+*counts* do move between modules, because those come from each module's own JUnit XML. Only a package
+rename would move coverage.
 
 Re-measure and adjust these once per stage rather than guessing. `docs/testing.md` restates the same
 four numbers in prose and must be edited in the same commit every time.
