@@ -32,6 +32,7 @@ import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.WorksheetWindowFn
 import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.evaluatePivotFormula
+import com.safedb.explore.formatExploreNumber
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.classifyColumn
@@ -39,8 +40,7 @@ import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
-import java.text.DecimalFormat
-import java.util.Currency
+import java.math.BigDecimal
 import java.util.UUID
 
 @Composable
@@ -519,25 +519,11 @@ internal fun String.toDisplayWords(): String =
 internal fun formatWorksheetValue(value: ResultCell, format: PivotNumberFormat?): String {
     val number =
         when (value) {
-            is ResultCell.IntegerCell -> value.value.toDouble()
-            is ResultCell.FloatCell -> value.value
+            is ResultCell.IntegerCell -> BigDecimal.valueOf(value.value)
+            is ResultCell.FloatCell -> BigDecimal.valueOf(value.value)
             else -> return formatCell(value)
         }
     val applied = format ?: return formatCell(value)
     if (applied.kind == NumberFormatKind.Auto) return formatCell(value)
-    if (applied.kind == NumberFormatKind.Scientific)
-        return "%1$.${applied.decimals}e".format(number)
-    val pattern = buildString {
-        append(if (applied.thousandsSeparator) "#,##0" else "0")
-        if (applied.decimals > 0) append('.').append("0".repeat(applied.decimals))
-    }
-    val formatter = DecimalFormat(pattern)
-    return when (applied.kind) {
-        NumberFormatKind.Percent -> "${formatter.format(number * 100)}%"
-        NumberFormatKind.Currency ->
-            runCatching { Currency.getInstance(applied.currencyCode).symbol }
-                .getOrDefault(applied.currencyCode) + formatter.format(number)
-        NumberFormatKind.Number -> formatter.format(number)
-        else -> formatCell(value)
-    }
+    return formatExploreNumber(number, applied)
 }

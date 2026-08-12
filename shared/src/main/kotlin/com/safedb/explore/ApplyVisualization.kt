@@ -10,12 +10,8 @@ import com.safedb.model.isTemporal
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
 import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
-import java.util.Currency
-import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -156,7 +152,7 @@ private class VisualizationPlanner(
                         xLabel = xBucket.label,
                         xValue = xBucket.numeric,
                         y = value.toDouble(),
-                        formattedY = formatNumber(value, measure.numberFormat),
+                        formattedY = formatExploreNumber(value, measure.numberFormat),
                         seriesKey = seriesKey,
                         seriesLabel = seriesLabel,
                         measureAlias = measure.alias,
@@ -191,7 +187,7 @@ private class VisualizationPlanner(
                 xLabel = xValue.stripTrailingZeros().toPlainString(),
                 xValue = xValue.toDouble(),
                 y = yValue.toDouble(),
-                formattedY = formatNumber(yValue, yMeasure.numberFormat),
+                formattedY = formatExploreNumber(yValue, yMeasure.numberFormat),
                 seriesKey = seriesBucket?.key ?: yMeasure.alias,
                 seriesLabel = seriesBucket?.label ?: yMeasure.label,
                 measureAlias = yMeasure.alias,
@@ -252,7 +248,7 @@ private class VisualizationPlanner(
                 xKey = "",
                 xLabel = measure.label,
                 y = value.toDouble(),
-                formattedY = formatNumber(value, measure.numberFormat),
+                formattedY = formatExploreNumber(value, measure.numberFormat),
                 seriesKey = measure.alias,
                 seriesLabel = measure.label,
                 measureAlias = measure.alias,
@@ -548,27 +544,3 @@ private fun ResultCell.text(): String = resultCellText(this)
 private fun List<BigDecimal>.sumDecimals(): BigDecimal = fold(BigDecimal.ZERO, BigDecimal::add)
 
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
-
-private fun formatNumber(value: BigDecimal, format: PivotNumberFormat): String {
-    if (format.kind == NumberFormatKind.Auto) return plain(value)
-    val decimals = format.decimals.coerceIn(0, 8)
-    val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
-    val pattern = buildString {
-        append(if (format.thousandsSeparator) "#,##0" else "0")
-        if (decimals > 0) append('.').append("0".repeat(decimals))
-    }
-    return when (format.kind) {
-        NumberFormatKind.Number -> DecimalFormat(pattern, symbols).format(value)
-        NumberFormatKind.Percent -> DecimalFormat("$pattern%", symbols).format(value)
-        NumberFormatKind.Currency ->
-            DecimalFormat("¤$pattern", symbols)
-                .apply {
-                    runCatching { Currency.getInstance(format.currencyCode) }
-                        .getOrNull()
-                        ?.let { currency = it }
-                }
-                .format(value)
-        NumberFormatKind.Scientific ->
-            DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(value)
-    }
-}

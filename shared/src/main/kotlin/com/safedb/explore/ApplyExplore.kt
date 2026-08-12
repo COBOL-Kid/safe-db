@@ -5,13 +5,9 @@ import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
 import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 import java.util.BitSet
-import java.util.Currency
-import java.util.Locale
 import kotlin.math.sqrt
 
 fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResult {
@@ -863,28 +859,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             } else {
                 configured.kind
             }
-        if (kind == NumberFormatKind.Auto) return decimal.stripTrailingZeros().toPlainString()
-        val decimals = configured.decimals.coerceIn(0, 8)
-        val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
-        val pattern = buildString {
-            append(if (configured.thousandsSeparator) "#,##0" else "0")
-            if (decimals > 0) append('.').append("0".repeat(decimals))
-        }
-        return when (kind) {
-            NumberFormatKind.Number -> DecimalFormat(pattern, symbols).format(decimal)
-            NumberFormatKind.Percent -> DecimalFormat("$pattern%", symbols).format(decimal)
-            NumberFormatKind.Currency -> {
-                val currency = runCatching {
-                    Currency.getInstance(configured.currencyCode)
-                }
-                    .getOrNull()
-                val formatter = DecimalFormat("¤$pattern", symbols)
-                currency?.let { formatter.currency = it }
-                formatter.format(decimal)
-            }
-            NumberFormatKind.Scientific ->
-                DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(decimal)
-        }
+        return formatExploreNumber(decimal, configured.copy(kind = kind))
     }
 }
 
