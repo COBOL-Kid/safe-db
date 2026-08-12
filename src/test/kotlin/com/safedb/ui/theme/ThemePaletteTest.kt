@@ -19,6 +19,7 @@ class ThemePaletteTest {
                 assertNotEquals(colors.navigationBackground, colors.workspaceBackground)
                 assertTrue(contrast(material.onSurface, material.surface) >= 7.0)
                 assertTrue(contrast(colors.onActionPrimary, colors.actionPrimary) >= 3.0)
+                assertTrue(contrast(material.onPrimary, material.primary) >= 4.5)
             }
         }
     }
@@ -33,6 +34,7 @@ class ThemePaletteTest {
         assertEquals(Color(0xFF0B5ED7), lightScheme().second.actionPrimary)
         assertEquals(Color(0xFF18222D), lightScheme().second.navigationBackground)
         assertEquals(Color(0xFF4C8DFF), darkScheme().second.actionPrimary)
+        assertEquals(Color(0xFF6EA2FF), darkScheme().first.primary)
     }
 
     private fun contrast(foreground: Color, background: Color): Double {

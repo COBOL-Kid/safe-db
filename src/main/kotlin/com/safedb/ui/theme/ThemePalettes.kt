@@ -57,15 +57,22 @@ internal data class ThemePaletteSpec(
     val onErrorContainer: Color,
     val scrim: Color,
     val series: List<Color>,
+    // Material's primary slots follow the accent unless a palette needs different ones; Control
+    // Blue
+    // keeps a lighter dark primary so tinted icons stay readable.
+    val materialPrimary: Color = accent,
+    val onMaterialPrimary: Color = onAccent,
+    val materialPrimaryContainer: Color = accentContainer,
+    val onMaterialPrimaryContainer: Color = onAccentContainer,
 )
 
 internal fun ThemePaletteSpec.toScheme(isDark: Boolean): Pair<ColorScheme, SafeDbColors> {
     val base = if (isDark) darkColorScheme() else lightColorScheme()
     return base.copy(
-        primary = accent,
-        onPrimary = onAccent,
-        primaryContainer = accentContainer,
-        onPrimaryContainer = onAccentContainer,
+        primary = materialPrimary,
+        onPrimary = onMaterialPrimary,
+        primaryContainer = materialPrimaryContainer,
+        onPrimaryContainer = onMaterialPrimaryContainer,
         inversePrimary = accentHover,
         secondary = info,
         onSecondary = onInfo,
@@ -81,7 +88,7 @@ internal fun ThemePaletteSpec.toScheme(isDark: Boolean): Pair<ColorScheme, SafeD
         onSurface = onSurface,
         surfaceVariant = container,
         onSurfaceVariant = onSurfaceVariant,
-        surfaceTint = accent,
+        surfaceTint = materialPrimary,
         inverseSurface = onSurface,
         inverseOnSurface = background,
         error = error,
@@ -135,11 +142,119 @@ internal fun ThemePaletteSpec.toScheme(isDark: Boolean): Pair<ColorScheme, SafeD
 
 internal fun paletteSpecFor(palette: ThemePalette, isDark: Boolean): ThemePaletteSpec =
     when (palette) {
-        ThemePalette.ControlBlue -> error("Control Blue uses the established palette in Color.kt")
+        ThemePalette.ControlBlue -> if (isDark) ControlBlueDark else ControlBlueLight
         ThemePalette.SignalTeal -> if (isDark) SignalTealDark else SignalTealLight
         ThemePalette.Oxide -> if (isDark) OxideDark else OxideLight
         ThemePalette.CommandViolet -> if (isDark) CommandVioletDark else CommandVioletLight
     }
+
+private val ControlBlueLight =
+    ThemePaletteSpec(
+        background = Color(0xFFF7F9FB),
+        surface = Color.White,
+        containerLowest = Color.White,
+        containerLow = Color(0xFFF4F7FA),
+        container = Color(0xFFEDF1F5),
+        containerHigh = Color(0xFFE5EBF0),
+        containerHighest = Color(0xFFDCE4EB),
+        outline = Color(0xFFB8C3CE),
+        outlineVariant = Color(0xFFD7DFE7),
+        onSurface = Color(0xFF17212B),
+        onSurfaceVariant = Color(0xFF607080),
+        accent = Color(0xFF0B5ED7),
+        onAccent = Color.White,
+        accentHover = Color(0xFF084CB3),
+        accentContainer = Color(0xFFE8F0FF),
+        onAccentContainer = Color(0xFF0847A6),
+        workspaceBackground = Color(0xFFE6EBF0),
+        workspaceHeader = Color(0xFFDCE3E9),
+        workspacePanel = Color(0xFFE6EBF0),
+        workspaceCanvas = Color(0xFFF7F9FB),
+        navigationBackground = Color(0xFF18222D),
+        navigationBorder = Color(0xFF344250),
+        navigationHover = Color(0xFF222F3C),
+        navigationSelected = Color(0xFF202D3A),
+        onNavigation = Color(0xFFEAF0F5),
+        onNavigationMuted = Color(0xFFA2B1C0),
+        success = Color(0xFF047857),
+        onSuccess = Color.White,
+        successContainer = Color(0xFFECFDF5),
+        onSuccessContainer = Color(0xFF047857),
+        warning = Color(0xFFB45309),
+        onWarning = Color.White,
+        warningContainer = Color(0xFFFFFBEB),
+        onWarningContainer = Color(0xFF92400E),
+        info = Color(0xFF475569),
+        onInfo = Color.White,
+        infoContainer = Color(0xFFF1F5F9),
+        onInfoContainer = Color(0xFF334155),
+        uq = Color(0xFF7C3AED),
+        onUq = Color.White,
+        uqContainer = Color(0xFFF5F3FF),
+        onUqContainer = Color(0xFF5B21B6),
+        error = Color(0xFFDC2626),
+        onError = Color.White,
+        errorContainer = Color(0xFFFEF2F2),
+        onErrorContainer = Color(0xFFB91C1C),
+        scrim = Color(0x66000000),
+        series = VisualizationSeriesPalette,
+    )
+
+private val ControlBlueDark =
+    ThemePaletteSpec(
+        background = Color(0xFF0D141C),
+        surface = Color(0xFF121B25),
+        containerLowest = Color(0xFF0A1118),
+        containerLow = Color(0xFF16212C),
+        container = Color(0xFF1B2733),
+        containerHigh = Color(0xFF22303E),
+        containerHighest = Color(0xFF2A3948),
+        outline = Color(0xFF3A4958),
+        outlineVariant = Color(0xFF2A3846),
+        onSurface = Color(0xFFE8EEF4),
+        onSurfaceVariant = Color(0xFF97A8B8),
+        accent = Color(0xFF4C8DFF),
+        onAccent = Color.White,
+        accentHover = Color(0xFF72A5FF),
+        accentContainer = Color(0xFF18365D),
+        onAccentContainer = Color(0xFFB8D0FF),
+        workspaceBackground = Color(0xFF16212C),
+        workspaceHeader = Color(0xFF1B2733),
+        workspacePanel = Color(0xFF16212C),
+        workspaceCanvas = Color(0xFF0D141C),
+        navigationBackground = Color(0xFF0A1118),
+        navigationBorder = Color(0xFF2D3A47),
+        navigationHover = Color(0xFF141F29),
+        navigationSelected = Color(0xFF172430),
+        onNavigation = Color(0xFFE8EEF4),
+        onNavigationMuted = Color(0xFF91A3B3),
+        success = Color(0xFF34D399),
+        onSuccess = Color(0xFF0B1120),
+        successContainer = Color(0xFF0A2818),
+        onSuccessContainer = Color(0xFF6EE7B7),
+        warning = Color(0xFFFCD34D),
+        onWarning = Color(0xFF0B1120),
+        warningContainer = Color(0xFF2A1F0A),
+        onWarningContainer = Color(0xFFFDE68A),
+        info = Color(0xFFCBD5E1),
+        onInfo = Color(0xFF0B1120),
+        infoContainer = Color(0xFF1B2436),
+        onInfoContainer = Color(0xFFCBD5E1),
+        uq = Color(0xFFC4B5FD),
+        onUq = Color(0xFF0B1120),
+        uqContainer = Color(0xFF221840),
+        onUqContainer = Color(0xFFC4B5FD),
+        error = Color(0xFFF87171),
+        onError = Color(0xFF0B1120),
+        errorContainer = Color(0xFF2A1414),
+        onErrorContainer = Color(0xFFFCA5A5),
+        scrim = Color(0x99000000),
+        series = VisualizationSeriesPalette,
+        materialPrimary = Color(0xFF6EA2FF),
+        onMaterialPrimary = Color(0xFF07172C),
+        materialPrimaryContainer = Color(0xFF173761),
+        onMaterialPrimaryContainer = Color(0xFFB9D1FF),
+    )
 
 private val SignalTealLight =
     ThemePaletteSpec(
