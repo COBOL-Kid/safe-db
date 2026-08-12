@@ -1,6 +1,11 @@
 package com.safedb.tools
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
@@ -68,9 +73,11 @@ import com.safedb.model.TableRef
 import com.safedb.model.ThemePalette
 import com.safedb.model.markIndexedColumns
 import com.safedb.service.FakeSafeDbServiceSupport
-import com.safedb.ui.AppShell
+import com.safedb.ui.AppShellContent
+import com.safedb.ui.ConnectionsScreenContent
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.RecipeLibraryDialog
+import com.safedb.ui.Sidebar
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.ExploreViewModel
@@ -414,45 +421,21 @@ private class FakeService(private val settings: Settings = Settings()) :
     override suspend fun saveSettings(settings: Settings) {}
 }
 
-internal fun render(
+private fun renderScene(
     name: String,
     isDark: Boolean,
+    width: Int,
+    height: Int,
     palette: ThemePalette = ThemePalette.DEFAULT,
-    sidebarCollapsed: Boolean = false,
-    newConnectionPreview: Boolean = false,
-    editConnectionPreview: ConnectionDef? = null,
-    width: Int = 1280,
-    height: Int = 832,
     additionalSettleFrames: Int = 0,
-    prepare: (AppState, AppViewModel) -> Unit,
+    content: @Composable () -> Unit,
 ) {
-    val service =
-        FakeService(
-            Settings(
-                theme = if (isDark) "dark" else Settings.DEFAULT_THEME,
-                colorScheme = palette.id,
-            )
-        )
-    val appState = AppState(service)
-    val viewModel = AppViewModel(service)
-    Thread.sleep(700)
-    prepare(appState, viewModel)
-    Thread.sleep(700)
-
     ImageComposeScene(width = width, height = height, density = Density(1f)) {
             SafeDbTheme(isDark = isDark, palette = palette) {
                 androidx.compose.material3.Surface(
                     color = androidx.compose.material3.MaterialTheme.colorScheme.background
                 ) {
-                    AppShell(
-                        appState = appState,
-                        viewModel = viewModel,
-                        paletteOpen = false,
-                        onPaletteOpenChange = {},
-                        initialSidebarCollapsed = sidebarCollapsed,
-                        newConnectionPreview = newConnectionPreview,
-                        editConnectionPreview = editConnectionPreview,
-                    )
+                    content()
                 }
             }
         }
@@ -471,6 +454,93 @@ internal fun render(
             out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
             println("wrote ${out.absolutePath}")
         }
+}
+
+internal fun render(
+    name: String,
+    isDark: Boolean,
+    palette: ThemePalette = ThemePalette.DEFAULT,
+    sidebarCollapsed: Boolean = false,
+    width: Int = 1280,
+    height: Int = 832,
+    additionalSettleFrames: Int = 0,
+    prepare: (AppState, AppViewModel) -> Unit,
+) {
+    val service =
+        FakeService(
+            Settings(
+                theme = if (isDark) "dark" else Settings.DEFAULT_THEME,
+                colorScheme = palette.id,
+            )
+        )
+    val appState = AppState(service)
+    val viewModel = AppViewModel(service)
+    Thread.sleep(700)
+    prepare(appState, viewModel)
+    Thread.sleep(700)
+
+    renderScene(
+        name = name,
+        isDark = isDark,
+        width = width,
+        height = height,
+        palette = palette,
+        additionalSettleFrames = additionalSettleFrames,
+    ) {
+        AppShellContent(
+            appState = appState,
+            viewModel = viewModel,
+            paletteOpen = false,
+            onPaletteOpenChange = {},
+            sidebarCollapsed = sidebarCollapsed,
+            onSidebarCollapsedChange = {},
+        )
+    }
+}
+
+// The connections form states live inside ConnectionsScreen, so the shell chrome is assembled here
+// rather than driving AppShell through a click.
+private fun renderConnectionsForm(
+    name: String,
+    isDark: Boolean,
+    editing: ConnectionDef? = null,
+    width: Int = 1280,
+    height: Int = 832,
+) {
+    val service = FakeService(Settings(theme = if (isDark) "dark" else Settings.DEFAULT_THEME))
+    val viewModel = AppViewModel(service)
+    Thread.sleep(1_400)
+
+    renderScene(name = name, isDark = isDark, width = width, height = height) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            Sidebar(
+                route = AppRoute.Connections,
+                isDark = isDark,
+                collapsed = false,
+                onCollapsedChange = {},
+                onNavigate = {},
+                onOpenSettings = {},
+                onOpenPalette = {},
+                onToggleTheme = {},
+            )
+            androidx.compose.material3.Surface(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                color = SafeDbTheme.colors.workspaceBackground,
+            ) {
+                ConnectionsScreenContent(
+                    viewModel = viewModel.connections,
+                    showConnectionForm = editing == null,
+                    editingConnection = editing,
+                    onShowConnectionFormChange = {},
+                    onEditingConnectionChange = {},
+                    onActivate = {},
+                    onDeleted = {},
+                    onConnectionChanged = {},
+                    onSaved = {},
+                )
+            }
+        }
+    }
 }
 
 private fun renderExplore(
@@ -663,31 +733,15 @@ private fun renderExplore(
         viewModel.updateVisualization { chart }
     }
 
-    ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
-            SafeDbTheme(isDark = isDark) {
-                androidx.compose.material3.Surface(
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.background
-                ) {
-                    ExploreWindowContent(
-                        viewModel = viewModel,
-                        currentSpec = spec,
-                        onClose = {},
-                        recipesViewModel =
-                            RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined)),
-                        connections = service.connections,
-                    )
-                }
-            }
-        }
-        .use { scene ->
-            scene.render(0L)
-            Thread.sleep(300)
-            val image = scene.render(300_000_000L)
-            val out = File("/tmp/safedb-preview/$name.png")
-            out.parentFile.mkdirs()
-            out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
-            println("wrote ${out.absolutePath}")
-        }
+    renderScene(name = name, isDark = isDark, width = 1120, height = 760) {
+        ExploreWindowContent(
+            viewModel = viewModel,
+            currentSpec = spec,
+            onClose = {},
+            recipesViewModel = RecipesViewModel(service, CoroutineScope(Dispatchers.Unconfined)),
+            connections = service.connections,
+        )
+    }
 }
 
 private fun renderRecipeLibrary(name: String, isDark: Boolean) {
@@ -734,37 +788,22 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
                 querySpec = spec,
             ),
         )
-    ImageComposeScene(width = 1120, height = 760, density = Density(1f)) {
-            SafeDbTheme(isDark = isDark) {
-                androidx.compose.material3.Surface(
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.background
-                ) {
-                    ExploreWindowContent(
-                        viewModel = explore,
-                        currentSpec = spec,
-                        onClose = {},
-                        recipesViewModel = recipesViewModel,
-                        connections = service.connections,
-                    )
-                    RecipeLibraryDialog(
-                        explore = explore,
-                        recipes = recipes,
-                        recipesViewModel = recipesViewModel,
-                        onApply = {},
-                        onDismiss = {},
-                    )
-                }
-            }
-        }
-        .use { scene ->
-            scene.render(0L)
-            Thread.sleep(300)
-            val image = scene.render(300_000_000L)
-            val out = File("/tmp/safedb-preview/$name.png")
-            out.parentFile.mkdirs()
-            out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
-            println("wrote ${out.absolutePath}")
-        }
+    renderScene(name = name, isDark = isDark, width = 1120, height = 760) {
+        ExploreWindowContent(
+            viewModel = explore,
+            currentSpec = spec,
+            onClose = {},
+            recipesViewModel = recipesViewModel,
+            connections = service.connections,
+        )
+        RecipeLibraryDialog(
+            explore = explore,
+            recipes = recipes,
+            recipesViewModel = recipesViewModel,
+            onApply = {},
+            onDismiss = {},
+        )
+    }
 }
 
 fun main() {
@@ -777,28 +816,15 @@ fun main() {
 
         render("connections-$suffix", dark) { state, _ -> state.navigate(AppRoute.Connections) }
 
-        render("connections-new-$suffix", dark, newConnectionPreview = true) { state, _ ->
-            state.navigate(AppRoute.Connections)
-        }
+        renderConnectionsForm("connections-new-$suffix", dark)
 
-        render(
-            "connections-new-narrow-$suffix",
-            dark,
-            newConnectionPreview = true,
-            width = 840,
-            height = 900,
-        ) { state, _ ->
-            state.navigate(AppRoute.Connections)
-        }
+        renderConnectionsForm("connections-new-narrow-$suffix", dark, width = 840, height = 900)
 
-        val editPreviewService = FakeService()
-        render(
+        renderConnectionsForm(
             "connections-edit-$suffix",
             dark,
-            editConnectionPreview = editPreviewService.connections.first(),
-        ) { state, _ ->
-            state.navigate(AppRoute.Connections)
-        }
+            editing = FakeService().connections.first(),
+        )
 
         render("builder-$suffix", dark) { state, vm ->
             val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)

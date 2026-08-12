@@ -5,6 +5,7 @@ plugins {
     kotlin("plugin.serialization")
     id("org.jetbrains.kotlinx.kover")
     id("com.ncorti.ktfmt.gradle")
+    `java-test-fixtures`
 }
 
 ktfmt { kotlinLangStyle() }

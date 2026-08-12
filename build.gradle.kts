@@ -27,6 +27,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation(testFixtures(project(":shared")))
     kover(project(":shared"))
 }
 
@@ -44,6 +45,8 @@ configurations[render.implementationConfigurationName].extendsFrom(
 )
 
 configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
+
+dependencies { add(render.implementationConfigurationName, testFixtures(project(":shared"))) }
 
 tasks.named<KotlinCompile>("compileRenderKotlin") {
     friendPaths.from(

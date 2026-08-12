@@ -57,15 +57,38 @@ fun ConnectionsScreen(
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
-    initialCreating: Boolean = false,
-    initialEditingConnection: ConnectionDef? = null,
+) {
+    var showConnectionForm by remember { mutableStateOf(false) }
+    var editingConnection by remember { mutableStateOf<ConnectionDef?>(null) }
+    ConnectionsScreenContent(
+        viewModel = viewModel,
+        showConnectionForm = showConnectionForm,
+        editingConnection = editingConnection,
+        onShowConnectionFormChange = { showConnectionForm = it },
+        onEditingConnectionChange = { editingConnection = it },
+        onActivate = onActivate,
+        onDeleted = onDeleted,
+        onConnectionChanged = onConnectionChanged,
+        onSaved = onSaved,
+    )
+}
+
+@Composable
+internal fun ConnectionsScreenContent(
+    viewModel: ConnectionsViewModel,
+    showConnectionForm: Boolean,
+    editingConnection: ConnectionDef?,
+    onShowConnectionFormChange: (Boolean) -> Unit,
+    onEditingConnectionChange: (ConnectionDef?) -> Unit,
+    onActivate: (String) -> Unit,
+    onDeleted: (String) -> Unit,
+    onConnectionChanged: (String) -> Unit,
+    onSaved: () -> Unit,
 ) {
     val connections by viewModel.connections.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
     val deleteError by viewModel.deleteError.collectAsState()
-    var showConnectionForm by remember { mutableStateOf(initialCreating) }
-    var editingConnection by remember { mutableStateOf(initialEditingConnection) }
     var pendingDelete by remember { mutableStateOf<ConnectionDef?>(null) }
 
     ConfirmDialog(
@@ -122,13 +145,13 @@ fun ConnectionsScreen(
                     color = SafeDbTheme.colors.actionPrimary,
                     modifier =
                         Modifier.clickable {
-                                showConnectionForm = false
-                                editingConnection = null
+                                onShowConnectionFormChange(false)
+                                onEditingConnectionChange(null)
                             }
                             .padding(8.dp),
                 )
             } else {
-                PrimaryButton(onClick = { showConnectionForm = true }) {
+                PrimaryButton(onClick = { onShowConnectionFormChange(true) }) {
                     Icon(
                         Icons.Filled.Add,
                         contentDescription = null,
@@ -154,8 +177,8 @@ fun ConnectionsScreen(
                             if (editingConnection != null && credentialMaterialChanged) {
                                 onConnectionChanged(saved.id)
                             }
-                            showConnectionForm = false
-                            editingConnection = null
+                            onShowConnectionFormChange(false)
+                            onEditingConnectionChange(null)
                             onSaved()
                         },
                         modifier = Modifier.widthIn(max = 1_020.dp),
@@ -175,7 +198,7 @@ fun ConnectionsScreen(
                     title = "No connections yet",
                     subtitle = "Add a connection to start exploring your data.",
                 ) {
-                    PrimaryButton(onClick = { showConnectionForm = true }) {
+                    PrimaryButton(onClick = { onShowConnectionFormChange(true) }) {
                         Text("Add Connection")
                     }
                 }
@@ -202,7 +225,7 @@ fun ConnectionsScreen(
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
                                 connection = connection,
-                                onEdit = { editingConnection = connection },
+                                onEdit = { onEditingConnectionChange(connection) },
                                 onDelete = { pendingDelete = connection },
                                 onOpen = { onActivate(connection.id) },
                             )
