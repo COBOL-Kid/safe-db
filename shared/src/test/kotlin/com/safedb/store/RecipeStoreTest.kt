@@ -177,6 +177,24 @@ class RecipeStoreTest {
         assertFailsWith<IllegalArgumentException> { store.importJson(json, "2") }
     }
 
+    @Test
+    fun unsupportedPivotVersionIsRejectedEvenWithALegacyColumnDimension() {
+        val store = RecipeStore.new(Files.createTempDirectory("recipe-pivot-version-legacy"))
+        val status = """{"column": "t0__status", "label": "Status", "id": "status"}"""
+
+        listOf(0, EXPLORE_SCHEMA_VERSION + 1, 99).forEach { version ->
+            assertFailsWith<IllegalArgumentException>("pivot version $version must be rejected") {
+                store.importJson(
+                    pivotRecipeJson(
+                        pivotVersion = version,
+                        columnDimensions = """"columnDimension": $status""",
+                    ),
+                    "2",
+                )
+            }
+        }
+    }
+
     private fun pivotRecipeJson(pivotVersion: Int, columnDimensions: String) =
         """
         {
