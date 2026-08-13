@@ -359,6 +359,10 @@ private class VisualizationPlanner(
         val column = measure.sourceColumn
         if (measure.fn == MeasureFn.Count && column == null) return records.size.toBigDecimal()
         val cells = column?.let { records.map { record -> record.cell(it) } }.orEmpty()
+        if (measure.fn == MeasureFn.Min || measure.fn == MeasureFn.Max) {
+            val values = cells.mapNotNull(::resultCellDecimal)
+            return if (measure.fn == MeasureFn.Min) values.minOrNull() else values.maxOrNull()
+        }
         return aggregateMeasure(cells, measure.fn).decimalOrNull()
     }
 

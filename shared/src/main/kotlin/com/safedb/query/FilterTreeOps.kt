@@ -110,8 +110,14 @@ fun filterNodeIdAtPath(group: FilterGroup, path: List<Int>): String? {
     }
 }
 
-fun filterLeafIdAtPath(group: FilterGroup, path: List<Int>): String? =
-    if (path.isEmpty()) null else filterNodeIdAtPath(group, path)
+fun filterLeafIdAtPath(group: FilterGroup, path: List<Int>): String? {
+    if (path.isEmpty()) return null
+    val child = group.children.getOrNull(path.first()) ?: return null
+    return when (child) {
+        is FilterNode.Leaf -> child.spec.id.ifEmpty { null }.takeIf { path.size == 1 }
+        is FilterNode.Group -> filterLeafIdAtPath(child.group, path.drop(1))
+    }
+}
 
 fun ensureFilterNodeIds(
     group: FilterGroup,
