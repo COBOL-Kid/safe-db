@@ -14,8 +14,6 @@ If a fix or feature seems to need a large redesign, many new types, or a lot of 
 
 Comments: use sparingly, prefer inline `//`, and only where behavior is non-obvious or easy to break (quirks, order dependencies, safety edges). Do not narrate what the code already says.
 
-Builder queries default to 500 rows, allow at most 10,000 rows, show guidance above 1,000 rows, and retain the 10-second timeout.
-
 ## Testing
 
 Add or update tests for behavior that matters, especially regressions. Prefer a few focused, high-signal tests over many thin or overlapping ones. Extend an existing test when that covers the change; do not add suites, fixtures, or permutations that mostly restate the same path.
