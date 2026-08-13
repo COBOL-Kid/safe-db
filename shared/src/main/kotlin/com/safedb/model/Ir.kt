@@ -20,16 +20,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonDecoder
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
-const val CURRENT_SCHEMA_VERSION: Int = 3
+const val CURRENT_SCHEMA_VERSION: Int = 1
 const val MAX_CELL_BYTES: Int = 1024 * 1024
 const val MAX_RESULT_BYTES: Int = 10 * 1024 * 1024
 
@@ -588,13 +584,3 @@ object SafeDbJson {
         isLenient = true
     }
 }
-
-internal fun JsonElement.asObjectOrNull(): JsonObject? = this as? JsonObject
-
-internal fun JsonObject.stringOrEmpty(key: String): String = get(key)?.jsonPrimitive?.content ?: ""
-
-internal fun JsonObject.u64OrDefault(key: String, default: Long): Long =
-    get(key)?.jsonPrimitive?.content?.toLongOrNull() ?: default
-
-internal fun JsonPrimitive?.isNullOrEmpty(): Boolean =
-    this == null || (isString && content.isEmpty())

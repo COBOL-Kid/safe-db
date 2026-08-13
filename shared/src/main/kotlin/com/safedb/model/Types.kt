@@ -5,7 +5,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-const val CURRENT_CONNECTION_VERSION = 2
+const val CURRENT_CONNECTION_VERSION = 1
 const val MAX_DRIVER_PROPERTIES = 50
 const val MAX_DRIVER_PROPERTY_NAME_LENGTH = 128
 const val MAX_DRIVER_PROPERTY_VALUE_LENGTH = 4_096
@@ -40,7 +40,6 @@ fun TransportSecurityMode.mySqlSslMode(): String =
 data class TransportSecurity(
     val mode: TransportSecurityMode = TransportSecurityMode.VerifyIdentity,
     @SerialName("oracle_wallet_location") val oracleWalletLocation: String? = null,
-    @SerialName("legacy_implicit") val legacyImplicit: Boolean = false,
 )
 
 @Serializable
@@ -244,6 +243,13 @@ data class ConnectionDef(
     }
 
     fun validate(): Result<Unit> {
+        if (version != CURRENT_CONNECTION_VERSION) {
+            return Result.failure(
+                IllegalArgumentException(
+                    "Unsupported connection version $version; expected $CURRENT_CONNECTION_VERSION"
+                )
+            )
+        }
         if (id.trim().isEmpty())
             return Result.failure(IllegalArgumentException("Connection id is required"))
         if (host.trim().isEmpty())

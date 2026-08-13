@@ -3,15 +3,11 @@ package com.safedb.store
 import com.safedb.model.CURRENT_CONNECTION_VERSION
 import com.safedb.model.ConnectionDef
 import com.safedb.model.SafeDbJson
-import com.safedb.model.TransportSecurityMode
 import com.safedb.persist.ensurePrivateDir
 import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 
 class ConfigStore
 private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {
@@ -27,6 +23,9 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     fun get(id: String): ConnectionDef? = list().firstOrNull { it.id == id }
 
     fun save(def: ConnectionDef) {
+        require(def.version == CURRENT_CONNECTION_VERSION) {
+            "Unsupported connection version ${def.version}; expected $CURRENT_CONNECTION_VERSION"
+        }
         lock.withLock {
             val connections = loadConnectionsUnlocked().toMutableList()
             val index = connections.indexOfFirst { it.id == def.id }
@@ -44,38 +43,15 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     }
 
     private fun loadConnectionsUnlocked(): List<ConnectionDef> =
-        readMigratedJsonList(path, ConnectionDef.serializer()) { element ->
-            val (migrated, upgraded) = migrateLegacyConnection(element)
-            runCatching {
-                SafeDbJson.lenient.decodeFromJsonElement(ConnectionDef.serializer(), migrated)
-            }
-                .getOrNull()
-                ?.let { MigratedEntry(it, upgraded) }
-        }
+        readJsonListEntries(path, ::decodeConnection)
+
+    private fun decodeConnection(element: JsonElement): ConnectionDef? = runCatching {
+        SafeDbJson.lenient.decodeFromJsonElement(ConnectionDef.serializer(), element)
+    }
+        .getOrNull()
+        ?.takeIf { it.version == CURRENT_CONNECTION_VERSION }
 
     private fun writeAllUnlocked(connections: List<ConnectionDef>) {
         writeJsonList(path, connections, ConnectionDef.serializer())
     }
-}
-
-// Pre-transport-security profiles omitted transport_security. Preserve their plaintext behavior.
-internal fun migrateLegacyConnection(value: JsonElement): Pair<JsonElement, Boolean> {
-    val objectValue = value as? JsonObject ?: return value to false
-    if ("transport_security" in objectValue) {
-        return value to false
-    }
-    val migrated =
-        JsonObject(
-            objectValue.toMutableMap().apply {
-                put("version", JsonPrimitive(CURRENT_CONNECTION_VERSION))
-                put(
-                    "transport_security",
-                    buildJsonObject {
-                        put("mode", JsonPrimitive(TransportSecurityMode.Disabled.name))
-                        put("legacy_implicit", JsonPrimitive(true))
-                    },
-                )
-            }
-        )
-    return migrated to true
 }

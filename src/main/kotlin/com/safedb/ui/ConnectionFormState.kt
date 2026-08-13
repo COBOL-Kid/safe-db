@@ -238,7 +238,6 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
                 TransportSecurity(
                     mode = transportMode,
                     oracleWalletLocation = persistedWallet,
-                    legacyImplicit = false,
                 ),
             driverProperties = driverProperties.map { DriverProperty(it.name.trim(), it.value) },
         )

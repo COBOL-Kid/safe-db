@@ -12,12 +12,13 @@ class TypesTest {
         val decoded =
             SafeDbJson.lenient.decodeFromString(
                 TransportSecurity.serializer(),
-                """{"mode":"VerifyIdentity","ca_pem":"legacy-ca"}""",
+                """{"mode":"VerifyIdentity","ca_pem":"legacy-ca","legacy_implicit":true}""",
             )
 
         assertEquals(TransportSecurity(TransportSecurityMode.VerifyIdentity), decoded)
         val encoded = SafeDbJson.store.encodeToString(TransportSecurity.serializer(), decoded)
         assertTrue("ca_pem" !in encoded)
+        assertTrue("legacy_implicit" !in encoded)
     }
 
     @Test
@@ -32,6 +33,9 @@ class TypesTest {
             base.copy(username = "").validate().getOrThrow()
         }
         assertFailsWith<IllegalArgumentException> { base.copy(port = 0).validate().getOrThrow() }
+        assertFailsWith<IllegalArgumentException> {
+            base.copy(version = CURRENT_CONNECTION_VERSION + 1).validate().getOrThrow()
+        }
     }
 
     @Test

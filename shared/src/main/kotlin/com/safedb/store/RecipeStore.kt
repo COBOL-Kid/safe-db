@@ -8,6 +8,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.serialization.json.JsonElement
 
 class RecipeStore
 private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {
@@ -57,17 +58,12 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     fun exportJson(recipe: ExploreRecipe): String =
         SafeDbJson.store.encodeToString(recipe.validate())
 
-    private fun read(): List<ExploreRecipe> {
-        val document = readJsonList(path) ?: return emptyList()
-        return document.entries.mapNotNull { element ->
-            runCatching {
-                SafeDbJson.lenient
-                    .decodeFromJsonElement(ExploreRecipe.serializer(), element)
-                    .validate()
-            }
-                .getOrNull()
-        }
+    private fun decodeRecipe(element: JsonElement): ExploreRecipe? = runCatching {
+        SafeDbJson.lenient.decodeFromJsonElement(ExploreRecipe.serializer(), element).validate()
     }
+        .getOrNull()
+
+    private fun read(): List<ExploreRecipe> = readJsonListEntries(path, ::decodeRecipe)
 
     private fun write(recipes: List<ExploreRecipe>) {
         writeJsonList(path, recipes, ExploreRecipe.serializer())

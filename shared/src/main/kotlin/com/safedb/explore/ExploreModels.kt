@@ -9,15 +9,8 @@ import java.security.MessageDigest
 import java.util.Currency
 import java.util.Locale
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.JsonTransformingSerializer
-import kotlinx.serialization.json.intOrNull
 
-const val EXPLORE_SCHEMA_VERSION = 2
+const val EXPLORE_SCHEMA_VERSION = 1
 const val MAX_VISIBLE_PIVOT_CELLS = 100_000
 const val MAX_VISIBLE_COLUMN_LEAVES = 500
 
@@ -49,7 +42,7 @@ data class ExploreConfig(
     val sort: ExploreSort? = null,
 ) {
     fun validate(): ExploreConfig {
-        require(schemaVersion in 1..EXPLORE_SCHEMA_VERSION) {
+        require(schemaVersion == EXPLORE_SCHEMA_VERSION) {
             "Unsupported Explore view version $schemaVersion"
         }
         return this
@@ -78,29 +71,6 @@ data class ExploreConfig(
             val label = displayColumnLabel(column).lowercase()
             return label == "id" || label.endsWith("_id") || label.endsWith(" id")
         }
-    }
-}
-
-// v1 stored a single columnDimension. Fold it into columnDimensions here so nothing downstream
-// has to know the legacy shape.
-object ExploreConfigMigration :
-    JsonTransformingSerializer<ExploreConfig>(ExploreConfig.serializer()) {
-    override fun transformDeserialize(element: JsonElement): JsonElement {
-        val fields = element as? JsonObject ?: return element
-        val legacy = fields["columnDimension"]?.takeUnless { it is JsonNull } ?: return element
-        if (!(fields["columnDimensions"] as? JsonArray).isNullOrEmpty()) return element
-        // Only a genuine v1 document is folded and restamped. Restamping unconditionally handed
-        // validate() a version it always accepts, so an unsupported version decoded as a silently
-        // truncated v2 config instead of being rejected. Absent version means v1: only v1 wrote
-        // columnDimension.
-        if (((fields["schemaVersion"] as? JsonPrimitive)?.intOrNull ?: 1) != 1) return element
-        return JsonObject(
-            fields +
-                mapOf(
-                    "columnDimensions" to JsonArray(listOf(legacy)),
-                    "schemaVersion" to JsonPrimitive(EXPLORE_SCHEMA_VERSION),
-                )
-        )
     }
 }
 

@@ -312,7 +312,7 @@ data class ExploreRecipe(
     val createdAt: String,
     val updatedAt: String,
     val defaultMode: ExploreMode,
-    @Serializable(with = ExploreConfigMigration::class) val pivot: ExploreConfig? = null,
+    val pivot: ExploreConfig? = null,
     val worksheet: WorksheetConfig? = null,
     val visualization: VisualizationConfig? = null,
     val requiredFields: List<RecipeField> = emptyList(),

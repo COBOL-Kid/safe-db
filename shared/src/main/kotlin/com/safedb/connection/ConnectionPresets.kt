@@ -21,17 +21,9 @@ val DIALECTS: List<DialectInfo> =
 
 fun transportPresetForLocation(location: DatabaseLocation): TransportSecurity =
     if (location == DatabaseLocation.Local) {
-        TransportSecurity(
-            mode = TransportSecurityMode.Disabled,
-            oracleWalletLocation = null,
-            legacyImplicit = false,
-        )
+        TransportSecurity(mode = TransportSecurityMode.Disabled)
     } else {
-        TransportSecurity(
-            mode = TransportSecurityMode.VerifyIdentity,
-            oracleWalletLocation = null,
-            legacyImplicit = false,
-        )
+        TransportSecurity(mode = TransportSecurityMode.VerifyIdentity)
     }
 
 fun isLocalHost(host: String): Boolean {

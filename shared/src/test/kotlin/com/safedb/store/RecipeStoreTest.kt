@@ -6,7 +6,6 @@ import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.MeasureFn
-import com.safedb.explore.PivotDimension
 import com.safedb.explore.RecipeField
 import com.safedb.explore.VisualizationConfig
 import com.safedb.explore.VisualizationField
@@ -127,75 +126,41 @@ class RecipeStoreTest {
     }
 
     @Test
-    fun legacySingleColumnDimensionMigratesAtDecodeAndCurrentConfigsAreUntouched() {
-        val store = RecipeStore.new(Files.createTempDirectory("recipe-pivot-v1"))
-        val status = """{"column": "t0__status", "label": "Status", "id": "status"}"""
-
-        val migrated =
-            store
-                .importJson(
-                    pivotRecipeJson(
-                        pivotVersion = 1,
-                        columnDimensions = """"columnDimension": $status""",
-                    ),
-                    "2",
-                )
-                .pivot!!
-
-        assertEquals(
-            listOf(PivotDimension("t0__status", "Status", "status")),
-            migrated.columnDimensions,
-        )
-        assertEquals(EXPLORE_SCHEMA_VERSION, migrated.schemaVersion)
-        assertEquals(listOf("t0__region"), migrated.rowDimensions.map { it.column })
-        assertEquals(setOf("shipped"), migrated.collapsedColumnPaths)
-
-        val current =
-            store
-                .importJson(
-                    pivotRecipeJson(
-                        pivotVersion = EXPLORE_SCHEMA_VERSION,
-                        columnDimensions = """"columnDimensions": [$status]""",
-                    ),
-                    "3",
-                )
-                .pivot!!
-
-        assertEquals(EXPLORE_SCHEMA_VERSION, current.schemaVersion)
-        assertEquals(migrated, current)
-    }
-
-    @Test
     fun unsupportedPivotVersionIsRejected() {
         val store = RecipeStore.new(Files.createTempDirectory("recipe-pivot-version"))
-        val json =
-            pivotRecipeJson(
-                pivotVersion = EXPLORE_SCHEMA_VERSION + 1,
-                columnDimensions = """"columnDimensions": []""",
-            )
+        val json = pivotRecipeJson(pivotVersion = EXPLORE_SCHEMA_VERSION + 1)
 
         assertFailsWith<IllegalArgumentException> { store.importJson(json, "2") }
     }
 
     @Test
-    fun unsupportedPivotVersionIsRejectedEvenWithALegacyColumnDimension() {
-        val store = RecipeStore.new(Files.createTempDirectory("recipe-pivot-version-legacy"))
-        val status = """{"column": "t0__status", "label": "Status", "id": "status"}"""
+    fun listQuarantinesUnsupportedPivotVersionThenSaveSucceeds() {
+        val dir = Files.createTempDirectory("recipe-unsupported")
+        val path = dir.resolve("explore_recipes.json")
+        Files.writeString(
+            path,
+            "[\n${pivotRecipeJson(pivotVersion = EXPLORE_SCHEMA_VERSION + 1)}\n]",
+        )
+        val store = RecipeStore.new(dir)
 
-        listOf(0, EXPLORE_SCHEMA_VERSION + 1, 99).forEach { version ->
-            assertFailsWith<IllegalArgumentException>("pivot version $version must be rejected") {
-                store.importJson(
-                    pivotRecipeJson(
-                        pivotVersion = version,
-                        columnDimensions = """"columnDimension": $status""",
-                    ),
-                    "2",
-                )
-            }
-        }
+        val failure = assertFailsWith<IllegalStateException> { store.list() }
+
+        assertTrue(failure.message?.contains("used an unsupported schema") == true)
+        assertFalse(Files.exists(path))
+        assertEquals(
+            1L,
+            Files.list(dir).use { files ->
+                files
+                    .filter { it.fileName.toString().startsWith("explore_recipes.unsupported-") }
+                    .count()
+            },
+        )
+
+        store.save(recipe("current", "Current"))
+        assertEquals(listOf("current"), store.list().map { it.id })
     }
 
-    private fun pivotRecipeJson(pivotVersion: Int, columnDimensions: String) =
+    private fun pivotRecipeJson(pivotVersion: Int) =
         """
         {
           "schemaVersion": 1,
@@ -207,7 +172,7 @@ class RecipeStoreTest {
           "pivot": {
             "schemaVersion": $pivotVersion,
             "rowDimensions": [{"column": "t0__region", "label": "Region", "id": "region"}],
-            $columnDimensions,
+            "columnDimensions": [],
             "collapsedColumnPaths": ["shipped"]
           }
         }

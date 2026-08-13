@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 
 class ExploreModelsTest {
     @Test
-    fun versionTwoConfigurationRoundTripsAdvancedSettings() {
+    fun configurationRoundTripsAdvancedSettings() {
         val config =
             ExploreConfig(
                 rowDimensions =
