@@ -71,6 +71,53 @@ class ExploreAggregateTest {
     }
 
     @Test
+    fun chartMinMaxIgnoreNonNumericCellsInAMostlyNumericGroup() {
+        val mixed =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("status", "varchar"),
+                        ResultColumn("amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("pending"), ResultCell.IntegerCell(10)),
+                        listOf(ResultCell.text("pending"), ResultCell.IntegerCell(20)),
+                        listOf(ResultCell.text("pending"), ResultCell.text("n/a")),
+                        listOf(ResultCell.text("pending"), ResultCell.text("-")),
+                    ),
+                rowCount = 4,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        fun chart(type: ChartType, fn: MeasureFn) =
+            applyVisualization(
+                mixed,
+                VisualizationConfig(
+                    chartType = type,
+                    x = if (type == ChartType.Kpi) null else VisualizationField("status"),
+                    values = listOf(VisualizationMeasure("m", fn, "amount", "Amount")),
+                ),
+            )
+
+        assertEquals(20.0, chart(ChartType.Bar, MeasureFn.Max).marks.single().y)
+        assertEquals(10.0, chart(ChartType.Bar, MeasureFn.Min).marks.single().y)
+        assertEquals(20.0, chart(ChartType.Kpi, MeasureFn.Max).marks.single().y)
+
+        val pivot =
+            applyExplore(
+                mixed,
+                ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("status")),
+                    measures = listOf(PivotMeasure("m", MeasureFn.Max, "amount", "Amount")),
+                    showColumnTotals = false,
+                ),
+            )
+        assertEquals(ResultCell.text("n/a"), pivot.result.rows.single()[1])
+    }
+
+    @Test
     fun averageRoundsToEightDecimalsOnBothSurfaces() {
         val pivot =
             applyExplore(

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonTransformingSerializer
+import kotlinx.serialization.json.intOrNull
 
 const val EXPLORE_SCHEMA_VERSION = 2
 const val MAX_VISIBLE_PIVOT_CELLS = 100_000
@@ -88,6 +89,8 @@ object ExploreConfigMigration :
         val fields = element as? JsonObject ?: return element
         val legacy = fields["columnDimension"]?.takeUnless { it is JsonNull } ?: return element
         if (!(fields["columnDimensions"] as? JsonArray).isNullOrEmpty()) return element
+        val version = (fields["schemaVersion"] as? JsonPrimitive)?.intOrNull
+        if (version != null && version != 1) return element
         return JsonObject(
             fields +
                 mapOf(

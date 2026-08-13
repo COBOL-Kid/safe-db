@@ -528,13 +528,13 @@ internal fun String.toDisplayWords(): String =
     replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase().replaceFirstChar(Char::uppercase)
 
 internal fun formatWorksheetValue(value: ResultCell, format: PivotNumberFormat?): String {
+    val applied = format ?: return formatCell(value)
+    if (applied.kind == NumberFormatKind.Auto) return formatCell(value)
     val number =
         when (value) {
             is ResultCell.IntegerCell -> BigDecimal.valueOf(value.value)
-            is ResultCell.FloatCell -> BigDecimal.valueOf(value.value)
-            else -> return formatCell(value)
-        }
-    val applied = format ?: return formatCell(value)
-    if (applied.kind == NumberFormatKind.Auto) return formatCell(value)
+            is ResultCell.FloatCell -> value.value.takeIf(Double::isFinite)?.let(BigDecimal::valueOf)
+            else -> null
+        } ?: return formatCell(value)
     return formatExploreNumber(number, applied)
 }
