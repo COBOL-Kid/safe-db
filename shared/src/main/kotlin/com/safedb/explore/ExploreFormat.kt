@@ -15,7 +15,6 @@ fun formatExploreNumber(value: BigDecimal, format: PivotNumberFormat): String {
         if (decimals > 0) append('.').append("0".repeat(decimals))
     }
     return when (format.kind) {
-        NumberFormatKind.Auto -> value.stripTrailingZeros().toPlainString()
         NumberFormatKind.Number -> DecimalFormat(pattern, symbols).format(value)
         NumberFormatKind.Percent -> DecimalFormat("$pattern%", symbols).format(value)
         NumberFormatKind.Currency ->

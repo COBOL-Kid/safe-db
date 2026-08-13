@@ -147,7 +147,7 @@ internal fun WorksheetCalculationEditor(
         } else {
             evaluatePivotFormula(
                     formula,
-                    formulaTokens.associate { it.first to java.math.BigDecimal.ONE },
+                    formulaTokens.associate { it.first to BigDecimal.ONE },
                 )
                 .error
         }
