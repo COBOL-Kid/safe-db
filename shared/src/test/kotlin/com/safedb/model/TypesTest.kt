@@ -12,12 +12,13 @@ class TypesTest {
         val decoded =
             SafeDbJson.lenient.decodeFromString(
                 TransportSecurity.serializer(),
-                """{"mode":"VerifyIdentity","ca_pem":"legacy-ca"}""",
+                """{"mode":"VerifyIdentity","ca_pem":"legacy-ca","legacy_implicit":true}""",
             )
 
         assertEquals(TransportSecurity(TransportSecurityMode.VerifyIdentity), decoded)
         val encoded = SafeDbJson.store.encodeToString(TransportSecurity.serializer(), decoded)
         assertTrue("ca_pem" !in encoded)
+        assertTrue("legacy_implicit" !in encoded)
     }
 
     @Test

@@ -98,7 +98,6 @@ private fun baseResult(
             TransportSecurity(
                 mode = transport.mode,
                 oracleWalletLocation = transport.oracleWalletLocation,
-                legacyImplicit = false,
             ),
         driverProperties = driverProperties,
         inferredLocation = inferLocation(cleanHost),

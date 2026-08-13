@@ -44,6 +44,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -511,7 +512,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun createConnectionLeavesUnsupportedDocumentUnchanged() = runBlocking {
+    fun createConnectionQuarantinesUnsupportedFileThenRetrySucceeds() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val path = dir.resolve("connections.json")
@@ -528,13 +529,12 @@ class SafeDbServiceImplTest {
                 "port": 5432,
                 "database": "demo",
                 "username": "readonly",
-                "transport_security": { "mode": "Disabled", "legacy_implicit": true }
+                "transport_security": { "mode": "Disabled" }
               }
             ]
             """
                 .trimIndent(),
         )
-        val before = Files.readString(path)
         val service =
             SafeDbServiceImpl(
                 configStore = ConfigStore.new(dir),
@@ -542,12 +542,26 @@ class SafeDbServiceImplTest {
                 settingsStore = SettingsStore.new(dir),
             )
 
-        assertFailsWith<IllegalStateException> {
-            service.createConnection(sampleConnection(), "secret")
-        }
+        val failure =
+            assertFailsWith<IllegalStateException> {
+                service.createConnection(sampleConnection(), "secret")
+            }
 
-        assertEquals(before, Files.readString(path))
+        assertTrue(failure.message?.contains("used an unsupported schema") == true)
+        assertFalse(Files.exists(path))
+        assertEquals(
+            1L,
+            Files.list(dir).use { files ->
+                files
+                    .filter { it.fileName.toString().startsWith("connections.unsupported-") }
+                    .count()
+            },
+        )
         assertTrue(SecretsManager.passwordForDefinition(sampleConnection()).isFailure)
+
+        val created = service.createConnection(sampleConnection(), "secret")
+        assertEquals("c1", created.id)
+        assertTrue(SecretsManager.passwordForDefinition(sampleConnection()).isSuccess)
     }
 
     @Test

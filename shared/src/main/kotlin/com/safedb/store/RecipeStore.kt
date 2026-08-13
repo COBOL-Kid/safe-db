@@ -24,7 +24,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     fun save(recipe: ExploreRecipe) {
         recipe.validate()
         lock.withLock {
-            val recipes = readExistingForMutation().toMutableList()
+            val recipes = read().toMutableList()
             val index = recipes.indexOfFirst { it.id == recipe.id }
             if (index >= 0) recipes[index] = recipe else recipes += recipe
             write(recipes)
@@ -32,7 +32,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     }
 
     fun delete(id: String) {
-        lock.withLock { write(readExistingForMutation().filterNot { it.id == id }) }
+        lock.withLock { write(read().filterNot { it.id == id }) }
     }
 
     fun importJson(content: String, nowEpochSec: String): ExploreRecipe {
@@ -42,7 +42,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
             "Unsupported recipe version ${decoded.schemaVersion}"
         }
         return lock.withLock {
-            val existing = readExistingForMutation()
+            val existing = read()
             val imported =
                 decoded.copy(
                     id = UUID.randomUUID().toString(),
@@ -64,9 +64,6 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
         .getOrNull()
 
     private fun read(): List<ExploreRecipe> = readJsonListEntries(path, ::decodeRecipe)
-
-    private fun readExistingForMutation(): List<ExploreRecipe> =
-        readJsonListEntriesStrict(path, ::decodeRecipe)
 
     private fun write(recipes: List<ExploreRecipe>) {
         writeJsonList(path, recipes, ExploreRecipe.serializer())

@@ -27,6 +27,24 @@ import kotlin.test.assertTrue
 class StoreTest {
     private fun tempDir() = Files.createTempDirectory("safedb-store-test")
 
+    private fun assertUnsupportedQuarantine(dir: java.nio.file.Path, original: java.nio.file.Path) {
+        assertFalse(Files.exists(original))
+        assertEquals(
+            1L,
+            Files.list(dir).use { files ->
+                files
+                    .filter {
+                        it.fileName
+                            .toString()
+                            .startsWith(
+                                "${original.fileName.toString().substringBeforeLast('.')}.unsupported-"
+                            )
+                    }
+                    .count()
+            },
+        )
+    }
+
     private fun sampleConnection(id: String) =
         ConnectionDef(
             id = id,
@@ -130,45 +148,16 @@ class StoreTest {
     }
 
     @Test
-    fun configStoreMutationsLeaveUnsupportedConnectionsUntouched() {
+    fun configStoreDecodesConnectionMissingTransportSecurityAsDefault() {
         val dir = tempDir()
-        val path = dir.resolve("connections.json")
         Files.writeString(
-            path,
-            """
-            [
-              ${connectionJson("good", CURRENT_CONNECTION_VERSION, includeTls = true)},
-              ${connectionJson("legacy", CURRENT_CONNECTION_VERSION + 1, includeTls = true)}
-            ]
-            """
-                .trimIndent(),
-        )
-        val before = Files.readString(path)
-        val store = ConfigStore.new(dir)
-
-        assertEquals(listOf("good"), store.list().map { it.id })
-        val saveFailure =
-            assertFailsWith<IllegalStateException> { store.save(sampleConnection("good")) }
-        val deleteFailure = assertFailsWith<IllegalStateException> { store.delete("good") }
-
-        assertTrue(saveFailure.message?.contains("unsupported or unreadable") == true)
-        assertTrue(deleteFailure.message?.contains("unsupported or unreadable") == true)
-        assertEquals(before, Files.readString(path))
-        assertEquals(listOf("good"), store.list().map { it.id })
-    }
-
-    @Test
-    fun configStoreRejectsLegacyConnectionMissingTransportSecurity() {
-        val dir = tempDir()
-        val path = dir.resolve("connections.json")
-        Files.writeString(
-            path,
+            dir.resolve("connections.json"),
             """
             [
               {
                 "version": 1,
-                "id": "legacy",
-                "name": "Legacy PG",
+                "id": "c1",
+                "name": "Local PG",
                 "dialect": "Postgres",
                 "host": "localhost",
                 "port": 5432,
@@ -179,12 +168,11 @@ class StoreTest {
             """
                 .trimIndent(),
         )
-        val before = Files.readString(path)
-        val store = ConfigStore.new(dir)
 
-        assertTrue(store.list().isEmpty())
-        assertFailsWith<IllegalStateException> { store.delete("missing") }
-        assertEquals(before, Files.readString(path))
+        val loaded = ConfigStore.new(dir).list().single()
+
+        assertEquals("c1", loaded.id)
+        assertEquals(TransportSecurity(), loaded.transportSecurity)
     }
 
     @Test
@@ -202,31 +190,6 @@ class StoreTest {
         assertTrue(failure.message?.contains("Unsupported connection version") == true)
         assertEquals(before, Files.readString(dir.resolve("connections.json")))
         assertEquals(listOf("c1"), store.list().map { it.id })
-    }
-
-    @Test
-    fun queryStoreMutationsLeaveUnsupportedQueriesUntouched() {
-        val dir = tempDir()
-        val path = dir.resolve("saved_queries.json")
-        Files.writeString(
-            path,
-            """
-            [
-              ${savedQueryJson("good", CURRENT_SCHEMA_VERSION)},
-              ${savedQueryJson("legacy", CURRENT_SCHEMA_VERSION + 1)}
-            ]
-            """
-                .trimIndent(),
-        )
-        val before = Files.readString(path)
-        val store = QueryStore.new(dir)
-
-        assertEquals(listOf("good"), store.listSaved().map { it.id })
-        assertFailsWith<IllegalStateException> {
-            store.saveQuery(SavedQuery("good", "Updated", "c1", sampleSpec(), "1"))
-        }
-        assertFailsWith<IllegalStateException> { store.deleteSaved("good") }
-        assertEquals(before, Files.readString(path))
     }
 
     @Test
@@ -263,52 +226,6 @@ class StoreTest {
         assertTrue(failure.message?.contains("Unsupported query schema version") == true)
         assertEquals(before, Files.readString(dir.resolve("query_history.json")))
         assertEquals(listOf("valid"), store.listHistory().map { it.id })
-    }
-
-    @Test
-    fun queryStoreHistoryMutationsLeaveUnsupportedEntriesUntouched() {
-        val dir = tempDir()
-        val path = dir.resolve("query_history.json")
-        Files.writeString(
-            path,
-            """
-            [
-              {
-                "id": "valid",
-                "connection_id": "c1",
-                "connection_name": "Conn",
-                "spec": {
-                  "tables": [], "columns": [], "joins": [],
-                  "filters": {"id":"root", "connector":"And", "children":[]},
-                  "limit":100, "schema_version":$CURRENT_SCHEMA_VERSION, "connector_overrides":{}
-                },
-                "row_count": 1,
-                "warnings": [],
-                "timestamp": "1"
-              },
-              {
-                "id": "legacy",
-                "connection_id": "c1",
-                "connection_name": "Conn",
-                "spec": {
-                  "tables": [], "columns": [], "joins": [],
-                  "filters": {"id":"root", "connector":"And", "children":[]},
-                  "limit":100, "schema_version":${CURRENT_SCHEMA_VERSION + 1}, "connector_overrides":{}
-                },
-                "row_count": 0,
-                "warnings": [],
-                "timestamp": "2"
-              }
-            ]
-            """
-                .trimIndent(),
-        )
-        val before = Files.readString(path)
-        val store = QueryStore.new(dir)
-
-        assertEquals(listOf("valid"), store.listHistory().map { it.id })
-        assertFailsWith<IllegalStateException> { store.addHistory(sampleHistory("new")) }
-        assertEquals(before, Files.readString(path))
     }
 
     @Test
@@ -563,7 +480,7 @@ class StoreTest {
 
         assertEquals("Local PG", connections.single().name)
         assertEquals(
-            TransportSecurity().copy(mode = TransportSecurityMode.Disabled, legacyImplicit = true),
+            TransportSecurity(mode = TransportSecurityMode.Disabled),
             connections.single().transportSecurity,
         )
         assertEquals("Saved from existing data", queries.listSaved().single().name)
@@ -645,84 +562,6 @@ class StoreTest {
     }
 
     @Test
-    fun queryStoreDropsMalformedEntriesButPreservesValidOnes() {
-        val dir = tempDir()
-        val validSpec =
-            """
-            {
-              "tables": [], "columns": [], "joins": [],
-              "filters": {"id":"root", "connector":"And", "children":[]},
-              "limit":100, "schema_version":1, "connector_overrides":{}
-            }
-            """
-                .trimIndent()
-        Files.writeString(
-            dir.resolve("saved_queries.json"),
-            """
-            [
-              {"id":"good", "name":"Good", "connection_id":"c1", "spec":$validSpec, "created_at":"1"},
-              {"id":42, "broken":true}
-            ]
-            """
-                .trimIndent(),
-        )
-
-        assertEquals(listOf("good"), QueryStore.new(dir).listSaved().map { it.id })
-    }
-
-    @Test
-    fun queryStoreSkipsEntriesWithUnsupportedSchemaVersion() {
-        val dir = tempDir()
-        Files.writeString(
-            dir.resolve("saved_queries.json"),
-            """
-            [
-              {
-                "id": "old",
-                "name": "Old",
-                "connection_id": "c1",
-                "spec": {
-                  "tables": [], "columns": [], "joins": [],
-                  "filters": {"id":"root", "connector":"And", "children":[]},
-                  "limit":100, "schema_version":${CURRENT_SCHEMA_VERSION + 1},
-                  "connector_overrides":{}
-                },
-                "created_at": "1"
-              }
-            ]
-            """
-                .trimIndent(),
-        )
-
-        assertTrue(QueryStore.new(dir).listSaved().isEmpty())
-    }
-
-    @Test
-    fun configStoreSkipsEntriesWithUnsupportedVersion() {
-        val dir = tempDir()
-        Files.writeString(
-            dir.resolve("connections.json"),
-            """
-            [
-              {
-                "version": ${CURRENT_CONNECTION_VERSION + 1},
-                "id": "c1",
-                "name": "Local PG",
-                "dialect": "Postgres",
-                "host": "localhost",
-                "port": 5432,
-                "database": "demo",
-                "username": "readonly"
-              }
-            ]
-            """
-                .trimIndent(),
-        )
-
-        assertTrue(ConfigStore.new(dir).list().isEmpty())
-    }
-
-    @Test
     fun settingsStoreSurfacesMalformedFileWithoutOverwritingIt() {
         val dir = tempDir()
         val settings = dir.resolve("settings.json")
@@ -750,5 +589,113 @@ class StoreTest {
             },
         )
         assertTrue(store.list().isEmpty())
+    }
+
+    @Test
+    fun configStoreQuarantinesUnsupportedVersionThenAcceptsSave() {
+        val dir = tempDir()
+        val path = dir.resolve("connections.json")
+        Files.writeString(
+            path,
+            """
+            [
+              ${connectionJson("old", CURRENT_CONNECTION_VERSION + 1, includeTls = true)}
+            ]
+            """
+                .trimIndent(),
+        )
+        val store = ConfigStore.new(dir)
+
+        val failure = assertFailsWith<IllegalStateException> { store.list() }
+
+        assertTrue(failure.message?.contains("used an unsupported schema") == true)
+        assertTrue(failure.message?.contains("moved to") == true)
+        assertUnsupportedQuarantine(dir, path)
+        assertTrue(store.list().isEmpty())
+
+        store.save(sampleConnection("c1"))
+        assertEquals(listOf("c1"), store.list().map { it.id })
+    }
+
+    @Test
+    fun queryStoreQuarantinesUnsupportedSchemaVersionOnList() {
+        val dir = tempDir()
+        val path = dir.resolve("saved_queries.json")
+        Files.writeString(
+            path,
+            """
+            [
+              ${savedQueryJson("old", CURRENT_SCHEMA_VERSION + 1)}
+            ]
+            """
+                .trimIndent(),
+        )
+
+        val failure = assertFailsWith<IllegalStateException> { QueryStore.new(dir).listSaved() }
+
+        assertTrue(failure.message?.contains("used an unsupported schema") == true)
+        assertUnsupportedQuarantine(dir, path)
+    }
+
+    @Test
+    fun queryStoreQuarantinesWhenAnyEntryIsUnreadable() {
+        val dir = tempDir()
+        val path = dir.resolve("saved_queries.json")
+        val validSpec =
+            """
+            {
+              "tables": [], "columns": [], "joins": [],
+              "filters": {"id":"root", "connector":"And", "children":[]},
+              "limit":100, "schema_version":$CURRENT_SCHEMA_VERSION, "connector_overrides":{}
+            }
+            """
+                .trimIndent()
+        Files.writeString(
+            path,
+            """
+            [
+              {"id":"good", "name":"Good", "connection_id":"c1", "spec":$validSpec, "created_at":"1"},
+              {"id":42, "broken":true}
+            ]
+            """
+                .trimIndent(),
+        )
+
+        val failure = assertFailsWith<IllegalStateException> { QueryStore.new(dir).listSaved() }
+
+        assertTrue(failure.message?.contains("used an unsupported schema") == true)
+        assertUnsupportedQuarantine(dir, path)
+    }
+
+    @Test
+    fun queryStoreQuarantinesUnsupportedHistoryOnList() {
+        val dir = tempDir()
+        val path = dir.resolve("query_history.json")
+        Files.writeString(
+            path,
+            """
+            [
+              {
+                "id": "old",
+                "connection_id": "c1",
+                "connection_name": "Conn",
+                "spec": {
+                  "tables": [], "columns": [], "joins": [],
+                  "filters": {"id":"root", "connector":"And", "children":[]},
+                  "limit":100, "schema_version":${CURRENT_SCHEMA_VERSION + 1}, "connector_overrides":{}
+                },
+                "row_count": 0,
+                "warnings": [],
+                "timestamp": "1"
+              }
+            ]
+            """
+                .trimIndent(),
+        )
+
+        val failure = assertFailsWith<IllegalStateException> { QueryStore.new(dir).listHistory() }
+
+        assertTrue(failure.message?.contains("used an unsupported schema") == true)
+        assertUnsupportedQuarantine(dir, path)
     }
 }

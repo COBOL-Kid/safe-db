@@ -9,11 +9,6 @@ import java.security.MessageDigest
 import java.util.Currency
 import java.util.Locale
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonTransformingSerializer
 
 const val EXPLORE_SCHEMA_VERSION = 1
 const val MAX_VISIBLE_PIVOT_CELLS = 100_000
@@ -76,20 +71,6 @@ data class ExploreConfig(
             val label = displayColumnLabel(column).lowercase()
             return label == "id" || label.endsWith("_id") || label.endsWith(" id")
         }
-    }
-}
-
-object RejectLegacyPivotColumnDimension :
-    JsonTransformingSerializer<ExploreConfig>(ExploreConfig.serializer()) {
-    override fun transformDeserialize(element: JsonElement): JsonElement {
-        val fields = element as? JsonObject ?: return element
-        val legacy = fields["columnDimension"]
-        if (legacy != null && legacy !is JsonNull) {
-            throw SerializationException(
-                "Legacy pivot field columnDimension is unsupported; recreate the view in the current format"
-            )
-        }
-        return element
     }
 }
 

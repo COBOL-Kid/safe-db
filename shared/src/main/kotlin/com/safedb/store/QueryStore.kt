@@ -9,7 +9,6 @@ import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.json.JsonElement
 
 class QueryStore
 private constructor(
@@ -37,9 +36,7 @@ private constructor(
         requireCurrentSchema(query.spec.schemaVersion)
         lock.withLock {
             val queries =
-                readValid(savedPath, SavedQuery.serializer(), strict = true) {
-                        it.spec.schemaVersion
-                    }
+                readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
                     .toMutableList()
             val index = queries.indexOfFirst { it.id == query.id }
             if (index >= 0) {
@@ -47,18 +44,16 @@ private constructor(
             } else {
                 queries.add(query)
             }
-            writeJson(savedPath, queries, SavedQuery.serializer())
+            writeJsonList(savedPath, queries, SavedQuery.serializer())
         }
     }
 
     fun deleteSaved(id: String) {
         lock.withLock {
             val queries =
-                readValid(savedPath, SavedQuery.serializer(), strict = true) {
-                        it.spec.schemaVersion
-                    }
+                readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
                     .filterNot { it.id == id }
-            writeJson(savedPath, queries, SavedQuery.serializer())
+            writeJsonList(savedPath, queries, SavedQuery.serializer())
         }
     }
 
@@ -70,20 +65,18 @@ private constructor(
         requireCurrentSchema(entry.spec.schemaVersion)
         lock.withLock {
             val history =
-                readValid(historyPath, HistoryEntry.serializer(), strict = true) {
-                        it.spec.schemaVersion
-                    }
+                readValid(historyPath, HistoryEntry.serializer()) { it.spec.schemaVersion }
                     .toMutableList()
             history.add(0, entry)
             if (history.size > maxHistory) {
                 history.subList(maxHistory, history.size).clear()
             }
-            writeJson(historyPath, history, HistoryEntry.serializer())
+            writeJsonList(historyPath, history, HistoryEntry.serializer())
         }
     }
 
     fun clearHistory() {
-        lock.withLock { writeJson(historyPath, emptyList(), HistoryEntry.serializer()) }
+        lock.withLock { writeJsonList(historyPath, emptyList(), HistoryEntry.serializer()) }
     }
 
     private fun requireCurrentSchema(schemaVersion: Int) {
@@ -95,19 +88,11 @@ private constructor(
     private fun <T> readValid(
         path: Path,
         serializer: KSerializer<T>,
-        strict: Boolean = false,
         schemaVersion: (T) -> Int,
-    ): List<T> {
-        val decode: (JsonElement) -> T? = { element ->
+    ): List<T> =
+        readJsonListEntries(path) { element ->
             runCatching { SafeDbJson.lenient.decodeFromJsonElement(serializer, element) }
                 .getOrNull()
                 ?.takeIf { schemaVersion(it) == CURRENT_SCHEMA_VERSION }
         }
-        return if (strict) readJsonListEntriesStrict(path, decode)
-        else readJsonListEntries(path, decode)
-    }
-
-    private fun <T> writeJson(path: Path, data: List<T>, serializer: KSerializer<T>) {
-        writeJsonList(path, data, serializer)
-    }
 }

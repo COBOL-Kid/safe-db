@@ -40,7 +40,6 @@ fun TransportSecurityMode.mySqlSslMode(): String =
 data class TransportSecurity(
     val mode: TransportSecurityMode = TransportSecurityMode.VerifyIdentity,
     @SerialName("oracle_wallet_location") val oracleWalletLocation: String? = null,
-    @SerialName("legacy_implicit") val legacyImplicit: Boolean = false,
 )
 
 @Serializable

@@ -22,11 +22,7 @@ internal fun readJsonList(path: Path): JsonListDocument? {
             SafeDbJson.lenient.parseToJsonElement(content) as? JsonArray
                 ?: error("Expected a JSON array")
         } catch (error: Exception) {
-            val quarantine =
-                path.resolveSibling(
-                    "${path.fileName.toString().substringBeforeLast('.')}.corrupt-${UUID.randomUUID()}.json"
-                )
-            Files.move(path, quarantine, StandardCopyOption.REPLACE_EXISTING)
+            val quarantine = moveJsonListAside(path, "corrupt")
             throw IllegalStateException(
                 "${path.fileName} was corrupt and was moved to $quarantine: $error"
             )
@@ -38,15 +34,27 @@ internal fun <T> writeJsonList(path: Path, values: List<T>, serializer: KSeriali
     atomicWrite(path, SafeDbJson.store.encodeToString(ListSerializer(serializer), values))
 }
 
-internal fun <T> readJsonListEntries(path: Path, decodeEntry: (JsonElement) -> T?): List<T> {
-    val document = readJsonList(path) ?: return emptyList()
-    return document.entries.mapNotNull(decodeEntry)
+internal fun moveJsonListAside(path: Path, kind: String): Path {
+    val quarantine =
+        path.resolveSibling(
+            "${path.fileName.toString().substringBeforeLast('.')}.$kind-${UUID.randomUUID()}.json"
+        )
+    Files.move(path, quarantine, StandardCopyOption.REPLACE_EXISTING)
+    return quarantine
 }
 
-internal fun <T> readJsonListEntriesStrict(path: Path, decodeEntry: (JsonElement) -> T?): List<T> {
+internal fun <T> readJsonListEntries(path: Path, decodeEntry: (JsonElement) -> T?): List<T> {
     val document = readJsonList(path) ?: return emptyList()
-    return document.entries.map { element ->
-        decodeEntry(element)
-            ?: error("${path.fileName} contains an unsupported or unreadable entry")
+    val values = ArrayList<T>(document.entries.size)
+    for (element in document.entries) {
+        val decoded = decodeEntry(element)
+        if (decoded == null) {
+            val quarantine = moveJsonListAside(path, "unsupported")
+            throw IllegalStateException(
+                "${path.fileName} used an unsupported schema and was moved to $quarantine"
+            )
+        }
+        values.add(decoded)
     }
+    return values
 }
