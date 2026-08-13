@@ -16,3 +16,7 @@ Thumbs.db
 
 # Disposable local database/TLS fixtures
 .docker/
+
+# Local agent instructions (kept on disk, not in repo)
+AGENTS.md
+CLAUDE.md
