@@ -244,6 +244,13 @@ data class ConnectionDef(
     }
 
     fun validate(): Result<Unit> {
+        if (version != CURRENT_CONNECTION_VERSION) {
+            return Result.failure(
+                IllegalArgumentException(
+                    "Unsupported connection version $version; expected $CURRENT_CONNECTION_VERSION"
+                )
+            )
+        }
         if (id.trim().isEmpty())
             return Result.failure(IllegalArgumentException("Connection id is required"))
         if (host.trim().isEmpty())

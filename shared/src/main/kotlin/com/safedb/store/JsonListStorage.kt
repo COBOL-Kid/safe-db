@@ -42,3 +42,11 @@ internal fun <T> readJsonListEntries(path: Path, decodeEntry: (JsonElement) -> T
     val document = readJsonList(path) ?: return emptyList()
     return document.entries.mapNotNull(decodeEntry)
 }
+
+internal fun <T> readJsonListEntriesStrict(path: Path, decodeEntry: (JsonElement) -> T?): List<T> {
+    val document = readJsonList(path) ?: return emptyList()
+    return document.entries.map { element ->
+        decodeEntry(element)
+            ?: error("${path.fileName} contains an unsupported or unreadable entry")
+    }
+}

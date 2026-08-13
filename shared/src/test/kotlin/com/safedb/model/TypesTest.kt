@@ -32,6 +32,9 @@ class TypesTest {
             base.copy(username = "").validate().getOrThrow()
         }
         assertFailsWith<IllegalArgumentException> { base.copy(port = 0).validate().getOrThrow() }
+        assertFailsWith<IllegalArgumentException> {
+            base.copy(version = CURRENT_CONNECTION_VERSION + 1).validate().getOrThrow()
+        }
     }
 
     @Test

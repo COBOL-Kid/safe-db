@@ -19,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.serialization.SerializationException
 
 class RecipeStoreTest {
     @Test
@@ -131,6 +132,60 @@ class RecipeStoreTest {
         val json = pivotRecipeJson(pivotVersion = EXPLORE_SCHEMA_VERSION + 1)
 
         assertFailsWith<IllegalArgumentException> { store.importJson(json, "2") }
+    }
+
+    @Test
+    fun importRejectsLegacyColumnDimension() {
+        val dir = Files.createTempDirectory("recipe-column-dimension")
+        val store = RecipeStore.new(dir)
+        store.save(recipe("current", "Current"))
+        val before = Files.readString(dir.resolve("explore_recipes.json"))
+        val payload =
+            """
+            {
+              "schemaVersion": 1,
+              "id": "old",
+              "name": "Sales by status",
+              "createdAt": "1",
+              "updatedAt": "1",
+              "defaultMode": "Pivot",
+              "pivot": {
+                "schemaVersion": 1,
+                "rowDimensions": [
+                  {"column": "t0__region", "label": "Region", "id": "region"}
+                ],
+                "columnDimension": {
+                  "column": "t0__status",
+                  "label": "Status",
+                  "id": "status"
+                }
+              }
+            }
+            """
+                .trimIndent()
+
+        val failure = assertFailsWith<SerializationException> { store.importJson(payload, "2") }
+
+        assertTrue(failure.message?.contains("columnDimension") == true)
+        assertEquals(before, Files.readString(dir.resolve("explore_recipes.json")))
+        assertEquals(listOf("current"), store.list().map { it.id })
+    }
+
+    @Test
+    fun mutationsLeaveUnsupportedRecipesUntouched() {
+        val dir = Files.createTempDirectory("recipe-unsupported")
+        val path = dir.resolve("explore_recipes.json")
+        Files.writeString(
+            path,
+            "[\n${pivotRecipeJson(pivotVersion = EXPLORE_SCHEMA_VERSION + 1)}\n]",
+        )
+        val before = Files.readString(path)
+        val store = RecipeStore.new(dir)
+
+        assertTrue(store.list().isEmpty())
+        assertFailsWith<IllegalStateException> { store.save(recipe("current", "Current")) }
+        assertFailsWith<IllegalStateException> { store.delete("old") }
+        assertEquals(before, Files.readString(path))
     }
 
     private fun pivotRecipeJson(pivotVersion: Int) =

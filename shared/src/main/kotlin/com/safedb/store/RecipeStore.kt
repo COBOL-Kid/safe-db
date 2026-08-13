@@ -8,6 +8,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.serialization.json.JsonElement
 
 class RecipeStore
 private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {
@@ -23,7 +24,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     fun save(recipe: ExploreRecipe) {
         recipe.validate()
         lock.withLock {
-            val recipes = read().toMutableList()
+            val recipes = readExistingForMutation().toMutableList()
             val index = recipes.indexOfFirst { it.id == recipe.id }
             if (index >= 0) recipes[index] = recipe else recipes += recipe
             write(recipes)
@@ -31,7 +32,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     }
 
     fun delete(id: String) {
-        lock.withLock { write(read().filterNot { it.id == id }) }
+        lock.withLock { write(readExistingForMutation().filterNot { it.id == id }) }
     }
 
     fun importJson(content: String, nowEpochSec: String): ExploreRecipe {
@@ -41,7 +42,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
             "Unsupported recipe version ${decoded.schemaVersion}"
         }
         return lock.withLock {
-            val existing = read()
+            val existing = readExistingForMutation()
             val imported =
                 decoded.copy(
                     id = UUID.randomUUID().toString(),
@@ -57,17 +58,15 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     fun exportJson(recipe: ExploreRecipe): String =
         SafeDbJson.store.encodeToString(recipe.validate())
 
-    private fun read(): List<ExploreRecipe> {
-        val document = readJsonList(path) ?: return emptyList()
-        return document.entries.mapNotNull { element ->
-            runCatching {
-                SafeDbJson.lenient
-                    .decodeFromJsonElement(ExploreRecipe.serializer(), element)
-                    .validate()
-            }
-                .getOrNull()
-        }
+    private fun decodeRecipe(element: JsonElement): ExploreRecipe? = runCatching {
+        SafeDbJson.lenient.decodeFromJsonElement(ExploreRecipe.serializer(), element).validate()
     }
+        .getOrNull()
+
+    private fun read(): List<ExploreRecipe> = readJsonListEntries(path, ::decodeRecipe)
+
+    private fun readExistingForMutation(): List<ExploreRecipe> =
+        readJsonListEntriesStrict(path, ::decodeRecipe)
 
     private fun write(recipes: List<ExploreRecipe>) {
         writeJsonList(path, recipes, ExploreRecipe.serializer())
