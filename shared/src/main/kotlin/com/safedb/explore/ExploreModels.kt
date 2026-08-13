@@ -89,8 +89,11 @@ object ExploreConfigMigration :
         val fields = element as? JsonObject ?: return element
         val legacy = fields["columnDimension"]?.takeUnless { it is JsonNull } ?: return element
         if (!(fields["columnDimensions"] as? JsonArray).isNullOrEmpty()) return element
-        val version = (fields["schemaVersion"] as? JsonPrimitive)?.intOrNull
-        if (version != null && version != 1) return element
+        // Only a genuine v1 document is folded and restamped. Restamping unconditionally handed
+        // validate() a version it always accepts, so an unsupported version decoded as a silently
+        // truncated v2 config instead of being rejected. Absent version means v1: only v1 wrote
+        // columnDimension.
+        if (((fields["schemaVersion"] as? JsonPrimitive)?.intOrNull ?: 1) != 1) return element
         return JsonObject(
             fields +
                 mapOf(

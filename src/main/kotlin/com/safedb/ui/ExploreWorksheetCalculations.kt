@@ -530,10 +530,13 @@ internal fun String.toDisplayWords(): String =
 internal fun formatWorksheetValue(value: ResultCell, format: PivotNumberFormat?): String {
     val applied = format ?: return formatCell(value)
     if (applied.kind == NumberFormatKind.Auto) return formatCell(value)
+    // BigDecimal has no NaN or infinity, so a non-finite double falls back to the plain rendering
+    // instead of throwing out of composition. Convert below the guards, never above them.
     val number =
         when (value) {
             is ResultCell.IntegerCell -> BigDecimal.valueOf(value.value)
-            is ResultCell.FloatCell -> value.value.takeIf(Double::isFinite)?.let(BigDecimal::valueOf)
+            is ResultCell.FloatCell ->
+                value.value.takeIf(Double::isFinite)?.let { BigDecimal.valueOf(it) }
             else -> null
         } ?: return formatCell(value)
     return formatExploreNumber(number, applied)
