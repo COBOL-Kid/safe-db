@@ -29,7 +29,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-const val CURRENT_SCHEMA_VERSION: Int = 3
+const val CURRENT_SCHEMA_VERSION: Int = 1
 const val MAX_CELL_BYTES: Int = 1024 * 1024
 const val MAX_RESULT_BYTES: Int = 10 * 1024 * 1024
 

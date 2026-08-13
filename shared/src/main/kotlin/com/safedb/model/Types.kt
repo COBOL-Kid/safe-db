@@ -5,7 +5,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-const val CURRENT_CONNECTION_VERSION = 2
+const val CURRENT_CONNECTION_VERSION = 1
 const val MAX_DRIVER_PROPERTIES = 50
 const val MAX_DRIVER_PROPERTY_NAME_LENGTH = 128
 const val MAX_DRIVER_PROPERTY_VALUE_LENGTH = 4_096

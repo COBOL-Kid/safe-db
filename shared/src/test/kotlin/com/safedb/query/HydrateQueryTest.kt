@@ -1,5 +1,6 @@
 package com.safedb.query
 
+import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ColumnInfo
 import com.safedb.model.FilterGroup
 import com.safedb.model.FilterNode
@@ -174,7 +175,7 @@ class HydrateQueryTest {
                 distinct = true,
                 sorts = listOf(SortSpec("saved_t1", "name", SortDirection.Desc)),
                 groups = listOf(GroupSpec("saved_t0", "name"), GroupSpec("saved_t1", "name")),
-                schemaVersion = 2,
+                schemaVersion = CURRENT_SCHEMA_VERSION,
                 connectorOverrides = emptyMap(),
             )
 

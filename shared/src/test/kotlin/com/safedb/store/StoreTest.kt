@@ -5,12 +5,8 @@ import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
-import com.safedb.model.FilterNode
-import com.safedb.model.FilterOp
-import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
 import com.safedb.model.HistoryEntry
-import com.safedb.model.LiteralKind
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
@@ -275,7 +271,7 @@ class StoreTest {
               "joins": [],
               "filters": {"id": "root", "connector": "And", "children": []},
               "limit": 100,
-              "schema_version": 3,
+              "schema_version": 1,
               "connector_overrides": {}
             }
             """
@@ -394,92 +390,6 @@ class StoreTest {
     }
 
     @Test
-    fun configStoreMigratesLegacyConnectionsMissingTransportSecurity() {
-        val dir = tempDir()
-        Files.writeString(
-            dir.resolve("connections.json"),
-            """
-            [
-              {
-                "version": 1,
-                "id": "legacy",
-                "name": "Legacy MySQL",
-                "dialect": "MySql",
-                "host": "localhost",
-                "port": 3306,
-                "database": "safedb_test",
-                "username": "root"
-              }
-            ]
-            """
-                .trimIndent(),
-        )
-
-        val migrated = ConfigStore.new(dir).list().single()
-
-        assertEquals(
-            TransportSecurity(mode = TransportSecurityMode.Disabled, legacyImplicit = true),
-            migrated.transportSecurity,
-        )
-        assertEquals(CURRENT_CONNECTION_VERSION, migrated.version)
-        assertEquals(emptyList(), migrated.driverProperties)
-        assertTrue(Files.exists(dir.resolve("connections.migration.bak")))
-    }
-
-    @Test
-    fun queryStoreMigratesV1SavedQueries() {
-        val dir = tempDir()
-        val v1 =
-            """
-            [
-              {
-                "id": "q1",
-                "name": "Old Users",
-                "connection_id": "c1",
-                "spec": {
-                  "tables": [{"schema": "public", "name": "users", "alias": "t0"}],
-                  "columns": [],
-                  "joins": [],
-                  "filters": [
-                    {"table_alias": "t0", "column": "age", "op": "Gt", "value": "21"},
-                    {"table_alias": "t0", "column": "deleted_at", "op": "IsNull", "value": null}
-                  ],
-                  "limit": 50
-                },
-                "created_at": "1"
-              }
-            ]
-            """
-                .trimIndent()
-        Files.writeString(dir.resolve("saved_queries.json"), v1)
-        val store = QueryStore.new(dir)
-        val saved = store.listSaved()
-        assertEquals(1, saved.size)
-        val spec = saved.single().spec
-        assertEquals(CURRENT_SCHEMA_VERSION, spec.schemaVersion)
-        assertEquals(50, spec.limit)
-        assertEquals(GroupConnector.And, spec.filters.connector)
-        assertEquals(2, spec.filters.children.size)
-
-        val leaf0 = (spec.filters.children[0] as FilterNode.Leaf).spec
-        assertEquals("t0", leaf0.tableAlias)
-        assertEquals("age", leaf0.column)
-        assertEquals(FilterOp.Gt, leaf0.op)
-        val value0 = leaf0.value as FilterValue.Single
-        assertEquals(LiteralKind.Text, value0.literal.kind)
-        assertEquals("21", value0.literal.text)
-
-        val leaf1 = (spec.filters.children[1] as FilterNode.Leaf).spec
-        assertEquals(FilterOp.IsNull, leaf1.op)
-        assertEquals(null, leaf1.value)
-
-        val rewritten = Files.readString(dir.resolve("saved_queries.json"))
-        assertTrue(rewritten.contains("\"connector\""))
-        assertFalse(rewritten.contains("\"filters\":["))
-        assertTrue(Files.exists(dir.resolve("saved_queries.migration.bak")))
-    }
-
-    @Test
     fun queryStoreQuarantinesMalformedWholeFile() {
         val dir = tempDir()
         val path = dir.resolve("saved_queries.json")
@@ -505,7 +415,7 @@ class StoreTest {
             {
               "tables": [], "columns": [], "joins": [],
               "filters": {"id":"root", "connector":"And", "children":[]},
-              "limit":100, "schema_version":3, "connector_overrides":{}
+              "limit":100, "schema_version":1, "connector_overrides":{}
             }
             """
                 .trimIndent()
@@ -521,6 +431,58 @@ class StoreTest {
         )
 
         assertEquals(listOf("good"), QueryStore.new(dir).listSaved().map { it.id })
+    }
+
+    @Test
+    fun queryStoreSkipsEntriesWithUnsupportedSchemaVersion() {
+        val dir = tempDir()
+        Files.writeString(
+            dir.resolve("saved_queries.json"),
+            """
+            [
+              {
+                "id": "old",
+                "name": "Old",
+                "connection_id": "c1",
+                "spec": {
+                  "tables": [], "columns": [], "joins": [],
+                  "filters": {"id":"root", "connector":"And", "children":[]},
+                  "limit":100, "schema_version":${CURRENT_SCHEMA_VERSION + 1},
+                  "connector_overrides":{}
+                },
+                "created_at": "1"
+              }
+            ]
+            """
+                .trimIndent(),
+        )
+
+        assertTrue(QueryStore.new(dir).listSaved().isEmpty())
+    }
+
+    @Test
+    fun configStoreSkipsEntriesWithUnsupportedVersion() {
+        val dir = tempDir()
+        Files.writeString(
+            dir.resolve("connections.json"),
+            """
+            [
+              {
+                "version": ${CURRENT_CONNECTION_VERSION + 1},
+                "id": "c1",
+                "name": "Local PG",
+                "dialect": "Postgres",
+                "host": "localhost",
+                "port": 5432,
+                "database": "demo",
+                "username": "readonly"
+              }
+            ]
+            """
+                .trimIndent(),
+        )
+
+        assertTrue(ConfigStore.new(dir).list().isEmpty())
     }
 
     @Test
