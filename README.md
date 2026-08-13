@@ -1,108 +1,70 @@
 # safe-db
 
-safe-db is a Jetpack Compose Desktop application for safely exploring PostgreSQL, MySQL, SQL Server, and Oracle on macOS and Windows. It provides visual schema exploration and read-only query building with enforced limits, blocked system schemas, and EXPLAIN-informed risk scoring.
+A desktop app for exploring production databases without handing a full SQL client to someone who once wrote `SELECT *` in a training sandbox and now 'knows' SQL.
 
-## Requirements, start, and verify
+safe-db is for them: users who still need to look at production Postgres, MySQL, SQL Server, or Oracle databases but cannot be trusted with a query.
 
-safe-db supports macOS and Windows only. It requires JDK 25 (`jvmToolchain(25)`) and network access to the database; unsupported operating systems exit before any profile, credential-store, or app-data initialization.
+Browse the schema. Build a typed query. Inspect a bounded sample. The app stays read-only, caps how much they can pull, and scores risk from the query plan before they lean on a live system.
+
+macOS and Windows. Built with Compose Desktop. Unapologetically not Excel.
+
+## Why it exists
+
+Most SQL clients assume you meant to do that. Safe-db assumes you did not.
+
+safe-db is opinionated on purpose — the opinions of people who have watched a cartesian product become a status meeting:
+
+- **Read-only by design.** Queries are validated against the loaded schema and compiled with bound parameters. No ad-hoc writes. No “just this once” `UPDATE`. No “I thought it was a SELECT.”
+- **Limits you can live with.** Default sample is 500 rows, hard cap is 10,000, and queries time out after 10 seconds. You’ll get a nudge above 1,000 rows. “Download everything” is not a feature.
+- **Plan-aware caution.** Missing plan evidence or a spicy optimizer cost needs an explicit confirmed retry — not a shrug, not a “it was fine in staging.”
+- **Credentials stay out of JSON.** Named connection profiles are saved without passwords. The OS credential store holds secrets when it’s available. Sticky notes are not a backend.
+- **Explore without mutating the query.** Schema maps, Pivot, Worksheet, and Visualization work from an immutable sample. Saved recipes keep layout, not credentials or result rows. Pivot all you want; you still cannot accidentally relaunch the query as a warehouse-melting encore.
+
+If you want a general-purpose DBA workbench, or a place to paste a 400-line query from a Slack thread titled “quick question,” this isn’t that.
+
+## Get started
+
+You need **JDK 25** and a database you can reach over the network. Unsupported operating systems exit before any profile, credential store, or app data is touched.
 
 ```sh
 ./gradlew run
-./gradlew check
 ```
 
-| Command | Purpose |
+That’s the whole “hello, world.” Use the Gradle wrapper, not a system Gradle install, and don’t run `./gradlew run` next to daemon-less builds.
+
+| I want to… | Run |
 | --- | --- |
-| `./gradlew check` | Unit tests, test-discovery, and coverage gate. |
-| `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh coverage proof after broad Kotlin or build changes. |
-| `./gradlew integrationTest` | Optional PostgreSQL/MySQL JDBC contracts. |
-| `./gradlew renderPreview --rerun-tasks` | Headless UI renders in `/tmp/safedb-preview/`. |
-| `./gradlew renderThemeGallery` | Connections and settings renders for every color scheme. |
-| `./gradlew seedMysql` | Generate and seed the local MySQL fixture. |
-| `./gradlew seedPostgres` | Generate and seed the Docker PostgreSQL fixture. |
-| `./gradlew seedMssql` | Generate and seed the Docker SQL Server fixture. |
-| `./gradlew seedOracle` | Generate and seed the Docker Oracle fixture. |
-| `scripts/verify_ssl_compat.sh` | Environment-gated TLS launch-profile and dialect-compatibility suite. |
-| `scripts/docker_test_databases.sh up` | Start and seed all four test databases with local TLS fixtures. |
-| `./gradlew packageDistributionForCurrentOS` | Unsigned DMG on macOS or MSI on Windows. |
+| Start the app | `./gradlew run` |
+| Run the usual checks | `./gradlew check` |
+| Package an unsigned installer | `./gradlew packageDistributionForCurrentOS` |
 
-Use the Gradle wrapper rather than a system Gradle installation. Do not run `./gradlew run` alongside daemon-less builds.
+More commands (integration tests, Docker fixtures, headless UI renders, seeders) live in [docs/testing.md](docs/testing.md). TLS launch profiles and managed trust stores are in [docs/trust-stores.md](docs/trust-stores.md).
 
-## What it does
+## A quick tour
 
-- Saves named connection profiles without passwords in profile JSON; credentials use the platform store when available.
-- Browses schemas and maps selected-schema tables, keys, indexes, and referenced external tables. The map is read-only and does not alter the Builder query.
-- Builds typed, parameterized queries with joins, nested filters, and controlled row limits.
-- Explores the immutable result sample through Pivot, Worksheet, and Visualization views; recipes store configuration only, never credentials or result rows.
+1. **Save a connection.** Give it a name. Test it. Passwords go to the platform store on save. `Test Connection` does not write the keyring.
+2. **Browse the schema.** Tables, keys, indexes, and referenced external tables. System schemas stay out of the way. The map is read-only and does not rewrite the query you’re building.
+3. **Build a query.** Typed, parameterized, with joins, nested filters, and a row limit you actually control.
+4. **Look at the sample.** Pivot it, spreadsheet it, chart it. Tinker with the view; the underlying rows stay put. If someone needs a million rows, they can submit a ticket.
 
-| Database | Transport notes |
+| Database | What to know |
 | --- | --- |
-| PostgreSQL | Verified TLS keeps pgjdbc's normal trust and client-certificate behavior unless a launch profile is selected. |
-| MySQL | Uses read-only transactions for non-locking reads where supported. |
-| SQL Server | Certificate verification uses JVM or launch-profile trust. |
+| PostgreSQL | Verified TLS keeps pgjdbc’s normal trust and client-certificate behavior unless you pick a launch profile. |
+| MySQL | Uses read-only transactions for non-locking reads where the server supports it. |
+| SQL Server | Certificate verification uses the JVM or a launch-profile trust store. |
 | Oracle | Verified TCPS uses an Oracle wallet. |
 
-## Local generated fixtures
+App data lives in `~/Library/Application Support/com.safedb.app/` on macOS and `%APPDATA%\com.safedb.app\` on Windows. For local development or CI, `SAFEDB_KEYCHAIN_BACKEND=disabled` keeps credentials in memory.
 
-The fixture targets `localhost:3306`, database `safedb_test`, user `root`; an empty password is valid. The script accepts `SAFEDB_TEST_MYSQL_*` overrides and can use a running Docker MySQL/MariaDB container when no local client is available.
+## Contributing
 
-```sh
-scripts/seed_mysql.sh                # generated reporting fixture (~50k orders)
-scripts/seed_mysql.sh --static       # checked-in fixture used by pull-request CI
-scripts/seed_mysql.sh --orders 20000 --customers 5000 --seed 7
+This is open source. If you’ve ever been paged because someone “just needed a count,” you already understand the product.
 
-SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true \
-  ./gradlew integrationTest --stacktrace
-```
+- **Fix a bug, polish copy, add a test, improve docs.** All of that counts. Guardrails are a team sport.
+- **Run `./gradlew check`** before you open a pull request. That’s the fast gate: unit tests, test discovery, and coverage.
+- **Need a real database?** [docs/testing.md](docs/testing.md) covers optional JDBC suites and the Docker stack. Integration tests skip when a fixture isn’t around, so you can still ship a unit-test change without standing up four engines.
+- **CI is on demand.** A maintainer applies the `ci:run` label to run `check` plus the required static-MySQL suite. After new commits, remove and reapply the label. Cross-platform durability is a manual **Run workflow** in GitHub Actions; see [.github/workflows](.github/workflows/).
 
-PostgreSQL, SQL Server, and Oracle use the same deterministic sizing flags and target the running containers from the complete Docker stack:
+Issues and pull requests are welcome. If you’re unsure where something belongs, open a small PR or an issue and we’ll sort it out.
 
-```sh
-scripts/docker_test_databases.sh up
-scripts/seed_postgres.sh --orders 20000 --customers 5000 --seed 7
-scripts/seed_mssql.sh --orders 20000 --customers 5000 --seed 7
-scripts/seed_oracle.sh --orders 20000 --customers 5000 --seed 7
-```
-
-Each also accepts `--products`, `--categories`, `--batch-size`, `--static`, and `--reset-state`. The equivalent Gradle properties are `seedPostgresArgs`, `seedMssqlArgs`, and `seedOracleArgs`. Override the default Compose container with `SAFEDB_TEST_POSTGRES_DOCKER`, `SAFEDB_TEST_MSSQL_DOCKER`, or `SAFEDB_TEST_ORACLE_DOCKER`. PostgreSQL and SQL Server seeders prefer `SAFEDB_TEST_*_PASSWORD` when set, then the matching `SAFEDB_DOCKER_*_PASSWORD`, then the development default.
-
-Integration tests skip when no selected fixture is available. Set `SAFEDB_TEST_REQUIRE_MYSQL=true` or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to require execution; PostgreSQL uses matching `SAFEDB_TEST_POSTGRES_*` variables and `testdata_postgres.sql`.
-
-For a local PostgreSQL instance using the test defaults, create `safedb_test` and load the checked-in fixture before running the required suite:
-
-```sh
-PGPASSWORD=postgres psql -h localhost -U postgres -d safedb_test \
-  -f testdata_postgres.sql
-
-SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_POSTGRES=true \
-  ./gradlew integrationTest --stacktrace
-```
-
-Set matching `SAFEDB_TEST_POSTGRES_*` variables when using another PostgreSQL endpoint. `scripts/verify_ssl_compat.sh` expects pre-provisioned TLS endpoints and launch profiles under `/tmp/safedb-ssl` by default. Set `SAFEDB_SSL_ROOT` (and the documented endpoint overrides in the script) when using another location.
-
-## Complete Docker test stack
-
-The root [`compose.yaml`](compose.yaml) provisions every supported database for local connectivity and certificate verification: ordinary MySQL on port 3306, TLS-required MySQL on 3307, TLS-enabled PostgreSQL on 5433, TLS-required SQL Server on 14333, and Oracle Free on 1522. Separate MySQL endpoints are necessary because the ordinary integration contract explicitly disables TLS while the SSL contract verifies that non-TLS connections are rejected. The stack loads checked-in fixtures for all four dialects, including SQL Server [`testdata_mssql.sql`](testdata_mssql.sql) and Oracle [`testdata_oracle.sql`](testdata_oracle.sql), and generates a trusted CA, an intentionally wrong CA, PKCS12 launch-profile stores, and the Oracle wallet-path fixture beneath the ignored `.docker/safedb-ssl/` directory.
-
-The harness requires Docker Compose, OpenSSL, and the JDK `keytool` command (included with the project's required JDK 25).
-
-```sh
-scripts/docker_test_databases.sh up       # generate certs, pull/start, wait for health
-scripts/docker_test_databases.sh seed     # reload SQL Server and Oracle sample data
-scripts/docker_test_databases.sh verify   # required JDBC suite, then SSL compatibility suite
-scripts/docker_test_databases.sh down     # stop the stack and discard all database data
-scripts/docker_test_databases.sh reset    # regenerate certificates and recreate everything
-scripts/docker_test_databases.sh certs    # regenerate certificates while the stack is stopped
-```
-
-Every database data directory uses an anonymous Docker volume. The helper renews those volumes on every `up` and removes them on `down`, so database state never survives between stack runs. Use the helper rather than raw `docker compose stop`, which leaves a stopped container and its anonymous volume in place. Generated TLS fixtures remain under `.docker/safedb-ssl/` so the host-side launch profiles continue to work. The `verify` command supplies the ordinary and TLS test environment variables automatically and forces fresh execution so cached results from an unavailable endpoint cannot mask the live checks. Certificate rotation refuses to run while project services are active because running servers would continue using the previous certificates; use `reset` to rotate certificates and recreate the stack safely. The stack uses disposable development credentials by default; override them with the `SAFEDB_DOCKER_*_PASSWORD` variables declared in `compose.yaml`. SQL Server runs as `linux/amd64`, so its first start is slower on Apple Silicon; Oracle is also a large image and can take several minutes to become healthy.
-
-## Safety, data, and trust
-
-Queries are validated against the loaded schema and compile with bound parameters. They are read-only, default to 500 rows, cannot exceed 10,000 rows, time out after 10 seconds, and show guidance above 1,000 rows. Missing plan evidence or optimizer cost requires an explicit confirmed retry.
-
-App data lives in `~/Library/Application Support/com.safedb.app/` on macOS and `%APPDATA%\com.safedb.app\` on Windows. `SAFEDB_KEYCHAIN_BACKEND=disabled` uses in-memory credentials for development or CI; `Test Connection` does not write the keyring, while `Save Connection` does.
-
-Managed installations can supply a PKCS12 trust store only through startup launch-profile JSON. It is never saved with a connection; the profile contains a password source, never the password itself. Use either the strict platform credential store or a protected one-line password file. See [external trust stores](docs/trust-stores.md).
-
-CI is on demand: a maintainer applies the `ci:run` label to a pull request to run `check` and the required static-MySQL integration suite. Remove and reapply the label after new commits to request another run. The cross-platform durability suite is available through **Run workflow** in GitHub Actions, while dependency submission continues automatically for qualifying trusted `main` changes. See [workflows](.github/workflows/) for details.
+If you change a documented command, environment variable, packaging path, or safety guarantee, update the matching docs in the same change. Future-you (and the next person who has to explain why `SELECT *` is not a plan) will be grateful.

@@ -27,7 +27,7 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
 }
 
 // Dev-only seeding tooling: compiled and run on demand, never packaged into the shipped jar.
@@ -63,10 +63,10 @@ dependencies {
         integrationTest.implementationConfigurationName,
         "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0",
     )
-    add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:6.1.2")
+    add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:6.1.3")
     add(
         integrationTest.runtimeOnlyConfigurationName,
-        "org.junit.platform:junit-platform-launcher:6.1.2",
+        "org.junit.platform:junit-platform-launcher:6.1.3",
     )
 }
 
