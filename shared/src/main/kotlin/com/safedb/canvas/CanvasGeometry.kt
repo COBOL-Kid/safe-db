@@ -559,38 +559,3 @@ private fun List<JoinSpec>.hasJoin(
 }
 
 private fun qualifiedTableKey(schema: String, table: String): String = "$schema.$table"
-
-data class JoinEdgePoints(
-    val sourceX: Float,
-    val sourceY: Float,
-    val control1X: Float,
-    val control1Y: Float,
-    val control2X: Float,
-    val control2Y: Float,
-    val targetX: Float,
-    val targetY: Float,
-)
-
-fun joinEdgePoints(
-    left: CanvasTableLike,
-    leftColumn: String,
-    right: CanvasTableLike,
-    rightColumn: String,
-    cardWidth: Float = CANVAS_CARD_WIDTH,
-): JoinEdgePoints {
-    val sourceX = tableRightX(left, cardWidth)
-    val targetX = tableLeftX(right)
-    val sourceY = columnY(left, leftColumn, cardWidth)
-    val targetY = columnY(right, rightColumn, cardWidth)
-    val midX = (sourceX + targetX) / 2f
-    return JoinEdgePoints(
-        sourceX = sourceX,
-        sourceY = sourceY,
-        control1X = midX,
-        control1Y = sourceY,
-        control2X = midX,
-        control2Y = targetY,
-        targetX = targetX,
-        targetY = targetY,
-    )
-}

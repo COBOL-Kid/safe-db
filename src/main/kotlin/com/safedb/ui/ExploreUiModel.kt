@@ -15,6 +15,7 @@ import com.safedb.model.ColumnCategory
 import com.safedb.model.QueryResult
 import com.safedb.model.TableRef
 import com.safedb.model.classifyColumn
+import com.safedb.model.isNumeric
 import java.util.UUID
 
 internal data class ExploreFieldOption(
@@ -106,47 +107,24 @@ internal fun availableMeasureFunctions(field: ExploreFieldOption): List<MeasureF
         ColumnCategory.Other -> listOf(MeasureFn.CountDistinct)
     }
 
+// Charts plot a numeric Y, so only counting functions survive on a non-numeric column.
+internal fun availablePlottableMeasureFunctions(field: ExploreFieldOption): List<MeasureFn> =
+    if (field.category.isNumeric()) availableMeasureFunctions(field)
+    else
+        availableMeasureFunctions(field).filter {
+            it == MeasureFn.Count || it == MeasureFn.CountDistinct
+        }
+
 internal fun measureFor(field: ExploreFieldOption, function: MeasureFn): PivotMeasure {
     require(function != MeasureFn.Count) { "Count rows does not use a source field" }
-    val functionLabel =
-        when (function) {
-            MeasureFn.CountDistinct -> "Distinct"
-            MeasureFn.CountNumbers -> "Count numbers"
-            MeasureFn.Sum -> "Sum"
-            MeasureFn.Avg -> "Average"
-            MeasureFn.Min -> "Minimum"
-            MeasureFn.Max -> "Maximum"
-            MeasureFn.Product -> "Product"
-            MeasureFn.StdDev -> "StdDev"
-            MeasureFn.StdDevPopulation -> "StdDevP"
-            MeasureFn.Variance -> "Variance"
-            MeasureFn.VariancePopulation -> "VarianceP"
-            MeasureFn.Count -> error("Count rows does not use a source field")
-        }
     return PivotMeasure(
         alias =
             "${function.name.lowercase()}_${field.column}_${UUID.randomUUID().toString().take(8)}",
         fn = function,
         sourceColumn = field.column,
-        label = "$functionLabel ${field.label}",
+        label = "${function.shortLabel} ${field.label}",
     )
 }
-
-internal fun measureFunctionLabel(function: MeasureFn): String =
-    when (function) {
-        MeasureFn.Count -> "Count rows"
-        MeasureFn.CountNumbers -> "Count numbers"
-        MeasureFn.CountDistinct -> "Count distinct"
-        MeasureFn.Sum -> "Sum"
-        MeasureFn.Avg -> "Average"
-        MeasureFn.Min -> "Minimum"
-        MeasureFn.Max -> "Maximum"
-        MeasureFn.Product -> "Product"
-        MeasureFn.StdDev -> "Standard deviation"
-        MeasureFn.StdDevPopulation -> "Population standard deviation"
-        MeasureFn.Variance -> "Variance"
-        MeasureFn.VariancePopulation -> "Population variance"
-    }
 
 internal fun toggleExploreSort(config: ExploreConfig, target: ExploreSortTarget): ExploreConfig {
     val current = config.sort

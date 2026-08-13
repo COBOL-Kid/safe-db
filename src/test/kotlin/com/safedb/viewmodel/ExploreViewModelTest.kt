@@ -89,16 +89,50 @@ class ExploreViewModelTest {
             it.copy(sort = ExploreSort(ExploreSortTarget.Dimension("t0__status"), SortDir.Asc))
         }
 
-        assertTrue(viewModel.pivotPreviewState.loading)
+        assertTrue(viewModel.isLoading(ExploreMode.Pivot))
         advanceTimeBy(75)
         runCurrent()
 
-        assertFalse(viewModel.pivotPreviewState.loading)
+        assertFalse(viewModel.isLoading(ExploreMode.Pivot))
         assertEquals(SortDir.Asc, viewModel.config.sort?.dir)
         assertEquals(
             "pending",
             (viewModel.preview.result.rows.first().first() as ResultCell.TextCell).value.text,
         )
+    }
+
+    @Test
+    fun failedPreviewSurfacesErrorPerModeAndClearsOnNextSuccess() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val rows = FailingRows(sampleResult().rows)
+        val viewModel =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), sampleResult().copy(rows = rows)),
+                computationScope = this,
+                computeDispatcher = dispatcher,
+            )
+
+        ExploreMode.entries.forEach { mode ->
+            viewModel.selectMode(mode)
+            rows.failing = true
+            viewModel.reconfigure(mode)
+            advanceTimeBy(75)
+            runCurrent()
+
+            assertTrue(
+                viewModel.previewError(mode)?.contains("compute failed") == true,
+                "$mode should surface the compute failure",
+            )
+            assertFalse(viewModel.isLoading(mode))
+
+            rows.failing = false
+            viewModel.reconfigure(mode)
+            advanceTimeBy(75)
+            runCurrent()
+
+            assertEquals(null, viewModel.previewError(mode), "$mode should clear on success")
+            assertFalse(viewModel.isLoading(mode))
+        }
     }
 
     @Test
@@ -492,6 +526,42 @@ class ExploreViewModelTest {
         val image = Image.makeFromEncoded(bytes)
         assertEquals(1600, image.width)
         assertEquals(900, image.height)
+    }
+
+    private fun ExploreViewModel.reconfigure(mode: ExploreMode) {
+        when (mode) {
+            ExploreMode.Pivot -> updateConfig { it.copy(nullBucketLabel = "(none)") }
+            ExploreMode.Worksheet ->
+                updateWorksheet { it.copy(groups = listOf(WorksheetGroup("g", "t0__status"))) }
+            ExploreMode.Visualization ->
+                updateVisualization {
+                    VisualizationConfig(
+                        chartType = ChartType.Bar,
+                        x = VisualizationField("t0__status", "Status"),
+                        values =
+                            listOf(
+                                VisualizationMeasure(
+                                    "amount",
+                                    MeasureFn.Sum,
+                                    "t0__amount",
+                                    "Amount",
+                                )
+                            ),
+                    )
+                }
+        }
+    }
+
+    /** Fails every cell read once [failing] is set, so each engine's compute throws. */
+    private class FailingRows(private val rows: List<List<ResultCell>>) :
+        AbstractList<List<ResultCell>>() {
+        var failing = false
+
+        override val size: Int
+            get() = rows.size
+
+        override fun get(index: Int): List<ResultCell> =
+            if (failing) error("compute failed") else rows[index]
     }
 
     private fun connection() =

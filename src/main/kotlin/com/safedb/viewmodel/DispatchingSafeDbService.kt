@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 internal class DispatchingSafeDbService(
     private val delegate: SafeDbService,
     private val ioDispatcher: CoroutineDispatcher,
-) : SafeDbService by delegate {
+) : SafeDbService {
     override suspend fun testConnection(def: ConnectionDef, password: String?) = onIo {
         delegate.testConnection(def, password)
     }

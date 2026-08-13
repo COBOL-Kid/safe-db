@@ -28,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -67,6 +66,7 @@ import com.safedb.model.Settings
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.RiskGateState
 import com.safedb.ui.components.BannerKind
+import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.PromptDialog
@@ -166,54 +166,33 @@ internal fun BuilderScreen(
 
     if (pendingConfirmation != null) {
         val copy = queryConfirmationDialogCopy(pendingConfirmation)
-        AlertDialog(
-            onDismissRequest = queryViewModel::dismissError,
-            shape = RoundedCornerShape(4.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text(copy.title, style = MaterialTheme.typography.titleMedium) },
-            text = { Text(copy.message) },
-            confirmButton = {
-                PrimaryButton(
-                    onClick = {
-                        val connectionId = connection?.id
-                        if (connectionId == null) {
-                            queryViewModel.dismissError()
-                        } else {
-                            queryViewModel.confirmPendingExecution(connectionId)
-                        }
-                    }
-                ) {
-                    Text(copy.confirmLabel)
+        ConfirmDialog(
+            open = true,
+            title = copy.title,
+            message = copy.message,
+            confirmLabel = copy.confirmLabel,
+            onConfirm = {
+                val connectionId = connection?.id
+                if (connectionId == null) {
+                    queryViewModel.dismissError()
+                } else {
+                    queryViewModel.confirmPendingExecution(connectionId)
                 }
             },
-            dismissButton = {
-                SecondaryButton(onClick = queryViewModel::dismissError) { Text("Cancel") }
-            },
+            onCancel = queryViewModel::dismissError,
         )
     }
 
     pendingConnectionSwitch?.let { target ->
-        AlertDialog(
-            onDismissRequest = { pendingConnectionSwitch = null },
-            shape = RoundedCornerShape(4.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text("Switch connection?", style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Text(
-                    "Switching to ${target.name} clears the current query canvas and results. " +
-                        "Saved queries are not affected."
-                )
-            },
-            confirmButton = {
-                PrimaryButton(onClick = { switchConnection(target) }) { Text("Switch and clear") }
-            },
-            dismissButton = {
-                SecondaryButton(onClick = { pendingConnectionSwitch = null }) { Text("Cancel") }
-            },
+        ConfirmDialog(
+            open = true,
+            title = "Switch connection?",
+            message =
+                "Switching to ${target.name} clears the current query canvas and results. " +
+                    "Saved queries are not affected.",
+            confirmLabel = "Switch and clear",
+            onConfirm = { switchConnection(target) },
+            onCancel = { pendingConnectionSwitch = null },
         )
     }
 
@@ -554,8 +533,11 @@ internal fun BuilderScreen(
                                     // Keep controls as separate aligned siblings (no full-width
                                     // empty parent) so dashed join-line clicks reach the canvas.
                                     if (queryViewModel.filterCount > 0) {
-                                        FilterBuilder(
+                                        FilterGroupCard(
                                             queryViewModel = queryViewModel,
+                                            group = queryViewModel.filters,
+                                            path = emptyList(),
+                                            depth = 0,
                                             modifier =
                                                 Modifier.align(Alignment.TopStart)
                                                     .padding(

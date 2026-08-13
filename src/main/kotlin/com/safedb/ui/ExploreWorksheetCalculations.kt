@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.safedb.explore.DateGroupUnit
 import com.safedb.explore.NumberFormatKind
 import com.safedb.explore.PivotGrouping
 import com.safedb.explore.PivotNumberFormat
@@ -32,6 +33,7 @@ import com.safedb.explore.WorksheetValueRef
 import com.safedb.explore.WorksheetWindowFn
 import com.safedb.explore.displayColumnLabel
 import com.safedb.explore.evaluatePivotFormula
+import com.safedb.explore.formatExploreNumber
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.classifyColumn
@@ -39,8 +41,8 @@ import com.safedb.model.isNumeric
 import com.safedb.model.isTemporal
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
-import java.text.DecimalFormat
-import java.util.Currency
+import com.safedb.ui.components.SelectablePill
+import java.math.BigDecimal
 import java.util.UUID
 
 @Composable
@@ -181,7 +183,7 @@ internal fun WorksheetCalculationEditor(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             calculationTabOrder.forEach { choice ->
-                SelectPill(label = choice.tabLabel, selected = kind == choice) { kind = choice }
+                SelectablePill(label = choice.tabLabel, selected = kind == choice) { kind = choice }
             }
         }
         Text(
@@ -218,7 +220,7 @@ internal fun WorksheetCalculationEditor(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     formulaTokens.forEach { (token, display) ->
-                        SelectPill(display, false) {
+                        SelectablePill(display, false) {
                             formula += if (formula.isBlank()) "[$token]" else " [$token]"
                         }
                     }
@@ -502,8 +504,17 @@ internal fun isTemporalType(type: String): Boolean = classifyColumn(type).isTemp
 internal fun groupingLabel(grouping: PivotGrouping): String =
     when (grouping) {
         PivotGrouping.Exact -> "Exact values"
-        is PivotGrouping.Date -> grouping.unit.name.toDisplayWords()
+        is PivotGrouping.Date -> dateUnitLabel(grouping.unit)
         is PivotGrouping.NumberBin -> "Number bins"
+    }
+
+internal fun dateUnitLabel(unit: DateGroupUnit): String =
+    when (unit) {
+        DateGroupUnit.Year -> "Year"
+        DateGroupUnit.Quarter -> "Quarter"
+        DateGroupUnit.Month -> "Month"
+        DateGroupUnit.IsoWeek -> "ISO week"
+        DateGroupUnit.Day -> "Day"
     }
 
 internal fun sameGroupingKind(left: PivotGrouping, right: PivotGrouping): Boolean =
@@ -517,27 +528,16 @@ internal fun String.toDisplayWords(): String =
     replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase().replaceFirstChar(Char::uppercase)
 
 internal fun formatWorksheetValue(value: ResultCell, format: PivotNumberFormat?): String {
-    val number =
-        when (value) {
-            is ResultCell.IntegerCell -> value.value.toDouble()
-            is ResultCell.FloatCell -> value.value
-            else -> return formatCell(value)
-        }
     val applied = format ?: return formatCell(value)
     if (applied.kind == NumberFormatKind.Auto) return formatCell(value)
-    if (applied.kind == NumberFormatKind.Scientific)
-        return "%1$.${applied.decimals}e".format(number)
-    val pattern = buildString {
-        append(if (applied.thousandsSeparator) "#,##0" else "0")
-        if (applied.decimals > 0) append('.').append("0".repeat(applied.decimals))
-    }
-    val formatter = DecimalFormat(pattern)
-    return when (applied.kind) {
-        NumberFormatKind.Percent -> "${formatter.format(number * 100)}%"
-        NumberFormatKind.Currency ->
-            runCatching { Currency.getInstance(applied.currencyCode).symbol }
-                .getOrDefault(applied.currencyCode) + formatter.format(number)
-        NumberFormatKind.Number -> formatter.format(number)
-        else -> formatCell(value)
-    }
+    // BigDecimal has no NaN or infinity, so a non-finite double falls back to the plain rendering
+    // instead of throwing out of composition. Convert below the guards, never above them.
+    val number =
+        when (value) {
+            is ResultCell.IntegerCell -> BigDecimal.valueOf(value.value)
+            is ResultCell.FloatCell ->
+                value.value.takeIf(Double::isFinite)?.let { BigDecimal.valueOf(it) }
+            else -> null
+        } ?: return formatCell(value)
+    return formatExploreNumber(number, applied)
 }

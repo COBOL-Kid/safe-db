@@ -113,6 +113,8 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
                 if (schemas.isEmpty()) {
                     _defaultSchemaError.value = "No schemas containing visible tables were found."
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 if (generation != defaultSchemaRequestGeneration) return@launch
                 _defaultSchemaError.value = error.message ?: error.toString()

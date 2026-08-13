@@ -18,6 +18,24 @@ enum class TransportSecurityMode {
     @SerialName("Disabled") Disabled,
 }
 
+// Connecting and formatting a connection string must agree on these driver spellings, so both the
+// JDBC URL builder and the connection-string formatter read them here.
+fun TransportSecurityMode.postgresSslMode(): String =
+    when (this) {
+        TransportSecurityMode.VerifyIdentity -> "verify-full"
+        TransportSecurityMode.VerifyCa -> "verify-ca"
+        TransportSecurityMode.EncryptOnly -> "require"
+        TransportSecurityMode.Disabled -> "disable"
+    }
+
+fun TransportSecurityMode.mySqlSslMode(): String =
+    when (this) {
+        TransportSecurityMode.VerifyIdentity -> "VERIFY_IDENTITY"
+        TransportSecurityMode.VerifyCa -> "VERIFY_CA"
+        TransportSecurityMode.EncryptOnly -> "REQUIRED"
+        TransportSecurityMode.Disabled -> "DISABLED"
+    }
+
 @Serializable
 data class TransportSecurity(
     val mode: TransportSecurityMode = TransportSecurityMode.VerifyIdentity,

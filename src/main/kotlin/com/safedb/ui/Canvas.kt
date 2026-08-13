@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -83,7 +82,7 @@ import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.CANVAS_MAX_ZOOM
 import com.safedb.viewmodel.CANVAS_MIN_ZOOM
 import com.safedb.viewmodel.CANVAS_ZOOM_STEP
-import com.safedb.viewmodel.CanvasAxisScrollState
+import com.safedb.viewmodel.CanvasScrollbarAdapter
 import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.canvasAxisScrollState
@@ -337,7 +336,7 @@ fun Canvas(
     val currentVerticalScroll = rememberUpdatedState(verticalScroll)
     val horizontalScrollbarAdapter =
         remember(viewportState) {
-            BuilderCanvasScrollbarAdapter(
+            CanvasScrollbarAdapter(
                 state = { currentHorizontalScroll.value },
                 onScrollTo = { target ->
                     val axis = currentHorizontalScroll.value
@@ -349,7 +348,7 @@ fun Canvas(
         }
     val verticalScrollbarAdapter =
         remember(viewportState) {
-            BuilderCanvasScrollbarAdapter(
+            CanvasScrollbarAdapter(
                 state = { currentVerticalScroll.value },
                 onScrollTo = { target ->
                     val axis = currentVerticalScroll.value
@@ -868,21 +867,3 @@ private fun RoutedJoinEdge.translated(deltaX: Float, deltaY: Float): RoutedJoinE
                 point = CanvasPoint(targetPort.point.x + deltaX, targetPort.point.y + deltaY)
             ),
     )
-
-private class BuilderCanvasScrollbarAdapter(
-    private val state: () -> CanvasAxisScrollState,
-    private val onScrollTo: (Float) -> Unit,
-) : ScrollbarAdapter {
-    override val scrollOffset: Double
-        get() = state().scrollOffset.toDouble()
-
-    override val contentSize: Double
-        get() = state().contentSize.toDouble()
-
-    override val viewportSize: Double
-        get() = state().viewportSize.toDouble()
-
-    override suspend fun scrollTo(scrollOffset: Double) {
-        onScrollTo(scrollOffset.toFloat())
-    }
-}

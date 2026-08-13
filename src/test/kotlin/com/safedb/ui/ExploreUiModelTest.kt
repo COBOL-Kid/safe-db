@@ -7,6 +7,8 @@ import com.safedb.explore.ExploreSortTarget
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotMeasure
+import com.safedb.explore.PivotShowAs
+import com.safedb.explore.ShowAsMode
 import com.safedb.explore.SortDir
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
@@ -142,7 +144,17 @@ class ExploreUiModelTest {
             listOf(MeasureFn.CountDistinct, MeasureFn.Min, MeasureFn.Max),
             availableMeasureFunctions(text),
         )
-        assertEquals("Average amount", measureFor(numeric, MeasureFn.Avg).label)
+        assertEquals(
+            availableMeasureFunctions(numeric),
+            availablePlottableMeasureFunctions(numeric),
+        )
+        assertEquals(listOf(MeasureFn.CountDistinct), availablePlottableMeasureFunctions(text))
+        assertEquals(
+            listOf(MeasureFn.CountDistinct),
+            availablePlottableMeasureFunctions(buildField("created_at", "date")),
+        )
+        assertEquals("Avg amount", measureFor(numeric, MeasureFn.Avg).label)
+        assertEquals("StdDevP amount", measureFor(numeric, MeasureFn.StdDevPopulation).label)
     }
 
     @Test
@@ -186,6 +198,31 @@ class ExploreUiModelTest {
         assertEquals("Revenue", pivotLeafLabel(layout, 3, "Total Revenue"))
         assertTrue(layout.hasGrandTotalRow)
         assertFalse(layout.columnGroups.first().isTotal)
+    }
+
+    @Test
+    fun runningTotalHeadersKeepTheirLabelButOfferNoSort() {
+        val running =
+            PivotMeasure(
+                "revenue",
+                MeasureFn.Sum,
+                "amount",
+                "Revenue",
+                showAs = PivotShowAs(ShowAsMode.RunningTotal),
+            )
+        val layout =
+            ExplorePivotLayout(
+                rowDimensions = listOf(PivotDimension("region", "Region")),
+                columnDimension = null,
+                measures = listOf(running),
+                columnGroups = emptyList(),
+                hasGrandTotalRow = false,
+            )
+
+        assertEquals(ExploreSortTarget.Dimension("region"), pivotSortTarget(layout, 0))
+        assertNull(pivotSortTarget(layout, 1))
+        assertEquals("Revenue", pivotLeafLabel(layout, 1, "Running revenue"))
+        assertEquals("Row labels", pivotLeafLabel(layout, 0, "Region"))
     }
 
     private fun buildField(name: String, type: String): ExploreFieldOption =

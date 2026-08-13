@@ -2,8 +2,8 @@ package com.safedb
 
 import com.safedb.launch.LaunchProfileBootstrap
 import com.safedb.launch.LaunchProfileException
+import com.safedb.platform.DataDirectory
 import com.safedb.platform.DesktopPlatform
-import com.safedb.platform.LegacyDataImport
 import com.safedb.platform.UnsupportedDesktopPlatformException
 import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbServiceImpl
@@ -24,7 +24,7 @@ fun main(args: Array<String>) {
         exitProcess(2)
     }
     SecretsManager.initStore(platform = platform)
-    val dataDir = LegacyDataImport.resolveDataDir()
+    val dataDir = DataDirectory.resolve()
     val service =
         SafeDbServiceImpl(
             configStore = ConfigStore.new(dataDir),
@@ -32,7 +32,7 @@ fun main(args: Array<String>) {
             settingsStore = SettingsStore.new(dataDir),
             recipeStore = RecipeStore.new(dataDir),
         )
-    runApp(AppState(service))
+    runApp(AppState(), service)
 }
 
 internal fun requireSupportedDesktopPlatform(

@@ -120,9 +120,28 @@ fun AppShell(
     paletteOpen: Boolean,
     onPaletteOpenChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    initialSidebarCollapsed: Boolean = false,
-    newConnectionPreview: Boolean = false,
-    editConnectionPreview: ConnectionDef? = null,
+) {
+    var sidebarCollapsed by rememberSaveable { mutableStateOf(false) }
+    AppShellContent(
+        appState = appState,
+        viewModel = viewModel,
+        paletteOpen = paletteOpen,
+        onPaletteOpenChange = onPaletteOpenChange,
+        sidebarCollapsed = sidebarCollapsed,
+        onSidebarCollapsedChange = { sidebarCollapsed = it },
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun AppShellContent(
+    appState: AppState,
+    viewModel: AppViewModel,
+    paletteOpen: Boolean,
+    onPaletteOpenChange: (Boolean) -> Unit,
+    sidebarCollapsed: Boolean,
+    onSidebarCollapsedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val route by appState.route.collectAsState()
     val settingsOpen by appState.settingsOpen.collectAsState()
@@ -138,7 +157,6 @@ fun AppShell(
         remember(settings, activeConnectionId) {
             connectionSchemaHandlers(appState, viewModel, settings, activeConnectionId)
         }
-    var sidebarCollapsed by rememberSaveable { mutableStateOf(initialSidebarCollapsed) }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
         val restoredSelection = com.safedb.resolveQuerySchemaSelection(spec)
@@ -173,7 +191,7 @@ fun AppShell(
             route = route,
             isDark = isDark,
             collapsed = sidebarCollapsed,
-            onCollapsedChange = { sidebarCollapsed = it },
+            onCollapsedChange = onSidebarCollapsedChange,
             onNavigate = appState::navigate,
             onOpenSettings = appState::openSettings,
             onOpenPalette = { onPaletteOpenChange(true) },
@@ -213,8 +231,6 @@ fun AppShell(
                             viewModel.settings.clearSchemaSelectionsForConnection(id)
                         },
                         onSaved = viewModel.connections::refresh,
-                        initialCreating = newConnectionPreview,
-                        initialEditingConnection = editConnectionPreview,
                     )
                 AppRoute.Builder ->
                     BuilderScreen(
@@ -286,7 +302,7 @@ fun AppShell(
 }
 
 @Composable
-private fun Sidebar(
+internal fun Sidebar(
     route: AppRoute,
     isDark: Boolean,
     collapsed: Boolean,

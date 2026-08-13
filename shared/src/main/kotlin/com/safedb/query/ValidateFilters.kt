@@ -11,6 +11,7 @@ import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
 import com.safedb.model.ValueKind
+import com.safedb.model.parseBoolLiteral
 import com.safedb.model.parseDateLiteral
 import com.safedb.model.parseDateTimeLiteral
 import com.safedb.model.valueKind
@@ -227,19 +228,8 @@ internal fun validateLiteral(
                 ?: Outcome.err("'${lit.text}' is not a valid number for '$alias.$column'")
         }
         LiteralKind.Bool -> {
-            if (
-                lit.text.equals("true", ignoreCase = true) ||
-                    lit.text.equals("false", ignoreCase = true) ||
-                    lit.text.equals("1", ignoreCase = true) ||
-                    lit.text.equals("0", ignoreCase = true) ||
-                    lit.text.equals("yes", ignoreCase = true) ||
-                    lit.text.equals("no", ignoreCase = true) ||
-                    lit.text.isEmpty()
-            ) {
-                Outcome.ok(Unit)
-            } else {
-                Outcome.err("'${lit.text}' is not a valid boolean for '$alias.$column'")
-            }
+            parseBoolLiteral(lit.text)?.let { Outcome.ok(Unit) }
+                ?: Outcome.err("'${lit.text}' is not a valid boolean for '$alias.$column'")
         }
         LiteralKind.Date -> {
             parseDateLiteral(lit.text)

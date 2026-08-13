@@ -5,16 +5,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
-import com.safedb.explore.ExplorePreviewResult
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.ExploreSession
 import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.VisualizationConfig
-import com.safedb.explore.VisualizationPreview
 import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetConfig
-import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyVisualization
 import com.safedb.explore.applyWorksheet
@@ -42,8 +39,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-data class PreviewState<T>(val value: T, val loading: Boolean = false, val error: String? = null)
 
 class ExploreViewModel(
     val session: ExploreSession,
@@ -83,18 +78,44 @@ class ExploreViewModel(
         )
         private set
 
-    var pivotPreviewState by mutableStateOf(PreviewState(preview))
-        private set
+    private var loadingModes by mutableStateOf(emptySet<ExploreMode>())
 
-    var worksheetPreviewState by mutableStateOf(PreviewState(worksheetPreview))
-        private set
+    private var previewErrors by mutableStateOf(emptyMap<ExploreMode, String>())
 
-    var visualizationPreviewState by mutableStateOf(PreviewState(visualizationPreview))
-        private set
+    fun isLoading(mode: ExploreMode): Boolean = mode in loadingModes
 
-    private val pivotTask = PreviewTask<ExplorePreviewResult>()
-    private val worksheetTask = PreviewTask<WorksheetPreview>()
-    private val visualizationTask = PreviewTask<VisualizationPreview>()
+    fun previewError(mode: ExploreMode): String? = previewErrors[mode]
+
+    private val previewTasks: Map<ExploreMode, PreviewTask<*>> =
+        mapOf(
+            ExploreMode.Pivot to
+                PreviewTask(
+                    ExploreMode.Pivot,
+                    { applyExplore(session.sample, workspace.pivot) },
+                    { preview = it },
+                ),
+            ExploreMode.Worksheet to
+                PreviewTask(
+                    ExploreMode.Worksheet,
+                    {
+                        applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
+                    },
+                    { worksheetPreview = it },
+                ),
+            ExploreMode.Visualization to
+                PreviewTask(
+                    ExploreMode.Visualization,
+                    {
+                        applyVisualization(
+                            session.sample,
+                            workspace.visualization,
+                            session.baseSpec.tables,
+                        )
+                    },
+                    { visualizationPreview = it },
+                ),
+        )
+
     private val dirtyModes = mutableSetOf<ExploreMode>()
     private val memberOptionsCache = mutableMapOf<String, List<MemberOption>>()
     var appliedRecipeId by mutableStateOf<String?>(null)
@@ -264,102 +285,24 @@ class ExploreViewModel(
     private fun refreshMode(mode: ExploreMode) {
         dirtyModes += mode
         if (workspace.activeMode != mode) return
+        val task = previewTasks.getValue(mode)
         val scope = computationScope
-        if (scope == null) {
-            computeModeNow(mode)
-            return
-        }
-        when (mode) {
-            ExploreMode.Pivot -> {
-                val config = workspace.pivot
-                pivotTask.schedule(
-                    scope,
-                    computeDispatcher,
-                    { applyExplore(session.sample, config) },
-                    { pivotPreviewState = pivotPreviewState.copy(loading = true, error = null) },
-                    { result ->
-                        preview = result
-                        pivotPreviewState = PreviewState(result)
-                        dirtyModes -= mode
-                    },
-                    { error ->
-                        pivotPreviewState = pivotPreviewState.copy(loading = false, error = error)
-                    },
-                )
-            }
-            ExploreMode.Worksheet -> {
-                val config = workspace.worksheet
-                worksheetTask.schedule(
-                    scope,
-                    computeDispatcher,
-                    { applyWorksheet(session.sample, config, session.baseSpec.tables) },
-                    {
-                        worksheetPreviewState =
-                            worksheetPreviewState.copy(loading = true, error = null)
-                    },
-                    { result ->
-                        worksheetPreview = result
-                        worksheetPreviewState = PreviewState(result)
-                        dirtyModes -= mode
-                    },
-                    { error ->
-                        worksheetPreviewState =
-                            worksheetPreviewState.copy(loading = false, error = error)
-                    },
-                )
-            }
-            ExploreMode.Visualization -> {
-                val config = workspace.visualization
-                visualizationTask.schedule(
-                    scope,
-                    computeDispatcher,
-                    { applyVisualization(session.sample, config, session.baseSpec.tables) },
-                    {
-                        visualizationPreviewState =
-                            visualizationPreviewState.copy(loading = true, error = null)
-                    },
-                    { result ->
-                        visualizationPreview = result
-                        visualizationPreviewState = PreviewState(result)
-                        dirtyModes -= mode
-                    },
-                    { error ->
-                        visualizationPreviewState =
-                            visualizationPreviewState.copy(loading = false, error = error)
-                    },
-                )
-            }
-        }
+        if (scope == null) task.computeNow() else task.schedule(scope)
     }
 
-    private fun computeModeNow(mode: ExploreMode) {
-        when (mode) {
-            ExploreMode.Pivot -> {
-                preview = applyExplore(session.sample, workspace.pivot)
-                pivotPreviewState = PreviewState(preview)
-            }
-            ExploreMode.Worksheet -> {
-                worksheetPreview =
-                    applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables)
-                worksheetPreviewState = PreviewState(worksheetPreview)
-            }
-            ExploreMode.Visualization -> {
-                visualizationPreview =
-                    applyVisualization(
-                        session.sample,
-                        workspace.visualization,
-                        session.baseSpec.tables,
-                    )
-                visualizationPreviewState = PreviewState(visualizationPreview)
-            }
-        }
+    private fun settle(mode: ExploreMode) {
         dirtyModes -= mode
+        loadingModes = loadingModes - mode
+        previewErrors = previewErrors - mode
+    }
+
+    private fun failMode(mode: ExploreMode, message: String) {
+        loadingModes = loadingModes - mode
+        previewErrors = previewErrors + (mode to message)
     }
 
     fun close() {
-        pivotTask.cancel()
-        worksheetTask.cancel()
-        visualizationTask.cancel()
+        previewTasks.values.forEach { it.cancel() }
     }
 
     fun updateMemberFilter(filterId: String, includedKeys: Set<String>) {
@@ -523,6 +466,44 @@ class ExploreViewModel(
         exportError = null
         exportMessage = null
     }
+
+    private inner class PreviewTask<T>(
+        private val mode: ExploreMode,
+        private val compute: () -> T,
+        private val publish: (T) -> Unit,
+    ) {
+        private var generation = 0
+        private var job: Job? = null
+
+        fun computeNow() {
+            publish(compute())
+            settle(mode)
+        }
+
+        fun schedule(scope: CoroutineScope) {
+            val scheduledGeneration = ++generation
+            job?.cancel()
+            loadingModes = loadingModes + mode
+            previewErrors = previewErrors - mode
+            job = scope.launch {
+                delay(PREVIEW_DEBOUNCE_MS.milliseconds)
+                val outcome = runCatching { withContext(computeDispatcher) { compute() } }
+                // A newer schedule superseded this one, so its result is stale.
+                if (scheduledGeneration != generation) return@launch
+                outcome
+                    .onSuccess { result ->
+                        publish(result)
+                        settle(mode)
+                    }
+                    .onFailure { error -> failMode(mode, error.message ?: error.toString()) }
+            }
+        }
+
+        fun cancel() {
+            generation++
+            job?.cancel()
+        }
+    }
 }
 
 data class MemberOption(val key: String, val label: String, val count: Int)
@@ -543,36 +524,5 @@ private fun memberLabel(cell: ResultCell?): String =
         is ResultCell.TextCell -> cell.value.text
         is ResultCell.BinaryCell -> cell.value.base64
     }
-
-private class PreviewTask<T> {
-    private var generation = 0
-    private var job: Job? = null
-
-    fun schedule(
-        scope: CoroutineScope,
-        dispatcher: CoroutineDispatcher,
-        compute: () -> T,
-        loading: () -> Unit,
-        success: (T) -> Unit,
-        failure: (String) -> Unit,
-    ) {
-        val scheduledGeneration = ++generation
-        job?.cancel()
-        loading()
-        job = scope.launch {
-            delay(PREVIEW_DEBOUNCE_MS.milliseconds)
-            val outcome = runCatching { withContext(dispatcher) { compute() } }
-            if (scheduledGeneration != generation) return@launch
-            outcome.onSuccess(success).onFailure { error ->
-                failure(error.message ?: error.toString())
-            }
-        }
-    }
-
-    fun cancel() {
-        generation++
-        job?.cancel()
-    }
-}
 
 private const val PREVIEW_DEBOUNCE_MS = 75L

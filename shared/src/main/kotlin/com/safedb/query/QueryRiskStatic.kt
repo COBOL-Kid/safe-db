@@ -21,11 +21,7 @@ fun assessStaticQueryRisk(
     dialect: Dialect,
 ): QueryRiskAssessment {
     val spec = validated.spec()
-    val tablesByAlias =
-        spec.tables.associate { ref ->
-            ref.alias to
-                schema.tables.firstOrNull { it.schema == ref.schema && it.name == ref.name }
-        }
+    val tablesByAlias = tablesByAlias(spec, schema)
     val signals = mutableListOf<RiskSignal>()
     val uncertainties = mutableListOf<RiskUncertainty>()
     val predicate = analyzePredicate(spec.filters, spec.connectorOverrides)
@@ -238,7 +234,7 @@ private fun addJoinSignals(
             uncertainties +=
                 RiskUncertainty(
                     "join_foreign_key_metadata_unknown",
-                    RiskSubject(operation = "join ${aliases.sorted().joinToString("-")}"),
+                    RiskSubject(operation = target.displayName()),
                     first.foreignKeyMetadata.reasonCode
                         ?: second.foreignKeyMetadata.reasonCode
                         ?: "foreign_key_metadata_unavailable",
@@ -284,7 +280,7 @@ private fun addJoinSignals(
             uncertainties +=
                 RiskUncertainty(
                     "join_uniqueness_metadata_unknown",
-                    RiskSubject(operation = "join ${aliases.sorted().joinToString("-")}"),
+                    RiskSubject(operation = target.displayName()),
                     sides
                         .firstOrNull { !it.second.indexMetadata.isComplete }
                         ?.second
@@ -300,7 +296,7 @@ private fun addJoinSignals(
                 RiskSignal(
                     RiskSignalCode.JoinExpansionPossible,
                     RiskCategory.Joins,
-                    RiskSubject(operation = "join ${aliases.sorted().joinToString("-")}"),
+                    RiskSubject(operation = target.displayName()),
                     1,
                     SignalBasis.StaticSchema,
                     if (uniquenessComplete) EvidenceConfidence.High else EvidenceConfidence.Unknown,
@@ -373,11 +369,7 @@ private fun addOperationSignals(
     signals: MutableList<RiskSignal>,
     uncertainties: MutableList<RiskUncertainty>,
 ) {
-    data class Operation(
-        val kind: PlanOperationKind,
-        val aliases: Set<String>,
-        val compatible: Boolean = false,
-    )
+    data class Operation(val kind: PlanOperationKind, val aliases: Set<String>)
     val operations = mutableListOf<Operation>()
     if (spec.groups.isNotEmpty()) {
         operations +=
@@ -420,7 +412,7 @@ private fun addOperationSignals(
                     )
         }
     }
-    for ((kind, aliases, _) in operations) {
+    for ((kind, aliases) in operations) {
         val bounded = aliases.all { alias ->
             alias in boundedAliases ||
                 tablesByAlias[alias]?.tableSize?.sizeClass == TableSizeClass.Small
@@ -549,6 +541,11 @@ private fun widthClassBytes(category: ColumnCategory?): Int =
 
 internal fun TableInfo.subject(alias: String, column: String? = null) =
     RiskSubject(tableAlias = alias, schema = schema, table = name, column = column)
+
+internal fun tablesByAlias(spec: QuerySpec, schema: Schema): Map<String, TableInfo?> =
+    spec.tables.associate { ref ->
+        ref.alias to schema.tables.firstOrNull { it.schema == ref.schema && it.name == ref.name }
+    }
 
 internal fun signalMessage(signal: RiskSignal): String =
     when (signal.code) {

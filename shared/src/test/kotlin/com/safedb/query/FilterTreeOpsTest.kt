@@ -80,6 +80,27 @@ class FilterTreeOpsTest {
         )
     }
 
+    @Test
+    fun leafIdAtPathDoesNotReturnGroupIds() {
+        val tree =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(
+                        FilterNode.Group(
+                            FilterGroup(
+                                id = "nested",
+                                children = listOf(FilterNode.Leaf(filter("leaf", "t0"))),
+                            )
+                        )
+                    ),
+            )
+
+        assertNull(filterLeafIdAtPath(tree, listOf(0)))
+        assertEquals("leaf", filterLeafIdAtPath(tree, listOf(0, 0)))
+        assertEquals("nested", filterNodeIdAtPath(tree, listOf(0)))
+    }
+
     private fun filter(id: String = "", alias: String) =
         FilterSpec(
             id = id,

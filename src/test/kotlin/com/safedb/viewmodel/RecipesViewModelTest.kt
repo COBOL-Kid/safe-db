@@ -4,8 +4,6 @@ import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ConnectionDef
-import com.safedb.model.HistoryEntry
-import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.service.FakeSafeDbServiceSupport
@@ -109,27 +107,11 @@ private class RecipeFakeService(private val fail: Boolean = false) : FakeSafeDbS
 
     override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
 
-    override suspend fun listConnections() = emptyList<ConnectionDef>()
-
     override suspend fun deleteConnection(id: String) = Unit
-
-    override suspend fun lockCredentials() = Unit
 
     override suspend fun getSchema(connectionId: String) = Schema(emptyList())
 
     override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) = error("unused")
 
-    override suspend fun listSavedQueries() = emptyList<SavedQuery>()
-
-    override suspend fun saveSavedQuery(query: SavedQuery) = Unit
-
-    override suspend fun deleteSavedQuery(id: String) = Unit
-
-    override suspend fun listHistory() = emptyList<HistoryEntry>()
-
-    override suspend fun clearHistory() = Unit
-
     override suspend fun getSettings() = Settings.default()
-
-    override suspend fun saveSettings(settings: Settings) = Unit
 }

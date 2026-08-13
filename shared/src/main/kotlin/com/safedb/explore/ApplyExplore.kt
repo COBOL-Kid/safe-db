@@ -4,15 +4,7 @@ import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import java.math.BigDecimal
-import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
-import java.time.format.DateTimeFormatter
-import java.time.temporal.WeekFields
 import java.util.BitSet
-import java.util.Currency
-import java.util.Locale
-import kotlin.math.sqrt
 
 fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResult {
     val engine = PivotEngine(sample, config)
@@ -24,8 +16,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
     private val warnings = linkedSetOf<String>()
     private val rowDimensions = config.rowDimensions.filterKnown(indexes, warnings, "row")
-    private val columnDimensions =
-        config.effectiveColumnDimensions.filterKnown(indexes, warnings, "column")
+    private val columnDimensions = config.columnDimensions.filterKnown(indexes, warnings, "column")
     private val measures =
         config.measures
             .ifEmpty { listOf(PivotMeasure.countRows()) }
@@ -235,88 +226,31 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             }
         }
 
-    private fun bucketFor(row: List<ResultCell>, dimension: PivotDimension): PivotBucket {
+    private fun bucketFor(row: List<ResultCell>, dimension: PivotDimension): ExploreBucket {
         val cell = row.getOrNull(indexes.getValue(dimension.column))
         if (cell == null || cell is ResultCell.Null) {
-            return PivotBucket("<null>", config.nullBucketLabel, config.nullBucketLabel)
+            return ExploreBucket(
+                "<null>",
+                config.nullBucketLabel,
+                config.nullBucketLabel,
+                ordinal = null,
+            )
         }
-        return when (val grouping = dimension.grouping) {
-            PivotGrouping.Exact -> PivotBucket(pivotCellKey(cell), cellText(cell), cellText(cell))
-            is PivotGrouping.Date -> dateBucket(cell, dimension, grouping.unit)
-            is PivotGrouping.NumberBin -> numberBucket(cell, dimension, grouping)
+        return groupingBucket(
+            cell,
+            dimension.grouping,
+            dimension.label,
+            WeekKeyStyle.Unpadded,
+        ) {
+            warnings += it
         }
-    }
-
-    private fun dateBucket(
-        cell: ResultCell,
-        dimension: PivotDimension,
-        unit: DateGroupUnit,
-    ): PivotBucket {
-        val dateTime = parseDateTime(cellText(cell))
-        if (dateTime == null) {
-            warnings += "${dimension.label} contains values that could not be grouped as dates"
-            return PivotBucket("<invalid-date>", "(invalid date)", "9999")
-        }
-        val date = dateTime.toLocalDate()
-        return when (unit) {
-            DateGroupUnit.Year ->
-                PivotBucket("${date.year}", "${date.year}", "%04d".format(date.year))
-            DateGroupUnit.Quarter -> {
-                val quarter = ((date.monthValue - 1) / 3) + 1
-                PivotBucket(
-                    "${date.year}-Q$quarter",
-                    "Q$quarter ${date.year}",
-                    "%04d-%d".format(date.year, quarter),
-                )
-            }
-            DateGroupUnit.Month ->
-                PivotBucket(
-                    "%04d-%02d".format(date.year, date.monthValue),
-                    date.format(DateTimeFormatter.ofPattern("MMM yyyy")),
-                    "%04d-%02d".format(date.year, date.monthValue),
-                )
-            DateGroupUnit.IsoWeek -> {
-                val weekFields = WeekFields.ISO
-                val weekYear = date.get(weekFields.weekBasedYear())
-                val week = date.get(weekFields.weekOfWeekBasedYear())
-                PivotBucket(
-                    "$weekYear-W$week",
-                    "%04d-W%02d".format(weekYear, week),
-                    "%04d-%02d".format(weekYear, week),
-                )
-            }
-            DateGroupUnit.Day -> PivotBucket(date.toString(), date.toString(), date.toString())
-        }
-    }
-
-    private fun numberBucket(
-        cell: ResultCell,
-        dimension: PivotDimension,
-        grouping: PivotGrouping.NumberBin,
-    ): PivotBucket {
-        val value = cell.toDecimalOrNull()
-        val size = grouping.size.toBigDecimalOrNull()
-        val start = grouping.start?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        if (value == null || size == null || size <= BigDecimal.ZERO) {
-            warnings += "${dimension.label} needs a positive numeric bin size and numeric values"
-            return PivotBucket(pivotCellKey(cell), cellText(cell), cellText(cell))
-        }
-        val bucketIndex = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
-        val lower = start.add(bucketIndex.multiply(size)).stripTrailingZeros()
-        val upper = lower.add(size).stripTrailingZeros()
-        val label = "${lower.toPlainString()} – ${upper.toPlainString()}"
-        return PivotBucket(
-            "${lower.toPlainString()}:${size.toPlainString()}",
-            label,
-            lower.toPlainString().padStart(32, '0'),
-        )
     }
 
     private fun buildTree(
         records: List<PivotRecord>,
         dimensions: List<PivotDimension>,
         filteredRows: BitSet,
-        buckets: (PivotRecord) -> List<PivotBucket>,
+        buckets: (PivotRecord) -> List<ExploreBucket>,
     ): AxisNode {
         val root =
             AxisNode(
@@ -695,7 +629,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     if (measure.formula.isNullOrBlank()) {
                         computeMeasure(rowIndexes, measure)
                     } else {
-                        val references = measureReferences(measure.formula)
+                        val references = formulaReferences(measure.formula)
                         val values = references.associateWith { alias ->
                             val dependency = measures.firstOrNull { it.alias == alias }
                             if (dependency == null) {
@@ -720,86 +654,16 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
 
     private fun computeMeasure(rowIndexes: List<Int>, measure: PivotMeasure): ResultCell {
         val index = measure.sourceColumn?.let(indexes::get)
-        val rows = rowIndexes.map(sample.rows::get)
-        return when (measure.fn) {
-            MeasureFn.Count ->
-                ResultCell.IntegerCell(
-                    if (index == null) rows.size.toLong()
-                    else rows.count { it.getOrNull(index) !is ResultCell.Null }.toLong()
-                )
-            MeasureFn.CountNumbers ->
-                ResultCell.IntegerCell(decimalCells(rows, index, measure).size.toLong())
-            MeasureFn.CountDistinct -> {
-                if (index == null) ResultCell.IntegerCell(0)
-                else
-                    ResultCell.IntegerCell(
-                        rows
-                            .mapNotNull { row ->
-                                row.getOrNull(index)
-                                    ?.takeUnless { it is ResultCell.Null }
-                                    ?.let(::pivotCellKey)
-                            }
-                            .distinct()
-                            .size
-                            .toLong()
-                    )
-            }
-            MeasureFn.Sum ->
-                decimalCells(rows, index, measure)
-                    .fold(BigDecimal.ZERO, BigDecimal::add)
-                    .toPivotResultCell()
-            MeasureFn.Avg ->
-                decimalCells(rows, index, measure).average()?.toPivotResultCell() ?: ResultCell.Null
-            MeasureFn.Min ->
-                comparableCells(rows, index).minWithOrNull(::comparePivotCells) ?: ResultCell.Null
-            MeasureFn.Max ->
-                comparableCells(rows, index).maxWithOrNull(::comparePivotCells) ?: ResultCell.Null
-            MeasureFn.Product ->
-                decimalCells(rows, index, measure)
-                    .takeIf { it.isNotEmpty() }
-                    ?.fold(BigDecimal.ONE, BigDecimal::multiply)
-                    ?.toPivotResultCell() ?: ResultCell.Null
-            MeasureFn.StdDev ->
-                statistic(decimalCells(rows, index, measure), sample = true, squareRoot = true)
-            MeasureFn.StdDevPopulation ->
-                statistic(decimalCells(rows, index, measure), sample = false, squareRoot = true)
-            MeasureFn.Variance ->
-                statistic(decimalCells(rows, index, measure), sample = true, squareRoot = false)
-            MeasureFn.VariancePopulation ->
-                statistic(decimalCells(rows, index, measure), sample = false, squareRoot = false)
+        if (index == null) {
+            if (measure.fn == MeasureFn.Count)
+                return ResultCell.IntegerCell(rowIndexes.size.toLong())
+            return aggregateMeasure(emptyList(), measure.fn)
         }
-    }
-
-    private fun decimalCells(
-        rows: List<List<ResultCell>>,
-        index: Int?,
-        measure: PivotMeasure,
-    ): List<BigDecimal> {
-        if (index == null) return emptyList()
-        var skipped = 0
-        val values = rows.mapNotNull { row ->
-            val value = row.getOrNull(index)
-            val decimal = value?.toDecimalOrNull()
-            if (decimal == null && value != null && value !is ResultCell.Null) skipped++
-            decimal
-        }
-        if (skipped > 0)
+        val cells = rowIndexes.map { sample.rows[it].getOrNull(index) ?: ResultCell.Null }
+        return aggregateMeasure(cells, measure.fn) { skipped ->
             warnings +=
                 "Measure '${measure.label}' skipped $skipped non-numeric cell${if (skipped == 1) "" else "s"}"
-        return values
-    }
-
-    private fun statistic(
-        values: List<BigDecimal>,
-        sample: Boolean,
-        squareRoot: Boolean,
-    ): ResultCell {
-        if (values.isEmpty() || sample && values.size < 2) return ResultCell.Null
-        val doubles = values.map(BigDecimal::toDouble)
-        val mean = doubles.average()
-        val denominator = if (sample) doubles.size - 1 else doubles.size
-        val variance = doubles.sumOf { (it - mean) * (it - mean) } / denominator
-        return ResultCell.FloatCell(if (squareRoot) sqrt(variance) else variance)
+        }
     }
 
     private fun buildOutputColumns(
@@ -863,28 +727,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             } else {
                 configured.kind
             }
-        if (kind == NumberFormatKind.Auto) return decimal.stripTrailingZeros().toPlainString()
-        val decimals = configured.decimals.coerceIn(0, 8)
-        val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
-        val pattern = buildString {
-            append(if (configured.thousandsSeparator) "#,##0" else "0")
-            if (decimals > 0) append('.').append("0".repeat(decimals))
-        }
-        return when (kind) {
-            NumberFormatKind.Number -> DecimalFormat(pattern, symbols).format(decimal)
-            NumberFormatKind.Percent -> DecimalFormat("$pattern%", symbols).format(decimal)
-            NumberFormatKind.Currency -> {
-                val currency = runCatching {
-                    Currency.getInstance(configured.currencyCode)
-                }
-                    .getOrNull()
-                val formatter = DecimalFormat("¤$pattern", symbols)
-                currency?.let { formatter.currency = it }
-                formatter.format(decimal)
-            }
-            NumberFormatKind.Scientific ->
-                DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(decimal)
-        }
+        return formatExploreNumber(decimal, configured.copy(kind = kind))
     }
 }
 

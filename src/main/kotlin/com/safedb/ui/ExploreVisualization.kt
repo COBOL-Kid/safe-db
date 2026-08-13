@@ -168,7 +168,7 @@ internal fun VisualizationConfigPanel(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     ChartType.entries.forEach { type ->
-                        ChoiceChip(chartTypeLabel(type), config.chartType == type) {
+                        SelectablePill(chartTypeLabel(type), config.chartType == type) {
                             val next = config.forChartType(type, fields)
                             val removed = buildList {
                                 if (config.x != null && next.x == null) add("X")
@@ -429,7 +429,7 @@ private fun VisualizationOptions(
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 DateGroupUnit.entries.forEach { unit ->
-                    ChoiceChip(
+                    SelectablePill(
                         unit.name.replace("Iso", "ISO "),
                         config.x?.grouping == PivotGrouping.Date(unit),
                     ) {
@@ -461,12 +461,12 @@ private fun VisualizationOptions(
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 BarArrangement.entries.forEach { arrangement ->
-                    ChoiceChip(arrangement.name, config.barArrangement == arrangement) {
+                    SelectablePill(arrangement.name, config.barArrangement == arrangement) {
                         onChange(config.copy(barArrangement = arrangement))
                     }
                 }
                 BarOrientation.entries.forEach { orientation ->
-                    ChoiceChip(orientation.name, config.barOrientation == orientation) {
+                    SelectablePill(orientation.name, config.barOrientation == orientation) {
                         onChange(config.copy(barOrientation = orientation))
                     }
                 }
@@ -479,7 +479,7 @@ private fun VisualizationOptions(
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 NumberFormatKind.entries.forEach { kind ->
-                    ChoiceChip(kind.name, value.numberFormat.kind == kind) {
+                    SelectablePill(kind.name, value.numberFormat.kind == kind) {
                         onChange(
                             config.copy(
                                 values =
@@ -531,12 +531,12 @@ private fun VisualizationOptions(
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             VisualizationSortTarget.entries.forEach { target ->
-                ChoiceChip(target.name, config.sort.target == target) {
+                SelectablePill(target.name, config.sort.target == target) {
                     onChange(config.copy(sort = config.sort.copy(target = target)))
                 }
             }
             SortDir.entries.forEach { dir ->
-                ChoiceChip(dir.name, config.sort.dir == dir) {
+                SelectablePill(dir.name, config.sort.dir == dir) {
                     onChange(config.copy(sort = config.sort.copy(dir = dir)))
                 }
             }
@@ -544,7 +544,7 @@ private fun VisualizationOptions(
         Text("Top categories", style = MaterialTheme.typography.labelMedium)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             listOf(10, 20, 50, 100).forEach { count ->
-                ChoiceChip(count.toString(), config.topN == count) {
+                SelectablePill(count.toString(), config.topN == count) {
                     onChange(config.copy(topN = count))
                 }
             }
@@ -602,9 +602,7 @@ private fun VisualizationValueChip(
             }
             if (allowAggregation && field != null) {
                 AggregationPicker(value, field) { fn ->
-                    onChange(
-                        value.copy(fn = fn, label = "${measureFunctionLabel(fn)} ${field.label}")
-                    )
+                    onChange(value.copy(fn = fn, label = "${fn.shortLabel} ${field.label}"))
                 }
             }
             IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
@@ -626,15 +624,15 @@ private fun AggregationPicker(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { expanded = true }) { Text(measureFunctionLabel(value.fn)) }
+        TextButton(onClick = { expanded = true }) { Text(value.fn.label) }
         SafeDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             minWidth = 190.dp,
         ) {
-            availableMeasureFunctions(field).forEach { fn ->
+            availablePlottableMeasureFunctions(field).forEach { fn ->
                 MenuActionRow(
-                    text = measureFunctionLabel(fn),
+                    text = fn.label,
                     selected = value.fn == fn,
                     onClick = {
                         expanded = false
@@ -712,8 +710,7 @@ private fun VisualizationValuePicker(
                                             sourceColumn = field.column,
                                             label =
                                                 if (raw) field.label
-                                                else
-                                                    "${measureFunctionLabel(function)} ${field.label}",
+                                                else "${function.shortLabel} ${field.label}",
                                             aggregate = !raw,
                                         )
                                     )
@@ -831,11 +828,6 @@ private fun ConfigSection(title: String, content: @Composable () -> Unit) {
         SectionLabel(title)
         content()
     }
-}
-
-@Composable
-private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    SelectablePill(label, selected, onClick)
 }
 
 @Composable

@@ -258,7 +258,7 @@ private fun RunRecipeDialog(
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     connections.forEach { connection ->
-                        RecipePill(connection.name, connection.id == selectedConnectionId) {
+                        SelectablePill(connection.name, connection.id == selectedConnectionId) {
                             onSelectConnection(connection.id)
                         }
                     }
@@ -340,7 +340,7 @@ private fun SaveRecipeDialog(
                     ExploreMode.entries
                         .filter { it in included }
                         .forEach { mode ->
-                            RecipePill(mode.displayName(), defaultMode == mode) {
+                            SelectablePill(mode.displayName(), defaultMode == mode) {
                                 defaultMode = mode
                             }
                         }
@@ -420,10 +420,7 @@ internal fun RecipeLibraryDialog(
         remember(explore.session.sample, explore.session.baseSpec) {
             buildExploreFieldOptions(explore.session.sample, explore.session.baseSpec.tables)
         }
-    val pivotTemplates =
-        remember(explore.session.sample, fields) {
-            listExploreTemplates(explore.session.sample, fields).filterNot { it.isUserTemplate }
-        }
+    val pivotTemplates = remember(fields) { listExploreTemplates(fields) }
     val visualizationTemplateCatalog =
         remember(explore.session.sample, explore.session.baseSpec.tables) {
             visualizationTemplates(explore.session.sample, explore.session.baseSpec.tables)
@@ -626,8 +623,7 @@ internal fun RecipeLibraryDialog(
             PrimaryButton(
                 onClick = {
                     selectedBuiltin?.let { selected ->
-                        val result =
-                            resolveExploreTemplate(selected, explore.session.sample, fields)
+                        val result = resolveExploreTemplate(selected, fields)
                         if (result !is ExploreTemplateBuildResult.Ready) return@let
                         val definition = pivotTemplates.first { it.id == selected }
                         val now = Instant.now().epochSecond.toString()
@@ -726,7 +722,7 @@ private fun RecipeMappingDialog(
                         ) {
                             recipeCandidateColumns(field, explore.session.sample.columns).forEach {
                                 column ->
-                                RecipePill(
+                                SelectablePill(
                                     displayColumnLabel(column.name),
                                     manual[field.column] == column.name,
                                 ) {
@@ -841,11 +837,6 @@ internal fun ExploreMode.displayName(): String =
         ExploreMode.Visualization -> "Visualization"
         ExploreMode.Worksheet -> "Worksheet"
     }
-
-@Composable
-private fun RecipePill(label: String, selected: Boolean, onClick: () -> Unit) {
-    SelectablePill(label, selected, onClick)
-}
 
 @Composable
 private fun RecipeLabel(text: String) {

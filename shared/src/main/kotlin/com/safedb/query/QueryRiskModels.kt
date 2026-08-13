@@ -45,7 +45,9 @@ sealed interface RiskTarget {
     data class Access(val alias: String, val kind: AccessRiskKind = AccessRiskKind.General) :
         RiskTarget
 
-    data class Join(val aliases: Set<String>) : RiskTarget
+    data class Join(val aliases: Set<String>) : RiskTarget {
+        fun displayName(): String = "join " + aliases.sorted().joinToString("-")
+    }
 
     data class Operation(val kind: PlanOperationKind, val aliases: Set<String>) : RiskTarget
 }
@@ -157,7 +159,4 @@ data class QueryRiskEvaluation(
     val optimizerCost: Double? = null,
     val confirmationRequirement: QueryConfirmationRequirement? = null,
     val confirmationAccepted: Boolean = false,
-) {
-    val assessment: QueryRiskAssessment?
-        get() = finalAssessment
-}
+)

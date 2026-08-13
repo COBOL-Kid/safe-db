@@ -7,10 +7,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 
-internal const val SCHEMA_MAP_MIN_ZOOM = CANVAS_MIN_ZOOM
-internal const val SCHEMA_MAP_MAX_ZOOM = CANVAS_MAX_ZOOM
-internal const val SCHEMA_MAP_DEFAULT_INSET = CANVAS_DEFAULT_PADDING
-
 internal data class SchemaMapContext(val connectionId: String, val schema: String)
 
 internal class SchemaMapViewModel {
@@ -22,7 +18,7 @@ internal class SchemaMapViewModel {
 
     var query by mutableStateOf("")
     private val viewport =
-        CanvasViewportState(initialPan = Offset(SCHEMA_MAP_DEFAULT_INSET, SCHEMA_MAP_DEFAULT_INSET))
+        CanvasViewportState(initialPan = Offset(CANVAS_DEFAULT_PADDING, CANVAS_DEFAULT_PADDING))
 
     val zoom: Float
         get() = viewport.zoom
@@ -71,10 +67,6 @@ internal class SchemaMapViewModel {
                 (context to (offsets + (nodeId to (offsets[nodeId].orZero() + canvasDelta))))
     }
 
-    fun panBy(screenDelta: Offset) {
-        viewport.panBy(screenDelta)
-    }
-
     fun updatePan(target: Offset) {
         viewport.updatePan(target)
     }
@@ -83,7 +75,7 @@ internal class SchemaMapViewModel {
         viewport.setZoom(target, anchor)
     }
 
-    fun fit(contentBounds: Rect, viewport: Size, padding: Float = SCHEMA_MAP_DEFAULT_INSET) {
+    fun fit(contentBounds: Rect, viewport: Size, padding: Float = CANVAS_DEFAULT_PADDING) {
         this.viewport.fit(contentBounds, viewport, padding)
     }
 

@@ -14,6 +14,7 @@ val SafeDbShapes =
     )
 
 val CardShape = RoundedCornerShape(3.dp)
+val DialogShape = RoundedCornerShape(4.dp)
 val InputShape = RoundedCornerShape(2.dp)
 val ButtonShape = RoundedCornerShape(2.dp)
 val PillShape = RoundedCornerShape(2.dp)

@@ -1,12 +1,11 @@
 package com.safedb.platform
 
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-class PlatformPathsTest {
+class DataDirectoryTest {
     @Test
     fun rejectsUnsupportedPlatformBeforeResolvingADataPath() {
         val error =
@@ -46,17 +45,5 @@ class PlatformPathsTest {
         assertFailsWith<IllegalArgumentException> {
             DataDirectory.baseDir(PlatformEnvironment("Windows 11", "C:/Users/test"))
         }
-    }
-
-    @Test
-    fun legacyResolverUsesFirstMarkedCandidateOrFallback() {
-        val root = Files.createTempDirectory("safedb-platform-test")
-        val empty = Files.createDirectories(root.resolve("empty"))
-        val marked = Files.createDirectories(root.resolve("marked"))
-        Files.writeString(marked.resolve("settings.json"), "{}")
-        val fallback = root.resolve("fallback")
-
-        assertEquals(marked, LegacyDataImport.resolveDataDir(listOf(empty, marked)) { fallback })
-        assertEquals(fallback, LegacyDataImport.resolveDataDir(listOf(empty)) { fallback })
     }
 }

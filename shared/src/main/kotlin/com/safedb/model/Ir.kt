@@ -236,7 +236,13 @@ sealed class BindValue {
                                 "'${literal.text}' is not a valid number"
                             )
                     )
-                LiteralKind.Bool -> Bool(parseBoolLiteral(literal.text))
+                LiteralKind.Bool ->
+                    Bool(
+                        parseBoolLiteral(literal.text)
+                            ?: throw IllegalArgumentException(
+                                "'${literal.text}' is not a valid boolean"
+                            )
+                    )
                 LiteralKind.Date -> Date(parseDateLiteral(literal.text).getOrThrow())
                 LiteralKind.DateTime -> DateTime(parseDateTimeLiteral(literal.text).getOrThrow())
             }
@@ -244,8 +250,8 @@ sealed class BindValue {
     }
 }
 
-private fun parseBoolLiteral(text: String): Boolean {
-    return when {
+internal fun parseBoolLiteral(text: String): Boolean? =
+    when {
         text.equals("true", ignoreCase = true) ||
             text.equals("1", ignoreCase = true) ||
             text.equals("yes", ignoreCase = true) -> true
@@ -253,9 +259,8 @@ private fun parseBoolLiteral(text: String): Boolean {
             text.equals("0", ignoreCase = true) ||
             text.equals("no", ignoreCase = true) ||
             text.isEmpty() -> false
-        else -> throw IllegalArgumentException("'$text' is not a valid boolean")
+        else -> null
     }
-}
 
 fun parseDateLiteral(text: String): Result<LocalDate> = runCatching {
     try {

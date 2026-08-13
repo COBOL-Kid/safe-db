@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
@@ -132,10 +131,10 @@ import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.CANVAS_MAX_ZOOM
+import com.safedb.viewmodel.CANVAS_MIN_ZOOM
 import com.safedb.viewmodel.CANVAS_ZOOM_STEP
-import com.safedb.viewmodel.CanvasAxisScrollState
-import com.safedb.viewmodel.SCHEMA_MAP_MAX_ZOOM
-import com.safedb.viewmodel.SCHEMA_MAP_MIN_ZOOM
+import com.safedb.viewmodel.CanvasScrollbarAdapter
 import com.safedb.viewmodel.SchemaMapViewModel
 import com.safedb.viewmodel.SchemaViewModel
 import com.safedb.viewmodel.canvasAxisScrollState
@@ -531,7 +530,7 @@ private fun SchemaMapCanvas(
     val currentVerticalScroll = rememberUpdatedState(verticalScroll)
     val horizontalScrollbarAdapter =
         remember(viewModel) {
-            SchemaMapScrollbarAdapter(
+            CanvasScrollbarAdapter(
                 state = { currentHorizontalScroll.value },
                 onScrollTo = { target ->
                     val axis = currentHorizontalScroll.value
@@ -541,7 +540,7 @@ private fun SchemaMapCanvas(
         }
     val verticalScrollbarAdapter =
         remember(viewModel) {
-            SchemaMapScrollbarAdapter(
+            CanvasScrollbarAdapter(
                 state = { currentVerticalScroll.value },
                 onScrollTo = { target ->
                     val axis = currentVerticalScroll.value
@@ -741,8 +740,8 @@ private fun SchemaMapCanvas(
 
         CanvasZoomControls(
             zoom = viewModel.zoom,
-            minZoom = SCHEMA_MAP_MIN_ZOOM,
-            maxZoom = SCHEMA_MAP_MAX_ZOOM,
+            minZoom = CANVAS_MIN_ZOOM,
+            maxZoom = CANVAS_MAX_ZOOM,
             fitDescription = "Fit map to screen",
             resetDescription = "Reset layout",
             onZoomOut = {
@@ -1394,22 +1393,4 @@ private fun SchemaMapTooltip(text: String, content: @Composable () -> Unit) {
         state = rememberTooltipState(isPersistent = true),
         content = content,
     )
-}
-
-private class SchemaMapScrollbarAdapter(
-    private val state: () -> CanvasAxisScrollState,
-    private val onScrollTo: (Float) -> Unit,
-) : ScrollbarAdapter {
-    override val scrollOffset: Double
-        get() = state().scrollOffset.toDouble()
-
-    override val contentSize: Double
-        get() = state().contentSize.toDouble()
-
-    override val viewportSize: Double
-        get() = state().viewportSize.toDouble()
-
-    override suspend fun scrollTo(scrollOffset: Double) {
-        onScrollTo(scrollOffset.toFloat())
-    }
 }

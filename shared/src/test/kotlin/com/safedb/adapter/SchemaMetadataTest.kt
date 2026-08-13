@@ -6,8 +6,13 @@ import com.safedb.model.EvidenceConfidence
 import com.safedb.model.IndexCapabilities
 import com.safedb.model.SortDirection
 import com.safedb.model.TableSizeClass
+import java.lang.reflect.Proxy
+import java.sql.Connection
+import java.sql.ResultSet
+import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SchemaMetadataTest {
@@ -139,4 +144,97 @@ class SchemaMetadataTest {
         assertEquals(false, capabilities.ordering)
         assertEquals(false, capabilities.specializedText)
     }
+
+    @Test
+    fun foreignKeyRowReadsTheAliasesEveryDialectQueryIsRequiredToProduce() {
+        val row =
+            foreignKeyRow(
+                metadataRow(
+                    "table_schema" to "app",
+                    "table_name" to "orders",
+                    "constraint_name" to "orders_customer_fk",
+                    "column_name" to "customer_id",
+                    "referenced_schema" to "billing",
+                    "referenced_table" to "customers",
+                    "referenced_column" to "id",
+                )
+            )
+
+        assertEquals(MetadataTableKey("app", "orders"), row.table)
+        assertEquals("orders_customer_fk", row.name)
+        assertEquals("customer_id", row.column)
+        assertEquals("billing", row.referencedSchema)
+        assertEquals("customers", row.referencedTable)
+        assertEquals("id", row.referencedColumn)
+    }
+
+    @Test
+    fun columnRowHonoursDialectLabelsAndNullableSentinel() {
+        val informationSchema =
+            columnRow(
+                metadataRow(
+                    "table_schema" to "public",
+                    "table_name" to "orders",
+                    "column_name" to "total",
+                    "data_type" to "numeric",
+                    "is_nullable" to "YES",
+                )
+            )
+
+        assertEquals(MetadataTableKey("public", "orders"), informationSchema.table)
+        assertEquals("total", informationSchema.column.name)
+        assertEquals("numeric", informationSchema.column.dataType)
+        assertTrue(informationSchema.column.nullable)
+
+        val oracle =
+            columnRow(
+                metadataRow(
+                    "owner" to "APP",
+                    "table_name" to "ORDERS",
+                    "column_name" to "TOTAL",
+                    "data_type" to "NUMBER",
+                    "nullable" to "N",
+                ),
+                schemaLabel = "owner",
+                nullableLabel = "nullable",
+                nullableValue = "Y",
+            )
+
+        assertEquals(MetadataTableKey("APP", "ORDERS"), oracle.table)
+        assertFalse(oracle.column.nullable)
+    }
+
+    @Test
+    fun tableSizesReturnNoEstimatesWhenStatisticsAreUnreadable() {
+        val denied =
+            Proxy.newProxyInstance(
+                Connection::class.java.classLoader,
+                arrayOf(Connection::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "toString" -> "DeniedConnection"
+                    else -> throw SQLException("statistics views are not readable")
+                }
+            } as Connection
+
+        assertEquals(
+            emptyMap(),
+            denied.tableSizes("SELECT 1", "row_count", EvidenceConfidence.Low),
+        )
+    }
+}
+
+private fun metadataRow(vararg values: Pair<String, String>): ResultSet {
+    val row = values.toMap()
+    return Proxy.newProxyInstance(
+        ResultSet::class.java.classLoader,
+        arrayOf(ResultSet::class.java),
+    ) { _, method, args ->
+        val label = args?.firstOrNull() as? String
+        when (method.name) {
+            "getString" -> row[label]
+            "toString" -> "MetadataRow($row)"
+            else -> throw UnsupportedOperationException(method.name)
+        }
+    } as ResultSet
 }

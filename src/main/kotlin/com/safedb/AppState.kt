@@ -3,7 +3,6 @@ package com.safedb
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
-import com.safedb.service.SafeDbService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,7 +67,7 @@ internal fun resolveQuerySchemaSelection(spec: QuerySpec): SchemaSelectionIntent
         SchemaSelectionIntent(schema, SchemaSelectionSource.RestoredQuery)
     } ?: SchemaSelectionIntent.Unselected
 
-class AppState(val service: SafeDbService) {
+class AppState {
     private val _route = MutableStateFlow(AppRoute.Home)
     val route: StateFlow<AppRoute> = _route.asStateFlow()
 

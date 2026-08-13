@@ -312,7 +312,7 @@ data class ExploreRecipe(
     val createdAt: String,
     val updatedAt: String,
     val defaultMode: ExploreMode,
-    val pivot: ExploreConfig? = null,
+    @Serializable(with = ExploreConfigMigration::class) val pivot: ExploreConfig? = null,
     val worksheet: WorksheetConfig? = null,
     val visualization: VisualizationConfig? = null,
     val requiredFields: List<RecipeField> = emptyList(),
@@ -332,6 +332,7 @@ data class ExploreRecipe(
         require(name.isNotBlank()) { "Recipe name is required" }
         require(includedModes.isNotEmpty()) { "Recipe must include at least one Explore mode" }
         require(defaultMode in includedModes) { "Recipe default mode must be included" }
+        pivot?.validate()
         visualization?.validate()
         return this
     }

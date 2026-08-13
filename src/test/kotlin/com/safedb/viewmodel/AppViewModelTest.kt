@@ -531,8 +531,8 @@ class AppViewModelTest {
 
                 val pending = viewModel.pendingRecipeRun.value
                 assertEquals("r1", pending?.recipe?.id)
-                val sample = assertNotNull(viewModel.query.currentSample(connection.id))
-                viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+                assertNotNull(viewModel.query.currentSample(connection.id))
+                viewModel.onQuerySettled(connection.id, listOf(connection))
 
                 assertNull(viewModel.pendingRecipeRun.value)
                 assertEquals("r1", viewModel.explore.value?.appliedRecipeId)
@@ -576,8 +576,9 @@ class AppViewModelTest {
                 advanceUntilIdle()
 
                 assertEquals("r-confirm", viewModel.pendingRecipeRun.value?.recipe?.id)
-                val sample = assertNotNull(viewModel.query.currentSample(connection.id))
-                viewModel.completePendingRecipeRun(connection, sample.result, sample.spec)
+                assertNotNull(viewModel.query.currentSample(connection.id))
+                viewModel.onQuerySettled(connection.id, listOf(connection))
+                assertNull(viewModel.pendingRecipeRun.value)
                 assertEquals("r-confirm", viewModel.explore.value?.appliedRecipeId)
             } finally {
                 viewModel.close()
@@ -736,11 +737,37 @@ class AppViewModelTest {
         }
 
     @Test
-    fun shouldCancelPendingRecipeOnlyForHardQueryFailures() {
-        assertTrue(shouldCancelPendingRecipeOnQuerySettle(running = false, hasError = true))
-        assertFalse(shouldCancelPendingRecipeOnQuerySettle(running = false, hasError = false))
-        assertFalse(shouldCancelPendingRecipeOnQuerySettle(running = true, hasError = true))
-    }
+    fun queryBackedRecipeIsCancelledWhenTheBuilderQueryNoLongerMatchesTheRecipe() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                val recipe =
+                    ExploreRecipe(
+                        id = "r6",
+                        name = "Drifted spec",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+
+                viewModel.runRecipe(connection, recipe)
+                advanceUntilIdle()
+                assertNotNull(viewModel.pendingRecipeRun.value)
+
+                viewModel.query.setLimit(50)
+                viewModel.onQuerySettled(connection.id, listOf(connection))
+
+                assertNull(viewModel.pendingRecipeRun.value)
+                assertNull(viewModel.explore.value)
+            } finally {
+                viewModel.close()
+            }
+        }
 
     @Test
     fun queryBackedRecipeIsCancelledWhenActiveConnectionChanges() =
@@ -764,9 +791,9 @@ class AppViewModelTest {
             viewModel.runRecipe(connection, recipe)
             advanceUntilIdle()
 
-            assertFalse(viewModel.cancelPendingRecipeRunIfConnectionChanged(connection.id))
+            viewModel.onQuerySettled(connection.id, listOf(connection))
             assertNotNull(viewModel.pendingRecipeRun.value)
-            assertTrue(viewModel.cancelPendingRecipeRunIfConnectionChanged("c2"))
+            viewModel.onQuerySettled("c2", listOf(connection))
             assertNull(viewModel.pendingRecipeRun.value)
             gate.complete(Unit)
         }

@@ -25,64 +25,41 @@ class RecipesViewModel(
     val error: StateFlow<String?> = _error.asStateFlow()
 
     suspend fun load() {
-        runCatching { service.listExploreRecipes() }
-            .onSuccess {
-                _recipes.value = it
-                _error.value = null
-            }
-            .onFailure { _error.value = it.message ?: it.toString() }
+        capturingFailure(_error) { _recipes.value = service.listExploreRecipes() }
     }
 
     fun save(recipe: ExploreRecipe, onComplete: (Boolean) -> Unit = {}) {
         scope.launch {
-            runCatching { service.saveExploreRecipe(recipe) }
-                .onSuccess {
-                    load()
-                    onComplete(true)
-                }
-                .onFailure {
-                    _error.value = it.message ?: it.toString()
-                    onComplete(false)
-                }
+            val saved = capturingFailure(_error) { service.saveExploreRecipe(recipe) }
+            if (saved) load()
+            onComplete(saved)
         }
     }
 
     fun delete(id: String) {
-        scope.launch {
-            runCatching { service.deleteExploreRecipe(id) }
-                .onSuccess { load() }
-                .onFailure { _error.value = it.message ?: it.toString() }
-        }
+        scope.launch { if (capturingFailure(_error) { service.deleteExploreRecipe(id) }) load() }
     }
 
     fun import(path: Path, onComplete: (ExploreRecipe?) -> Unit = {}) {
         scope.launch {
-            runCatching {
+            var imported: ExploreRecipe? = null
+            capturingFailure(_error) {
                 val json = withContext(ioDispatcher) { Files.readString(path) }
-                service.importExploreRecipe(json, Instant.now().epochSecond.toString())
+                imported = service.importExploreRecipe(json, Instant.now().epochSecond.toString())
             }
-                .onSuccess { recipe ->
-                    load()
-                    onComplete(recipe)
-                }
-                .onFailure {
-                    _error.value = it.message ?: it.toString()
-                    onComplete(null)
-                }
+            if (imported != null) load()
+            onComplete(imported)
         }
     }
 
     fun export(recipe: ExploreRecipe, path: Path, onComplete: (Boolean) -> Unit = {}) {
         scope.launch {
-            runCatching {
-                val json = service.exportExploreRecipe(recipe)
-                withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
-            }
-                .onSuccess { onComplete(true) }
-                .onFailure {
-                    _error.value = it.message ?: it.toString()
-                    onComplete(false)
+            onComplete(
+                capturingFailure(_error) {
+                    val json = service.exportExploreRecipe(recipe)
+                    withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
                 }
+            )
         }
     }
 

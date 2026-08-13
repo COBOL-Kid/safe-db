@@ -19,15 +19,7 @@ class SavedQueriesViewModel(private val service: SafeDbService, private val scop
     val error: StateFlow<String?> = _error.asStateFlow()
 
     suspend fun load() {
-        _loading.value = true
-        _error.value = null
-        try {
-            _queries.value = service.listSavedQueries()
-        } catch (error: Exception) {
-            _error.value = error.message ?: error.toString()
-        } finally {
-            _loading.value = false
-        }
+        capturingFailure(_error, _loading) { _queries.value = service.listSavedQueries() }
     }
 
     fun refresh() {
@@ -36,25 +28,19 @@ class SavedQueriesViewModel(private val service: SafeDbService, private val scop
 
     fun delete(id: String) {
         scope.launch {
-            _error.value = null
-            try {
+            capturingFailure(_error) {
                 service.deleteSavedQuery(id)
                 _queries.value = service.listSavedQueries()
-            } catch (error: Exception) {
-                _error.value = error.message ?: error.toString()
             }
         }
     }
 
     fun save(query: SavedQuery, onComplete: () -> Unit = {}) {
         scope.launch {
-            _error.value = null
-            try {
+            capturingFailure(_error) {
                 service.saveSavedQuery(query)
                 _queries.value = service.listSavedQueries()
                 onComplete()
-            } catch (error: Exception) {
-                _error.value = error.message ?: error.toString()
             }
         }
     }

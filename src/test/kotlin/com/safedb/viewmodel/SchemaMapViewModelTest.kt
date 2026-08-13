@@ -30,7 +30,7 @@ class SchemaMapViewModelTest {
     fun zoomKeepsTheRequestedScreenAnchorStable() {
         val viewModel = SchemaMapViewModel()
         viewModel.activate("c1", "public")
-        viewModel.panBy(Offset(64f, 24f))
+        viewModel.updatePan(viewModel.pan + Offset(64f, 24f))
         val anchor = Offset(400f, 300f)
         val canvasPointBefore = (anchor - viewModel.pan) / viewModel.zoom
 
@@ -45,10 +45,10 @@ class SchemaMapViewModelTest {
         val viewModel = SchemaMapViewModel()
 
         viewModel.setZoom(10f)
-        assertEquals(SCHEMA_MAP_MAX_ZOOM, viewModel.zoom)
+        assertEquals(CANVAS_MAX_ZOOM, viewModel.zoom)
 
         viewModel.setZoom(0.01f)
-        assertEquals(SCHEMA_MAP_MIN_ZOOM, viewModel.zoom)
+        assertEquals(CANVAS_MIN_ZOOM, viewModel.zoom)
     }
 
     @Test
@@ -91,7 +91,7 @@ class SchemaMapViewModelTest {
 
         viewModel.updatePan(Offset(-240f, viewModel.pan.y))
 
-        assertEquals(Offset(-240f, SCHEMA_MAP_DEFAULT_INSET), viewModel.pan)
+        assertEquals(Offset(-240f, CANVAS_DEFAULT_PADDING), viewModel.pan)
     }
 
     @Test
@@ -105,7 +105,7 @@ class SchemaMapViewModelTest {
 
         assertEquals(Offset.Zero, viewModel.offsetFor("public.orders"))
         assertEquals(1f, viewModel.zoom)
-        assertEquals(Offset(SCHEMA_MAP_DEFAULT_INSET, SCHEMA_MAP_DEFAULT_INSET), viewModel.pan)
+        assertEquals(Offset(CANVAS_DEFAULT_PADDING, CANVAS_DEFAULT_PADDING), viewModel.pan)
     }
 
     @Test

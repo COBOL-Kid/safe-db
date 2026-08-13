@@ -43,18 +43,4 @@ class ConnectionPresetsTest {
             transportPresetForLocation(DatabaseLocation.Organization).mode,
         )
     }
-
-    @Test
-    fun securityLabelForDisabledLocalHost() {
-        val label = securityLabelForMode(TransportSecurityMode.Disabled, host = "localhost")
-        assertEquals(SecurityTone.Danger, label.tone)
-        assertEquals("Not encrypted - local only", label.text)
-    }
-
-    @Test
-    fun securityLabelForVerifyIdentity() {
-        val label = securityLabelForMode(TransportSecurityMode.VerifyIdentity)
-        assertEquals(SecurityTone.Success, label.tone)
-        assertEquals("Secure connection", label.text)
-    }
 }

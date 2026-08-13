@@ -7,15 +7,6 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-internal class MysqlFixtureGenerator(
-    private val options: GeneratorOptions,
-    private val out: BufferedWriter,
-) {
-    private val delegate = RelationalFixtureGenerator(options, GeneratedSqlDialect.Mysql, out)
-
-    fun generate() = delegate.generate()
-}
-
 internal enum class GeneratedSqlDialect {
     Mysql,
     Postgres,

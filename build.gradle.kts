@@ -1,7 +1,9 @@
 import com.safedb.buildlogic.VerifyCoverageRatchet
 import com.safedb.buildlogic.VerifyIntegrationTestDiscovery
 import com.safedb.buildlogic.VerifyUnitTestDiscovery
+import com.safedb.buildlogic.splitSeedTaskArgs
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm")
@@ -26,10 +28,32 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation(testFixtures(project(":shared")))
     kover(project(":shared"))
 }
 
 ktfmt { kotlinLangStyle() }
+
+// Dev-only headless renderers: compiled and run on demand, never packaged into the shipped app.
+val render = sourceSets.create("render")
+
+render.compileClasspath += sourceSets.main.get().output
+
+render.runtimeClasspath += sourceSets.main.get().output
+
+configurations[render.implementationConfigurationName].extendsFrom(
+    configurations.implementation.get()
+)
+
+configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
+
+dependencies { add(render.implementationConfigurationName, testFixtures(project(":shared"))) }
+
+tasks.named<KotlinCompile>("compileRenderKotlin") {
+    friendPaths.from(
+        tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory }
+    )
+}
 
 qodana { resultsPath.set(layout.buildDirectory.dir("qodana/results").get().asFile.absolutePath) }
 
@@ -65,16 +89,9 @@ kover {
                     "com.safedb.secrets.*",
                     "com.safedb.service.*",
                     "com.safedb.store.*",
-                    "com.safedb.tools.SeedMysql*",
                 )
             }
-            excludes {
-                classes(
-                    "*ComposableSingletons*",
-                    "*\$\$serializer*",
-                    "com.safedb.tools.RenderPreview*",
-                )
-            }
+            excludes { classes("*ComposableSingletons*", "*\$\$serializer*") }
         }
     }
 }
@@ -105,8 +122,8 @@ val verifyUnitTestDiscovery =
         dependsOn(tasks.test, ":shared:test")
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(191)
-        minimumSharedTests.set(341)
+        minimumDesktopTests.set(222)
+        minimumSharedTests.set(365)
     }
 
 val verifyCoverageRatchet =
@@ -159,16 +176,26 @@ tasks.register("integrationTest") {
     dependsOn(verifyIntegrationTestDiscovery)
 }
 
+// Resolved lazily from inside task configuration blocks, after :shared has been evaluated.
+fun sharedToolsRuntimeClasspath(): FileCollection =
+    project(":shared")
+        .extensions
+        .getByType<SourceSetContainer>()
+        .getByName("tools")
+        .runtimeClasspath
+
+fun seedTaskArgs(taskName: String): List<String> {
+    val propertyName = "${taskName}Args"
+    return splitSeedTaskArgs(providers.gradleProperty(propertyName).orElse("").get(), propertyName)
+}
+
 tasks.register<JavaExec>("seedMysql") {
     group = "safe-db"
     description = "Seed the local safe-db MySQL test database."
-    val shared = project(":shared")
-    val sharedJar = shared.tasks.named("jar")
-    dependsOn(sharedJar)
-    classpath = files(sharedJar, shared.configurations.named("runtimeClasspath"))
+    classpath = sharedToolsRuntimeClasspath()
     mainClass.set("com.safedb.tools.SeedMysqlKt")
     workingDir = projectDir
-    args(splitSeedMysqlArgs(providers.gradleProperty("seedMysqlArgs").orElse("").get()))
+    args(seedTaskArgs("seedMysql"))
 }
 
 fun registerRelationalSeedTask(
@@ -178,18 +205,10 @@ fun registerRelationalSeedTask(
     tasks.register<JavaExec>(taskName) {
         group = "safe-db"
         description = "Seed the local safe-db $dialect test database."
-        val shared = project(":shared")
-        val sharedJar = shared.tasks.named("jar")
-        dependsOn(sharedJar)
-        classpath = files(sharedJar, shared.configurations.named("runtimeClasspath"))
+        classpath = sharedToolsRuntimeClasspath()
         mainClass.set("com.safedb.tools.SeedRelationalKt")
         workingDir = projectDir
-        val propertyName = "${taskName}Args"
-        args(
-            dialect,
-            *splitSeedMysqlArgs(providers.gradleProperty(propertyName).orElse("").get())
-                .toTypedArray(),
-        )
+        args(dialect, *seedTaskArgs(taskName).toTypedArray())
     }
 }
 
@@ -199,45 +218,16 @@ registerRelationalSeedTask("seedMssql", "mssql")
 
 registerRelationalSeedTask("seedOracle", "oracle")
 
-fun splitSeedMysqlArgs(raw: String): List<String> {
-    val args = mutableListOf<String>()
-    val current = StringBuilder()
-    var quote: Char? = null
-    var escaping = false
-    for (char in raw) {
-        when {
-            escaping -> {
-                current.append(char)
-                escaping = false
-            }
-            char == '\\' -> escaping = true
-            quote != null && char == quote -> quote = null
-            quote == null && (char == '\'' || char == '"') -> quote = char
-            quote == null && char.isWhitespace() -> {
-                if (current.isNotEmpty()) {
-                    args.add(current.toString())
-                    current.clear()
-                }
-            }
-            else -> current.append(char)
-        }
-    }
-    if (escaping) current.append('\\')
-    if (quote != null) throw GradleException("Unclosed quote in seedMysqlArgs")
-    if (current.isNotEmpty()) args.add(current.toString())
-    return args
-}
-
 tasks.register<JavaExec>("renderPreview") {
     group = "safe-db"
     description = "Render main screens headlessly to /tmp/safedb-preview for visual checks."
-    classpath = sourceSets.named("main").get().runtimeClasspath
+    classpath = render.runtimeClasspath
     mainClass.set("com.safedb.tools.RenderPreviewKt")
 }
 
 tasks.register<JavaExec>("renderThemeGallery") {
     group = "safe-db"
     description = "Render the color scheme picker and Connections screen for every scheme."
-    classpath = sourceSets.named("main").get().runtimeClasspath
+    classpath = render.runtimeClasspath
     mainClass.set("com.safedb.tools.RenderThemeGalleryKt")
 }

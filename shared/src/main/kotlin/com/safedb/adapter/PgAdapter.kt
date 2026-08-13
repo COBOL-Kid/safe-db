@@ -1,6 +1,5 @@
 package com.safedb.adapter
 
-import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.EvidenceConfidence
@@ -12,15 +11,7 @@ import com.safedb.model.SortDirection
 import com.zaxxer.hikari.HikariDataSource
 
 object PgAdapter {
-    fun test(dataSource: HikariDataSource): String =
-        dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.executeQuery("SELECT version()").use { rs ->
-                    rs.next()
-                    rs.getString(1)
-                }
-            }
-        }
+    fun test(dataSource: HikariDataSource): String = probeVersion(dataSource, "SELECT version()")
 
     fun introspect(dataSource: HikariDataSource): Schema {
         dataSource.connection.use { conn ->
@@ -39,17 +30,7 @@ object PgAdapter {
                         "FROM information_schema.columns WHERE table_schema NOT IN $excluded " +
                         "ORDER BY table_schema, table_name, ordinal_position"
                 ) { rs ->
-                    MetadataColumn(
-                        MetadataTableKey(
-                            readString(rs, "table_schema"),
-                            readString(rs, "table_name"),
-                        ),
-                        ColumnInfo(
-                            readString(rs, "column_name"),
-                            readString(rs, "data_type"),
-                            readString(rs, "is_nullable") == "YES",
-                        ),
-                    )
+                    columnRow(rs)
                 }
             val indexes =
                 conn.metadataRows(
@@ -130,41 +111,20 @@ object PgAdapter {
                 """
                         .trimIndent()
                 ) { rs ->
-                    MetadataForeignKey(
-                        MetadataTableKey(
-                            readString(rs, "table_schema"),
-                            readString(rs, "table_name"),
-                        ),
-                        readString(rs, "constraint_name"),
-                        readString(rs, "column_name"),
-                        readString(rs, "referenced_schema"),
-                        readString(rs, "referenced_table"),
-                        readString(rs, "referenced_column"),
-                    )
+                    foreignKeyRow(rs)
                 }
-            val tableSizes = runCatching {
-                conn
-                    .metadataRows(
-                        """
+            val tableSizes =
+                conn.tableSizes(
+                    """
                     SELECT n.nspname AS table_schema, c.relname AS table_name, c.reltuples
                     FROM pg_class c
                     JOIN pg_namespace n ON n.oid = c.relnamespace
                     WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN $excluded
                     """
-                            .trimIndent()
-                    ) { rs ->
-                        MetadataTableKey(
-                            readString(rs, "table_schema"),
-                            readString(rs, "table_name"),
-                        ) to
-                            normalizeTableSize(
-                                (rs.getObject("reltuples") as? Number)?.toDouble(),
-                                EvidenceConfidence.Low,
-                            )
-                    }
-                    .toMap()
-            }
-                .getOrDefault(emptyMap())
+                        .trimIndent(),
+                    rowEstimateLabel = "reltuples",
+                    confidence = EvidenceConfidence.Low,
+                )
             return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
         }
     }

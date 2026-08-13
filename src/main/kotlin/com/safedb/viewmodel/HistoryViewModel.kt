@@ -19,15 +19,7 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
     val error: StateFlow<String?> = _error.asStateFlow()
 
     suspend fun load() {
-        _loading.value = true
-        _error.value = null
-        try {
-            _entries.value = service.listHistory()
-        } catch (error: Exception) {
-            _error.value = error.message ?: error.toString()
-        } finally {
-            _loading.value = false
-        }
+        capturingFailure(_error, _loading) { _entries.value = service.listHistory() }
     }
 
     fun refresh() {
@@ -36,13 +28,10 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
 
     fun clear(onComplete: () -> Unit = {}) {
         scope.launch {
-            _error.value = null
-            try {
+            capturingFailure(_error) {
                 service.clearHistory()
                 _entries.value = emptyList()
                 onComplete()
-            } catch (error: Exception) {
-                _error.value = error.message ?: error.toString()
             }
         }
     }

@@ -67,24 +67,12 @@ internal fun ratio(numerator: BigDecimal, denominator: BigDecimal?): BigDecimal?
         ?.takeUnless { it.compareTo(BigDecimal.ZERO) == 0 }
         ?.let { numerator.divide(it, 10, RoundingMode.HALF_UP).stripTrailingZeros() }
 
-internal fun measureReferences(formula: String): Set<String> =
-    Regex("\\[([^]]+)]")
-        .findAll(formula)
-        .map { it.groupValues[1].trim() }
-        .filter { it.isNotEmpty() }
-        .toSet()
-
 internal fun ResultCell.toDecimalOrNull(): BigDecimal? = resultCellDecimal(this)
 
 internal fun BigDecimal.toPivotResultCell(): ResultCell {
     val normalized = stripTrailingZeros()
     return runCatching { ResultCell.IntegerCell(normalized.longValueExact()) }
         .getOrElse { ResultCell.FloatCell(normalized.toDouble()) }
-}
-
-internal fun comparableCells(rows: List<List<ResultCell>>, index: Int?): List<ResultCell> {
-    if (index == null) return emptyList()
-    return rows.mapNotNull { it.getOrNull(index) }.filterNot { it is ResultCell.Null }
 }
 
 internal fun comparePivotCells(left: ResultCell, right: ResultCell): Int {

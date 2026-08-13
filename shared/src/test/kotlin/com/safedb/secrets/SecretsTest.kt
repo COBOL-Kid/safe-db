@@ -14,48 +14,66 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SecretsTest {
+    private lateinit var store: DisabledMemoryStore
+
     @BeforeTest
     fun setup() {
-        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        store = DisabledMemoryStore()
+        SecretsManager.useStoreForTest(store)
         SecretsManager.resetStoreReadCountForTest()
         CredentialSession.lockCredentials()
     }
 
+    private fun connectionDef(id: String) =
+        ConnectionDef(
+            id = id,
+            name = "Test connection",
+            dialect = Dialect.Postgres,
+            host = "localhost",
+            port = 5432,
+            database = "demo",
+            username = "readonly",
+            transportSecurity = TransportSecurity(mode = TransportSecurityMode.Disabled),
+        )
+
+    private fun sessionKey(def: ConnectionDef) = "${def.id}:${def.credentialFingerprint()}"
+
     @Test
     fun disabledStoreRoundTrip() {
-        val id = "conn-1"
-        SecretsManager.savePassword(id, "secret").getOrThrow()
+        val def = connectionDef("conn-1")
+        SecretsManager.savePasswordForDefinition(def, "secret").getOrThrow()
         SecretsManager.resetStoreReadCountForTest()
 
-        val first = SecretsManager.getPassword(id).getOrThrow()
+        val first = SecretsManager.passwordForDefinition(def).getOrThrow()
         assertEquals("secret", first)
-        assertTrue(CredentialSession.containsForTest(id))
+        assertTrue(CredentialSession.containsForTest(sessionKey(def)))
         assertEquals(0, SecretsManager.storeReadCountForTest)
 
-        val second = SecretsManager.getPassword(id).getOrThrow()
+        val second = SecretsManager.passwordForDefinition(def).getOrThrow()
         assertEquals("secret", second)
         assertEquals(0, SecretsManager.storeReadCountForTest)
     }
 
     @Test
     fun deleteClearsSessionAndStore() {
-        val id = "conn-delete"
-        SecretsManager.savePassword(id, "to-delete").getOrThrow()
-        SecretsManager.getPassword(id).getOrThrow()
-        assertTrue(CredentialSession.containsForTest(id))
+        val def = connectionDef("conn-delete")
+        SecretsManager.savePasswordForDefinition(def, "to-delete").getOrThrow()
+        assertTrue(CredentialSession.containsForTest(sessionKey(def)))
 
-        SecretsManager.deletePassword(id).getOrThrow()
-        assertFalse(CredentialSession.containsForTest(id))
-        assertNull(SecretsManager.getPassword(id).getOrThrow())
+        SecretsManager.deletePassword(def.id).getOrThrow()
+        assertFalse(CredentialSession.containsForTest(sessionKey(def)))
+        assertNull(store.getPassword(SERVICE_NAME, def.id))
+        assertTrue(SecretsManager.passwordForDefinition(def).isFailure)
     }
 
     @Test
     fun emptyPasswordRoundTrips() {
-        val id = "conn-empty"
-        SecretsManager.savePassword(id, "").getOrThrow()
-        val value = SecretsManager.passwordForConnection(id).getOrThrow()
-        assertEquals("", value)
-        assertTrue(CredentialSession.containsForTest(id))
+        val def = connectionDef("conn-empty")
+        SecretsManager.savePasswordForDefinition(def, "").getOrThrow()
+        CredentialSession.lockCredentials()
+
+        assertEquals("", SecretsManager.passwordForDefinition(def).getOrThrow())
+        assertTrue(CredentialSession.containsForTest(sessionKey(def)))
     }
 
     @Test
@@ -86,21 +104,19 @@ class SecretsTest {
 
     @Test
     fun lockingCredentialsClearsSessionAndAllowsStoreReload() {
-        val id = "conn-lock"
-        SecretsManager.savePassword(id, "secret").getOrThrow()
-        assertTrue(CredentialSession.containsForTest(id))
+        val def = connectionDef("conn-lock")
+        SecretsManager.savePasswordForDefinition(def, "secret").getOrThrow()
+        assertTrue(CredentialSession.containsForTest(sessionKey(def)))
 
         SecretsManager.lockCredentials()
 
-        assertFalse(CredentialSession.containsForTest(id))
-        assertEquals("secret", SecretsManager.getPassword(id).getOrThrow())
-        assertTrue(CredentialSession.containsForTest(id))
+        assertFalse(CredentialSession.containsForTest(sessionKey(def)))
+        assertEquals("secret", SecretsManager.passwordForDefinition(def).getOrThrow())
+        assertTrue(CredentialSession.containsForTest(sessionKey(def)))
     }
 
     @Test
     fun definitionsWithoutDriverPropertiesKeepTheReleasedCredentialFingerprint() {
-        val store = DisabledMemoryStore()
-        SecretsManager.useStoreForTest(store)
         val def =
             ConnectionDef(
                 id = "legacy-bound",

@@ -10,12 +10,6 @@ import com.safedb.model.isTemporal
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
-import java.time.format.DateTimeFormatter
-import java.time.temporal.WeekFields
-import java.util.Currency
-import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -135,11 +129,12 @@ private class VisualizationPlanner(
         type: ChartType,
     ): List<VisualizationMark> {
         val x = config.x ?: return emptyList()
-        val groups = linkedMapOf<Pair<Bucket, Bucket>, MutableList<ChartRecord>>()
+        val groups = linkedMapOf<Pair<ExploreBucket, ExploreBucket>, MutableList<ChartRecord>>()
         records.forEach { record ->
             val xBucket = bucket(record.cell(x.column), x)
             val seriesBucket =
-                config.series?.let { bucket(record.cell(it.column), it) } ?: Bucket("", "", null)
+                config.series?.let { bucket(record.cell(it.column), it) }
+                    ?: ExploreBucket("", "", "", ordinal = null)
             groups.getOrPut(xBucket to seriesBucket, ::mutableListOf) += record
         }
         val marks = mutableListOf<VisualizationMark>()
@@ -154,9 +149,9 @@ private class VisualizationPlanner(
                         id = "${xBucket.key}|$seriesKey|${measure.alias}",
                         xKey = xBucket.key,
                         xLabel = xBucket.label,
-                        xValue = xBucket.numeric,
+                        xValue = xBucket.ordinal,
                         y = value.toDouble(),
-                        formattedY = formatNumber(value, measure.numberFormat),
+                        formattedY = formatExploreNumber(value, measure.numberFormat),
                         seriesKey = seriesKey,
                         seriesLabel = seriesLabel,
                         measureAlias = measure.alias,
@@ -191,7 +186,7 @@ private class VisualizationPlanner(
                 xLabel = xValue.stripTrailingZeros().toPlainString(),
                 xValue = xValue.toDouble(),
                 y = yValue.toDouble(),
-                formattedY = formatNumber(yValue, yMeasure.numberFormat),
+                formattedY = formatExploreNumber(yValue, yMeasure.numberFormat),
                 seriesKey = seriesBucket?.key ?: yMeasure.alias,
                 seriesLabel = seriesBucket?.label ?: yMeasure.label,
                 measureAlias = yMeasure.alias,
@@ -252,7 +247,7 @@ private class VisualizationPlanner(
                 xKey = "",
                 xLabel = measure.label,
                 y = value.toDouble(),
-                formattedY = formatNumber(value, measure.numberFormat),
+                formattedY = formatExploreNumber(value, measure.numberFormat),
                 seriesKey = measure.alias,
                 seriesLabel = measure.label,
                 measureAlias = measure.alias,
@@ -352,124 +347,23 @@ private class VisualizationPlanner(
         return limited.flatten()
     }
 
-    private fun bucket(cell: ResultCell, field: VisualizationField): Bucket {
-        if (cell is ResultCell.Null) return Bucket("<null>", "(blank)", null)
-        return when (val grouping = field.grouping) {
-            PivotGrouping.Exact ->
-                Bucket(pivotCellKey(cell), cell.text(), cell.decimalOrNull()?.toDouble())
-            is PivotGrouping.Date -> dateBucket(cell, field, grouping.unit)
-            is PivotGrouping.NumberBin -> numberBucket(cell, field, grouping)
+    private fun bucket(cell: ResultCell, field: VisualizationField): ExploreBucket {
+        if (cell is ResultCell.Null)
+            return ExploreBucket("<null>", "(blank)", "(blank)", ordinal = null)
+        return groupingBucket(cell, field.grouping, field.label, WeekKeyStyle.Unpadded) {
+            warnings += it
         }
-    }
-
-    private fun dateBucket(
-        cell: ResultCell,
-        field: VisualizationField,
-        unit: DateGroupUnit,
-    ): Bucket {
-        val date = parseExploreDate(cell.text())
-        if (date == null) {
-            warnings += "${field.label} contains values that could not be grouped as dates"
-            return Bucket("<invalid-date>", "(invalid date)", null)
-        }
-        return when (unit) {
-            DateGroupUnit.Year -> Bucket("${date.year}", "${date.year}", date.year.toDouble())
-            DateGroupUnit.Quarter -> {
-                val quarter = ((date.monthValue - 1) / 3) + 1
-                Bucket(
-                    "${date.year}-Q$quarter",
-                    "Q$quarter ${date.year}",
-                    (date.year * 4 + quarter).toDouble(),
-                )
-            }
-            DateGroupUnit.Month ->
-                Bucket(
-                    "%04d-%02d".format(date.year, date.monthValue),
-                    date.format(DateTimeFormatter.ofPattern("MMM yyyy")),
-                    (date.year * 12 + date.monthValue).toDouble(),
-                )
-            DateGroupUnit.IsoWeek -> {
-                val fields = WeekFields.ISO
-                val year = date.get(fields.weekBasedYear())
-                val week = date.get(fields.weekOfWeekBasedYear())
-                Bucket(
-                    "$year-W$week",
-                    "%04d-W%02d".format(year, week),
-                    (year * 53 + week).toDouble(),
-                )
-            }
-            DateGroupUnit.Day ->
-                Bucket(date.toString(), date.toString(), date.toEpochDay().toDouble())
-        }
-    }
-
-    private fun numberBucket(
-        cell: ResultCell,
-        field: VisualizationField,
-        grouping: PivotGrouping.NumberBin,
-    ): Bucket {
-        val value = cell.decimalOrNull()
-        val size = grouping.size.toBigDecimalOrNull()
-        val start = grouping.start?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        if (value == null || size == null || size <= BigDecimal.ZERO) {
-            warnings += "${field.label} needs a positive numeric bin size and numeric values"
-            return Bucket(pivotCellKey(cell), cell.text(), value?.toDouble())
-        }
-        val index = value.subtract(start).divide(size, 0, RoundingMode.FLOOR)
-        val lower = start.add(index.multiply(size))
-        val upper = lower.add(size)
-        return Bucket(
-            "${plain(lower)}:${plain(size)}",
-            "${plain(lower)} – ${plain(upper)}",
-            lower.toDouble(),
-        )
     }
 
     private fun aggregate(records: List<ChartRecord>, measure: VisualizationMeasure): BigDecimal? {
-        if (measure.fn == MeasureFn.Count && measure.sourceColumn == null)
-            return records.size.toBigDecimal()
-        val values =
-            measure.sourceColumn
-                ?.let { column -> records.mapNotNull { it.cell(column).decimalOrNull() } }
-                .orEmpty()
-        val concrete =
-            measure.sourceColumn
-                ?.let { column ->
-                    records.map { it.cell(column) }.filterNot { it is ResultCell.Null }
-                }
-                .orEmpty()
-        return when (measure.fn) {
-            MeasureFn.Count -> concrete.size.toBigDecimal()
-            MeasureFn.CountNumbers -> values.size.toBigDecimal()
-            MeasureFn.CountDistinct -> concrete.map(::pivotCellKey).distinct().size.toBigDecimal()
-            MeasureFn.Sum -> values.takeIf { it.isNotEmpty() }?.sumDecimals()
-            MeasureFn.Avg ->
-                values
-                    .takeIf { it.isNotEmpty() }
-                    ?.sumDecimals()
-                    ?.divide(values.size.toBigDecimal(), MathContext.DECIMAL128)
-            MeasureFn.Min -> values.minOrNull()
-            MeasureFn.Max -> values.maxOrNull()
-            MeasureFn.Product ->
-                values.takeIf { it.isNotEmpty() }?.fold(BigDecimal.ONE, BigDecimal::multiply)
-            MeasureFn.StdDev -> statistic(values, sample = true, squareRoot = true)
-            MeasureFn.StdDevPopulation -> statistic(values, sample = false, squareRoot = true)
-            MeasureFn.Variance -> statistic(values, sample = true, squareRoot = false)
-            MeasureFn.VariancePopulation -> statistic(values, sample = false, squareRoot = false)
+        val column = measure.sourceColumn
+        if (measure.fn == MeasureFn.Count && column == null) return records.size.toBigDecimal()
+        val cells = column?.let { records.map { record -> record.cell(it) } }.orEmpty()
+        if (measure.fn == MeasureFn.Min || measure.fn == MeasureFn.Max) {
+            val values = cells.mapNotNull(::resultCellDecimal)
+            return if (measure.fn == MeasureFn.Min) values.minOrNull() else values.maxOrNull()
         }
-    }
-
-    private fun statistic(
-        values: List<BigDecimal>,
-        sample: Boolean,
-        squareRoot: Boolean,
-    ): BigDecimal? {
-        if (values.isEmpty() || sample && values.size < 2) return null
-        val doubles = values.map(BigDecimal::toDouble)
-        val mean = doubles.average()
-        val denominator = if (sample) doubles.size - 1 else doubles.size
-        val variance = doubles.sumOf { (it - mean) * (it - mean) } / denominator
-        return BigDecimal.valueOf(if (squareRoot) sqrt(variance) else variance)
+        return aggregateMeasure(cells, measure.fn).decimalOrNull()
     }
 
     private fun defaultTitle(type: ChartType): String {
@@ -539,36 +433,8 @@ private class VisualizationPlanner(
 
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
 
-private data class Bucket(val key: String, val label: String, val numeric: Double?)
-
 private fun ResultCell.decimalOrNull(): BigDecimal? = resultCellDecimal(this)
 
 private fun ResultCell.text(): String = resultCellText(this)
 
-private fun List<BigDecimal>.sumDecimals(): BigDecimal = fold(BigDecimal.ZERO, BigDecimal::add)
-
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
-
-private fun formatNumber(value: BigDecimal, format: PivotNumberFormat): String {
-    if (format.kind == NumberFormatKind.Auto) return plain(value)
-    val decimals = format.decimals.coerceIn(0, 8)
-    val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
-    val pattern = buildString {
-        append(if (format.thousandsSeparator) "#,##0" else "0")
-        if (decimals > 0) append('.').append("0".repeat(decimals))
-    }
-    return when (format.kind) {
-        NumberFormatKind.Number -> DecimalFormat(pattern, symbols).format(value)
-        NumberFormatKind.Percent -> DecimalFormat("$pattern%", symbols).format(value)
-        NumberFormatKind.Currency ->
-            DecimalFormat("¤$pattern", symbols)
-                .apply {
-                    runCatching { Currency.getInstance(format.currencyCode) }
-                        .getOrNull()
-                        ?.let { currency = it }
-                }
-                .format(value)
-        NumberFormatKind.Scientific ->
-            DecimalFormat("0.${"0".repeat(decimals)}E0", symbols).format(value)
-    }
-}

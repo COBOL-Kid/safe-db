@@ -73,12 +73,8 @@ fun ExploreWindowContent(
 ) {
     val session = viewModel.session
     val preview = viewModel.preview
-    val activePreviewLoading =
-        when (viewModel.workspace.activeMode) {
-            ExploreMode.Pivot -> viewModel.pivotPreviewState.loading
-            ExploreMode.Worksheet -> viewModel.worksheetPreviewState.loading
-            ExploreMode.Visualization -> viewModel.visualizationPreviewState.loading
-        }
+    val activeMode = viewModel.workspace.activeMode
+    val activePreviewLoading = viewModel.isLoading(activeMode)
     val config = viewModel.config
     val fields =
         remember(session.sample.columns, session.baseSpec.tables) {
@@ -94,7 +90,9 @@ fun ExploreWindowContent(
         ExploreDrillDialog(
             result = result,
             onExport = {
-                chooseCsvFile("explore-details")?.let { viewModel.saveResultCsv(result, it) }
+                chooseExportFile("explore-details", "csv")?.let {
+                    viewModel.saveResultCsv(result, it)
+                }
             },
             onDismiss = { drillResult = null },
         )
@@ -148,7 +146,8 @@ fun ExploreWindowContent(
                 sampleRefreshEnabled = sampleRefreshEnabled,
                 onRefreshSample = onRefreshSample,
             )
-            when (viewModel.workspace.activeMode) {
+            ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
+            when (activeMode) {
                 ExploreMode.Pivot ->
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         if (pivotRailVisible) {
@@ -187,7 +186,7 @@ fun ExploreWindowContent(
                                 onToggleRow = viewModel::toggleRowPath,
                                 onToggleColumn = viewModel::toggleColumnPath,
                                 onDrill = { rowPath, columnPath, measureAlias ->
-                                    if (!viewModel.pivotPreviewState.loading) {
+                                    if (!viewModel.isLoading(ExploreMode.Pivot)) {
                                         drillResult =
                                             viewModel.sourceRowsFor(
                                                 rowPath,
@@ -200,9 +199,9 @@ fun ExploreWindowContent(
                             )
                             ExploreExportBar(
                                 viewModel,
-                                enabled = !viewModel.pivotPreviewState.loading,
+                                enabled = !viewModel.isLoading(ExploreMode.Pivot),
                             ) {
-                                chooseCsvFile(session.connectionLabel)
+                                chooseExportFile(session.connectionLabel, "csv")
                                     ?.let(viewModel::savePreviewCsv)
                             }
                         }
@@ -225,10 +224,10 @@ fun ExploreWindowContent(
                         ExploreExportBar(
                             viewModel,
                             enabled =
-                                !viewModel.worksheetPreviewState.loading &&
+                                !viewModel.isLoading(ExploreMode.Worksheet) &&
                                     viewModel.hasVisibleWorksheetColumns(),
                         ) {
-                            chooseCsvFile("${session.connectionLabel}-worksheet")
+                            chooseExportFile("${session.connectionLabel}-worksheet", "csv")
                                 ?.let(viewModel::saveWorksheetCsv)
                         }
                     }
@@ -275,7 +274,7 @@ fun ExploreWindowContent(
                                         sampleRowCount = session.sample.rowCount,
                                         sampleTruncated = session.sample.truncated,
                                         onMarkClick = { markId ->
-                                            if (!viewModel.visualizationPreviewState.loading) {
+                                            if (!viewModel.isLoading(ExploreMode.Visualization)) {
                                                 drillResult =
                                                     viewModel.sourceRowsForVisualizationMark(markId)
                                             }
@@ -289,7 +288,7 @@ fun ExploreWindowContent(
                                     viewModel = viewModel,
                                     enabled =
                                         viewModel.visualizationPreview.ready &&
-                                            !viewModel.visualizationPreviewState.loading,
+                                            !viewModel.isLoading(ExploreMode.Visualization),
                                     onExportCsv = {
                                         chooseExportFile(
                                                 "${session.connectionLabel}-chart-data",
@@ -427,11 +426,18 @@ private fun ExploreStaleSampleWarning(
 }
 
 @Composable
-private fun ExploreExportBar(
-    viewModel: ExploreViewModel,
-    enabled: Boolean,
-    onExport: () -> Unit,
-) {
+private fun ExplorePreviewErrorBanner(error: String?) {
+    if (error == null) return
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        MessageBanner(
+            text = "This Explore view could not be refreshed: $error",
+            kind = BannerKind.ERROR,
+        )
+    }
+}
+
+@Composable
+private fun ExportBar(viewModel: ExploreViewModel, actions: @Composable () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -455,6 +461,17 @@ private fun ExploreExportBar(
             SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
         }
         if (viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+        actions()
+    }
+}
+
+@Composable
+private fun ExploreExportBar(
+    viewModel: ExploreViewModel,
+    enabled: Boolean,
+    onExport: () -> Unit,
+) {
+    ExportBar(viewModel) {
         PrimaryButton(
             modifier = Modifier.padding(start = 8.dp),
             onClick = onExport,
@@ -472,29 +489,7 @@ private fun VisualizationExportBar(
     onExportCsv: () -> Unit,
     onExportPng: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        viewModel.exportMessage?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        viewModel.exportError?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        Box(modifier = Modifier.weight(1f))
-        if (viewModel.exportMessage != null || viewModel.exportError != null) {
-            SecondaryButton(onClick = viewModel::clearExportMessages) { Text("Dismiss") }
-        }
-        if (viewModel.exporting) Text("Exporting…", style = MaterialTheme.typography.bodySmall)
+    ExportBar(viewModel) {
         SecondaryButton(
             modifier = Modifier.padding(start = 8.dp),
             onClick = onExportCsv,
@@ -510,23 +505,6 @@ private fun VisualizationExportBar(
             Text("Export PNG")
         }
     }
-}
-
-private fun chooseCsvFile(connectionLabel: String): java.nio.file.Path? {
-    val safeName =
-        connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty {
-            "explore"
-        }
-    val chooser =
-        JFileChooser().apply {
-            selectedFile = File("explore-$safeName.csv")
-            dialogTitle = "Export Explore CSV"
-        }
-    val result = chooser.showSaveDialog(null)
-    if (result != JFileChooser.APPROVE_OPTION) return null
-    val file = chooser.selectedFile
-    return if (file.extension.equals("csv", ignoreCase = true)) file.toPath()
-    else File("${file.path}.csv").toPath()
 }
 
 private fun chooseExportFile(connectionLabel: String, extension: String): java.nio.file.Path? {

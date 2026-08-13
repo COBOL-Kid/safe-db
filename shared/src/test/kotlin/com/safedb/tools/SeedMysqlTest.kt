@@ -1,5 +1,6 @@
 package com.safedb.tools
 
+import com.safedb.platform.PlatformEnvironment
 import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.io.BufferedWriter
 import java.io.StringWriter
@@ -203,29 +204,29 @@ class SeedMysqlTest {
     }
 
     @Test
-    fun resolvesOnlySupportedPlatformAppDataDirectories() {
+    fun appDataLookupAppendsTheAppIdAndTreatsMissingAppDataAsSkippable() {
         assertEquals(
             Path.of("/Users/test/Library/Application Support/com.safedb.app"),
-            safeDbAppDataDir(SeedMysqlPlatformEnvironment("Darwin", "/Users/test")),
+            safeDbAppDataDir(PlatformEnvironment("Darwin", "/Users/test")),
         )
-        assertEquals(
-            Path.of("C:/Users/test/AppData/Roaming/com.safedb.app"),
-            safeDbAppDataDir(
-                SeedMysqlPlatformEnvironment(
-                    "Windows 11",
-                    "C:/Users/test",
-                    appData = "C:/Users/test/AppData/Roaming",
-                )
-            ),
+        // DataDirectory.baseDir throws here; the seeder needs a null so it can skip the reset.
+        assertNull(safeDbAppDataDir(PlatformEnvironment("Windows 11", "C:/Users/test")))
+
+        var resetMessage = ""
+        assertNull(
+            safeDbAppDataDirForStateReset(
+                environment = PlatformEnvironment("Windows 11", "C:/Users/test"),
+                report = { resetMessage = it },
+            )
         )
-        assertNull(safeDbAppDataDir(SeedMysqlPlatformEnvironment("Windows 11", "C:/Users/test")))
+        assertEquals("-> skipping safe-db app state reset (APPDATA is not set)", resetMessage)
     }
 
     @Test
     fun linuxAppDataLookupReportsUnsupportedPlatform() {
         val error =
             assertFailsWith<UnsupportedDesktopPlatformException> {
-                safeDbAppDataDir(SeedMysqlPlatformEnvironment("Linux", "/home/test"))
+                safeDbAppDataDir(PlatformEnvironment("Linux", "/home/test"))
             }
 
         assertEquals(
@@ -236,7 +237,7 @@ class SeedMysqlTest {
         var resetMessage = ""
         assertNull(
             safeDbAppDataDirForStateReset(
-                environment = SeedMysqlPlatformEnvironment("Linux", "/home/test"),
+                environment = PlatformEnvironment("Linux", "/home/test"),
                 report = { resetMessage = it },
             )
         )
@@ -249,7 +250,9 @@ class SeedMysqlTest {
 
     private fun generate(options: GeneratorOptions): String {
         val output = StringWriter()
-        BufferedWriter(output).use { writer -> MysqlFixtureGenerator(options, writer).generate() }
+        BufferedWriter(output).use { writer ->
+            RelationalFixtureGenerator(options, GeneratedSqlDialect.Mysql, writer).generate()
+        }
         return output.toString()
     }
 

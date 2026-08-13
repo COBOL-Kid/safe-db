@@ -6,6 +6,8 @@ import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.isReservedDriverPropertyName
 import com.safedb.model.isSensitiveDriverPropertyName
+import com.safedb.model.mySqlSslMode
+import com.safedb.model.postgresSslMode
 import com.safedb.model.validateDriverProperties
 import java.net.URI
 import java.net.URLDecoder
@@ -33,13 +35,8 @@ private data class MutableTransport(
     var oracleWalletLocation: String? = null,
 )
 
-private val DEFAULT_PORTS =
-    mapOf(
-        Dialect.Postgres to 5432,
-        Dialect.MySql to 3306,
-        Dialect.Mssql to 1433,
-        Dialect.Oracle to 1521,
-    )
+private fun defaultPortFor(dialect: Dialect): Int =
+    DIALECTS.first { it.value == dialect }.defaultPort
 
 fun parseConnectionString(input: String): ParsedConnection {
     val raw = input.trim()
@@ -85,7 +82,7 @@ private fun baseResult(
         throw ConnectionStringParseError("Connection string is missing a database name.")
     }
 
-    val resolvedPort = port ?: DEFAULT_PORTS.getValue(dialect)
+    val resolvedPort = port ?: defaultPortFor(dialect)
     if (resolvedPort !in 1..65535) {
         throw ConnectionStringParseError("Connection string has an invalid port.")
     }
@@ -165,52 +162,53 @@ private fun parseSqlServerJdbc(raw: String): ParsedConnection {
     val rest = raw.replace(Regex("^jdbc:sqlserver://", RegexOption.IGNORE_CASE), "")
     val records = splitSemicolonRecords(rest)
     val serverPart = records.firstOrNull().orEmpty()
-    val propertyParts = records.drop(1)
     val (host, port) = parseSqlServerHost(serverPart)
-    val props = parseSemicolonKeyValues(propertyParts.joinToString(";"))
-    val database = findKey(props, listOf("databasename", "database", "initial catalog")).orEmpty()
-    val username = findKey(props, listOf("user", "username", "user id", "uid")).orEmpty()
-    val password = findKey(props, listOf("password", "pwd"))
-    val encrypt = findKey(props, listOf("encrypt"))
-    val trustServerCertificate =
-        findKey(props, listOf("trustservercertificate", "trust server certificate"))
-    val extracted =
-        extractDriverProperties(
-            Dialect.Mssql,
-            parseSemicolonKeyValueList(propertyParts.joinToString(";")),
-            SQL_SERVER_MANAGED_KEYS,
-        )
-
-    return baseResult(
-        dialect = Dialect.Mssql,
+    return sqlServerResult(
+        raw = raw,
+        properties = records.drop(1).joinToString(";"),
         host = host,
         port = port,
-        database = database,
-        username = username,
-        password = password,
-        transport = sqlServerTransport(encrypt, trustServerCertificate, host),
-        driverProperties = extracted.properties,
-        warnings = extracted.warnings,
-        sanitizedInput = sanitizeSqlServerKeyValue(raw),
+        databaseKeys = listOf("databasename", "database", "initial catalog"),
+        usernameKeys = listOf("user", "username", "user id", "uid"),
     )
 }
 
 private fun parseSqlServerKeyValue(raw: String): ParsedConnection {
-    val props = parseSemicolonKeyValues(raw)
     val server =
-        findKey(props, listOf("server", "data source", "address", "addr", "network address"))
+        findKey(
+                parseSemicolonKeyValues(raw),
+                listOf("server", "data source", "address", "addr", "network address"),
+            )
             .orEmpty()
     val (host, port) = parseSqlServerHost(server)
-    val database = findKey(props, listOf("database", "initial catalog")).orEmpty()
-    val username = findKey(props, listOf("user id", "uid", "user", "username")).orEmpty()
-    val password = findKey(props, listOf("password", "pwd"))
+    return sqlServerResult(
+        raw = raw,
+        properties = raw,
+        host = host,
+        port = port,
+        databaseKeys = listOf("database", "initial catalog"),
+        usernameKeys = listOf("user id", "uid", "user", "username"),
+    )
+}
+
+// The key lists stay caller-supplied: the two syntaxes prefer different aliases first, so merging
+// them would change which value wins on input carrying both.
+private fun sqlServerResult(
+    raw: String,
+    properties: String,
+    host: String,
+    port: Int?,
+    databaseKeys: List<String>,
+    usernameKeys: List<String>,
+): ParsedConnection {
+    val props = parseSemicolonKeyValues(properties)
     val encrypt = findKey(props, listOf("encrypt"))
     val trustServerCertificate =
         findKey(props, listOf("trustservercertificate", "trust server certificate"))
     val extracted =
         extractDriverProperties(
             Dialect.Mssql,
-            parseSemicolonKeyValueList(raw),
+            parseSemicolonKeyValueList(properties),
             SQL_SERVER_MANAGED_KEYS,
         )
 
@@ -218,9 +216,9 @@ private fun parseSqlServerKeyValue(raw: String): ParsedConnection {
         dialect = Dialect.Mssql,
         host = host,
         port = port,
-        database = database,
-        username = username,
-        password = password,
+        database = findKey(props, databaseKeys).orEmpty(),
+        username = findKey(props, usernameKeys).orEmpty(),
+        password = findKey(props, listOf("password", "pwd")),
         transport = sqlServerTransport(encrypt, trustServerCertificate, host),
         driverProperties = extracted.properties,
         warnings = extracted.warnings,
@@ -327,7 +325,7 @@ private fun pathnameDatabase(pathname: String): String =
     decodeComponent(pathname.replace(Regex("^/+"), "").split('/').firstOrNull().orEmpty())
 
 private fun parsePort(url: ParsedUrl, dialect: Dialect): Int =
-    if (url.port != -1) url.port else DEFAULT_PORTS.getValue(dialect)
+    if (url.port != -1) url.port else defaultPortFor(dialect)
 
 private fun postgresTransport(sslmode: String?, host: String): MutableTransport =
     when (sslmode) {
@@ -727,30 +725,21 @@ fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
         }
     return when (def.dialect) {
         Dialect.Postgres -> {
-            val sslMode =
-                when (def.transportSecurity.mode) {
-                    TransportSecurityMode.VerifyIdentity -> "verify-full"
-                    TransportSecurityMode.VerifyCa -> "verify-ca"
-                    TransportSecurityMode.EncryptOnly -> "require"
-                    TransportSecurityMode.Disabled -> "disable"
-                }
+            val sslMode = def.transportSecurity.mode.postgresSslMode()
             val query =
                 listOf("sslmode=$sslMode", properties).filter(String::isNotEmpty).joinToString("&")
             "postgresql://${encodeComponent(def.username)}@${def.host}:${def.port}/${encodeComponent(def.database)}?$query"
         }
         Dialect.MySql -> {
-            val sslMode =
-                when (def.transportSecurity.mode) {
-                    TransportSecurityMode.VerifyIdentity -> "VERIFY_IDENTITY"
-                    TransportSecurityMode.VerifyCa -> "VERIFY_CA"
-                    TransportSecurityMode.EncryptOnly -> "REQUIRED"
-                    TransportSecurityMode.Disabled -> "DISABLED"
-                }
+            val sslMode = def.transportSecurity.mode.mySqlSslMode()
             val query =
                 listOf("ssl-mode=$sslMode", properties).filter(String::isNotEmpty).joinToString("&")
             "mysql://${encodeComponent(def.username)}@${def.host}:${def.port}/${encodeComponent(def.database)}?$query"
         }
         Dialect.Mssql -> {
+            // Deliberately not shared with applyMssqlSsl: an exported string carries only the
+            // properties a driver needs to reproduce the mode, while connecting also pins
+            // hostNameInCertificate.
             val security =
                 when (def.transportSecurity.mode) {
                     TransportSecurityMode.VerifyIdentity,
