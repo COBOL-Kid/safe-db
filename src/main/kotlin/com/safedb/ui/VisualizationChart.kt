@@ -249,20 +249,17 @@ internal fun visualizationGeometry(
             val minX = preview.marks.minOf { it.xValue ?: 0.0 }
             val maxX =
                 preview.marks.maxOf { it.xValue ?: 0.0 }.let { if (it == minX) it + 1.0 else it }
-            val padding = 8f
-            // Both axes map through a padded range so a short plot cannot invert the bounds.
-            val paddedHeight = (plot.height - padding * 2f).coerceAtLeast(0f)
+            // Points use the same scale as the value ticks; only the edge band is coerced so
+            // circles stay inside the plot. The pad shrinks to half the plot on tiny canvases
+            // so the coerce bounds can never invert.
+            val padX = min(8f, plot.width / 2f)
+            val padY = min(8f, plot.height / 2f)
             preview.marks.forEach { mark ->
                 val x =
-                    plot.left +
-                        padding +
-                        (((mark.xValue ?: minX) - minX) / (maxX - minX) *
-                                (plot.width - padding * 2f))
-                            .toFloat()
-                val y =
-                    plot.bottom -
-                        padding -
-                        ((mark.y - rawMin) / (yMax - rawMin) * paddedHeight).toFloat()
+                    (plot.left + ((mark.xValue ?: minX) - minX) / (maxX - minX) * plot.width)
+                        .toFloat()
+                        .coerceIn(plot.left + padX, plot.right - padX)
+                val y = yPosition(mark.y).coerceIn(plot.top + padY, plot.bottom - padY)
                 val point = Offset(x, y)
                 val radius = (mark.size?.let { 4f + min(10.0, abs(it) / 10.0).toFloat() } ?: 6f)
                 points[mark.id] = point
@@ -736,33 +733,45 @@ private fun PlotChart(
                             )
                         }
                 } else {
-                    val centers = categoryMarks.mapNotNull { geometry.categoryCenters[it.xKey] }
-                    val slot = categoryLabelSlot(centers, plot.width)
+                    // Scatter centers arrive in sample order, so decimation must be spatial:
+                    // index stepping labels clustered points and skips isolated ones.
+                    val ordered =
+                        categoryMarks
+                            .mapNotNull { mark ->
+                                geometry.categoryCenters[mark.xKey]?.let { mark to it }
+                            }
+                            .sortedBy { it.second }
                     val widest = categoryMarks.maxOf { categoryLabelWidths[it.xKey] ?: 0f }
-                    val step = categoryLabelStep(min(widest + gapPx, 160f), slot)
-                    val available = (slot * step - gapPx).coerceAtLeast(0f)
-                    categoryMarks
-                        .filterIndexed { index, _ -> index % step == 0 }
-                        .forEach { mark ->
-                            val x = geometry.categoryCenters[mark.xKey] ?: return@forEach
-                            val label =
-                                fitted(
-                                    mark.xLabel,
-                                    categoryLabelMaxWidth(x, plot.left, canvasWidth, available),
-                                )
-                            drawText(
-                                label,
-                                topLeft =
-                                    Offset(
-                                        clampX(
-                                            x - label.size.width / 2f,
-                                            label.size.width.toFloat(),
-                                            plot.left,
-                                        ),
-                                        plot.bottom + gapPx,
-                                    ),
+                    val selected =
+                        categoryLabelIndices(ordered.map { it.second }, min(widest + gapPx, 160f))
+                    selected.forEachIndexed { position, index ->
+                        val (mark, x) = ordered[index]
+                        val previousGap =
+                            if (position == 0) plot.width
+                            else x - ordered[selected[position - 1]].second
+                        val nextGap =
+                            if (position == selected.lastIndex) plot.width
+                            else ordered[selected[position + 1]].second - x
+                        val available =
+                            (min(min(previousGap, nextGap), plot.width) - gapPx).coerceAtLeast(0f)
+                        val label =
+                            fitted(
+                                mark.xLabel,
+                                categoryLabelMaxWidth(x, plot.left, canvasWidth, available),
                             )
-                        }
+                        drawText(
+                            label,
+                            topLeft =
+                                Offset(
+                                    clampX(
+                                        x - label.size.width / 2f,
+                                        label.size.width.toFloat(),
+                                        plot.left,
+                                    ),
+                                    plot.bottom + gapPx,
+                                ),
+                        )
+                    }
                 }
             }
         }
@@ -832,11 +841,17 @@ internal fun plotRect(width: Float, height: Float, insets: PlotInsets): Rect {
 internal fun valueTickMaxWidth(horizontalBars: Boolean, plot: Rect, gapPx: Float): Float =
     if (horizontalBars) max(plot.width / 4f, 1f) else max(plot.left - gapPx, 0f)
 
-internal fun categoryLabelSlot(centers: List<Float>, plotWidth: Float): Float {
-    if (centers.size <= 1) return plotWidth
-    // Scatter centers arrive in sample order, not axis order.
-    val sorted = centers.sorted()
-    return (sorted.last() - sorted.first()) / (centers.size - 1)
+// Walks centers in axis order and labels one only when it sits at least requiredGap after the
+// previous labeled center, so uneven scatter spacing cannot overlap labels or skip isolated
+// points. Centers must be sorted ascending.
+internal fun categoryLabelIndices(sortedCenters: List<Float>, requiredGap: Float): List<Int> {
+    val selected = mutableListOf<Int>()
+    sortedCenters.forEachIndexed { index, center ->
+        if (selected.isEmpty() || center - sortedCenters[selected.last()] >= requiredGap) {
+            selected += index
+        }
+    }
+    return selected
 }
 
 internal fun categoryLabelStep(labelExtent: Float, band: Float): Int =

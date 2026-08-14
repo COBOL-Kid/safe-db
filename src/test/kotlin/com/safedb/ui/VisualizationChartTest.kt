@@ -192,6 +192,55 @@ class VisualizationChartTest {
     }
 
     @Test
+    fun scatterInteriorPointsSitOnTheValueTickScale() {
+        val geometry =
+            visualizationGeometry(
+                preview(ChartType.Scatter),
+                VisualizationConfig(chartType = ChartType.Scatter),
+                600f,
+                380f,
+            )
+        // Range is 0..10, so y = 5 is interior and must land exactly on the tick scale.
+        val expected = (geometry.plot.bottom - 0.5 * geometry.plot.height).toFloat()
+
+        assertEquals(expected, geometry.points.getValue("a-2").y)
+        // y == yMax falls in the edge band and is only pulled in by the 8px pad.
+        assertEquals(geometry.plot.top + 8f, geometry.points.getValue("a-1").y)
+    }
+
+    @Test
+    fun scatterGeometryOnTinyWidthKeepsXInsidePlotAndUninverted() {
+        val narrow =
+            visualizationGeometry(
+                preview(ChartType.Scatter),
+                VisualizationConfig(chartType = ChartType.Scatter),
+                12f,
+                400f,
+            )
+        val tiny =
+            visualizationGeometry(
+                preview(ChartType.Scatter),
+                VisualizationConfig(chartType = ChartType.Scatter),
+                5f,
+                5f,
+            )
+
+        assertTrue(
+            narrow.points.values.all { it.x >= narrow.plot.left && it.x <= narrow.plot.right }
+        )
+        // xValue 4 (max) must not land left of xValue 1 (min).
+        assertTrue(narrow.points.getValue("b-2").x >= narrow.points.getValue("a-1").x)
+        assertTrue(
+            tiny.points.values.all {
+                it.x >= tiny.plot.left &&
+                    it.x <= tiny.plot.right &&
+                    it.y >= tiny.plot.top &&
+                    it.y <= tiny.plot.bottom
+            }
+        )
+    }
+
+    @Test
     fun scatterGeometryMapsEveryPointInsidePlot() {
         val preview = preview(ChartType.Scatter)
         val geometry =
@@ -267,19 +316,18 @@ class VisualizationChartTest {
     }
 
     @Test
-    fun lineCategoryLabelSlotUsesSpacingBetweenCenters() {
-        val slot = categoryLabelSlot(listOf(0f, 200f), 200f)
-        val widest = 120f
-
-        assertEquals(200f, slot)
-        assertTrue(widest > 200f / 2f)
-        assertTrue(widest < 200f)
-        assertEquals(1, kotlin.math.ceil((widest + 6f) / slot).toInt())
+    fun categoryLabelIndicesMatchIndexSteppingOnEvenBands() {
+        assertEquals(listOf(0, 1, 2), categoryLabelIndices(listOf(0f, 200f, 400f), 126f))
+        assertEquals(listOf(0, 2), categoryLabelIndices(listOf(0f, 200f, 400f), 250f))
     }
 
     @Test
-    fun categoryLabelSlotSortsUnsortedScatterCenters() {
-        assertEquals(150f, categoryLabelSlot(listOf(100f, 400f, 110f), 300f))
+    fun clusteredScatterCentersKeepIsolatedLabelAndDropOverlappingOnes() {
+        // Sample order was 0, 100, 1, 2; sorted centers cluster at the left. The cluster
+        // must collapse to one label while the isolated center at 100 keeps its own.
+        val selected = categoryLabelIndices(listOf(0f, 1f, 2f, 100f), 50f)
+
+        assertEquals(listOf(0, 3), selected)
     }
 
     @Test
