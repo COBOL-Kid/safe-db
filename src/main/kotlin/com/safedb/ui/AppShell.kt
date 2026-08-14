@@ -74,7 +74,6 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
 import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
-import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
@@ -625,7 +624,7 @@ private fun SidebarUtilities(
 private fun LogoMark() {
     val c = SafeDbTheme.colors
     Box(
-        modifier = Modifier.size(34.dp).clip(CardShape).background(c.actionPrimary),
+        modifier = Modifier.size(34.dp).clip(ChipShape).background(c.actionPrimary),
         contentAlignment = Alignment.Center,
     ) {
         Text(

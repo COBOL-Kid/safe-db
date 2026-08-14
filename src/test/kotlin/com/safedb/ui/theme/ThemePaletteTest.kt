@@ -43,11 +43,19 @@ class ThemePaletteTest {
             val colors = darkScheme(palette).second
             colors.series.forEach { series ->
                 assertTrue(
-                    contrast(series, colors.workspaceCanvas) >= 2.0,
+                    contrast(series, colors.workspaceCanvas) >= 3.0,
                     "$palette dark series $series lacks contrast on ${colors.workspaceCanvas}",
                 )
             }
         }
+    }
+
+    @Test
+    fun controlBlueDarkSeriesDivergesFromTheSharedLightPalette() {
+        assertNotEquals(
+            VisualizationSeriesPalette,
+            darkScheme(ThemePalette.ControlBlue).second.series,
+        )
     }
 
     private fun contrast(foreground: Color, background: Color): Double {
