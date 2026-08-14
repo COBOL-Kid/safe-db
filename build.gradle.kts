@@ -122,7 +122,7 @@ val verifyUnitTestDiscovery =
         dependsOn(tasks.test, ":shared:test")
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(222)
+        minimumDesktopTests.set(240)
         minimumSharedTests.set(365)
     }
 
