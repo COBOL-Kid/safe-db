@@ -415,7 +415,7 @@ internal fun Sidebar(
             )
 
             Column(
-                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 horizontalAlignment = Alignment.Start,
             ) {
@@ -518,7 +518,7 @@ private fun SidebarUtilities(
 ) {
     val c = SafeDbTheme.colors
     Column(
-        modifier = Modifier.padding(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -712,7 +712,8 @@ private fun NavButton(
             }
         )
 
-    Row(
+    // Keep icons in their own layer so label expand/shrink cannot shift the rail.
+    Box(
         modifier =
             Modifier.fillMaxWidth()
                 .height(44.dp)
@@ -720,25 +721,32 @@ private fun NavButton(
                 .hoverable(interactionSource)
                 .clickable(onClick = onClick)
                 .pointerHoverIcon(PointerIcon.Hand)
-                .padding(end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Start,
     ) {
-        Box(
+        Row(
+            modifier = Modifier.fillMaxHeight(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            Box(
+                modifier =
+                    Modifier.width(NavRailIndicatorWidth)
+                        .fillMaxHeight()
+                        .background(if (selected) c.actionPrimary else Color.Transparent)
+            )
+            Spacer(Modifier.width(NavRailIconStartGap))
+            Icon(
+                item.icon,
+                contentDescription = if (collapsed) item.label else null,
+                tint = content,
+                modifier = Modifier.size(NavRailIconSize),
+            )
+        }
+        AnimatedSidebarLabel(
+            visible = labelVisible,
             modifier =
-                Modifier.width(3.dp)
-                    .fillMaxHeight()
-                    .background(if (selected) c.actionPrimary else Color.Transparent)
-        )
-        Spacer(Modifier.width(9.dp))
-        Icon(
-            item.icon,
-            contentDescription = if (collapsed) item.label else null,
-            tint = content,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(11.dp))
-        AnimatedSidebarLabel(visible = labelVisible) {
+                Modifier.align(Alignment.CenterStart)
+                    .padding(start = NavIconRailWidth, end = 12.dp),
+        ) {
             Text(
                 item.label,
                 color = content,
@@ -822,6 +830,12 @@ private data class NavItem(val route: AppRoute, val label: String, val icon: Ima
 private val ExpandedSidebarWidth = 232.dp
 private val CollapsedSidebarWidth = 72.dp
 private val SidebarHeaderHeight = 78.dp
+private val NavRailIndicatorWidth = 3.dp
+private val NavRailIconStartGap = 9.dp
+private val NavRailIconSize = 18.dp
+private val NavRailLabelGap = 11.dp
+private val NavIconRailWidth =
+    NavRailIndicatorWidth + NavRailIconStartGap + NavRailIconSize + NavRailLabelGap
 private const val SidebarWidthAnimationMillis = 240
 private const val SidebarRevealStaggerMillis = 55
 private const val SidebarExpandedExitMillis = 120
