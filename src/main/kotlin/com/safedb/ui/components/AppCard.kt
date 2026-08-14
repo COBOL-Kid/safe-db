@@ -14,6 +14,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.SafeDbTheme
@@ -46,7 +48,7 @@ fun AppCard(
 
     if (onClick != null) {
         Surface(
-            modifier = modifier,
+            modifier = modifier.pointerHoverIcon(PointerIcon.Hand),
             shape = CardShape,
             color = backgroundColor,
             border = border,

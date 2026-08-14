@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -71,7 +70,10 @@ import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.PromptDialog
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
+import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.QueryViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import com.safedb.viewmodel.SavedQueriesViewModel
@@ -246,12 +248,16 @@ internal fun BuilderScreen(
             modifier =
                 Modifier.fillMaxWidth()
                     .background(SafeDbTheme.colors.workspaceHeader)
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                    .padding(
+                        horizontal = ScreenHeaderHorizontalPadding,
+                        vertical = ToolbarHeaderVerticalPadding,
+                    ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (connection != null) {
-                Column {
+                // Weighted so the risk/join hint wraps instead of starving the run controls.
+                Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
                     Text(connection.name, style = MaterialTheme.typography.titleMedium)
                     Text(
                         "${dialectLabel(connection.dialect)} · ${connection.database}",
@@ -285,7 +291,11 @@ internal fun BuilderScreen(
                     }
                 }
             } else {
-                Text("Query Builder", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Query Builder",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f).padding(end = 16.dp),
+                )
             }
 
             Row(
@@ -417,7 +427,7 @@ internal fun BuilderScreen(
         }
 
         if (connection == null) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(modifier = Modifier.fillMaxSize()) {
                 Surface(
                     modifier = Modifier.width(288.dp).fillMaxHeight(),
@@ -447,7 +457,7 @@ internal fun BuilderScreen(
                 }
             }
         } else {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(modifier = Modifier.fillMaxSize()) {
                 Surface(
                     modifier = Modifier.width(288.dp).fillMaxHeight(),
@@ -717,7 +727,7 @@ private fun ResultsPaneResizeBar(
         }
         Box(
             modifier =
-                Modifier.clip(RoundedCornerShape(2.dp))
+                Modifier.clip(ChipShape)
                     .background(pillColor)
                     .clickable(onClick = onToggleMode)
                     .semantics { contentDescription = label }

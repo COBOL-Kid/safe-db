@@ -30,15 +30,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -58,6 +58,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -72,6 +74,8 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
 import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
+import com.safedb.ui.theme.CardShape
+import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import kotlin.time.Duration.Companion.milliseconds
@@ -456,6 +460,7 @@ private fun SidebarHeader(
                 Modifier.fillMaxWidth()
                     .height(SidebarHeaderHeight)
                     .clickable(onClick = onToggleCollapsed)
+                    .pointerHoverIcon(PointerIcon.Hand)
                     .semantics { contentDescription = "Expand sidebar" },
             contentAlignment = Alignment.Center,
         ) {
@@ -523,7 +528,7 @@ private fun SidebarUtilities(
                 modifier = Modifier.size(32.dp),
             ) { enabled ->
                 SidebarIconButton(
-                    icon = Icons.Filled.Search,
+                    icon = Icons.Outlined.Search,
                     contentDescription = "Search commands",
                     enabled = enabled,
                     onClick = onOpenPalette,
@@ -540,7 +545,7 @@ private fun SidebarUtilities(
                 modifier = Modifier.size(32.dp),
             ) { enabled ->
                 SidebarIconButton(
-                    icon = Icons.Filled.Settings,
+                    icon = Icons.Outlined.Settings,
                     contentDescription = "Settings",
                     enabled = enabled,
                     onClick = onOpenSettings,
@@ -551,7 +556,7 @@ private fun SidebarUtilities(
                 modifier = Modifier.size(32.dp),
             ) { enabled ->
                 SidebarIconButton(
-                    icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                    icon = if (isDark) Icons.Outlined.WbSunny else Icons.Outlined.DarkMode,
                     contentDescription = "Toggle theme",
                     enabled = enabled,
                     onClick = onToggleTheme,
@@ -595,7 +600,7 @@ private fun SidebarUtilities(
                     SidebarFade(visible = settingsVisible, modifier = Modifier.size(32.dp)) {
                         enabled ->
                         SidebarIconButton(
-                            icon = Icons.Filled.Settings,
+                            icon = Icons.Outlined.Settings,
                             contentDescription = "Settings",
                             enabled = enabled,
                             onClick = onOpenSettings,
@@ -604,7 +609,7 @@ private fun SidebarUtilities(
                     SidebarFade(visible = themeVisible, modifier = Modifier.size(32.dp)) { enabled
                         ->
                         SidebarIconButton(
-                            icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                            icon = if (isDark) Icons.Outlined.WbSunny else Icons.Outlined.DarkMode,
                             contentDescription = "Toggle theme",
                             enabled = enabled,
                             onClick = onToggleTheme,
@@ -620,7 +625,7 @@ private fun SidebarUtilities(
 private fun LogoMark() {
     val c = SafeDbTheme.colors
     Box(
-        modifier = Modifier.size(34.dp).clip(RoundedCornerShape(2.dp)).background(c.actionPrimary),
+        modifier = Modifier.size(34.dp).clip(CardShape).background(c.actionPrimary),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -637,7 +642,7 @@ private fun SidebarStatusIndicator() {
     val c = SafeDbTheme.colors
     Box(
         modifier =
-            Modifier.size(32.dp).clip(RoundedCornerShape(2.dp)).semantics {
+            Modifier.size(32.dp).clip(ChipShape).semantics {
                 contentDescription = "Safe Read Mode"
             },
         contentAlignment = Alignment.Center,
@@ -662,10 +667,11 @@ private fun SidebarIconButton(
     Box(
         modifier =
             Modifier.size(32.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .clip(ChipShape)
                 .background(background)
                 .hoverable(interactionSource, enabled = enabled)
-                .clickable(enabled = enabled, onClick = onClick),
+                .clickable(enabled = enabled, onClick = onClick)
+                .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -713,6 +719,7 @@ private fun NavButton(
                 .background(background)
                 .hoverable(interactionSource)
                 .clickable(onClick = onClick)
+                .pointerHoverIcon(PointerIcon.Hand)
                 .padding(end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start,

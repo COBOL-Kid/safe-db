@@ -54,6 +54,8 @@ import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
+import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import java.io.File
@@ -103,7 +105,10 @@ fun ExploreWindowContent(
             modifier =
                 Modifier.fillMaxWidth()
                     .background(SafeDbTheme.colors.workspaceHeader)
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .padding(
+                        horizontal = ScreenHeaderHorizontalPadding,
+                        vertical = ToolbarHeaderVerticalPadding,
+                    ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -138,7 +143,7 @@ fun ExploreWindowContent(
                 Icon(Icons.Default.Close, contentDescription = "Close Explore")
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             ExploreStaleSampleWarning(
@@ -207,30 +212,29 @@ fun ExploreWindowContent(
                         }
                     }
                 ExploreMode.Worksheet ->
-                    Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        ExploreWorksheet(
-                            sample = session.sample,
-                            config = viewModel.worksheetConfig,
-                            preview = viewModel.worksheetPreview,
-                            onConfigChange = { next -> viewModel.updateWorksheet { next } },
-                            onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
-                            onToggleGroup = viewModel::toggleWorksheetGroup,
-                            configReplacementRevision =
-                                viewModel.worksheetConfigReplacementRevision,
-                            railVisible = worksheetRailVisible,
-                            onRailVisibilityChange = { worksheetRailVisible = it },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
-                        ExploreExportBar(
-                            viewModel,
-                            enabled =
-                                !viewModel.isLoading(ExploreMode.Worksheet) &&
-                                    viewModel.hasVisibleWorksheetColumns(),
-                        ) {
-                            chooseExportFile("${session.connectionLabel}-worksheet", "csv")
-                                ?.let(viewModel::saveWorksheetCsv)
-                        }
-                    }
+                    ExploreWorksheet(
+                        sample = session.sample,
+                        config = viewModel.worksheetConfig,
+                        preview = viewModel.worksheetPreview,
+                        onConfigChange = { next -> viewModel.updateWorksheet { next } },
+                        onColumnLayoutChange = viewModel::updateWorksheetColumnLayout,
+                        onToggleGroup = viewModel::toggleWorksheetGroup,
+                        configReplacementRevision = viewModel.worksheetConfigReplacementRevision,
+                        railVisible = worksheetRailVisible,
+                        onRailVisibilityChange = { worksheetRailVisible = it },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        exportBar = {
+                            ExploreExportBar(
+                                viewModel,
+                                enabled =
+                                    !viewModel.isLoading(ExploreMode.Worksheet) &&
+                                        viewModel.hasVisibleWorksheetColumns(),
+                            ) {
+                                chooseExportFile("${session.connectionLabel}-worksheet", "csv")
+                                    ?.let(viewModel::saveWorksheetCsv)
+                            }
+                        },
+                    )
                 ExploreMode.Visualization ->
                     Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         Row(modifier = Modifier.weight(1f).fillMaxWidth()) {

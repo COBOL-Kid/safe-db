@@ -272,7 +272,7 @@ fun SettingsPanel(
                         }
                     }
 
-                    HorizontalDivider()
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                     Column {
                         Text(
@@ -297,7 +297,7 @@ fun SettingsPanel(
                         )
                     }
 
-                    HorizontalDivider()
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                     Column {
                         Text("Query risk gate", style = MaterialTheme.typography.titleSmall)

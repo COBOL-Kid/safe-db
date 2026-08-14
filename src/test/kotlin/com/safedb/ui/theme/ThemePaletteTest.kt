@@ -37,6 +37,19 @@ class ThemePaletteTest {
         assertEquals(Color(0xFF6EA2FF), darkScheme().first.primary)
     }
 
+    @Test
+    fun darkSeriesColorsStayLegibleOnTheDarkChartCanvas() {
+        ThemePalette.entries.forEach { palette ->
+            val colors = darkScheme(palette).second
+            colors.series.forEach { series ->
+                assertTrue(
+                    contrast(series, colors.workspaceCanvas) >= 2.0,
+                    "$palette dark series $series lacks contrast on ${colors.workspaceCanvas}",
+                )
+            }
+        }
+    }
+
     private fun contrast(foreground: Color, background: Color): Double {
         val high = maxOf(foreground.luminance(), background.luminance()).toDouble()
         val low = minOf(foreground.luminance(), background.luminance()).toDouble()

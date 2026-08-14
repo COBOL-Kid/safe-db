@@ -110,6 +110,8 @@ internal fun ExploreWorksheet(
     railVisible: Boolean,
     onRailVisibilityChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    // Rendered under the table so the rail spans the full height, matching Pivot/Visualization.
+    exportBar: @Composable () -> Unit = {},
 ) {
     var editingFilter by remember { mutableStateOf<String?>(null) }
     var editingGroup by remember { mutableStateOf<String?>(null) }
@@ -235,7 +237,7 @@ internal fun ExploreWorksheet(
         }
         HorizontalDivider(
             modifier = Modifier.width(1.dp).fillMaxHeight(),
-            color = MaterialTheme.colorScheme.outlineVariant,
+            color = MaterialTheme.colorScheme.outline,
         )
 
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -268,6 +270,7 @@ internal fun ExploreWorksheet(
                 onToggleGroup = onToggleGroup,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
+            exportBar()
         }
     }
 }
@@ -951,7 +954,7 @@ private fun CalculationRail(
     modifier: Modifier,
 ) {
     val scroll = rememberScrollState()
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
+    Surface(modifier = modifier, color = SafeDbTheme.colors.workspacePanel) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier =
