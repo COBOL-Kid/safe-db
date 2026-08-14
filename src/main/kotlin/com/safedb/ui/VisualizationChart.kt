@@ -249,15 +249,20 @@ internal fun visualizationGeometry(
             val minX = preview.marks.minOf { it.xValue ?: 0.0 }
             val maxX =
                 preview.marks.maxOf { it.xValue ?: 0.0 }.let { if (it == minX) it + 1.0 else it }
+            val padding = 8f
+            // Both axes map through a padded range so a short plot cannot invert the bounds.
+            val paddedHeight = (plot.height - padding * 2f).coerceAtLeast(0f)
             preview.marks.forEach { mark ->
-                val padding = 8f
                 val x =
                     plot.left +
                         padding +
                         (((mark.xValue ?: minX) - minX) / (maxX - minX) *
                                 (plot.width - padding * 2f))
                             .toFloat()
-                val y = yPosition(mark.y).coerceIn(plot.top + padding, plot.bottom - padding)
+                val y =
+                    plot.bottom -
+                        padding -
+                        ((mark.y - rawMin) / (yMax - rawMin) * paddedHeight).toFloat()
                 val point = Offset(x, y)
                 val radius = (mark.size?.let { 4f + min(10.0, abs(it) / 10.0).toFloat() } ?: 6f)
                 points[mark.id] = point
@@ -497,11 +502,12 @@ private fun PlotChart(
             val lineHeight = ticks.maxOf { it.height }.toFloat()
             val bottom = lineHeight + gapPx * 2f
             val top = lineHeight / 2f + gapPx
-            val lastCategoryWidth =
-                preview.marks
-                    .distinctBy { it.xKey }
-                    .lastOrNull()
-                    ?.let { categoryLabelWidths[it.xKey] ?: 0f } ?: 0f
+            // Scatter marks keep sample order, so the right edge belongs to the max X value.
+            val lastCategory =
+                if (preview.chartType == ChartType.Scatter)
+                    preview.marks.maxByOrNull { it.xValue ?: Double.NEGATIVE_INFINITY }
+                else preview.marks.distinctBy { it.xKey }.lastOrNull()
+            val lastCategoryWidth = lastCategory?.let { categoryLabelWidths[it.xKey] ?: 0f } ?: 0f
             if (horizontalBars) {
                 val category = categoryLabelWidths.values.maxOrNull() ?: 0f
                 PlotInsets(
@@ -517,7 +523,7 @@ private fun PlotChart(
                 PlotInsets(
                     left = (tickWidth + gapPx * 2f).coerceIn(minGutter, maxGutter),
                     top = top,
-                    right = max(28f, lastCategoryWidth / 2f + gapPx),
+                    right = max(28f, lastCategoryWidth / 2f + gapPx).coerceAtMost(maxGutter),
                     bottom = bottom,
                 )
             }
@@ -665,15 +671,14 @@ private fun PlotChart(
                                 val color =
                                     seriesPalette[seriesIndex[key]?.rem(seriesPalette.size) ?: 0]
                                 marks.zipWithNext().forEach { (left, right) ->
-                                    drawLine(
-                                        color,
-                                        geometry.points.getValue(left.id),
-                                        geometry.points.getValue(right.id),
-                                        strokeWidth = 3f,
-                                    )
+                                    // The first frame draws before the measured size feeds back
+                                    // into geometry, so points can be missing.
+                                    val start = geometry.points[left.id] ?: return@forEach
+                                    val end = geometry.points[right.id] ?: return@forEach
+                                    drawLine(color, start, end, strokeWidth = 3f)
                                 }
                                 marks.forEach { mark ->
-                                    val point = geometry.points.getValue(mark.id)
+                                    val point = geometry.points[mark.id] ?: return@forEach
                                     drawCircle(
                                         color,
                                         if (hovered?.id == mark.id) 7f else 5f,
@@ -688,7 +693,9 @@ private fun PlotChart(
                             val color =
                                 seriesPalette[
                                     seriesIndex[mark.seriesKey]?.rem(seriesPalette.size) ?: 0]
-                            val region = geometry.regions.first { it.markId == mark.id }
+                            val region =
+                                geometry.regions.firstOrNull { it.markId == mark.id }
+                                    ?: return@forEach
                             drawCircle(
                                 color.copy(alpha = 0.82f),
                                 region.bounds.width / 2f,
@@ -712,10 +719,7 @@ private fun PlotChart(
                 if (horizontalBars) {
                     val bandHeight = plot.height / categoryMarks.size.coerceAtLeast(1)
                     val lineHeight = textMeasurer.measure("0", labelStyle).size.height.toFloat()
-                    val step =
-                        ceil((lineHeight + 2f) / bandHeight.coerceAtLeast(1f))
-                            .toInt()
-                            .coerceAtLeast(1)
+                    val step = categoryLabelStep(lineHeight + 2f, bandHeight)
                     val available = plot.left - gapPx * 2f
                     categoryMarks
                         .filterIndexed { index, _ -> index % step == 0 }
@@ -735,16 +739,17 @@ private fun PlotChart(
                     val centers = categoryMarks.mapNotNull { geometry.categoryCenters[it.xKey] }
                     val slot = categoryLabelSlot(centers, plot.width)
                     val widest = categoryMarks.maxOf { categoryLabelWidths[it.xKey] ?: 0f }
-                    val step =
-                        ceil(min(widest + gapPx, 160f) / slot.coerceAtLeast(1f))
-                            .toInt()
-                            .coerceAtLeast(1)
-                    val available = slot * step - gapPx
+                    val step = categoryLabelStep(min(widest + gapPx, 160f), slot)
+                    val available = (slot * step - gapPx).coerceAtLeast(0f)
                     categoryMarks
                         .filterIndexed { index, _ -> index % step == 0 }
                         .forEach { mark ->
                             val x = geometry.categoryCenters[mark.xKey] ?: return@forEach
-                            val label = fitted(mark.xLabel, available)
+                            val label =
+                                fitted(
+                                    mark.xLabel,
+                                    categoryLabelMaxWidth(x, plot.left, canvasWidth, available),
+                                )
                             drawText(
                                 label,
                                 topLeft =
@@ -816,18 +821,37 @@ internal fun plotRect(width: Float, height: Float, insets: PlotInsets): Rect {
     val minPlotHeight = 30f
     val maxLeft = (width - insets.right.coerceAtLeast(0f) - minPlotWidth).coerceAtLeast(0f)
     val left = insets.left.coerceIn(0f, maxLeft)
-    val right = (width - insets.right).coerceAtLeast(left).coerceAtMost(width)
+    // Trailing insets shrink before the plot drops below its minimum size.
+    val right = (width - insets.right).coerceAtLeast(left + minPlotWidth).coerceAtMost(width)
     val maxTop = (height - insets.bottom.coerceAtLeast(0f) - minPlotHeight).coerceAtLeast(0f)
     val top = insets.top.coerceIn(0f, maxTop)
-    val bottom = (height - insets.bottom).coerceAtLeast(top).coerceAtMost(height)
+    val bottom = (height - insets.bottom).coerceAtLeast(top + minPlotHeight).coerceAtMost(height)
     return Rect(left, top, right, bottom)
 }
 
 internal fun valueTickMaxWidth(horizontalBars: Boolean, plot: Rect, gapPx: Float): Float =
     if (horizontalBars) max(plot.width / 4f, 1f) else max(plot.left - gapPx, 0f)
 
-internal fun categoryLabelSlot(centers: List<Float>, plotWidth: Float): Float =
-    if (centers.size <= 1) plotWidth else abs(centers.last() - centers.first()) / (centers.size - 1)
+internal fun categoryLabelSlot(centers: List<Float>, plotWidth: Float): Float {
+    if (centers.size <= 1) return plotWidth
+    // Scatter centers arrive in sample order, not axis order.
+    val sorted = centers.sorted()
+    return (sorted.last() - sorted.first()) / (centers.size - 1)
+}
+
+internal fun categoryLabelStep(labelExtent: Float, band: Float): Int =
+    ceil(labelExtent / band.coerceAtLeast(1e-3f)).toInt().coerceAtLeast(1)
+
+// A label clamped at either edge shifts off its center; capping its width at half the slot plus
+// the room to that edge keeps it clear of the neighbouring centered label.
+internal fun categoryLabelMaxWidth(
+    center: Float,
+    minX: Float,
+    canvasWidth: Float,
+    available: Float,
+): Float =
+    minOf(available, available / 2f + (center - minX), available / 2f + (canvasWidth - center))
+        .coerceAtLeast(0f)
 
 internal fun clampLabelX(x: Float, labelWidth: Float, minX: Float, canvasWidth: Float): Float =
     min(max(minX, x), max(minX, canvasWidth - labelWidth))

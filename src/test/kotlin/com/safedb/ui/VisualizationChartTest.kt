@@ -116,6 +116,47 @@ class VisualizationChartTest {
     }
 
     @Test
+    fun plotRectPreservesMinimumPlotSizeAgainstOversizedTrailingInsets() {
+        val wide = plotRect(400f, 300f, PlotInsets(left = 80f, right = 400f))
+        val short = plotRect(400f, 70f, PlotInsets())
+
+        assertTrue(wide.width >= 20f)
+        assertTrue(wide.right <= 400f)
+        assertTrue(short.height >= 30f)
+        assertTrue(short.bottom <= 70f)
+    }
+
+    @Test
+    fun oversizedRightInsetStillProducesBarRegionsAndValueRange() {
+        val geometry =
+            visualizationGeometry(
+                preview(ChartType.Bar),
+                VisualizationConfig(chartType = ChartType.Bar),
+                150f,
+                200f,
+                PlotInsets(left = 72f, right = 180f),
+            )
+
+        assertTrue(geometry.regions.isNotEmpty())
+        assertEquals(10.0, geometry.yMax)
+    }
+
+    @Test
+    fun scatterGeometryOnTinyCanvasDoesNotThrowAndStaysInsidePlot() {
+        val geometry =
+            visualizationGeometry(
+                preview(ChartType.Scatter),
+                VisualizationConfig(chartType = ChartType.Scatter),
+                400f,
+                12f,
+            )
+
+        assertTrue(
+            geometry.points.values.all { it.y >= geometry.plot.top && it.y <= geometry.plot.bottom }
+        )
+    }
+
+    @Test
     fun horizontalBarsWithNegativeValuesUseComputedZeroBaseline() {
         val preview =
             VisualizationPreview(
@@ -237,11 +278,35 @@ class VisualizationChartTest {
     }
 
     @Test
+    fun categoryLabelSlotSortsUnsortedScatterCenters() {
+        assertEquals(150f, categoryLabelSlot(listOf(100f, 400f, 110f), 300f))
+    }
+
+    @Test
+    fun categoryLabelStepSkipsEnoughWhenBandIsBelowOnePixel() {
+        assertTrue(categoryLabelStep(labelExtent = 18f, band = 0.8f) >= 23)
+        assertEquals(1, categoryLabelStep(labelExtent = 126f, band = 200f))
+    }
+
+    @Test
     fun categoryLabelClampStaysOutOfTheYTickColumn() {
         val x = clampLabelX(x = 0f, labelWidth = 40f, minX = 72f, canvasWidth = 400f)
 
         assertEquals(72f, x)
         assertTrue(x >= 72f)
+    }
+
+    @Test
+    fun edgeClampedFirstLineLabelDoesNotOverlapItsNeighbour() {
+        val plotLeft = 72f
+        val slot = 200f
+        val available = slot - 6f
+        val firstWidth = categoryLabelMaxWidth(plotLeft, plotLeft, 500f, available)
+        val firstLeft = clampLabelX(plotLeft - firstWidth / 2f, firstWidth, plotLeft, 500f)
+        val secondCenter = plotLeft + slot
+
+        assertTrue(firstLeft + firstWidth <= secondCenter - available / 2f)
+        assertEquals(available, categoryLabelMaxWidth(secondCenter, plotLeft, 500f, available))
     }
 
     @Test
