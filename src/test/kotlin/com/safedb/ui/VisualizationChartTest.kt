@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.ui.geometry.Rect
 import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
@@ -10,8 +11,11 @@ import com.safedb.explore.VisualizationMeasure
 import com.safedb.explore.VisualizationPreview
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultColumn
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class VisualizationChartTest {
@@ -58,6 +62,57 @@ class VisualizationChartTest {
         assertEquals(firstCategory[0].left, firstCategory[1].left)
         assertEquals(firstCategory[0].right, firstCategory[1].right)
         assertEquals(firstCategory[0].top, firstCategory[1].bottom)
+    }
+
+    @Test
+    fun stackedNegativeBarsSumRangeAndStayClickable() {
+        val preview =
+            VisualizationPreview(
+                chartType = ChartType.Bar,
+                title = "Chart",
+                marks =
+                    listOf(
+                        mark("n1", "a", "A", "one", -10.0, 1.0),
+                        mark("n2", "a", "A", "two", -20.0, 2.0),
+                    ),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                barArrangement = BarArrangement.Stacked,
+            )
+        val geometry = visualizationGeometry(preview, config, 800f, 500f)
+        val first = geometry.regions.first { it.markId == "n1" }.bounds
+        val second = geometry.regions.first { it.markId == "n2" }.bounds
+        val zero =
+            geometry.plot.bottom -
+                ((0.0 - geometry.yMin) / (geometry.yMax - geometry.yMin) * geometry.plot.height)
+                    .toFloat()
+
+        assertEquals(-30.0, visualizationValueRange(preview, config).start)
+        assertEquals(-30.0, geometry.yMin)
+        assertTrue(first.height > 0f && first.top < first.bottom)
+        assertTrue(second.height > 0f && second.top < second.bottom)
+        assertEquals(first.left, second.left)
+        assertEquals(first.right, second.right)
+        assertEquals(zero, first.top)
+        assertEquals(first.bottom, second.top)
+    }
+
+    @Test
+    fun measuredInsetsThatExceedCanvasKeepThePlotOnCanvas() {
+        val geometry =
+            visualizationGeometry(
+                preview(ChartType.Bar),
+                VisualizationConfig(chartType = ChartType.Bar),
+                150f,
+                200f,
+                PlotInsets(left = 180f, right = 28f),
+            )
+
+        assertTrue(geometry.plot.left >= 0f)
+        assertTrue(geometry.plot.right <= 150f)
+        assertTrue(geometry.plot.width > 0f)
     }
 
     @Test
@@ -149,10 +204,56 @@ class VisualizationChartTest {
 
     @Test
     fun compactNumberCoversBillionsAndTrillions() {
-        assertEquals("5.0T", compactNumber(5e12))
-        assertEquals("-2.5B", compactNumber(-2.5e9))
-        assertEquals("1.5M", compactNumber(1.5e6))
-        assertEquals("12", compactNumber(12.0))
+        val previous = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.GERMANY)
+            assertEquals("5.0T", compactNumber(5e12))
+            assertEquals("-2.5B", compactNumber(-2.5e9))
+            assertEquals("1.5M", compactNumber(1.5e6))
+            assertEquals("12", compactNumber(12.0))
+        } finally {
+            Locale.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun horizontalValueTicksUseBottomAxisBudgetNotLeftGutter() {
+        val plot = Rect(44f, 24f, 400f, 200f)
+        val gapPx = 12f
+
+        assertEquals(plot.width / 4f, valueTickMaxWidth(true, plot, gapPx))
+        assertEquals(32f, valueTickMaxWidth(false, plot, gapPx))
+    }
+
+    @Test
+    fun lineCategoryLabelSlotUsesSpacingBetweenCenters() {
+        val slot = categoryLabelSlot(listOf(0f, 200f), 200f)
+        val widest = 120f
+
+        assertEquals(200f, slot)
+        assertTrue(widest > 200f / 2f)
+        assertTrue(widest < 200f)
+        assertEquals(1, kotlin.math.ceil((widest + 6f) / slot).toInt())
+    }
+
+    @Test
+    fun categoryLabelClampStaysOutOfTheYTickColumn() {
+        val x = clampLabelX(x = 0f, labelWidth = 40f, minX = 72f, canvasWidth = 400f)
+
+        assertEquals(72f, x)
+        assertTrue(x >= 72f)
+    }
+
+    @Test
+    fun tooltipAlignsToEndWhenPointerIsOnTheLeftHalf() {
+        assertFalse(tooltipAlignsToStart(pointerX = 10f, plotCenterX = 100f))
+        assertTrue(tooltipAlignsToStart(pointerX = 150f, plotCenterX = 100f))
+    }
+
+    @Test
+    fun inBarLabelOmitsValuesThatDoNotFitRatherThanChangingUnits() {
+        assertNull(inBarLabelOrNull("50%", formattedWidth = 40f, available = 20f))
+        assertEquals("50%", inBarLabelOrNull("50%", formattedWidth = 20f, available = 40f))
     }
 
     @Test

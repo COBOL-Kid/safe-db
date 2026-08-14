@@ -147,14 +147,14 @@ jobs:
         run: |
           rm -rf /tmp/safedb-preview
           xvfb-run -a ./gradlew renderPreview --rerun-tasks
-          test "$(find /tmp/safedb-preview -name '*.png' -type f -size +0c | wc -l | tr -d ' ')" = "36"
+          test "$(find /tmp/safedb-preview -name '*.png' -type f -size +0c | wc -l | tr -d ' ')" = "40"
           for image in /tmp/safedb-preview/{home,connections,connections-new,connections-edit,builder,builder-collapsed,map,history}-{light,dark}.png; do
             test "$(identify -format '%wx%h' "$image")" = "1280x832"
           done
           for image in /tmp/safedb-preview/connections-new-narrow-{light,dark}.png; do
             test "$(identify -format '%wx%h' "$image")" = "840x900"
           done
-          for image in /tmp/safedb-preview/{explore,explore-pivot,explore-worksheet,explore-visualization-empty,explore-visualization-bar,explore-visualization-horizontal,explore-visualization-line,explore-visualization-scatter,explore-recipes}-{light,dark}.png; do
+          for image in /tmp/safedb-preview/{explore,explore-pivot,explore-worksheet,explore-visualization-empty,explore-visualization-bar,explore-visualization-horizontal,explore-visualization-line,explore-visualization-scatter,explore-visualization-kpi,explore-visualization-histogram,explore-recipes}-{light,dark}.png; do
             test "$(identify -format '%wx%h' "$image")" = "1120x760"
           done
       - name: Upload preview renders
