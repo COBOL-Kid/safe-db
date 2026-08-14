@@ -20,3 +20,5 @@ Thumbs.db
 # Local agent instructions (kept on disk, not in repo)
 AGENTS.md
 CLAUDE.md
+.cursor/
+.claude/

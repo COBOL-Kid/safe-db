@@ -727,6 +727,33 @@ private fun renderExplore(
                         size = VisualizationField("t0__total_cents", "Order value"),
                         title = "Order value by order ID",
                     )
+                "kpi" ->
+                    VisualizationConfig(
+                        chartType = ChartType.Kpi,
+                        values =
+                            listOf(
+                                VisualizationMeasure(
+                                    "revenue",
+                                    MeasureFn.Sum,
+                                    "t0__total_cents",
+                                    "Total revenue",
+                                    numberFormat =
+                                        PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
+                                )
+                            ),
+                        title = "Total sampled revenue",
+                    )
+                "histogram" ->
+                    VisualizationConfig(
+                        chartType = ChartType.Histogram,
+                        x =
+                            VisualizationField(
+                                "t0__total_cents",
+                                "Order value",
+                                PivotGrouping.NumberBin(size = "2500"),
+                            ),
+                        title = "Order value distribution",
+                    )
                 else -> VisualizationConfig()
             }
         viewModel.updateVisualization { chart }
@@ -930,6 +957,8 @@ fun main() {
         )
         renderExplore("explore-visualization-line-$suffix", dark, visualization = "line")
         renderExplore("explore-visualization-scatter-$suffix", dark, visualization = "scatter")
+        renderExplore("explore-visualization-kpi-$suffix", dark, visualization = "kpi")
+        renderExplore("explore-visualization-histogram-$suffix", dark, visualization = "histogram")
         renderRecipeLibrary("explore-recipes-$suffix", dark)
     }
 }

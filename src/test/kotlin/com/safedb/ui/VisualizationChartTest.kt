@@ -111,6 +111,51 @@ class VisualizationChartTest {
     }
 
     @Test
+    fun geometryHonoursMeasuredInsets() {
+        val geometry =
+            visualizationGeometry(
+                preview(ChartType.Bar),
+                VisualizationConfig(chartType = ChartType.Bar),
+                900f,
+                500f,
+                PlotInsets(left = 130f, bottom = 90f),
+            )
+
+        assertEquals(130f, geometry.plot.left)
+        assertEquals(410f, geometry.plot.bottom)
+        assertTrue(
+            geometry.regions.all {
+                it.bounds.left >= geometry.plot.left && it.bounds.right <= geometry.plot.right
+            }
+        )
+    }
+
+    @Test
+    fun categoryCentersUseBandCenterNotFirstSeriesBar() {
+        val geometry =
+            visualizationGeometry(
+                preview(ChartType.Bar),
+                VisualizationConfig(chartType = ChartType.Bar),
+                900f,
+                500f,
+            )
+        val band = geometry.plot.width / 2f
+        val center = geometry.categoryCenters.getValue("a")
+
+        assertEquals(geometry.plot.left + band / 2f, center)
+        assertTrue(center > geometry.points.getValue("a-1").x)
+        assertTrue(center < geometry.points.getValue("a-2").x)
+    }
+
+    @Test
+    fun compactNumberCoversBillionsAndTrillions() {
+        assertEquals("5.0T", compactNumber(5e12))
+        assertEquals("-2.5B", compactNumber(-2.5e9))
+        assertEquals("1.5M", compactNumber(1.5e6))
+        assertEquals("12", compactNumber(12.0))
+    }
+
+    @Test
     fun switchingToScatterClearsIncompatibleAssignments() {
         val sample =
             QueryResult(
