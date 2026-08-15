@@ -16,13 +16,18 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.TableRows
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.DataMono
@@ -85,18 +91,28 @@ fun ResultsTable(
                         .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 for (warning in result.warnings) {
-                    Text("\u26A0 $warning", style = MaterialTheme.typography.labelSmall)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            Icons.Outlined.WarningAmber,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(warning, style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
 
         if (result.rows.isEmpty() && result.columns.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("No rows returned.", style = MaterialTheme.typography.bodySmall)
-            }
+            EmptyState(
+                icon = Icons.Outlined.TableRows,
+                title = "No rows returned",
+                subtitle = "The query completed without any rows.",
+            )
         } else {
             val horizontalScroll = rememberScrollState()
             val listState = rememberLazyListState()
@@ -135,6 +151,7 @@ fun ResultsTable(
                             "No rows returned.",
                             modifier = Modifier.padding(16.dp),
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
                         LazyColumn(

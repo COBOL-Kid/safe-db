@@ -13,6 +13,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 
 @Composable
 fun DeleteIconButton(
@@ -30,7 +32,10 @@ fun DeleteIconButton(
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         }
-    IconButton(onClick = onClick, modifier = modifier.hoverable(interactionSource)) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.hoverable(interactionSource).pointerHoverIcon(PointerIcon.Hand),
+    ) {
         Icon(icon, contentDescription = contentDescription, tint = tint, modifier = iconModifier)
     }
 }

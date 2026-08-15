@@ -249,7 +249,19 @@ private val ControlBlueDark =
         errorContainer = Color(0xFF2A1414),
         onErrorContainer = Color(0xFFFCA5A5),
         scrim = Color(0x99000000),
-        series = VisualizationSeriesPalette,
+        // Hue order mirrors VisualizationSeriesPalette so each series keeps its identity
+        // when the user toggles between light and dark.
+        series =
+            listOf(
+                Color(0xFF6EA2FF),
+                Color(0xFF2DD4BF),
+                Color(0xFFFBBF24),
+                Color(0xFFA78BFA),
+                Color(0xFFFB7185),
+                Color(0xFF38BDF8),
+                Color(0xFFA3E635),
+                Color(0xFFFB923C),
+            ),
         materialPrimary = Color(0xFF6EA2FF),
         onMaterialPrimary = Color(0xFF07172C),
         materialPrimaryContainer = Color(0xFF173761),

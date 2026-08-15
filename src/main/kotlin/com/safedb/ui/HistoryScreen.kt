@@ -46,6 +46,8 @@ import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
+import com.safedb.ui.theme.TitleHeaderVerticalPadding
 import com.safedb.ui.util.formatTime
 import com.safedb.ui.util.summarizeSpec
 import com.safedb.viewmodel.AppViewModel
@@ -111,7 +113,10 @@ fun HistoryScreen(
             modifier =
                 Modifier.fillMaxWidth()
                     .background(SafeDbTheme.colors.workspaceHeader)
-                    .padding(horizontal = 32.dp, vertical = 20.dp),
+                    .padding(
+                        horizontal = ScreenHeaderHorizontalPadding,
+                        vertical = TitleHeaderVerticalPadding,
+                    ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {

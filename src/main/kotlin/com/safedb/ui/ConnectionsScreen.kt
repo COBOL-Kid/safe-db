@@ -48,6 +48,8 @@ import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.LabelMicro
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
+import com.safedb.ui.theme.TitleHeaderVerticalPadding
 import com.safedb.viewmodel.ConnectionsViewModel
 
 @Composable
@@ -111,7 +113,10 @@ internal fun ConnectionsScreenContent(
             modifier =
                 Modifier.fillMaxWidth()
                     .background(SafeDbTheme.colors.workspaceHeader)
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                    .padding(
+                        horizontal = ScreenHeaderHorizontalPadding,
+                        vertical = TitleHeaderVerticalPadding,
+                    ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {

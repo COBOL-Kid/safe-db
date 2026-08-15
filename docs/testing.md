@@ -7,7 +7,7 @@
 | `./gradlew check` | Fast gate: desktop/shared unit tests, discovery, and Kover ratchets. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh coverage proof for broad Kotlin/build changes. |
 | `./gradlew integrationTest` | Environment-gated `:shared` JDBC suite. |
-| `./gradlew renderPreview --rerun-tasks` | Render 40 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
+| `./gradlew renderPreview --rerun-tasks` | Render 42 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
 | `./gradlew seedMysql` | Generate the default 50,000-order MySQL fixture. |
 | `./gradlew seedPostgres` | Generate the default fixture in the Docker PostgreSQL endpoint. |

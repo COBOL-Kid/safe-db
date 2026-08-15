@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +49,11 @@ fun ModeToggle(isDark: Boolean, onSelect: (Boolean) -> Unit, modifier: Modifier 
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         ModeSegment("Light", selected = !isDark, onClick = { onSelect(false) }) {
-            Icon(Icons.Filled.WbSunny, contentDescription = null, modifier = Modifier.size(14.dp))
+            Icon(
+                Icons.Outlined.WbSunny,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+            )
         }
         ModeSegment("Dark", selected = isDark, onClick = { onSelect(true) }) {
             Icon(
@@ -69,6 +75,7 @@ private fun ModeSegment(
     Surface(
         selected,
         onClick,
+        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand),
         shape = ChipShape,
         color = if (selected) SafeDbTheme.colors.accentContainer else Color.Transparent,
         contentColor =
@@ -128,9 +135,10 @@ private fun ColorSchemeRow(
         onClick,
         interactionSource = interactionSource,
         modifier =
-            Modifier.fillMaxWidth().hoverable(interactionSource).semantics {
-                this.selected = selected
-            },
+            Modifier.fillMaxWidth()
+                .hoverable(interactionSource)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .semantics { this.selected = selected },
         shape = CardShape,
         color =
             if (selected) SafeDbTheme.colors.accentContainer

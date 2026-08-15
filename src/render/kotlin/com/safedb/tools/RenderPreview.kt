@@ -934,6 +934,28 @@ fun main() {
             Thread.sleep(900)
         }
 
+        // Minimum window width with unjoined tables: the header shows the join hint while
+        // Run is disabled, which used to squeeze the run controls out of the header row.
+        render(
+            "builder-narrow-$suffix",
+            dark,
+            sidebarCollapsed = true,
+            width = 960,
+            height = 700,
+        ) { state, vm ->
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
+            state.navigate(AppRoute.Builder)
+            vm.schema.load("c1", selection = selection) { loaded ->
+                if (loaded) {
+                    vm.query.addTable(vm.schema.tables[1])
+                    vm.query.addTable(vm.schema.tables[0])
+                    vm.query.moveTable("t1", 360f, 28f)
+                }
+            }
+            Thread.sleep(900)
+        }
+
         render("map-$suffix", dark, additionalSettleFrames = 1) { state, vm ->
             val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
             state.setActiveConnection("c1", selection)

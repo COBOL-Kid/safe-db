@@ -131,6 +131,8 @@ import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
+import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.CANVAS_MAX_ZOOM
 import com.safedb.viewmodel.CANVAS_MIN_ZOOM
 import com.safedb.viewmodel.CANVAS_ZOOM_STEP
@@ -295,7 +297,10 @@ private fun SchemaMapHeader(
         modifier =
             Modifier.fillMaxWidth()
                 .background(SafeDbTheme.colors.workspaceHeader)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(
+                    horizontal = ScreenHeaderHorizontalPadding,
+                    vertical = ToolbarHeaderVerticalPadding,
+                ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
@@ -420,7 +425,7 @@ private fun SchemaMapHeader(
             }
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable

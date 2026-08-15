@@ -30,15 +30,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -58,6 +58,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -72,6 +74,7 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
 import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
+import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import kotlin.time.Duration.Companion.milliseconds
@@ -411,7 +414,7 @@ internal fun Sidebar(
             )
 
             Column(
-                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 horizontalAlignment = Alignment.Start,
             ) {
@@ -456,6 +459,7 @@ private fun SidebarHeader(
                 Modifier.fillMaxWidth()
                     .height(SidebarHeaderHeight)
                     .clickable(onClick = onToggleCollapsed)
+                    .pointerHoverIcon(PointerIcon.Hand)
                     .semantics { contentDescription = "Expand sidebar" },
             contentAlignment = Alignment.Center,
         ) {
@@ -513,7 +517,7 @@ private fun SidebarUtilities(
 ) {
     val c = SafeDbTheme.colors
     Column(
-        modifier = Modifier.padding(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -523,7 +527,7 @@ private fun SidebarUtilities(
                 modifier = Modifier.size(32.dp),
             ) { enabled ->
                 SidebarIconButton(
-                    icon = Icons.Filled.Search,
+                    icon = Icons.Outlined.Search,
                     contentDescription = "Search commands",
                     enabled = enabled,
                     onClick = onOpenPalette,
@@ -540,7 +544,7 @@ private fun SidebarUtilities(
                 modifier = Modifier.size(32.dp),
             ) { enabled ->
                 SidebarIconButton(
-                    icon = Icons.Filled.Settings,
+                    icon = Icons.Outlined.Settings,
                     contentDescription = "Settings",
                     enabled = enabled,
                     onClick = onOpenSettings,
@@ -551,7 +555,7 @@ private fun SidebarUtilities(
                 modifier = Modifier.size(32.dp),
             ) { enabled ->
                 SidebarIconButton(
-                    icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                    icon = if (isDark) Icons.Outlined.WbSunny else Icons.Outlined.DarkMode,
                     contentDescription = "Toggle theme",
                     enabled = enabled,
                     onClick = onToggleTheme,
@@ -595,7 +599,7 @@ private fun SidebarUtilities(
                     SidebarFade(visible = settingsVisible, modifier = Modifier.size(32.dp)) {
                         enabled ->
                         SidebarIconButton(
-                            icon = Icons.Filled.Settings,
+                            icon = Icons.Outlined.Settings,
                             contentDescription = "Settings",
                             enabled = enabled,
                             onClick = onOpenSettings,
@@ -604,7 +608,7 @@ private fun SidebarUtilities(
                     SidebarFade(visible = themeVisible, modifier = Modifier.size(32.dp)) { enabled
                         ->
                         SidebarIconButton(
-                            icon = if (isDark) Icons.Filled.WbSunny else Icons.Outlined.DarkMode,
+                            icon = if (isDark) Icons.Outlined.WbSunny else Icons.Outlined.DarkMode,
                             contentDescription = "Toggle theme",
                             enabled = enabled,
                             onClick = onToggleTheme,
@@ -620,7 +624,7 @@ private fun SidebarUtilities(
 private fun LogoMark() {
     val c = SafeDbTheme.colors
     Box(
-        modifier = Modifier.size(34.dp).clip(RoundedCornerShape(2.dp)).background(c.actionPrimary),
+        modifier = Modifier.size(34.dp).clip(ChipShape).background(c.actionPrimary),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -637,7 +641,7 @@ private fun SidebarStatusIndicator() {
     val c = SafeDbTheme.colors
     Box(
         modifier =
-            Modifier.size(32.dp).clip(RoundedCornerShape(2.dp)).semantics {
+            Modifier.size(32.dp).clip(ChipShape).semantics {
                 contentDescription = "Safe Read Mode"
             },
         contentAlignment = Alignment.Center,
@@ -662,10 +666,11 @@ private fun SidebarIconButton(
     Box(
         modifier =
             Modifier.size(32.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .clip(ChipShape)
                 .background(background)
                 .hoverable(interactionSource, enabled = enabled)
-                .clickable(enabled = enabled, onClick = onClick),
+                .clickable(enabled = enabled, onClick = onClick)
+                .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -706,32 +711,41 @@ private fun NavButton(
             }
         )
 
-    Row(
+    // Keep icons in their own layer so label expand/shrink cannot shift the rail.
+    Box(
         modifier =
             Modifier.fillMaxWidth()
                 .height(44.dp)
                 .background(background)
                 .hoverable(interactionSource)
                 .clickable(onClick = onClick)
-                .padding(end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Start,
+                .pointerHoverIcon(PointerIcon.Hand)
     ) {
-        Box(
+        Row(
+            modifier = Modifier.fillMaxHeight(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            Box(
+                modifier =
+                    Modifier.width(NavRailIndicatorWidth)
+                        .fillMaxHeight()
+                        .background(if (selected) c.actionPrimary else Color.Transparent)
+            )
+            Spacer(Modifier.width(NavRailIconStartGap))
+            Icon(
+                item.icon,
+                contentDescription = if (collapsed) item.label else null,
+                tint = content,
+                modifier = Modifier.size(NavRailIconSize),
+            )
+        }
+        AnimatedSidebarLabel(
+            visible = labelVisible,
             modifier =
-                Modifier.width(3.dp)
-                    .fillMaxHeight()
-                    .background(if (selected) c.actionPrimary else Color.Transparent)
-        )
-        Spacer(Modifier.width(9.dp))
-        Icon(
-            item.icon,
-            contentDescription = if (collapsed) item.label else null,
-            tint = content,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(11.dp))
-        AnimatedSidebarLabel(visible = labelVisible) {
+                Modifier.align(Alignment.CenterStart)
+                    .padding(start = NavIconRailWidth, end = 12.dp),
+        ) {
             Text(
                 item.label,
                 color = content,
@@ -815,6 +829,12 @@ private data class NavItem(val route: AppRoute, val label: String, val icon: Ima
 private val ExpandedSidebarWidth = 232.dp
 private val CollapsedSidebarWidth = 72.dp
 private val SidebarHeaderHeight = 78.dp
+private val NavRailIndicatorWidth = 3.dp
+private val NavRailIconStartGap = 9.dp
+private val NavRailIconSize = 18.dp
+private val NavRailLabelGap = 11.dp
+private val NavIconRailWidth =
+    NavRailIndicatorWidth + NavRailIconStartGap + NavRailIconSize + NavRailLabelGap
 private const val SidebarWidthAnimationMillis = 240
 private const val SidebarRevealStaggerMillis = 55
 private const val SidebarExpandedExitMillis = 120

@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.unit.dp
 import com.safedb.ui.theme.ButtonShape
 import com.safedb.ui.theme.SafeDbTheme
@@ -57,7 +59,8 @@ fun PrimaryButton(
         }
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier =
+            modifier.then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier),
         enabled = enabled,
         shape = ButtonShape,
         colors = colors,
@@ -89,7 +92,8 @@ fun SecondaryButton(
 
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier =
+            modifier.then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier),
         enabled = enabled,
         shape = ButtonShape,
         colors =
