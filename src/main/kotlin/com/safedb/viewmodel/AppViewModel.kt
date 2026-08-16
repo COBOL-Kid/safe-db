@@ -136,8 +136,9 @@ class AppViewModel(
                 return@restoreQueryForConnection
             }
             onRestored()
-            if (!query.canRun) {
-                if (query.running) {
+            // The SQL editor holds the same app-wide slot, so a run there blocks this one too.
+            if (!query.canRun || sqlEditor.running) {
+                if (query.running || sqlEditor.running) {
                     _recipeApplyNotice.value = RECIPE_APPLY_BUSY_NOTICE
                 }
                 _pendingRecipeRun.value = null

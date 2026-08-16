@@ -65,7 +65,7 @@ import javax.swing.JFileChooser
 @Composable
 fun ExploreWindowContent(
     viewModel: ExploreViewModel,
-    currentSpec: QuerySpec,
+    currentSpec: QuerySpec?,
     onClose: () -> Unit,
     origin: ExploreOrigin = ExploreOrigin.Builder,
     onRefreshSample: (() -> Unit)? = null,

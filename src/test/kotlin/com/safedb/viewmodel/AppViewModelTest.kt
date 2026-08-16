@@ -163,6 +163,32 @@ class AppViewModelTest {
         }
 
     @Test
+    fun openExploreRecordsTheOriginScreen() =
+        runTest(dispatcher) {
+            val viewModel = AppViewModel(FakeSafeDbService(), dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                val result =
+                    QueryResult(
+                        columns = listOf(ResultColumn("t0__status", "varchar")),
+                        rows = listOf(listOf(ResultCell.text("pending"))),
+                        rowCount = 1,
+                        truncated = false,
+                        warnings = emptyList(),
+                    )
+
+                viewModel.openExplore(connection, sampleSpec(), result)
+                assertEquals(ExploreOrigin.Builder, viewModel.exploreOrigin.value)
+
+                viewModel.openExplore(connection, sampleSpec(), result, ExploreOrigin.Sql)
+                assertEquals(ExploreOrigin.Sql, viewModel.exploreOrigin.value)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
     fun refreshExploreSampleReplacesSessionSampleAndSpecHash() =
         runTest(dispatcher) {
             val service = FakeSafeDbService()
@@ -903,6 +929,51 @@ class AppViewModelTest {
 
                 viewModel.dismissRecipeApplyNotice()
                 assertNull(viewModel.recipeApplyNotice.value)
+
+                gate.complete(Unit)
+                advanceUntilIdle()
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun recipeRunIsSuppressedWhileTheSqlEditorHasAQueryInFlight() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service = FakeSafeDbService(queryGate = gate, queryStarted = started)
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.sqlEditor.run("c1", sampleSpec())
+                runCurrent()
+                assertTrue(started.isCompleted)
+                assertTrue(viewModel.sqlEditor.running)
+
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-sql-busy",
+                        name = "SQL busy",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+                viewModel.runRecipe(testConnection(), recipe)
+                advanceUntilIdle()
+
+                assertEquals(1, viewModel.query.tableCount)
+                assertEquals(1, service.queryAttempts)
+                assertFalse(viewModel.query.running)
+                assertNull(viewModel.pendingRecipeRun.value)
+                assertNull(viewModel.explore.value)
+                assertEquals(
+                    "The recipe is on the canvas but was not run because a query is already running. Wait, then press Run.",
+                    viewModel.recipeApplyNotice.value,
+                )
 
                 gate.complete(Unit)
                 advanceUntilIdle()

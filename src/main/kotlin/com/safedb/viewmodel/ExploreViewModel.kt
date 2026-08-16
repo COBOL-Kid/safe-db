@@ -347,11 +347,14 @@ class ExploreViewModel(
         )
     }
 
+    // A null spec means the origin screen has nothing runnable right now, which matches no
+    // executed query.
     fun isStale(
-        currentSpec: QuerySpec,
+        currentSpec: QuerySpec?,
         currentConnectionId: String? = session.connectionId,
     ): Boolean =
         currentConnectionId != session.connectionId ||
+            currentSpec == null ||
             exploreSpecHash(currentSpec) != session.baseSpecHash
 
     fun savePreviewCsv(path: Path) {

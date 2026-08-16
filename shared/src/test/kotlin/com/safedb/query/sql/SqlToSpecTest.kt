@@ -185,6 +185,14 @@ class SqlToSpecTest {
     }
 
     @Test
+    fun joinOnUnindexedColumnsParsesButFailsValidation() {
+        val parsed =
+            spec("SELECT u.email FROM users u JOIN categories c ON u.email = c.name LIMIT 5")
+        val outcome = validateQuery(parsed, schema, emptyList(), Dialect.Postgres)
+        assertIs<Outcome.Err>(outcome, "expected validation to reject the join, got $outcome")
+    }
+
+    @Test
     fun timestampFilterWithUnparseableTextIsRejectedAtParse() {
         val issue = failure("SELECT id FROM users WHERE created_at > 'yesterday' LIMIT 5")
         assertEquals(SqlIssueCode.LiteralTypeMismatch, issue.code)

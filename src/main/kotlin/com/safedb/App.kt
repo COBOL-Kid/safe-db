@@ -25,14 +25,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.safedb.model.FilterGroup
-import com.safedb.model.QuerySpec
 import com.safedb.query.sql.SqlParseResult
 import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbService
 import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
-import com.safedb.ui.parsedSqlSpec
+import com.safedb.ui.rememberSqlParseResult
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.ExploreOrigin
@@ -52,6 +50,15 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
     val useDarkTheme = settings.theme == "dark"
     val themePalette = settings.palette()
     var paletteOpen by remember { mutableStateOf(false) }
+    // Parsed here rather than in SqlScreen so an open Explore window keeps seeing the current
+    // editor spec even while the user is on another route.
+    val sqlParseResult =
+        rememberSqlParseResult(
+            sqlText = viewModel.sqlEditor.text.text,
+            dialect = connections.firstOrNull { it.id == activeConnectionId }?.dialect,
+            schemaViewModel = viewModel.schema,
+            activeConnectionId = activeConnectionId,
+        )
 
     LaunchedEffect(initialLoading) {
         if (initialLoading) return@LaunchedEffect
@@ -106,6 +113,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                 viewModel = viewModel,
                 paletteOpen = paletteOpen,
                 onPaletteOpenChange = { paletteOpen = it },
+                sqlParseResult = sqlParseResult,
             )
         }
 
@@ -114,35 +122,11 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
             val exploreOrigin by viewModel.exploreOrigin.collectAsState()
             // The session refreshes from whichever screen produced it, so staleness and the
             // refreshed sample must come from that screen's current state.
-            val activeDialect = connections.firstOrNull { it.id == activeConnectionId }?.dialect
-            val sqlText = viewModel.sqlEditor.text.text
-            val sqlSpec =
-                remember(
-                    exploreOrigin,
-                    sqlText,
-                    activeDialect,
-                    viewModel.schema.schema,
-                    viewModel.schema.selectedSchema,
-                ) {
-                    if (exploreOrigin != ExploreOrigin.Sql) {
-                        null
-                    } else {
-                        (parsedSqlSpec(
-                                sqlText,
-                                activeDialect,
-                                viewModel.schema.schema,
-                                viewModel.schema.selectedSchema,
-                            )
-                                as? SqlParseResult.Success)
-                            ?.spec
-                    }
-                }
+            val sqlSpec = (sqlParseResult as? SqlParseResult.Success)?.spec
             val currentSpec =
                 when (exploreOrigin) {
                     ExploreOrigin.Builder -> viewModel.query.spec
-                    // An unparseable editor matches no executed query; hash as clearly stale.
-                    ExploreOrigin.Sql ->
-                        sqlSpec ?: QuerySpec(filters = FilterGroup(id = "g0"), limit = 0)
+                    ExploreOrigin.Sql -> sqlSpec
                 }
             val originSample =
                 when (exploreOrigin) {

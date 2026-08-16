@@ -150,7 +150,8 @@ fun CommandPalette(
             builderCommandsApply &&
                 runConnectionId != null &&
                 schemaMatchesConnection &&
-                viewModel.query.canRun
+                viewModel.query.canRun &&
+                !viewModel.sqlEditor.running
         ) {
             add(
                 PaletteCommand(
@@ -161,7 +162,8 @@ fun CommandPalette(
                 ) {
                     if (
                         viewModel.schema.schema != null &&
-                            viewModel.schema.loadedConnectionId == runConnectionId
+                            viewModel.schema.loadedConnectionId == runConnectionId &&
+                            !viewModel.sqlEditor.running
                     ) {
                         viewModel.query.run(runConnectionId)
                         appState.navigate(AppRoute.Builder)

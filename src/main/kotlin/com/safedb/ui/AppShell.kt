@@ -73,6 +73,7 @@ import com.safedb.SchemaSelectionSource
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
+import com.safedb.query.sql.SqlParseResult
 import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
 import com.safedb.ui.components.ConfirmDialog
@@ -125,6 +126,7 @@ fun AppShell(
     viewModel: AppViewModel,
     paletteOpen: Boolean,
     onPaletteOpenChange: (Boolean) -> Unit,
+    sqlParseResult: SqlParseResult?,
     modifier: Modifier = Modifier,
 ) {
     var sidebarCollapsed by rememberSaveable { mutableStateOf(false) }
@@ -133,6 +135,7 @@ fun AppShell(
         viewModel = viewModel,
         paletteOpen = paletteOpen,
         onPaletteOpenChange = onPaletteOpenChange,
+        sqlParseResult = sqlParseResult,
         sidebarCollapsed = sidebarCollapsed,
         onSidebarCollapsedChange = { sidebarCollapsed = it },
         modifier = modifier,
@@ -145,6 +148,7 @@ internal fun AppShellContent(
     viewModel: AppViewModel,
     paletteOpen: Boolean,
     onPaletteOpenChange: (Boolean) -> Unit,
+    sqlParseResult: SqlParseResult?,
     sidebarCollapsed: Boolean,
     onSidebarCollapsedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -293,6 +297,7 @@ internal fun AppShellContent(
                         schemaSelection = schemaSelection,
                         schemaHistoryError = schemaHistoryError,
                         settings = settings,
+                        sqlRunning = viewModel.sqlEditor.running,
                         onConnectionSelected = schemaHandlers.onConnectionSelected,
                         onSchemaSelected = schemaHandlers.onSchemaSelected,
                         onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
@@ -336,6 +341,8 @@ internal fun AppShellContent(
                         schemaSelection = schemaSelection,
                         schemaHistoryError = schemaHistoryError,
                         settings = settings,
+                        parseResult = sqlParseResult,
+                        builderRunning = viewModel.query.running,
                         onConnectionSelected = schemaHandlers.onConnectionSelected,
                         onSchemaSelected = schemaHandlers.onSchemaSelected,
                         onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,

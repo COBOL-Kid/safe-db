@@ -92,6 +92,7 @@ internal fun BuilderScreen(
     schemaSelection: SchemaSelectionIntent,
     schemaHistoryError: String?,
     settings: Settings,
+    sqlRunning: Boolean,
     onConnectionSelected: (ConnectionDef) -> Unit,
     onSchemaSelected: (String) -> Unit,
     onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
@@ -321,13 +322,15 @@ internal fun BuilderScreen(
                             queryViewModel.run(connectionId)
                         }
                     },
+                    // A SQL editor run holds the same app-wide slot: one live query at a time.
                     enabled =
                         queryViewModel.canRun &&
                             riskValidationError == null &&
                             connection != null &&
                             schemaViewModel.schema != null &&
                             schemaViewModel.loadedConnectionId == connection.id &&
-                            !queryViewModel.running,
+                            !queryViewModel.running &&
+                            !sqlRunning,
                 ) {
                     if (queryViewModel.running) {
                         CircularProgressIndicator(

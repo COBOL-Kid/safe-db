@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.TextFieldValue
@@ -81,6 +83,7 @@ import com.safedb.ui.ConnectionsScreenContent
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.RecipeLibraryDialog
 import com.safedb.ui.Sidebar
+import com.safedb.ui.rememberSqlParseResult
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.ExploreViewModel
@@ -490,11 +493,20 @@ internal fun render(
         palette = palette,
         additionalSettleFrames = additionalSettleFrames,
     ) {
+        val activeConnectionId by appState.activeConnectionId.collectAsState()
+        val connections by viewModel.connections.connections.collectAsState()
         AppShellContent(
             appState = appState,
             viewModel = viewModel,
             paletteOpen = false,
             onPaletteOpenChange = {},
+            sqlParseResult =
+                rememberSqlParseResult(
+                    sqlText = viewModel.sqlEditor.text.text,
+                    dialect = connections.firstOrNull { it.id == activeConnectionId }?.dialect,
+                    schemaViewModel = viewModel.schema,
+                    activeConnectionId = activeConnectionId,
+                ),
             sidebarCollapsed = sidebarCollapsed,
             onSidebarCollapsedChange = {},
         )

@@ -102,6 +102,7 @@ class BuilderScreenJoinClickTest {
                         schemaSelection = selection,
                         schemaHistoryError = null,
                         settings = Settings(),
+                        sqlRunning = false,
                         onConnectionSelected = {},
                         onSchemaSelected = {},
                         onUnavailableSchemaSelection = {},
