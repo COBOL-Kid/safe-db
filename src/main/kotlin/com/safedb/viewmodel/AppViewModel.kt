@@ -33,11 +33,14 @@ class AppViewModel(
     val history = HistoryViewModel(service, scope)
     val recipes = RecipesViewModel(service, scope, ioDispatcher)
     val query = QueryViewModel(service, scope)
+    val sqlEditor = SqlEditorViewModel(service, scope)
     val schema = SchemaViewModel(service, scope)
     internal val schemaMap = SchemaMapViewModel()
 
     private val _explore = MutableStateFlow<ExploreViewModel?>(null)
     val explore: StateFlow<ExploreViewModel?> = _explore.asStateFlow()
+    private val _exploreOrigin = MutableStateFlow(ExploreOrigin.Builder)
+    val exploreOrigin: StateFlow<ExploreOrigin> = _exploreOrigin.asStateFlow()
     private val _pendingRecipeRun = MutableStateFlow<PendingRecipeRun?>(null)
     val pendingRecipeRun: StateFlow<PendingRecipeRun?> = _pendingRecipeRun.asStateFlow()
 
@@ -79,8 +82,14 @@ class AppViewModel(
         scope.launch { service.lockCredentials() }
     }
 
-    fun openExplore(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
+    fun openExplore(
+        connection: ConnectionDef,
+        spec: QuerySpec,
+        sample: QueryResult,
+        origin: ExploreOrigin = ExploreOrigin.Builder,
+    ) {
         _explore.value?.close()
+        _exploreOrigin.value = origin
         _explore.value =
             ExploreViewModel(
                 createExploreSession(connection, spec, sample),
@@ -96,6 +105,8 @@ class AppViewModel(
         recipe: ExploreRecipe,
     ) {
         _explore.value?.close()
+        // Recipes replay through the builder pipeline, so the session refreshes from the builder.
+        _exploreOrigin.value = ExploreOrigin.Builder
         _explore.value =
             ExploreViewModel(
                     createExploreSession(connection, spec, sample),
@@ -163,6 +174,11 @@ class AppViewModel(
         closeExplore()
         scope.cancel()
     }
+}
+
+enum class ExploreOrigin {
+    Builder,
+    Sql,
 }
 
 data class PendingRecipeRun(

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
@@ -77,6 +78,7 @@ import com.safedb.ui.components.CommandPalette
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.ExploreOrigin
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
@@ -278,6 +280,32 @@ internal fun AppShellContent(
                             }
                         },
                     )
+                AppRoute.Sql ->
+                    SqlScreen(
+                        connection = activeConnection,
+                        connections = connections,
+                        sqlViewModel = viewModel.sqlEditor,
+                        schemaViewModel = viewModel.schema,
+                        schemaSelection = schemaSelection,
+                        schemaHistoryError = schemaHistoryError,
+                        settings = settings,
+                        onConnectionSelected = schemaHandlers.onConnectionSelected,
+                        onSchemaSelected = schemaHandlers.onSchemaSelected,
+                        onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
+                        onDismissSchemaHistoryError = schemaHandlers.onDismissSchemaHistoryError,
+                        onOpenExplore = { sample ->
+                            val target = connections.firstOrNull { it.id == sample.connectionId }
+                            if (target != null) {
+                                viewModel.openExplore(
+                                    target,
+                                    sample.spec,
+                                    sample.result,
+                                    ExploreOrigin.Sql,
+                                )
+                            }
+                        },
+                        onOpenConnections = { appState.navigate(AppRoute.Connections) },
+                    )
                 AppRoute.Map ->
                     SchemaMapScreen(
                         connection = activeConnection,
@@ -321,6 +349,7 @@ internal fun Sidebar(
             NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
             NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
             NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
+            NavItem(AppRoute.Sql, "SQL", Icons.Outlined.Code),
             NavItem(AppRoute.Map, "Map", Icons.Outlined.Hub),
             NavItem(AppRoute.History, "History", Icons.Outlined.History),
         )
@@ -842,9 +871,9 @@ private const val SidebarUtilityFadeInMillis = 120
 private const val SidebarUtilityFadeOutMillis = 80
 private const val SidebarRevealHeader = 1
 private const val SidebarRevealFirstNav = 2
-private const val SidebarRevealStatus = 7
-private const val SidebarRevealSettings = 8
-private const val SidebarRevealTheme = 9
+private const val SidebarRevealStatus = 8
+private const val SidebarRevealSettings = 9
+private const val SidebarRevealTheme = 10
 private const val SidebarRevealAll = SidebarRevealTheme
 private const val SidebarCompactRevealCommand = 1
 private const val SidebarCompactRevealStatus = 2

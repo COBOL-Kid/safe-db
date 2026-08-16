@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -103,6 +104,12 @@ fun CommandPalette(
                 Icons.Filled.Build,
             ) {
                 appState.navigate(AppRoute.Builder)
+                onDismiss()
+            }
+        )
+        add(
+            PaletteCommand("nav-sql", "Go to SQL", "Write SELECT queries", Icons.Filled.Code) {
+                appState.navigate(AppRoute.Sql)
                 onDismiss()
             }
         )
