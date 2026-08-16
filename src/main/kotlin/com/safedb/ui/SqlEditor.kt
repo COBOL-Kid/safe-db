@@ -231,12 +231,13 @@ private fun CompletionList(
             modifier = Modifier.widthIn(min = 220.dp, max = 340.dp).heightIn(max = 216.dp),
         ) {
             itemsIndexed(items) { index, item ->
+                val selected = index == selectedIndex
                 Row(
                     modifier =
                         Modifier.fillMaxWidth()
                             .background(
-                                if (index == selectedIndex) {
-                                    SafeDbTheme.colors.navigationSelected
+                                if (selected) {
+                                    SafeDbTheme.colors.accentContainer
                                 } else {
                                     MaterialTheme.colorScheme.surface
                                 }
@@ -254,6 +255,12 @@ private fun CompletionList(
                     Text(
                         item.label,
                         style = DataMono,
+                        color =
+                            if (selected) {
+                                SafeDbTheme.colors.onAccentContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -262,7 +269,12 @@ private fun CompletionList(
                         Text(
                             detail,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color =
+                                if (selected) {
+                                    SafeDbTheme.colors.onAccentContainer.copy(alpha = 0.72f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             modifier = Modifier.padding(start = 8.dp).widthIn(max = 110.dp),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
