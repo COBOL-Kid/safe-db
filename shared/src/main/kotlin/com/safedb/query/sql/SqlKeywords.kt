@@ -27,12 +27,14 @@ private val CORE_KEYWORDS =
         "DESC",
         "LIMIT",
         "FETCH",
-        "FIRST",
-        "ROWS",
-        "ONLY",
         "TRUE",
         "FALSE",
     )
+
+// Words that only ever appear inside FETCH FIRST n ROWS ONLY. Reserving them would make `first`,
+// `rows`, and `only` unusable as unquoted columns, which they are not in any supported dialect —
+// the parser matches them through wordAt, which accepts identifiers.
+private val CLAUSE_WORDS = setOf("FIRST", "ROWS", "ONLY")
 
 fun sqlKeywords(dialect: Dialect): Set<String> =
     when (dialect) {
@@ -41,6 +43,9 @@ fun sqlKeywords(dialect: Dialect): Set<String> =
         Dialect.Mssql -> CORE_KEYWORDS + "TOP"
         Dialect.Oracle -> CORE_KEYWORDS
     }
+
+// Completion may offer the clause words even though they are not reserved.
+fun sqlCompletionKeywords(dialect: Dialect): Set<String> = sqlKeywords(dialect) + CLAUSE_WORDS
 
 // First words that identify a non-SELECT statement for the "read-only" rejection.
 internal val BLOCKED_STATEMENT_STARTERS =

@@ -75,6 +75,7 @@ fun CommandPalette(
     var search by remember { mutableStateOf("") }
     var selectedIndex by remember { mutableIntStateOf(0) }
     val activeConnectionId by appState.activeConnectionId.collectAsState()
+    val currentRoute by appState.route.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
 
@@ -141,7 +142,15 @@ fun CommandPalette(
             runConnectionId != null &&
                 viewModel.schema.schema != null &&
                 viewModel.schema.loadedConnectionId == runConnectionId
-        if (runConnectionId != null && schemaMatchesConnection && viewModel.query.canRun) {
+        // These act on the builder canvas. On the SQL screen they would run or clear a query the
+        // user cannot see — on a read-only tool, sending the wrong statement to the database.
+        val builderCommandsApply = currentRoute != AppRoute.Sql
+        if (
+            builderCommandsApply &&
+                runConnectionId != null &&
+                schemaMatchesConnection &&
+                viewModel.query.canRun
+        ) {
             add(
                 PaletteCommand(
                     "run-query",
@@ -160,7 +169,7 @@ fun CommandPalette(
                 }
             )
         }
-        if (viewModel.query.canvasTables.isNotEmpty()) {
+        if (builderCommandsApply && viewModel.query.canvasTables.isNotEmpty()) {
             add(
                 PaletteCommand(
                     "clear-canvas",

@@ -27,6 +27,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
     private var activeConnectionId: String? = null
     private var observedQueryRiskGate: QueryRiskGate? = null
     private var riskEvaluationConnectionId: String? = null
+    private var riskEvaluationSpec: QuerySpec? = null
     private var pendingConfirmationRequest: QueryRunRequest? = null
 
     var text by mutableStateOf(TextFieldValue(""))
@@ -83,6 +84,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
         resultSpec = null
         riskEvaluation = null
         riskEvaluationConnectionId = null
+        riskEvaluationSpec = null
         pendingRiskGateState = false
         scope.launch {
             try {
@@ -91,6 +93,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
                     results = completed.queryResult
                     riskEvaluation = completed.riskEvaluation
                     riskEvaluationConnectionId = request.connectionId
+                    riskEvaluationSpec = request.spec
                     resultConnectionId = request.connectionId
                     resultSpec = executedSpec
                 }
@@ -101,6 +104,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
                         pendingRiskGateState = true
                         riskEvaluation = queryError.evaluation
                         riskEvaluationConnectionId = request.connectionId
+                        riskEvaluationSpec = request.spec
                         error = queryError.message
                     }
                     is QueryError.ConfirmationRequired -> {
@@ -108,6 +112,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
                         pendingConfirmation = queryError.requirement
                         riskEvaluation = queryError.evaluation
                         riskEvaluationConnectionId = request.connectionId
+                        riskEvaluationSpec = request.spec
                     }
                     else -> error = failure.message ?: failure.toString()
                 }
@@ -129,7 +134,9 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
         val request = pendingConfirmationRequest ?: return
         val requirement = pendingConfirmation ?: return
         if (request.connectionId != connectionId || request.spec != currentSpec) {
-            clearPendingConfirmation()
+            // The evaluation described the request we are abandoning, so drop it too — otherwise
+            // the header and plan-safeguard banner keep demanding a confirmation that is gone.
+            invalidateSettledRunFailure()
             return
         }
         clearPendingConfirmation()
@@ -137,7 +144,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
     }
 
     fun dismissPendingConfirmation() {
-        clearPendingConfirmation()
+        invalidateSettledRunFailure()
     }
 
     // The sample is only valid while the editor still parses to the spec that produced it.
@@ -161,6 +168,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
         pendingRiskGateState = false
         riskEvaluation = null
         riskEvaluationConnectionId = null
+        riskEvaluationSpec = null
         error = null
         clearPendingConfirmation()
     }
@@ -182,12 +190,19 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
         pendingRiskGateState = false
         riskEvaluation = null
         riskEvaluationConnectionId = null
+        riskEvaluationSpec = null
         if (wasRiskGateBlock) error = null
     }
 
-    fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? = riskEvaluation.takeIf {
-        connectionId != null && connectionId == riskEvaluationConnectionId
-    }
+    // Keyed by spec as well as connection, like currentSample: editing the SQL or switching the
+    // default schema reparses to a different spec, and the old decision no longer describes it.
+    fun riskEvaluationFor(connectionId: String?, currentSpec: QuerySpec?): QueryRiskEvaluation? =
+        riskEvaluation.takeIf {
+            connectionId != null &&
+                connectionId == riskEvaluationConnectionId &&
+                currentSpec != null &&
+                currentSpec == riskEvaluationSpec
+        }
 
     fun dismissError() {
         invalidateSettledRunFailure()
@@ -207,6 +222,7 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
         pendingRiskGateState = false
         riskEvaluation = null
         riskEvaluationConnectionId = null
+        riskEvaluationSpec = null
         error = null
         clearPendingConfirmation()
     }

@@ -56,6 +56,7 @@ import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
 import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
+import com.safedb.viewmodel.ExploreOrigin
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import java.io.File
@@ -66,6 +67,7 @@ fun ExploreWindowContent(
     viewModel: ExploreViewModel,
     currentSpec: QuerySpec,
     onClose: () -> Unit,
+    origin: ExploreOrigin = ExploreOrigin.Builder,
     onRefreshSample: (() -> Unit)? = null,
     sampleRefreshEnabled: Boolean = false,
     recipesViewModel: RecipesViewModel,
@@ -148,6 +150,7 @@ fun ExploreWindowContent(
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             ExploreStaleSampleWarning(
                 stale = stale,
+                origin = origin,
                 sampleRefreshEnabled = sampleRefreshEnabled,
                 onRefreshSample = onRefreshSample,
             )
@@ -409,17 +412,27 @@ private fun ExploreModeSelector(
 @Composable
 private fun ExploreStaleSampleWarning(
     stale: Boolean,
+    origin: ExploreOrigin,
     sampleRefreshEnabled: Boolean,
     onRefreshSample: (() -> Unit)?,
 ) {
     if (!stale) return
+    // Refresh pulls from whichever surface opened this window, so the instructions have to name it
+    // —
+    // telling a SQL-origin user to re-run in Builder never produces a sample and leaves Refresh
+    // off.
+    val surface =
+        when (origin) {
+            ExploreOrigin.Builder -> "Builder"
+            ExploreOrigin.Sql -> "SQL"
+        }
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         MessageBanner(
             text =
                 if (sampleRefreshEnabled)
-                    "The builder query changed. Refresh the Explore sample from the latest Builder results."
+                    "The $surface query changed. Refresh the Explore sample from the latest $surface results."
                 else
-                    "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
+                    "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore.",
             kind = BannerKind.WARNING,
             action =
                 if (sampleRefreshEnabled && onRefreshSample != null) {

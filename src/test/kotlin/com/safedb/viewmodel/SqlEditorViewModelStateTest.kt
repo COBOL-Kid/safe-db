@@ -98,8 +98,8 @@ class SqlEditorViewModelStateTest {
 
         assertFalse(viewModel.running)
         assertNotNull(viewModel.results)
-        assertNotNull(viewModel.riskEvaluationFor("c1"))
-        assertNull(viewModel.riskEvaluationFor("other"))
+        assertNotNull(viewModel.riskEvaluationFor("c1", spec))
+        assertNull(viewModel.riskEvaluationFor("other", spec))
         assertNotNull(viewModel.currentSample("c1", spec))
         assertNull(viewModel.currentSample("c1", spec.copy(limit = 10)))
         assertNull(viewModel.currentSample("c2", spec))
@@ -156,7 +156,7 @@ class SqlEditorViewModelStateTest {
 
         assertFalse(viewModel.pendingRiskGate)
         assertNull(viewModel.error)
-        assertNull(viewModel.riskEvaluationFor("c1"))
+        assertNull(viewModel.riskEvaluationFor("c1", spec))
     }
 
     @Test
@@ -236,6 +236,54 @@ class SqlEditorViewModelStateTest {
 
         assertEquals(0, executions)
         assertNull(viewModel.pendingConfirmation)
+        // The abandoned request's evaluation must go too, or the header keeps demanding a
+        // confirmation whose dialog no longer exists.
+        assertNull(viewModel.riskEvaluationFor("c1", spec))
+    }
+
+    @Test
+    fun dismissingConfirmationClearsTheEvaluationAndReenablesRun() {
+        val scope = TestScope(dispatcher)
+        val spec = sampleSpec()
+        var attempts = 0
+        var executions = 0
+        val viewModel =
+            SqlEditorViewModel(
+                service =
+                    object : SqlStubService() {
+                        override suspend fun runQuery(request: QueryRunRequest) =
+                            // Only the first attempt demands confirmation; a later run must be able
+                            // to proceed once the stale decision has been cleared.
+                            if (attempts++ == 0) {
+                                throw QueryFailureException(
+                                    QueryError.ConfirmationRequired(
+                                        evaluation(RiskGateState.ConfirmationRequired),
+                                        requirement(),
+                                        request.spec,
+                                    )
+                                )
+                            } else {
+                                executions++
+                                queryRunResult(sampleResult())
+                            }
+                    },
+                scope = scope,
+            )
+
+        viewModel.run("c1", spec)
+        scope.advanceUntilIdle()
+        assertNotNull(viewModel.pendingConfirmation)
+        assertNotNull(viewModel.riskEvaluationFor("c1", spec))
+
+        viewModel.dismissPendingConfirmation()
+
+        assertNull(viewModel.pendingConfirmation)
+        assertNull(viewModel.riskEvaluationFor("c1", spec))
+
+        // Cancelling leaves the editor runnable again rather than stuck behind a stale decision.
+        viewModel.run("c1", spec)
+        scope.advanceUntilIdle()
+        assertEquals(1, executions)
     }
 
     @Test

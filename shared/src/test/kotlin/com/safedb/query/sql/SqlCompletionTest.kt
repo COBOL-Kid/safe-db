@@ -96,4 +96,50 @@ class SqlCompletionTest {
         val result = complete(text, caret = text.length)
         assertTrue(result.items.any { it.label == "created_at" })
     }
+
+    @Test
+    fun schemaDotOffersThatSchemasTables() {
+        // `public.` used to be scanned as a table named "public", which resolved to nothing and
+        // left
+        // the popup empty.
+        val result = complete("SELECT id FROM public.")
+        assertEquals(
+            listOf("categories", "users"),
+            result.items.filter { it.kind == SqlCompletionKind.Table }.map { it.label },
+        )
+        assertTrue(result.items.none { it.kind == SqlCompletionKind.Column })
+
+        val sales = complete("SELECT id FROM Sales.")
+        assertTrue(sales.items.any { it.label == "Invoices" })
+    }
+
+    @Test
+    fun unqualifiedPrefixMatchesQualifiedColumnLabels() {
+        // With more than one table the labels are qualified (u.email), but the user is typing the
+        // column name, so the prefix has to match the segment after the dot.
+        val text = "SELECT id FROM users u JOIN categories c ON u.category_id = c.id WHERE em"
+        val result = complete(text)
+        assertTrue(result.items.any { it.label == "u.email" })
+    }
+
+    @Test
+    fun completingMidWordReplacesTheWholeWord() {
+        val text = "SELECT id FROM users"
+        val caret = text.length - 3
+        val result = complete(text, caret = caret)
+        assertEquals(text.length - "users".length, result.replaceStart)
+        assertEquals(text.length, result.replaceEnd)
+    }
+
+    @Test
+    fun caretAtEndOfLineCommentOffersNothing() {
+        val text = "SELECT id -- note"
+        assertTrue(complete(text).items.isEmpty())
+    }
+
+    @Test
+    fun caretAtEndOfUnterminatedStringOffersNothing() {
+        val text = "SELECT id FROM users WHERE name = 'ab"
+        assertTrue(complete(text).items.isEmpty())
+    }
 }

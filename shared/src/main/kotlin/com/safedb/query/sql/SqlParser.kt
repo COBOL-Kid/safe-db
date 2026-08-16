@@ -87,7 +87,15 @@ private class SqlParser(
         expectWord("SELECT", "Expected SELECT.")
         val distinct = matchWord("DISTINCT")
         var topLimit: Int? = null
-        if (wordAt(0) == "TOP") {
+        // TOP is a keyword only on MSSQL (see sqlKeywords); elsewhere it tokenizes as an identifier
+        // and `SELECT top FROM t` is an ordinary column. `TOP 7` and `TOP (7)` cannot be a column
+        // reference in any dialect, so those still reach the clause and its "use LIMIT" message.
+        val looksLikeTopClause =
+            wordAt(0) == "TOP" &&
+                (peek()?.type == SqlTokenType.Keyword ||
+                    peek(1)?.type == SqlTokenType.NumberLiteral ||
+                    peek(1)?.type == SqlTokenType.LeftParen)
+        if (looksLikeTopClause) {
             val topToken = advance()
             if (dialect != Dialect.Mssql) {
                 fail(
@@ -96,7 +104,11 @@ private class SqlParser(
                     topToken.span,
                 )
             }
+            // MSSQL accepts both `TOP 7` and `TOP (7)`.
+            val parenthesized = peek()?.type == SqlTokenType.LeftParen
+            if (parenthesized) advance()
             topLimit = parseLimitNumber()
+            if (parenthesized) expectType(SqlTokenType.RightParen, "Expected ')' after TOP (n).")
         }
 
         val items = parseSelectList()
@@ -343,6 +355,15 @@ private class SqlParser(
                         advance()
                         predicate(column, FilterOp.NotIn, parseInList())
                     }
+                    // BETWEEN and ILIKE parse on their own, so a bare "Expected LIKE or IN"
+                    // reads like a typo. Name the construct that has no negated FilterOp.
+                    "BETWEEN",
+                    "ILIKE" ->
+                        fail(
+                            SqlIssueCode.Unsupported,
+                            SqlMessages.notOperator(wordAt(0)!!),
+                            peek()?.span ?: endSpan(),
+                        )
                     else ->
                         fail(
                             SqlIssueCode.Syntax,
@@ -518,6 +539,11 @@ private class SqlParser(
         val value = token.text.toIntOrNull()
         if (token.text.contains('.') || value == null) {
             fail(SqlIssueCode.InvalidLimit, SqlMessages.LIMIT_WHOLE_NUMBER, token.span)
+        }
+        // QuerySpec reserves 0 as the builder's "no limit chosen" sentinel, which validateQuery
+        // rewrites to DEFAULT_LIMIT. Typed SQL means it literally, so reject rather than run 500.
+        if (value <= 0) {
+            fail(SqlIssueCode.InvalidLimit, SqlMessages.LIMIT_POSITIVE, token.span)
         }
         return value
     }

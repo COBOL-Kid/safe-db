@@ -14,6 +14,7 @@ enum class SqlIssueCode {
     DuplicateAlias,
     SchemaRequired,
     InvalidLimit,
+    LiteralTypeMismatch,
 }
 
 data class SqlIssue(val code: SqlIssueCode, val message: String, val span: SqlSpan?)

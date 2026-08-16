@@ -75,6 +75,7 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
 import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
+import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
@@ -158,10 +159,51 @@ internal fun AppShellContent(
     val connections by viewModel.connections.connections.collectAsState()
     val isDark = settings.theme == "dark"
     val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
-    val schemaHandlers =
+    val rawSchemaHandlers =
         remember(settings, activeConnectionId) {
             connectionSchemaHandlers(appState, viewModel, settings, activeConnectionId)
         }
+
+    // Every route's connection picker goes through one confirm-and-clear path. A builder draft is
+    // bound to the connection it was built against, so letting any other surface switch underneath
+    // it would leave a canvas that can be run against a database it was never written for.
+    var pendingConnectionSwitch by remember { mutableStateOf<ConnectionDef?>(null) }
+
+    fun switchConnection(target: ConnectionDef) {
+        viewModel.query.clear()
+        pendingConnectionSwitch = null
+        rawSchemaHandlers.onConnectionSelected(target)
+    }
+
+    val schemaHandlers =
+        rawSchemaHandlers.copy(
+            onConnectionSelected = { target ->
+                when (
+                    builderConnectionSwitchDecision(
+                        activeConnectionId = activeConnectionId,
+                        targetConnectionId = target.id,
+                        hasDraft = viewModel.query.canvasTables.isNotEmpty(),
+                    )
+                ) {
+                    BuilderConnectionSwitchDecision.NoOp -> Unit
+                    BuilderConnectionSwitchDecision.SwitchImmediately -> switchConnection(target)
+                    BuilderConnectionSwitchDecision.ConfirmClear -> pendingConnectionSwitch = target
+                }
+            }
+        )
+
+    pendingConnectionSwitch?.let { target ->
+        ConfirmDialog(
+            open = true,
+            title = "Switch connection?",
+            message =
+                "Switching to ${target.name} clears the current query canvas and results. " +
+                    "Saved queries are not affected.",
+            confirmLabel = "Switch and clear",
+            onConfirm = { switchConnection(target) },
+            onCancel = { pendingConnectionSwitch = null },
+        )
+    }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
         val restoredSelection = com.safedb.resolveQuerySchemaSelection(spec)

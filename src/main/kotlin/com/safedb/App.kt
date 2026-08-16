@@ -167,6 +167,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                             viewModel = explore,
                             currentSpec = currentSpec,
                             onClose = viewModel::closeExplore,
+                            origin = exploreOrigin,
                             onRefreshSample =
                                 if (sampleRefreshEnabled) {
                                     refresh@{
@@ -211,6 +212,12 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                             settings,
                                         ),
                                 )
+                                // runRecipe drives the builder query, so its confirmation dialog
+                                // and
+                                // errors only exist while Builder is composed. Launched from SQL
+                                // the
+                                // run would otherwise appear to hang on an invisible prompt.
+                                if (recipe.querySpec != null) appState.navigate(AppRoute.Builder)
                                 viewModel.closeExplore()
                                 viewModel.runRecipe(connection, recipe)
                             },

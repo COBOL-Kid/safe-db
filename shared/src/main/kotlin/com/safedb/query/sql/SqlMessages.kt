@@ -26,8 +26,33 @@ internal object SqlMessages {
     const val COMPARE_NULL = "Use IS NULL or IS NOT NULL to test for null."
     const val STAR_MIX = "* can't be combined with other columns — use table.* or list columns."
     const val LIMIT_WHOLE_NUMBER = "LIMIT must be a whole number."
+    const val LIMIT_POSITIVE = "LIMIT must be 1 or more."
 
     fun topElsewhere(dialect: String) = "TOP is SQL Server syntax — use LIMIT on $dialect."
 
     const val SCHEMA_REQUIRED = "Select a schema, or qualify the table as schema.table."
+
+    // Each ON condition becomes an edge in the builder's join graph, so it must connect the table
+    // being joined to one already in the query. Anything else would be silently dropped at compile.
+    const val JOIN_EDGE =
+        "Each ON condition must link the joined table to a table already in the query — put other conditions in WHERE."
+
+    fun literalTypeMismatch(column: String, dataType: String) =
+        "This value doesn't match the type of '$column' ($dataType) — the query would compare something different than written."
+
+    fun dateTimeFormat(column: String) =
+        "'$column' needs a date like '2024-01-01' or a timestamp like '2024-01-01 09:30:00'."
+
+    fun dateFormat(column: String) = "'$column' needs a date like '2024-01-01'."
+
+    const val MYSQL_EXEC_COMMENT =
+        "MySQL executable comments (/*! … */) aren't supported — write the statement directly."
+
+    const val OPTIMIZER_HINT = "Optimizer hints (/*+ … */) aren't supported."
+
+    const val NATIONAL_STRING =
+        "National string literals (N'…') aren't supported — use an ordinary quoted string."
+
+    fun notOperator(construct: String) =
+        "NOT $construct isn't supported — rewrite it with a supported operator."
 }

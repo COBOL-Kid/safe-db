@@ -239,4 +239,53 @@ class SqlParserTest {
         assertEquals("select", item.ref.name.name)
         assertTrue(item.ref.name.quoted)
     }
+
+    @Test
+    fun clauseWordsAreUsableAsUnquotedColumns() {
+        // FIRST/ROWS/ONLY exist only inside FETCH FIRST n ROWS ONLY; reserving them made ordinary
+        // Postgres and MySQL column names unusable.
+        val ast = parse("SELECT first, rows, only FROM t")
+        assertEquals(3, ast.items!!.size)
+        assertEquals(3, parse("SELECT id FROM t FETCH FIRST 3 ROWS ONLY").limit)
+    }
+
+    @Test
+    fun topIsOnlyAClauseOnMssql() {
+        // TOP is a keyword only on MSSQL, so elsewhere `top` is just a column name.
+        val ast = parse("SELECT top FROM t")
+        assertEquals(1, ast.items!!.size)
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT TOP 7 id FROM t", Dialect.Postgres).code,
+        )
+        assertEquals(7, parse("SELECT TOP 7 id FROM t", Dialect.Mssql).limit)
+        assertEquals(7, parse("SELECT TOP (7) id FROM t", Dialect.Mssql).limit)
+    }
+
+    @Test
+    fun explicitZeroLimitIsRejected() {
+        // QuerySpec reserves 0 as the builder's "unset" sentinel, which validateQuery rewrites to
+        // 500 — running 500 rows for a typed LIMIT 0 would be the opposite of what was asked.
+        assertEquals(SqlIssueCode.InvalidLimit, failParse("SELECT id FROM t LIMIT 0").code)
+        assertEquals(
+            SqlIssueCode.InvalidLimit,
+            failParse("SELECT TOP 0 id FROM t", Dialect.Mssql).code,
+        )
+        assertEquals(
+            SqlIssueCode.InvalidLimit,
+            failParse("SELECT id FROM t FETCH FIRST 0 ROWS ONLY").code,
+        )
+    }
+
+    @Test
+    fun negatedOperatorsWithoutSupportNameTheConstruct() {
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT id FROM t WHERE a NOT BETWEEN 1 AND 2").code,
+        )
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT id FROM t WHERE a NOT ILIKE 'x'", Dialect.Postgres).code,
+        )
+    }
 }

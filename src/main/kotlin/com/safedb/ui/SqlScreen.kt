@@ -124,7 +124,7 @@ internal fun SqlScreen(
         }
     val preliminaryEvaluation = (preliminaryRisk as? Outcome.Ok)?.value
     val riskValidationError = (preliminaryRisk as? Outcome.Err)?.message
-    val finalRiskEvaluation = sqlViewModel.riskEvaluationFor(connection?.id)
+    val finalRiskEvaluation = sqlViewModel.riskEvaluationFor(connection?.id, parsedSpec)
     val currentSample = sqlViewModel.currentSample(connection?.id, parsedSpec)
     val pendingConfirmation =
         sqlViewModel.pendingConfirmation?.takeIf { it.confirmation.connectionId == connection?.id }
@@ -305,7 +305,8 @@ private fun SqlWorkspace(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         Box(modifier = Modifier.fillMaxSize()) {
-            val results = sqlViewModel.results
+            // Render only the sample that still matches the editor's parsed spec. Showing raw
+            // results would leave the previous query's rows sitting under freshly edited SQL.
             when {
                 sqlViewModel.running ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -318,12 +319,12 @@ private fun SqlWorkspace(
                             )
                         }
                     }
-                results != null ->
-                    ResultsTable(result = results, modifier = Modifier.fillMaxSize()) {
-                        PrimaryButton(
-                            onClick = { currentSample?.let(onOpenExplore) },
-                            enabled = currentSample != null,
-                        ) {
+                currentSample != null ->
+                    ResultsTable(
+                        result = currentSample.result,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        PrimaryButton(onClick = { onOpenExplore(currentSample) }) {
                             Text("Explore")
                         }
                     }

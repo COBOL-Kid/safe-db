@@ -5,8 +5,10 @@ import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
 import com.safedb.model.GroupConnector
 import com.safedb.model.LiteralKind
+import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.validateQuery
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -124,10 +126,93 @@ class SqlToSpecTest {
             )
         val leaves = spec.filters.children.map { (it as FilterNode.Leaf).spec }
         assertEquals(LiteralKind.DateTime, leaves[0].singleLiteral().kind)
-        assertEquals("2024-01-01", leaves[0].singleLiteral().text)
+        // Postgres and MySQL accept a bare date against a timestamp column, so it is widened to
+        // midnight here rather than reaching validateQuery, which only accepts a time component.
+        assertEquals("2024-01-01T00:00:00", leaves[0].singleLiteral().text)
         assertEquals(LiteralKind.Bool, leaves[1].singleLiteral().kind)
         assertEquals(LiteralKind.Int, leaves[2].listLiterals().first().kind)
         assertEquals(LiteralKind.Text, leaves[3].singleLiteral().kind)
+    }
+
+    @Test
+    fun dateOnlyTimestampFilterSurvivesValidation() {
+        val parsed = spec("SELECT id FROM users WHERE created_at > '2024-01-01' LIMIT 5")
+        val outcome = validateQuery(parsed, schema, emptyList(), Dialect.Postgres)
+        assertIs<Outcome.Ok<*>>(outcome, "expected the parsed spec to validate, got $outcome")
+    }
+
+    @Test
+    fun timestampFilterWithUnparseableTextIsRejectedAtParse() {
+        val issue = failure("SELECT id FROM users WHERE created_at > 'yesterday' LIMIT 5")
+        assertEquals(SqlIssueCode.LiteralTypeMismatch, issue.code)
+    }
+
+    @Test
+    fun literalFormMustMatchTheColumnType() {
+        // `name = 123` used to bind "123" as text, silently running a different comparison than
+        // the one written — MySQL would have compared numerically.
+        assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE name = 123").code,
+        )
+        assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE name = true").code,
+        )
+        assertEquals(
+            LiteralKind.Text,
+            (spec("SELECT id FROM users WHERE name = '123'").filters.children.single()
+                    as FilterNode.Leaf)
+                .spec
+                .singleLiteral()
+                .kind,
+        )
+        assertEquals(
+            LiteralKind.Int,
+            (spec("SELECT id FROM users WHERE id = 123").filters.children.single()
+                    as FilterNode.Leaf)
+                .spec
+                .singleLiteral()
+                .kind,
+        )
+        // A quoted number against a numeric column keeps the comparison intact, so it is allowed.
+        assertEquals(
+            LiteralKind.Int,
+            (spec("SELECT id FROM users WHERE id = '123'").filters.children.single()
+                    as FilterNode.Leaf)
+                .spec
+                .singleLiteral()
+                .kind,
+        )
+    }
+
+    @Test
+    fun quotedIdentifiersMustMatchMetadataExactly() {
+        // "invoiceid" spells a column that does not exist; falling back case-insensitively would
+        // silently retarget InvoiceId.
+        val issue =
+            failure("SELECT \"invoiceid\" FROM \"Sales\".\"Invoices\"", defaultSchema = null)
+        assertEquals(SqlIssueCode.UnknownColumn, issue.code)
+    }
+
+    @Test
+    fun onConditionMustLinkTheJoinedTable() {
+        // The second conjunct is not a join-graph edge, so buildJoinClause would have dropped it
+        // and
+        // executed a broader query than written.
+        val issue =
+            failure(
+                "SELECT u.id FROM users u JOIN categories c " +
+                    "ON u.category_id = c.id AND u.id = u.category_id LIMIT 5"
+            )
+        assertEquals(SqlIssueCode.Unsupported, issue.code)
+    }
+
+    @Test
+    fun tableNameQualifierRejectsAmbiguity() {
+        val issue =
+            failure("SELECT users.id FROM users u JOIN users u2 ON u.category_id = u2.id LIMIT 5")
+        assertEquals(SqlIssueCode.UnknownTable, issue.code)
     }
 
     @Test

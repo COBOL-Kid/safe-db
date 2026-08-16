@@ -108,7 +108,6 @@ internal fun BuilderScreen(
     var resizing by remember { mutableStateOf(false) }
     var filterControlsHeightPx by remember { mutableIntStateOf(0) }
     var optionControlsHeightPx by remember { mutableIntStateOf(0) }
-    var pendingConnectionSwitch by remember { mutableStateOf<ConnectionDef?>(null) }
     val density = LocalDensity.current
     val limitChoices = BUILDER_LIMIT_CHOICES
     val schema = schemaViewModel.schema
@@ -125,26 +124,6 @@ internal fun BuilderScreen(
         queryViewModel.pendingConfirmation?.takeIf {
             it.confirmation.connectionId == connection?.id
         }
-
-    fun switchConnection(target: ConnectionDef) {
-        queryViewModel.clear()
-        pendingConnectionSwitch = null
-        onConnectionSelected(target)
-    }
-
-    fun requestConnectionSwitch(target: ConnectionDef) {
-        when (
-            builderConnectionSwitchDecision(
-                activeConnectionId = connection?.id,
-                targetConnectionId = target.id,
-                hasDraft = queryViewModel.canvasTables.isNotEmpty(),
-            )
-        ) {
-            BuilderConnectionSwitchDecision.NoOp -> Unit
-            BuilderConnectionSwitchDecision.SwitchImmediately -> switchConnection(target)
-            BuilderConnectionSwitchDecision.ConfirmClear -> pendingConnectionSwitch = target
-        }
-    }
 
     LaunchedEffect(connection?.id, schemaSelection) {
         val connectionId = connection?.id
@@ -182,19 +161,6 @@ internal fun BuilderScreen(
                 }
             },
             onCancel = queryViewModel::dismissError,
-        )
-    }
-
-    pendingConnectionSwitch?.let { target ->
-        ConfirmDialog(
-            open = true,
-            title = "Switch connection?",
-            message =
-                "Switching to ${target.name} clears the current query canvas and results. " +
-                    "Saved queries are not affected.",
-            confirmLabel = "Switch and clear",
-            onConfirm = { switchConnection(target) },
-            onCancel = { pendingConnectionSwitch = null },
         )
     }
 
@@ -438,7 +404,7 @@ internal fun BuilderScreen(
                         schemaViewModel = schemaViewModel,
                         connection = null,
                         connections = connections,
-                        onConnectionSelected = ::requestConnectionSwitch,
+                        onConnectionSelected = onConnectionSelected,
                         onSchemaSelected = onSchemaSelected,
                     )
                 }
@@ -468,7 +434,7 @@ internal fun BuilderScreen(
                         schemaViewModel = schemaViewModel,
                         connection = connection,
                         connections = connections,
-                        onConnectionSelected = ::requestConnectionSwitch,
+                        onConnectionSelected = onConnectionSelected,
                         onAddTable = { queryViewModel.addTable(it) },
                         onSchemaSelected = onSchemaSelected,
                     )

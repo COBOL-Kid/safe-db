@@ -62,11 +62,33 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
         )
     }
 
-    fun readQuoted(open: Char, close: Char, start: Int, kind: SqlTokenType, what: String): Int {
+    fun readQuoted(
+        open: Char,
+        close: Char,
+        start: Int,
+        kind: SqlTokenType,
+        what: String,
+        // MySQL treats \ as an escape in strings unless NO_BACKSLASH_ESCAPES is set, so 'it\'s' is
+        // one string and 'a\\b' is a single backslash. ANSI dialects take \ literally.
+        backslashEscapes: Boolean = false,
+    ): Int {
         val body = StringBuilder()
         var j = start + 1
         while (j < sql.length) {
             val ch = sql[j]
+            if (backslashEscapes && ch == '\\' && j + 1 < sql.length) {
+                when (val escaped = sql[j + 1]) {
+                    'n' -> body.append('\n')
+                    't' -> body.append('\t')
+                    'r' -> body.append('\r')
+                    'b' -> body.append('\b')
+                    '0' -> body.append('\u0000')
+                    'Z' -> body.append('\u001A')
+                    else -> body.append(escaped)
+                }
+                j += 2
+                continue
+            }
             if (ch == close) {
                 if (j + 1 < sql.length && sql[j + 1] == close) {
                     body.append(close)
@@ -92,7 +114,16 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                 add(SqlTokenType.Whitespace, i, j)
                 i = j
             }
-            c == '-' && i + 1 < sql.length && sql[i + 1] == '-' -> {
+            // MySQL only starts a comment when -- is followed by whitespace or a control character;
+            // `--2` there is two unary minuses, not a comment that would swallow the rest of the
+            // line.
+            c == '-' &&
+                i + 1 < sql.length &&
+                sql[i + 1] == '-' &&
+                (dialect != Dialect.MySql ||
+                    i + 2 >= sql.length ||
+                    sql[i + 2].isWhitespace() ||
+                    sql[i + 2].isISOControl()) -> {
                 var j = i
                 while (j < sql.length && sql[j] != '\n') j++
                 add(SqlTokenType.Comment, i, j)
@@ -106,15 +137,49 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
             }
             c == '/' && i + 1 < sql.length && sql[i + 1] == '*' -> {
                 val close = sql.indexOf("*/", i + 2)
+                val marker = sql.getOrNull(i + 2)
                 if (close < 0) {
                     add(SqlTokenType.Error, i, sql.length, error = "Unterminated comment")
                     i = sql.length
+                } else if (marker == '!' || marker == '+') {
+                    // /*! … */ is executed by MySQL and /*+ … */ carries optimizer hints.
+                    // Discarding
+                    // either as an ordinary comment would silently reinterpret the statement, so
+                    // reject it rather than quietly dropping what the user wrote.
+                    add(
+                        SqlTokenType.Error,
+                        i,
+                        close + 2,
+                        error =
+                            if (marker == '!') SqlMessages.MYSQL_EXEC_COMMENT
+                            else SqlMessages.OPTIMIZER_HINT,
+                    )
+                    i = close + 2
                 } else {
                     add(SqlTokenType.Comment, i, close + 2)
                     i = close + 2
                 }
             }
-            c == '\'' -> i = readQuoted('\'', '\'', i, SqlTokenType.StringLiteral, "string")
+            // N'…' is a national string literal; without this it tokenizes as identifier N plus a
+            // string and fails downstream as an unsupported column comparison.
+            (c == 'N' || c == 'n') &&
+                sql.getOrNull(i + 1) == '\'' &&
+                (dialect == Dialect.Mssql || dialect == Dialect.Postgres) -> {
+                val end = readQuoted('\'', '\'', i + 1, SqlTokenType.StringLiteral, "string")
+                tokens.removeAt(tokens.size - 1)
+                add(SqlTokenType.Error, i, end, error = SqlMessages.NATIONAL_STRING)
+                i = end
+            }
+            c == '\'' ->
+                i =
+                    readQuoted(
+                        '\'',
+                        '\'',
+                        i,
+                        SqlTokenType.StringLiteral,
+                        "string",
+                        backslashEscapes = dialect == Dialect.MySql,
+                    )
             c == '"' ->
                 if (dialect == Dialect.Postgres || dialect == Dialect.Oracle) {
                     i = readQuoted('"', '"', i, SqlTokenType.QuotedIdentifier, "quoted identifier")

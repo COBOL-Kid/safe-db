@@ -43,13 +43,21 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
         it.type != SqlTokenType.Whitespace && it.type != SqlTokenType.Comment
     }
 
-    // A quoted identifier, string, or comment containing the caret is not completable.
+    // A quoted identifier, string, comment, or malformed token containing the caret is not
+    // completable. A line comment or unterminated literal running to the end of the text still
+    // contains a caret sitting at its very end, so those extend one position further.
     tokens
-        .firstOrNull { it.span.start < caret && caret < it.span.end }
-        ?.takeIf {
-            it.type == SqlTokenType.QuotedIdentifier ||
-                it.type == SqlTokenType.StringLiteral ||
-                it.type == SqlTokenType.Comment
+        .firstOrNull { token ->
+            val opaque =
+                token.type == SqlTokenType.QuotedIdentifier ||
+                    token.type == SqlTokenType.StringLiteral ||
+                    token.type == SqlTokenType.Comment ||
+                    token.type == SqlTokenType.Error
+            if (!opaque || token.span.start >= caret) return@firstOrNull false
+            val openToEof =
+                token.span.end == request.text.length &&
+                    (token.type == SqlTokenType.Error || !token.text.endsWith("*/"))
+            caret < token.span.end || (openToEof && caret == token.span.end)
         }
         ?.let {
             return SqlCompletionResult(emptyList(), caret, caret)
@@ -72,27 +80,29 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
             ?.uppercase()
 
     val statementTables = scanStatementTables(significant, request)
-    val keywords = sqlKeywords(request.dialect)
+    val keywords = sqlCompletionKeywords(request.dialect)
 
     val items: List<SqlCompletionItem> =
         when {
             prev?.type == SqlTokenType.Dot -> {
-                val qualifier = before.getOrNull(before.size - 2)
-                val table =
-                    qualifier
-                        ?.takeIf {
-                            it.type == SqlTokenType.Identifier ||
-                                it.type == SqlTokenType.QuotedIdentifier
-                        }
-                        ?.let { q ->
-                            statementTables.find {
-                                it.alias.equals(q.value, ignoreCase = true) ||
-                                    it.name.equals(q.value, ignoreCase = true)
-                            }
-                        }
-                table?.info?.columns.orEmpty().map {
-                    SqlCompletionItem(it.name, it.name, SqlCompletionKind.Column, it.dataType)
+                val qualifier =
+                    before.getOrNull(before.size - 2)?.takeIf {
+                        it.type == SqlTokenType.Identifier ||
+                            it.type == SqlTokenType.QuotedIdentifier
+                    }
+                val table = qualifier?.let { q ->
+                    statementTables.find {
+                        it.alias.equals(q.value, ignoreCase = true) ||
+                            it.name.equals(q.value, ignoreCase = true)
+                    }
                 }
+                val columns =
+                    table?.info?.columns.orEmpty().map {
+                        SqlCompletionItem(it.name, it.name, SqlCompletionKind.Column, it.dataType)
+                    }
+                // Aliases and table names win, matching SQL scoping. Only when the qualifier names
+                // no table in the statement is it a schema — `FROM public.` should list its tables.
+                columns.ifEmpty { tableCompletions(request, schemaName = qualifier?.value) }
             }
             prevWord == "FROM" || prevWord == "JOIN" -> tableCompletions(request)
             prevWord in COLUMN_CONTEXT_WORDS ||
@@ -104,8 +114,16 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
 
     val filtered =
         if (prefix.isEmpty()) items
-        else items.filter { it.label.startsWith(prefix, ignoreCase = true) }
-    return SqlCompletionResult(filtered, replaceStart, caret)
+        else
+            items.filter { item ->
+                // Multi-table labels are qualified (`u.email`), so also match what the user is
+                // actually typing — the column name after the dot.
+                item.label.startsWith(prefix, ignoreCase = true) ||
+                    item.label.substringAfterLast('.').startsWith(prefix, ignoreCase = true)
+            }
+    // Completing mid-word replaces the whole word, not just the part before the caret.
+    val replaceEnd = wordToken?.span?.end?.coerceAtLeast(caret) ?: caret
+    return SqlCompletionResult(filtered, replaceStart, replaceEnd)
 }
 
 private val COLUMN_CONTEXT_WORDS = setOf("SELECT", "DISTINCT", "WHERE", "ON", "BY", "AND", "OR")
@@ -113,8 +131,21 @@ private val COLUMN_CONTEXT_WORDS = setOf("SELECT", "DISTINCT", "WHERE", "ON", "B
 private fun keywordCompletions(keywords: Set<String>): List<SqlCompletionItem> =
     keywords.sorted().map { SqlCompletionItem(it, it, SqlCompletionKind.Keyword) }
 
-private fun tableCompletions(request: SqlCompletionRequest): List<SqlCompletionItem> {
+// With no schemaName, lists the selected schema's tables plus every schema as a `name.` prefix.
+// With one, lists only that schema's tables — the member list for a completed `schema.` qualifier.
+private fun tableCompletions(
+    request: SqlCompletionRequest,
+    schemaName: String? = null,
+): List<SqlCompletionItem> {
     val schema = request.schema ?: return emptyList()
+    if (schemaName != null) {
+        val known = schema.tables.map { it.schema }.any { it.equals(schemaName, ignoreCase = true) }
+        if (!known) return emptyList()
+        return schema.tables
+            .filter { it.schema.equals(schemaName, ignoreCase = true) }
+            .sortedBy { it.name }
+            .map { SqlCompletionItem(it.name, it.name, SqlCompletionKind.Table, it.schema) }
+    }
     val tables =
         request.defaultSchema
             ?.let { selected -> schema.tables.filter { it.schema == selected } }
@@ -173,6 +204,11 @@ private fun scanStatementTables(
                 schemaName = first.value
                 tableName = name.value
                 i += 2
+            } else {
+                // `FROM public.` with no table yet — recording `public` as a table would shadow the
+                // schema and leave the completion popup empty.
+                i++
+                continue
             }
         }
         var alias = tableName

@@ -132,4 +132,60 @@ class SqlTokenizerTest {
             )
         assertNull(tokens.firstOrNull { it.type == SqlTokenType.Error })
     }
+
+    @Test
+    fun mysqlBackslashEscapesInStrings() {
+        val quote = significant("'it\\'s'", Dialect.MySql).single()
+        assertEquals(SqlTokenType.StringLiteral, quote.type)
+        assertEquals("it's", quote.value)
+
+        val backslash = significant("'a\\\\b'", Dialect.MySql).single()
+        assertEquals("a\\b", backslash.value)
+    }
+
+    @Test
+    fun ansiDialectsTakeBackslashLiterally() {
+        val doubled = significant("'it''s'").single()
+        assertEquals("it's", doubled.value)
+
+        val backslash = significant("'a\\\\b'").single()
+        assertEquals("a\\\\b", backslash.value)
+    }
+
+    @Test
+    fun mysqlExecutableCommentIsRejectedNotDiscarded() {
+        val token =
+            tokenizeSql("SELECT id FROM users /*! WHERE id = 1 */", Dialect.MySql).single {
+                it.type == SqlTokenType.Error
+            }
+        assertEquals(SqlMessages.MYSQL_EXEC_COMMENT, token.error)
+    }
+
+    @Test
+    fun nationalStringLiteralIsRejected() {
+        val token =
+            tokenizeSql("SELECT id FROM t WHERE name = N'alice'", Dialect.Mssql).single {
+                it.type == SqlTokenType.Error
+            }
+        assertEquals(SqlMessages.NATIONAL_STRING, token.error)
+    }
+
+    @Test
+    fun mysqlDashDashNeedsWhitespaceToStartAComment() {
+        assertTrue(
+            tokenizeSql("SELECT id -- note", Dialect.MySql).any { it.type == SqlTokenType.Comment }
+        )
+        // MySQL reads `--2` as two unary minuses, not a comment swallowing the rest of the line.
+        assertTrue(
+            tokenizeSql("SELECT id FROM t WHERE a = --2", Dialect.MySql).none {
+                it.type == SqlTokenType.Comment
+            }
+        )
+        // Other dialects keep the ANSI rule.
+        assertTrue(
+            tokenizeSql("SELECT id FROM t WHERE a = --2", Dialect.Postgres).any {
+                it.type == SqlTokenType.Comment
+            }
+        )
+    }
 }
