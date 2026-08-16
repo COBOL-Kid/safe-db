@@ -179,6 +179,7 @@ fun CommandPalette(
                     Icons.Filled.Delete,
                 ) {
                     viewModel.query.clear()
+                    viewModel.dismissRecipeApplyNotice()
                     onDismiss()
                 }
             )

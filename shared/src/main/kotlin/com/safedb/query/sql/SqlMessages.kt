@@ -30,6 +30,8 @@ internal object SqlMessages {
 
     fun topElsewhere(dialect: String) = "TOP is SQL Server syntax — use LIMIT on $dialect."
 
+    fun ilikeElsewhere(dialect: String) = "ILIKE is PostgreSQL syntax — use LIKE on $dialect."
+
     const val SCHEMA_REQUIRED = "Select a schema, or qualify the table as schema.table."
 
     // Each ON condition becomes an edge in the builder's join graph, so it must connect the table

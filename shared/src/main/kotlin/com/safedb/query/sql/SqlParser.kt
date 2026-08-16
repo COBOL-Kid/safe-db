@@ -341,7 +341,14 @@ private class SqlParser(
                 predicate(column, FilterOp.Like, listOf(parseLiteral()))
             }
             word == "ILIKE" -> {
-                advance()
+                val ilikeToken = advance()
+                if (dialect != Dialect.Postgres) {
+                    fail(
+                        SqlIssueCode.Unsupported,
+                        SqlMessages.ilikeElsewhere(dialectDisplay(dialect)),
+                        ilikeToken.span,
+                    )
+                }
                 predicate(column, FilterOp.Ilike, listOf(parseLiteral()))
             }
             word == "NOT" -> {

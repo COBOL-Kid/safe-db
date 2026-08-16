@@ -115,15 +115,18 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
             // The session refreshes from whichever screen produced it, so staleness and the
             // refreshed sample must come from that screen's current state.
             val activeDialect = connections.firstOrNull { it.id == activeConnectionId }?.dialect
+            val sqlText = viewModel.sqlEditor.text.text
             val sqlSpec =
-                if (exploreOrigin == ExploreOrigin.Sql) {
-                    val sqlText = viewModel.sqlEditor.text.text
-                    remember(
-                        sqlText,
-                        activeDialect,
-                        viewModel.schema.schema,
-                        viewModel.schema.selectedSchema,
-                    ) {
+                remember(
+                    exploreOrigin,
+                    sqlText,
+                    activeDialect,
+                    viewModel.schema.schema,
+                    viewModel.schema.selectedSchema,
+                ) {
+                    if (exploreOrigin != ExploreOrigin.Sql) {
+                        null
+                    } else {
                         (parsedSqlSpec(
                                 sqlText,
                                 activeDialect,
@@ -133,8 +136,6 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                 as? SqlParseResult.Success)
                             ?.spec
                     }
-                } else {
-                    null
                 }
             val currentSpec =
                 when (exploreOrigin) {

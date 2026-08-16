@@ -240,6 +240,18 @@ class SqlToSpecTest {
             failure("SELECT id FROM users WHERE active = ''").code,
         )
         assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE active = 'yes'").code,
+        )
+        assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE active = '1'").code,
+        )
+        assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE active = 'no'").code,
+        )
+        assertEquals(
             LiteralKind.Bool,
             (spec("SELECT id FROM users WHERE active = true").filters.children.single()
                     as FilterNode.Leaf)

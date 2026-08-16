@@ -263,6 +263,19 @@ class SqlParserTest {
     }
 
     @Test
+    fun ilikeIsPostgresOnly() {
+        val sql = "SELECT id FROM t WHERE col ILIKE 'x'"
+        val pred = assertIs<SqlConditionAst.Predicate>(parse(sql, Dialect.Postgres).where)
+        assertEquals(FilterOp.Ilike, pred.op)
+
+        for (dialect in listOf(Dialect.MySql, Dialect.Mssql, Dialect.Oracle)) {
+            val issue = failParse(sql, dialect)
+            assertEquals(SqlIssueCode.Unsupported, issue.code)
+            assertTrue(issue.message.contains("ILIKE is PostgreSQL syntax"))
+        }
+    }
+
+    @Test
     fun explicitZeroLimitIsRejected() {
         // QuerySpec reserves 0 as the builder's "unset" sentinel, which validateQuery rewrites to
         // 500 — running 500 rows for a typed LIMIT 0 would be the opposite of what was asked.

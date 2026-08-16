@@ -531,6 +531,7 @@ class AppViewModelTest {
 
                 val pending = viewModel.pendingRecipeRun.value
                 assertEquals("r1", pending?.recipe?.id)
+                assertNull(viewModel.recipeApplyNotice.value)
                 assertNotNull(viewModel.query.currentSample(connection.id))
                 viewModel.onQuerySettled(connection.id, listOf(connection))
 
@@ -820,6 +821,7 @@ class AppViewModelTest {
             advanceUntilIdle()
 
             assertNull(viewModel.pendingRecipeRun.value)
+            assertNull(viewModel.recipeApplyNotice.value)
             assertFalse(viewModel.query.canRun)
             assertNull(viewModel.query.currentSample(connection.id))
             assertNull(viewModel.explore.value)
@@ -894,6 +896,13 @@ class AppViewModelTest {
                 assertTrue(restored)
                 assertNull(viewModel.pendingRecipeRun.value)
                 assertEquals(1, service.queryAttempts)
+                assertEquals(
+                    "The recipe is on the canvas but was not run because a query is already running. Wait, then press Run.",
+                    viewModel.recipeApplyNotice.value,
+                )
+
+                viewModel.dismissRecipeApplyNotice()
+                assertNull(viewModel.recipeApplyNotice.value)
 
                 gate.complete(Unit)
                 advanceUntilIdle()

@@ -157,6 +157,7 @@ internal fun AppShellContent(
     val settings by viewModel.settings.settings.collectAsState()
     val schemaHistoryError by viewModel.settings.schemaHistoryError.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
+    val recipeApplyNotice by viewModel.recipeApplyNotice.collectAsState()
     val isDark = settings.theme == "dark"
     val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
     val rawSchemaHandlers =
@@ -171,6 +172,7 @@ internal fun AppShellContent(
 
     fun switchConnection(target: ConnectionDef) {
         viewModel.query.clear()
+        viewModel.dismissRecipeApplyNotice()
         pendingConnectionSwitch = null
         rawSchemaHandlers.onConnectionSelected(target)
     }
@@ -263,11 +265,11 @@ internal fun AppShellContent(
                     ConnectionsScreen(
                         viewModel = viewModel.connections,
                         onActivate = { id ->
-                            appState.setActiveConnection(
-                                id,
-                                resolveConnectionSchemaSelection(id, settings),
-                            )
-                            appState.navigate(AppRoute.Builder)
+                            val connection = connections.firstOrNull { it.id == id }
+                            if (connection != null) {
+                                schemaHandlers.onConnectionSelected(connection)
+                                appState.navigate(AppRoute.Builder)
+                            }
                         },
                         onDeleted = { id ->
                             appState.clearActiveConnectionIf(id)
@@ -322,6 +324,8 @@ internal fun AppShellContent(
                                 }
                             }
                         },
+                        recipeApplyNotice = recipeApplyNotice,
+                        onDismissRecipeApplyNotice = viewModel::dismissRecipeApplyNotice,
                     )
                 AppRoute.Sql ->
                     SqlScreen(

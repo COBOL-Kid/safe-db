@@ -99,6 +99,8 @@ internal fun BuilderScreen(
     onOpenExplore: () -> Unit,
     onOpenSettings: () -> Unit,
     onApplyRecipe: (ExploreRecipe, ConnectionDef) -> Unit,
+    recipeApplyNotice: String? = null,
+    onDismissRecipeApplyNotice: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showSavePrompt by remember { mutableStateOf(false) }
@@ -469,6 +471,13 @@ internal fun BuilderScreen(
                                     TextButton(
                                         onClick = { queryViewModel.dismissHydrationWarning() }
                                     ) {
+                                        Text("Dismiss")
+                                    }
+                                }
+                            }
+                            recipeApplyNotice?.let { notice ->
+                                MessageBanner(text = notice, kind = BannerKind.WARNING) {
+                                    TextButton(onClick = onDismissRecipeApplyNotice) {
                                         Text("Dismiss")
                                     }
                                 }

@@ -43,6 +43,8 @@ class AppViewModel(
     val exploreOrigin: StateFlow<ExploreOrigin> = _exploreOrigin.asStateFlow()
     private val _pendingRecipeRun = MutableStateFlow<PendingRecipeRun?>(null)
     val pendingRecipeRun: StateFlow<PendingRecipeRun?> = _pendingRecipeRun.asStateFlow()
+    private val _recipeApplyNotice = MutableStateFlow<String?>(null)
+    val recipeApplyNotice: StateFlow<String?> = _recipeApplyNotice.asStateFlow()
 
     private val _initialLoading = MutableStateFlow(true)
     val initialLoading: StateFlow<Boolean> = _initialLoading.asStateFlow()
@@ -126,6 +128,7 @@ class AppViewModel(
         onRestored: () -> Unit = {},
     ) {
         _pendingRecipeRun.value = null
+        _recipeApplyNotice.value = null
         val spec = recipe.querySpec ?: return
         restoreQueryForConnection(connection.id, spec) { restored ->
             if (!restored) {
@@ -134,13 +137,21 @@ class AppViewModel(
             }
             onRestored()
             if (!query.canRun) {
+                if (query.running) {
+                    _recipeApplyNotice.value = RECIPE_APPLY_BUSY_NOTICE
+                }
                 _pendingRecipeRun.value = null
                 return@restoreQueryForConnection
             }
+            _recipeApplyNotice.value = null
             _pendingRecipeRun.value =
                 PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
             query.run(connection.id) { succeeded -> if (!succeeded) _pendingRecipeRun.value = null }
         }
+    }
+
+    fun dismissRecipeApplyNotice() {
+        _recipeApplyNotice.value = null
     }
 
     // Advances the pending recipe run after the builder query settles: the spec-hash checks keep an
@@ -199,3 +210,6 @@ data class PendingRecipeRun(
     val connectionId: String,
     val specHash: String,
 )
+
+private const val RECIPE_APPLY_BUSY_NOTICE =
+    "The recipe is on the canvas but was not run because a query is already running. Wait, then press Run."

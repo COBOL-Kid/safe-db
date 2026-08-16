@@ -423,7 +423,11 @@ private class SqlSpecBuilder(
                     LiteralForm.Bool ->
                         if (parseBoolLiteral(raw) == null) mismatch() else FilterLiteral(kind, raw)
                     LiteralForm.Text ->
-                        if (raw.isEmpty() || parseBoolLiteral(raw) == null) mismatch()
+                        if (
+                            !raw.equals("true", ignoreCase = true) &&
+                                !raw.equals("false", ignoreCase = true)
+                        )
+                            mismatch()
                         else FilterLiteral(kind, raw)
                     LiteralForm.Number -> mismatch()
                 }
