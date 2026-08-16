@@ -59,6 +59,7 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.safedb.AppRoute
 import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
 import com.safedb.model.SortDirection
@@ -143,6 +144,37 @@ internal fun builderConnectionSwitchDecision(
         activeConnectionId == targetConnectionId -> BuilderConnectionSwitchDecision.NoOp
         hasDraft -> BuilderConnectionSwitchDecision.ConfirmClear
         else -> BuilderConnectionSwitchDecision.SwitchImmediately
+    }
+
+internal data class ConnectionSwitchPlan(
+    val switchNow: Boolean,
+    val awaitConfirm: Boolean,
+    val navigateOnCommit: AppRoute?,
+)
+
+internal fun planConnectionSwitch(
+    decision: BuilderConnectionSwitchDecision,
+    thenNavigate: AppRoute?,
+): ConnectionSwitchPlan =
+    when (decision) {
+        BuilderConnectionSwitchDecision.NoOp ->
+            ConnectionSwitchPlan(
+                switchNow = false,
+                awaitConfirm = false,
+                navigateOnCommit = thenNavigate,
+            )
+        BuilderConnectionSwitchDecision.SwitchImmediately ->
+            ConnectionSwitchPlan(
+                switchNow = true,
+                awaitConfirm = false,
+                navigateOnCommit = thenNavigate,
+            )
+        BuilderConnectionSwitchDecision.ConfirmClear ->
+            ConnectionSwitchPlan(
+                switchNow = false,
+                awaitConfirm = true,
+                navigateOnCommit = thenNavigate,
+            )
     }
 
 @Composable

@@ -196,4 +196,16 @@ class SqlTokenizerTest {
             }
         )
     }
+
+    @Test
+    fun mysqlBackslashNewlineIsLineContinuation() {
+        val token = significant("'foo\\\nbar'", Dialect.MySql).single()
+        assertEquals(SqlTokenType.StringLiteral, token.type)
+        assertEquals("foobar", token.value)
+    }
+
+    @Test
+    fun sqlWordUppercasesWithRootLocale() {
+        assertEquals("LIKE", sqlWord("like"))
+    }
 }

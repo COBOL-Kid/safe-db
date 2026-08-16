@@ -21,8 +21,11 @@ internal fun queryRiskIndicatorText(
     running: Boolean,
     gate: QueryRiskGate,
     validationError: String? = null,
-): String =
-    when {
+    runAvailable: Boolean = true,
+): String {
+    val runEnabledLabel = if (runAvailable) "Run enabled" else "Run unavailable"
+    val runAvailableLabel = if (runAvailable) "Run available" else "Run unavailable"
+    return when {
         validationError != null -> "Query validation: $validationError"
         running -> "Assessing query risk · Run unavailable"
         evaluation?.decision?.state == RiskGateState.ConfirmationRequired ->
@@ -32,22 +35,23 @@ internal fun queryRiskIndicatorText(
         evaluation?.confirmationAccepted == true -> {
             val severity = evaluation.finalAssessment?.severity?.label
             if (severity == null) {
-                "Query risk: Not required · plan safeguard confirmed · Run enabled"
+                "Query risk: Not required · plan safeguard confirmed · $runEnabledLabel"
             } else {
-                "Query risk: $severity · plan safeguard confirmed · Run enabled"
+                "Query risk: $severity · plan safeguard confirmed · $runEnabledLabel"
             }
         }
-        gate == QueryRiskGate.Disabled -> "Query risk: Not required · Run enabled"
+        gate == QueryRiskGate.Disabled -> "Query risk: Not required · $runEnabledLabel"
         evaluation?.finalAssessment != null -> {
             val finalAssessment = requireNotNull(evaluation.finalAssessment)
             val refinement =
                 if (evaluation.planStatus == QueryPlanStatus.Available) " · plan refined" else ""
-            "Query risk: ${finalAssessment.severity.label}$refinement · Run enabled"
+            "Query risk: ${finalAssessment.severity.label}$refinement · $runEnabledLabel"
         }
         preliminary != null ->
-            "Preliminary query risk: ${preliminary.severity.label} · Run available"
-        else -> "Query risk: Ready to assess · Run enabled"
+            "Preliminary query risk: ${preliminary.severity.label} · $runAvailableLabel"
+        else -> "Query risk: Ready to assess · $runEnabledLabel"
     }
+}
 
 internal data class QueryConfirmationDialogCopy(
     val title: String,

@@ -151,7 +151,7 @@ fun CommandPalette(
                 runConnectionId != null &&
                 schemaMatchesConnection &&
                 viewModel.query.canRun &&
-                !viewModel.sqlEditor.running
+                !viewModel.sqlEditor.occupiesQuerySlot
         ) {
             add(
                 PaletteCommand(
@@ -163,7 +163,7 @@ fun CommandPalette(
                     if (
                         viewModel.schema.schema != null &&
                             viewModel.schema.loadedConnectionId == runConnectionId &&
-                            !viewModel.sqlEditor.running
+                            !viewModel.sqlEditor.occupiesQuerySlot
                     ) {
                         viewModel.query.run(runConnectionId)
                         appState.navigate(AppRoute.Builder)
@@ -195,7 +195,6 @@ fun CommandPalette(
                     icon = Icons.Filled.Link,
                 ) {
                     onConnectionSelected(connection)
-                    appState.navigate(AppRoute.Builder)
                     onDismiss()
                 }
             )

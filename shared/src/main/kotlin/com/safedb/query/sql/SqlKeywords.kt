@@ -1,6 +1,9 @@
 package com.safedb.query.sql
 
 import com.safedb.model.Dialect
+import java.util.Locale
+
+internal fun sqlWord(text: String): String = text.uppercase(Locale.ROOT)
 
 private val CORE_KEYWORDS =
     setOf(

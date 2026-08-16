@@ -3,6 +3,7 @@ package com.safedb.query.sql
 import com.safedb.model.Dialect
 import com.safedb.model.FilterOp
 import com.safedb.model.SortDirection
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -300,5 +301,28 @@ class SqlParserTest {
             SqlIssueCode.Unsupported,
             failParse("SELECT id FROM t WHERE a NOT ILIKE 'x'", Dialect.Postgres).code,
         )
+    }
+
+    @Test
+    fun crTerminatesLineCommentsWithoutSwallowingTheNextClause() {
+        val sql = "SELECT id FROM users -- note\rWHERE active = true"
+        val ast = parse(sql)
+        assertIs<SqlConditionAst.Predicate>(ast.where)
+        val parsed = parseSqlToSpec(sql, Dialect.Postgres, sqlTestSchema(), "public")
+        assertIs<SqlParseResult.Success>(parsed)
+        assertTrue(parsed.spec.filters.children.isNotEmpty())
+    }
+
+    @Test
+    fun keywordsMatchUnderTurkishLocale() {
+        val previous = Locale.getDefault()
+        Locale.setDefault(Locale.forLanguageTag("tr"))
+        try {
+            val ast = parse("SELECT id FROM users WHERE name like 'a%' LIMIT 5")
+            assertEquals(FilterOp.Like, assertIs<SqlConditionAst.Predicate>(ast.where).op)
+            assertEquals(5, ast.limit)
+        } finally {
+            Locale.setDefault(previous)
+        }
     }
 }

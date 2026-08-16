@@ -3,6 +3,7 @@ package com.safedb.query.sql
 import com.safedb.model.Dialect
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
+import com.safedb.query.foldUnquoted
 import com.safedb.query.quoteIfRequired
 
 enum class SqlCompletionKind {
@@ -78,7 +79,7 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
         prev
             ?.takeIf { it.type == SqlTokenType.Keyword || it.type == SqlTokenType.Identifier }
             ?.text
-            ?.uppercase()
+            ?.let(::sqlWord)
 
     val statementTables = scanStatementTables(significant, request)
     val keywords = sqlCompletionKeywords(request.dialect)
@@ -92,10 +93,7 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
                             it.type == SqlTokenType.QuotedIdentifier
                     }
                 val table = qualifier?.let { q ->
-                    statementTables.find {
-                        it.alias.equals(q.value, ignoreCase = true) ||
-                            it.name.equals(q.value, ignoreCase = true)
-                    }
+                    resolveQualifier(q, statementTables, request.dialect)
                 }
                 val columns =
                     table?.info?.columns.orEmpty().map {
@@ -239,7 +237,7 @@ private fun scanStatementTables(
     val result = mutableListOf<StatementTable>()
     var i = 0
     while (i < tokens.size) {
-        val word = tokens[i].takeIf { it.type == SqlTokenType.Keyword }?.text?.uppercase()
+        val word = tokens[i].takeIf { it.type == SqlTokenType.Keyword }?.text?.let(::sqlWord)
         if (word != "FROM" && word != "JOIN") {
             i++
             continue
@@ -262,28 +260,60 @@ private fun scanStatementTables(
                 continue
             }
         }
-        var alias = tableName
         val next = tokens.getOrNull(i)
-        if (next?.type == SqlTokenType.Keyword && next.text.uppercase() == "AS") {
-            tokens.getOrNull(i + 1)?.takeIf(::isIdentToken)?.let {
-                alias = it.value
-                i += 2
+        val aliasToken: SqlToken? =
+            if (next?.type == SqlTokenType.Keyword && sqlWord(next.text) == "AS") {
+                tokens.getOrNull(i + 1)?.takeIf(::isIdentToken)?.also { i += 2 }
+            } else if (
+                next != null && isIdentToken(next) && sqlWord(next.text) !in NON_TABLE_ALIAS_WORDS
+            ) {
+                i++
+                next
+            } else {
+                null
             }
-        } else if (
-            next != null && isIdentToken(next) && next.text.uppercase() !in NON_TABLE_ALIAS_WORDS
-        ) {
-            alias = next.value
-            i++
-        }
         val effectiveSchema = schemaName ?: request.defaultSchema
         val info =
             request.schema?.tables?.find {
                 (effectiveSchema == null || it.schema.equals(effectiveSchema, ignoreCase = true)) &&
                     it.name.equals(tableName, ignoreCase = true)
             }
+        // Same spelling SqlToSpec stores; quoting the written token (`U`) would not resolve.
+        val alias =
+            when {
+                aliasToken == null -> info?.name ?: foldUnquoted(tableName, request.dialect)
+                aliasToken.type == SqlTokenType.QuotedIdentifier -> aliasToken.value
+                else -> foldUnquoted(aliasToken.value, request.dialect)
+            }
         result.add(StatementTable(info, tableName, alias))
     }
     return result
+}
+
+// Same tiers as SqlToSpec.resolveQualifier. Ambiguous or missing → empty column list.
+private fun resolveQualifier(
+    ident: SqlToken,
+    tables: List<StatementTable>,
+    dialect: Dialect,
+): StatementTable? {
+    val quoted = ident.type == SqlTokenType.QuotedIdentifier
+    val spelling = if (quoted) ident.value else foldUnquoted(ident.value, dialect)
+
+    val aliasMatches = tables.filter { it.alias == spelling }
+    if (aliasMatches.size == 1) return aliasMatches[0]
+    if (aliasMatches.size > 1) return null
+
+    val nameMatches = tables.filter { it.info?.name == spelling }
+    if (nameMatches.size == 1) return nameMatches[0]
+    if (nameMatches.size > 1) return null
+
+    if (quoted) return null
+
+    val ciMatches = tables.filter {
+        it.alias.equals(ident.value, ignoreCase = true) ||
+            it.info?.name.equals(ident.value, ignoreCase = true)
+    }
+    return if (ciMatches.size == 1) ciMatches[0] else null
 }
 
 private val NON_TABLE_ALIAS_WORDS =

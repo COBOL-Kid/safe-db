@@ -284,4 +284,61 @@ class SqlCompletionTest {
         assertTrue(complete(text, caret = newline).items.isEmpty())
         assertTrue(complete(text, caret = newline + 1).items.isNotEmpty())
     }
+
+    @Test
+    fun foldedAliasInsertsResolvableQualifier() {
+        val text = "SELECT  FROM users AS U JOIN categories c ON U.category_id = c.id"
+        val result = complete(text, caret = "SELECT ".length)
+        val item = result.items.single { it.insertText == "u.email" }
+        val parsed = parseSqlToSpec(apply(text, result, item), Dialect.Postgres, schema, "public")
+        assertIs<SqlParseResult.Success>(parsed)
+        assertEquals("u", parsed.spec.columns.single().tableAlias)
+    }
+
+    @Test
+    fun oracleFoldedAliasInsertsResolvableQualifier() {
+        val text = "SELECT  FROM users AS u JOIN categories c ON u.category_id = c.id"
+        val result = complete(text, caret = "SELECT ".length, dialect = Dialect.Oracle)
+        val item = result.items.single { it.label == "U.email" }
+        // Oracle folds unquoted names to uppercase, so lowercase metadata columns are quoted.
+        assertEquals("U.\"email\"", item.insertText)
+        val parsed = parseSqlToSpec(apply(text, result, item), Dialect.Oracle, schema, "public")
+        assertIs<SqlParseResult.Success>(parsed)
+        assertEquals("U", parsed.spec.columns.single().tableAlias)
+    }
+
+    @Test
+    fun quotedAliasInsertsQuotedQualifier() {
+        val text = "SELECT  FROM users AS \"U\" JOIN categories c ON \"U\".category_id = c.id"
+        val result = complete(text, caret = "SELECT ".length)
+        val item = result.items.single { it.insertText == "\"U\".email" }
+        val parsed = parseSqlToSpec(apply(text, result, item), Dialect.Postgres, schema, "public")
+        assertIs<SqlParseResult.Success>(parsed)
+        assertEquals("U", parsed.spec.columns.single().tableAlias)
+    }
+
+    @Test
+    fun unaliasedMixedCaseTableInsertsMetadataAlias() {
+        val text = "SELECT  FROM Users JOIN categories c ON Users.category_id = c.id"
+        val result = complete(text, caret = "SELECT ".length)
+        val item = result.items.single { it.label.equals("users.email", ignoreCase = true) }
+        assertEquals("users.email", item.insertText)
+        val parsed = parseSqlToSpec(apply(text, result, item), Dialect.Postgres, schema, "public")
+        assertIs<SqlParseResult.Success>(parsed)
+        assertEquals("users", parsed.spec.columns.single().tableAlias)
+    }
+
+    @Test
+    fun unquotedQualifierPrefersFoldedAliasOverQuotedAlias() {
+        val text = "SELECT u. FROM users AS \"U\" JOIN categories u ON \"U\".category_id = u.id"
+        val result = complete(text, caret = "SELECT u.".length)
+        assertTrue(result.items.any { it.label == "name" })
+        assertTrue(result.items.any { it.label == "id" })
+        assertTrue(result.items.none { it.label == "email" })
+        val name = result.items.single { it.label == "name" }
+        val parsed = parseSqlToSpec(apply(text, result, name), Dialect.Postgres, schema, "public")
+        assertIs<SqlParseResult.Success>(parsed)
+        assertEquals("u", parsed.spec.columns.single().tableAlias)
+        assertEquals("name", parsed.spec.columns.single().column)
+    }
 }

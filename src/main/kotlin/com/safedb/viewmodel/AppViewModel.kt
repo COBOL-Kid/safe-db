@@ -136,9 +136,10 @@ class AppViewModel(
                 return@restoreQueryForConnection
             }
             onRestored()
-            // The SQL editor holds the same app-wide slot, so a run there blocks this one too.
-            if (!query.canRun || sqlEditor.running) {
-                if (query.running || sqlEditor.running) {
+            // The SQL editor holds the same app-wide slot, so a run or confirmation there
+            // blocks this one too.
+            if (!query.canRun || sqlEditor.occupiesQuerySlot) {
+                if (query.occupiesQuerySlot || sqlEditor.occupiesQuerySlot) {
                     _recipeApplyNotice.value = RECIPE_APPLY_BUSY_NOTICE
                 }
                 _pendingRecipeRun.value = null
@@ -213,4 +214,4 @@ data class PendingRecipeRun(
 )
 
 private const val RECIPE_APPLY_BUSY_NOTICE =
-    "The recipe is on the canvas but was not run because a query is already running. Wait, then press Run."
+    "The recipe is on the canvas but was not run because a query is already running or waiting for confirmation. Wait, then press Run."

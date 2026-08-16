@@ -169,6 +169,9 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
     val pendingConfirmationReason: String?
         get() = pendingConfirmationReasons.joinToString(separator = " ").ifBlank { null }
 
+    val occupiesQuerySlot: Boolean
+        get() = running || pendingConfirmation != null || pendingRiskGate
+
     var hydrationWarning by mutableStateOf<String?>(null)
         private set
 

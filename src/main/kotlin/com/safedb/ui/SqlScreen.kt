@@ -96,7 +96,7 @@ internal fun SqlScreen(
     schemaHistoryError: String?,
     settings: Settings,
     parseResult: SqlParseResult?,
-    builderRunning: Boolean,
+    builderBusy: Boolean,
     onConnectionSelected: (ConnectionDef) -> Unit,
     onSchemaSelected: (String) -> Unit,
     onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
@@ -157,7 +157,7 @@ internal fun SqlScreen(
             parsedSpec != null &&
             riskValidationError == null &&
             !sqlViewModel.running &&
-            !builderRunning &&
+            !builderBusy &&
             !sqlViewModel.pendingRiskGateFor(connection.id, parsedSpec) &&
             pendingConfirmation == null
 
@@ -176,6 +176,7 @@ internal fun SqlScreen(
             message = copy.message,
             confirmLabel = copy.confirmLabel,
             onConfirm = {
+                if (builderBusy) return@ConfirmDialog
                 val connectionId = connection?.id
                 if (connectionId == null) {
                     sqlViewModel.dismissError()
@@ -194,13 +195,17 @@ internal fun SqlScreen(
             selectedSchema = selectedSchema,
             schemaOptions = schemaViewModel.schemaOptions,
             riskIndicator =
-                if (connection != null) {
+                if (
+                    connection != null &&
+                        (parsedSpec != null || sqlViewModel.running || finalRiskEvaluation != null)
+                ) {
                     queryRiskIndicatorText(
                         preliminary = preliminaryEvaluation?.staticAssessment,
                         evaluation = finalRiskEvaluation,
                         running = sqlViewModel.running,
                         gate = settings.queryRiskGate,
                         validationError = riskValidationError,
+                        runAvailable = canRun,
                     )
                 } else {
                     null

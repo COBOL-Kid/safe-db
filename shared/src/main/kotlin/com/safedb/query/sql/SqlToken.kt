@@ -78,6 +78,17 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
             val ch = sql[j]
             if (backslashEscapes && ch == '\\' && j + 1 < sql.length) {
                 when (val escaped = sql[j + 1]) {
+                    // Real newline after \ continues the string; \n (letter n) stays an escaped
+                    // newline in the value.
+                    '\n' -> {
+                        j += 2
+                        continue
+                    }
+                    '\r' -> {
+                        j += 2
+                        if (j < sql.length && sql[j] == '\n') j++
+                        continue
+                    }
                     'n' -> body.append('\n')
                     't' -> body.append('\t')
                     'r' -> body.append('\r')
@@ -132,13 +143,14 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                     sql[i + 2].isWhitespace() ||
                     sql[i + 2].isISOControl()) -> {
                 var j = i
-                while (j < sql.length && sql[j] != '\n') j++
+                // Stop at CR or LF; do not consume the LF of CRLF (whitespace handles it).
+                while (j < sql.length && sql[j] != '\n' && sql[j] != '\r') j++
                 add(SqlTokenType.Comment, i, j)
                 i = j
             }
             c == '#' && dialect == Dialect.MySql -> {
                 var j = i
-                while (j < sql.length && sql[j] != '\n') j++
+                while (j < sql.length && sql[j] != '\n' && sql[j] != '\r') j++
                 add(SqlTokenType.Comment, i, j)
                 i = j
             }
@@ -261,8 +273,7 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                 ) j++
                 val word = sql.substring(i, j)
                 val type =
-                    if (word.uppercase() in keywords) SqlTokenType.Keyword
-                    else SqlTokenType.Identifier
+                    if (sqlWord(word) in keywords) SqlTokenType.Keyword else SqlTokenType.Identifier
                 add(type, i, j)
                 i = j
             }

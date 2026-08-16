@@ -3,6 +3,7 @@ package com.safedb.query.sql
 import com.safedb.model.Dialect
 import com.safedb.model.FilterOp
 import com.safedb.model.SortDirection
+import java.util.Locale
 
 internal sealed class SqlStatementResult {
     data class Ok(val ast: SqlSelectAst) : SqlStatementResult()
@@ -60,7 +61,7 @@ private class SqlParser(
 
     fun parseStatement(): SqlSelectAst {
         val first = peek() ?: fail(SqlIssueCode.Syntax, "Enter a SELECT query.", null)
-        val firstWord = first.text.uppercase()
+        val firstWord = sqlWord(first.text)
         when {
             wordAt(0) == "WITH" -> fail(SqlIssueCode.Unsupported, SqlMessages.CTE, first.span)
             firstWord in BLOCKED_STATEMENT_STARTERS &&
@@ -72,11 +73,12 @@ private class SqlParser(
         val ast = parseSelect()
         if (peek()?.type == SqlTokenType.Semicolon) pos++
         peek()?.let { extra ->
+            val extraWord = sqlWord(extra.text)
             val code =
-                if (extra.text.uppercase() in SET_OPERATIONS) SqlIssueCode.Unsupported
+                if (extraWord in SET_OPERATIONS) SqlIssueCode.Unsupported
                 else SqlIssueCode.MultipleStatements
             val message =
-                if (extra.text.uppercase() in SET_OPERATIONS) SqlMessages.SET_OPERATION
+                if (extraWord in SET_OPERATIONS) SqlMessages.SET_OPERATION
                 else SqlMessages.MULTIPLE_STATEMENTS
             fail(code, message, extra.span)
         }
@@ -219,7 +221,7 @@ private class SqlParser(
             alias = parseIdent("Expected an alias after AS.")
         } else {
             val next = peek()
-            if (next != null && isIdent(next) && next.text.uppercase() !in NON_ALIAS_WORDS) {
+            if (next != null && isIdent(next) && sqlWord(next.text) !in NON_ALIAS_WORDS) {
                 alias = parseIdent("Expected an alias.")
             }
         }
@@ -303,7 +305,7 @@ private class SqlParser(
         val next =
             peek()
                 ?: fail(SqlIssueCode.Syntax, "Expected a comparison after the column.", endSpan())
-        val word = next.text.uppercase()
+        val word = sqlWord(next.text)
         return when {
             next.type == SqlTokenType.Operator && next.text in COMPARISON_OPERATORS -> {
                 advance()
@@ -456,7 +458,7 @@ private class SqlParser(
                 }
                 wordAt(0) == "TRUE" || wordAt(0) == "FALSE" -> {
                     advance()
-                    SqlLiteralAst(next.text.lowercase(), LiteralForm.Bool, next.span)
+                    SqlLiteralAst(next.text.lowercase(Locale.ROOT), LiteralForm.Bool, next.span)
                 }
                 wordAt(0) == "NULL" ->
                     fail(SqlIssueCode.Unsupported, SqlMessages.COMPARE_NULL, next.span)
@@ -598,7 +600,7 @@ private class SqlParser(
     private fun wordAt(offset: Int): String? {
         val token = peek(offset) ?: return null
         if (token.type != SqlTokenType.Keyword && token.type != SqlTokenType.Identifier) return null
-        return token.text.uppercase()
+        return sqlWord(token.text)
     }
 
     private fun matchWord(word: String): Boolean {

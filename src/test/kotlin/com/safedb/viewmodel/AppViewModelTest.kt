@@ -923,7 +923,7 @@ class AppViewModelTest {
                 assertNull(viewModel.pendingRecipeRun.value)
                 assertEquals(1, service.queryAttempts)
                 assertEquals(
-                    "The recipe is on the canvas but was not run because a query is already running. Wait, then press Run.",
+                    "The recipe is on the canvas but was not run because a query is already running or waiting for confirmation. Wait, then press Run.",
                     viewModel.recipeApplyNotice.value,
                 )
 
@@ -971,12 +971,106 @@ class AppViewModelTest {
                 assertNull(viewModel.pendingRecipeRun.value)
                 assertNull(viewModel.explore.value)
                 assertEquals(
-                    "The recipe is on the canvas but was not run because a query is already running. Wait, then press Run.",
+                    "The recipe is on the canvas but was not run because a query is already running or waiting for confirmation. Wait, then press Run.",
                     viewModel.recipeApplyNotice.value,
                 )
 
                 gate.complete(Unit)
                 advanceUntilIdle()
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun recipeRunIsSuppressedWhileTheSqlEditorAwaitsConfirmation() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(confirmationRequired = true)
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.sqlEditor.run("c1", sampleSpec())
+                advanceUntilIdle()
+                assertTrue(viewModel.sqlEditor.occupiesQuerySlot)
+                assertFalse(viewModel.sqlEditor.running)
+                assertNotNull(viewModel.sqlEditor.pendingConfirmation)
+
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-sql-confirm",
+                        name = "SQL confirmation",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+                viewModel.runRecipe(testConnection(), recipe)
+                advanceUntilIdle()
+
+                assertEquals(1, service.queryAttempts)
+                assertFalse(viewModel.query.running)
+                assertNull(viewModel.pendingRecipeRun.value)
+                assertEquals(
+                    "The recipe is on the canvas but was not run because a query is already running or waiting for confirmation. Wait, then press Run.",
+                    viewModel.recipeApplyNotice.value,
+                )
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun builderRunGuardDoesNotStartWhileSqlConfirmationOccupiesTheSlot() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(confirmationRequired = true)
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.sqlEditor.run("c1", sampleSpec())
+                advanceUntilIdle()
+                assertTrue(viewModel.sqlEditor.occupiesQuerySlot)
+                assertFalse(viewModel.sqlEditor.running)
+
+                viewModel.query.addTable(sampleTable())
+                if (!viewModel.sqlEditor.occupiesQuerySlot) {
+                    viewModel.query.run("c1")
+                }
+                advanceUntilIdle()
+
+                assertEquals(1, service.queryAttempts)
+                assertFalse(viewModel.query.running)
+                assertNull(viewModel.query.pendingConfirmation)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun sqlRunGuardDoesNotStartWhileBuilderConfirmationOccupiesTheSlot() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(confirmationRequired = true)
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.query.addTable(sampleTable())
+                viewModel.query.run("c1")
+                advanceUntilIdle()
+                assertTrue(viewModel.query.occupiesQuerySlot)
+                assertFalse(viewModel.query.running)
+                assertNotNull(viewModel.query.pendingConfirmation)
+
+                if (!viewModel.query.occupiesQuerySlot) {
+                    viewModel.sqlEditor.run("c1", sampleSpec())
+                }
+                advanceUntilIdle()
+
+                assertEquals(1, service.queryAttempts)
+                assertFalse(viewModel.sqlEditor.running)
+                assertNull(viewModel.sqlEditor.pendingConfirmation)
             } finally {
                 viewModel.close()
             }

@@ -60,6 +60,9 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
     val pendingConfirmationReasons: List<String>
         get() = pendingConfirmation?.reasons.orEmpty().map { it.message }
 
+    val occupiesQuerySlot: Boolean
+        get() = running || pendingConfirmation != null || pendingRiskGate
+
     fun onTextChanged(value: TextFieldValue) {
         val edited = value.text != text.text
         text = value

@@ -91,6 +91,11 @@ private data class ConnectionSchemaHandlers(
     val onDismissSchemaHistoryError: () -> Unit,
 )
 
+private data class PendingConnectionSwitch(
+    val target: ConnectionDef,
+    val thenNavigate: AppRoute?,
+)
+
 private fun connectionSchemaHandlers(
     appState: AppState,
     viewModel: AppViewModel,
@@ -172,41 +177,46 @@ internal fun AppShellContent(
     // Every route's connection picker goes through one confirm-and-clear path. A builder draft is
     // bound to the connection it was built against, so letting any other surface switch underneath
     // it would leave a canvas that can be run against a database it was never written for.
-    var pendingConnectionSwitch by remember { mutableStateOf<ConnectionDef?>(null) }
+    var pendingConnectionSwitch by remember { mutableStateOf<PendingConnectionSwitch?>(null) }
 
-    fun switchConnection(target: ConnectionDef) {
+    fun switchConnection(target: ConnectionDef, thenNavigate: AppRoute? = null) {
         viewModel.query.clear()
         viewModel.dismissRecipeApplyNotice()
         pendingConnectionSwitch = null
         rawSchemaHandlers.onConnectionSelected(target)
+        thenNavigate?.let(appState::navigate)
+    }
+
+    fun selectConnection(target: ConnectionDef, thenNavigate: AppRoute? = null) {
+        val plan =
+            planConnectionSwitch(
+                builderConnectionSwitchDecision(
+                    activeConnectionId = activeConnectionId,
+                    targetConnectionId = target.id,
+                    hasDraft = viewModel.query.canvasTables.isNotEmpty(),
+                ),
+                thenNavigate,
+            )
+        when {
+            plan.awaitConfirm ->
+                pendingConnectionSwitch = PendingConnectionSwitch(target, plan.navigateOnCommit)
+            plan.switchNow -> switchConnection(target, plan.navigateOnCommit)
+            else -> plan.navigateOnCommit?.let(appState::navigate)
+        }
     }
 
     val schemaHandlers =
-        rawSchemaHandlers.copy(
-            onConnectionSelected = { target ->
-                when (
-                    builderConnectionSwitchDecision(
-                        activeConnectionId = activeConnectionId,
-                        targetConnectionId = target.id,
-                        hasDraft = viewModel.query.canvasTables.isNotEmpty(),
-                    )
-                ) {
-                    BuilderConnectionSwitchDecision.NoOp -> Unit
-                    BuilderConnectionSwitchDecision.SwitchImmediately -> switchConnection(target)
-                    BuilderConnectionSwitchDecision.ConfirmClear -> pendingConnectionSwitch = target
-                }
-            }
-        )
+        rawSchemaHandlers.copy(onConnectionSelected = { target -> selectConnection(target) })
 
-    pendingConnectionSwitch?.let { target ->
+    pendingConnectionSwitch?.let { pending ->
         ConfirmDialog(
             open = true,
             title = "Switch connection?",
             message =
-                "Switching to ${target.name} clears the current query canvas and results. " +
+                "Switching to ${pending.target.name} clears the current query canvas and results. " +
                     "Saved queries are not affected.",
             confirmLabel = "Switch and clear",
-            onConfirm = { switchConnection(target) },
+            onConfirm = { switchConnection(pending.target, pending.thenNavigate) },
             onCancel = { pendingConnectionSwitch = null },
         )
     }
@@ -226,7 +236,9 @@ internal fun AppShellContent(
         onDismiss = { onPaletteOpenChange(false) },
         appState = appState,
         viewModel = viewModel,
-        onConnectionSelected = schemaHandlers.onConnectionSelected,
+        onConnectionSelected = { target ->
+            selectConnection(target, thenNavigate = AppRoute.Builder)
+        },
     )
 
     SettingsPanel(
@@ -271,8 +283,7 @@ internal fun AppShellContent(
                         onActivate = { id ->
                             val connection = connections.firstOrNull { it.id == id }
                             if (connection != null) {
-                                schemaHandlers.onConnectionSelected(connection)
-                                appState.navigate(AppRoute.Builder)
+                                selectConnection(connection, thenNavigate = AppRoute.Builder)
                             }
                         },
                         onDeleted = { id ->
@@ -297,7 +308,7 @@ internal fun AppShellContent(
                         schemaSelection = schemaSelection,
                         schemaHistoryError = schemaHistoryError,
                         settings = settings,
-                        sqlRunning = viewModel.sqlEditor.running,
+                        sqlBusy = viewModel.sqlEditor.occupiesQuerySlot,
                         onConnectionSelected = schemaHandlers.onConnectionSelected,
                         onSchemaSelected = schemaHandlers.onSchemaSelected,
                         onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
@@ -342,7 +353,7 @@ internal fun AppShellContent(
                         schemaHistoryError = schemaHistoryError,
                         settings = settings,
                         parseResult = sqlParseResult,
-                        builderRunning = viewModel.query.running,
+                        builderBusy = viewModel.query.occupiesQuerySlot,
                         onConnectionSelected = schemaHandlers.onConnectionSelected,
                         onSchemaSelected = schemaHandlers.onSchemaSelected,
                         onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,

@@ -92,7 +92,7 @@ internal fun BuilderScreen(
     schemaSelection: SchemaSelectionIntent,
     schemaHistoryError: String?,
     settings: Settings,
-    sqlRunning: Boolean,
+    sqlBusy: Boolean,
     onConnectionSelected: (ConnectionDef) -> Unit,
     onSchemaSelected: (String) -> Unit,
     onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
@@ -156,6 +156,7 @@ internal fun BuilderScreen(
             message = copy.message,
             confirmLabel = copy.confirmLabel,
             onConfirm = {
+                if (sqlBusy) return@ConfirmDialog
                 val connectionId = connection?.id
                 if (connectionId == null) {
                     queryViewModel.dismissError()
@@ -330,7 +331,7 @@ internal fun BuilderScreen(
                             schemaViewModel.schema != null &&
                             schemaViewModel.loadedConnectionId == connection.id &&
                             !queryViewModel.running &&
-                            !sqlRunning,
+                            !sqlBusy,
                 ) {
                     if (queryViewModel.running) {
                         CircularProgressIndicator(
