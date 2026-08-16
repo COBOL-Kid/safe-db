@@ -1,0 +1,33 @@
+package com.safedb.query.sql
+
+// All user-facing rejection copy for the SQL screen lives here.
+internal object SqlMessages {
+    fun notSelect(found: String) =
+        "Only SELECT statements can run here — Safe-DB is read-only. (found ${found.uppercase()})"
+
+    const val CTE = "WITH clauses (CTEs) aren't supported — write a single SELECT."
+    const val MULTIPLE_STATEMENTS = "Only one statement can run at a time."
+    const val FUNCTIONS =
+        "Functions and aggregates (COUNT, SUM, …) aren't supported here. Run the base query, then aggregate in Explore."
+    const val SUBQUERY = "Subqueries aren't supported — flatten to joins and filters."
+    const val OUTER_JOIN = "Only INNER JOIN with column equality (a.x = b.y) is supported."
+    const val JOIN_CONDITION =
+        "Join conditions must be column equalities like a.x = b.y — put filters in WHERE."
+    const val COLUMN_COMPARE =
+        "Comparing two columns isn't supported — compare a column to a value."
+    const val COLUMN_ALIAS = "Column aliases aren't supported — columns keep their own names."
+    const val EXPRESSION = "Expressions and calculations aren't supported — select plain columns."
+    const val HAVING = "HAVING isn't supported. Run the grouped query, then filter in Explore."
+    const val SET_OPERATION =
+        "UNION, INTERSECT, and EXCEPT aren't supported — run one query at a time."
+    const val OFFSET = "OFFSET isn't supported — narrow the query with filters instead."
+    const val NOT_CONDITION =
+        "NOT before a condition isn't supported — use the negated operator (<>, NOT LIKE, NOT IN)."
+    const val COMPARE_NULL = "Use IS NULL or IS NOT NULL to test for null."
+    const val STAR_MIX = "* can't be combined with other columns — use table.* or list columns."
+    const val LIMIT_WHOLE_NUMBER = "LIMIT must be a whole number."
+
+    fun topElsewhere(dialect: String) = "TOP is SQL Server syntax — use LIMIT on $dialect."
+
+    const val SCHEMA_REQUIRED = "Select a schema, or qualify the table as schema.table."
+}
