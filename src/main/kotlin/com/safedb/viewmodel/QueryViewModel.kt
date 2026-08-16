@@ -446,7 +446,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
                 addGroup(tableAlias, columnName)
             }
         } else {
-            clearGroup(tableAlias, columnName)
+            groupState = emptyList()
         }
     }
 

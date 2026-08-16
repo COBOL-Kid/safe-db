@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.geometry.Offset
@@ -91,6 +92,43 @@ class CanvasInteractionTest {
         assertEquals(Offset.Zero, viewModel.canvasViewport.pan)
         assertEquals("customer_id", viewModel.joins.single().leftColumn)
         assertEquals("id", viewModel.joins.single().rightColumn)
+    }
+
+    @Test
+    fun tableCardScrollbarDragScrollsColumns() {
+        val viewModel =
+            QueryViewModel(CanvasInteractionService, CoroutineScope(Dispatchers.Unconfined))
+        viewModel.addTable(wideTable("orders", columnCount = 16))
+        val canvasTable = viewModel.canvasTables.single()
+        val fieldScrollState = ScrollState(0)
+
+        ImageComposeScene(width = 280, height = 280, density = Density(1f)) {
+                SafeDbTheme(isDark = false) {
+                    TableCard(
+                        canvasTable = canvasTable,
+                        queryViewModel = viewModel,
+                        fieldScrollState = fieldScrollState,
+                        onStartDrag = {},
+                        onDragTable = {},
+                        onStartJoin = {},
+                        onDragJoin = {},
+                        onJoinClick = {},
+                        onJoinTargetClick = { _, _ -> },
+                        onStartResize = {},
+                        onResizeTable = {},
+                        onEndGesture = {},
+                    )
+                }
+            }
+            .use { scene ->
+                scene.render(0L)
+                assertTrue(fieldScrollState.maxValue > 0)
+                assertEquals(0, fieldScrollState.value)
+                scene.drag(Offset(220f, 80f), Offset(220f, 160f))
+                scene.render(100_000_000L)
+            }
+
+        assertTrue(fieldScrollState.value > 0)
     }
 
     @Test
@@ -472,6 +510,21 @@ private fun ImageComposeScene.drag(from: Offset, to: Offset) {
     render(30_000_000L)
     sendPointerEvent(PointerEventType.Release, to, button = PointerButton.Primary)
 }
+
+private fun wideTable(name: String, columnCount: Int): TableInfo =
+    TableInfo(
+        schema = "public",
+        name = name,
+        columns =
+            (0 until columnCount).map { index ->
+                ColumnInfo(
+                    name = "col_$index",
+                    dataType = "text",
+                    nullable = true,
+                )
+            },
+        indexes = emptyList(),
+    )
 
 private fun indexedTable(
     name: String,

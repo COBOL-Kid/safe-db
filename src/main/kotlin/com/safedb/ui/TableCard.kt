@@ -2,6 +2,7 @@ package com.safedb.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -28,7 +30,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,7 +54,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -419,29 +419,13 @@ fun TableCard(
                     }
                 }
 
-                if (fieldScrollState.value < fieldScrollState.maxValue) {
-                    Box(
+                if (fieldScrollState.maxValue > 0) {
+                    VerticalScrollbar(
+                        adapter = rememberScrollbarAdapter(fieldScrollState),
                         modifier =
-                            Modifier.align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .height(28.dp)
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                                        )
-                                    )
-                                )
-                    )
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = "More fields below",
-                        tint = SafeDbTheme.colors.actionPrimary,
-                        modifier =
-                            Modifier.align(Alignment.BottomCenter)
-                                .padding(bottom = 2.dp)
-                                .size(18.dp),
+                            Modifier.align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .padding(end = 2.dp, top = 2.dp, bottom = 2.dp),
                     )
                 }
             }

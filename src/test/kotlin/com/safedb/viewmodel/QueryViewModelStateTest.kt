@@ -262,6 +262,39 @@ class QueryViewModelStateTest {
     }
 
     @Test
+    fun togglingGroupOffClearsAllGroupsAndKeepsSelectionsAndSorts() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("orders", "id", "status", "created_at"))
+        viewModel.toggleColumn("t0", "id")
+        viewModel.toggleColumn("t0", "status")
+        viewModel.cycleSort("t0", "id")
+
+        viewModel.toggleGroup("t0", "created_at")
+
+        assertEquals(
+            listOf(
+                GroupSpec("t0", "created_at"),
+                GroupSpec("t0", "id"),
+                GroupSpec("t0", "status"),
+            ),
+            viewModel.groups,
+        )
+        assertTrue(viewModel.isColumnSelected("t0", "created_at"))
+        assertTrue(viewModel.isColumnSelected("t0", "id"))
+        assertTrue(viewModel.isColumnSelected("t0", "status"))
+        assertEquals(SortDirection.Asc, viewModel.sortForColumn("t0", "id")?.direction)
+
+        viewModel.toggleGroup("t0", "id")
+
+        assertTrue(viewModel.groups.isEmpty())
+        assertEquals(
+            setOf("t0\u0000id", "t0\u0000status", "t0\u0000created_at"),
+            viewModel.selectedColumns,
+        )
+        assertEquals(SortDirection.Asc, viewModel.sortForColumn("t0", "id")?.direction)
+    }
+
+    @Test
     fun uncheckingAutoGroupedColumnRemovesItFromSelectionAndGrouping() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         viewModel.addTable(table("orders", "id", "status"))
@@ -320,7 +353,7 @@ class QueryViewModelStateTest {
             )
         viewModel.restoreFromSpec(savedSpec, listOf(orders))
 
-        viewModel.toggleGroup("t0", "id")
+        viewModel.clearGroup("t0", "id")
 
         assertEquals(listOf(GroupSpec("t0", "status")), viewModel.groups)
         assertEquals(listOf(ColumnSel("t0", "status")), viewModel.spec.columns)
