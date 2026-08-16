@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
@@ -72,6 +73,8 @@ import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ThemePalette
 import com.safedb.model.markIndexedColumns
+import com.safedb.query.sql.SqlParseResult
+import com.safedb.query.sql.parseSqlToSpec
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.AppShellContent
 import com.safedb.ui.ConnectionsScreenContent
@@ -951,6 +954,29 @@ fun main() {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
                     vm.query.moveTable("t1", 360f, 28f)
+                }
+            }
+            Thread.sleep(900)
+        }
+
+        render("sql-$suffix", dark) { state, vm ->
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
+            state.navigate(AppRoute.Sql)
+            vm.schema.load("c1", selection = selection) { loaded ->
+                if (loaded) {
+                    val sql =
+                        "SELECT o.id, o.status, o.total_cents\n" +
+                            "FROM orders o\n" +
+                            "WHERE o.status = 'pending' AND o.total_cents > 5000\n" +
+                            "ORDER BY o.placed_at DESC\n" +
+                            "LIMIT 100"
+                    vm.sqlEditor.onTextChanged(TextFieldValue(sql))
+                    val schema = vm.schema.schema
+                    val parsed = schema?.let { parseSqlToSpec(sql, Dialect.Postgres, it, "public") }
+                    if (parsed is SqlParseResult.Success) {
+                        vm.sqlEditor.run("c1", parsed.spec)
+                    }
                 }
             }
             Thread.sleep(900)
