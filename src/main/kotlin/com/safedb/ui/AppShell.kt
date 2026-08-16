@@ -220,6 +220,7 @@ internal fun AppShellContent(
         onDismiss = { onPaletteOpenChange(false) },
         appState = appState,
         viewModel = viewModel,
+        onConnectionSelected = schemaHandlers.onConnectionSelected,
     )
 
     SettingsPanel(

@@ -23,6 +23,7 @@ import com.safedb.model.parseDateLiteral
 import com.safedb.model.parseDateTimeLiteral
 import com.safedb.model.valueKind
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.foldUnquoted
 import com.safedb.query.literalKindForColumn
 
 fun parseSqlToSpec(
@@ -129,16 +130,8 @@ private class SqlSpecBuilder(
     // spelling is tried first and a case-insensitive sweep only serves as a fallback. Every tier
     // fails on more than one match rather than binding whichever object happens to come first.
 
-    private fun foldUnquoted(name: String): String =
-        when (dialect) {
-            Dialect.Postgres -> name.lowercase()
-            Dialect.Oracle -> name.uppercase()
-            Dialect.MySql,
-            Dialect.Mssql -> name
-        }
-
     private fun exactSpelling(ident: SqlIdent): String =
-        if (ident.quoted) ident.name else foldUnquoted(ident.name)
+        if (ident.quoted) ident.name else foldUnquoted(ident.name, dialect)
 
     private fun <T> resolveUnique(
         candidates: List<T>,
@@ -191,8 +184,14 @@ private class SqlSpecBuilder(
                     )
                 },
             )
-        val alias = ref.alias?.name ?: info.name
-        if (tables.any { it.alias == alias }) {
+        val alias = ref.alias?.let { exactSpelling(it) } ?: info.name
+        val duplicate =
+            if (dialect == Dialect.MySql || dialect == Dialect.Mssql) {
+                tables.any { it.alias.equals(alias, ignoreCase = true) }
+            } else {
+                tables.any { it.alias == alias }
+            }
+        if (duplicate) {
             fail(SqlIssueCode.DuplicateAlias, "Alias '$alias' is used more than once.", ref.span)
         }
         val resolved = ResolvedTable(info, alias)
@@ -419,10 +418,15 @@ private class SqlSpecBuilder(
                         if (isNumericText(kind, raw)) FilterLiteral(kind, raw) else mismatch()
                     LiteralForm.Bool -> mismatch()
                 }
-            LiteralKind.Bool -> {
-                if (parseBoolLiteral(raw) == null) mismatch()
-                FilterLiteral(kind, raw)
-            }
+            LiteralKind.Bool ->
+                when (literal.form) {
+                    LiteralForm.Bool ->
+                        if (parseBoolLiteral(raw) == null) mismatch() else FilterLiteral(kind, raw)
+                    LiteralForm.Text ->
+                        if (raw.isEmpty() || parseBoolLiteral(raw) == null) mismatch()
+                        else FilterLiteral(kind, raw)
+                    LiteralForm.Number -> mismatch()
+                }
             LiteralKind.Date -> {
                 if (literal.form != LiteralForm.Text) mismatch()
                 if (parseDateLiteral(raw).isFailure) {

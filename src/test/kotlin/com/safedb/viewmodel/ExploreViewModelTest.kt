@@ -161,6 +161,8 @@ class ExploreViewModelTest {
             ExploreViewModel(createExploreSession(connection(), baseSpec, sampleResult()))
 
         assertFalse(viewModel.isStale(baseSpec))
+        assertFalse(viewModel.isStale(baseSpec, "c1"))
+        assertTrue(viewModel.isStale(baseSpec, "c2"))
         assertTrue(viewModel.isStale(baseSpec.copy(limit = 250)))
     }
 

@@ -19,16 +19,19 @@ import com.safedb.query.RiskGateState
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
+import com.safedb.service.QueryRunResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SqlEditorViewModelStateTest {
@@ -190,6 +193,8 @@ class SqlEditorViewModelStateTest {
 
         assertNotNull(viewModel.pendingConfirmation)
         assertEquals(listOf("Plan unavailable."), viewModel.pendingConfirmationReasons)
+        assertNotNull(viewModel.pendingConfirmationFor("c1", spec))
+        assertNull(viewModel.pendingConfirmationFor("c1", spec.copy(limit = 10)))
         assertNull(viewModel.error)
 
         viewModel.confirmPendingExecution("c1", spec)
@@ -347,6 +352,85 @@ class SqlEditorViewModelStateTest {
         assertNull(viewModel.currentSample("c1", spec))
         assertNull(viewModel.error)
         assertFalse(viewModel.pendingRiskGate)
+    }
+
+    @Test
+    fun parsedSpecChangeClearsSettledRiskGate() {
+        val scope = TestScope(dispatcher)
+        val specA = sampleSpec()
+        val specB = sampleSpec().copy(limit = 10)
+        val viewModel =
+            SqlEditorViewModel(
+                service =
+                    object : SqlStubService() {
+                        override suspend fun runQuery(request: QueryRunRequest) =
+                            throw QueryFailureException(
+                                QueryError.RiskGate(evaluation(RiskGateState.Blocked), request.spec)
+                            )
+                    },
+                scope = scope,
+            )
+
+        viewModel.run("c1", specA)
+        scope.advanceUntilIdle()
+        assertTrue(viewModel.pendingRiskGate)
+        assertTrue(viewModel.pendingRiskGateFor("c1", specA))
+        assertFalse(viewModel.pendingRiskGateFor("c1", specB))
+
+        viewModel.onParsedSpecChanged(specA)
+        assertTrue(viewModel.pendingRiskGate)
+        assertTrue(viewModel.pendingRiskGateFor("c1", specA))
+
+        viewModel.onParsedSpecChanged(specB)
+        assertFalse(viewModel.pendingRiskGate)
+        assertFalse(viewModel.pendingRiskGateFor("c1", specA))
+        assertFalse(viewModel.pendingRiskGateFor("c1", specB))
+        assertNull(viewModel.error)
+    }
+
+    @Test
+    fun inFlightConfirmationDoesNotApplyAfterSpecChange() {
+        val scope = TestScope(dispatcher)
+        val specA = sampleSpec()
+        val specB = sampleSpec().copy(limit = 10)
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val viewModel =
+            SqlEditorViewModel(
+                service =
+                    object : SqlStubService() {
+                        override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
+                            started.complete(Unit)
+                            gate.await()
+                            throw QueryFailureException(
+                                QueryError.ConfirmationRequired(
+                                    evaluation(RiskGateState.ConfirmationRequired),
+                                    requirement(),
+                                    request.spec,
+                                )
+                            )
+                        }
+                    },
+                scope = scope,
+            )
+
+        viewModel.run("c1", specA)
+        scope.runCurrent()
+        assertTrue(started.isCompleted)
+        assertTrue(viewModel.running)
+
+        viewModel.onParsedSpecChanged(specA)
+        viewModel.onParsedSpecChanged(specB)
+        assertTrue(viewModel.running)
+        assertNull(viewModel.pendingConfirmation)
+
+        gate.complete(Unit)
+        scope.advanceUntilIdle()
+
+        assertFalse(viewModel.running)
+        assertNull(viewModel.pendingConfirmation)
+        assertNull(viewModel.pendingConfirmationFor("c1", specA))
+        assertNull(viewModel.pendingConfirmationFor("c1", specB))
     }
 }
 

@@ -84,6 +84,13 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                     'b' -> body.append('\b')
                     '0' -> body.append('\u0000')
                     'Z' -> body.append('\u001A')
+                    // MySQL keeps the backslash for \% and \_, so LIKE can treat them as
+                    // escaped wildcards rather than the wildcard itself.
+                    '%',
+                    '_' -> {
+                        body.append('\\')
+                        body.append(escaped)
+                    }
                     else -> body.append(escaped)
                 }
                 j += 2

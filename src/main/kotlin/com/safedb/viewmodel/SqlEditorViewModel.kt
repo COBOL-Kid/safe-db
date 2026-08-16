@@ -29,6 +29,8 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
     private var riskEvaluationConnectionId: String? = null
     private var riskEvaluationSpec: QuerySpec? = null
     private var pendingConfirmationRequest: QueryRunRequest? = null
+    private var observedParsedSpec = false
+    private var lastParsedSpec: QuerySpec? = null
 
     var text by mutableStateOf(TextFieldValue(""))
         private set
@@ -207,6 +209,38 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
     fun dismissError() {
         invalidateSettledRunFailure()
     }
+
+    // Skip the first observation so composing SQL does not wipe a live gate as null → current spec.
+    fun onParsedSpecChanged(spec: QuerySpec?) {
+        if (!observedParsedSpec) {
+            observedParsedSpec = true
+            lastParsedSpec = spec
+            return
+        }
+        if (lastParsedSpec == spec) return
+        lastParsedSpec = spec
+        invalidateSettledRunFailure()
+    }
+
+    fun pendingConfirmationFor(
+        connectionId: String?,
+        spec: QuerySpec?,
+    ): QueryConfirmationRequirement? {
+        val request = pendingConfirmationRequest ?: return null
+        return pendingConfirmation.takeIf {
+            connectionId != null &&
+                spec != null &&
+                request.connectionId == connectionId &&
+                request.spec == spec
+        }
+    }
+
+    fun pendingRiskGateFor(connectionId: String?, spec: QuerySpec?): Boolean =
+        pendingRiskGateState &&
+            connectionId != null &&
+            spec != null &&
+            connectionId == riskEvaluationConnectionId &&
+            spec == riskEvaluationSpec
 
     private fun invalidateSettledRunFailure() {
         if (running) {

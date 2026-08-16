@@ -3,6 +3,7 @@ package com.safedb.query.sql
 import com.safedb.model.Dialect
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
+import com.safedb.query.quoteIfRequired
 
 enum class SqlCompletionKind {
     Keyword,
@@ -44,8 +45,8 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
     }
 
     // A quoted identifier, string, comment, or malformed token containing the caret is not
-    // completable. A line comment or unterminated literal running to the end of the text still
-    // contains a caret sitting at its very end, so those extend one position further.
+    // completable. Unclosed errors and line comments still contain a caret sitting at their
+    // very end, including mid-file; a closed literal or */ at that position is completable.
     tokens
         .firstOrNull { token ->
             val opaque =
@@ -54,10 +55,10 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
                     token.type == SqlTokenType.Comment ||
                     token.type == SqlTokenType.Error
             if (!opaque || token.span.start >= caret) return@firstOrNull false
-            val openToEof =
-                token.span.end == request.text.length &&
-                    (token.type == SqlTokenType.Error || !token.text.endsWith("*/"))
-            caret < token.span.end || (openToEof && caret == token.span.end)
+            val unclosed =
+                token.type == SqlTokenType.Error ||
+                    (token.type == SqlTokenType.Comment && !token.text.endsWith("*/"))
+            caret < token.span.end || (unclosed && caret == token.span.end)
         }
         ?.let {
             return SqlCompletionResult(emptyList(), caret, caret)
@@ -65,7 +66,7 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
 
     val wordToken = significant.lastOrNull {
         (it.type == SqlTokenType.Identifier || it.type == SqlTokenType.Keyword) &&
-            it.span.start < caret &&
+            it.span.start <= caret &&
             caret <= it.span.end
     }
     val prefix = wordToken?.let { request.text.substring(it.span.start, caret) } ?: ""
@@ -98,17 +99,30 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
                 }
                 val columns =
                     table?.info?.columns.orEmpty().map {
-                        SqlCompletionItem(it.name, it.name, SqlCompletionKind.Column, it.dataType)
+                        SqlCompletionItem(
+                            it.name,
+                            quoteIfRequired(it.name, request.dialect),
+                            SqlCompletionKind.Column,
+                            it.dataType,
+                        )
                     }
                 // Aliases and table names win, matching SQL scoping. Only when the qualifier names
                 // no table in the statement is it a schema — `FROM public.` should list its tables.
-                columns.ifEmpty { tableCompletions(request, schemaName = qualifier?.value) }
+                // A lone `.` after a number (`1.`) has no qualifier and must not become tables.
+                columns.ifEmpty {
+                    if (qualifier != null) {
+                        tableCompletions(request, schemaName = qualifier.value)
+                    } else {
+                        emptyList()
+                    }
+                }
             }
             prevWord == "FROM" || prevWord == "JOIN" -> tableCompletions(request)
             prevWord in COLUMN_CONTEXT_WORDS ||
                 prev?.type == SqlTokenType.Comma ||
                 prev?.type == SqlTokenType.LeftParen ->
-                columnCompletions(statementTables) + keywordCompletions(keywords)
+                columnCompletions(statementTables, request.dialect) + keywordCompletions(keywords)
+            prev?.type == SqlTokenType.NumberLiteral -> emptyList()
             else -> keywordCompletions(keywords)
         }
 
@@ -144,37 +158,74 @@ private fun tableCompletions(
         return schema.tables
             .filter { it.schema.equals(schemaName, ignoreCase = true) }
             .sortedBy { it.name }
-            .map { SqlCompletionItem(it.name, it.name, SqlCompletionKind.Table, it.schema) }
+            .map {
+                SqlCompletionItem(
+                    it.name,
+                    quoteIfRequired(it.name, request.dialect),
+                    SqlCompletionKind.Table,
+                    it.schema,
+                )
+            }
     }
     val tables =
         request.defaultSchema
             ?.let { selected -> schema.tables.filter { it.schema == selected } }
             .orEmpty()
             .sortedBy { it.name }
-            .map { SqlCompletionItem(it.name, it.name, SqlCompletionKind.Table, it.schema) }
+            .map {
+                SqlCompletionItem(
+                    it.name,
+                    quoteIfRequired(it.name, request.dialect),
+                    SqlCompletionKind.Table,
+                    it.schema,
+                )
+            }
     val schemaNames =
         schema.tables
             .map { it.schema }
             .distinct()
             .sorted()
-            .map { SqlCompletionItem("$it.", "$it.", SqlCompletionKind.SchemaName, "schema") }
+            .map {
+                SqlCompletionItem(
+                    "$it.",
+                    "${quoteIfRequired(it, request.dialect)}.",
+                    SqlCompletionKind.SchemaName,
+                    "schema",
+                )
+            }
     return tables + schemaNames
 }
 
-private fun columnCompletions(tables: List<StatementTable>): List<SqlCompletionItem> {
+private fun columnCompletions(
+    tables: List<StatementTable>,
+    dialect: Dialect,
+): List<SqlCompletionItem> {
     val qualify = tables.size > 1
     val aliases =
         if (qualify) {
             tables.map {
-                SqlCompletionItem("${it.alias}.", "${it.alias}.", SqlCompletionKind.Alias, it.name)
+                SqlCompletionItem(
+                    "${it.alias}.",
+                    "${quoteIfRequired(it.alias, dialect)}.",
+                    SqlCompletionKind.Alias,
+                    it.name,
+                )
             }
         } else {
             emptyList()
         }
     val columns = tables.flatMap { table ->
         table.info?.columns.orEmpty().map { column ->
-            val text = if (qualify) "${table.alias}.${column.name}" else column.name
-            SqlCompletionItem(text, text, SqlCompletionKind.Column, column.dataType)
+            val label = if (qualify) "${table.alias}.${column.name}" else column.name
+            val insert =
+                if (qualify) {
+                    quoteIfRequired(table.alias, dialect) +
+                        "." +
+                        quoteIfRequired(column.name, dialect)
+                } else {
+                    quoteIfRequired(column.name, dialect)
+                }
+            SqlCompletionItem(label, insert, SqlCompletionKind.Column, column.dataType)
         }
     }
     return aliases + columns.sortedBy { it.label }

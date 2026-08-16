@@ -141,6 +141,14 @@ class SqlTokenizerTest {
 
         val backslash = significant("'a\\\\b'", Dialect.MySql).single()
         assertEquals("a\\b", backslash.value)
+
+        val percent = significant("'100\\%'", Dialect.MySql).single()
+        assertEquals("100\\%", percent.value)
+        assertEquals(5, percent.value.length)
+
+        val underscore = significant("'100\\_'", Dialect.MySql).single()
+        assertEquals("100\\_", underscore.value)
+        assertEquals(5, underscore.value.length)
     }
 
     @Test

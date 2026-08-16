@@ -1,8 +1,11 @@
 package com.safedb.query.sql
 
 import com.safedb.model.Dialect
+import com.safedb.model.Schema
+import com.safedb.model.TableInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SqlCompletionTest {
@@ -13,16 +16,37 @@ class SqlCompletionTest {
         caret: Int = text.length,
         defaultSchema: String? = "public",
         withSchema: Boolean = true,
+        dialect: Dialect = Dialect.Postgres,
+        schema: Schema = this.schema,
     ): SqlCompletionResult =
         sqlCompletions(
             SqlCompletionRequest(
                 text = text,
                 caret = caret,
-                dialect = Dialect.Postgres,
+                dialect = dialect,
                 schema = if (withSchema) schema else null,
                 defaultSchema = defaultSchema,
             )
         )
+
+    private fun schemaWithTable(name: String): Schema =
+        Schema(
+            tables =
+                listOf(
+                    TableInfo(
+                        schema = "public",
+                        name = name,
+                        columns = listOf(column("id", "int")),
+                        indexes = emptyList(),
+                    )
+                )
+        )
+
+    private fun apply(
+        text: String,
+        result: SqlCompletionResult,
+        item: SqlCompletionItem,
+    ): String = text.replaceRange(result.replaceStart, result.replaceEnd, item.insertText)
 
     @Test
     fun afterFromOffersTablesAndSchemas() {
@@ -141,5 +165,123 @@ class SqlCompletionTest {
     fun caretAtEndOfUnterminatedStringOffersNothing() {
         val text = "SELECT id FROM users WHERE name = 'ab"
         assertTrue(complete(text).items.isEmpty())
+    }
+
+    @Test
+    fun decimalDoesNotOpenJunkCompletion() {
+        val afterDot = complete("SELECT id FROM users WHERE id = 1.")
+        assertTrue(afterDot.items.none { it.kind == SqlCompletionKind.Table })
+        assertTrue(afterDot.items.none { it.kind == SqlCompletionKind.Keyword })
+
+        val afterNumber = complete("SELECT id FROM users WHERE id = 1.0")
+        assertTrue(afterNumber.items.none { it.kind == SqlCompletionKind.Table })
+        assertTrue(afterNumber.items.none { it.kind == SqlCompletionKind.Keyword })
+    }
+
+    @Test
+    fun caretAtStartOfWordReplacesTheWholeWord() {
+        val text = "SELECT id FROM users"
+        val caret = text.indexOf("users")
+        val result = complete(text, caret = caret)
+        assertEquals(caret, result.replaceStart)
+        assertEquals(text.length, result.replaceEnd)
+        val categories = result.items.single { it.label == "categories" }
+        assertEquals("SELECT id FROM categories", apply(text, result, categories))
+    }
+
+    @Test
+    fun reservedTableNameIsQuotedAndParses() {
+        val schema = schemaWithTable("order")
+        val text = "SELECT id FROM "
+        val result = complete(text, schema = schema)
+        val item = result.items.single { it.kind == SqlCompletionKind.Table && it.label == "order" }
+        assertEquals("\"order\"", item.insertText)
+        val applied = apply(text, result, item)
+        assertIs<SqlParseResult.Success>(
+            parseSqlToSpec(applied, Dialect.Postgres, schema, "public")
+        )
+    }
+
+    @Test
+    fun spacedTableNameIsQuotedOnMysql() {
+        val schema = schemaWithTable("order details")
+        val text = "SELECT id FROM "
+        val result = complete(text, dialect = Dialect.MySql, schema = schema)
+        val item =
+            result.items.single {
+                it.kind == SqlCompletionKind.Table && it.label == "order details"
+            }
+        assertEquals("`order details`", item.insertText)
+        assertIs<SqlParseResult.Success>(
+            parseSqlToSpec(apply(text, result, item), Dialect.MySql, schema, "public")
+        )
+    }
+
+    @Test
+    fun embeddedBracketInTableNameIsQuotedOnMssql() {
+        val schema = schemaWithTable("a]b")
+        val text = "SELECT id FROM "
+        val result = complete(text, dialect = Dialect.Mssql, schema = schema)
+        val item = result.items.single { it.kind == SqlCompletionKind.Table && it.label == "a]b" }
+        assertEquals("[a]]b]", item.insertText)
+        assertIs<SqlParseResult.Success>(
+            parseSqlToSpec(apply(text, result, item), Dialect.Mssql, schema, "public")
+        )
+    }
+
+    @Test
+    fun embeddedQuoteInTableNameIsQuotedOnOracle() {
+        val schema = schemaWithTable("a\"b")
+        val text = "SELECT id FROM "
+        val result = complete(text, dialect = Dialect.Oracle, schema = schema)
+        val item = result.items.single { it.kind == SqlCompletionKind.Table && it.label == "a\"b" }
+        assertEquals("\"a\"\"b\"", item.insertText)
+        assertIs<SqlParseResult.Success>(
+            parseSqlToSpec(apply(text, result, item), Dialect.Oracle, schema, "public")
+        )
+    }
+
+    @Test
+    fun schemaAndQualifiedColumnInsertTextQuotesEachPart() {
+        val from = complete("SELECT id FROM ")
+        assertEquals("\"Sales\".", from.items.single { it.label == "Sales." }.insertText)
+
+        val schema =
+            Schema(
+                tables =
+                    listOf(
+                        TableInfo(
+                            schema = "public",
+                            name = "users",
+                            columns = listOf(column("id", "int"), column("order", "text")),
+                            indexes = emptyList(),
+                        ),
+                        TableInfo(
+                            schema = "public",
+                            name = "categories",
+                            columns = listOf(column("id", "int")),
+                            indexes = emptyList(),
+                        ),
+                    )
+            )
+        val where = complete("SELECT id FROM users u JOIN categories c WHERE ", schema = schema)
+        assertEquals("u.\"order\"", where.items.single { it.label == "u.order" }.insertText)
+    }
+
+    @Test
+    fun closedStringAtEofOffersKeywords() {
+        val text = "SELECT id FROM users WHERE name = 'ab'"
+        val result = complete(text)
+        assertTrue(result.items.any { it.kind == SqlCompletionKind.Keyword && it.label == "AND" })
+        assertTrue(complete("SELECT id FROM \"users\"").items.isNotEmpty())
+        assertTrue(complete("SELECT id /* note */").items.isNotEmpty())
+    }
+
+    @Test
+    fun completingAtEndOfMidFileLineCommentOffersNothing() {
+        val text = "SELECT id -- note\nFROM "
+        val newline = text.indexOf('\n')
+        assertTrue(complete(text, caret = newline).items.isEmpty())
+        assertTrue(complete(text, caret = newline + 1).items.isNotEmpty())
     }
 }

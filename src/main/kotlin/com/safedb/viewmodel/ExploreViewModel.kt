@@ -347,8 +347,12 @@ class ExploreViewModel(
         )
     }
 
-    fun isStale(currentSpec: QuerySpec): Boolean =
-        exploreSpecHash(currentSpec) != session.baseSpecHash
+    fun isStale(
+        currentSpec: QuerySpec,
+        currentConnectionId: String? = session.connectionId,
+    ): Boolean =
+        currentConnectionId != session.connectionId ||
+            exploreSpecHash(currentSpec) != session.baseSpecHash
 
     fun savePreviewCsv(path: Path) {
         val formattedRows = preview.layout.formattedRows

@@ -117,6 +117,8 @@ internal fun SqlScreen(
     val parseIssues = (parseResult as? SqlParseResult.Failure)?.issues.orEmpty()
     val parseNotes = (parseResult as? SqlParseResult.Success)?.notes.orEmpty()
 
+    LaunchedEffect(parsedSpec) { sqlViewModel.onParsedSpecChanged(parsedSpec) }
+
     val preliminaryRisk =
         remember(parsedSpec, schema, settings, dialect) {
             if (parsedSpec == null || schema == null || dialect == null) null
@@ -126,15 +128,14 @@ internal fun SqlScreen(
     val riskValidationError = (preliminaryRisk as? Outcome.Err)?.message
     val finalRiskEvaluation = sqlViewModel.riskEvaluationFor(connection?.id, parsedSpec)
     val currentSample = sqlViewModel.currentSample(connection?.id, parsedSpec)
-    val pendingConfirmation =
-        sqlViewModel.pendingConfirmation?.takeIf { it.confirmation.connectionId == connection?.id }
+    val pendingConfirmation = sqlViewModel.pendingConfirmationFor(connection?.id, parsedSpec)
 
     val canRun =
         connection != null &&
             parsedSpec != null &&
             riskValidationError == null &&
             !sqlViewModel.running &&
-            !sqlViewModel.pendingRiskGate &&
+            !sqlViewModel.pendingRiskGateFor(connection.id, parsedSpec) &&
             pendingConfirmation == null
 
     fun runQuery() {

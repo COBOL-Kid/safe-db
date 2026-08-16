@@ -826,6 +826,82 @@ class AppViewModelTest {
             assertEquals(0, service.queryAttempts)
         }
 
+    @Test
+    fun restoreReusesLoadedSchemaAndRecipeRunDoesNotReload() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                viewModel.restoreQueryForConnection("c1", sampleSpec())
+                advanceUntilIdle()
+                assertEquals(1, service.schemaLoadCount)
+                assertEquals(1, viewModel.query.tableCount)
+
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-reuse",
+                        name = "Reuse schema",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+                viewModel.runRecipe(testConnection(), recipe)
+                advanceUntilIdle()
+
+                assertEquals(1, service.schemaLoadCount)
+                assertEquals(1, service.queryAttempts)
+                assertEquals("r-reuse", viewModel.pendingRecipeRun.value?.recipe?.id)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun recipeRestoreInvokesOnRestoredWhenQueryCannotRun() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service = FakeSafeDbService(queryGate = gate, queryStarted = started)
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                viewModel.restoreQueryForConnection("c1", sampleSpec())
+                advanceUntilIdle()
+
+                viewModel.query.run("c1")
+                runCurrent()
+                assertTrue(started.isCompleted)
+                assertTrue(viewModel.query.running)
+                assertFalse(viewModel.query.canRun)
+
+                var restored = false
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-busy",
+                        name = "Busy canvas",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+                viewModel.runRecipe(testConnection(), recipe) { restored = true }
+                advanceUntilIdle()
+
+                assertTrue(restored)
+                assertNull(viewModel.pendingRecipeRun.value)
+                assertEquals(1, service.queryAttempts)
+
+                gate.complete(Unit)
+                advanceUntilIdle()
+            } finally {
+                viewModel.close()
+            }
+        }
+
     private fun testConnection() =
         ConnectionDef(
             id = "c1",
@@ -853,6 +929,9 @@ private class FakeSafeDbService(
         private set
 
     var settingsSaveCount = 0
+        private set
+
+    var schemaLoadCount = 0
         private set
 
     val queryRequests = mutableListOf<QueryRunRequest>()
@@ -887,7 +966,10 @@ private class FakeSafeDbService(
         locked = true
     }
 
-    override suspend fun getSchema(connectionId: String): Schema = Schema(schemaTables)
+    override suspend fun getSchema(connectionId: String): Schema {
+        schemaLoadCount += 1
+        return Schema(schemaTables)
+    }
 
     override suspend fun runQuery(request: QueryRunRequest): com.safedb.service.QueryRunResult {
         queryAttempts += 1

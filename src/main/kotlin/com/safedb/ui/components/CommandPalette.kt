@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.model.ConnectionDef
 import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.InputShape
 import com.safedb.viewmodel.AppViewModel
@@ -69,6 +70,7 @@ fun CommandPalette(
     onDismiss: () -> Unit,
     appState: AppState,
     viewModel: AppViewModel,
+    onConnectionSelected: (ConnectionDef) -> Unit,
 ) {
     if (!open) return
 
@@ -77,7 +79,6 @@ fun CommandPalette(
     val activeConnectionId by appState.activeConnectionId.collectAsState()
     val currentRoute by appState.route.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
-    val settings by viewModel.settings.settings.collectAsState()
 
     val commands = buildList {
         add(
@@ -182,18 +183,15 @@ fun CommandPalette(
                 }
             )
         }
-        for ((_, id, name, dialect, _, _, database, _, _, _) in connections) {
+        for (connection in connections) {
             add(
                 PaletteCommand(
-                    id = "conn-$id",
-                    label = "Explore: $name",
-                    hint = "$dialect · $database",
+                    id = "conn-${connection.id}",
+                    label = "Explore: ${connection.name}",
+                    hint = "${connection.dialect} · ${connection.database}",
                     icon = Icons.Filled.Link,
                 ) {
-                    appState.setActiveConnection(
-                        id,
-                        com.safedb.resolveConnectionSchemaSelection(id, settings),
-                    )
+                    onConnectionSelected(connection)
                     appState.navigate(AppRoute.Builder)
                     onDismiss()
                 }

@@ -112,12 +112,12 @@ internal fun SqlEditor(
                 val typedText = updated.text != value.text
                 onValueChange(updated)
                 if (typedText) {
-                    val caret = updated.selection.start
-                    val lastChar = updated.text.getOrNull(caret - 1)
                     completionOpen =
                         updated.text.length > value.text.length &&
-                            lastChar != null &&
-                            (lastChar.isLetterOrDigit() || lastChar == '_' || lastChar == '.')
+                            shouldAutoOpenCompletion(
+                                updated.text,
+                                updated.selection.start,
+                            )
                 }
             },
             enabled = enabled,
@@ -195,6 +195,15 @@ internal fun SqlEditor(
 }
 
 private val VisualTransformationNone = androidx.compose.ui.text.input.VisualTransformation.None
+
+// Digits must not open the popup (`1.` / `1.0`); `.` only after a name or quote closer.
+private fun shouldAutoOpenCompletion(text: String, caret: Int): Boolean {
+    val last = text.getOrNull(caret - 1) ?: return false
+    if (last.isLetter() || last == '_') return true
+    if (last != '.') return false
+    val prev = text.getOrNull(caret - 2) ?: return false
+    return prev.isLetter() || prev == '_' || prev == '"' || prev == '`' || prev == ']'
+}
 
 @Composable
 private fun CompletionList(

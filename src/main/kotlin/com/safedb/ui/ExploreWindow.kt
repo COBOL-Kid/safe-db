@@ -73,6 +73,7 @@ fun ExploreWindowContent(
     recipesViewModel: RecipesViewModel,
     connections: List<ConnectionDef> = emptyList(),
     onRunRecipe: (ExploreRecipe, ConnectionDef) -> Unit = { _, _ -> },
+    activeConnectionId: String? = viewModel.session.connectionId,
     modifier: Modifier = Modifier,
 ) {
     val session = viewModel.session
@@ -84,7 +85,8 @@ fun ExploreWindowContent(
         remember(session.sample.columns, session.baseSpec.tables) {
             buildExploreFieldOptions(session.sample, session.baseSpec.tables)
         }
-    val stale = viewModel.isStale(currentSpec)
+    val stale = viewModel.isStale(currentSpec, activeConnectionId)
+    val connectionStale = activeConnectionId != session.connectionId
     var drillResult by remember { mutableStateOf<QueryResult?>(null) }
     var pivotRailVisible by remember { mutableStateOf(true) }
     var worksheetRailVisible by remember { mutableStateOf(true) }
@@ -152,6 +154,7 @@ fun ExploreWindowContent(
                 stale = stale,
                 origin = origin,
                 sampleRefreshEnabled = sampleRefreshEnabled,
+                connectionStale = connectionStale,
                 onRefreshSample = onRefreshSample,
             )
             ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
@@ -414,6 +417,7 @@ private fun ExploreStaleSampleWarning(
     stale: Boolean,
     origin: ExploreOrigin,
     sampleRefreshEnabled: Boolean,
+    connectionStale: Boolean,
     onRefreshSample: (() -> Unit)?,
 ) {
     if (!stale) return
@@ -429,13 +433,18 @@ private fun ExploreStaleSampleWarning(
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         MessageBanner(
             text =
-                if (sampleRefreshEnabled)
-                    "The $surface query changed. Refresh the Explore sample from the latest $surface results."
-                else
-                    "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore.",
+                when {
+                    connectionStale ->
+                        "The active connection changed. Reopen Explore from the query you " +
+                            "want to inspect; Refresh cannot update this sample."
+                    sampleRefreshEnabled ->
+                        "The $surface query changed. Refresh the Explore sample from the latest $surface results."
+                    else ->
+                        "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore."
+                },
             kind = BannerKind.WARNING,
             action =
-                if (sampleRefreshEnabled && onRefreshSample != null) {
+                if (!connectionStale && sampleRefreshEnabled && onRefreshSample != null) {
                     { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
                 } else null,
         )

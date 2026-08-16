@@ -27,11 +27,18 @@ class SqlToSpecTest {
         return result
     }
 
-    private fun spec(sql: String, defaultSchema: String? = "public"): QuerySpec =
-        success(sql, defaultSchema).spec
+    private fun spec(
+        sql: String,
+        defaultSchema: String? = "public",
+        dialect: Dialect = Dialect.Postgres,
+    ): QuerySpec = success(sql, defaultSchema, dialect).spec
 
-    private fun failure(sql: String, defaultSchema: String? = "public"): SqlIssue {
-        val result = parseSqlToSpec(sql, Dialect.Postgres, schema, defaultSchema)
+    private fun failure(
+        sql: String,
+        defaultSchema: String? = "public",
+        dialect: Dialect = Dialect.Postgres,
+    ): SqlIssue {
+        val result = parseSqlToSpec(sql, dialect, schema, defaultSchema)
         assertIs<SqlParseResult.Failure>(result, "expected failure for: $sql")
         return result.issues.single()
     }
@@ -62,6 +69,7 @@ class SqlToSpecTest {
         val spec = spec("SELECT invoiceid FROM sales.invoices", defaultSchema = null)
         assertEquals("Sales", spec.tables.single().schema)
         assertEquals("Invoices", spec.tables.single().name)
+        assertEquals("Invoices", spec.tables.single().alias)
         assertEquals("InvoiceId", spec.columns.single().column)
     }
 
@@ -71,12 +79,47 @@ class SqlToSpecTest {
         assertEquals("u", withAs.tables.single().alias)
         val bare = spec("SELECT u.id FROM users u")
         assertEquals("u", bare.tables.single().alias)
+
+        val folded = spec("SELECT U.id FROM users AS U LIMIT 5")
+        assertEquals("u", folded.tables.single().alias)
+        assertEquals(
+            "u",
+            spec("SELECT \"u\".id FROM users AS U LIMIT 5").columns.single().tableAlias,
+        )
+
+        val quoted = spec("SELECT \"U\".id FROM users AS \"U\" LIMIT 5")
+        assertEquals("U", quoted.tables.single().alias)
+        val mixed =
+            spec(
+                "SELECT \"U\".id FROM users AS \"U\" JOIN categories u " +
+                    "ON users.category_id = u.id LIMIT 5"
+            )
+        assertEquals(listOf("U", "u"), mixed.tables.map { it.alias })
     }
 
     @Test
     fun duplicateAliasRejected() {
         val issue = failure("SELECT id FROM users u JOIN categories u ON u.category_id = u.id")
         assertEquals(SqlIssueCode.DuplicateAlias, issue.code)
+
+        val folded =
+            failure(
+                "SELECT U.id FROM users AS U JOIN categories u ON users.category_id = u.id LIMIT 5"
+            )
+        assertEquals(SqlIssueCode.DuplicateAlias, folded.code)
+
+        val mysql =
+            failure(
+                "SELECT U.id FROM users AS U JOIN categories u ON users.category_id = u.id LIMIT 5",
+                dialect = Dialect.MySql,
+            )
+        assertEquals(SqlIssueCode.DuplicateAlias, mysql.code)
+        val mssql =
+            failure(
+                "SELECT U.id FROM users AS U JOIN categories u ON users.category_id = u.id LIMIT 5",
+                dialect = Dialect.Mssql,
+            )
+        assertEquals(SqlIssueCode.DuplicateAlias, mssql.code)
     }
 
     @Test
@@ -184,6 +227,44 @@ class SqlToSpecTest {
                 .singleLiteral()
                 .kind,
         )
+        assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE active = 1").code,
+        )
+        assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE active = 0").code,
+        )
+        assertEquals(
+            SqlIssueCode.LiteralTypeMismatch,
+            failure("SELECT id FROM users WHERE active = ''").code,
+        )
+        assertEquals(
+            LiteralKind.Bool,
+            (spec("SELECT id FROM users WHERE active = true").filters.children.single()
+                    as FilterNode.Leaf)
+                .spec
+                .singleLiteral()
+                .kind,
+        )
+        assertEquals(
+            LiteralKind.Bool,
+            (spec("SELECT id FROM users WHERE active = 'false'").filters.children.single()
+                    as FilterNode.Leaf)
+                .spec
+                .singleLiteral()
+                .kind,
+        )
+        val mysqlLike =
+            (success(
+                    "SELECT id FROM users WHERE name LIKE '100\\%' OR name = '100\\_'",
+                    dialect = Dialect.MySql,
+                )
+                .spec
+                .filters
+                .children)
+        assertEquals("100\\%", (mysqlLike[0] as FilterNode.Leaf).spec.singleLiteral().text)
+        assertEquals("100\\_", (mysqlLike[1] as FilterNode.Leaf).spec.singleLiteral().text)
     }
 
     @Test

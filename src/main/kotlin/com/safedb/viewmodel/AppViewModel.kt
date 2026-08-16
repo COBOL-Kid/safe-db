@@ -69,7 +69,11 @@ class AppViewModel(
         selection: SchemaSelectionIntent = resolveQuerySchemaSelection(spec),
         onComplete: (Boolean) -> Unit = {},
     ) {
-        schema.clear()
+        // SchemaViewModel.load early-returns when this connection is already loaded; clear() would
+        // bump requestGeneration and force a redundant introspection.
+        if (schema.loadedConnectionId != connectionId || schema.schema == null) {
+            schema.clear()
+        }
         schema.load(connectionId, selection = selection) { loaded ->
             if (loaded) {
                 query.restoreFromSpec(spec, schema.tables)
@@ -116,11 +120,20 @@ class AppViewModel(
                 .also { it.requestRecipe(recipe) }
     }
 
-    fun runRecipe(connection: ConnectionDef, recipe: ExploreRecipe) {
+    fun runRecipe(
+        connection: ConnectionDef,
+        recipe: ExploreRecipe,
+        onRestored: () -> Unit = {},
+    ) {
         _pendingRecipeRun.value = null
         val spec = recipe.querySpec ?: return
         restoreQueryForConnection(connection.id, spec) { restored ->
-            if (!restored || !query.canRun) {
+            if (!restored) {
+                _pendingRecipeRun.value = null
+                return@restoreQueryForConnection
+            }
+            onRestored()
+            if (!query.canRun) {
                 _pendingRecipeRun.value = null
                 return@restoreQueryForConnection
             }
