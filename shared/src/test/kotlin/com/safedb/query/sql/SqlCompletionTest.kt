@@ -135,6 +135,20 @@ class SqlCompletionTest {
 
         val sales = complete("SELECT id FROM Sales.")
         assertTrue(sales.items.any { it.label == "Invoices" })
+
+        val joined = complete("SELECT id FROM users u JOIN public.")
+        assertTrue(joined.items.any { it.label == "categories" })
+    }
+
+    @Test
+    fun schemaTableCompletionsAreLimitedToTableReferencePositions() {
+        // Accepting a table after `SELECT public.` would insert SQL that conversion rejects, so
+        // an unresolved qualifier only reads as a schema in FROM/JOIN positions.
+        val select = complete("SELECT public.")
+        assertTrue(select.items.isEmpty())
+
+        val where = complete("SELECT id FROM users WHERE public.")
+        assertTrue(where.items.isEmpty())
     }
 
     @Test

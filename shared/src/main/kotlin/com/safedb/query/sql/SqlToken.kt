@@ -1,5 +1,6 @@
 package com.safedb.query.sql
 
+import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 
 data class SqlSpan(val start: Int, val end: Int)
@@ -39,7 +40,17 @@ private fun quoteHint(dialect: Dialect): String =
         Dialect.Mssql -> "brackets ([name])"
     }
 
-fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
+// value is null when the quote never closes.
+private class QuotedScan(val end: Int, val value: String?)
+
+fun tokenizeSql(
+    sql: String,
+    dialect: Dialect,
+    // MySQL string semantics depend on the session's NO_BACKSLASH_ESCAPES mode. True/false when
+    // the connection pins sql_mode (see mySqlBackslashEscapes); null when the mode is unknown, in
+    // which case strings whose meaning differs between the two modes are rejected, not guessed.
+    mySqlBackslashEscapes: Boolean? = null,
+): List<SqlToken> {
     val tokens = mutableListOf<SqlToken>()
     val keywords = sqlKeywords(dialect)
     var i = 0
@@ -62,16 +73,9 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
         )
     }
 
-    fun readQuoted(
-        open: Char,
-        close: Char,
-        start: Int,
-        kind: SqlTokenType,
-        what: String,
-        // MySQL treats \ as an escape in strings unless NO_BACKSLASH_ESCAPES is set, so 'it\'s' is
-        // one string and 'a\\b' is a single backslash. ANSI dialects take \ literally.
-        backslashEscapes: Boolean = false,
-    ): Int {
+    // MySQL treats \ as an escape in strings unless NO_BACKSLASH_ESCAPES is set, so 'it\'s' is
+    // one string and 'a\\b' is a single backslash. ANSI dialects take \ literally.
+    fun scanQuoted(close: Char, start: Int, backslashEscapes: Boolean): QuotedScan {
         val body = StringBuilder()
         var j = start + 1
         while (j < sql.length) {
@@ -113,14 +117,54 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                     j += 2
                     continue
                 }
-                add(kind, start, j + 1, value = body.toString())
-                return j + 1
+                return QuotedScan(j + 1, body.toString())
             }
             body.append(ch)
             j++
         }
-        add(SqlTokenType.Error, start, sql.length, error = "Unterminated $what")
-        return sql.length
+        return QuotedScan(sql.length, null)
+    }
+
+    fun readQuoted(close: Char, start: Int, kind: SqlTokenType, what: String): Int {
+        val scan = scanQuoted(close, start, backslashEscapes = false)
+        if (scan.value == null) {
+            add(SqlTokenType.Error, start, scan.end, error = "Unterminated $what")
+        } else {
+            add(kind, start, scan.end, value = scan.value)
+        }
+        return scan.end
+    }
+
+    fun readMySqlString(start: Int): Int {
+        val escaped = scanQuoted('\'', start, backslashEscapes = true)
+        val plain = scanQuoted('\'', start, backslashEscapes = false)
+        val chosen =
+            when (mySqlBackslashEscapes) {
+                true -> escaped
+                false -> plain
+                // Unknown session mode: only accept the string when both readings agree (no
+                // backslash, or only the \% and \_ forms that decode identically); anything else
+                // would silently run a different comparison than the server sees.
+                null ->
+                    if (escaped.end == plain.end && escaped.value == plain.value) {
+                        escaped
+                    } else {
+                        val end = maxOf(escaped.end, plain.end)
+                        add(
+                            SqlTokenType.Error,
+                            start,
+                            end,
+                            error = SqlMessages.MYSQL_BACKSLASH_AMBIGUOUS,
+                        )
+                        return end
+                    }
+            }
+        if (chosen.value == null) {
+            add(SqlTokenType.Error, start, chosen.end, error = "Unterminated string")
+        } else {
+            add(SqlTokenType.StringLiteral, start, chosen.end, value = chosen.value)
+        }
+        return chosen.end
     }
 
     while (i < sql.length) {
@@ -155,9 +199,12 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                 i = j
             }
             c == '/' && i + 1 < sql.length && sql[i + 1] == '*' -> {
-                val close = sql.indexOf("*/", i + 2)
+                // PostgreSQL and SQL Server nest block comments; MySQL and Oracle close at the
+                // first */, so `/* /* */` already ends the comment there.
+                val nested = dialect == Dialect.Postgres || dialect == Dialect.Mssql
+                val end = blockCommentEnd(sql, i, nested)
                 val marker = sql.getOrNull(i + 2)
-                if (close < 0) {
+                if (end < 0) {
                     add(SqlTokenType.Error, i, sql.length, error = "Unterminated comment")
                     i = sql.length
                 } else if (marker == '!' || marker == '+') {
@@ -168,15 +215,15 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                     add(
                         SqlTokenType.Error,
                         i,
-                        close + 2,
+                        end,
                         error =
                             if (marker == '!') SqlMessages.MYSQL_EXEC_COMMENT
                             else SqlMessages.OPTIMIZER_HINT,
                     )
-                    i = close + 2
+                    i = end
                 } else {
-                    add(SqlTokenType.Comment, i, close + 2)
-                    i = close + 2
+                    add(SqlTokenType.Comment, i, end)
+                    i = end
                 }
             }
             // N'…' is a national string literal; without this it tokenizes as identifier N plus a
@@ -184,24 +231,17 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
             (c == 'N' || c == 'n') &&
                 sql.getOrNull(i + 1) == '\'' &&
                 (dialect == Dialect.Mssql || dialect == Dialect.Postgres) -> {
-                val end = readQuoted('\'', '\'', i + 1, SqlTokenType.StringLiteral, "string")
-                tokens.removeAt(tokens.size - 1)
+                val end = scanQuoted('\'', i + 1, backslashEscapes = false).end
                 add(SqlTokenType.Error, i, end, error = SqlMessages.NATIONAL_STRING)
                 i = end
             }
             c == '\'' ->
                 i =
-                    readQuoted(
-                        '\'',
-                        '\'',
-                        i,
-                        SqlTokenType.StringLiteral,
-                        "string",
-                        backslashEscapes = dialect == Dialect.MySql,
-                    )
+                    if (dialect == Dialect.MySql) readMySqlString(i)
+                    else readQuoted('\'', i, SqlTokenType.StringLiteral, "string")
             c == '"' ->
                 if (dialect == Dialect.Postgres || dialect == Dialect.Oracle) {
-                    i = readQuoted('"', '"', i, SqlTokenType.QuotedIdentifier, "quoted identifier")
+                    i = readQuoted('"', i, SqlTokenType.QuotedIdentifier, "quoted identifier")
                 } else {
                     var j = i + 1
                     while (j < sql.length && sql[j] != '"') j++
@@ -211,7 +251,7 @@ fun tokenizeSql(sql: String, dialect: Dialect): List<SqlToken> {
                 }
             c == '`' ->
                 if (dialect == Dialect.MySql) {
-                    i = readQuoted('`', '`', i, SqlTokenType.QuotedIdentifier, "quoted identifier")
+                    i = readQuoted('`', i, SqlTokenType.QuotedIdentifier, "quoted identifier")
                 } else {
                     var j = i + 1
                     while (j < sql.length && sql[j] != '`') j++
@@ -356,10 +396,46 @@ fun lineColOf(text: String, offset: Int): Pair<Int, Int> {
     var lineStart = 0
     val bounded = offset.coerceIn(0, text.length)
     for (i in 0 until bounded) {
-        if (text[i] == '\n') {
+        val ch = text[i]
+        // \n and a bare \r each end a line; the \n of a \r\n pair is the same line break.
+        if (ch == '\n' || (ch == '\r' && text.getOrNull(i + 1) != '\n')) {
             line++
             lineStart = i + 1
         }
     }
     return line to (bounded - lineStart + 1)
+}
+
+// Exclusive end offset of the block comment opening at `start`, or -1 when unterminated.
+private fun blockCommentEnd(sql: String, start: Int, nested: Boolean): Int {
+    var depth = 1
+    var j = start + 2
+    while (j + 2 <= sql.length) {
+        when {
+            nested && sql[j] == '/' && sql[j + 1] == '*' -> {
+                depth++
+                j += 2
+            }
+            sql[j] == '*' && sql[j + 1] == '/' -> {
+                depth--
+                j += 2
+                if (depth == 0) return j
+            }
+            else -> j++
+        }
+    }
+    return -1
+}
+
+// True/false when the connection's Connector/J sessionVariables property pins sql_mode, making
+// the session's string-escape semantics known; null when the server's global sql_mode could still
+// enable NO_BACKSLASH_ESCAPES, so parsing must treat mode-dependent strings as ambiguous.
+fun mySqlBackslashEscapes(connection: ConnectionDef): Boolean? {
+    if (connection.dialect != Dialect.MySql) return null
+    val sessionVariables =
+        connection.driverProperties
+            .firstOrNull { it.name.equals("sessionVariables", ignoreCase = true) }
+            ?.value ?: return null
+    if (!sessionVariables.contains("sql_mode", ignoreCase = true)) return null
+    return !sessionVariables.contains("NO_BACKSLASH_ESCAPES", ignoreCase = true)
 }

@@ -215,6 +215,26 @@ class SqlParserTest {
     }
 
     @Test
+    fun conditionParenthesesAreBoundedInsteadOfOverflowingTheStack() {
+        fun nested(depth: Int) =
+            "SELECT id FROM t WHERE ${"(".repeat(depth)}a = 1${")".repeat(depth)}"
+
+        parse(nested(MAX_CONDITION_PAREN_DEPTH))
+        assertEquals(
+            SqlMessages.PAREN_DEPTH,
+            failParse(nested(MAX_CONDITION_PAREN_DEPTH + 1)).message,
+        )
+        // Must surface as a normal issue, never a StackOverflowError.
+        assertEquals(SqlMessages.PAREN_DEPTH, failParse(nested(5_000)).message)
+    }
+
+    @Test
+    fun sequentialParenthesizedConditionsDoNotAccumulateDepth() {
+        val groups = (1..MAX_CONDITION_PAREN_DEPTH + 5).joinToString(" AND ") { "(a = $it)" }
+        parse("SELECT id FROM t WHERE $groups")
+    }
+
+    @Test
     fun errorSpansPointAtTheProblem() {
         val sql = "SELECT id FROM t WHERE a = NULL"
         val issue = failParse(sql)

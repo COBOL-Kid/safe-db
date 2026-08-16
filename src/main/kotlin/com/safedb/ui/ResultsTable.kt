@@ -40,9 +40,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.safedb.explore.displayColumnLabel
+import com.safedb.explore.displayColumnLabels
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.TableRef
 import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.StatusChip
 import com.safedb.ui.components.StatusChipKind
@@ -53,9 +56,12 @@ import com.safedb.ui.theme.SafeDbTheme
 fun ResultsTable(
     result: QueryResult,
     modifier: Modifier = Modifier,
+    // TableRefs of the spec that produced the result; used to strip alias prefixes from headers.
+    tables: List<TableRef> = emptyList(),
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val columns = remember(result.columns, result.rows) { buildResultTableColumns(result) }
+    val columns =
+        remember(result.columns, result.rows, tables) { buildResultTableColumns(result, tables) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -246,8 +252,13 @@ private val ResultTableCellAlignment.textAlign: TextAlign
             ResultTableCellAlignment.End -> TextAlign.End
         }
 
-internal fun buildResultTableColumns(result: QueryResult): List<ResultTableColumnLayout> {
-    val labels = result.columns.map(::displayColumnName)
+internal fun buildResultTableColumns(
+    result: QueryResult,
+    tables: List<TableRef> = emptyList(),
+): List<ResultTableColumnLayout> {
+    // Shared with Explore so both surfaces label and qualify duplicate columns identically.
+    val labelByName = displayColumnLabels(result.columns, tables)
+    val labels = result.columns.map { labelByName[it.name] ?: displayColumnLabel(it.name, tables) }
     val maxLengths = IntArray(labels.size) { labels[it].length }
     val hasConcrete = BooleanArray(labels.size)
     val allNumeric = BooleanArray(labels.size) { true }

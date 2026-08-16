@@ -1,14 +1,22 @@
 package com.safedb.query.sql
 
+import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.DriverProperty
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SqlTokenizerTest {
-    private fun significant(sql: String, dialect: Dialect = Dialect.Postgres) =
-        tokenizeSql(sql, dialect).filter { it.type != SqlTokenType.Whitespace }
+    private fun significant(
+        sql: String,
+        dialect: Dialect = Dialect.Postgres,
+        mySqlBackslashEscapes: Boolean? = null,
+    ) =
+        tokenizeSql(sql, dialect, mySqlBackslashEscapes).filter {
+            it.type != SqlTokenType.Whitespace
+        }
 
     @Test
     fun classifiesKeywordsCaseInsensitively() {
@@ -124,6 +132,17 @@ class SqlTokenizerTest {
     }
 
     @Test
+    fun lineColCountsBareCarriageReturnsAndCrLfPairs() {
+        assertEquals(2 to 1, lineColOf("SELECT id\rFROM t", 10))
+        assertEquals(2 to 5, lineColOf("SELECT id\rFROM t", 14))
+
+        val crlf = "SELECT id\r\nFROM t"
+        assertEquals(1 to 10, lineColOf(crlf, 9))
+        assertEquals(2 to 1, lineColOf(crlf, 11))
+        assertEquals(2 to 5, lineColOf(crlf, 15))
+    }
+
+    @Test
     fun noErrorsInWellFormedInput() {
         val tokens =
             tokenizeSql(
@@ -134,21 +153,100 @@ class SqlTokenizerTest {
     }
 
     @Test
-    fun mysqlBackslashEscapesInStrings() {
-        val quote = significant("'it\\'s'", Dialect.MySql).single()
+    fun mysqlBackslashEscapesInStringsWhenSessionModeIsPinned() {
+        val quote = significant("'it\\'s'", Dialect.MySql, mySqlBackslashEscapes = true).single()
         assertEquals(SqlTokenType.StringLiteral, quote.type)
         assertEquals("it's", quote.value)
 
-        val backslash = significant("'a\\\\b'", Dialect.MySql).single()
+        val backslash =
+            significant("'a\\\\b'", Dialect.MySql, mySqlBackslashEscapes = true).single()
         assertEquals("a\\b", backslash.value)
 
-        val percent = significant("'100\\%'", Dialect.MySql).single()
+        val percent = significant("'100\\%'", Dialect.MySql, mySqlBackslashEscapes = true).single()
         assertEquals("100\\%", percent.value)
         assertEquals(5, percent.value.length)
 
-        val underscore = significant("'100\\_'", Dialect.MySql).single()
+        val underscore =
+            significant("'100\\_'", Dialect.MySql, mySqlBackslashEscapes = true).single()
         assertEquals("100\\_", underscore.value)
         assertEquals(5, underscore.value.length)
+    }
+
+    @Test
+    fun mysqlNoBackslashEscapesModeTakesBackslashLiterally() {
+        val literal = significant("'a\\q'", Dialect.MySql, mySqlBackslashEscapes = false).single()
+        assertEquals(SqlTokenType.StringLiteral, literal.type)
+        assertEquals("a\\q", literal.value)
+
+        val doubled = significant("'a\\\\b'", Dialect.MySql, mySqlBackslashEscapes = false).single()
+        assertEquals("a\\\\b", doubled.value)
+    }
+
+    @Test
+    fun mysqlAmbiguousBackslashIsRejectedWhenSessionModeIsUnknown() {
+        val literal = significant("'a\\q'", Dialect.MySql).single()
+        assertEquals(SqlTokenType.Error, literal.type)
+        assertEquals(SqlMessages.MYSQL_BACKSLASH_AMBIGUOUS, literal.error)
+
+        // \' is an escaped quote in one mode and a string terminator in the other.
+        val quote = significant("'it\\'s'", Dialect.MySql).first()
+        assertEquals(SqlTokenType.Error, quote.type)
+        assertEquals(SqlMessages.MYSQL_BACKSLASH_AMBIGUOUS, quote.error)
+    }
+
+    @Test
+    fun mysqlEscapedWildcardsStayAcceptedWhenSessionModeIsUnknown() {
+        // \% and \_ decode identically under both sql_mode settings, so LIKE escapes keep working.
+        val percent = significant("'100\\%'", Dialect.MySql).single()
+        assertEquals(SqlTokenType.StringLiteral, percent.type)
+        assertEquals("100\\%", percent.value)
+
+        val plain = significant("'plain'", Dialect.MySql).single()
+        assertEquals(SqlTokenType.StringLiteral, plain.type)
+        assertEquals("plain", plain.value)
+    }
+
+    @Test
+    fun mysqlBackslashEscapesDerivesFromSessionVariables() {
+        fun connection(vararg properties: DriverProperty) =
+            ConnectionDef(
+                id = "c1",
+                name = "Local",
+                dialect = Dialect.MySql,
+                host = "localhost",
+                port = 3306,
+                database = "test",
+                username = "reader",
+                driverProperties = properties.toList(),
+            )
+
+        assertNull(mySqlBackslashEscapes(connection()))
+        assertNull(
+            mySqlBackslashEscapes(connection(DriverProperty("sessionVariables", "wait_timeout=60")))
+        )
+        assertEquals(
+            true,
+            mySqlBackslashEscapes(
+                connection(DriverProperty("sessionVariables", "sql_mode='STRICT_TRANS_TABLES'"))
+            ),
+        )
+        assertEquals(
+            false,
+            mySqlBackslashEscapes(
+                connection(
+                    DriverProperty(
+                        "sessionVariables",
+                        "sql_mode='STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES'",
+                    )
+                )
+            ),
+        )
+        assertNull(
+            mySqlBackslashEscapes(
+                connection(DriverProperty("sessionVariables", "sql_mode='ANSI'"))
+                    .copy(dialect = Dialect.Postgres)
+            )
+        )
     }
 
     @Test
@@ -199,9 +297,41 @@ class SqlTokenizerTest {
 
     @Test
     fun mysqlBackslashNewlineIsLineContinuation() {
-        val token = significant("'foo\\\nbar'", Dialect.MySql).single()
+        val token =
+            significant("'foo\\\nbar'", Dialect.MySql, mySqlBackslashEscapes = true).single()
         assertEquals(SqlTokenType.StringLiteral, token.type)
         assertEquals("foobar", token.value)
+    }
+
+    @Test
+    fun nestedBlockCommentsCloseAtTheMatchingTerminator() {
+        // The whole input is one comment on dialects with nesting; the inner SELECT stays inert.
+        val input = "/* /* */ SELECT id FROM users -- */"
+        for (dialect in listOf(Dialect.Postgres, Dialect.Mssql)) {
+            val tokens = tokenizeSql(input, dialect)
+            assertEquals(SqlTokenType.Comment, tokens.single().type)
+        }
+
+        // MySQL and Oracle close at the first */, so the SELECT is live again.
+        for (dialect in listOf(Dialect.MySql, Dialect.Oracle)) {
+            val tokens = significant(input, dialect)
+            assertEquals(SqlTokenType.Comment, tokens.first().type)
+            assertTrue(
+                tokens.any { it.type == SqlTokenType.Keyword && sqlWord(it.text) == "SELECT" }
+            )
+        }
+    }
+
+    @Test
+    fun nestedBlockCommentBeforeARealQueryTokenizes() {
+        val tokens = significant("/* /* inner */ outer */ SELECT id", Dialect.Postgres)
+        assertEquals(SqlTokenType.Comment, tokens.first().type)
+        assertEquals("/* /* inner */ outer */", tokens.first().text)
+        assertTrue(tokens.any { it.type == SqlTokenType.Keyword && sqlWord(it.text) == "SELECT" })
+
+        val unterminated = tokenizeSql("/* /* */ SELECT", Dialect.Postgres).single()
+        assertEquals(SqlTokenType.Error, unterminated.type)
+        assertEquals("Unterminated comment", unterminated.error)
     }
 
     @Test

@@ -11,8 +11,16 @@ internal sealed class SqlStatementResult {
     data class Fail(val issue: SqlIssue) : SqlStatementResult()
 }
 
-internal fun parseSqlStatement(sql: String, dialect: Dialect): SqlStatementResult {
-    val all = tokenizeSql(sql, dialect)
+// Deep parenthesis towers would otherwise overflow the recursive-descent stack and kill the UI
+// thread mid-composition; genuine queries never need anywhere near this many levels.
+internal const val MAX_CONDITION_PAREN_DEPTH = 32
+
+internal fun parseSqlStatement(
+    sql: String,
+    dialect: Dialect,
+    mySqlBackslashEscapes: Boolean? = null,
+): SqlStatementResult {
+    val all = tokenizeSql(sql, dialect, mySqlBackslashEscapes)
     all.firstOrNull { it.type == SqlTokenType.Error }
         ?.let {
             return SqlStatementResult.Fail(
@@ -58,6 +66,7 @@ private class SqlParser(
     private val inputLength: Int,
 ) {
     private var pos = 0
+    private var parenDepth = 0
 
     fun parseStatement(): SqlSelectAst {
         val first = peek() ?: fail(SqlIssueCode.Syntax, "Enter a SELECT query.", null)
@@ -289,12 +298,17 @@ private class SqlParser(
             fail(SqlIssueCode.Unsupported, SqlMessages.NOT_CONDITION, next.span)
         }
         if (next.type == SqlTokenType.LeftParen) {
+            if (parenDepth >= MAX_CONDITION_PAREN_DEPTH) {
+                fail(SqlIssueCode.Unsupported, SqlMessages.PAREN_DEPTH, next.span)
+            }
+            parenDepth++
             advance()
             if (wordAt(0) == "SELECT") {
                 fail(SqlIssueCode.Unsupported, SqlMessages.SUBQUERY, peek()!!.span)
             }
             val inner = parseOrExpr()
             expectType(SqlTokenType.RightParen, "Expected ')'.")
+            parenDepth--
             return inner
         }
         return parsePredicate()

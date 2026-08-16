@@ -65,6 +65,9 @@ internal fun SqlEditor(
     enabled: Boolean,
     onRun: () -> Unit,
     modifier: Modifier = Modifier,
+    // MySQL session string mode (see mySqlBackslashEscapes); keeps highlighting and completion
+    // consistent with how the parse treats backslash literals.
+    backslashEscapes: Boolean? = null,
 ) {
     val scheme = rememberSqlHighlightScheme()
     var completionOpen by remember { mutableStateOf(false) }
@@ -73,7 +76,7 @@ internal fun SqlEditor(
     val density = LocalDensity.current
 
     val completion =
-        remember(value.text, value.selection, dialect, schema, defaultSchema) {
+        remember(value.text, value.selection, dialect, schema, defaultSchema, backslashEscapes) {
             dialect?.let {
                 sqlCompletions(
                     SqlCompletionRequest(
@@ -82,6 +85,7 @@ internal fun SqlEditor(
                         dialect = it,
                         schema = schema,
                         defaultSchema = defaultSchema,
+                        mySqlBackslashEscapes = backslashEscapes,
                     )
                 )
             }
@@ -156,7 +160,8 @@ internal fun SqlEditor(
             textStyle = DataMono.copy(color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = SolidColor(SafeDbTheme.colors.actionPrimary),
             visualTransformation =
-                dialect?.let { SqlSyntaxTransformation(it, scheme) } ?: VisualTransformationNone,
+                dialect?.let { SqlSyntaxTransformation(it, scheme, backslashEscapes) }
+                    ?: VisualTransformationNone,
             onTextLayout = { layoutResult = it },
             decorationBox = { inner ->
                 Box {

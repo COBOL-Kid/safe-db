@@ -55,6 +55,12 @@ internal object SqlMessages {
     const val NATIONAL_STRING =
         "National string literals (N'…') aren't supported — use an ordinary quoted string."
 
+    const val MYSQL_BACKSLASH_AMBIGUOUS =
+        "This string's backslash means different things depending on the server's NO_BACKSLASH_ESCAPES mode. Pin sql_mode with the connection's sessionVariables driver property, or rewrite the string without the ambiguous backslash."
+
+    const val PAREN_DEPTH =
+        "Conditions are nested too deeply — use at most $MAX_CONDITION_PAREN_DEPTH levels of parentheses."
+
     fun notOperator(construct: String) =
         "NOT $construct isn't supported — rewrite it with a supported operator."
 }

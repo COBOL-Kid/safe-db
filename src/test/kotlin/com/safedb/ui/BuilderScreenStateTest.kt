@@ -384,6 +384,35 @@ class BuilderScreenStateTest {
     }
 
     @Test
+    fun queryRiskIndicatorReflectsTheEffectiveRunAvailability() {
+        // BuilderScreen feeds the same predicate to the Run button and this copy, so a busy SQL
+        // editor (sqlBusy=true → runAvailable=false) must flip the copy to "Run unavailable"
+        // even when the risk state alone would allow running.
+        assertEquals(
+            "Query risk: Not required · Run unavailable",
+            queryRiskIndicatorText(
+                null,
+                null,
+                false,
+                QueryRiskGate.Disabled,
+                null,
+                runAvailable = false,
+            ),
+        )
+        assertEquals(
+            "Query risk: Ready to assess · Run unavailable",
+            queryRiskIndicatorText(
+                null,
+                null,
+                false,
+                QueryRiskGate.Standard,
+                null,
+                runAvailable = false,
+            ),
+        )
+    }
+
+    @Test
     fun queryRiskIndicatorKeepsValidationSeparateFromAssessmentPending() {
         assertEquals(
             "Query validation: Choose at least one table",

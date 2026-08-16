@@ -127,6 +127,17 @@ internal fun BuilderScreen(
         queryViewModel.pendingConfirmation?.takeIf {
             it.confirmation.connectionId == connection?.id
         }
+    // One effective availability predicate for the Run button and the adjacent risk copy, so the
+    // copy never claims Run is enabled while the button is disabled (e.g. SQL editor busy).
+    // A SQL editor run holds the same app-wide slot: one live query at a time.
+    val runAvailable =
+        queryViewModel.canRun &&
+            riskValidationError == null &&
+            connection != null &&
+            schema != null &&
+            schemaViewModel.loadedConnectionId == connection.id &&
+            !queryViewModel.running &&
+            !sqlBusy
 
     LaunchedEffect(connection?.id, schemaSelection) {
         val connectionId = connection?.id
@@ -248,6 +259,7 @@ internal fun BuilderScreen(
                                 queryViewModel.running,
                                 settings.queryRiskGate,
                                 riskValidationError,
+                                runAvailable = runAvailable,
                             ),
                             style = MaterialTheme.typography.labelSmall,
                             color =
@@ -323,15 +335,7 @@ internal fun BuilderScreen(
                             queryViewModel.run(connectionId)
                         }
                     },
-                    // A SQL editor run holds the same app-wide slot: one live query at a time.
-                    enabled =
-                        queryViewModel.canRun &&
-                            riskValidationError == null &&
-                            connection != null &&
-                            schemaViewModel.schema != null &&
-                            schemaViewModel.loadedConnectionId == connection.id &&
-                            !queryViewModel.running &&
-                            !sqlBusy,
+                    enabled = runAvailable,
                 ) {
                     if (queryViewModel.running) {
                         CircularProgressIndicator(
@@ -589,7 +593,7 @@ internal fun BuilderScreen(
                             }
                         }
 
-                        currentSample?.result?.let { result ->
+                        currentSample?.let { sample ->
                             Column(
                                 modifier = Modifier.fillMaxWidth().height(resultsPaneHeight.dp)
                             ) {
@@ -620,7 +624,11 @@ internal fun BuilderScreen(
                                             )
                                     },
                                 )
-                                ResultsTable(result = result, modifier = Modifier.fillMaxSize()) {
+                                ResultsTable(
+                                    result = sample.result,
+                                    tables = sample.spec.tables,
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
                                     PrimaryButton(onClick = onOpenExplore) { Text("Explore") }
                                 }
                             }

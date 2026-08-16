@@ -947,7 +947,7 @@ class AppViewModelTest {
             try {
                 advanceUntilIdle()
 
-                viewModel.sqlEditor.run("c1", sampleSpec())
+                viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)
                 runCurrent()
                 assertTrue(started.isCompleted)
                 assertTrue(viewModel.sqlEditor.running)
@@ -990,7 +990,7 @@ class AppViewModelTest {
             try {
                 advanceUntilIdle()
 
-                viewModel.sqlEditor.run("c1", sampleSpec())
+                viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)
                 advanceUntilIdle()
                 assertTrue(viewModel.sqlEditor.occupiesQuerySlot)
                 assertFalse(viewModel.sqlEditor.running)
@@ -1029,7 +1029,7 @@ class AppViewModelTest {
             try {
                 advanceUntilIdle()
 
-                viewModel.sqlEditor.run("c1", sampleSpec())
+                viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)
                 advanceUntilIdle()
                 assertTrue(viewModel.sqlEditor.occupiesQuerySlot)
                 assertFalse(viewModel.sqlEditor.running)
@@ -1064,13 +1064,79 @@ class AppViewModelTest {
                 assertNotNull(viewModel.query.pendingConfirmation)
 
                 if (!viewModel.query.occupiesQuerySlot) {
-                    viewModel.sqlEditor.run("c1", sampleSpec())
+                    viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)
                 }
                 advanceUntilIdle()
 
                 assertEquals(1, service.queryAttempts)
                 assertFalse(viewModel.sqlEditor.running)
                 assertNull(viewModel.sqlEditor.pendingConfirmation)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun settledSqlRiskRejectionDoesNotBlockBuilderOrRecipes() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(riskGateFirstRun = true)
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)
+                advanceUntilIdle()
+                assertTrue(viewModel.sqlEditor.pendingRiskGate)
+                assertFalse(viewModel.sqlEditor.running)
+
+                // The rejection has settled, so the SQL editor no longer occupies the shared slot.
+                assertFalse(viewModel.sqlEditor.occupiesQuerySlot)
+
+                // Applying a recipe must run instead of reporting a nonexistent active query.
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-after-risk",
+                        name = "After risk rejection",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+                viewModel.runRecipe(testConnection(), recipe)
+                advanceUntilIdle()
+
+                assertNull(viewModel.recipeApplyNotice.value)
+                assertEquals(2, service.queryAttempts)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun settledBuilderRiskRejectionDoesNotBlockTheSqlEditor() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(riskGateFirstRun = true)
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.query.addTable(sampleTable())
+                viewModel.query.run("c1")
+                advanceUntilIdle()
+                assertTrue(viewModel.query.pendingRiskGate)
+                assertFalse(viewModel.query.running)
+
+                // The builder's settled rejection releases the shared slot, so the SQL editor's
+                // own run may start.
+                assertFalse(viewModel.query.occupiesQuerySlot)
+                if (!viewModel.query.occupiesQuerySlot) {
+                    viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)
+                }
+                advanceUntilIdle()
+
+                assertEquals(2, service.queryAttempts)
+                assertNotNull(viewModel.sqlEditor.results)
             } finally {
                 viewModel.close()
             }

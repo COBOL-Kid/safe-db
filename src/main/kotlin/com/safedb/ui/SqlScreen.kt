@@ -39,6 +39,7 @@ import com.safedb.model.Settings
 import com.safedb.query.evaluateQueryRisk
 import com.safedb.query.sql.SqlParseResult
 import com.safedb.query.sql.lineColOf
+import com.safedb.query.sql.mySqlBackslashEscapes
 import com.safedb.query.sql.parseSqlToSpec
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
@@ -61,9 +62,10 @@ internal fun parsedSqlSpec(
     dialect: Dialect?,
     schema: Schema?,
     defaultSchema: String?,
+    mySqlBackslashEscapes: Boolean? = null,
 ): SqlParseResult? {
     if (dialect == null || schema == null || text.isBlank()) return null
-    return parseSqlToSpec(text, dialect, schema, defaultSchema)
+    return parseSqlToSpec(text, dialect, schema, defaultSchema, mySqlBackslashEscapes)
 }
 
 // Single parse site, shared with App.kt so Explore staleness/refresh sees the same spec the SQL
@@ -72,17 +74,18 @@ internal fun parsedSqlSpec(
 @Composable
 internal fun rememberSqlParseResult(
     sqlText: String,
-    dialect: Dialect?,
+    connection: ConnectionDef?,
     schemaViewModel: SchemaViewModel,
-    activeConnectionId: String?,
 ): SqlParseResult? {
     val schema =
         schemaViewModel.schema.takeIf {
-            activeConnectionId != null && schemaViewModel.loadedConnectionId == activeConnectionId
+            connection != null && schemaViewModel.loadedConnectionId == connection.id
         }
     val defaultSchema = schemaViewModel.selectedSchema
-    return remember(sqlText, dialect, schema, defaultSchema) {
-        parsedSqlSpec(sqlText, dialect, schema, defaultSchema)
+    val dialect = connection?.dialect
+    val backslashEscapes = connection?.let(::mySqlBackslashEscapes)
+    return remember(sqlText, dialect, backslashEscapes, schema, defaultSchema) {
+        parsedSqlSpec(sqlText, dialect, schema, defaultSchema, backslashEscapes)
     }
 }
 
@@ -161,11 +164,16 @@ internal fun SqlScreen(
             !sqlViewModel.pendingRiskGateFor(connection.id, parsedSpec) &&
             pendingConfirmation == null
 
+    // Text this composition's parseResult was produced from; run() rejects the snapshot if the
+    // editor has moved on before the callback was recomposed, so a stale Ctrl/Cmd+Enter can never
+    // submit a query the editor no longer shows.
+    val parsedSourceText = sqlViewModel.text.text
+
     fun runQuery() {
         val connectionId = connection?.id ?: return
         val spec = parsedSpec ?: return
         if (!canRun) return
-        sqlViewModel.run(connectionId, spec)
+        sqlViewModel.run(connectionId, spec, sourceText = parsedSourceText)
     }
 
     if (pendingConfirmation != null) {
@@ -264,6 +272,7 @@ internal fun SqlScreen(
                     schema = schema,
                     selectedSchema = selectedSchema,
                     dialect = dialect,
+                    backslashEscapes = connection?.let(::mySqlBackslashEscapes),
                     parseIssues = parseIssues,
                     parseNotes = parseNotes,
                     riskValidationError = riskValidationError,
@@ -282,6 +291,7 @@ private fun SqlWorkspace(
     schema: Schema?,
     selectedSchema: String?,
     dialect: Dialect?,
+    backslashEscapes: Boolean?,
     parseIssues: List<com.safedb.query.sql.SqlIssue>,
     parseNotes: List<String>,
     riskValidationError: String?,
@@ -296,6 +306,7 @@ private fun SqlWorkspace(
             value = text,
             onValueChange = sqlViewModel::onTextChanged,
             dialect = dialect,
+            backslashEscapes = backslashEscapes,
             schema = schema,
             defaultSchema = selectedSchema,
             enabled = true,
@@ -356,6 +367,7 @@ private fun SqlWorkspace(
                 currentSample != null ->
                     ResultsTable(
                         result = currentSample.result,
+                        tables = currentSample.spec.tables,
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         PrimaryButton(onClick = { onOpenExplore(currentSample) }) {

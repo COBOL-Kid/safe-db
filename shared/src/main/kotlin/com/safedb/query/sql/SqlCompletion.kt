@@ -27,6 +27,7 @@ data class SqlCompletionRequest(
     val dialect: Dialect,
     val schema: Schema?,
     val defaultSchema: String?,
+    val mySqlBackslashEscapes: Boolean? = null,
 )
 
 data class SqlCompletionResult(
@@ -40,7 +41,7 @@ private data class StatementTable(val info: TableInfo?, val name: String, val al
 
 fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
     val caret = request.caret.coerceIn(0, request.text.length)
-    val tokens = tokenizeSql(request.text, request.dialect)
+    val tokens = tokenizeSql(request.text, request.dialect, request.mySqlBackslashEscapes)
     val significant = tokens.filter {
         it.type != SqlTokenType.Whitespace && it.type != SqlTokenType.Comment
     }
@@ -107,8 +108,16 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
                 // Aliases and table names win, matching SQL scoping. Only when the qualifier names
                 // no table in the statement is it a schema — `FROM public.` should list its tables.
                 // A lone `.` after a number (`1.`) has no qualifier and must not become tables.
+                // Schemas only qualify tables, so offer them solely in FROM/JOIN positions —
+                // accepting a table after `SELECT public.` would insert SQL that conversion
+                // rejects.
+                val qualifierPrecededByTableKeyword =
+                    before.getOrNull(before.size - 3)?.let { token ->
+                        token.type == SqlTokenType.Keyword &&
+                            sqlWord(token.text) in TABLE_REFERENCE_WORDS
+                    } ?: false
                 columns.ifEmpty {
-                    if (qualifier != null) {
+                    if (qualifier != null && qualifierPrecededByTableKeyword) {
                         tableCompletions(request, schemaName = qualifier.value)
                     } else {
                         emptyList()
@@ -139,6 +148,8 @@ fun sqlCompletions(request: SqlCompletionRequest): SqlCompletionResult {
 }
 
 private val COLUMN_CONTEXT_WORDS = setOf("SELECT", "DISTINCT", "WHERE", "ON", "BY", "AND", "OR")
+
+private val TABLE_REFERENCE_WORDS = setOf("FROM", "JOIN")
 
 private fun keywordCompletions(keywords: Set<String>): List<SqlCompletionItem> =
     keywords.sorted().map { SqlCompletionItem(it, it, SqlCompletionKind.Keyword) }

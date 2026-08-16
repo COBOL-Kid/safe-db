@@ -503,9 +503,8 @@ internal fun render(
             sqlParseResult =
                 rememberSqlParseResult(
                     sqlText = viewModel.sqlEditor.text.text,
-                    dialect = connections.firstOrNull { it.id == activeConnectionId }?.dialect,
+                    connection = connections.firstOrNull { it.id == activeConnectionId },
                     schemaViewModel = viewModel.schema,
-                    activeConnectionId = activeConnectionId,
                 ),
             sidebarCollapsed = sidebarCollapsed,
             onSidebarCollapsedChange = {},
@@ -987,7 +986,7 @@ fun main() {
                     val schema = vm.schema.schema
                     val parsed = schema?.let { parseSqlToSpec(sql, Dialect.Postgres, it, "public") }
                     if (parsed is SqlParseResult.Success) {
-                        vm.sqlEditor.run("c1", parsed.spec)
+                        vm.sqlEditor.run("c1", parsed.spec, sourceText = sql)
                     }
                 }
             }

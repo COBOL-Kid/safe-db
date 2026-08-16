@@ -1,5 +1,6 @@
 package com.safedb.query.sql
 
+import com.safedb.model.BindValue
 import com.safedb.model.Dialect
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
@@ -285,6 +286,70 @@ class SqlToSpecTest {
                 .children)
         assertEquals("100\\%", (mysqlLike[0] as FilterNode.Leaf).spec.singleLiteral().text)
         assertEquals("100\\_", (mysqlLike[1] as FilterNode.Leaf).spec.singleLiteral().text)
+    }
+
+    @Test
+    fun mysqlQuotedColumnsResolveCaseInsensitively() {
+        val unqualified = spec("SELECT `NAME` FROM users", dialect = Dialect.MySql)
+        assertEquals("name", unqualified.columns.single().column)
+
+        val qualified = spec("SELECT u.`NAME` FROM users u", dialect = Dialect.MySql)
+        assertEquals("name", qualified.columns.single().column)
+
+        // Table names keep exact quoted matching — MySQL table-name case follows the file system.
+        assertEquals(
+            SqlIssueCode.UnknownTable,
+            failure("SELECT id FROM `USERS`", dialect = Dialect.MySql).code,
+        )
+    }
+
+    @Test
+    fun quotedNumericTextIsStoredNormalized() {
+        val parsed = spec("SELECT id FROM users WHERE id = ' 123 ' LIMIT 5")
+        val literal = (parsed.filters.children.single() as FilterNode.Leaf).spec.singleLiteral()
+        assertEquals("123", literal.text)
+        assertEquals(BindValue.Int(123L), BindValue.fromLiteral(literal).getOrThrow())
+        assertIs<Outcome.Ok<*>>(validateQuery(parsed, schema, emptyList(), Dialect.Postgres))
+
+        val decimal =
+            spec(
+                "SELECT \"InvoiceId\" FROM \"Sales\".\"Invoices\" WHERE \"Amount\" = ' 1.5 ' LIMIT 5",
+                defaultSchema = null,
+            )
+        val decimalLiteral =
+            (decimal.filters.children.single() as FilterNode.Leaf).spec.singleLiteral()
+        assertEquals("1.5", decimalLiteral.text)
+        assertIs<Outcome.Ok<*>>(validateQuery(decimal, schema, emptyList(), Dialect.Postgres))
+    }
+
+    @Test
+    fun offsetBearingTimestampLiteralsAreRejected() {
+        val issue =
+            failure("SELECT id FROM users WHERE created_at > '2024-01-01T09:00:00-05:00' LIMIT 5")
+        assertEquals(SqlIssueCode.LiteralTypeMismatch, issue.code)
+    }
+
+    @Test
+    fun mysqlBackslashLiteralsFollowTheSessionMode() {
+        val sql = "SELECT id FROM users WHERE name = 'a\\q' LIMIT 5"
+        // Unknown session mode: the literal decodes differently per mode, so it is rejected.
+        assertIs<SqlParseResult.Failure>(parseSqlToSpec(sql, Dialect.MySql, schema, "public"))
+
+        val pinnedOff =
+            parseSqlToSpec(sql, Dialect.MySql, schema, "public", mySqlBackslashEscapes = false)
+        assertIs<SqlParseResult.Success>(pinnedOff)
+        assertEquals(
+            "a\\q",
+            (pinnedOff.spec.filters.children.single() as FilterNode.Leaf).spec.singleLiteral().text,
+        )
+
+        val pinnedOn =
+            parseSqlToSpec(sql, Dialect.MySql, schema, "public", mySqlBackslashEscapes = true)
+        assertIs<SqlParseResult.Success>(pinnedOn)
+        assertEquals(
+            "aq",
+            (pinnedOn.spec.filters.children.single() as FilterNode.Leaf).spec.singleLiteral().text,
+        )
     }
 
     @Test

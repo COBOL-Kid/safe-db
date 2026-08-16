@@ -1,10 +1,40 @@
 package com.safedb.explore
 
+import com.safedb.model.ResultColumn
 import com.safedb.model.SafeDbJson
+import com.safedb.model.TableRef
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class ExploreModelsTest {
+    @Test
+    fun columnLabelsStripKnownAliasesAndQualifyDuplicates() {
+        // SQL aliases are arbitrary, so only prefixes matching an actual TableRef alias may be
+        // stripped; builder-style t<n> prefixes still work without table context.
+        val tables = listOf(TableRef("public", "users", "u"), TableRef("public", "categories", "c"))
+        val columns =
+            listOf(
+                ResultColumn("u__id", "int"),
+                ResultColumn("c__id", "int"),
+                ResultColumn("u__name", "text"),
+            )
+        assertEquals(
+            mapOf("u__id" to "users.id", "c__id" to "categories.id", "u__name" to "name"),
+            displayColumnLabels(columns, tables),
+        )
+
+        val unaliased =
+            displayColumnLabels(
+                listOf(ResultColumn("users__id", "int")),
+                listOf(TableRef("public", "users", "users")),
+            )
+        assertEquals(mapOf("users__id" to "id"), unaliased)
+
+        // Without table context an arbitrary alias prefix is left alone rather than guessed at.
+        assertEquals("u__id", displayColumnLabel("u__id"))
+        assertEquals("id", displayColumnLabel("t0__id"))
+    }
+
     @Test
     fun configurationRoundTripsAdvancedSettings() {
         val config =

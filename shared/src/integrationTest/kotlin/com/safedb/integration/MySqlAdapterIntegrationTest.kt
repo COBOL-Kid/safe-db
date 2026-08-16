@@ -1,12 +1,19 @@
 package com.safedb.integration
 
 import com.safedb.adapter.Adapter
+import com.safedb.adapter.closeDataSource
+import com.safedb.adapter.createDataSource
 import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
+import com.safedb.model.Dialect
+import com.safedb.model.DriverProperty
 import com.safedb.model.ExplainResult
 import com.safedb.model.Outcome
 import com.safedb.model.ResultCell
 import com.safedb.query.compileValidated
+import com.safedb.query.sql.SqlTokenType
+import com.safedb.query.sql.mySqlBackslashEscapes
+import com.safedb.query.sql.tokenizeSql
 import com.safedb.query.validateQuery
 import com.safedb.secrets.CredentialSession
 import com.safedb.secrets.DisabledMemoryStore
@@ -129,6 +136,67 @@ class MySqlAdapterIntegrationTest {
             assertEquals(listOf("t0__id", "t0__email"), empty.columns.map { it.name })
         } finally {
             adapter.close()
+        }
+    }
+
+    // Safe-DB must never decode a string differently than the session the query would run in.
+    // sessionVariables pins the session's sql_mode, so the derived escape mode has to match what
+    // the server actually does with the same literal.
+    @Test
+    fun mysqlSessionVariablesPinBackslashSemanticsForParsing() {
+        IntegrationAssumptions.assumeMysqlAvailable()
+        val literalSql = "SELECT @@SESSION.sql_mode AS mode, 'a\\q' AS v"
+
+        fun serverEvaluation(def: com.safedb.model.ConnectionDef): Pair<String, String> {
+            val dataSource = createDataSource(def, IntegrationAssumptions.mysqlPassword)
+            try {
+                dataSource.connection.use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.executeQuery(literalSql).use { rs ->
+                            rs.next()
+                            return rs.getString("mode") to rs.getString("v")
+                        }
+                    }
+                }
+            } finally {
+                closeDataSource(dataSource)
+            }
+        }
+
+        val pinned =
+            IntegrationAssumptions.mysqlConnectionDef()
+                .copy(
+                    driverProperties =
+                        listOf(
+                            DriverProperty(
+                                "sessionVariables",
+                                "sql_mode='STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES'",
+                            )
+                        )
+                )
+        assertEquals(false, mySqlBackslashEscapes(pinned))
+        val (pinnedMode, pinnedValue) = serverEvaluation(pinned)
+        assertTrue(pinnedMode.contains("NO_BACKSLASH_ESCAPES"))
+        // Server and Safe-DB agree on the literal under the pinned session mode.
+        assertEquals("a\\q", pinnedValue)
+        val pinnedToken =
+            tokenizeSql("'a\\q'", Dialect.MySql, mySqlBackslashEscapes(pinned)).single()
+        assertEquals(SqlTokenType.StringLiteral, pinnedToken.type)
+        assertEquals(pinnedValue, pinnedToken.value)
+
+        // Without pinned session variables the effective mode is unknown, so Safe-DB refuses the
+        // ambiguous literal instead of guessing against whatever the server default happens to be.
+        val unpinned = IntegrationAssumptions.mysqlConnectionDef()
+        assertEquals(null, mySqlBackslashEscapes(unpinned))
+        val unpinnedToken =
+            tokenizeSql("'a\\q'", Dialect.MySql, mySqlBackslashEscapes(unpinned)).single()
+        assertEquals(SqlTokenType.Error, unpinnedToken.type)
+
+        // When the default session does use backslash escapes, the escapes-on decoding matches it.
+        val (defaultMode, defaultValue) = serverEvaluation(unpinned)
+        if (!defaultMode.contains("NO_BACKSLASH_ESCAPES")) {
+            val escapedToken = tokenizeSql("'a\\q'", Dialect.MySql, true).single()
+            assertEquals(defaultValue, escapedToken.value)
         }
     }
 }

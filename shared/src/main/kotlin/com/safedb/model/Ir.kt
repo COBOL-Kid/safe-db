@@ -283,16 +283,18 @@ fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
             return@runCatching LocalDateTime.parse(trimmed, formatter)
         } catch (_: DateTimeParseException) {}
     }
-    try {
-        return@runCatching java.time.OffsetDateTime.parse(trimmed)
-            .toInstant()
-            .atZone(java.time.ZoneOffset.UTC)
-            .toLocalDateTime()
-    } catch (_: DateTimeParseException) {
+    // The IR only carries local timestamps. Normalizing an offset-bearing value to UTC would bind
+    // a different instant than the database compares against a local timestamp column, so reject
+    // rather than silently shift the comparison.
+    val hasOffset = runCatching { java.time.OffsetDateTime.parse(trimmed) }.isSuccess
+    if (hasOffset) {
         throw IllegalArgumentException(
-            "'$text' is not a valid datetime; expected YYYY-MM-DDTHH:MM[:SS] or RFC3339"
+            "'$text' has a UTC offset, which isn't supported; write the timestamp as the column's local time (YYYY-MM-DDTHH:MM:SS)"
         )
     }
+    throw IllegalArgumentException(
+        "'$text' is not a valid datetime; expected YYYY-MM-DDTHH:MM[:SS]"
+    )
 }
 
 @Serializable

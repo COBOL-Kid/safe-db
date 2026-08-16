@@ -95,7 +95,7 @@ class SqlEditorViewModelStateTest {
                 scope = scope,
             )
 
-        viewModel.run("c1", spec)
+        viewModel.run("c1", spec, viewModel.text.text)
         assertTrue(viewModel.running)
         scope.advanceUntilIdle()
 
@@ -121,7 +121,7 @@ class SqlEditorViewModelStateTest {
                 scope = scope,
             )
 
-        viewModel.run("c1", sampleSpec())
+        viewModel.run("c1", sampleSpec(), viewModel.text.text)
         scope.advanceUntilIdle()
 
         assertEquals("Bad query.", viewModel.error)
@@ -149,7 +149,7 @@ class SqlEditorViewModelStateTest {
             )
         viewModel.onQueryRiskGateChanged(QueryRiskGate.Standard)
 
-        viewModel.run("c1", spec)
+        viewModel.run("c1", spec, viewModel.text.text)
         scope.advanceUntilIdle()
 
         assertTrue(viewModel.pendingRiskGate)
@@ -188,7 +188,7 @@ class SqlEditorViewModelStateTest {
                 scope = scope,
             )
 
-        viewModel.run("c1", spec)
+        viewModel.run("c1", spec, viewModel.text.text)
         scope.advanceUntilIdle()
 
         assertNotNull(viewModel.pendingConfirmation)
@@ -232,7 +232,7 @@ class SqlEditorViewModelStateTest {
                 scope = scope,
             )
 
-        viewModel.run("c1", spec)
+        viewModel.run("c1", spec, viewModel.text.text)
         scope.advanceUntilIdle()
         assertNotNull(viewModel.pendingConfirmation)
 
@@ -275,7 +275,7 @@ class SqlEditorViewModelStateTest {
                 scope = scope,
             )
 
-        viewModel.run("c1", spec)
+        viewModel.run("c1", spec, viewModel.text.text)
         scope.advanceUntilIdle()
         assertNotNull(viewModel.pendingConfirmation)
         assertNotNull(viewModel.riskEvaluationFor("c1", spec))
@@ -286,7 +286,7 @@ class SqlEditorViewModelStateTest {
         assertNull(viewModel.riskEvaluationFor("c1", spec))
 
         // Cancelling leaves the editor runnable again rather than stuck behind a stale decision.
-        viewModel.run("c1", spec)
+        viewModel.run("c1", spec, viewModel.text.text)
         scope.advanceUntilIdle()
         assertEquals(1, executions)
     }
@@ -311,7 +311,7 @@ class SqlEditorViewModelStateTest {
             )
 
         viewModel.onTextChanged(TextFieldValue("SELECT id FROM users"))
-        viewModel.run("c1", sampleSpec())
+        viewModel.run("c1", sampleSpec(), viewModel.text.text)
         scope.advanceUntilIdle()
         assertNotNull(viewModel.pendingConfirmation)
 
@@ -342,7 +342,7 @@ class SqlEditorViewModelStateTest {
             )
 
         viewModel.onActiveConnectionChanged("c1")
-        viewModel.run("c1", spec)
+        viewModel.run("c1", spec, viewModel.text.text)
         scope.advanceUntilIdle()
         assertNotNull(viewModel.currentSample("c1", spec))
 
@@ -371,7 +371,7 @@ class SqlEditorViewModelStateTest {
                 scope = scope,
             )
 
-        viewModel.run("c1", specA)
+        viewModel.run("c1", specA, viewModel.text.text)
         scope.advanceUntilIdle()
         assertTrue(viewModel.pendingRiskGate)
         assertTrue(viewModel.pendingRiskGateFor("c1", specA))
@@ -414,7 +414,7 @@ class SqlEditorViewModelStateTest {
                 scope = scope,
             )
 
-        viewModel.run("c1", specA)
+        viewModel.run("c1", specA, viewModel.text.text)
         scope.runCurrent()
         assertTrue(started.isCompleted)
         assertTrue(viewModel.running)
@@ -431,6 +431,65 @@ class SqlEditorViewModelStateTest {
         assertNull(viewModel.pendingConfirmation)
         assertNull(viewModel.pendingConfirmationFor("c1", specA))
         assertNull(viewModel.pendingConfirmationFor("c1", specB))
+    }
+
+    @Test
+    fun staleRunCallbackIsRejectedAfterTextChanges() {
+        val scope = TestScope(dispatcher)
+        val executed = mutableListOf<QueryRunRequest>()
+        val viewModel =
+            SqlEditorViewModel(
+                service =
+                    object : SqlStubService() {
+                        override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
+                            executed.add(request)
+                            return queryRunResult(sampleResult())
+                        }
+                    },
+                scope = scope,
+            )
+        val queryA = "SELECT id FROM users"
+        val specA = sampleSpec()
+        viewModel.onTextChanged(TextFieldValue(queryA))
+
+        // The editor moves on to query B before the callback captured for A is invoked.
+        viewModel.onTextChanged(TextFieldValue("SELECT name FROM users"))
+        viewModel.run("c1", specA, sourceText = queryA)
+        scope.advanceUntilIdle()
+
+        assertTrue(executed.isEmpty())
+        assertFalse(viewModel.running)
+
+        // A snapshot matching the live text still runs.
+        viewModel.run("c1", specA, sourceText = "SELECT name FROM users")
+        scope.advanceUntilIdle()
+        assertEquals(1, executed.size)
+    }
+
+    @Test
+    fun settledRiskGateDoesNotOccupyTheSharedQuerySlot() {
+        val scope = TestScope(dispatcher)
+        val spec = sampleSpec()
+        val viewModel =
+            SqlEditorViewModel(
+                service =
+                    object : SqlStubService() {
+                        override suspend fun runQuery(request: QueryRunRequest) =
+                            throw QueryFailureException(
+                                QueryError.RiskGate(evaluation(RiskGateState.Blocked), request.spec)
+                            )
+                    },
+                scope = scope,
+            )
+
+        viewModel.run("c1", spec, viewModel.text.text)
+        assertTrue(viewModel.occupiesQuerySlot)
+        scope.advanceUntilIdle()
+
+        // The failure has settled: this editor's own Run stays gated, but the other editor and
+        // recipe application must not stay blocked by it.
+        assertTrue(viewModel.pendingRiskGate)
+        assertFalse(viewModel.occupiesQuerySlot)
     }
 }
 

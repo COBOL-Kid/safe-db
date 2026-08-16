@@ -55,9 +55,8 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
     val sqlParseResult =
         rememberSqlParseResult(
             sqlText = viewModel.sqlEditor.text.text,
-            dialect = connections.firstOrNull { it.id == activeConnectionId }?.dialect,
+            connection = connections.firstOrNull { it.id == activeConnectionId },
             schemaViewModel = viewModel.schema,
-            activeConnectionId = activeConnectionId,
         )
 
     LaunchedEffect(initialLoading) {

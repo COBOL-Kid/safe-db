@@ -47,9 +47,10 @@ internal fun highlightSql(
     text: String,
     dialect: Dialect,
     scheme: SqlHighlightScheme,
+    mySqlBackslashEscapes: Boolean? = null,
 ): AnnotatedString = buildAnnotatedString {
     append(text)
-    for (token in tokenizeSql(text, dialect)) {
+    for (token in tokenizeSql(text, dialect, mySqlBackslashEscapes)) {
         val style =
             when (token.type) {
                 SqlTokenType.Keyword -> SpanStyle(color = scheme.keyword)
@@ -70,7 +71,11 @@ internal fun highlightSql(
 internal class SqlSyntaxTransformation(
     private val dialect: Dialect,
     private val scheme: SqlHighlightScheme,
+    private val mySqlBackslashEscapes: Boolean? = null,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText =
-        TransformedText(highlightSql(text.text, dialect, scheme), OffsetMapping.Identity)
+        TransformedText(
+            highlightSql(text.text, dialect, scheme, mySqlBackslashEscapes),
+            OffsetMapping.Identity,
+        )
 }

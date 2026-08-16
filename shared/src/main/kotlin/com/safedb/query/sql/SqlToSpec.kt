@@ -31,9 +31,10 @@ fun parseSqlToSpec(
     dialect: Dialect,
     schema: Schema,
     defaultSchema: String?,
+    mySqlBackslashEscapes: Boolean? = null,
 ): SqlParseResult {
     val ast =
-        when (val result = parseSqlStatement(sql, dialect)) {
+        when (val result = parseSqlStatement(sql, dialect, mySqlBackslashEscapes)) {
             is SqlStatementResult.Fail -> return SqlParseResult.Failure(listOf(result.issue))
             is SqlStatementResult.Ok -> result.ast
         }
@@ -133,17 +134,23 @@ private class SqlSpecBuilder(
     private fun exactSpelling(ident: SqlIdent): String =
         if (ident.quoted) ident.name else foldUnquoted(ident.name, dialect)
 
+    // MySQL column names stay case-insensitive even inside backticks (unlike its table names,
+    // which follow the file system), so quoted column lookups may fall through to the CI sweep.
+    private val quotedColumnsCaseInsensitive: Boolean
+        get() = dialect == Dialect.MySql
+
     private fun <T> resolveUnique(
         candidates: List<T>,
         nameOf: (T) -> String,
         ident: SqlIdent,
         onMissing: () -> Nothing,
         onAmbiguous: () -> Nothing,
+        quotedCaseInsensitive: Boolean = false,
     ): T {
         val exact = candidates.filter { nameOf(it) == exactSpelling(ident) }
         if (exact.size == 1) return exact[0]
         if (exact.size > 1) onAmbiguous()
-        if (ident.quoted) onMissing()
+        if (ident.quoted && !quotedCaseInsensitive) onMissing()
         val ciMatches = candidates.filter { nameOf(it).equals(ident.name, ignoreCase = true) }
         return when (ciMatches.size) {
             1 -> ciMatches[0]
@@ -296,7 +303,7 @@ private class SqlSpecBuilder(
         }
         if (exact.size == 1) return exact[0]
         if (exact.size > 1) onAmbiguous()
-        if (ref.name.quoted) {
+        if (ref.name.quoted && !quotedColumnsCaseInsensitive) {
             fail(
                 SqlIssueCode.UnknownColumn,
                 "Column '${ref.name.name}' not found in the referenced tables.",
@@ -325,6 +332,7 @@ private class SqlSpecBuilder(
             candidates = table.columns,
             nameOf = { it.name },
             ident = ident,
+            quotedCaseInsensitive = quotedColumnsCaseInsensitive,
             onMissing = {
                 fail(
                     SqlIssueCode.UnknownColumn,
@@ -414,8 +422,12 @@ private class SqlSpecBuilder(
                     LiteralForm.Number -> FilterLiteral(kind, raw)
                     // `id = '123'` is a common idiom that every supported dialect coerces without
                     // changing the comparison, so allow it when the text really is such a number.
-                    LiteralForm.Text ->
-                        if (isNumericText(kind, raw)) FilterLiteral(kind, raw) else mismatch()
+                    // Store the trimmed form: validation and binding parse the stored text.
+                    LiteralForm.Text -> {
+                        val trimmed = raw.trim()
+                        if (isNumericText(kind, trimmed)) FilterLiteral(kind, trimmed)
+                        else mismatch()
+                    }
                     LiteralForm.Bool -> mismatch()
                 }
             LiteralKind.Bool ->
@@ -461,13 +473,11 @@ private class SqlSpecBuilder(
         }
     }
 
-    private fun isNumericText(kind: LiteralKind, raw: String): Boolean {
-        val trimmed = raw.trim()
-        return when (kind) {
-            LiteralKind.Int -> trimmed.toLongOrNull() != null
-            else -> trimmed.toDoubleOrNull() != null
+    private fun isNumericText(kind: LiteralKind, text: String): Boolean =
+        when (kind) {
+            LiteralKind.Int -> text.toLongOrNull() != null
+            else -> text.toDoubleOrNull() != null
         }
-    }
 
     // Deterministic ids: re-parsing identical text must yield an equal QuerySpec, because pending
     // confirmations and the Explore handoff compare specs structurally.

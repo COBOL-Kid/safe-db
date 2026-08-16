@@ -60,8 +60,10 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
     val pendingConfirmationReasons: List<String>
         get() = pendingConfirmation?.reasons.orEmpty().map { it.message }
 
+    // A settled risk-gate failure only blocks this editor's own Run; the shared slot is occupied
+    // solely by work that is still live (running or awaiting the user's confirmation).
     val occupiesQuerySlot: Boolean
-        get() = running || pendingConfirmation != null || pendingRiskGate
+        get() = running || pendingConfirmation != null
 
     fun onTextChanged(value: TextFieldValue) {
         val edited = value.text != text.text
@@ -69,7 +71,12 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
         if (edited) invalidateSettledRunFailure()
     }
 
-    fun run(connectionId: String, spec: QuerySpec) {
+    // sourceText is the editor text the spec was parsed from. A Run callback captured before a
+    // recomposition can carry a spec for text the editor no longer shows; executing it would run
+    // a query the user cannot see and later invalidation could not undo. Reject the stale snapshot
+    // instead — the recomposed callback resubmits cleanly.
+    fun run(connectionId: String, spec: QuerySpec, sourceText: String) {
+        if (sourceText != text.text) return
         if (running || pendingRiskGateState || pendingConfirmation != null) return
         run(QueryRunRequest(connectionId, spec))
     }

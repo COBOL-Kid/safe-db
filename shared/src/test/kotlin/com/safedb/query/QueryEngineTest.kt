@@ -1237,10 +1237,18 @@ class QueryEngineTest {
     }
 
     @Test
-    fun offsetDateTimeLiteralNormalizesToUtc() {
-        val parsed = parseDateTimeLiteral("2026-07-01T12:30:00-05:00").getOrThrow()
-
-        assertEquals("2026-07-01T17:30", parsed.toString())
+    fun offsetDateTimeLiteralIsRejectedNotNormalized() {
+        // Normalizing to UTC would compare a different wall-clock value than the database does
+        // against a local timestamp column.
+        for (input in listOf("2026-07-01T12:30:00-05:00", "2026-07-01T12:30:00Z")) {
+            val result = parseDateTimeLiteral(input)
+            assertTrue(result.isFailure, "expected rejection for $input")
+            assertTrue(result.exceptionOrNull()!!.message!!.contains("offset"))
+        }
+        assertEquals(
+            "2026-07-01T12:30",
+            parseDateTimeLiteral("2026-07-01T12:30:00").getOrThrow().toString(),
+        )
     }
 
     private fun sampleConnection(id: String) =
