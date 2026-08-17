@@ -827,6 +827,92 @@ class QueryRiskTest {
     }
 
     @Test
+    fun duplicateSelectionCountsProjectedWidthOnce() {
+        val assessment =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "payload"), ColumnSel("t0", "payload")),
+                    limit = 1_000,
+                ),
+                listOf(
+                    table(
+                        columns = listOf(column("payload", ColumnCategory.Binary)),
+                        indexes = emptyList(),
+                    )
+                ),
+            )
+
+        assertEquals(0, assessment.signals.count { it.category == RiskCategory.Volume })
+    }
+
+    @Test
+    fun startsWithOnEqualityOnlyIndexHasNoCompatiblePath() {
+        val hashIndex =
+            IndexInfo(
+                name = "orders_name_hash",
+                columns = listOf("name"),
+                keys = listOf(IndexKey("name")),
+                kind = "HASH",
+                capabilities =
+                    IndexCapabilities(
+                        equality = true,
+                        ordering = false,
+                        specializedText = false,
+                        expressionKeys = false,
+                        partialPredicate = false,
+                        includedColumns = false,
+                    ),
+                isPartial = false,
+            )
+        val assessment =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "name")),
+                    filters = group(leaf("t0", "name", FilterOp.StartsWith, "ab")),
+                ),
+                listOf(
+                    table(
+                        columns = listOf(column("name", ColumnCategory.Text)),
+                        indexes = listOf(hashIndex),
+                    )
+                ),
+            )
+
+        assertTrue(assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath })
+    }
+
+    @Test
+    fun equalityPrefixThenStartsWithOnOrderedIndexIsCompatible() {
+        val assessment =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "account_id")),
+                    filters =
+                        group(
+                            leaf("t0", "account_id", FilterOp.Eq, "1"),
+                            leaf("t0", "name", FilterOp.StartsWith, "ab"),
+                        ),
+                ),
+                listOf(
+                    table(
+                        columns = listOf(column("account_id"), column("name", ColumnCategory.Text)),
+                        indexes =
+                            listOf(
+                                index(
+                                    "orders_account_name",
+                                    listOf(IndexKey("account_id"), IndexKey("name")),
+                                )
+                            ),
+                    )
+                ),
+            )
+
+        assertFalse(
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+        )
+    }
+
+    @Test
     fun unavailablePlanKeepsStaticSignalsAndAddsNonScoringUncertainty() {
         val base = buildAssessment("f", listOf(signal(RiskCategory.Access, 2)), emptyList())
         val refined =

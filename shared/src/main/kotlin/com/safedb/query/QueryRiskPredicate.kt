@@ -1,6 +1,5 @@
 package com.safedb.query
 
-import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
@@ -188,7 +187,6 @@ internal fun analyzeAccessPaths(
     table: TableInfo,
     alias: String,
     predicate: PredicateAnalysis,
-    dialect: Dialect,
 ): AccessPathAnalysis {
     val branches =
         predicate.branches
@@ -198,8 +196,7 @@ internal fun analyzeAccessPaths(
             )
     val branchStates = branches.map { branch ->
         val leaves = branch.filter { it.tableAlias == alias }
-        if (leaves.isEmpty()) AccessPathState.Incompatible
-        else knownCompatiblePath(table, leaves, dialect)
+        if (leaves.isEmpty()) AccessPathState.Incompatible else knownCompatiblePath(table, leaves)
     }
     val state =
         when {
@@ -218,7 +215,6 @@ internal fun analyzeAccessPaths(
 internal fun knownCompatiblePath(
     table: TableInfo,
     leaves: List<com.safedb.model.FilterSpec>,
-    dialect: Dialect,
 ): AccessPathState {
     if (!table.indexMetadata.isComplete) return AccessPathState.Unknown
     var unknown = false
@@ -241,15 +237,15 @@ internal fun knownCompatiblePath(
         for ((column, _, _) in keys) {
             if (column == null) break
             val filter = leaves.firstOrNull { it.column == column } ?: break
-            if (
-                filter.op in equalityOps &&
-                    equality &&
-                    expressionCompatible(filter.op, index, dialect)
-            ) {
+            if (filter.op in equalityOps && equality) {
                 constrainedPrefix++
                 continue
             }
-            if (filter.op in rangeOps && index.capabilities.ordering == true)
+            // StartsWith compiles to a bare prefix LIKE, so it needs an ordered path like a range.
+            if (
+                (filter.op in rangeOps || filter.op == FilterOp.StartsWith) &&
+                    index.capabilities.ordering == true
+            )
                 return AccessPathState.Compatible
             break
         }
@@ -264,11 +260,6 @@ internal fun knownCompatiblePath(
     }
     return if (unknown) AccessPathState.Unknown else AccessPathState.Incompatible
 }
-
-internal fun expressionCompatible(op: FilterOp, index: IndexInfo, dialect: Dialect): Boolean =
-    op != FilterOp.ContainsIgnoreCase ||
-        dialect == Dialect.Postgres ||
-        index.capabilities.expressionKeys == true
 
 internal fun normalizedKeys(index: IndexInfo): List<IndexKey> =
     index.keys.ifEmpty { index.columns.map(::IndexKey) }
@@ -298,8 +289,7 @@ internal fun isScanProneText(filter: com.safedb.model.FilterSpec): Boolean =
         else -> false
     }
 
-internal val equalityOps =
-    setOf(FilterOp.Eq, FilterOp.In, FilterOp.IsNull, FilterOp.IsEmpty, FilterOp.StartsWith)
+internal val equalityOps = setOf(FilterOp.Eq, FilterOp.In, FilterOp.IsNull, FilterOp.IsEmpty)
 internal val rangeOps =
     setOf(FilterOp.Gt, FilterOp.Gte, FilterOp.Lt, FilterOp.Lte, FilterOp.Between)
 internal val negativeOps =

@@ -62,7 +62,7 @@ fun assessStaticQueryRisk(
         }
 
         if (leaves.isEmpty()) continue
-        val path = analyzeAccessPaths(table, alias, predicate, dialect)
+        val path = analyzeAccessPaths(table, alias, predicate)
         if (directlyRestricted && path.state == AccessPathState.Compatible)
             directlyBoundedAliases += alias
         if (path.state == AccessPathState.Unknown) {
@@ -345,6 +345,7 @@ private fun matchingForeignKey(
         from.foreignKeys.firstOrNull { fk ->
             fk.referencedSchema == to.schema &&
                 fk.referencedTable == to.name &&
+                fk.columns.size == fk.referencedColumns.size &&
                 fk.columns.indices.all { index ->
                     joins.any { join ->
                         (join.leftAlias == fromAlias &&
@@ -500,14 +501,17 @@ private fun addVolumeSignal(
     signals: MutableList<RiskSignal>,
 ) {
     val width =
-        validated.columns().sumOf { selection ->
-            val category =
-                tablesByAlias[selection.tableAlias]
-                    ?.columns
-                    ?.firstOrNull { it.name == selection.column }
-                    ?.category
-            widthClassBytes(category)
-        }
+        validated
+            .columns()
+            .distinctBy { it.tableAlias to it.column }
+            .sumOf { selection ->
+                val category =
+                    tablesByAlias[selection.tableAlias]
+                        ?.columns
+                        ?.firstOrNull { it.name == selection.column }
+                        ?.category
+                widthClassBytes(category)
+            }
     val projectedBytes = width.toLong() * validated.spec().limit
     val (code, points) =
         when {

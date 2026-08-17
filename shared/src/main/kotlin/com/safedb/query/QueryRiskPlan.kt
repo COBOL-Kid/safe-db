@@ -43,14 +43,14 @@ fun refineRiskWithPlan(
         }
     }
 
-    for ((schema, table, planAlias, method, estimatedRows, specializedTextEvidence) in
+    for ((planSchema, table, planAlias, method, estimatedRows, specializedTextEvidence) in
         plan.relations) {
-        val alias = resolvePlanAlias(planAlias, schema, table, spec)
+        val alias = resolvePlanAlias(planAlias, planSchema, table, spec)
         if (alias == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_relation_unmapped",
-                    RiskSubject(schema = schema, table = table, tableAlias = planAlias),
+                    RiskSubject(schema = planSchema, table = table, tableAlias = planAlias),
                     "ambiguous_or_unmapped_relation",
                 )
             continue
@@ -58,7 +58,7 @@ fun refineRiskWithPlan(
         val tableInfo = tablesByAlias[alias]
         val subject =
             tableInfo?.subject(alias)
-                ?: RiskSubject(tableAlias = alias, schema = schema, table = table)
+                ?: RiskSubject(tableAlias = alias, schema = planSchema, table = table)
         if (specializedTextEvidence) {
             val textTarget = RiskTarget.Access(alias, AccessRiskKind.Text)
             replace(

@@ -10,6 +10,18 @@ import com.safedb.model.Schema
 import com.safedb.model.SortDirection
 import com.zaxxer.hikari.HikariDataSource
 
+internal fun pgIndexCapabilities(kind: String): IndexCapabilities =
+    IndexCapabilities(
+        equality = kind in setOf("btree", "hash"),
+        ordering = kind == "btree",
+        // gin/gist commonly back trgm text search; a wrong guess only suppresses a static
+        // signal that plan evidence re-checks.
+        specializedText = kind in setOf("gin", "gist"),
+        expressionKeys = true,
+        partialPredicate = true,
+        includedColumns = true,
+    )
+
 object PgAdapter {
     fun test(dataSource: HikariDataSource): String = probeVersion(dataSource, "SELECT version()")
 
@@ -76,15 +88,7 @@ object PgAdapter {
                                 SortDirection.Asc
                             },
                         included = rs.getBoolean("is_included"),
-                        capabilities =
-                            IndexCapabilities(
-                                equality = kind in setOf("btree", "hash"),
-                                ordering = kind == "btree",
-                                specializedText = null,
-                                expressionKeys = true,
-                                partialPredicate = true,
-                                includedColumns = true,
-                            ),
+                        capabilities = pgIndexCapabilities(kind),
                         partial = rs.getBoolean("is_partial"),
                         expression = rs.getString("column_name") == null,
                     )

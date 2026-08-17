@@ -146,6 +146,17 @@ class SchemaMetadataTest {
     }
 
     @Test
+    fun postgresIndexKindsMapToSpecializedTextAndOrderingCapabilities() {
+        assertEquals(true, pgIndexCapabilities("gin").specializedText)
+        assertEquals(true, pgIndexCapabilities("gist").specializedText)
+        assertEquals(false, pgIndexCapabilities("gin").equality)
+        assertEquals(false, pgIndexCapabilities("btree").specializedText)
+        assertEquals(true, pgIndexCapabilities("btree").ordering)
+        assertEquals(false, pgIndexCapabilities("hash").ordering)
+        assertEquals(true, pgIndexCapabilities("hash").equality)
+    }
+
+    @Test
     fun foreignKeyRowReadsTheAliasesEveryDialectQueryIsRequiredToProduce() {
         val row =
             foreignKeyRow(
