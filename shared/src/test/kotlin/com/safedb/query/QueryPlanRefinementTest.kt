@@ -277,6 +277,9 @@ class QueryPlanRefinementTest {
             )
         assertEquals(3, high.signals.single { it.target == operationTarget }.points)
         assertTrue(high.signals.single { it.target == joinTarget }.mandatoryBlockWhenGateEnabled)
+        // Confirmed expansion must register in the score, not vanish under the category cap.
+        assertEquals(3, high.categoryScores.getValue(RiskCategory.Joins))
+        assertTrue(high.score > base.score)
     }
 
     private fun refineAccess(

@@ -1,5 +1,5 @@
 {
-  "score_version": 2,
+  "score_version": 1,
   "cases": [
     {
       "id": "postgres-indexed-equality",

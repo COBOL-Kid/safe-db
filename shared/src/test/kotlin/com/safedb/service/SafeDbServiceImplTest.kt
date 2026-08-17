@@ -30,6 +30,7 @@ import com.safedb.model.TableRef
 import com.safedb.model.TableSizeClass
 import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurity
+import com.safedb.query.QUERY_RISK_SCORE_VERSION
 import com.safedb.query.QueryError
 import com.safedb.query.QueryRunner
 import com.safedb.secrets.CredentialSession
@@ -211,7 +212,7 @@ class SafeDbServiceImplTest {
         assertEquals(1, queryStore.listHistory().size)
         val history = queryStore.listHistory().single()
         assertEquals("Delete me", history.connectionName)
-        assertEquals(2, history.riskScoreVersion)
+        assertEquals(QUERY_RISK_SCORE_VERSION, history.riskScoreVersion)
         assertEquals(history.riskStaticScore, history.riskFinalScore)
         assertEquals("Available", history.riskPlanStatus)
         assertEquals("Allowed", history.riskGateState)
@@ -485,7 +486,7 @@ class SafeDbServiceImplTest {
         assertEquals(1, closeCount)
         val history = queryStore.listHistory().single()
         assertTrue(assertNotNull(history.error).contains("execution failed"))
-        assertEquals(2, history.riskScoreVersion)
+        assertEquals(QUERY_RISK_SCORE_VERSION, history.riskScoreVersion)
         assertEquals("Allowed", history.riskGateState)
     }
 

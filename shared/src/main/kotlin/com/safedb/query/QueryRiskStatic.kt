@@ -101,21 +101,19 @@ fun assessStaticQueryRisk(
             }
         }
 
-        val broad = leaves.firstOrNull(::isScanProneText)
+        // A specialized path on one column must not hide scan-prone text on another.
+        val broad = leaves.firstOrNull { isScanProneText(it) && !hasSpecializedTextPath(table, it) }
         if (broad != null && table.tableSize.sizeClass != TableSizeClass.Small) {
-            val specialized = hasSpecializedTextPath(table, broad)
-            if (!specialized) {
-                signals +=
-                    RiskSignal(
-                        RiskSignalCode.ScanProneTextPredicate,
-                        RiskCategory.Access,
-                        table.subject(alias, broad.column),
-                        3,
-                        SignalBasis.StaticSchema,
-                        tableRiskConfidence(table),
-                        target = RiskTarget.Access(alias, AccessRiskKind.Text),
-                    )
-            }
+            signals +=
+                RiskSignal(
+                    RiskSignalCode.ScanProneTextPredicate,
+                    RiskCategory.Access,
+                    table.subject(alias, broad.column),
+                    3,
+                    SignalBasis.StaticSchema,
+                    tableRiskConfidence(table),
+                    target = RiskTarget.Access(alias, AccessRiskKind.Text),
+                )
         }
 
         val negative = leaves.firstOrNull { it.op in negativeOps }
@@ -171,7 +169,9 @@ internal fun buildAssessment(
     val caps =
         mapOf(
             RiskCategory.Access to 6,
-            RiskCategory.Joins to 2,
+            // Must exceed the typical static join total (relation + expansion points) so
+            // plan-confirmed expansion evidence can still raise the category.
+            RiskCategory.Joins to 4,
             RiskCategory.Operations to 4,
             RiskCategory.Volume to 2,
         )
@@ -289,7 +289,7 @@ private fun addJoinSignals(
                 )
         }
         val unique = sides.any { (alias, table) ->
-            exactUniqueJoinKey(table, joinedColumns(alias, joins))
+            provenUniqueJoinKey(table, joinedColumns(alias, joins))
         }
         if (!unique) {
             signals +=
@@ -315,7 +315,9 @@ internal fun joinedColumns(alias: String, joins: List<com.safedb.model.JoinSpec>
         }
     }
 
-internal fun exactUniqueJoinKey(table: TableInfo, joinedColumns: Set<String>): Boolean =
+// A unique non-partial key on any subset of the joined columns already proves at most one
+// matching row per outer row, so extra join conditions must not defeat the proof.
+internal fun provenUniqueJoinKey(table: TableInfo, joinedColumns: Set<String>): Boolean =
     table.indexMetadata.isComplete &&
         joinedColumns.isNotEmpty() &&
         table.indexes.any { index ->
@@ -324,8 +326,7 @@ internal fun exactUniqueJoinKey(table: TableInfo, joinedColumns: Set<String>): B
                 index.isPartial == false &&
                 keys.isNotEmpty() &&
                 keys.none { it.expression || it.column == null } &&
-                keys.mapNotNull(IndexKey::column).toSet() == joinedColumns &&
-                keys.size == joinedColumns.size
+                joinedColumns.containsAll(keys.mapNotNull(IndexKey::column))
         }
 
 private fun matchingForeignKey(

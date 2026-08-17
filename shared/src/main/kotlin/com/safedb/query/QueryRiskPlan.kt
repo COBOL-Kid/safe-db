@@ -324,6 +324,6 @@ private fun joinUniquenessProvesNeitherSideUnique(
         aliases.all { alias ->
             val table = tablesByAlias[alias] ?: return false
             table.indexMetadata.isComplete &&
-                !exactUniqueJoinKey(table, joinedColumns(alias, joins))
+                !provenUniqueJoinKey(table, joinedColumns(alias, joins))
         }
 }
