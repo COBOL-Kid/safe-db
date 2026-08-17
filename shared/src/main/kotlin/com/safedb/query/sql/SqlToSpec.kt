@@ -62,9 +62,9 @@ private class SqlSpecBuilder(
 
         resolveTable(ast.from)
         val joinSpecs = mutableListOf<JoinSpec>()
-        for (join in ast.joins) {
-            val joined = resolveTable(join.table)
-            for ((left, right) in join.conditions) {
+        for ((table, conditions) in ast.joins) {
+            val joined = resolveTable(table)
+            for ((left, right) in conditions) {
                 val leftRef = resolveColumn(left)
                 val rightRef = resolveColumn(right)
                 // Every ON conjunct becomes an edge in the builder's join graph, and

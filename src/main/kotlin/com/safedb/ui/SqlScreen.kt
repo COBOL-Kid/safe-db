@@ -272,7 +272,7 @@ internal fun SqlScreen(
                     schema = schema,
                     selectedSchema = selectedSchema,
                     dialect = dialect,
-                    backslashEscapes = connection?.let(::mySqlBackslashEscapes),
+                    backslashEscapes = mySqlBackslashEscapes(connection),
                     parseIssues = parseIssues,
                     parseNotes = parseNotes,
                     riskValidationError = riskValidationError,
