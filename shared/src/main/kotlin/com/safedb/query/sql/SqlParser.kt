@@ -240,11 +240,11 @@ private class SqlParser(
     private fun parseJoins(): List<SqlJoinAst> {
         val joins = mutableListOf<SqlJoinAst>()
         while (true) {
-            val word = wordAt(0)
-            when {
-                word in OUTER_JOIN_WORDS ->
+            when (val word = wordAt(0)) {
+                in OUTER_JOIN_WORDS ->
                     fail(SqlIssueCode.Unsupported, SqlMessages.OUTER_JOIN, peek()!!.span)
-                word == "INNER" || word == "JOIN" -> {
+                "INNER",
+                "JOIN" -> {
                     if (word == "INNER") advance()
                     expectWord("JOIN", "Expected JOIN after INNER.")
                     val table = parseTableRef()

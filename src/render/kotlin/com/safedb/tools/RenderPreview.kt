@@ -475,7 +475,7 @@ internal fun render(
     val service =
         FakeService(
             Settings(
-                theme = if (isDark) "dark" else Settings.DEFAULT_THEME,
+                theme = if (isDark) "dark" else "light",
                 colorScheme = palette.id,
             )
         )
@@ -521,7 +521,7 @@ private fun renderConnectionsForm(
     width: Int = 1280,
     height: Int = 832,
 ) {
-    val service = FakeService(Settings(theme = if (isDark) "dark" else Settings.DEFAULT_THEME))
+    val service = FakeService(Settings(theme = if (isDark) "dark" else "light"))
     val viewModel = AppViewModel(service)
     Thread.sleep(1_400)
 
@@ -547,7 +547,6 @@ private fun renderConnectionsForm(
                     editingConnection = editing,
                     onShowConnectionFormChange = {},
                     onEditingConnectionChange = {},
-                    onActivate = {},
                     onDeleted = {},
                     onConnectionChanged = {},
                     onSaved = {},

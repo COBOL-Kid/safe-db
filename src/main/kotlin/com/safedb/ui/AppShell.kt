@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -65,6 +66,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.AppState
@@ -280,12 +283,6 @@ internal fun AppShellContent(
                 AppRoute.Connections ->
                     ConnectionsScreen(
                         viewModel = viewModel.connections,
-                        onActivate = { id ->
-                            val connection = connections.firstOrNull { it.id == id }
-                            if (connection != null) {
-                                selectConnection(connection, thenNavigate = AppRoute.Builder)
-                            }
-                        },
                         onDeleted = { id ->
                             appState.clearActiveConnectionIf(id)
                             viewModel.settings.clearDefaultIfConnection(id)
@@ -497,9 +494,7 @@ internal fun Sidebar(
     Row(modifier = Modifier.fillMaxHeight()) {
         Column(
             modifier =
-                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground),
-            horizontalAlignment =
-                if (layoutCollapsed) Alignment.CenterHorizontally else Alignment.Start,
+                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground)
         ) {
             SidebarHeader(
                 collapsed = layoutCollapsed,
@@ -673,17 +668,24 @@ private fun SidebarUtilities(
                                     .clip(RoundedCornerShape(50))
                                     .background(SafeDbTheme.colors.success)
                         )
+                        // Single-line: during the width animation this slot can shrink to ~0
+                        // wide, and wrapped text would grow tall enough to squeeze the last
+                        // nav rows (Map/History icons visibly shift up).
                         Column {
                             Text(
                                 "Safe Read Mode",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Medium,
                                 color = c.onNavigation,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
                             )
                             Text(
                                 "No-lock · Indexed joins",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = c.onNavigationMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
                             )
                         }
                     }
@@ -805,7 +807,7 @@ private fun NavButton(
             }
         )
 
-    // Keep icons in their own layer so label expand/shrink cannot shift the rail.
+    // Fixed-width rail plus a full-size fade overlay so label show/hide cannot move icons.
     Box(
         modifier =
             Modifier.fillMaxWidth()
@@ -816,7 +818,10 @@ private fun NavButton(
                 .pointerHoverIcon(PointerIcon.Hand)
     ) {
         Row(
-            modifier = Modifier.fillMaxHeight(),
+            modifier =
+                Modifier.align(Alignment.CenterStart)
+                    .width(navButtonLabelStartOffset())
+                    .fillMaxHeight(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
         ) {
@@ -834,18 +839,22 @@ private fun NavButton(
                 modifier = Modifier.size(NavRailIconSize),
             )
         }
-        AnimatedSidebarLabel(
-            visible = labelVisible,
+        Box(
             modifier =
                 Modifier.align(Alignment.CenterStart)
-                    .padding(start = NavIconRailWidth, end = 12.dp),
+                    .fillMaxSize()
+                    .padding(start = navButtonLabelStartOffset(), end = 12.dp)
+                    .clipToBounds(),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                item.label,
-                color = content,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            )
+            SidebarFade(visible = labelVisible) {
+                Text(
+                    item.label,
+                    color = content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                )
+            }
         }
     }
 }
@@ -927,8 +936,12 @@ private val NavRailIndicatorWidth = 3.dp
 private val NavRailIconStartGap = 9.dp
 private val NavRailIconSize = 18.dp
 private val NavRailLabelGap = 11.dp
-private val NavIconRailWidth =
+
+internal fun navButtonIconStartOffset(): Dp = NavRailIndicatorWidth + NavRailIconStartGap
+
+internal fun navButtonLabelStartOffset(): Dp =
     NavRailIndicatorWidth + NavRailIconStartGap + NavRailIconSize + NavRailLabelGap
+
 private const val SidebarWidthAnimationMillis = 240
 private const val SidebarRevealStaggerMillis = 55
 private const val SidebarExpandedExitMillis = 120

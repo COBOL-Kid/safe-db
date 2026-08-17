@@ -68,7 +68,7 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
     }
 
     fun setDarkMode(isDark: Boolean) {
-        val next = if (isDark) "dark" else Settings.DEFAULT_THEME
+        val next = if (isDark) "dark" else "light"
         mutateSettings {
             if (_settings.value.theme == next) return@mutateSettings
             save(_settings.value.copy(theme = next))

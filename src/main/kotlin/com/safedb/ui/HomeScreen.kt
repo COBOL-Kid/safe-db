@@ -26,7 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -111,31 +113,56 @@ fun HomeScreen(
 
             Spacer(Modifier.height(40.dp))
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                QuickLinkCard(
-                    title = "New Connection",
-                    description = "Connect to a database",
-                    icon = Icons.Filled.Add,
-                    onClick = { onNavigate(AppRoute.Connections) },
-                    modifier = Modifier.weight(1f),
-                )
-                QuickLinkCard(
-                    title = "Build a Query",
-                    description = "Visually explore your data",
-                    icon = Icons.Filled.Build,
-                    onClick = { onNavigate(AppRoute.Builder) },
-                    modifier = Modifier.weight(1f),
-                )
-                QuickLinkCard(
-                    title = "Recent Queries",
-                    description = "Revisit past explorations",
-                    icon = Icons.Filled.History,
-                    onClick = { onNavigate(AppRoute.History) },
-                    modifier = Modifier.weight(1f),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    QuickLinkCard(
+                        title = "New Connection",
+                        description = "Connect to a database",
+                        icon = Icons.Filled.Add,
+                        onClick = { onNavigate(AppRoute.Connections) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    QuickLinkCard(
+                        title = "Build a Query",
+                        description = "Visually explore your data",
+                        icon = Icons.Filled.Build,
+                        onClick = { onNavigate(AppRoute.Builder) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    QuickLinkCard(
+                        title = "Recent Queries",
+                        description = "Revisit past explorations",
+                        icon = Icons.Filled.History,
+                        onClick = { onNavigate(AppRoute.History) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    QuickLinkCard(
+                        title = "SQL Editor",
+                        description = "Write SELECT queries",
+                        icon = Icons.Filled.Code,
+                        onClick = { onNavigate(AppRoute.Sql) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    QuickLinkCard(
+                        title = "Map",
+                        description = "Explore database schema",
+                        icon = Icons.Filled.Hub,
+                        onClick = { onNavigate(AppRoute.Map) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.weight(1f))
+                }
             }
 
             if (savedQueries.isNotEmpty()) {

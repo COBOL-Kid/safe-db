@@ -50,9 +50,9 @@ internal fun highlightSql(
     mySqlBackslashEscapes: Boolean? = null,
 ): AnnotatedString = buildAnnotatedString {
     append(text)
-    for (token in tokenizeSql(text, dialect, mySqlBackslashEscapes)) {
+    for ((type, _, span) in tokenizeSql(text, dialect, mySqlBackslashEscapes)) {
         val style =
-            when (token.type) {
+            when (type) {
                 SqlTokenType.Keyword -> SpanStyle(color = scheme.keyword)
                 SqlTokenType.StringLiteral -> SpanStyle(color = scheme.string)
                 SqlTokenType.NumberLiteral -> SpanStyle(color = scheme.number)
@@ -63,7 +63,7 @@ internal fun highlightSql(
                     SpanStyle(color = scheme.error, textDecoration = TextDecoration.Underline)
                 else -> null
             }
-        if (style != null) addStyle(style, token.span.start, token.span.end)
+        if (style != null) addStyle(style, span.start, span.end)
     }
 }
 
