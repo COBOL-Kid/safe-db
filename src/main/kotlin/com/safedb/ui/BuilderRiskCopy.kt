@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.runtime.Composable
 import com.safedb.model.QueryRiskGate
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -8,6 +9,7 @@ import com.safedb.query.QueryRiskAssessment
 import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.RiskGateState
 import com.safedb.query.blockingBand
+import com.safedb.ui.components.ConfirmDialog
 
 internal fun riskGateIndicatorText(gate: QueryRiskGate): String =
     when (gate) {
@@ -74,6 +76,28 @@ internal fun queryConfirmationDialogCopy(
         title = title,
         message = requirement.reasons.joinToString(separator = " ") { it.message },
         confirmLabel = "Run with safeguards",
+    )
+}
+
+@Composable
+internal fun QueryConfirmationDialog(
+    requirement: QueryConfirmationRequirement,
+    otherEditorBusy: Boolean,
+    connectionId: String?,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val copy = queryConfirmationDialogCopy(requirement)
+    ConfirmDialog(
+        open = true,
+        title = copy.title,
+        message = copy.message,
+        confirmLabel = copy.confirmLabel,
+        onConfirm = {
+            if (otherEditorBusy) return@ConfirmDialog
+            if (connectionId == null) onDismiss() else onConfirm(connectionId)
+        },
+        onCancel = onDismiss,
     )
 }
 

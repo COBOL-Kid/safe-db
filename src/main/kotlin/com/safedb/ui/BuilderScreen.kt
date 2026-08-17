@@ -36,7 +36,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -65,11 +64,9 @@ import com.safedb.model.Settings
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.RiskGateState
 import com.safedb.ui.components.BannerKind
-import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.PromptDialog
-import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
@@ -139,17 +136,17 @@ internal fun BuilderScreen(
             !queryViewModel.running &&
             !sqlBusy
 
-    LaunchedEffect(connection?.id, schemaSelection) {
-        val connectionId = connection?.id
-        if (connectionId == null) {
-            schemaViewModel.clear()
-        } else {
-            schemaViewModel.load(
-                connectionId,
-                selection = schemaSelection,
-                onUnavailableSelection = onUnavailableSchemaSelection,
-            )
-        }
+    val fallbackWarning =
+        rememberSchemaLoad(
+            connection = connection,
+            schemaViewModel = schemaViewModel,
+            schemaSelection = schemaSelection,
+            onSchemaSelected = onSchemaSelected,
+            onUnavailableSchemaSelection = onUnavailableSchemaSelection,
+        )
+    val selectSchema: (String) -> Unit = { selected ->
+        fallbackWarning.value = null
+        onSchemaSelected(selected)
     }
 
     val visibleQueryError = queryViewModel.error
@@ -160,22 +157,12 @@ internal fun BuilderScreen(
             queryViewModel.limit > LARGE_LIMIT_WARNING_THRESHOLD
 
     if (pendingConfirmation != null) {
-        val copy = queryConfirmationDialogCopy(pendingConfirmation)
-        ConfirmDialog(
-            open = true,
-            title = copy.title,
-            message = copy.message,
-            confirmLabel = copy.confirmLabel,
-            onConfirm = {
-                if (sqlBusy) return@ConfirmDialog
-                val connectionId = connection?.id
-                if (connectionId == null) {
-                    queryViewModel.dismissError()
-                } else {
-                    queryViewModel.confirmPendingExecution(connectionId)
-                }
-            },
-            onCancel = queryViewModel::dismissError,
+        QueryConfirmationDialog(
+            requirement = pendingConfirmation,
+            otherEditorBusy = sqlBusy,
+            connectionId = connection?.id,
+            onConfirm = queryViewModel::confirmPendingExecution,
+            onDismiss = queryViewModel::dismissError,
         )
     }
 
@@ -392,15 +379,19 @@ internal fun BuilderScreen(
             )
         }
 
-        schemaHistoryError?.let { error ->
+        fallbackWarning.value?.let { warning ->
             MessageBanner(
-                text = "Could not remember the selected schema: $error",
+                text = warning,
                 kind = BannerKind.WARNING,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            ) {
-                SecondaryButton(onClick = onDismissSchemaHistoryError) { Text("Dismiss") }
-            }
+            )
         }
+
+        SchemaHistoryErrorBanner(
+            error = schemaHistoryError,
+            onDismiss = onDismissSchemaHistoryError,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        )
 
         if (connection == null) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -415,7 +406,7 @@ internal fun BuilderScreen(
                         connection = null,
                         connections = connections,
                         onConnectionSelected = onConnectionSelected,
-                        onSchemaSelected = onSchemaSelected,
+                        onSchemaSelected = selectSchema,
                     )
                 }
                 Box(
@@ -446,7 +437,7 @@ internal fun BuilderScreen(
                         connections = connections,
                         onConnectionSelected = onConnectionSelected,
                         onAddTable = { queryViewModel.addTable(it) },
-                        onSchemaSelected = onSchemaSelected,
+                        onSchemaSelected = selectSchema,
                     )
                 }
                 Box(

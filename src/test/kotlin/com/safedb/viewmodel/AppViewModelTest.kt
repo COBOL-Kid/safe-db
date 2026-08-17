@@ -528,6 +528,9 @@ class AppViewModelTest {
             scope.advanceUntilIdle()
 
             assertNull(query.pendingConfirmation)
+            // The abandoned request's evaluation goes too, or the header keeps demanding a
+            // confirmation whose dialog no longer exists (same rule as the SQL editor).
+            assertNull(query.riskEvaluation)
             assertEquals(false, settled)
             assertEquals(1, service.queryAttempts)
             assertTrue(query.canRun)

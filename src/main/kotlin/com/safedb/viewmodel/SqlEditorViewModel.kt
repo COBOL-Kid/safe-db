@@ -8,67 +8,47 @@ import com.safedb.model.QueryResult
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.query.QueryConfirmationRequirement
-import com.safedb.query.QueryError
 import com.safedb.query.QueryRiskEvaluation
-import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
-// Retain ownership until the service settles because blocking JDBC work may ignore cancellation.
-private class ActiveSqlRun
-
-class SqlEditorViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
-    private var runGeneration = 0
-    private var activeRun: ActiveSqlRun? = null
-    private var observedActiveConnection = false
-    private var activeConnectionId: String? = null
-    private var observedQueryRiskGate: QueryRiskGate? = null
-    private var riskEvaluationConnectionId: String? = null
-    private var riskEvaluationSpec: QuerySpec? = null
-    private var pendingConfirmationRequest: QueryRunRequest? = null
+class SqlEditorViewModel(service: SafeDbService, scope: CoroutineScope) {
+    private val runController = QueryRunController(service, scope)
     private var observedParsedSpec = false
     private var lastParsedSpec: QuerySpec? = null
 
     var text by mutableStateOf(TextFieldValue(""))
         private set
 
-    var results by mutableStateOf<QueryResult?>(null)
-        private set
+    val results: QueryResult?
+        get() = runController.results
 
-    private var resultConnectionId by mutableStateOf<String?>(null)
-    private var resultSpec by mutableStateOf<QuerySpec?>(null)
+    val running: Boolean
+        get() = runController.running
 
-    var running by mutableStateOf(false)
-        private set
+    val error: String?
+        get() = runController.error
 
-    var error by mutableStateOf<String?>(null)
-        private set
+    val riskEvaluation: QueryRiskEvaluation?
+        get() = runController.riskEvaluation
 
-    var riskEvaluation by mutableStateOf<QueryRiskEvaluation?>(null)
-        private set
-
-    private var pendingRiskGateState by mutableStateOf(false)
     val pendingRiskGate: Boolean
-        get() = pendingRiskGateState
+        get() = runController.pendingRiskGate
 
-    var pendingConfirmation by mutableStateOf<QueryConfirmationRequirement?>(null)
-        private set
+    val pendingConfirmation: QueryConfirmationRequirement?
+        get() = runController.pendingConfirmation
 
     val pendingConfirmationReasons: List<String>
-        get() = pendingConfirmation?.reasons.orEmpty().map { it.message }
+        get() = runController.pendingConfirmationReasons
 
-    // A settled risk-gate failure only blocks this editor's own Run; the shared slot is occupied
-    // solely by work that is still live (running or awaiting the user's confirmation).
     val occupiesQuerySlot: Boolean
-        get() = running || pendingConfirmation != null
+        get() = runController.occupiesQuerySlot
 
     fun onTextChanged(value: TextFieldValue) {
         val edited = value.text != text.text
         text = value
-        if (edited) invalidateSettledRunFailure()
+        if (edited) runController.invalidateSettledRunFailure()
     }
 
     // sourceText is the editor text the spec was parsed from. A Run callback captured before a
@@ -77,147 +57,34 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
     // instead — the recomposed callback resubmits cleanly.
     fun run(connectionId: String, spec: QuerySpec, sourceText: String) {
         if (sourceText != text.text) return
-        if (running || pendingRiskGateState || pendingConfirmation != null) return
-        run(QueryRunRequest(connectionId, spec))
-    }
-
-    private fun run(request: QueryRunRequest) {
-        if (activeRun != null) return
-        observedActiveConnection = true
-        activeConnectionId = request.connectionId
-        val executedSpec = request.spec
-        val generation = ++runGeneration
-        val run = ActiveSqlRun()
-        activeRun = run
-        running = true
-        error = null
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        riskEvaluationSpec = null
-        pendingRiskGateState = false
-        scope.launch {
-            try {
-                val completed = service.runQuery(request)
-                if (generation == runGeneration) {
-                    results = completed.queryResult
-                    riskEvaluation = completed.riskEvaluation
-                    riskEvaluationConnectionId = request.connectionId
-                    riskEvaluationSpec = request.spec
-                    resultConnectionId = request.connectionId
-                    resultSpec = executedSpec
-                }
-            } catch (failure: QueryFailureException) {
-                if (generation != runGeneration) return@launch
-                when (val queryError = failure.queryError) {
-                    is QueryError.RiskGate -> {
-                        pendingRiskGateState = true
-                        riskEvaluation = queryError.evaluation
-                        riskEvaluationConnectionId = request.connectionId
-                        riskEvaluationSpec = request.spec
-                        error = queryError.message
-                    }
-                    is QueryError.ConfirmationRequired -> {
-                        pendingConfirmationRequest = request
-                        pendingConfirmation = queryError.requirement
-                        riskEvaluation = queryError.evaluation
-                        riskEvaluationConnectionId = request.connectionId
-                        riskEvaluationSpec = request.spec
-                    }
-                    else -> error = failure.message ?: failure.toString()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (generation == runGeneration) error = e.message ?: e.toString()
-            } finally {
-                if (activeRun === run) {
-                    activeRun = null
-                    running = false
-                }
-            }
-        }
+        if (running || pendingRiskGate || pendingConfirmation != null) return
+        runController.run(QueryRunRequest(connectionId, spec))
     }
 
     fun confirmPendingExecution(connectionId: String, currentSpec: QuerySpec?) {
-        if (running || activeRun != null) return
-        val request = pendingConfirmationRequest ?: return
-        val requirement = pendingConfirmation ?: return
-        if (request.connectionId != connectionId || request.spec != currentSpec) {
-            // The evaluation described the request we are abandoning, so drop it too — otherwise
-            // the header and plan-safeguard banner keep demanding a confirmation that is gone.
-            invalidateSettledRunFailure()
-            return
-        }
-        clearPendingConfirmation()
-        run(request.copy(confirmation = requirement.confirmation))
+        runController.confirmPendingExecution(connectionId, currentSpec)
     }
 
     fun dismissPendingConfirmation() {
-        invalidateSettledRunFailure()
+        runController.invalidateSettledRunFailure()
     }
 
-    // The sample is only valid while the editor still parses to the spec that produced it.
-    fun currentSample(connectionId: String?, currentSpec: QuerySpec?): BuilderQuerySample? {
-        if (connectionId == null || resultConnectionId != connectionId) return null
-        val result = results ?: return null
-        val executedSpec = resultSpec ?: return null
-        if (currentSpec != executedSpec) return null
-        return BuilderQuerySample(connectionId, executedSpec, result)
-    }
+    fun currentSample(connectionId: String?, currentSpec: QuerySpec?): BuilderQuerySample? =
+        runController.currentSample(connectionId, currentSpec)
 
-    // Do not clear running here; the prior JDBC call still owns the single-operation slot.
     fun onActiveConnectionChanged(connectionId: String?) {
-        if (observedActiveConnection && activeConnectionId == connectionId) return
-        observedActiveConnection = true
-        activeConnectionId = connectionId
-        if (running) runGeneration += 1
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        pendingRiskGateState = false
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        riskEvaluationSpec = null
-        error = null
-        clearPendingConfirmation()
+        runController.onActiveConnectionChanged(connectionId)
     }
 
-    // Gate changes invalidate descriptive decisions, but the service rechecks hard plan conditions.
     fun onQueryRiskGateChanged(gate: QueryRiskGate) {
-        val previous = observedQueryRiskGate ?: riskEvaluation?.decision?.effectiveGate
-        observedQueryRiskGate = gate
-        if (previous == null || previous == gate) return
-
-        if (running) {
-            runGeneration += 1
-            return
-        }
-        if (riskEvaluation?.decision?.effectiveGate == gate) return
-        if (pendingConfirmation != null) return
-
-        val wasRiskGateBlock = pendingRiskGateState
-        pendingRiskGateState = false
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        riskEvaluationSpec = null
-        if (wasRiskGateBlock) error = null
+        runController.onQueryRiskGateChanged(gate)
     }
 
-    // Keyed by spec as well as connection, like currentSample: editing the SQL or switching the
-    // default schema reparses to a different spec, and the old decision no longer describes it.
     fun riskEvaluationFor(connectionId: String?, currentSpec: QuerySpec?): QueryRiskEvaluation? =
-        riskEvaluation.takeIf {
-            connectionId != null &&
-                connectionId == riskEvaluationConnectionId &&
-                currentSpec != null &&
-                currentSpec == riskEvaluationSpec
-        }
+        runController.riskEvaluationFor(connectionId, currentSpec)
 
     fun dismissError() {
-        invalidateSettledRunFailure()
+        runController.invalidateSettledRunFailure()
     }
 
     // Skip the first observation so composing SQL does not wipe a live gate as null → current spec.
@@ -229,50 +96,14 @@ class SqlEditorViewModel(private val service: SafeDbService, private val scope: 
         }
         if (lastParsedSpec == spec) return
         lastParsedSpec = spec
-        invalidateSettledRunFailure()
+        runController.invalidateSettledRunFailure()
     }
 
     fun pendingConfirmationFor(
         connectionId: String?,
         spec: QuerySpec?,
-    ): QueryConfirmationRequirement? {
-        val request = pendingConfirmationRequest ?: return null
-        return pendingConfirmation.takeIf {
-            connectionId != null &&
-                spec != null &&
-                request.connectionId == connectionId &&
-                request.spec == spec
-        }
-    }
+    ): QueryConfirmationRequirement? = runController.pendingConfirmationFor(connectionId, spec)
 
     fun pendingRiskGateFor(connectionId: String?, spec: QuerySpec?): Boolean =
-        pendingRiskGateState &&
-            connectionId != null &&
-            spec != null &&
-            connectionId == riskEvaluationConnectionId &&
-            spec == riskEvaluationSpec
-
-    private fun invalidateSettledRunFailure() {
-        if (running) {
-            runGeneration += 1
-        }
-        if (
-            error == null &&
-                !pendingRiskGateState &&
-                riskEvaluation == null &&
-                pendingConfirmation == null
-        )
-            return
-        pendingRiskGateState = false
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        riskEvaluationSpec = null
-        error = null
-        clearPendingConfirmation()
-    }
-
-    private fun clearPendingConfirmation() {
-        pendingConfirmationRequest = null
-        pendingConfirmation = null
-    }
+        runController.pendingRiskGateFor(connectionId, spec)
 }
