@@ -100,7 +100,6 @@ internal fun SqlScreen(
             connection = connection,
             schemaViewModel = schemaViewModel,
             schemaSelection = schemaSelection,
-            onSchemaSelected = onSchemaSelected,
             onUnavailableSchemaSelection = onUnavailableSchemaSelection,
         )
 

@@ -141,7 +141,6 @@ internal fun BuilderScreen(
             connection = connection,
             schemaViewModel = schemaViewModel,
             schemaSelection = schemaSelection,
-            onSchemaSelected = onSchemaSelected,
             onUnavailableSchemaSelection = onUnavailableSchemaSelection,
         )
     val selectSchema: (String) -> Unit = { selected ->

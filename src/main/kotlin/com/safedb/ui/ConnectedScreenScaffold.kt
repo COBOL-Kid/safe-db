@@ -125,14 +125,29 @@ internal fun SchemaHistoryErrorBanner(
     }
 }
 
+internal data class SchemaFallback(val schema: String, val warning: String?)
+
+// Decides whether a finished load needs a display-only fallback to the first available schema.
+internal fun resolveSchemaFallback(
+    loaded: Boolean,
+    selectedSchema: String?,
+    schemaOptions: List<String>,
+    preferredSchemaWarning: String?,
+): SchemaFallback? {
+    if (!loaded || selectedSchema != null) return null
+    val first = schemaOptions.firstOrNull() ?: return null
+    return SchemaFallback(first, preferredSchemaWarning?.let { "$it Showing \"$first\" instead." })
+}
+
 // Loads the schema whenever the connection or requested selection changes, falling back to the
 // first available schema (with a warning in the returned state) when the remembered one is gone.
+// The fallback is display-only: it never goes through the user-pick handler, so it cannot
+// overwrite remembered schema history.
 @Composable
 internal fun rememberSchemaLoad(
     connection: ConnectionDef?,
     schemaViewModel: SchemaViewModel,
     schemaSelection: SchemaSelectionIntent,
-    onSchemaSelected: (String) -> Unit,
     onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
     retryKey: Any = Unit,
     onNoConnection: () -> Unit = {},
@@ -140,6 +155,7 @@ internal fun rememberSchemaLoad(
     val fallbackWarning = remember(connection?.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(connection?.id, schemaSelection, retryKey) {
+        fallbackWarning.value = null
         val connectionId = connection?.id
         if (connectionId == null) {
             schemaViewModel.clear()
@@ -151,12 +167,15 @@ internal fun rememberSchemaLoad(
             selection = schemaSelection,
             onUnavailableSelection = onUnavailableSchemaSelection,
         ) { loaded ->
-            if (!loaded || schemaViewModel.selectedSchema != null) return@load
-            val first = schemaViewModel.schemaOptions.firstOrNull() ?: return@load
-            fallbackWarning.value =
-                schemaViewModel.preferredSchemaWarning?.let { "$it Showing \"$first\" instead." }
-            schemaViewModel.selectSchema(first)
-            onSchemaSelected(first)
+            val fallback =
+                resolveSchemaFallback(
+                    loaded = loaded,
+                    selectedSchema = schemaViewModel.selectedSchema,
+                    schemaOptions = schemaViewModel.schemaOptions,
+                    preferredSchemaWarning = schemaViewModel.preferredSchemaWarning,
+                ) ?: return@load
+            fallbackWarning.value = fallback.warning
+            schemaViewModel.selectSchema(fallback.schema)
         }
     }
     return fallbackWarning

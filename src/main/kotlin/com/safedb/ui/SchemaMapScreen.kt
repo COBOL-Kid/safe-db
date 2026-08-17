@@ -160,7 +160,6 @@ internal fun SchemaMapScreen(
             connection = connection,
             schemaViewModel = schemaViewModel,
             schemaSelection = schemaSelection,
-            onSchemaSelected = onSchemaSelected,
             onUnavailableSchemaSelection = onUnavailableSchemaSelection,
             retryKey = retryGeneration,
             onNoConnection = { mapViewModel.activate(null, null) },
