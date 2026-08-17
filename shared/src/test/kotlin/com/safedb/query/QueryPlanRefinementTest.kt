@@ -76,6 +76,138 @@ class QueryPlanRefinementTest {
     }
 
     @Test
+    fun fullIndexScanBandsLikeATableScanButNeverBlocksOutright() {
+        assertTrue(refineAccess(PlanAccessMethod.FullIndexScan, 20).signals.isEmpty())
+
+        val material = refineAccess(PlanAccessMethod.FullIndexScan, 25_000)
+        assertEquals(RiskSignalCode.PlanConfirmedLargeScan, material.signals.single().code)
+        assertEquals(4, material.signals.single().points)
+
+        val high =
+            refineAccess(
+                PlanAccessMethod.FullIndexScan,
+                2_000_000,
+                TableSizeClass.Large,
+                EvidenceConfidence.High,
+            )
+        assertFalse(high.signals.single().mandatoryBlockWhenGateEnabled)
+    }
+
+    @Test
+    fun fullIndexScanWithoutRowsAddsUncertaintyAndKeepsStaticSignal() {
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0",
+                                method = PlanAccessMethod.FullIndexScan,
+                            )
+                        )
+                ),
+                oneTableSpec(),
+                Schema(listOf(table("orders"))),
+            )
+
+        assertEquals(
+            listOf(RiskSignalCode.NoKnownCompatibleAccessPath),
+            refined.signals.map(RiskSignal::code),
+        )
+        assertTrue(refined.uncertainties.any { it.code == "plan_access_rows_unknown" })
+    }
+
+    @Test
+    fun highRowScanOnUnknownSizeTableIsMandatoryOnlyAtLargeEstimates() {
+        val million = refineAccess(PlanAccessMethod.TableScan, 2_000_000, TableSizeClass.Unknown)
+        assertTrue(million.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Flexible).state)
+
+        val moderate = refineAccess(PlanAccessMethod.TableScan, 150_000, TableSizeClass.Unknown)
+        assertEquals(4, moderate.signals.single().points)
+        assertFalse(moderate.signals.single().mandatoryBlockWhenGateEnabled)
+    }
+
+    @Test
+    fun partitionChildRelationsCollapseOntoTheParentAliasWithSummedRows() {
+        fun child(name: String, alias: String, rows: Long) =
+            PlanRelationAccess(
+                table = name,
+                alias = alias,
+                method = PlanAccessMethod.TableScan,
+                estimatedRows = rows,
+            )
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            child("orders_2024_01", "t0_1", 80_000),
+                            child("orders_2024_02", "t0_2", 80_000),
+                        )
+                ),
+                oneTableSpec(),
+                Schema(listOf(table("orders", TableSizeClass.Large, EvidenceConfidence.High))),
+            )
+
+        // 80k per child is Material alone; the 160k sum bands High and blocks outright.
+        val signal = refined.signals.single()
+        assertEquals(RiskSignalCode.PlanConfirmedLargeScan, signal.code)
+        assertTrue(signal.mandatoryBlockWhenGateEnabled)
+        assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
+    }
+
+    @Test
+    fun specAliasEndingInNumericSuffixStillResolvesExactly() {
+        val suffixedSpec =
+            QuerySpec(
+                tables = listOf(TableRef("public", "orders", "t0_1")),
+                columns = listOf(ColumnSel("t0_1", "id")),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            )
+        val base =
+            buildAssessment(
+                "f",
+                listOf(
+                    RiskSignal(
+                        RiskSignalCode.NoKnownCompatibleAccessPath,
+                        RiskCategory.Access,
+                        RiskSubject(tableAlias = "t0_1", table = "orders"),
+                        2,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.Medium,
+                        RiskTarget.Access("t0_1"),
+                    )
+                ),
+                emptyList(),
+            )
+        val refined =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0_1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 5,
+                            )
+                        )
+                ),
+                suffixedSpec,
+                Schema(listOf(table("orders"))),
+            )
+
+        assertTrue(refined.signals.isEmpty())
+        assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
+    }
+
+    @Test
     fun targetSpecificPlanReplacementLeavesUnrelatedSignalsActive() {
         val refined =
             refineAccess(

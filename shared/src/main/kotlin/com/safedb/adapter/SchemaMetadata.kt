@@ -6,6 +6,7 @@ import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexCapabilities
 import com.safedb.model.IndexInfo
 import com.safedb.model.IndexKey
+import com.safedb.model.LARGE_TABLE_ROW_ESTIMATE
 import com.safedb.model.MetadataCoverage
 import com.safedb.model.Schema
 import com.safedb.model.SortDirection
@@ -59,7 +60,7 @@ internal fun normalizeTableSize(
             TableSizeEstimate(coverage = MetadataCoverage.unavailable("row_estimate_unavailable"))
         rowEstimate < 10_000.0 ->
             TableSizeEstimate(TableSizeClass.Small, MetadataCoverage.complete(), confidence)
-        rowEstimate < 1_000_000.0 ->
+        rowEstimate < LARGE_TABLE_ROW_ESTIMATE.toDouble() ->
             TableSizeEstimate(TableSizeClass.Medium, MetadataCoverage.complete(), confidence)
         else -> TableSizeEstimate(TableSizeClass.Large, MetadataCoverage.complete(), confidence)
     }
