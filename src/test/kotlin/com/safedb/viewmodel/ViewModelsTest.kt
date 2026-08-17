@@ -280,12 +280,12 @@ class ViewModelsTest {
 
             viewModel.load()
             advanceUntilIdle()
-            assertEquals("light", viewModel.settings.value.theme)
+            assertEquals("dark", viewModel.settings.value.theme)
 
             viewModel.toggleTheme()
             advanceUntilIdle()
-            assertEquals("dark", viewModel.settings.value.theme)
-            assertEquals("dark", service.savedSettings?.theme)
+            assertEquals("light", viewModel.settings.value.theme)
+            assertEquals("light", service.savedSettings?.theme)
         }
 
     @Test
@@ -297,7 +297,7 @@ class ViewModelsTest {
             viewModel.load()
             advanceUntilIdle()
 
-            viewModel.setDarkMode(false)
+            viewModel.setDarkMode(true)
             viewModel.setColorScheme(ThemePalette.ControlBlue)
             advanceUntilIdle()
             assertEquals(0, service.settingsSaveCount)
@@ -308,9 +308,9 @@ class ViewModelsTest {
             assertEquals(ThemePalette.Oxide.id, service.savedSettings?.colorScheme)
             assertEquals(1, service.settingsSaveCount)
 
-            viewModel.setDarkMode(true)
+            viewModel.setDarkMode(false)
             advanceUntilIdle()
-            assertEquals("dark", viewModel.settings.value.theme)
+            assertEquals("light", viewModel.settings.value.theme)
             assertEquals(2, service.settingsSaveCount)
 
             viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
@@ -331,7 +331,7 @@ class ViewModelsTest {
             val viewModel = SettingsViewModel(service, TestScope(dispatcher))
             viewModel.load()
 
-            viewModel.setDarkMode(true)
+            viewModel.setDarkMode(false)
             viewModel.setColorScheme(ThemePalette.Oxide)
             viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
             runCurrent()
@@ -342,7 +342,7 @@ class ViewModelsTest {
             saveGate.complete(Unit)
             advanceUntilIdle()
 
-            assertEquals("dark", viewModel.settings.value.theme)
+            assertEquals("light", viewModel.settings.value.theme)
             assertEquals(ThemePalette.Oxide.id, viewModel.settings.value.colorScheme)
             assertEquals(QueryRiskGate.Flexible, viewModel.settings.value.queryRiskGate)
             assertEquals(viewModel.settings.value, service.savedSettings)
@@ -579,7 +579,7 @@ class ViewModelsTest {
             viewModel.toggleTheme()
             advanceUntilIdle()
 
-            assertEquals("light", viewModel.settings.value.theme)
+            assertEquals("dark", viewModel.settings.value.theme)
             assertEquals("settings save failed", viewModel.saveError.value)
         }
 }

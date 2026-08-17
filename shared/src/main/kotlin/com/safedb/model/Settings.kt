@@ -16,7 +16,7 @@ data class Settings(
     fun palette(): ThemePalette = ThemePalette.fromId(colorScheme)
 
     companion object {
-        const val DEFAULT_THEME: String = "light"
+        const val DEFAULT_THEME: String = "dark"
 
         fun default(): Settings = Settings()
     }
@@ -32,7 +32,12 @@ fun normalizeSettings(settings: Settings): Settings {
             .filter { seen.add(it) }
             .toList()
 
-    val theme = if (settings.theme == "dark") "dark" else Settings.DEFAULT_THEME
+    val theme =
+        when (settings.theme) {
+            "dark",
+            "light" -> settings.theme
+            else -> Settings.DEFAULT_THEME
+        }
     val colorScheme = settings.palette().id
     val defaultConnectionId = settings.defaultConnectionId?.trim()?.takeIf { it.isNotEmpty() }
     val defaultSchema =
