@@ -66,6 +66,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
@@ -673,17 +674,24 @@ private fun SidebarUtilities(
                                     .clip(RoundedCornerShape(50))
                                     .background(SafeDbTheme.colors.success)
                         )
+                        // Single-line: during the width animation this slot can shrink to ~0
+                        // wide, and wrapped text would grow tall enough to squeeze the last
+                        // nav rows (Map/History icons visibly shift up).
                         Column {
                             Text(
                                 "Safe Read Mode",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Medium,
                                 color = c.onNavigation,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
                             )
                             Text(
                                 "No-lock · Indexed joins",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = c.onNavigationMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
                             )
                         }
                     }

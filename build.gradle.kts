@@ -225,6 +225,13 @@ tasks.register<JavaExec>("renderPreview") {
     mainClass.set("com.safedb.tools.RenderPreviewKt")
 }
 
+tasks.register<JavaExec>("renderHeroFrames") {
+    group = "safe-db"
+    description = "Render the query-builder build-up sequence to /tmp/safedb-preview/hero."
+    classpath = render.runtimeClasspath
+    mainClass.set("com.safedb.tools.HeroFramesKt")
+}
+
 tasks.register<JavaExec>("renderThemeGallery") {
     group = "safe-db"
     description = "Render the color scheme picker and Connections screen for every scheme."
