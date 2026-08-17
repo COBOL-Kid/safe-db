@@ -46,6 +46,22 @@ class PlanParsersTest {
     }
 
     @Test
+    fun mysqlJoinOutputFallsBackToTheLastNestedLoopTablesCumulativeRows() {
+        val plan =
+            parseMySqlPlan(
+                """{"query_block":{"query_cost":"9.5","nested_loop":[{"table":{"table_name":"orders","table_alias":"t0","access_type":"ref","rows_examined_per_scan":8,"rows_produced_per_join":8}},{"table":{"table_name":"items","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":200,"rows_produced_per_join":2000000}}]}}"""
+            )
+
+        assertNotNull(plan)
+        // The last table's cumulative output is the join output, not the max per-scan value.
+        assertEquals(
+            2_000_000,
+            plan.joins.single { it.aliases == setOf("t0", "t1") }.estimatedOutputRows,
+        )
+        assertEquals(200, plan.relations.first { it.alias == "t1" }.estimatedRows)
+    }
+
+    @Test
     fun mysql9JsonSchemaNormalizesInputsAndIndexAccessType() {
         val plan =
             parseMySqlPlan(
@@ -72,6 +88,17 @@ class PlanParsersTest {
         assertEquals("orders", plan.relations.single().table)
         assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Sort })
         assertEquals(12.5, plan.rawOptimizerCost)
+    }
+
+    @Test
+    fun sqlServerRebindsScaleInnerLoopRowEstimates() {
+        val plan =
+            parseSqlServerPlan(
+                """<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan"><BatchSequence><Batch><Statements><StmtSimple StatementSubTreeCost="12.5"><QueryPlan><RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="50" EstimateRebinds="999" EstimateRewinds="0"><IndexScan><Object Schema="[dbo]" Table="[items]" Alias="[t1]"/><SeekPredicates><SeekPredicateNew><SeekKeys><Prefix ScanType="EQ"/></SeekKeys></SeekPredicateNew></SeekPredicates></IndexScan></RelOp></QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>"""
+            )
+
+        assertNotNull(plan)
+        assertEquals(50_000, plan.relations.single().estimatedRows)
     }
 
     @Test
