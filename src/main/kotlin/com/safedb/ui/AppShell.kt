@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -65,6 +66,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.AppState
@@ -816,7 +818,7 @@ private fun NavButton(
                 .pointerHoverIcon(PointerIcon.Hand)
     ) {
         Row(
-            modifier = Modifier.fillMaxHeight(),
+            modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
         ) {
@@ -834,18 +836,22 @@ private fun NavButton(
                 modifier = Modifier.size(NavRailIconSize),
             )
         }
-        AnimatedSidebarLabel(
-            visible = labelVisible,
+        Box(
             modifier =
                 Modifier.align(Alignment.CenterStart)
-                    .padding(start = NavIconRailWidth, end = 12.dp),
+                    .fillMaxHeight()
+                    .padding(start = navButtonLabelStartOffset(), end = 12.dp)
+                    .clipToBounds(),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                item.label,
-                color = content,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            )
+            AnimatedSidebarLabel(visible = labelVisible) {
+                Text(
+                    item.label,
+                    color = content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                )
+            }
         }
     }
 }
@@ -927,8 +933,12 @@ private val NavRailIndicatorWidth = 3.dp
 private val NavRailIconStartGap = 9.dp
 private val NavRailIconSize = 18.dp
 private val NavRailLabelGap = 11.dp
-private val NavIconRailWidth =
+
+internal fun navButtonIconStartOffset(): Dp = NavRailIndicatorWidth + NavRailIconStartGap
+
+internal fun navButtonLabelStartOffset(): Dp =
     NavRailIndicatorWidth + NavRailIconStartGap + NavRailIconSize + NavRailLabelGap
+
 private const val SidebarWidthAnimationMillis = 240
 private const val SidebarRevealStaggerMillis = 55
 private const val SidebarExpandedExitMillis = 120
