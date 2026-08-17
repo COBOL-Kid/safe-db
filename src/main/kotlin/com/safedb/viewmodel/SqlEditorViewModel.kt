@@ -30,9 +30,6 @@ class SqlEditorViewModel(service: SafeDbService, scope: CoroutineScope) {
     val error: String?
         get() = runController.error
 
-    val riskEvaluation: QueryRiskEvaluation?
-        get() = runController.riskEvaluation
-
     val pendingRiskGate: Boolean
         get() = runController.pendingRiskGate
 
