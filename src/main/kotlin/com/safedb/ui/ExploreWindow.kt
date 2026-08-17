@@ -56,6 +56,7 @@ import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
 import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
+import com.safedb.viewmodel.ExploreOrigin
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import java.io.File
@@ -64,13 +65,15 @@ import javax.swing.JFileChooser
 @Composable
 fun ExploreWindowContent(
     viewModel: ExploreViewModel,
-    currentSpec: QuerySpec,
+    currentSpec: QuerySpec?,
     onClose: () -> Unit,
+    origin: ExploreOrigin = ExploreOrigin.Builder,
     onRefreshSample: (() -> Unit)? = null,
     sampleRefreshEnabled: Boolean = false,
     recipesViewModel: RecipesViewModel,
     connections: List<ConnectionDef> = emptyList(),
     onRunRecipe: (ExploreRecipe, ConnectionDef) -> Unit = { _, _ -> },
+    activeConnectionId: String? = viewModel.session.connectionId,
     modifier: Modifier = Modifier,
 ) {
     val session = viewModel.session
@@ -82,7 +85,8 @@ fun ExploreWindowContent(
         remember(session.sample.columns, session.baseSpec.tables) {
             buildExploreFieldOptions(session.sample, session.baseSpec.tables)
         }
-    val stale = viewModel.isStale(currentSpec)
+    val stale = viewModel.isStale(currentSpec, activeConnectionId)
+    val connectionStale = activeConnectionId != session.connectionId
     var drillResult by remember { mutableStateOf<QueryResult?>(null) }
     var pivotRailVisible by remember { mutableStateOf(true) }
     var worksheetRailVisible by remember { mutableStateOf(true) }
@@ -148,7 +152,9 @@ fun ExploreWindowContent(
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             ExploreStaleSampleWarning(
                 stale = stale,
+                origin = origin,
                 sampleRefreshEnabled = sampleRefreshEnabled,
+                connectionStale = connectionStale,
                 onRefreshSample = onRefreshSample,
             )
             ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
@@ -409,20 +415,36 @@ private fun ExploreModeSelector(
 @Composable
 private fun ExploreStaleSampleWarning(
     stale: Boolean,
+    origin: ExploreOrigin,
     sampleRefreshEnabled: Boolean,
+    connectionStale: Boolean,
     onRefreshSample: (() -> Unit)?,
 ) {
     if (!stale) return
+    // Refresh pulls from whichever surface opened this window, so the instructions have to name it
+    // —
+    // telling a SQL-origin user to re-run in Builder never produces a sample and leaves Refresh
+    // off.
+    val surface =
+        when (origin) {
+            ExploreOrigin.Builder -> "Builder"
+            ExploreOrigin.Sql -> "SQL"
+        }
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         MessageBanner(
             text =
-                if (sampleRefreshEnabled)
-                    "The builder query changed. Refresh the Explore sample from the latest Builder results."
-                else
-                    "The builder query changed. Re-run the query in Builder, then refresh or reopen Explore.",
+                when {
+                    connectionStale ->
+                        "The active connection changed. Reopen Explore from the query you " +
+                            "want to inspect; Refresh cannot update this sample."
+                    sampleRefreshEnabled ->
+                        "The $surface query changed. Refresh the Explore sample from the latest $surface results."
+                    else ->
+                        "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore."
+                },
             kind = BannerKind.WARNING,
             action =
-                if (sampleRefreshEnabled && onRefreshSample != null) {
+                if (!connectionStale && sampleRefreshEnabled && onRefreshSample != null) {
                     { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
                 } else null,
         )

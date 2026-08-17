@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
@@ -72,11 +73,14 @@ import com.safedb.SchemaSelectionSource
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
 import com.safedb.model.Settings
+import com.safedb.query.sql.SqlParseResult
 import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.ui.components.CommandPalette
+import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.ExploreOrigin
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
@@ -85,6 +89,11 @@ private data class ConnectionSchemaHandlers(
     val onSchemaSelected: (String) -> Unit,
     val onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
     val onDismissSchemaHistoryError: () -> Unit,
+)
+
+private data class PendingConnectionSwitch(
+    val target: ConnectionDef,
+    val thenNavigate: AppRoute?,
 )
 
 private fun connectionSchemaHandlers(
@@ -122,6 +131,7 @@ fun AppShell(
     viewModel: AppViewModel,
     paletteOpen: Boolean,
     onPaletteOpenChange: (Boolean) -> Unit,
+    sqlParseResult: SqlParseResult?,
     modifier: Modifier = Modifier,
 ) {
     var sidebarCollapsed by rememberSaveable { mutableStateOf(false) }
@@ -130,6 +140,7 @@ fun AppShell(
         viewModel = viewModel,
         paletteOpen = paletteOpen,
         onPaletteOpenChange = onPaletteOpenChange,
+        sqlParseResult = sqlParseResult,
         sidebarCollapsed = sidebarCollapsed,
         onSidebarCollapsedChange = { sidebarCollapsed = it },
         modifier = modifier,
@@ -142,6 +153,7 @@ internal fun AppShellContent(
     viewModel: AppViewModel,
     paletteOpen: Boolean,
     onPaletteOpenChange: (Boolean) -> Unit,
+    sqlParseResult: SqlParseResult?,
     sidebarCollapsed: Boolean,
     onSidebarCollapsedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -154,12 +166,60 @@ internal fun AppShellContent(
     val settings by viewModel.settings.settings.collectAsState()
     val schemaHistoryError by viewModel.settings.schemaHistoryError.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
+    val recipeApplyNotice by viewModel.recipeApplyNotice.collectAsState()
     val isDark = settings.theme == "dark"
     val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
-    val schemaHandlers =
+    val rawSchemaHandlers =
         remember(settings, activeConnectionId) {
             connectionSchemaHandlers(appState, viewModel, settings, activeConnectionId)
         }
+
+    // Every route's connection picker goes through one confirm-and-clear path. A builder draft is
+    // bound to the connection it was built against, so letting any other surface switch underneath
+    // it would leave a canvas that can be run against a database it was never written for.
+    var pendingConnectionSwitch by remember { mutableStateOf<PendingConnectionSwitch?>(null) }
+
+    fun switchConnection(target: ConnectionDef, thenNavigate: AppRoute? = null) {
+        viewModel.query.clear()
+        viewModel.dismissRecipeApplyNotice()
+        pendingConnectionSwitch = null
+        rawSchemaHandlers.onConnectionSelected(target)
+        thenNavigate?.let(appState::navigate)
+    }
+
+    fun selectConnection(target: ConnectionDef, thenNavigate: AppRoute? = null) {
+        val plan =
+            planConnectionSwitch(
+                builderConnectionSwitchDecision(
+                    activeConnectionId = activeConnectionId,
+                    targetConnectionId = target.id,
+                    hasDraft = viewModel.query.canvasTables.isNotEmpty(),
+                ),
+                thenNavigate,
+            )
+        when {
+            plan.awaitConfirm ->
+                pendingConnectionSwitch = PendingConnectionSwitch(target, plan.navigateOnCommit)
+            plan.switchNow -> switchConnection(target, plan.navigateOnCommit)
+            else -> plan.navigateOnCommit?.let(appState::navigate)
+        }
+    }
+
+    val schemaHandlers =
+        rawSchemaHandlers.copy(onConnectionSelected = { target -> selectConnection(target) })
+
+    pendingConnectionSwitch?.let { pending ->
+        ConfirmDialog(
+            open = true,
+            title = "Switch connection?",
+            message =
+                "Switching to ${pending.target.name} clears the current query canvas and results. " +
+                    "Saved queries are not affected.",
+            confirmLabel = "Switch and clear",
+            onConfirm = { switchConnection(pending.target, pending.thenNavigate) },
+            onCancel = { pendingConnectionSwitch = null },
+        )
+    }
 
     fun restoreQuery(connectionId: String, spec: QuerySpec) {
         val restoredSelection = com.safedb.resolveQuerySchemaSelection(spec)
@@ -176,6 +236,9 @@ internal fun AppShellContent(
         onDismiss = { onPaletteOpenChange(false) },
         appState = appState,
         viewModel = viewModel,
+        onConnectionSelected = { target ->
+            selectConnection(target, thenNavigate = AppRoute.Builder)
+        },
     )
 
     SettingsPanel(
@@ -218,11 +281,10 @@ internal fun AppShellContent(
                     ConnectionsScreen(
                         viewModel = viewModel.connections,
                         onActivate = { id ->
-                            appState.setActiveConnection(
-                                id,
-                                resolveConnectionSchemaSelection(id, settings),
-                            )
-                            appState.navigate(AppRoute.Builder)
+                            val connection = connections.firstOrNull { it.id == id }
+                            if (connection != null) {
+                                selectConnection(connection, thenNavigate = AppRoute.Builder)
+                            }
                         },
                         onDeleted = { id ->
                             appState.clearActiveConnectionIf(id)
@@ -246,6 +308,7 @@ internal fun AppShellContent(
                         schemaSelection = schemaSelection,
                         schemaHistoryError = schemaHistoryError,
                         settings = settings,
+                        sqlBusy = viewModel.sqlEditor.occupiesQuerySlot,
                         onConnectionSelected = schemaHandlers.onConnectionSelected,
                         onSchemaSelected = schemaHandlers.onSchemaSelected,
                         onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
@@ -277,6 +340,36 @@ internal fun AppShellContent(
                                 }
                             }
                         },
+                        recipeApplyNotice = recipeApplyNotice,
+                        onDismissRecipeApplyNotice = viewModel::dismissRecipeApplyNotice,
+                    )
+                AppRoute.Sql ->
+                    SqlScreen(
+                        connection = activeConnection,
+                        connections = connections,
+                        sqlViewModel = viewModel.sqlEditor,
+                        schemaViewModel = viewModel.schema,
+                        schemaSelection = schemaSelection,
+                        schemaHistoryError = schemaHistoryError,
+                        settings = settings,
+                        parseResult = sqlParseResult,
+                        builderBusy = viewModel.query.occupiesQuerySlot,
+                        onConnectionSelected = schemaHandlers.onConnectionSelected,
+                        onSchemaSelected = schemaHandlers.onSchemaSelected,
+                        onUnavailableSchemaSelection = schemaHandlers.onUnavailableSchemaSelection,
+                        onDismissSchemaHistoryError = schemaHandlers.onDismissSchemaHistoryError,
+                        onOpenExplore = { sample ->
+                            val target = connections.firstOrNull { it.id == sample.connectionId }
+                            if (target != null) {
+                                viewModel.openExplore(
+                                    target,
+                                    sample.spec,
+                                    sample.result,
+                                    ExploreOrigin.Sql,
+                                )
+                            }
+                        },
+                        onOpenConnections = { appState.navigate(AppRoute.Connections) },
                     )
                 AppRoute.Map ->
                     SchemaMapScreen(
@@ -321,6 +414,7 @@ internal fun Sidebar(
             NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
             NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
             NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
+            NavItem(AppRoute.Sql, "SQL", Icons.Outlined.Code),
             NavItem(AppRoute.Map, "Map", Icons.Outlined.Hub),
             NavItem(AppRoute.History, "History", Icons.Outlined.History),
         )
@@ -842,9 +936,9 @@ private const val SidebarUtilityFadeInMillis = 120
 private const val SidebarUtilityFadeOutMillis = 80
 private const val SidebarRevealHeader = 1
 private const val SidebarRevealFirstNav = 2
-private const val SidebarRevealStatus = 7
-private const val SidebarRevealSettings = 8
-private const val SidebarRevealTheme = 9
+private const val SidebarRevealStatus = 8
+private const val SidebarRevealSettings = 9
+private const val SidebarRevealTheme = 10
 private const val SidebarRevealAll = SidebarRevealTheme
 private const val SidebarCompactRevealCommand = 1
 private const val SidebarCompactRevealStatus = 2

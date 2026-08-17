@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.safedb.AppRoute
 import com.safedb.canvas.CanvasPoint
 import com.safedb.canvas.CanvasTableLike
 import com.safedb.canvas.ColumnJoinPort
@@ -58,6 +59,53 @@ class BuilderScreenStateTest {
         assertEquals(
             BuilderConnectionSwitchDecision.ConfirmClear,
             builderConnectionSwitchDecision("c1", "c2", hasDraft = true),
+        )
+    }
+
+    @Test
+    fun connectionSwitchPlanNavigatesOnNoOpWhenRequested() {
+        assertEquals(
+            ConnectionSwitchPlan(
+                switchNow = false,
+                awaitConfirm = false,
+                navigateOnCommit = AppRoute.Builder,
+            ),
+            planConnectionSwitch(BuilderConnectionSwitchDecision.NoOp, AppRoute.Builder),
+        )
+    }
+
+    @Test
+    fun connectionSwitchPlanSwitchesImmediatelyThenNavigates() {
+        assertEquals(
+            ConnectionSwitchPlan(
+                switchNow = true,
+                awaitConfirm = false,
+                navigateOnCommit = AppRoute.Builder,
+            ),
+            planConnectionSwitch(
+                BuilderConnectionSwitchDecision.SwitchImmediately,
+                AppRoute.Builder,
+            ),
+        )
+    }
+
+    @Test
+    fun connectionSwitchPlanDefersNavigationUntilConfirmClear() {
+        assertEquals(
+            ConnectionSwitchPlan(
+                switchNow = false,
+                awaitConfirm = true,
+                navigateOnCommit = AppRoute.Builder,
+            ),
+            planConnectionSwitch(BuilderConnectionSwitchDecision.ConfirmClear, AppRoute.Builder),
+        )
+    }
+
+    @Test
+    fun connectionSwitchPlanOmitsNavigationWhenNoneRequested() {
+        assertEquals(
+            ConnectionSwitchPlan(switchNow = false, awaitConfirm = false, navigateOnCommit = null),
+            planConnectionSwitch(BuilderConnectionSwitchDecision.NoOp, null),
         )
     }
 
@@ -336,6 +384,35 @@ class BuilderScreenStateTest {
     }
 
     @Test
+    fun queryRiskIndicatorReflectsTheEffectiveRunAvailability() {
+        // BuilderScreen feeds the same predicate to the Run button and this copy, so a busy SQL
+        // editor (sqlBusy=true → runAvailable=false) must flip the copy to "Run unavailable"
+        // even when the risk state alone would allow running.
+        assertEquals(
+            "Query risk: Not required · Run unavailable",
+            queryRiskIndicatorText(
+                null,
+                null,
+                false,
+                QueryRiskGate.Disabled,
+                null,
+                runAvailable = false,
+            ),
+        )
+        assertEquals(
+            "Query risk: Ready to assess · Run unavailable",
+            queryRiskIndicatorText(
+                null,
+                null,
+                false,
+                QueryRiskGate.Standard,
+                null,
+                runAvailable = false,
+            ),
+        )
+    }
+
+    @Test
     fun queryRiskIndicatorKeepsValidationSeparateFromAssessmentPending() {
         assertEquals(
             "Query validation: Choose at least one table",
@@ -474,6 +551,35 @@ class BuilderScreenStateTest {
         assertEquals(
             "Preliminary query risk: Very high concern · Run available",
             queryRiskIndicatorText(assessment, null, false, QueryRiskGate.Cautious),
+        )
+    }
+
+    @Test
+    fun queryRiskIndicatorUsesRunUnavailableWhenRunIsNotAvailable() {
+        val assessment =
+            QueryRiskAssessment(
+                2,
+                "f",
+                6,
+                QueryRiskSeverity.High,
+                emptyMap(),
+                emptyList(),
+                emptyList(),
+            )
+
+        assertEquals(
+            "Preliminary query risk: High concern · Run unavailable",
+            queryRiskIndicatorText(
+                assessment,
+                null,
+                false,
+                QueryRiskGate.Standard,
+                runAvailable = false,
+            ),
+        )
+        assertEquals(
+            "Query risk: Ready to assess · Run unavailable",
+            queryRiskIndicatorText(null, null, false, QueryRiskGate.Standard, runAvailable = false),
         )
     }
 }

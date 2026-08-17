@@ -315,12 +315,15 @@ class AdapterTest {
                 "setBigDecimal",
                 "setDouble",
                 "setBoolean",
-                "setDate",
-                "setTimestamp",
+                "setObject",
+                "setObject",
                 "setNull",
             ),
             calls.map { it.first },
         )
+        // Temporal values bind as java.time objects so the JVM default zone can never shift them.
+        assertEquals(LocalDate.of(2026, 1, 2), calls[5].second)
+        assertEquals(LocalDateTime.of(2026, 1, 2, 3, 4, 5), calls[6].second)
         assertTrue(calls.last().second is Int)
     }
 

@@ -92,6 +92,7 @@ internal fun BuilderScreen(
     schemaSelection: SchemaSelectionIntent,
     schemaHistoryError: String?,
     settings: Settings,
+    sqlBusy: Boolean,
     onConnectionSelected: (ConnectionDef) -> Unit,
     onSchemaSelected: (String) -> Unit,
     onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
@@ -99,6 +100,8 @@ internal fun BuilderScreen(
     onOpenExplore: () -> Unit,
     onOpenSettings: () -> Unit,
     onApplyRecipe: (ExploreRecipe, ConnectionDef) -> Unit,
+    recipeApplyNotice: String? = null,
+    onDismissRecipeApplyNotice: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showSavePrompt by remember { mutableStateOf(false) }
@@ -108,7 +111,6 @@ internal fun BuilderScreen(
     var resizing by remember { mutableStateOf(false) }
     var filterControlsHeightPx by remember { mutableIntStateOf(0) }
     var optionControlsHeightPx by remember { mutableIntStateOf(0) }
-    var pendingConnectionSwitch by remember { mutableStateOf<ConnectionDef?>(null) }
     val density = LocalDensity.current
     val limitChoices = BUILDER_LIMIT_CHOICES
     val schema = schemaViewModel.schema
@@ -125,26 +127,17 @@ internal fun BuilderScreen(
         queryViewModel.pendingConfirmation?.takeIf {
             it.confirmation.connectionId == connection?.id
         }
-
-    fun switchConnection(target: ConnectionDef) {
-        queryViewModel.clear()
-        pendingConnectionSwitch = null
-        onConnectionSelected(target)
-    }
-
-    fun requestConnectionSwitch(target: ConnectionDef) {
-        when (
-            builderConnectionSwitchDecision(
-                activeConnectionId = connection?.id,
-                targetConnectionId = target.id,
-                hasDraft = queryViewModel.canvasTables.isNotEmpty(),
-            )
-        ) {
-            BuilderConnectionSwitchDecision.NoOp -> Unit
-            BuilderConnectionSwitchDecision.SwitchImmediately -> switchConnection(target)
-            BuilderConnectionSwitchDecision.ConfirmClear -> pendingConnectionSwitch = target
-        }
-    }
+    // One effective availability predicate for the Run button and the adjacent risk copy, so the
+    // copy never claims Run is enabled while the button is disabled (e.g. SQL editor busy).
+    // A SQL editor run holds the same app-wide slot: one live query at a time.
+    val runAvailable =
+        queryViewModel.canRun &&
+            riskValidationError == null &&
+            connection != null &&
+            schema != null &&
+            schemaViewModel.loadedConnectionId == connection.id &&
+            !queryViewModel.running &&
+            !sqlBusy
 
     LaunchedEffect(connection?.id, schemaSelection) {
         val connectionId = connection?.id
@@ -174,6 +167,7 @@ internal fun BuilderScreen(
             message = copy.message,
             confirmLabel = copy.confirmLabel,
             onConfirm = {
+                if (sqlBusy) return@ConfirmDialog
                 val connectionId = connection?.id
                 if (connectionId == null) {
                     queryViewModel.dismissError()
@@ -182,19 +176,6 @@ internal fun BuilderScreen(
                 }
             },
             onCancel = queryViewModel::dismissError,
-        )
-    }
-
-    pendingConnectionSwitch?.let { target ->
-        ConfirmDialog(
-            open = true,
-            title = "Switch connection?",
-            message =
-                "Switching to ${target.name} clears the current query canvas and results. " +
-                    "Saved queries are not affected.",
-            confirmLabel = "Switch and clear",
-            onConfirm = { switchConnection(target) },
-            onCancel = { pendingConnectionSwitch = null },
         )
     }
 
@@ -278,6 +259,7 @@ internal fun BuilderScreen(
                                 queryViewModel.running,
                                 settings.queryRiskGate,
                                 riskValidationError,
+                                runAvailable = runAvailable,
                             ),
                             style = MaterialTheme.typography.labelSmall,
                             color =
@@ -353,13 +335,7 @@ internal fun BuilderScreen(
                             queryViewModel.run(connectionId)
                         }
                     },
-                    enabled =
-                        queryViewModel.canRun &&
-                            riskValidationError == null &&
-                            connection != null &&
-                            schemaViewModel.schema != null &&
-                            schemaViewModel.loadedConnectionId == connection.id &&
-                            !queryViewModel.running,
+                    enabled = runAvailable,
                 ) {
                     if (queryViewModel.running) {
                         CircularProgressIndicator(
@@ -438,7 +414,7 @@ internal fun BuilderScreen(
                         schemaViewModel = schemaViewModel,
                         connection = null,
                         connections = connections,
-                        onConnectionSelected = ::requestConnectionSwitch,
+                        onConnectionSelected = onConnectionSelected,
                         onSchemaSelected = onSchemaSelected,
                     )
                 }
@@ -468,7 +444,7 @@ internal fun BuilderScreen(
                         schemaViewModel = schemaViewModel,
                         connection = connection,
                         connections = connections,
-                        onConnectionSelected = ::requestConnectionSwitch,
+                        onConnectionSelected = onConnectionSelected,
                         onAddTable = { queryViewModel.addTable(it) },
                         onSchemaSelected = onSchemaSelected,
                     )
@@ -503,6 +479,13 @@ internal fun BuilderScreen(
                                     TextButton(
                                         onClick = { queryViewModel.dismissHydrationWarning() }
                                     ) {
+                                        Text("Dismiss")
+                                    }
+                                }
+                            }
+                            recipeApplyNotice?.let { notice ->
+                                MessageBanner(text = notice, kind = BannerKind.WARNING) {
+                                    TextButton(onClick = onDismissRecipeApplyNotice) {
                                         Text("Dismiss")
                                     }
                                 }
@@ -610,7 +593,7 @@ internal fun BuilderScreen(
                             }
                         }
 
-                        currentSample?.result?.let { result ->
+                        currentSample?.let { sample ->
                             Column(
                                 modifier = Modifier.fillMaxWidth().height(resultsPaneHeight.dp)
                             ) {
@@ -641,7 +624,11 @@ internal fun BuilderScreen(
                                             )
                                     },
                                 )
-                                ResultsTable(result = result, modifier = Modifier.fillMaxSize()) {
+                                ResultsTable(
+                                    result = sample.result,
+                                    tables = sample.spec.tables,
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
                                     PrimaryButton(onClick = onOpenExplore) { Text("Explore") }
                                 }
                             }

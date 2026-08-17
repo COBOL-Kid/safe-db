@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.model.ConnectionDef
 import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.InputShape
 import com.safedb.viewmodel.AppViewModel
@@ -68,14 +70,15 @@ fun CommandPalette(
     onDismiss: () -> Unit,
     appState: AppState,
     viewModel: AppViewModel,
+    onConnectionSelected: (ConnectionDef) -> Unit,
 ) {
     if (!open) return
 
     var search by remember { mutableStateOf("") }
     var selectedIndex by remember { mutableIntStateOf(0) }
     val activeConnectionId by appState.activeConnectionId.collectAsState()
+    val currentRoute by appState.route.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
-    val settings by viewModel.settings.settings.collectAsState()
 
     val commands = buildList {
         add(
@@ -107,6 +110,12 @@ fun CommandPalette(
             }
         )
         add(
+            PaletteCommand("nav-sql", "Go to SQL", "Write SELECT queries", Icons.Filled.Code) {
+                appState.navigate(AppRoute.Sql)
+                onDismiss()
+            }
+        )
+        add(
             PaletteCommand("nav-map", "Go to Map", "Explore database schema", Icons.Filled.Hub) {
                 appState.navigate(AppRoute.Map)
                 onDismiss()
@@ -134,7 +143,16 @@ fun CommandPalette(
             runConnectionId != null &&
                 viewModel.schema.schema != null &&
                 viewModel.schema.loadedConnectionId == runConnectionId
-        if (runConnectionId != null && schemaMatchesConnection && viewModel.query.canRun) {
+        // These act on the builder canvas. On the SQL screen they would run or clear a query the
+        // user cannot see — on a read-only tool, sending the wrong statement to the database.
+        val builderCommandsApply = currentRoute != AppRoute.Sql
+        if (
+            builderCommandsApply &&
+                runConnectionId != null &&
+                schemaMatchesConnection &&
+                viewModel.query.canRun &&
+                !viewModel.sqlEditor.occupiesQuerySlot
+        ) {
             add(
                 PaletteCommand(
                     "run-query",
@@ -144,7 +162,8 @@ fun CommandPalette(
                 ) {
                     if (
                         viewModel.schema.schema != null &&
-                            viewModel.schema.loadedConnectionId == runConnectionId
+                            viewModel.schema.loadedConnectionId == runConnectionId &&
+                            !viewModel.sqlEditor.occupiesQuerySlot
                     ) {
                         viewModel.query.run(runConnectionId)
                         appState.navigate(AppRoute.Builder)
@@ -153,7 +172,7 @@ fun CommandPalette(
                 }
             )
         }
-        if (viewModel.query.canvasTables.isNotEmpty()) {
+        if (builderCommandsApply && viewModel.query.canvasTables.isNotEmpty()) {
             add(
                 PaletteCommand(
                     "clear-canvas",
@@ -162,23 +181,20 @@ fun CommandPalette(
                     Icons.Filled.Delete,
                 ) {
                     viewModel.query.clear()
+                    viewModel.dismissRecipeApplyNotice()
                     onDismiss()
                 }
             )
         }
-        for ((_, id, name, dialect, _, _, database, _, _, _) in connections) {
+        for (connection in connections) {
             add(
                 PaletteCommand(
-                    id = "conn-$id",
-                    label = "Explore: $name",
-                    hint = "$dialect · $database",
+                    id = "conn-${connection.id}",
+                    label = "Explore: ${connection.name}",
+                    hint = "${connection.dialect} · ${connection.database}",
                     icon = Icons.Filled.Link,
                 ) {
-                    appState.setActiveConnection(
-                        id,
-                        com.safedb.resolveConnectionSchemaSelection(id, settings),
-                    )
-                    appState.navigate(AppRoute.Builder)
+                    onConnectionSelected(connection)
                     onDismiss()
                 }
             )

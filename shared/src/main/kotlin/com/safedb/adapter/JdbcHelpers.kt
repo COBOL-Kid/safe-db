@@ -205,8 +205,10 @@ private fun bindParam(stmt: PreparedStatement, index: Int, param: BindValue) {
         is BindValue.Decimal -> stmt.setBigDecimal(index, param.value)
         is BindValue.Float -> stmt.setDouble(index, param.value)
         is BindValue.Bool -> stmt.setBoolean(index, param.value)
-        is BindValue.Date -> stmt.setDate(index, java.sql.Date.valueOf(param.value))
-        is BindValue.DateTime -> stmt.setTimestamp(index, java.sql.Timestamp.valueOf(param.value))
+        // Bind java.time values directly: java.sql.Date/Timestamp.valueOf route through the JVM
+        // default zone, which can shift wall-clock values across DST gaps.
+        is BindValue.Date -> stmt.setObject(index, param.value)
+        is BindValue.DateTime -> stmt.setObject(index, param.value)
         BindValue.Null -> stmt.setNull(index, Types.NULL)
     }
 }

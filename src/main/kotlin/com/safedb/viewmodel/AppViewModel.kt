@@ -33,13 +33,18 @@ class AppViewModel(
     val history = HistoryViewModel(service, scope)
     val recipes = RecipesViewModel(service, scope, ioDispatcher)
     val query = QueryViewModel(service, scope)
+    val sqlEditor = SqlEditorViewModel(service, scope)
     val schema = SchemaViewModel(service, scope)
     internal val schemaMap = SchemaMapViewModel()
 
     private val _explore = MutableStateFlow<ExploreViewModel?>(null)
     val explore: StateFlow<ExploreViewModel?> = _explore.asStateFlow()
+    private val _exploreOrigin = MutableStateFlow(ExploreOrigin.Builder)
+    val exploreOrigin: StateFlow<ExploreOrigin> = _exploreOrigin.asStateFlow()
     private val _pendingRecipeRun = MutableStateFlow<PendingRecipeRun?>(null)
     val pendingRecipeRun: StateFlow<PendingRecipeRun?> = _pendingRecipeRun.asStateFlow()
+    private val _recipeApplyNotice = MutableStateFlow<String?>(null)
+    val recipeApplyNotice: StateFlow<String?> = _recipeApplyNotice.asStateFlow()
 
     private val _initialLoading = MutableStateFlow(true)
     val initialLoading: StateFlow<Boolean> = _initialLoading.asStateFlow()
@@ -66,7 +71,11 @@ class AppViewModel(
         selection: SchemaSelectionIntent = resolveQuerySchemaSelection(spec),
         onComplete: (Boolean) -> Unit = {},
     ) {
-        schema.clear()
+        // SchemaViewModel.load early-returns when this connection is already loaded; clear() would
+        // bump requestGeneration and force a redundant introspection.
+        if (schema.loadedConnectionId != connectionId || schema.schema == null) {
+            schema.clear()
+        }
         schema.load(connectionId, selection = selection) { loaded ->
             if (loaded) {
                 query.restoreFromSpec(spec, schema.tables)
@@ -79,8 +88,14 @@ class AppViewModel(
         scope.launch { service.lockCredentials() }
     }
 
-    fun openExplore(connection: ConnectionDef, spec: QuerySpec, sample: QueryResult) {
+    fun openExplore(
+        connection: ConnectionDef,
+        spec: QuerySpec,
+        sample: QueryResult,
+        origin: ExploreOrigin = ExploreOrigin.Builder,
+    ) {
         _explore.value?.close()
+        _exploreOrigin.value = origin
         _explore.value =
             ExploreViewModel(
                 createExploreSession(connection, spec, sample),
@@ -96,6 +111,8 @@ class AppViewModel(
         recipe: ExploreRecipe,
     ) {
         _explore.value?.close()
+        // Recipes replay through the builder pipeline, so the session refreshes from the builder.
+        _exploreOrigin.value = ExploreOrigin.Builder
         _explore.value =
             ExploreViewModel(
                     createExploreSession(connection, spec, sample),
@@ -105,18 +122,38 @@ class AppViewModel(
                 .also { it.requestRecipe(recipe) }
     }
 
-    fun runRecipe(connection: ConnectionDef, recipe: ExploreRecipe) {
+    fun runRecipe(
+        connection: ConnectionDef,
+        recipe: ExploreRecipe,
+        onRestored: () -> Unit = {},
+    ) {
         _pendingRecipeRun.value = null
+        _recipeApplyNotice.value = null
         val spec = recipe.querySpec ?: return
         restoreQueryForConnection(connection.id, spec) { restored ->
-            if (!restored || !query.canRun) {
+            if (!restored) {
                 _pendingRecipeRun.value = null
                 return@restoreQueryForConnection
             }
+            onRestored()
+            // The SQL editor holds the same app-wide slot, so a run or confirmation there
+            // blocks this one too.
+            if (!query.canRun || sqlEditor.occupiesQuerySlot) {
+                if (query.occupiesQuerySlot || sqlEditor.occupiesQuerySlot) {
+                    _recipeApplyNotice.value = RECIPE_APPLY_BUSY_NOTICE
+                }
+                _pendingRecipeRun.value = null
+                return@restoreQueryForConnection
+            }
+            _recipeApplyNotice.value = null
             _pendingRecipeRun.value =
                 PendingRecipeRun(recipe, connection.id, exploreSpecHash(query.spec))
             query.run(connection.id) { succeeded -> if (!succeeded) _pendingRecipeRun.value = null }
         }
+    }
+
+    fun dismissRecipeApplyNotice() {
+        _recipeApplyNotice.value = null
     }
 
     // Advances the pending recipe run after the builder query settles: the spec-hash checks keep an
@@ -165,8 +202,16 @@ class AppViewModel(
     }
 }
 
+enum class ExploreOrigin {
+    Builder,
+    Sql,
+}
+
 data class PendingRecipeRun(
     val recipe: ExploreRecipe,
     val connectionId: String,
     val specHash: String,
 )
+
+private const val RECIPE_APPLY_BUSY_NOTICE =
+    "The recipe is on the canvas but was not run because a query is already running or waiting for confirmation. Wait, then press Run."

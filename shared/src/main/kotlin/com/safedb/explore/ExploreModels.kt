@@ -326,13 +326,28 @@ data class PivotHeaderCell(
     val isTotal: Boolean,
 )
 
+// Without table context only the builder's generated t<n> aliases are safe to strip; a SQL query's
+// aliases are arbitrary, so those columns need the alias list to be labeled correctly.
 fun displayColumnLabel(raw: String): String = raw.replace(Regex("^t\\d+__(.+)$"), "$1")
+
+// Longest alias whose `alias__` prefixes the result name; longest wins when one alias prefixes
+// another, and columns may themselves contain underscores.
+private fun aliasPrefixOf(raw: String, tables: List<TableRef>): String? =
+    tables
+        .map { it.alias }
+        .filter { raw.length > it.length + 2 && raw.startsWith("${it}__") }
+        .maxByOrNull { it.length }
+
+fun displayColumnLabel(raw: String, tables: List<TableRef>): String {
+    val alias = aliasPrefixOf(raw, tables) ?: return displayColumnLabel(raw)
+    return raw.substring(alias.length + 2)
+}
 
 fun displayColumnLabels(
     columns: List<ResultColumn>,
     tables: List<TableRef> = emptyList(),
 ): Map<String, String> {
-    val baseLabels = columns.associate { it.name to displayColumnLabel(it.name) }
+    val baseLabels = columns.associate { it.name to displayColumnLabel(it.name, tables) }
     val duplicateBases =
         baseLabels.values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
     if (duplicateBases.isEmpty()) return baseLabels
@@ -343,7 +358,9 @@ fun displayColumnLabels(
         if (base !in duplicateBases) {
             column.name to base
         } else {
-            val alias = column.name.substringBefore("__", missingDelimiterValue = "")
+            val alias =
+                aliasPrefixOf(column.name, tables)
+                    ?: column.name.substringBefore("__", missingDelimiterValue = "")
             val qualifier = tableByAlias[alias] ?: alias.ifEmpty { "field" }
             column.name to "$qualifier.$base"
         }
@@ -356,7 +373,8 @@ fun displayColumnLabels(
         if (label !in duplicateQualified) {
             label
         } else {
-            val alias = raw.substringBefore("__", missingDelimiterValue = raw)
+            val alias =
+                aliasPrefixOf(raw, tables) ?: raw.substringBefore("__", missingDelimiterValue = raw)
             "$label ($alias)"
         }
     }

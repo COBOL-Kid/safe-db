@@ -25,12 +25,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.safedb.query.sql.SqlParseResult
 import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbService
 import com.safedb.ui.AppShell
 import com.safedb.ui.ExploreWindowContent
+import com.safedb.ui.rememberSqlParseResult
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.ExploreOrigin
 import java.awt.Dimension
 import kotlinx.coroutines.runBlocking
 
@@ -47,6 +50,14 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
     val useDarkTheme = settings.theme == "dark"
     val themePalette = settings.palette()
     var paletteOpen by remember { mutableStateOf(false) }
+    // Parsed here rather than in SqlScreen so an open Explore window keeps seeing the current
+    // editor spec even while the user is on another route.
+    val sqlParseResult =
+        rememberSqlParseResult(
+            sqlText = viewModel.sqlEditor.text.text,
+            connection = connections.firstOrNull { it.id == activeConnectionId },
+            schemaViewModel = viewModel.schema,
+        )
 
     LaunchedEffect(initialLoading) {
         if (initialLoading) return@LaunchedEffect
@@ -60,10 +71,12 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
 
     LaunchedEffect(activeConnectionId) {
         viewModel.query.onActiveConnectionChanged(activeConnectionId)
+        viewModel.sqlEditor.onActiveConnectionChanged(activeConnectionId)
     }
 
     LaunchedEffect(settings.queryRiskGate) {
         viewModel.query.onQueryRiskGateChanged(settings.queryRiskGate)
+        viewModel.sqlEditor.onQueryRiskGateChanged(settings.queryRiskGate)
     }
 
     LaunchedEffect(
@@ -99,16 +112,30 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                 viewModel = viewModel,
                 paletteOpen = paletteOpen,
                 onPaletteOpenChange = { paletteOpen = it },
+                sqlParseResult = sqlParseResult,
             )
         }
 
         exploreViewModel?.let { explore ->
             val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
-            val currentSpec = viewModel.query.spec
-            val builderSample = viewModel.query.currentSample(activeConnectionId)
+            val exploreOrigin by viewModel.exploreOrigin.collectAsState()
+            // The session refreshes from whichever screen produced it, so staleness and the
+            // refreshed sample must come from that screen's current state.
+            val sqlSpec = (sqlParseResult as? SqlParseResult.Success)?.spec
+            val currentSpec =
+                when (exploreOrigin) {
+                    ExploreOrigin.Builder -> viewModel.query.spec
+                    ExploreOrigin.Sql -> sqlSpec
+                }
+            val originSample =
+                when (exploreOrigin) {
+                    ExploreOrigin.Builder -> viewModel.query.currentSample(activeConnectionId)
+                    ExploreOrigin.Sql ->
+                        viewModel.sqlEditor.currentSample(activeConnectionId, sqlSpec)
+                }
             val sampleRefreshEnabled =
                 activeConnectionId == explore.session.connectionId &&
-                    builderSample != null &&
+                    originSample != null &&
                     connections.any { it.id == activeConnectionId }
             Window(
                 onCloseRequest = viewModel::closeExplore,
@@ -123,18 +150,30 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                         ExploreWindowContent(
                             viewModel = explore,
                             currentSpec = currentSpec,
+                            activeConnectionId = activeConnectionId,
                             onClose = viewModel::closeExplore,
+                            origin = exploreOrigin,
                             onRefreshSample =
                                 if (sampleRefreshEnabled) {
                                     refresh@{
-                                        val builderConnectionId = appState.activeConnectionId.value
-                                        if (builderConnectionId != explore.session.connectionId)
+                                        val originConnectionId = appState.activeConnectionId.value
+                                        if (originConnectionId != explore.session.connectionId)
                                             return@refresh
                                         val connection = connections.firstOrNull { connection ->
-                                            connection.id == builderConnectionId
+                                            connection.id == originConnectionId
                                         }
                                         val latestSample =
-                                            viewModel.query.currentSample(builderConnectionId)
+                                            when (exploreOrigin) {
+                                                ExploreOrigin.Builder ->
+                                                    viewModel.query.currentSample(
+                                                        originConnectionId
+                                                    )
+                                                ExploreOrigin.Sql ->
+                                                    viewModel.sqlEditor.currentSample(
+                                                        originConnectionId,
+                                                        sqlSpec,
+                                                    )
+                                            }
                                         if (connection != null && latestSample != null) {
                                             viewModel.refreshExploreSample(
                                                 connection,
@@ -159,7 +198,12 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                         ),
                                 )
                                 viewModel.closeExplore()
-                                viewModel.runRecipe(connection, recipe)
+                                viewModel.runRecipe(connection, recipe) {
+                                    // Builder reads VM confirmation after navigate.
+                                    if (recipe.querySpec != null) {
+                                        appState.navigate(AppRoute.Builder)
+                                    }
+                                }
                             },
                         )
                     }

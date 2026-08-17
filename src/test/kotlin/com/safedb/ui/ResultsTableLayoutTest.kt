@@ -3,6 +3,7 @@ package com.safedb.ui
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.TableRef
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -39,6 +40,39 @@ class ResultsTableLayoutTest {
         assertEquals(ResultTableCellAlignment.End, columns[0].alignment)
         assertEquals(ResultTableCellAlignment.Start, columns[1].alignment)
         assertEquals(ResultTableCellAlignment.End, columns[2].alignment)
+    }
+
+    @Test
+    fun sqlAliasHeadersDeriveFromActualTableRefsAndQualifyDuplicates() {
+        fun result(vararg names: String) =
+            QueryResult(
+                columns = names.map { ResultColumn(it, "int") },
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        // Unaliased SQL: the table name itself is the alias prefix to strip.
+        val unaliased =
+            buildResultTableColumns(
+                result("users__id"),
+                listOf(TableRef("public", "users", "users")),
+            )
+        assertEquals(listOf("id"), unaliased.map { it.label })
+
+        // Explicit alias.
+        val aliased =
+            buildResultTableColumns(result("u__id"), listOf(TableRef("public", "users", "u")))
+        assertEquals(listOf("id"), aliased.map { it.label })
+
+        // A join selecting duplicate column names qualifies both instead of showing bare twins.
+        val joined =
+            buildResultTableColumns(
+                result("u__id", "c__id"),
+                listOf(TableRef("public", "users", "u"), TableRef("public", "categories", "c")),
+            )
+        assertEquals(listOf("users.id", "categories.id"), joined.map { it.label })
     }
 
     @Test

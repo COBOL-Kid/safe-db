@@ -4,8 +4,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
@@ -72,12 +75,15 @@ import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.ThemePalette
 import com.safedb.model.markIndexedColumns
+import com.safedb.query.sql.SqlParseResult
+import com.safedb.query.sql.parseSqlToSpec
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.AppShellContent
 import com.safedb.ui.ConnectionsScreenContent
 import com.safedb.ui.ExploreWindowContent
 import com.safedb.ui.RecipeLibraryDialog
 import com.safedb.ui.Sidebar
+import com.safedb.ui.rememberSqlParseResult
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.ExploreViewModel
@@ -487,11 +493,19 @@ internal fun render(
         palette = palette,
         additionalSettleFrames = additionalSettleFrames,
     ) {
+        val activeConnectionId by appState.activeConnectionId.collectAsState()
+        val connections by viewModel.connections.connections.collectAsState()
         AppShellContent(
             appState = appState,
             viewModel = viewModel,
             paletteOpen = false,
             onPaletteOpenChange = {},
+            sqlParseResult =
+                rememberSqlParseResult(
+                    sqlText = viewModel.sqlEditor.text.text,
+                    connection = connections.firstOrNull { it.id == activeConnectionId },
+                    schemaViewModel = viewModel.schema,
+                ),
             sidebarCollapsed = sidebarCollapsed,
             onSidebarCollapsedChange = {},
         )
@@ -951,6 +965,29 @@ fun main() {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
                     vm.query.moveTable("t1", 360f, 28f)
+                }
+            }
+            Thread.sleep(900)
+        }
+
+        render("sql-$suffix", dark) { state, vm ->
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c1", selection)
+            state.navigate(AppRoute.Sql)
+            vm.schema.load("c1", selection = selection) { loaded ->
+                if (loaded) {
+                    val sql =
+                        "SELECT o.id, o.status, o.total_cents\n" +
+                            "FROM orders o\n" +
+                            "WHERE o.status = 'pending' AND o.total_cents > 5000\n" +
+                            "ORDER BY o.placed_at DESC\n" +
+                            "LIMIT 100"
+                    vm.sqlEditor.onTextChanged(TextFieldValue(sql))
+                    val schema = vm.schema.schema
+                    val parsed = schema?.let { parseSqlToSpec(sql, Dialect.Postgres, it, "public") }
+                    if (parsed is SqlParseResult.Success) {
+                        vm.sqlEditor.run("c1", parsed.spec, sourceText = sql)
+                    }
                 }
             }
             Thread.sleep(900)

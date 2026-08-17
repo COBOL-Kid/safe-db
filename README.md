@@ -45,7 +45,8 @@ More commands (integration tests, Docker fixtures, headless UI renders, seeders)
 1. **Save a connection.** Give it a name. Test it. Passwords go to the platform store on save. `Test Connection` does not write the keyring.
 2. **Browse the schema.** Tables, keys, indexes, and referenced external tables. System schemas stay out of the way. The map is read-only and does not rewrite the query you’re building.
 3. **Build a query.** Typed, parameterized, with joins, nested filters, and a row limit you actually control.
-4. **Look at the sample.** Pivot it, spreadsheet it, chart it. Tinker with the view; the underlying rows stay put. If someone needs a million rows, they can submit a ticket.
+4. **Or type it.** The SQL screen takes a single `SELECT` in your database's dialect, with schema-aware autocomplete and a schema picker so `FROM` needs no prefix. Typed SQL is parsed into the same structured, parameter-bound query the builder produces — your text never reaches the database — so the same limits, risk scoring, and confirmations apply. Writes, subqueries, and aggregates are rejected with an explanation (aggregate in Explore instead).
+5. **Look at the sample.** Pivot it, spreadsheet it, chart it. Tinker with the view; the underlying rows stay put. If someone needs a million rows, they can submit a ticket.
 
 | Database | What to know |
 | --- | --- |

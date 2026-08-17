@@ -11,6 +11,7 @@ enum class AppRoute {
     Home,
     Connections,
     Builder,
+    Sql,
     Map,
     History,
 }

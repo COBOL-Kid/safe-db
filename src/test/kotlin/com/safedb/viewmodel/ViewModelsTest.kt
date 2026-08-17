@@ -207,6 +207,37 @@ class ViewModelsTest {
         }
 
     @Test
+    fun schemaViewModelOverlappingLoadReportsFirstCallbackFalse() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val gate = CompletableDeferred<Schema>()
+            service.schemaResponses["c1"] = gate
+            val viewModel = SchemaViewModel(service, TestScope(dispatcher))
+
+            var first: Boolean? = null
+            var second: Boolean? = null
+            viewModel.load("c1") { first = it }
+            runCurrent()
+            viewModel.load("c1") { second = it }
+            runCurrent()
+            gate.complete(
+                Schema(
+                    tables =
+                        listOf(
+                            TableInfo("safedb_test", "customers", emptyList(), emptyList()),
+                            TableInfo("safedb_test", "orders", emptyList(), emptyList()),
+                            TableInfo("reporting", "events", emptyList(), emptyList()),
+                        )
+                )
+            )
+            advanceUntilIdle()
+
+            assertEquals(false, first)
+            assertEquals(true, second)
+            assertEquals("c1", viewModel.loadedConnectionId)
+        }
+
+    @Test
     fun historyViewModelLoadsAndClears() =
         runTest(dispatcher) {
             val service = RecordingSafeDbService()

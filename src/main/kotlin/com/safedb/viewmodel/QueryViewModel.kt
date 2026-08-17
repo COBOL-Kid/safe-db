@@ -169,6 +169,11 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
     val pendingConfirmationReason: String?
         get() = pendingConfirmationReasons.joinToString(separator = " ").ifBlank { null }
 
+    // A settled risk-gate failure only blocks this editor's own Run; the shared slot is occupied
+    // solely by work that is still live (running or awaiting the user's confirmation).
+    val occupiesQuerySlot: Boolean
+        get() = running || pendingConfirmation != null
+
     var hydrationWarning by mutableStateOf<String?>(null)
         private set
 
