@@ -59,6 +59,22 @@ class SqlCompletionTest {
     }
 
     @Test
+    fun defaultSchemaMatchesCaseInsensitively() {
+        val result = complete("SELECT id FROM ", defaultSchema = "PUBLIC")
+        val tables = result.items.filter { it.kind == SqlCompletionKind.Table }.map { it.label }
+        assertEquals(listOf("categories", "users"), tables)
+    }
+
+    @Test
+    fun nullDefaultSchemaOffersOnlySchemaPrefixes() {
+        val result = complete("SELECT id FROM ", defaultSchema = null)
+        assertTrue(result.items.none { it.kind == SqlCompletionKind.Table })
+        val schemas =
+            result.items.filter { it.kind == SqlCompletionKind.SchemaName }.map { it.label }
+        assertEquals(listOf("Sales.", "public."), schemas)
+    }
+
+    @Test
     fun afterAliasDotOffersThatTablesColumns() {
         val result = complete("SELECT u. FROM users u", caret = "SELECT u.".length)
         assertTrue(result.items.isNotEmpty())

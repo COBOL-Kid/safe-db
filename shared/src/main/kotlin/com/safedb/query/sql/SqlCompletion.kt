@@ -178,7 +178,9 @@ private fun tableCompletions(
     }
     val tables =
         request.defaultSchema
-            ?.let { selected -> schema.tables.filter { it.schema == selected } }
+            ?.let { selected ->
+                schema.tables.filter { it.schema.equals(selected, ignoreCase = true) }
+            }
             .orEmpty()
             .sortedBy { it.name }
             .map {

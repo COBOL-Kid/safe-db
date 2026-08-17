@@ -115,13 +115,29 @@ internal fun SqlEditor(
             onValueChange = { updated ->
                 val typedText = updated.text != value.text
                 onValueChange(updated)
+                val request = dialect?.let {
+                    SqlCompletionRequest(
+                        text = updated.text,
+                        caret = updated.selection.start,
+                        dialect = it,
+                        schema = schema,
+                        defaultSchema = defaultSchema,
+                        mySqlBackslashEscapes = backslashEscapes,
+                    )
+                }
                 if (typedText) {
                     completionOpen =
                         updated.text.length > value.text.length &&
-                            shouldAutoOpenCompletion(
-                                updated.text,
-                                updated.selection.start,
-                            )
+                            request != null &&
+                            shouldAutoOpenCompletion(request, typed = true)
+                } else if (
+                    updated.selection != value.selection &&
+                        updated.selection.collapsed &&
+                        request != null &&
+                        shouldAutoOpenCompletion(request, typed = false)
+                ) {
+                    // Caret moves may open the popup but never force it closed.
+                    completionOpen = true
                 }
             },
             enabled = enabled,
@@ -202,11 +218,17 @@ internal fun SqlEditor(
 private val VisualTransformationNone = androidx.compose.ui.text.input.VisualTransformation.None
 
 // Digits must not open the popup (`1.` / `1.0`); `.` only after a name or quote closer.
-private fun shouldAutoOpenCompletion(text: String, caret: Int): Boolean {
-    val last = text.getOrNull(caret - 1) ?: return false
-    if (last.isLetter() || last == '_') return true
-    if (last != '.') return false
-    val prev = text.getOrNull(caret - 2) ?: return false
+// After whitespace, open only when the context yields real suggestions (tables/columns) —
+// a keyword-only list after every space would be noise. Caret-only moves (typed = false) use
+// just the whitespace probe: reopening on letters would pop the list on every arrow-key step.
+internal fun shouldAutoOpenCompletion(request: SqlCompletionRequest, typed: Boolean): Boolean {
+    val last = request.text.getOrNull(request.caret - 1) ?: return false
+    if (typed && (last.isLetter() || last == '_')) return true
+    if (last.isWhitespace()) {
+        return sqlCompletions(request).items.any { it.kind != SqlCompletionKind.Keyword }
+    }
+    if (!typed || last != '.') return false
+    val prev = request.text.getOrNull(request.caret - 2) ?: return false
     return prev.isLetter() || prev == '_' || prev == '"' || prev == '`' || prev == ']'
 }
 
