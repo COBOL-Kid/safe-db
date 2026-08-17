@@ -17,8 +17,8 @@ import com.safedb.viewmodel.AppViewModel
 /**
  * Renders the query-builder scene as a sequence of cumulative real UI states for the marketing
  * site's hero clip. Each frame is an independent deterministic render; the website stitches the
- * PNGs into a short looping video. Output: /tmp/safedb-preview/hero/frame-NN.png (dark,
- * Control Blue). Frame NN applies the first NN build steps; the last frame runs the query.
+ * PNGs into a short looping video. Output: /tmp/safedb-preview/hero/frame-NN.png (dark, Control
+ * Blue). Frame NN applies the first NN build steps; the last frame runs the query.
  */
 private const val TOTAL_STEPS = 7
 

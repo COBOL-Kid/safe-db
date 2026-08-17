@@ -78,6 +78,44 @@ internal fun ConnectionPicker(
 }
 
 @Composable
+internal fun SchemaPicker(
+    selectedSchema: String?,
+    schemaOptions: List<String>,
+    onSchemaSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+
+    Box(modifier) {
+        SecondaryButton(
+            onClick = { menuOpen = true },
+            enabled = schemaOptions.isNotEmpty(),
+            modifier = Modifier.width(166.dp),
+        ) {
+            Text(
+                selectedSchema ?: "Choose schema",
+                modifier = Modifier.weight(1f, fill = false),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(Icons.Default.ExpandMore, contentDescription = null)
+        }
+        SafeDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            schemaOptions.forEach { option ->
+                MenuActionRow(
+                    text = option,
+                    selected = option == selectedSchema,
+                    onClick = {
+                        menuOpen = false
+                        onSchemaSelected(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun CanvasZoomControls(
     zoom: Float,
     minZoom: Float,

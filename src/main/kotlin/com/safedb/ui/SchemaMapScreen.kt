@@ -124,15 +124,10 @@ import com.safedb.schema.toPxOffset
 import com.safedb.schema.translated
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.CanvasZoomControls
-import com.safedb.ui.components.ConnectionPicker
-import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MessageBanner
-import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
-import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
-import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.CANVAS_MAX_ZOOM
 import com.safedb.viewmodel.CANVAS_MIN_ZOOM
 import com.safedb.viewmodel.CANVAS_ZOOM_STEP
@@ -160,28 +155,15 @@ internal fun SchemaMapScreen(
     modifier: Modifier = Modifier,
 ) {
     var retryGeneration by remember { mutableIntStateOf(0) }
-    var fallbackWarning by remember(connection?.id) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(connection?.id, schemaSelection, retryGeneration) {
-        val connectionId = connection?.id
-        if (connectionId == null) {
-            schemaViewModel.clear()
-            mapViewModel.activate(null, null)
-            return@LaunchedEffect
-        }
-        schemaViewModel.load(
-            connectionId = connectionId,
-            selection = schemaSelection,
-            onUnavailableSelection = onUnavailableSchemaSelection,
-        ) { loaded ->
-            if (!loaded || schemaViewModel.selectedSchema != null) return@load
-            val first = schemaViewModel.schemaOptions.firstOrNull() ?: return@load
-            fallbackWarning =
-                schemaViewModel.preferredSchemaWarning?.let { "$it Showing \"$first\" instead." }
-            schemaViewModel.selectSchema(first)
-            onSchemaSelected(first)
-        }
-    }
+    val fallbackWarning =
+        rememberSchemaLoad(
+            connection = connection,
+            schemaViewModel = schemaViewModel,
+            schemaSelection = schemaSelection,
+            onUnavailableSchemaSelection = onUnavailableSchemaSelection,
+            retryKey = retryGeneration,
+            onNoConnection = { mapViewModel.activate(null, null) },
+        )
 
     LaunchedEffect(connection?.id, schemaViewModel.selectedSchema) {
         mapViewModel.activate(connection?.id, schemaViewModel.selectedSchema)
@@ -196,32 +178,44 @@ internal fun SchemaMapScreen(
         }
 
     Column(modifier = modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceBackground)) {
-        SchemaMapHeader(
+        val tableCount = graph?.nodes?.count { !it.isExternal } ?: 0
+        val relationshipCount = graph?.relationships?.size ?: 0
+        WorkspaceScreenHeader(
+            icon = Icons.Default.Hub,
+            title = "Map",
+            subtitle =
+                if (connection == null) {
+                    "A clean view of tables, keys, indexes, and relationships"
+                } else {
+                    buildString {
+                        append(connection.database)
+                        if (selectedSchema != null) append(" · $selectedSchema")
+                        if (tableCount > 0)
+                            append(" · $tableCount tables · $relationshipCount relationships")
+                    }
+                },
             connection = connection,
             connections = connections,
             selectedSchema = selectedSchema,
             schemaOptions = schemaViewModel.schemaOptions,
-            query = mapViewModel.query,
-            tableCount = graph?.nodes?.count { !it.isExternal } ?: 0,
-            relationshipCount = graph?.relationships?.size ?: 0,
+            contentSpacing = 10.dp,
             onConnectionSelected = onConnectionSelected,
             onSchemaSelected = { selected ->
-                fallbackWarning = null
+                fallbackWarning.value = null
                 schemaViewModel.selectSchema(selected)
                 onSchemaSelected(selected)
             },
-            onQueryChange = { mapViewModel.query = it },
+            bottomContent = {
+                SchemaMapSearchField(
+                    query = mapViewModel.query,
+                    enabled = connection != null && selectedSchema != null,
+                    onQueryChange = { mapViewModel.query = it },
+                )
+            },
         )
 
-        fallbackWarning?.let { MessageBanner(it, BannerKind.WARNING) }
-        schemaHistoryError?.let { error ->
-            MessageBanner(
-                text = "Could not remember the selected schema: $error",
-                kind = BannerKind.WARNING,
-            ) {
-                SecondaryButton(onClick = onDismissSchemaHistoryError) { Text("Dismiss") }
-            }
-        }
+        fallbackWarning.value?.let { MessageBanner(it, BannerKind.WARNING) }
+        SchemaHistoryErrorBanner(schemaHistoryError, onDismiss = onDismissSchemaHistoryError)
 
         when {
             connection == null ->
@@ -280,152 +274,55 @@ internal fun SchemaMapScreen(
 }
 
 @Composable
-private fun SchemaMapHeader(
-    connection: ConnectionDef?,
-    connections: List<ConnectionDef>,
-    selectedSchema: String?,
-    schemaOptions: List<String>,
-    query: String,
-    tableCount: Int,
-    relationshipCount: Int,
-    onConnectionSelected: (ConnectionDef) -> Unit,
-    onSchemaSelected: (String) -> Unit,
-    onQueryChange: (String) -> Unit,
-) {
-    var schemaMenuOpen by remember { mutableStateOf(false) }
-    Column(
+private fun SchemaMapSearchField(query: String, enabled: Boolean, onQueryChange: (String) -> Unit) {
+    Row(
         modifier =
             Modifier.fillMaxWidth()
-                .background(SafeDbTheme.colors.workspaceHeader)
-                .padding(
-                    horizontal = ScreenHeaderHorizontalPadding,
-                    vertical = ToolbarHeaderVerticalPadding,
-                ),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+                .height(38.dp)
+                .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.small)
+                .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.Hub,
-                        contentDescription = null,
-                        tint = SafeDbTheme.colors.actionPrimary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Text(
-                        "Map",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-                Text(
-                    if (connection == null) {
-                        "A clean view of tables, keys, indexes, and relationships"
-                    } else {
-                        buildString {
-                            append(connection.database)
-                            if (selectedSchema != null) append(" · $selectedSchema")
-                            if (tableCount > 0)
-                                append(" · $tableCount tables · $relationshipCount relationships")
-                        }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ConnectionPicker(
-                    connection = connection,
-                    connections = connections,
-                    onConnectionSelected = onConnectionSelected,
-                )
+        Icon(
+            Icons.Default.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(17.dp),
+        )
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            textStyle =
+                MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+            decorationBox = { inner ->
                 Box {
-                    SecondaryButton(
-                        onClick = { schemaMenuOpen = true },
-                        enabled = schemaOptions.isNotEmpty(),
-                        modifier = Modifier.width(166.dp),
-                    ) {
+                    if (query.isEmpty()) {
                         Text(
-                            selectedSchema ?: "Choose schema",
-                            modifier = Modifier.weight(1f, fill = false),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            "Search tables, columns, indexes, and foreign keys…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Icon(Icons.Default.ExpandMore, contentDescription = null)
                     }
-                    SafeDropdownMenu(
-                        expanded = schemaMenuOpen,
-                        onDismissRequest = { schemaMenuOpen = false },
-                    ) {
-                        schemaOptions.forEach { option ->
-                            MenuActionRow(
-                                text = option,
-                                selected = option == selectedSchema,
-                                onClick = {
-                                    schemaMenuOpen = false
-                                    onSchemaSelected(option)
-                                },
-                            )
-                        }
-                    }
+                    inner()
                 }
-            }
-        }
-
-        Row(
-            modifier =
-                Modifier.fillMaxWidth()
-                    .height(38.dp)
-                    .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.small)
-                    .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(
-                Icons.Default.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
+            },
+        )
+        if (query.isNotEmpty()) {
+            Text(
+                "Clear",
+                style = MaterialTheme.typography.labelSmall,
+                color = SafeDbTheme.colors.actionPrimary,
+                modifier = Modifier.clickable { onQueryChange("") }.padding(4.dp),
             )
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                enabled = connection != null && selectedSchema != null,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                textStyle =
-                    MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                decorationBox = { inner ->
-                    Box {
-                        if (query.isEmpty()) {
-                            Text(
-                                "Search tables, columns, indexes, and foreign keys…",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        inner()
-                    }
-                },
-            )
-            if (query.isNotEmpty()) {
-                Text(
-                    "Clear",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SafeDbTheme.colors.actionPrimary,
-                    modifier = Modifier.clickable { onQueryChange("") }.padding(4.dp),
-                )
-            }
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable

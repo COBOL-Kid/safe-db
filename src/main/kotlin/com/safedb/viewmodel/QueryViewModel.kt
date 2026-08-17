@@ -41,7 +41,6 @@ import com.safedb.model.valueKind
 import com.safedb.query.AliasRef
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.QueryConfirmationRequirement
-import com.safedb.query.QueryError
 import com.safedb.query.QueryHydrationTarget
 import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.addFilterGroup
@@ -64,12 +63,9 @@ import com.safedb.query.pruneFiltersForAlias
 import com.safedb.query.rebuildConnectorOverrides
 import com.safedb.query.removeFilterNode
 import com.safedb.query.updateFilterNode
-import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
 data class CanvasTable(
     val tableInfo: TableInfo,
@@ -88,18 +84,9 @@ data class BuilderQuerySample(
 
 typealias NewFilterSpec = FilterSpec
 
-// Retain ownership until the service settles because blocking JDBC work may ignore cancellation.
-private class ActiveQueryRun
-
-class QueryViewModel(private val service: SafeDbService, private val scope: CoroutineScope) :
-    QueryHydrationTarget {
+class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydrationTarget {
+    private val runController = QueryRunController(service, scope)
     private var aliasCounter = 0
-    private var runGeneration = 0
-    private var activeRun: ActiveQueryRun? = null
-    private var observedActiveConnection = false
-    private var activeConnectionId: String? = null
-    private var observedQueryRiskGate: QueryRiskGate? = null
-    private var riskEvaluationConnectionId: String? = null
 
     internal val canvasViewport = CanvasViewportState()
 
@@ -140,39 +127,32 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         if (requestedFilterFocusIdState == id) requestedFilterFocusIdState = null
     }
 
-    var results by mutableStateOf<QueryResult?>(null)
-        private set
+    val results: QueryResult?
+        get() = runController.results
 
-    private var resultConnectionId by mutableStateOf<String?>(null)
-    private var resultSpec by mutableStateOf<QuerySpec?>(null)
-    var running by mutableStateOf(false)
-        private set
+    val running: Boolean
+        get() = runController.running
 
-    var error by mutableStateOf<String?>(null)
-        private set
+    val error: String?
+        get() = runController.error
 
-    var riskEvaluation by mutableStateOf<QueryRiskEvaluation?>(null)
-        private set
+    val riskEvaluation: QueryRiskEvaluation?
+        get() = runController.riskEvaluation
 
-    private var pendingRiskGateState by mutableStateOf(false)
     val pendingRiskGate: Boolean
-        get() = pendingRiskGateState
+        get() = runController.pendingRiskGate
 
-    private var pendingConfirmationRequest: QueryRunRequest? = null
-    private var pendingConfirmationOnSettled: ((Boolean) -> Unit)? = null
-    var pendingConfirmation by mutableStateOf<QueryConfirmationRequirement?>(null)
-        private set
+    val pendingConfirmation: QueryConfirmationRequirement?
+        get() = runController.pendingConfirmation
 
     val pendingConfirmationReasons: List<String>
-        get() = pendingConfirmation?.reasons.orEmpty().map { it.message }
+        get() = runController.pendingConfirmationReasons
 
     val pendingConfirmationReason: String?
         get() = pendingConfirmationReasons.joinToString(separator = " ").ifBlank { null }
 
-    // A settled risk-gate failure only blocks this editor's own Run; the shared slot is occupied
-    // solely by work that is still live (running or awaiting the user's confirmation).
     val occupiesQuerySlot: Boolean
-        get() = running || pendingConfirmation != null
+        get() = runController.occupiesQuerySlot
 
     var hydrationWarning by mutableStateOf<String?>(null)
         private set
@@ -188,7 +168,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
             canvasTables.isNotEmpty() &&
                 distinctSortConflicts.isEmpty() &&
                 !running &&
-                !pendingRiskGateState &&
+                !pendingRiskGate &&
                 pendingConfirmation == null
 
     val filterCount: Int
@@ -218,20 +198,12 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         }
 
     override fun clear() {
-        runGeneration += 1
         canvasTables.clear()
         selectedColumns = emptySet()
         joins.clear()
         filterGroupState = FilterGroup.empty()
         queryLimit = DEFAULT_LIMIT
         distinctState = false
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        error = null
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        pendingRiskGateState = false
         hydrationWarning = null
         aliasCounter = 0
         connectorOverrideState = emptyMap()
@@ -239,7 +211,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         groupState = emptyList()
         requestedFilterFocusIdState = null
         canvasViewport.reset()
-        clearPendingConfirmation(settle = true)
+        runController.reset()
     }
 
     override fun addTable(tableInfo: TableInfo) {
@@ -592,126 +564,23 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
 
     fun run(connectionId: String, onSettled: ((Boolean) -> Unit)? = null) {
         if (!canRun) return
-        run(QueryRunRequest(connectionId, spec), onSettled)
-    }
-
-    private fun run(request: QueryRunRequest, onSettled: ((Boolean) -> Unit)? = null) {
-        if (activeRun != null) return
-        observedActiveConnection = true
-        activeConnectionId = request.connectionId
-        val executedSpec = request.spec
-        val generation = ++runGeneration
-        val run = ActiveQueryRun()
-        activeRun = run
-        running = true
-        error = null
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        pendingRiskGateState = false
-        scope.launch {
-            var succeeded = false
-            var awaitingConfirmation = false
-            try {
-                val completed = service.runQuery(request)
-                if (generation == runGeneration) {
-                    results = completed.queryResult
-                    riskEvaluation = completed.riskEvaluation
-                    riskEvaluationConnectionId = request.connectionId
-                    resultConnectionId = request.connectionId
-                    resultSpec = executedSpec
-                    succeeded = true
-                }
-            } catch (failure: QueryFailureException) {
-                if (generation != runGeneration) return@launch
-                when (val queryError = failure.queryError) {
-                    is QueryError.RiskGate -> {
-                        pendingRiskGateState = true
-                        riskEvaluation = queryError.evaluation
-                        riskEvaluationConnectionId = request.connectionId
-                        error = queryError.message
-                    }
-                    is QueryError.ConfirmationRequired -> {
-                        awaitingConfirmation = true
-                        pendingConfirmationRequest = request
-                        pendingConfirmationOnSettled = onSettled
-                        pendingConfirmation = queryError.requirement
-                        riskEvaluation = queryError.evaluation
-                        riskEvaluationConnectionId = request.connectionId
-                    }
-                    else -> error = failure.message ?: failure.toString()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (generation == runGeneration) error = e.message ?: e.toString()
-            } finally {
-                if (activeRun === run) {
-                    activeRun = null
-                    running = false
-                    if (!awaitingConfirmation) onSettled?.invoke(succeeded)
-                }
-            }
-        }
+        runController.run(QueryRunRequest(connectionId, spec), onSettled)
     }
 
     fun confirmPendingExecution(connectionId: String) {
-        if (running || activeRun != null) return
-        val request = pendingConfirmationRequest ?: return
-        val requirement = pendingConfirmation ?: return
-        val onSettled = pendingConfirmationOnSettled
-        if (request.connectionId != connectionId || request.spec != spec) {
-            clearPendingConfirmation(settle = true)
-            return
-        }
-        clearPendingConfirmation(settle = false)
-        run(request.copy(confirmation = requirement.confirmation), onSettled)
+        runController.confirmPendingExecution(connectionId, spec)
     }
 
-    // Do not clear running here; the prior JDBC call still owns the single-operation slot.
     fun onActiveConnectionChanged(connectionId: String?) {
-        if (observedActiveConnection && activeConnectionId == connectionId) return
-        observedActiveConnection = true
-        activeConnectionId = connectionId
-        if (running) runGeneration += 1
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        pendingRiskGateState = false
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        error = null
-        clearPendingConfirmation(settle = true)
+        runController.onActiveConnectionChanged(connectionId)
     }
 
-    // Gate changes invalidate descriptive decisions, but the service rechecks hard plan conditions.
     fun onQueryRiskGateChanged(gate: QueryRiskGate) {
-        val previous = observedQueryRiskGate ?: riskEvaluation?.decision?.effectiveGate
-        observedQueryRiskGate = gate
-        if (previous == null || previous == gate) return
-
-        if (running) {
-            // The service snapshots settings before EXPLAIN/execution. Keep ownership until that
-            // call settles, but discard its old-policy completion and require a fresh Run.
-            runGeneration += 1
-            return
-        }
-        // A fast run may already have observed the newly persisted gate before this UI callback.
-        if (riskEvaluation?.decision?.effectiveGate == gate) return
-        if (pendingConfirmation != null) return
-
-        val wasRiskGateBlock = pendingRiskGateState
-        pendingRiskGateState = false
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        if (wasRiskGateBlock) error = null
+        runController.onQueryRiskGateChanged(gate)
     }
 
-    fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? = riskEvaluation.takeIf {
-        connectionId != null && connectionId == riskEvaluationConnectionId
-    }
+    fun riskEvaluationFor(connectionId: String?): QueryRiskEvaluation? =
+        runController.riskEvaluationFor(connectionId, spec)
 
     // This is only a static preview; execution still performs plan refinement and confirmation.
     fun evaluatePreliminaryRisk(
@@ -723,13 +592,8 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
         return evaluateQueryRisk(spec, schema, settings, dialect)
     }
 
-    fun currentSample(connectionId: String?): BuilderQuerySample? {
-        if (connectionId == null || resultConnectionId != connectionId) return null
-        val result = results ?: return null
-        val executedSpec = resultSpec ?: return null
-        if (spec != executedSpec) return null
-        return BuilderQuerySample(connectionId, executedSpec, result)
-    }
+    fun currentSample(connectionId: String?): BuilderQuerySample? =
+        runController.currentSample(connectionId, spec)
 
     fun dismissHydrationWarning() {
         hydrationWarning = null
@@ -740,29 +604,7 @@ class QueryViewModel(private val service: SafeDbService, private val scope: Coro
     }
 
     private fun invalidateSettledRunFailure() {
-        if (running) {
-            runGeneration += 1
-        }
-        if (
-            error == null &&
-                !pendingRiskGateState &&
-                riskEvaluation == null &&
-                pendingConfirmation == null
-        )
-            return
-        pendingRiskGateState = false
-        riskEvaluation = null
-        riskEvaluationConnectionId = null
-        error = null
-        clearPendingConfirmation(settle = true)
-    }
-
-    private fun clearPendingConfirmation(settle: Boolean) {
-        val onSettled = pendingConfirmationOnSettled
-        pendingConfirmationRequest = null
-        pendingConfirmationOnSettled = null
-        pendingConfirmation = null
-        if (settle) onSettled?.invoke(false)
+        runController.invalidateSettledRunFailure()
     }
 
     fun restoreFromSpec(spec: QuerySpec, schemaTables: List<TableInfo>) {
