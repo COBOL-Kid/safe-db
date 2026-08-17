@@ -499,9 +499,7 @@ internal fun Sidebar(
     Row(modifier = Modifier.fillMaxHeight()) {
         Column(
             modifier =
-                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground),
-            horizontalAlignment =
-                if (layoutCollapsed) Alignment.CenterHorizontally else Alignment.Start,
+                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground)
         ) {
             SidebarHeader(
                 collapsed = layoutCollapsed,
@@ -807,7 +805,7 @@ private fun NavButton(
             }
         )
 
-    // Keep icons in their own layer so label expand/shrink cannot shift the rail.
+    // Fixed-width rail plus a full-size fade overlay so label show/hide cannot move icons.
     Box(
         modifier =
             Modifier.fillMaxWidth()
@@ -818,7 +816,10 @@ private fun NavButton(
                 .pointerHoverIcon(PointerIcon.Hand)
     ) {
         Row(
-            modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight(),
+            modifier =
+                Modifier.align(Alignment.CenterStart)
+                    .width(navButtonLabelStartOffset())
+                    .fillMaxHeight(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
         ) {
@@ -839,12 +840,12 @@ private fun NavButton(
         Box(
             modifier =
                 Modifier.align(Alignment.CenterStart)
-                    .fillMaxHeight()
+                    .fillMaxSize()
                     .padding(start = navButtonLabelStartOffset(), end = 12.dp)
                     .clipToBounds(),
             contentAlignment = Alignment.CenterStart,
         ) {
-            AnimatedSidebarLabel(visible = labelVisible) {
+            SidebarFade(visible = labelVisible) {
                 Text(
                     item.label,
                     color = content,
