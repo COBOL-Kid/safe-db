@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
@@ -55,7 +54,6 @@ import com.safedb.viewmodel.ConnectionsViewModel
 @Composable
 fun ConnectionsScreen(
     viewModel: ConnectionsViewModel,
-    onActivate: (String) -> Unit,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
@@ -68,7 +66,6 @@ fun ConnectionsScreen(
         editingConnection = editingConnection,
         onShowConnectionFormChange = { showConnectionForm = it },
         onEditingConnectionChange = { editingConnection = it },
-        onActivate = onActivate,
         onDeleted = onDeleted,
         onConnectionChanged = onConnectionChanged,
         onSaved = onSaved,
@@ -82,7 +79,6 @@ internal fun ConnectionsScreenContent(
     editingConnection: ConnectionDef?,
     onShowConnectionFormChange: (Boolean) -> Unit,
     onEditingConnectionChange: (ConnectionDef?) -> Unit,
-    onActivate: (String) -> Unit,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
@@ -232,7 +228,6 @@ internal fun ConnectionsScreenContent(
                                 connection = connection,
                                 onEdit = { onEditingConnectionChange(connection) },
                                 onDelete = { pendingDelete = connection },
-                                onOpen = { onActivate(connection.id) },
                             )
                         }
                     }
@@ -247,7 +242,6 @@ private fun ConnectionCard(
     connection: ConnectionDef,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onOpen: () -> Unit,
 ) {
     AppCard {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -316,18 +310,6 @@ private fun ConnectionCard(
             ConnectionDetailRow("Host:", "${connection.host}:${connection.port}")
             ConnectionDetailRow("DB:", connection.database)
             ConnectionDetailRow("User:", connection.username)
-
-            PrimaryButton(
-                onClick = onOpen,
-                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
-            ) {
-                Text("Open")
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    modifier = Modifier.padding(start = 8.dp).size(16.dp),
-                )
-            }
         }
     }
 }

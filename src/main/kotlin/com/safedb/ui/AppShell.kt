@@ -283,12 +283,6 @@ internal fun AppShellContent(
                 AppRoute.Connections ->
                     ConnectionsScreen(
                         viewModel = viewModel.connections,
-                        onActivate = { id ->
-                            val connection = connections.firstOrNull { it.id == id }
-                            if (connection != null) {
-                                selectConnection(connection, thenNavigate = AppRoute.Builder)
-                            }
-                        },
                         onDeleted = { id ->
                             appState.clearActiveConnectionIf(id)
                             viewModel.settings.clearDefaultIfConnection(id)
