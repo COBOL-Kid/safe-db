@@ -154,7 +154,7 @@ fun refineRiskWithPlan(
 
     for ((kind, planAliases, estimatedRows) in plan.blockingOperations) {
         val aliases = resolvePlanAliases(planAliases, spec)
-        if (planAliases.isEmpty() || aliases.size != planAliases.size) {
+        if (planAliases.isEmpty() || aliases == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_operation_unmapped",
@@ -200,7 +200,7 @@ fun refineRiskWithPlan(
 
     for ((planAliases, estimatedOutputRows) in plan.joins) {
         val aliases = resolvePlanAliases(planAliases, spec)
-        if (planAliases.isEmpty() || aliases.size != planAliases.size) {
+        if (planAliases.isEmpty() || aliases == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_join_unmapped",
@@ -335,8 +335,15 @@ private fun resolvePlanAlias(
     return null
 }
 
-private fun resolvePlanAliases(aliases: Set<String>, spec: QuerySpec): Set<String> =
-    aliases.mapNotNullTo(linkedSetOf()) { value -> resolvePlanAlias(value, null, value, spec) }
+// Partition children resolve many-to-one onto the parent alias, so the resolved set may be
+// smaller than the plan's; null (an alias that resolves to nothing) marks true ambiguity.
+private fun resolvePlanAliases(aliases: Set<String>, spec: QuerySpec): Set<String>? {
+    val resolved = linkedSetOf<String>()
+    for (alias in aliases) {
+        resolved += resolvePlanAlias(alias, null, alias, spec) ?: return null
+    }
+    return resolved
+}
 
 private fun matchingOperationTarget(
     kind: PlanOperationKind,

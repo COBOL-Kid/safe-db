@@ -161,6 +161,76 @@ class QueryPlanRefinementTest {
     }
 
     @Test
+    fun partitionChildAliasesMapJoinAndOperationEvidenceOntoTheParentAlias() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val sortTarget = RiskTarget.Operation(PlanOperationKind.Sort, setOf("t0"))
+        val base =
+            buildAssessment(
+                "f",
+                listOf(
+                    RiskSignal(
+                        RiskSignalCode.JoinExpansionPossible,
+                        RiskCategory.Joins,
+                        RiskSubject(operation = "join"),
+                        1,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.High,
+                        joinTarget,
+                    ),
+                    RiskSignal(
+                        RiskSignalCode.LimitCannotBoundWork,
+                        RiskCategory.Operations,
+                        RiskSubject(operation = "sort"),
+                        3,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.Medium,
+                        sortTarget,
+                    ),
+                ),
+                emptyList(),
+            )
+        fun child(name: String, alias: String) =
+            PlanRelationAccess(
+                table = name,
+                alias = alias,
+                method = PlanAccessMethod.TableScan,
+                estimatedRows = 100,
+            )
+        val refined =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            child("orders_2024_01", "t0_1"),
+                            child("orders_2024_02", "t0_2"),
+                            PlanRelationAccess(
+                                table = "items",
+                                alias = "t1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0_1", "t0_2", "t1"), 50)),
+                    blockingOperations =
+                        listOf(
+                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0_1", "t0_2"), 50)
+                        ),
+                ),
+                twoTableSpec(),
+                Schema(listOf(table("orders"), table("items"))),
+            )
+
+        // Low-band join evidence clears the static expansion signal; the sort downgrades to a
+        // bounded operation instead of surfacing an unmapped-alias uncertainty.
+        assertFalse(refined.signals.any { it.code == RiskSignalCode.JoinExpansionPossible })
+        val sort = refined.signals.single { it.target == sortTarget }
+        assertEquals(RiskSignalCode.BoundedBlockingOperation, sort.code)
+        assertTrue(refined.uncertainties.none { it.code.startsWith("plan_join") })
+        assertTrue(refined.uncertainties.none { it.code.startsWith("plan_operation") })
+    }
+
+    @Test
     fun specAliasEndingInNumericSuffixStillResolvesExactly() {
         val suffixedSpec =
             QuerySpec(
