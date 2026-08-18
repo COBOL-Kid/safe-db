@@ -163,7 +163,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             formattedRows += formatted
         }
 
-        val resultWarnings = (sample.warnings + warnings).distinct()
+        val resultWarnings = warnings.toList()
         val columnLeaves = maxColumns.map { it.toLeaf() }
         val headerRows = buildColumnHeaders(maxColumns)
         val columnGroups = maxColumns.mapIndexed { index, slice ->

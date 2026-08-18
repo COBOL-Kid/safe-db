@@ -639,6 +639,17 @@ class ApplyWorksheetTest {
         assertTrue(preview.warnings.any { it.contains("circular") })
     }
 
+    @Test
+    fun querySampleWarningsAreNotCopiedIntoWorksheetPreview() {
+        val preview =
+            applyWorksheet(
+                sample().copy(warnings = listOf("No columns selected — query will select all columns")),
+                WorksheetConfig(),
+            )
+
+        assertEquals(emptyList(), preview.warnings)
+    }
+
     private fun WorksheetPreview.detailValues(column: String): List<String> {
         val index = columns.indexOfFirst { it.sourceColumn == column }
         return rows
