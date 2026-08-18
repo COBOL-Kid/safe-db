@@ -20,7 +20,7 @@
 
 Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 240 desktop and 365 shared tests, with 72% and 66% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
 
-Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true` and/or `SAFEDB_TEST_REQUIRE_POSTGRES=true` to require a configured engine. MySQL uses `SAFEDB_TEST_MYSQL_{HOST,PORT,USER,PASSWORD,DATABASE}` and optional `SAFEDB_TEST_MYSQL_DOCKER`; PostgreSQL has matching variables. Reproduce the required MySQL job with:
+Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true`, `SAFEDB_TEST_REQUIRE_POSTGRES=true`, `SAFEDB_TEST_REQUIRE_MSSQL=true`, and `SAFEDB_TEST_REQUIRE_ORACLE=true` to require configured engines. Each engine has matching `SAFEDB_TEST_{MYSQL,POSTGRES,MSSQL,ORACLE}_{HOST,PORT,USER,PASSWORD,DATABASE}` variables; MySQL also accepts optional `SAFEDB_TEST_MYSQL_DOCKER`. Reproduce the required MySQL job with:
 
 ```sh
 scripts/seed_mysql.sh --static
@@ -29,7 +29,7 @@ SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integr
 
 `scripts/verify_ssl_compat.sh` expects pre-provisioned TLS endpoints and profiles under `/tmp/safedb-ssl` unless `SAFEDB_SSL_ROOT` is set; it calls `:shared:integrationTest` directly and, by default, writes its report beneath that fixture root. It is not a substitute for the normal optional JDBC suite.
 
-For a self-contained local harness, `scripts/docker_test_databases.sh up` generates disposable trusted/wrong CAs, server certificates, PKCS12 launch profiles, and the Oracle wallet-path fixture under `.docker/safedb-ssl`, then starts ordinary MySQL plus the four dialect endpoints used by the SSL suite. Checked-in fixtures seed every dialect; `scripts/docker_test_databases.sh seed` reloads the SQL Server and Oracle sample schemas without recreating the stack. Database data directories use anonymous volumes that the helper renews on `up` and removes on `down`; generated TLS inputs remain on the host. `scripts/docker_test_databases.sh verify` runs both the required PostgreSQL/MySQL contracts and SSL compatibility checks with fresh, uncached integration-test execution.
+For a self-contained local harness, `scripts/docker_test_databases.sh up` generates disposable trusted/wrong CAs, server certificates, PKCS12 launch profiles, and the Oracle wallet-path fixture under `.docker/safedb-ssl`, then starts ordinary MySQL plus the four dialect endpoints used by the SSL suite. Checked-in fixtures seed every dialect; `scripts/docker_test_databases.sh seed` reloads the SQL Server and Oracle sample schemas without recreating the stack. Database data directories use anonymous volumes that the helper renews on `up` and removes on `down`; generated TLS inputs remain on the host. `scripts/docker_test_databases.sh verify` requires the standard MySQL, PostgreSQL, SQL Server, and Oracle adapter contracts before running the four-dialect SSL compatibility checks, all with fresh, uncached integration-test execution.
 
 PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `SAFEDB_TEST_*_PASSWORD`, then the matching `SAFEDB_DOCKER_*_PASSWORD`, then the development default. `scripts/docker_test_databases.sh certs` is an offline operation and refuses to replace certificates while project services are running; use `reset` to rotate certificates and recreate an active stack safely.
 

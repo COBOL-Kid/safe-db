@@ -170,6 +170,18 @@ val verifyIntegrationTestDiscovery =
                 .map { it.equals("true", ignoreCase = true) }
                 .orElse(false)
         )
+        requireMssql.set(
+            providers
+                .environmentVariable("SAFEDB_TEST_REQUIRE_MSSQL")
+                .map { it.equals("true", ignoreCase = true) }
+                .orElse(false)
+        )
+        requireOracle.set(
+            providers
+                .environmentVariable("SAFEDB_TEST_REQUIRE_ORACLE")
+                .map { it.equals("true", ignoreCase = true) }
+                .orElse(false)
+        )
     }
 
 tasks.register("integrationTest") {

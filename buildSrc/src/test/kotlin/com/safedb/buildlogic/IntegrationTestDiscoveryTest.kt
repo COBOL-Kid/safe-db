@@ -10,13 +10,14 @@ class IntegrationTestDiscoveryTest {
     fun acceptsSufficientUnskippedTests() {
         val result =
             verifyIntegrationTestDiscovery(
-                reports = listOf(report("MySql", 6)),
-                requiredEngines = setOf("mysql"),
+                reports = listOf(report("MySql", 6), report("Mssql", 2)),
+                requiredEngines = setOf("mysql", "mssql"),
             )
 
         assertEquals(
             listOf(
                 IntegrationDiscoveryResult("mysql", 6, 0),
+                IntegrationDiscoveryResult("mssql", 2, 0),
             ),
             result,
         )
@@ -27,12 +28,12 @@ class IntegrationTestDiscoveryTest {
         val failure =
             assertFailsWith<IllegalStateException> {
                 verifyIntegrationTestDiscovery(
-                    reports = listOf(report("MySql", 5)),
-                    requiredEngines = setOf("mysql"),
+                    reports = listOf(report("Oracle", 1)),
+                    requiredEngines = setOf("oracle"),
                 )
             }
 
-        assertTrue(failure.message!!.contains("found 5 tests; expected at least 6"))
+        assertTrue(failure.message!!.contains("found 1 tests; expected at least 2"))
     }
 
     @Test

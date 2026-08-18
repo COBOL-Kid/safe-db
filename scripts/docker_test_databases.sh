@@ -21,7 +21,7 @@ Commands:
   seed     Reload the SQL Server and Oracle sample schemas and data.
   down     Remove the containers and their anonymous database volumes.
   reset    Regenerate certificates and recreate the ephemeral stack.
-  verify   Run required PostgreSQL/MySQL JDBC tests and the four-dialect TLS suite.
+  verify   Run required four-engine JDBC tests and the four-dialect TLS suite.
   certs    Regenerate certificates and profiles while the stack is stopped.
 
 The generated CA keys, server keys, trust stores, profiles, and reports live under
@@ -200,6 +200,18 @@ verify_stack() {
   SAFEDB_TEST_POSTGRES_USER=postgres \
   SAFEDB_TEST_POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
   SAFEDB_TEST_POSTGRES_DATABASE=safedb_test \
+  SAFEDB_TEST_REQUIRE_MSSQL=true \
+  SAFEDB_TEST_MSSQL_HOST=localhost \
+  SAFEDB_TEST_MSSQL_PORT=14333 \
+  SAFEDB_TEST_MSSQL_USER=sa \
+  SAFEDB_TEST_MSSQL_PASSWORD="$MSSQL_PASSWORD" \
+  SAFEDB_TEST_MSSQL_DATABASE=safedb_ssl \
+  SAFEDB_TEST_REQUIRE_ORACLE=true \
+  SAFEDB_TEST_ORACLE_HOST=127.0.0.1 \
+  SAFEDB_TEST_ORACLE_PORT=1522 \
+  SAFEDB_TEST_ORACLE_USER=safedb \
+  SAFEDB_TEST_ORACLE_PASSWORD="$ORACLE_PASSWORD" \
+  SAFEDB_TEST_ORACLE_DATABASE=FREEPDB1 \
     ./gradlew integrationTest --rerun-tasks --no-build-cache --stacktrace
   SAFEDB_TEST_MYSQL_SSL_PASSWORD="$MYSQL_PASSWORD" \
   SAFEDB_TEST_POSTGRES_SSL_PASSWORD="$POSTGRES_PASSWORD" \
