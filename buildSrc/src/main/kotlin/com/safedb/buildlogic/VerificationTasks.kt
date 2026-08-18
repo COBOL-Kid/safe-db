@@ -1,6 +1,7 @@
 package com.safedb.buildlogic
 
 import java.io.File
+import java.io.ByteArrayInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
@@ -114,61 +115,91 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
 
     @TaskAction
     fun verify() {
-        if (!requireMysql.get() && !requirePostgres.get()) {
+        val requiredEngines =
+            buildSet {
+                if (requireMysql.get()) add("mysql")
+                if (requirePostgres.get()) add("postgres")
+            }
+        if (requiredEngines.isEmpty()) {
             logger.lifecycle("No JDBC engine is required; integration suites may skip locally.")
             return
         }
 
         val resultsDir = resultsDirectory.get().asFile
-        val reports = junitReports(resultsDir)
-        check(reports.isNotEmpty()) { "Integration tests produced no JUnit XML in $resultsDir" }
+        val results =
+            verifyIntegrationTestDiscovery(
+                junitReports(resultsDir).map(File::readText),
+                requiredEngines,
+                resultsDir.toString(),
+            )
+        for (result in results) {
+            logger.lifecycle(
+                "${result.engine} integration discovery verified: ${result.discovered} executed tests"
+            )
+        }
+    }
+}
 
-        val engines = mutableMapOf("mysql" to EngineResult(), "postgres" to EngineResult())
-        for (report in reports) {
-            val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(report)
-            val testcases = document.getElementsByTagName("testcase")
-            for (index in 0 until testcases.length) {
-                val testcase = testcases.item(index)
-                val className = testcase.attributes.getNamedItem("classname").nodeValue
-                val engine =
-                    when {
-                        className.contains("MySql") -> "mysql"
-                        className.contains("Postgres") -> "postgres"
-                        else -> continue
-                    }
-                engines.getValue(engine).discovered += 1
-                val children = testcase.childNodes
-                for (childIndex in 0 until children.length) {
-                    if (children.item(childIndex).nodeName == "skipped") {
-                        engines.getValue(engine).skipped += 1
-                    }
+internal data class IntegrationDiscoveryResult(
+    val engine: String,
+    val discovered: Int,
+    val skipped: Int,
+)
+
+private data class IntegrationSuite(
+    val engine: String,
+    val classNameFragment: String,
+    val minimum: Int,
+)
+
+private val integrationSuites =
+    listOf(
+        IntegrationSuite("mysql", "MySql", 6),
+        IntegrationSuite("postgres", "Postgres", 3),
+    )
+
+internal fun verifyIntegrationTestDiscovery(
+    reports: List<String>,
+    requiredEngines: Set<String>,
+    resultsLocation: String = "the integration test results directory",
+): List<IntegrationDiscoveryResult> {
+    if (requiredEngines.isEmpty()) return emptyList()
+    check(reports.isNotEmpty()) { "Integration tests produced no JUnit XML in $resultsLocation" }
+
+    val counts = integrationSuites.associate { it.engine to intArrayOf(0, 0) }
+    for (report in reports) {
+        val document =
+            DocumentBuilderFactory.newInstance()
+                .newDocumentBuilder()
+                .parse(ByteArrayInputStream(report.toByteArray(Charsets.UTF_8)))
+        val testcases = document.getElementsByTagName("testcase")
+        for (index in 0 until testcases.length) {
+            val testcase = testcases.item(index)
+            val className = testcase.attributes.getNamedItem("classname")?.nodeValue ?: continue
+            val suite = integrationSuites.firstOrNull { className.contains(it.classNameFragment) }
+                ?: continue
+            counts.getValue(suite.engine)[0] += 1
+            val children = testcase.childNodes
+            for (childIndex in 0 until children.length) {
+                if (children.item(childIndex).nodeName == "skipped") {
+                    counts.getValue(suite.engine)[1] += 1
                 }
             }
         }
-
-        verifyRequired("mysql", requireMysql.get(), minimum = 5, engines.getValue("mysql"))
-        verifyRequired("postgres", requirePostgres.get(), minimum = 3, engines.getValue("postgres"))
     }
 
-    private fun verifyRequired(
-        engine: String,
-        required: Boolean,
-        minimum: Int,
-        result: EngineResult,
-    ) {
-        if (!required) return
-        check(result.discovered >= minimum) {
-            "$engine integration discovery found ${result.discovered} tests; expected at least $minimum"
+    return integrationSuites
+        .filter { it.engine in requiredEngines }
+        .map { suite ->
+            val (discovered, skipped) = counts.getValue(suite.engine)
+            check(discovered >= suite.minimum) {
+                "${suite.engine} integration discovery found $discovered tests; expected at least ${suite.minimum}"
+            }
+            check(skipped == 0) {
+                "${suite.engine} is required but $skipped of $discovered integration tests were skipped"
+            }
+            IntegrationDiscoveryResult(suite.engine, discovered, skipped)
         }
-        check(result.skipped == 0) {
-            "$engine is required but ${result.skipped} of ${result.discovered} integration tests were skipped"
-        }
-        logger.lifecycle(
-            "$engine integration discovery verified: ${result.discovered} executed tests"
-        )
-    }
-
-    private data class EngineResult(var discovered: Int = 0, var skipped: Int = 0)
 }
 
 private fun junitReports(resultsDir: File): List<File> =
