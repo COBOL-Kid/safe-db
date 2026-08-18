@@ -133,6 +133,36 @@ internal val REPORT_JS =
 
     function cellText(cell) { return cell ? cell.t : ''; }
 
+    // Hierarchy-aware filter: a row stays when it matches, an ancestor header matches, or it
+    // heads a subtree with a match. Headers are rows followed by a deeper row — that covers
+    // group rows and subtotal rows acting as group headers (subtotals-on-top layout). Other
+    // total rows aggregate ALL rows, not the filtered subset, so they are hidden.
+    function filterHierarchy(rows, needle, matches) {
+      if (!needle) return rows;
+      const isTotal = (row) => row.kind === 'total' || row.kind === 'subtotal' || row.kind === 'grandtotal';
+      const matched = rows.map((row) => !isTotal(row) && matches(row));
+      const subtreeMatches = (index) => {
+        const depth = rows[index].depth || 0;
+        for (let j = index + 1; j < rows.length && (rows[j].depth || 0) > depth; j++) {
+          if (matched[j]) return true;
+        }
+        return false;
+      };
+      const ancestors = [];
+      return rows.filter((row, index) => {
+        const depth = row.depth || 0;
+        while (ancestors.length && ancestors[ancestors.length - 1].depth >= depth) ancestors.pop();
+        const inherited = ancestors.length > 0 && ancestors[ancestors.length - 1].matched;
+        const heads = index + 1 < rows.length && (rows[index + 1].depth || 0) > depth;
+        if (heads) {
+          ancestors.push({ depth, matched: inherited || matched[index] });
+          return inherited || matched[index] || subtreeMatches(index);
+        }
+        if (isTotal(row)) return false;
+        return inherited || matched[index];
+      });
+    }
+
     function buildTableWidget(section, labelColumn) {
       const wrap = el('div');
       const filter = el('input', 'filter');
@@ -174,8 +204,7 @@ internal val REPORT_JS =
         table.appendChild(thead);
 
         const needle = filter.value.trim().toLowerCase();
-        let rows = section.rows.filter((row) =>
-          row.kind === 'total' || row.kind === 'grandtotal' || !needle ||
+        let rows = filterHierarchy(section.rows, needle, (row) =>
           row.cells.some((cell) => cellText(cell).toLowerCase().includes(needle)));
         if (sortIndex !== null) {
           const numeric = section.columns[sortIndex].numeric;
@@ -265,11 +294,10 @@ internal val REPORT_JS =
 
         const needle = filter.value.trim().toLowerCase();
         const tbody = el('tbody');
-        pivot.rows.forEach((row) => {
-          const keep = row.kind === 'subtotal' || row.kind === 'grandtotal' || !needle ||
-            (row.label || '').toLowerCase().includes(needle) ||
-            row.cells.some((cell) => cell.t.toLowerCase().includes(needle));
-          if (!keep) return;
+        const visible = filterHierarchy(pivot.rows, needle, (row) =>
+          (row.label || '').toLowerCase().includes(needle) ||
+          row.cells.some((cell) => cell.t.toLowerCase().includes(needle)));
+        visible.forEach((row) => {
           const tr = el('tr', row.kind !== 'leaf' ? row.kind : null);
           if (pivot.hasRowLabels) {
             const td = el('td', 'sticky-col', row.label || '');
@@ -376,7 +404,8 @@ internal val REPORT_JS =
         } else if (shape.kind === 'circle') {
           node = svgEl('circle', { cx: shape.cx, cy: shape.cy, r: shape.r }, 'shape fill-' + seriesClass);
         } else {
-          node = svgEl('polyline', { points: shape.points, fill: 'none', 'stroke-width': 3 }, 'stroke-' + seriesClass);
+          // Strokes hit-test even with fill:none; only circles carry tooltip and drill.
+          node = svgEl('polyline', { points: shape.points, fill: 'none', 'stroke-width': 3, 'pointer-events': 'none' }, 'stroke-' + seriesClass);
         }
         if (shape.tooltip) {
           const title = document.createElementNS(SVG_NS, 'title');
@@ -412,7 +441,8 @@ internal val REPORT_JS =
     if (REPORT.table) {
       const section = el('section');
       section.appendChild(el('h2', 'section-title', REPORT.chart ? 'Chart data' : 'Rows'));
-      section.appendChild(buildTableWidget(REPORT.table, REPORT.table.rows.some((r) => r.kind !== 'detail')));
+      // kind is omitted from the JSON when it is the default 'detail'.
+      section.appendChild(buildTableWidget(REPORT.table, REPORT.table.rows.some((r) => (r.kind || 'detail') !== 'detail')));
       if (REPORT.table.rows.some((r) => r.d)) {
         section.appendChild(el('p', 'hint', 'Click a row to see its source row.'));
       }

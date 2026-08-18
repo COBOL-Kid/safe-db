@@ -105,6 +105,7 @@ class HtmlReportWriterTest {
                     listOf(
                         WorksheetDisplayColumn("c1", "Amount", "bigint", "t0__amount"),
                         WorksheetDisplayColumn("c2", "Doubled", "decimal", null, "calc"),
+                        WorksheetDisplayColumn("c3", "Broken", "decimal", null, "calc"),
                     ),
                 rows =
                     listOf(
@@ -117,6 +118,7 @@ class HtmlReportWriterTest {
                             cells =
                                 listOf(
                                     WorksheetCell(ResultCell.integer(300)),
+                                    WorksheetCell(ResultCell.Null),
                                     WorksheetCell(ResultCell.Null),
                                 ),
                             sourceRowIndex = null,
@@ -131,8 +133,23 @@ class HtmlReportWriterTest {
                                 listOf(
                                     WorksheetCell(ResultCell.integer(100)),
                                     WorksheetCell(error = "bad formula"),
+                                    WorksheetCell(error = "bad formula"),
                                 ),
                             sourceRowIndex = 1,
+                        ),
+                        WorksheetProjectedRow(
+                            kind = WorksheetRowKind.Detail,
+                            depth = 1,
+                            pathKey = "g/1",
+                            rowLabel = null,
+                            expanded = true,
+                            cells =
+                                listOf(
+                                    WorksheetCell(ResultCell.integer(200)),
+                                    WorksheetCell(ResultCell.float(2.5)),
+                                    WorksheetCell(error = "bad formula"),
+                                ),
+                            sourceRowIndex = 2,
                         ),
                     ),
                 hasRowLabels = true,
@@ -141,12 +158,15 @@ class HtmlReportWriterTest {
         val report = buildWorksheetReport(session, projection, listOf("careful"))
 
         val table = assertNotNull(report.table)
-        assertEquals(listOf("Group", "Amount", "Doubled"), table.columns.map { it.label })
+        assertEquals(listOf("Group", "Amount", "Doubled", "Broken"), table.columns.map { it.label })
         assertTrue(table.columns[1].numeric)
-        assertFalse(table.columns[2].numeric)
+        // A column stays numeric when only some rows error; an all-error column does not.
+        assertTrue(table.columns[2].numeric)
+        assertFalse(table.columns[3].numeric)
         assertFalse(table.sortable)
-        assertEquals(listOf("group", "detail"), table.rows.map { it.kind })
+        assertEquals(listOf("group", "detail", "detail"), table.rows.map { it.kind })
         assertEquals("Error: bad formula", table.rows[1].cells[2].t)
+        assertNull(table.rows[1].cells[2].n)
         assertEquals(listOf(1), table.rows[1].d)
         assertNull(table.rows[0].d)
         assertEquals(listOf("careful"), report.meta.warnings)
@@ -267,6 +287,154 @@ class HtmlReportWriterTest {
 
         assertTrue(html.contains("(binary)"))
         assertFalse(html.contains(base64))
+    }
+
+    @Test
+    fun nonFiniteDoublesEncodeAsTextWithoutNumericValue() {
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__value", "double precision")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.float(Double.NaN)),
+                        listOf(ResultCell.float(Double.POSITIVE_INFINITY)),
+                        listOf(ResultCell.float(1.5)),
+                    ),
+                rowCount = 3,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        val table = tableSectionFrom(result)
+
+        assertEquals(listOf("NaN", "Infinity", "1.5"), table.rows.map { it.cells[0].t })
+        assertEquals(listOf(null, null, 1.5), table.rows.map { it.cells[0].n })
+        val meta =
+            HtmlReportMeta(
+                title = "t",
+                connectionLabel = "Local",
+                mode = "worksheet",
+                sampleRowCount = 3,
+                sampleTruncated = false,
+                sampledAt = "",
+                generatedAt = "",
+                warnings = emptyList(),
+            )
+        // The default Json rejects non-finite doubles; encoding must not throw.
+        val html = renderHtmlDocument(HtmlReport(meta = meta, table = table))
+        assertTrue(html.contains("NaN"))
+    }
+
+    @Test
+    fun categoryTicksSurviveLongLabels() {
+        val labels = (0 until 4).map { "category-$it-" + "x".repeat(24) }
+        val sample =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__status", "varchar")),
+                rows = labels.map { listOf(ResultCell.text(it)) },
+                rowCount = 4,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("count", MeasureFn.Count)),
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+
+        val chart = buildChartSection(preview, config)
+
+        // The gap is measured on the truncated label and capped, so no tick is dropped.
+        assertEquals(4, chart.categoryTicks.size)
+        assertTrue(chart.categoryTicks.all { it.label.length == 24 && it.label.endsWith("…") })
+    }
+
+    @Test
+    fun linePolylinesPrecedeCirclesAndCarryNoInteraction() {
+        val session = session()
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Line,
+                x = VisualizationField("t0__status", "Status"),
+                values =
+                    listOf(
+                        VisualizationMeasure("count", MeasureFn.Count),
+                        VisualizationMeasure("amount", MeasureFn.Sum, "t0__amount"),
+                    ),
+            )
+        val preview = applyVisualization(session.sample, config, session.baseSpec.tables)
+
+        val chart = assertNotNull(buildVisualizationReport(session, preview, config).chart)
+
+        val kinds = chart.shapes.map { it.kind }
+        assertEquals(2, kinds.count { it == "polyline" })
+        assertTrue(kinds.lastIndexOf("polyline") < kinds.indexOf("circle"))
+        chart.shapes.filter { it.kind == "polyline" }.forEach { polyline ->
+            assertNull(polyline.tooltip)
+            assertNull(polyline.d)
+        }
+        assertTrue(REPORT_JS.contains("'pointer-events': 'none'"))
+    }
+
+    @Test
+    fun overflowMessageRendersOnceInPivotSection() {
+        val session = session()
+        val preview = applyExplore(session.sample, pivotConfig())
+        val message = "This pivot overflows."
+        val overflowing =
+            preview.copy(
+                warnings = preview.warnings + listOf("other", message),
+                layout = preview.layout.copy(overflowMessage = message),
+            )
+
+        val report = buildPivotReport(session, overflowing)
+
+        assertEquals(message, assertNotNull(report.pivot).overflowMessage)
+        assertEquals(preview.warnings + "other", report.meta.warnings)
+    }
+
+    @Test
+    fun detailKindOmittedFromJsonAndDefaultedByScript() {
+        val session = session()
+        val projection =
+            WorksheetTableProjection(
+                resolvedColumns = emptyList(),
+                columns = listOf(WorksheetDisplayColumn("c1", "Amount", "bigint", "t0__amount")),
+                rows =
+                    listOf(
+                        WorksheetProjectedRow(
+                            kind = WorksheetRowKind.Detail,
+                            depth = 0,
+                            pathKey = "0",
+                            rowLabel = null,
+                            expanded = true,
+                            cells = listOf(WorksheetCell(ResultCell.integer(100))),
+                            sourceRowIndex = 0,
+                        )
+                    ),
+                hasRowLabels = false,
+            )
+        val output = ByteArrayOutputStream()
+
+        writeWorksheetReportHtml(session, projection, emptyList(), output)
+        val html = output.toString(Charsets.UTF_8)
+
+        val json =
+            html
+                .substringAfter("<script id=\"report-data\" type=\"application/json\">")
+                .substringBefore("</script>")
+        val rows =
+            Json.parseToJsonElement(json)
+                .jsonObject
+                .getValue("table")
+                .jsonObject
+                .getValue("rows")
+                .jsonArray
+        assertTrue(rows.none { "kind" in it.jsonObject })
+        // The bootstrap must default the omitted kind instead of treating flat rows as grouped.
+        assertTrue(REPORT_JS.contains("(r.kind || 'detail')"))
     }
 
     private fun pivotConfig() =

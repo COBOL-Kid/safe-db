@@ -24,8 +24,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 
 // Data embedded in the exported document. The DTOs are flattened for the report's JavaScript:
@@ -57,6 +59,8 @@ internal data class HtmlCell(
     val t: String,
     val n: Double? = null,
     val d: List<Int>? = null,
+    // Marks formula-error cells so the numeric survey can skip them; never serialized.
+    @Transient val err: Boolean = false,
 )
 
 @Serializable
@@ -253,7 +257,9 @@ internal fun buildPivotReport(session: ExploreSession, preview: ExplorePreviewRe
             )
         }
     return HtmlReport(
-        meta = meta,
+        // The pivot section renders overflowMessage itself; repeating it in the header
+        // warnings would show the same sentence twice.
+        meta = meta.copy(warnings = meta.warnings.filterNot { it == layout.overflowMessage }),
         source = buildSourceTable(session),
         pivot =
             HtmlPivotSection(
@@ -276,9 +282,13 @@ internal fun buildWorksheetReport(
             val cells = buildList {
                 if (projection.hasRowLabels) add(HtmlCell(row.rowLabel.orEmpty()))
                 row.cells.forEach { cell ->
-                    val (text, numeric) =
-                        cell.error?.let { "Error: $it" to null } ?: cellToHtmlDisplay(cell.value)
-                    add(HtmlCell(text, numeric))
+                    val error = cell.error
+                    if (error != null) {
+                        add(HtmlCell("Error: $error", err = true))
+                    } else {
+                        val (text, numeric) = cellToHtmlDisplay(cell.value)
+                        add(HtmlCell(text, numeric))
+                    }
                 }
             }
             HtmlTableRow(
@@ -398,6 +408,10 @@ internal fun buildChartSection(
                 )
             }
         ChartType.Line -> {
+            // DOM order is SVG hit order: all polylines go first so no series' stroke sits
+            // above another series' points, and circles go in reverse mark order so the
+            // earliest overlapping mark wins, like the app's first-region hit test.
+            val circles = mutableListOf<HtmlChartShape>()
             preview.marks
                 .groupBy { it.seriesKey }
                 .forEach { (key, marks) ->
@@ -411,7 +425,7 @@ internal fun buildChartSection(
                             points = points,
                             series = seriesIndex[key] ?: 0,
                         )
-                    marks.mapNotNullTo(shapes) { mark ->
+                    marks.mapNotNullTo(circles) { mark ->
                         val point = geometry.points[mark.id] ?: return@mapNotNullTo null
                         HtmlChartShape(
                             kind = "circle",
@@ -424,9 +438,11 @@ internal fun buildChartSection(
                         )
                     }
                 }
+            shapes += circles.asReversed()
         }
         ChartType.Scatter ->
-            geometry.regions.mapTo(shapes) { region ->
+            // Reversed for the same reason as line circles: first mark wins overlaps.
+            geometry.regions.asReversed().mapTo(shapes) { region ->
                 val mark = preview.marks.first { it.id == region.markId }
                 HtmlChartShape(
                     kind = "circle",
@@ -458,19 +474,19 @@ internal fun buildChartSection(
     val centered =
         categories
             .mapNotNull { mark ->
-                geometry.categoryCenters[mark.xKey]?.let { center -> center to mark.xLabel }
+                geometry.categoryCenters[mark.xKey]?.let { center ->
+                    center to truncatedTickLabel(mark.xLabel)
+                }
             }
             .sortedBy { it.first }
+    // Measure the truncated label that is actually rendered, and cap the gap like the in-app
+    // chart (VisualizationChart) so long labels thin the axis instead of emptying it.
     val requiredGap =
         if (horizontal) 16f
-        else (centered.maxOfOrNull { estimatedLabelWidth(it.second) } ?: 0f) + 8f
+        else min((centered.maxOfOrNull { estimatedLabelWidth(it.second) } ?: 0f) + 8f, 160f)
     val categoryTicks =
         categoryLabelIndices(centered.map { it.first }, requiredGap).map { index ->
-            HtmlAxisTick(
-                pos = centered[index].first.rounded(),
-                label =
-                    centered[index].second.let { if (it.length > 24) it.take(23) + "…" else it },
-            )
+            HtmlAxisTick(pos = centered[index].first.rounded(), label = centered[index].second)
         }
     val shownLegend = if (multiSeries) preview.series.take(12) else emptyList()
     return HtmlChartSection(
@@ -516,7 +532,10 @@ private fun columnsWithNumericFlags(
     labels: List<String>,
     rows: List<HtmlTableRow>,
 ): List<HtmlTableColumn> = labels.mapIndexed { index, label ->
-    val cells = rows.mapNotNull { it.cells.getOrNull(index) }.filter { it.t.isNotEmpty() }
+    // Error cells are excluded like empties: one bad formula row must not turn a numeric
+    // column into locale text sorting.
+    val cells =
+        rows.mapNotNull { it.cells.getOrNull(index) }.filter { !it.err && it.t.isNotEmpty() }
     HtmlTableColumn(
         label = label,
         numeric = cells.isNotEmpty() && cells.all { it.n != null },
@@ -549,7 +568,8 @@ private fun cellToHtmlDisplay(cell: ResultCell): Pair<String, Double?> =
         is ResultCell.Null -> "" to null
         is ResultCell.BoolCell -> cell.value.toString() to null
         is ResultCell.IntegerCell -> cell.value.toString() to cell.value.toDouble()
-        is ResultCell.FloatCell -> cell.value.toString() to cell.value
+        // Non-finite doubles must not reach the JSON island: the default Json rejects them.
+        is ResultCell.FloatCell -> cell.value.toString() to cell.value.takeIf(Double::isFinite)
         is ResultCell.TextCell -> cell.value.text to null
         // Base64 payloads are useless in a report and can be huge; a placeholder keeps the
         // document light. This intentionally diverges from the CSV export.
@@ -568,6 +588,9 @@ private fun markTooltip(mark: VisualizationMark, multiSeries: Boolean): String =
 }
 
 private fun estimatedLabelWidth(label: String): Float = label.length * 7f + 4f
+
+private fun truncatedTickLabel(label: String): String =
+    if (label.length > 24) label.take(23) + "…" else label
 
 private fun Float.rounded(): Double = (this * 10f).roundToInt() / 10.0
 
