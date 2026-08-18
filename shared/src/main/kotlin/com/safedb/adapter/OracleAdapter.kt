@@ -194,7 +194,8 @@ object OracleAdapter {
         }
 
     fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult {
-        val statementId = "safedb_${UUID.randomUUID().toString().replace("-", "")}"
+        // PLAN_TABLE statement IDs remain limited to 30 bytes on supported Oracle versions.
+        val statementId = "safedb_${UUID.randomUUID().toString().replace("-", "").take(23)}"
         return dataSource.connection.use { conn ->
             val explainSql = "EXPLAIN PLAN SET STATEMENT_ID = '$statementId' FOR ${compiled.sql}"
             prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Oracle).use {

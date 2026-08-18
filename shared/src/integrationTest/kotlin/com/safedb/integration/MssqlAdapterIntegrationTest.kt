@@ -85,9 +85,8 @@ class MssqlAdapterIntegrationTest {
             assertIs<ResultCell.TextCell>(result.rows.first()[0])
             assertTrue(result.rows.any { it[1] is ResultCell.Null })
             assertIs<ResultCell.TextCell>(result.rows.first()[2])
-            val plan =
-                assertIs<ExplainResult.Available>(Adapter.explainWithTimeout(adapter, compiled))
-                    .plan
+            val explain = Adapter.explainWithTimeout(adapter, compiled)
+            val plan = assertIs<ExplainResult.Available>(explain, "Expected a plan: $explain").plan
             assertTrue(plan.relations.isNotEmpty())
 
             val empty =
