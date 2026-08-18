@@ -454,7 +454,6 @@ internal fun buildChartSection(
                     d = mark.sourceRowIndices.takeIf { it.isNotEmpty() },
                 )
             }
-        ChartType.Kpi,
         ChartType.Auto,
         null -> Unit
     }

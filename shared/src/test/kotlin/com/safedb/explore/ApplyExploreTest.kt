@@ -662,7 +662,8 @@ class ApplyExploreTest {
     fun querySampleWarningsAreNotCopiedIntoPivotPreview() {
         val preview =
             applyExplore(
-                sampleResult().copy(warnings = listOf("No columns selected — query will select all columns")),
+                sampleResult()
+                    .copy(warnings = listOf("No columns selected — query will select all columns")),
                 ExploreConfig(
                     rowDimensions = listOf(PivotDimension("t0__status")),
                     showColumnTotals = false,

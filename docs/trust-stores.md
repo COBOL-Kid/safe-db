@@ -65,4 +65,4 @@ SAFEDB_TEST_SSL_WRONG_LAUNCH_PROFILE=/absolute/path/to/wrong.json \
 ./scripts/verify_ssl_compat.sh
 ```
 
-`SslCompatIntegrationTest` covers PKCS12 launch-profile application, reserved TLS driver properties, JDBC URL/property mapping for all four dialects, live EncryptOnly/VerifyCa/VerifyIdentity against MySQL, PostgreSQL, and SQL Server when those endpoints are provisioned, Oracle TCP plus wallet-required TCPS configuration, and rejection of an untrusted launch-profile CA. Oracle remains wallet-based: a generic PKCS12 file is not a substitute for an Oracle wallet.
+The harness `verify` command first requires the standard adapter contracts for MySQL, PostgreSQL, SQL Server, and Oracle. `SslCompatIntegrationTest` then covers PKCS12 launch-profile application, reserved TLS driver properties, JDBC URL/property mapping for all four dialects, live EncryptOnly/VerifyCa/VerifyIdentity against MySQL, PostgreSQL, and SQL Server when those endpoints are provisioned, Oracle TCP plus wallet-required TCPS configuration, and rejection of an untrusted launch-profile CA. Oracle remains wallet-based: a generic PKCS12 file is not a substitute for an Oracle wallet.

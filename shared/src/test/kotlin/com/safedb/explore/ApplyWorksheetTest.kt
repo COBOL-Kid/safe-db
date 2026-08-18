@@ -643,7 +643,8 @@ class ApplyWorksheetTest {
     fun querySampleWarningsAreNotCopiedIntoWorksheetPreview() {
         val preview =
             applyWorksheet(
-                sample().copy(warnings = listOf("No columns selected — query will select all columns")),
+                sample()
+                    .copy(warnings = listOf("No columns selected — query will select all columns")),
                 WorksheetConfig(),
             )
 

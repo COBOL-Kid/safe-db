@@ -1,5 +1,6 @@
 package com.safedb.adapter
 
+import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.EvidenceConfidence
@@ -167,12 +168,18 @@ object MssqlAdapter {
             var showplanRestored = false
             val xml =
                 try {
-                    prepareStatement(conn, compiled, Dialect.Mssql).use { ps ->
-                        ps.executeQuery().use { rs ->
-                            buildString {
-                                while (rs.next()) {
-                                    append(readString(rs, 1))
+                    conn.createStatement().use { stmt ->
+                        buildString {
+                            var hasResult = stmt.execute(mssqlShowplanSql(compiled))
+                            while (hasResult || stmt.updateCount != -1) {
+                                if (hasResult) {
+                                    stmt.resultSet.use { rs ->
+                                        while (rs.next()) {
+                                            append(readString(rs, 1))
+                                        }
+                                    }
                                 }
+                                hasResult = stmt.moreResults
                             }
                         }
                     }
@@ -202,3 +209,30 @@ object MssqlAdapter {
                 )
         }
 }
+
+internal fun mssqlShowplanSql(compiled: CompiledQuery): String = buildString {
+    // The JDBC prepared-statement RPC does not surface SHOWPLAN's result set. Keep values typed
+    // and escaped in a direct batch so text parameters cannot become executable SQL.
+    compiled.params.forEachIndexed { index, value ->
+        append("DECLARE @P${index + 1} ")
+        append(mssqlDeclaration(value))
+        append(";\n")
+    }
+    append(compiled.sql)
+}
+
+private fun mssqlDeclaration(value: BindValue): String =
+    when (value) {
+        is BindValue.Text -> "nvarchar(max) = N'${value.value.replace("'", "''")}'"
+        is BindValue.Int -> "bigint = ${value.value}"
+        is BindValue.Decimal -> {
+            val integerDigits = (value.value.precision() - value.value.scale()).coerceAtLeast(0)
+            val scale = value.value.scale().coerceIn(0, (38 - integerDigits).coerceAtLeast(0))
+            "decimal(38,$scale) = ${value.value.toPlainString()}"
+        }
+        is BindValue.Float -> "float = ${value.value}"
+        is BindValue.Bool -> "bit = ${if (value.value) 1 else 0}"
+        is BindValue.Date -> "date = '${value.value}'"
+        is BindValue.DateTime -> "datetime2 = '${value.value}'"
+        BindValue.Null -> "nvarchar(max) = NULL"
+    }

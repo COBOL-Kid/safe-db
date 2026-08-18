@@ -126,7 +126,7 @@ fun refineRiskWithPlan(
                                     method == PlanAccessMethod.TableScan &&
                                         band == EstimatedRowBand.High &&
                                         (tableInfo.isConfidentLarge() ||
-                                            (estimatedRows ?: 0L) >= LARGE_TABLE_ROW_ESTIMATE),
+                                            estimatedRows >= LARGE_TABLE_ROW_ESTIMATE),
                             )
                         null -> {
                             uncertainties +=

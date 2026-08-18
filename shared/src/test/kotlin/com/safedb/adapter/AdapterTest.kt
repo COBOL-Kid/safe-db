@@ -42,6 +42,28 @@ class AdapterTest {
     }
 
     @Test
+    fun mssqlShowplanSqlDeclaresTypedParametersWithoutExposingTextSyntax() {
+        val sql =
+            mssqlShowplanSql(
+                CompiledQuery(
+                    "SELECT * FROM [orders] WHERE [status] = @P1 AND [created_at] >= @P2",
+                    listOf(
+                        BindValue.Text("delivered'; DROP TABLE orders; --"),
+                        BindValue.DateTime(LocalDateTime.of(2025, 1, 2, 3, 4, 5)),
+                    ),
+                )
+            )
+
+        assertTrue(
+            sql.startsWith(
+                "DECLARE @P1 nvarchar(max) = N'delivered''; DROP TABLE orders; --';\n" +
+                    "DECLARE @P2 datetime2 = '2025-01-02T03:04:05';\n"
+            )
+        )
+        assertTrue(sql.endsWith("[status] = @P1 AND [created_at] >= @P2"))
+    }
+
+    @Test
     fun mysqlDisabledTransportAllowsPublicKeyRetrievalForLocalAuth() {
         val url = buildJdbcUrl(mysqlConnection(TransportSecurityMode.Disabled))
 
