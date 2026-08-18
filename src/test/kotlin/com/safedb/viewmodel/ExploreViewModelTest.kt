@@ -176,8 +176,7 @@ class ExploreViewModelTest {
                     sampleSpec(),
                     sampleResult()
                         .copy(
-                            warnings =
-                                listOf("No columns selected — query will select all columns")
+                            warnings = listOf("No columns selected — query will select all columns")
                         ),
                 )
             )
@@ -263,6 +262,43 @@ class ExploreViewModelTest {
 
         assertNotNull(viewModel.exportMessage)
         assertEquals("status,Count\r\npending,2\r\nshipped,1\r\nTotal,3\r\n", path.readText())
+    }
+
+    @Test
+    fun savePreviewHtmlWritesInteractiveReport() {
+        val viewModel =
+            ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        val path = createTempFile(suffix = ".html")
+
+        viewModel.savePreviewHtml(path)
+
+        assertEquals("Exported HTML report", viewModel.exportMessage)
+        val html = path.readText()
+        assertTrue(html.contains("report-data"))
+        assertTrue(html.contains("Local"))
+        assertTrue(html.contains("pending"))
+    }
+
+    @Test
+    fun saveWorksheetHtmlRequiresVisibleColumns() {
+        val viewModel =
+            ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+        viewModel.selectMode(ExploreMode.Worksheet)
+        viewModel.updateWorksheetColumnLayout(
+            listOf(
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__id"), visible = false),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false),
+                WorksheetColumnLayout(WorksheetValueRef.Column("t0__amount"), visible = false),
+            )
+        )
+        val path = createTempFile(suffix = ".html")
+
+        viewModel.saveWorksheetHtml(path)
+
+        assertEquals(
+            "Show at least one worksheet column before exporting.",
+            viewModel.exportError,
+        )
     }
 
     @Test
@@ -511,7 +547,14 @@ class ExploreViewModelTest {
         assertTrue(csv.readText().contains("Status,Series,Measure,Value,Source rows"))
         assertTrue(csv.readText().contains("pending"))
 
+        val html = createTempFile(suffix = ".html")
+        viewModel.saveVisualizationHtml(html)
+        assertEquals("Exported HTML report", viewModel.exportMessage)
+        assertTrue(html.readText().contains("pending"))
+
         viewModel.resetVisualization()
+        viewModel.saveVisualizationHtml(html)
+        assertEquals("Complete the chart before exporting.", viewModel.exportError)
         assertTrue(viewModel.isDefaultVisualization())
         assertFalse(viewModel.visualizationPreview.ready)
     }
