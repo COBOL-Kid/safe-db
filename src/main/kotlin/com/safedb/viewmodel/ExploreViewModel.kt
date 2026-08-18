@@ -330,7 +330,7 @@ class ExploreViewModel(
             rows = rows,
             rowCount = rows.size,
             truncated = session.sample.truncated,
-            warnings = session.sample.warnings,
+            warnings = emptyList(),
         )
     }
 
@@ -343,7 +343,7 @@ class ExploreViewModel(
             rows = rows,
             rowCount = rows.size,
             truncated = session.sample.truncated,
-            warnings = session.sample.warnings,
+            warnings = emptyList(),
         )
     }
 

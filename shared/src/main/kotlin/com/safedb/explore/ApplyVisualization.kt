@@ -62,7 +62,7 @@ private class VisualizationPlanner(
             marks = ordered,
             categories = ordered.distinctBy { it.xKey }.map { it.xLabel },
             series = series,
-            warnings = warnings.toList() + sample.warnings,
+            warnings = warnings.toList(),
             exportResult = exportResult(chartType, ordered),
         )
     }
@@ -423,7 +423,7 @@ private class VisualizationPlanner(
         VisualizationPreview(
             chartType = type,
             title = config.title,
-            warnings = warnings.toList() + sample.warnings,
+            warnings = warnings.toList(),
             blockingMessage = message,
         )
 
