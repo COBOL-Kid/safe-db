@@ -12,12 +12,13 @@ macOS and Windows. Built with Compose Desktop. Unapologetically not Excel.
 
 Most SQL clients assume you meant to do that. Safe-db assumes you did not.
 
-safe-db is opinionated on purpose — the opinions of people who have watched a cartesian product become a status meeting:
+safe-db is opinionated on purpose, with the opinions of people who have watched a cartesian product become a status meeting:
 
 - **Read-only by design.** Queries are validated against the loaded schema and compiled with bound parameters. No ad-hoc writes. No “just this once” `UPDATE`. No “I thought it was a SELECT.”
 - **Limits you can live with.** Default sample is 500 rows, hard cap is 10,000, and queries time out after 10 seconds. You’ll get a nudge above 1,000 rows. “Download everything” is not a feature.
-- **Plan-aware caution.** Missing plan evidence or a spicy optimizer cost needs an explicit confirmed retry — not a shrug, not a “it was fine in staging.”
+- **Plan-aware caution.** Missing plan evidence or a spicy optimizer cost needs an explicit confirmed retry, not a shrug, and not a “it was fine in staging.”
 - **Credentials stay out of JSON.** Named connection profiles are saved without passwords. The OS credential store holds secrets when it’s available. Sticky notes are not a backend.
+- **Exports are snapshots, not connections.** CSV, PNG, and the interactive HTML report all carry the sample you already pulled. A report you email is a file, not a back door into production.
 - **Explore without mutating the query.** Schema maps, Pivot, Worksheet, and Visualization work from an immutable sample. Saved recipes keep layout, not credentials or result rows. Pivot all you want; you still cannot accidentally relaunch the query as a warehouse-melting encore.
 
 If you want a general-purpose DBA workbench, or a place to paste a 400-line query from a Slack thread titled “quick question,” this isn’t that.
@@ -45,8 +46,9 @@ More commands (integration tests, Docker fixtures, headless UI renders, seeders)
 1. **Save a connection.** Give it a name. Test it. Passwords go to the platform store on save. `Test Connection` does not write the keyring.
 2. **Browse the schema.** Tables, keys, indexes, and referenced external tables. System schemas stay out of the way. The map is read-only and does not rewrite the query you’re building.
 3. **Build a query.** Typed, parameterized, with joins, nested filters, and a row limit you actually control.
-4. **Or type it.** The SQL screen takes a single `SELECT` in your database's dialect, with schema-aware autocomplete and a schema picker so `FROM` needs no prefix. Typed SQL is parsed into the same structured, parameter-bound query the builder produces — your text never reaches the database — so the same limits, risk scoring, and confirmations apply. Writes, subqueries, and aggregates are rejected with an explanation (aggregate in Explore instead).
+4. **Or type it.** The SQL screen takes a single `SELECT` in your database's dialect, with schema-aware autocomplete and a schema picker so `FROM` needs no prefix. Typed SQL is parsed into the same structured, parameter-bound query the builder produces (your text never reaches the database), so the same limits, risk scoring, and confirmations apply. Writes, subqueries, and aggregates are rejected with an explanation (aggregate in Explore instead).
 5. **Look at the sample.** Pivot it, spreadsheet it, chart it. Tinker with the view; the underlying rows stay put. If someone needs a million rows, they can submit a ticket.
+6. **Share what you found.** Every Explore mode exports CSV, charts also export PNG, and `Export HTML` writes a single self-contained report: the sampled rows travel with it, tables sort and filter, the chart renders inline, and clicking a cell or a mark drills into the same source rows the app would show. No database connection, no credentials, no live query waiting to be re-run by whoever opens it.
 
 | Database | What to know |
 | --- | --- |
