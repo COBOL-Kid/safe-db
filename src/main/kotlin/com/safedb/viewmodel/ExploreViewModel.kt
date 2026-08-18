@@ -23,8 +23,11 @@ import com.safedb.explore.remapRecipe
 import com.safedb.explore.resolveRecipeFields
 import com.safedb.explore.resolveWorksheetColumnLayout
 import com.safedb.explore.withoutTransientState
+import com.safedb.export.writePivotReportHtml
 import com.safedb.export.writeQueryResultCsv
 import com.safedb.export.writeVisualizationPng
+import com.safedb.export.writeVisualizationReportHtml
+import com.safedb.export.writeWorksheetReportHtml
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
@@ -404,6 +407,46 @@ class ExploreViewModel(
             ),
             path,
         )
+    }
+
+    fun savePreviewHtml(path: Path) {
+        executeExport("Exported HTML report") {
+            Files.newOutputStream(path).use { output ->
+                writePivotReportHtml(session, preview, output)
+            }
+        }
+    }
+
+    fun saveWorksheetHtml(path: Path) {
+        val projection = projectWorksheetTable(worksheetPreview, worksheetConfig.columnLayout)
+        if (projection.columns.isEmpty()) {
+            exportMessage = null
+            exportError = "Show at least one worksheet column before exporting."
+            return
+        }
+        executeExport("Exported HTML report") {
+            Files.newOutputStream(path).use { output ->
+                writeWorksheetReportHtml(session, projection, worksheetPreview.warnings, output)
+            }
+        }
+    }
+
+    fun saveVisualizationHtml(path: Path) {
+        if (visualizationPreview.exportResult == null) {
+            exportMessage = null
+            exportError = "Complete the chart before exporting."
+            return
+        }
+        executeExport("Exported HTML report") {
+            Files.newOutputStream(path).use { output ->
+                writeVisualizationReportHtml(
+                    session,
+                    visualizationPreview,
+                    visualizationConfig,
+                    output,
+                )
+            }
+        }
     }
 
     fun saveVisualizationCsv(path: Path) {

@@ -211,6 +211,10 @@ fun ExploreWindowContent(
                             ExploreExportBar(
                                 viewModel,
                                 enabled = !viewModel.isLoading(ExploreMode.Pivot),
+                                onExportHtml = {
+                                    chooseExportFile(session.connectionLabel, "html")
+                                        ?.let(viewModel::savePreviewHtml)
+                                },
                             ) {
                                 chooseExportFile(session.connectionLabel, "csv")
                                     ?.let(viewModel::savePreviewCsv)
@@ -235,6 +239,10 @@ fun ExploreWindowContent(
                                 enabled =
                                     !viewModel.isLoading(ExploreMode.Worksheet) &&
                                         viewModel.hasVisibleWorksheetColumns(),
+                                onExportHtml = {
+                                    chooseExportFile("${session.connectionLabel}-worksheet", "html")
+                                        ?.let(viewModel::saveWorksheetHtml)
+                                },
                             ) {
                                 chooseExportFile("${session.connectionLabel}-worksheet", "csv")
                                     ?.let(viewModel::saveWorksheetCsv)
@@ -299,6 +307,10 @@ fun ExploreWindowContent(
                                     enabled =
                                         viewModel.visualizationPreview.ready &&
                                             !viewModel.isLoading(ExploreMode.Visualization),
+                                    onExportHtml = {
+                                        chooseExportFile("${session.connectionLabel}-chart", "html")
+                                            ?.let(viewModel::saveVisualizationHtml)
+                                    },
                                     onExportCsv = {
                                         chooseExportFile(
                                                 "${session.connectionLabel}-chart-data",
@@ -495,9 +507,17 @@ private fun ExportBar(viewModel: ExploreViewModel, actions: @Composable () -> Un
 private fun ExploreExportBar(
     viewModel: ExploreViewModel,
     enabled: Boolean,
+    onExportHtml: () -> Unit,
     onExport: () -> Unit,
 ) {
     ExportBar(viewModel) {
+        SecondaryButton(
+            modifier = Modifier.padding(start = 8.dp),
+            onClick = onExportHtml,
+            enabled = enabled && !viewModel.exporting,
+        ) {
+            Text("Export HTML")
+        }
         PrimaryButton(
             modifier = Modifier.padding(start = 8.dp),
             onClick = onExport,
@@ -512,10 +532,18 @@ private fun ExploreExportBar(
 private fun VisualizationExportBar(
     viewModel: ExploreViewModel,
     enabled: Boolean,
+    onExportHtml: () -> Unit,
     onExportCsv: () -> Unit,
     onExportPng: () -> Unit,
 ) {
     ExportBar(viewModel) {
+        SecondaryButton(
+            modifier = Modifier.padding(start = 8.dp),
+            onClick = onExportHtml,
+            enabled = enabled && !viewModel.exporting,
+        ) {
+            Text("Export HTML")
+        }
         SecondaryButton(
             modifier = Modifier.padding(start = 8.dp),
             onClick = onExportCsv,
