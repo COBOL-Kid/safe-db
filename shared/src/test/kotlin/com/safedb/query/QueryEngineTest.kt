@@ -26,6 +26,7 @@ import com.safedb.model.Outcome
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.SortDirection
@@ -1234,6 +1235,25 @@ class QueryEngineTest {
             cell.value.text.toByteArray(Charsets.UTF_8).size,
         )
         assertTrue(cell.value.text.endsWith("a"))
+    }
+
+    @Test
+    fun queryResultCapsAggregatePayloadAndReportsBothTruncationCauses() {
+        val cell = ResultCell.text("x".repeat(com.safedb.model.MAX_CELL_BYTES + 1))
+        val rows = List(11) { listOf(cell) }
+
+        val result = QueryResult.fromRows(listOf(ResultColumn.of("payload", "text")), rows)
+
+        assertTrue(result.truncated)
+        assertTrue(result.rows.size in 1 until rows.size)
+        assertEquals(result.rows.size, result.rowCount)
+        assertEquals(
+            listOf(
+                "One or more cells exceeded ${com.safedb.model.MAX_CELL_BYTES} bytes and were truncated",
+                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated",
+            ),
+            result.warnings,
+        )
     }
 
     @Test

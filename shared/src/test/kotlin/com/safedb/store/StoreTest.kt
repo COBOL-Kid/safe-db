@@ -5,8 +5,14 @@ import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
+import com.safedb.model.FilterLiteral
+import com.safedb.model.FilterNode
+import com.safedb.model.FilterOp
+import com.safedb.model.FilterSpec
+import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
 import com.safedb.model.HistoryEntry
+import com.safedb.model.LiteralKind
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
@@ -238,6 +244,77 @@ class StoreTest {
         assertEquals("All Users", store.listSaved().single().name)
         store.deleteSaved("q1")
         assertTrue(store.listSaved().isEmpty())
+    }
+
+    @Test
+    fun queryStoreRoundTripsNestedFilterValueVariants() {
+        val filters =
+            FilterGroup(
+                id = "root",
+                connector = GroupConnector.And,
+                children =
+                    listOf(
+                        FilterNode.Leaf(
+                            FilterSpec(
+                                id = "single",
+                                tableAlias = "t0",
+                                column = "name",
+                                op = FilterOp.Eq,
+                                value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "Ada")),
+                            )
+                        ),
+                        FilterNode.Group(
+                            FilterGroup(
+                                id = "nested",
+                                connector = GroupConnector.Or,
+                                children =
+                                    listOf(
+                                        FilterNode.Leaf(
+                                            FilterSpec(
+                                                id = "list",
+                                                tableAlias = "t0",
+                                                column = "id",
+                                                op = FilterOp.In,
+                                                value =
+                                                    FilterValue.ListValue(
+                                                        listOf(
+                                                            FilterLiteral(LiteralKind.Int, "1"),
+                                                            FilterLiteral(LiteralKind.Int, "2"),
+                                                        )
+                                                    ),
+                                            )
+                                        ),
+                                        FilterNode.Leaf(
+                                            FilterSpec(
+                                                id = "pair",
+                                                tableAlias = "t0",
+                                                column = "id",
+                                                op = FilterOp.Between,
+                                                value =
+                                                    FilterValue.Pair(
+                                                        FilterLiteral(LiteralKind.Int, "10"),
+                                                        FilterLiteral(LiteralKind.Int, "20"),
+                                                    ),
+                                            )
+                                        ),
+                                    ),
+                            )
+                        ),
+                    ),
+            )
+        val saved =
+            SavedQuery(
+                id = "q1",
+                name = "Filtered users",
+                connectionId = "c1",
+                spec = sampleSpec().copy(filters = filters),
+                createdAt = "1",
+            )
+        val store = QueryStore.new(tempDir())
+
+        store.saveQuery(saved)
+
+        assertEquals(saved, store.listSaved().single())
     }
 
     @Test

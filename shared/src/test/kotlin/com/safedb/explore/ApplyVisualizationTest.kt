@@ -191,7 +191,8 @@ class ApplyVisualizationTest {
     fun querySampleWarningsAreNotCopiedIntoChartPreview() {
         val preview =
             applyVisualization(
-                sample().copy(warnings = listOf("No columns selected — query will select all columns")),
+                sample()
+                    .copy(warnings = listOf("No columns selected — query will select all columns")),
                 VisualizationConfig(
                     chartType = ChartType.Bar,
                     x = VisualizationField("status"),

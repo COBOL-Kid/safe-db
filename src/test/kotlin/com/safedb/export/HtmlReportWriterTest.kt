@@ -1,5 +1,6 @@
 package com.safedb.export
 
+import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreSession
@@ -82,6 +83,31 @@ class HtmlReportWriterTest {
     }
 
     @Test
+    fun hierarchicalPivotDoesNotAttachDrillToGroupRows() {
+        val session = session()
+        val preview =
+            applyExplore(
+                session.sample,
+                pivotConfig()
+                    .copy(
+                        rowDimensions =
+                            listOf(
+                                PivotDimension("t0__status"),
+                                PivotDimension("t0__id"),
+                            ),
+                        showColumnTotals = false,
+                    ),
+            )
+
+        val pivot = assertNotNull(buildPivotReport(session, preview).pivot)
+
+        val group = pivot.rows.first { it.kind == "group" }
+        assertEquals("pending", group.label)
+        assertTrue(group.cells.all { it.d == null })
+        assertTrue(pivot.rows.first { it.kind == "leaf" }.cells.any { it.d != null })
+    }
+
+    @Test
     fun pivotReportFallsBackToPlainTableOnLayoutMismatch() {
         val session = session()
         val preview = applyExplore(session.sample, pivotConfig())
@@ -151,6 +177,20 @@ class HtmlReportWriterTest {
                                 ),
                             sourceRowIndex = 2,
                         ),
+                        WorksheetProjectedRow(
+                            kind = WorksheetRowKind.GrandTotal,
+                            depth = 0,
+                            pathKey = "total",
+                            rowLabel = "Grand total",
+                            expanded = true,
+                            cells =
+                                listOf(
+                                    WorksheetCell(ResultCell.integer(300)),
+                                    WorksheetCell(ResultCell.float(2.5)),
+                                    WorksheetCell(error = "bad formula"),
+                                ),
+                            sourceRowIndex = null,
+                        ),
                     ),
                 hasRowLabels = true,
             )
@@ -164,11 +204,12 @@ class HtmlReportWriterTest {
         assertTrue(table.columns[2].numeric)
         assertFalse(table.columns[3].numeric)
         assertFalse(table.sortable)
-        assertEquals(listOf("group", "detail", "detail"), table.rows.map { it.kind })
+        assertEquals(listOf("group", "detail", "detail", "total"), table.rows.map { it.kind })
         assertEquals("Error: bad formula", table.rows[1].cells[2].t)
         assertNull(table.rows[1].cells[2].n)
         assertEquals(listOf(1), table.rows[1].d)
         assertNull(table.rows[0].d)
+        assertNull(table.rows.last().d)
         assertEquals(listOf("careful"), report.meta.warnings)
     }
 
@@ -203,6 +244,35 @@ class HtmlReportWriterTest {
         assertEquals(listOf(0, 1), pendingBar.d)
         assertTrue(assertNotNull(pendingBar.tooltip).contains("pending"))
         assertNotNull(report.table)
+    }
+
+    @Test
+    fun horizontalBarReportUsesCategoryGutterAndHorizontalTicks() {
+        val session = session(statusText = "pending-" + "x".repeat(30))
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure.countRows()),
+                barOrientation = BarOrientation.Horizontal,
+            )
+        val preview = applyVisualization(session.sample, config, session.baseSpec.tables)
+
+        val chart = buildChartSection(preview, config)
+
+        assertTrue(chart.horizontal)
+        assertEquals(180.0, chart.plot[0])
+        assertTrue(chart.valueTicks.zipWithNext().all { (first, second) -> first.pos < second.pos })
+        assertEquals(preview.marks.size, chart.shapes.size)
+        chart.shapes.forEach { bar ->
+            assertEquals("rect", bar.kind)
+            val x = assertNotNull(bar.x)
+            val y = assertNotNull(bar.y)
+            assertTrue(x >= chart.plot[0])
+            assertTrue(x + assertNotNull(bar.w) <= chart.plot[2])
+            assertTrue(y >= chart.plot[1])
+            assertTrue(y + assertNotNull(bar.h) <= chart.plot[3])
+        }
     }
 
     @Test
@@ -371,11 +441,47 @@ class HtmlReportWriterTest {
         val kinds = chart.shapes.map { it.kind }
         assertEquals(2, kinds.count { it == "polyline" })
         assertTrue(kinds.lastIndexOf("polyline") < kinds.indexOf("circle"))
-        chart.shapes.filter { it.kind == "polyline" }.forEach { polyline ->
-            assertNull(polyline.tooltip)
-            assertNull(polyline.d)
-        }
+        chart.shapes
+            .filter { it.kind == "polyline" }
+            .forEach { polyline ->
+                assertNull(polyline.tooltip)
+                assertNull(polyline.d)
+            }
         assertTrue(REPORT_JS.contains("'pointer-events': 'none'"))
+    }
+
+    @Test
+    fun scatterReportBuildsReversedDrillableCirclesInsidePlot() {
+        val session = session()
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("t0__id", "ID"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "amount",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            "Amount",
+                            aggregate = false,
+                        )
+                    ),
+            )
+        val preview = applyVisualization(session.sample, config, session.baseSpec.tables)
+
+        val chart = buildChartSection(preview, config)
+
+        assertEquals(preview.marks.size, chart.shapes.size)
+        assertTrue(chart.shapes.all { it.kind == "circle" })
+        chart.shapes.forEach { point ->
+            assertTrue(assertNotNull(point.cx) in chart.plot[0]..chart.plot[2])
+            assertTrue(assertNotNull(point.cy) in chart.plot[1]..chart.plot[3])
+        }
+        assertEquals(
+            preview.marks.map { it.sourceRowIndices }.asReversed(),
+            chart.shapes.map { it.d },
+        )
     }
 
     @Test

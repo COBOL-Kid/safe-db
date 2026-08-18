@@ -43,6 +43,10 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.skia.Image
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -330,7 +334,7 @@ class ExploreViewModelTest {
     }
 
     @Test
-    fun worksheetCsvUsesVisibleColumnLayoutOrderAndOriginalCellIndexes() {
+    fun worksheetExportsUseVisibleColumnLayoutOrderAndOriginalCellIndexes() {
         val viewModel =
             ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
         viewModel.selectMode(ExploreMode.Worksheet)
@@ -353,6 +357,25 @@ class ExploreViewModelTest {
         viewModel.saveWorksheetCsv(path)
 
         assertEquals("Double,amount\r\n200.0,100\r\n400.0,200\r\n600.0,300\r\n", path.readText())
+
+        val htmlPath = createTempFile(suffix = ".html")
+        viewModel.saveWorksheetHtml(htmlPath)
+
+        assertEquals("Exported HTML report", viewModel.exportMessage)
+        val reportJson =
+            htmlPath
+                .readText()
+                .substringAfter("<script id=\"report-data\" type=\"application/json\">")
+                .substringBefore("</script>")
+        val columns =
+            Json.parseToJsonElement(reportJson)
+                .jsonObject
+                .getValue("table")
+                .jsonObject
+                .getValue("columns")
+                .jsonArray
+                .map { it.jsonObject.getValue("label").jsonPrimitive.content }
+        assertEquals(listOf("Double", "amount"), columns)
     }
 
     @Test
