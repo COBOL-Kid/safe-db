@@ -96,7 +96,7 @@ private class WorksheetEngine(
         return WorksheetPreview(
             columns = columns,
             rows = rows,
-            warnings = (sample.warnings + warnings).distinct(),
+            warnings = warnings.toList(),
             calculationErrorCount = errorCount,
         )
     }

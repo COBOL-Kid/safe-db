@@ -76,6 +76,208 @@ class QueryPlanRefinementTest {
     }
 
     @Test
+    fun fullIndexScanBandsLikeATableScanButNeverBlocksOutright() {
+        assertTrue(refineAccess(PlanAccessMethod.FullIndexScan, 20).signals.isEmpty())
+
+        val material = refineAccess(PlanAccessMethod.FullIndexScan, 25_000)
+        assertEquals(RiskSignalCode.PlanConfirmedLargeScan, material.signals.single().code)
+        assertEquals(4, material.signals.single().points)
+
+        val high =
+            refineAccess(
+                PlanAccessMethod.FullIndexScan,
+                2_000_000,
+                TableSizeClass.Large,
+                EvidenceConfidence.High,
+            )
+        assertFalse(high.signals.single().mandatoryBlockWhenGateEnabled)
+    }
+
+    @Test
+    fun fullIndexScanWithoutRowsAddsUncertaintyAndKeepsStaticSignal() {
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0",
+                                method = PlanAccessMethod.FullIndexScan,
+                            )
+                        )
+                ),
+                oneTableSpec(),
+                Schema(listOf(table("orders"))),
+            )
+
+        assertEquals(
+            listOf(RiskSignalCode.NoKnownCompatibleAccessPath),
+            refined.signals.map(RiskSignal::code),
+        )
+        assertTrue(refined.uncertainties.any { it.code == "plan_access_rows_unknown" })
+    }
+
+    @Test
+    fun highRowScanOnUnknownSizeTableIsMandatoryOnlyAtLargeEstimates() {
+        val million = refineAccess(PlanAccessMethod.TableScan, 2_000_000, TableSizeClass.Unknown)
+        assertTrue(million.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Flexible).state)
+
+        val moderate = refineAccess(PlanAccessMethod.TableScan, 150_000, TableSizeClass.Unknown)
+        assertEquals(4, moderate.signals.single().points)
+        assertFalse(moderate.signals.single().mandatoryBlockWhenGateEnabled)
+    }
+
+    @Test
+    fun partitionChildRelationsCollapseOntoTheParentAliasWithSummedRows() {
+        fun child(name: String, alias: String, rows: Long) =
+            PlanRelationAccess(
+                table = name,
+                alias = alias,
+                method = PlanAccessMethod.TableScan,
+                estimatedRows = rows,
+            )
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment("f", listOf(genericAccessSignal()), emptyList()),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            child("orders_2024_01", "t0_1", 80_000),
+                            child("orders_2024_02", "t0_2", 80_000),
+                        )
+                ),
+                oneTableSpec(),
+                Schema(listOf(table("orders", TableSizeClass.Large, EvidenceConfidence.High))),
+            )
+
+        // 80k per child is Material alone; the 160k sum bands High and blocks outright.
+        val signal = refined.signals.single()
+        assertEquals(RiskSignalCode.PlanConfirmedLargeScan, signal.code)
+        assertTrue(signal.mandatoryBlockWhenGateEnabled)
+        assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
+    }
+
+    @Test
+    fun partitionChildAliasesMapJoinAndOperationEvidenceOntoTheParentAlias() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val sortTarget = RiskTarget.Operation(PlanOperationKind.Sort, setOf("t0"))
+        val base =
+            buildAssessment(
+                "f",
+                listOf(
+                    RiskSignal(
+                        RiskSignalCode.JoinExpansionPossible,
+                        RiskCategory.Joins,
+                        RiskSubject(operation = "join"),
+                        1,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.High,
+                        joinTarget,
+                    ),
+                    RiskSignal(
+                        RiskSignalCode.LimitCannotBoundWork,
+                        RiskCategory.Operations,
+                        RiskSubject(operation = "sort"),
+                        3,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.Medium,
+                        sortTarget,
+                    ),
+                ),
+                emptyList(),
+            )
+        fun child(name: String, alias: String) =
+            PlanRelationAccess(
+                table = name,
+                alias = alias,
+                method = PlanAccessMethod.TableScan,
+                estimatedRows = 100,
+            )
+        val refined =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            child("orders_2024_01", "t0_1"),
+                            child("orders_2024_02", "t0_2"),
+                            PlanRelationAccess(
+                                table = "items",
+                                alias = "t1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0_1", "t0_2", "t1"), 50)),
+                    blockingOperations =
+                        listOf(
+                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0_1", "t0_2"), 50)
+                        ),
+                ),
+                twoTableSpec(),
+                Schema(listOf(table("orders"), table("items"))),
+            )
+
+        // Low-band join evidence clears the static expansion signal; the sort downgrades to a
+        // bounded operation instead of surfacing an unmapped-alias uncertainty.
+        assertFalse(refined.signals.any { it.code == RiskSignalCode.JoinExpansionPossible })
+        val sort = refined.signals.single { it.target == sortTarget }
+        assertEquals(RiskSignalCode.BoundedBlockingOperation, sort.code)
+        assertTrue(refined.uncertainties.none { it.code.startsWith("plan_join") })
+        assertTrue(refined.uncertainties.none { it.code.startsWith("plan_operation") })
+    }
+
+    @Test
+    fun specAliasEndingInNumericSuffixStillResolvesExactly() {
+        val suffixedSpec =
+            QuerySpec(
+                tables = listOf(TableRef("public", "orders", "t0_1")),
+                columns = listOf(ColumnSel("t0_1", "id")),
+                filters = FilterGroup.empty(),
+                limit = 100,
+            )
+        val base =
+            buildAssessment(
+                "f",
+                listOf(
+                    RiskSignal(
+                        RiskSignalCode.NoKnownCompatibleAccessPath,
+                        RiskCategory.Access,
+                        RiskSubject(tableAlias = "t0_1", table = "orders"),
+                        2,
+                        SignalBasis.StaticSchema,
+                        EvidenceConfidence.Medium,
+                        RiskTarget.Access("t0_1"),
+                    )
+                ),
+                emptyList(),
+            )
+        val refined =
+            refineRiskWithPlan(
+                base,
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0_1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 5,
+                            )
+                        )
+                ),
+                suffixedSpec,
+                Schema(listOf(table("orders"))),
+            )
+
+        assertTrue(refined.signals.isEmpty())
+        assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
+    }
+
+    @Test
     fun targetSpecificPlanReplacementLeavesUnrelatedSignalsActive() {
         val refined =
             refineAccess(
@@ -277,6 +479,9 @@ class QueryPlanRefinementTest {
             )
         assertEquals(3, high.signals.single { it.target == operationTarget }.points)
         assertTrue(high.signals.single { it.target == joinTarget }.mandatoryBlockWhenGateEnabled)
+        // Confirmed expansion must register in the score, not vanish under the category cap.
+        assertEquals(3, high.categoryScores.getValue(RiskCategory.Joins))
+        assertTrue(high.score > base.score)
     }
 
     private fun refineAccess(

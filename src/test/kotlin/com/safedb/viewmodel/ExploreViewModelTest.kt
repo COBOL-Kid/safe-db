@@ -170,7 +170,17 @@ class ExploreViewModelTest {
     @Test
     fun memberFiltersAndDrillThroughUseOnlySampleRows() {
         val viewModel =
-            ExploreViewModel(createExploreSession(connection(), sampleSpec(), sampleResult()))
+            ExploreViewModel(
+                createExploreSession(
+                    connection(),
+                    sampleSpec(),
+                    sampleResult()
+                        .copy(
+                            warnings =
+                                listOf("No columns selected — query will select all columns")
+                        ),
+                )
+            )
         val options = viewModel.memberOptions("t0__status")
         assertEquals(listOf("pending", "shipped"), options.map { it.label })
         assertEquals(listOf(2, 1), options.map { it.count })
@@ -196,6 +206,7 @@ class ExploreViewModelTest {
             )
         assertEquals(2, detail.rowCount)
         assertTrue(detail.rows.all { (it[1] as ResultCell.TextCell).value.text == "pending" })
+        assertEquals(emptyList(), detail.warnings)
     }
 
     @Test

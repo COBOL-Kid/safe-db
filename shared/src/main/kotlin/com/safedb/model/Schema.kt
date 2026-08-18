@@ -100,6 +100,10 @@ enum class TableSizeClass {
     Unknown,
 }
 
+// Row count at which catalog classification calls a table Large; plan-estimated rows crossing
+// the same threshold count as equally confident large-scan evidence.
+const val LARGE_TABLE_ROW_ESTIMATE: Long = 1_000_000
+
 @Serializable
 enum class EvidenceConfidence {
     High,

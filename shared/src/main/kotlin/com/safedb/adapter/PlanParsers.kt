@@ -200,6 +200,7 @@ internal fun parseMySqlPlan(raw: String): NormalizedQueryPlan? = runCatching {
                             aliases,
                             element.long("rows_produced_per_join")
                                 ?: element.long("estimated_rows")
+                                ?: nestedLoop?.let(::nestedLoopOutputRows)
                                 ?: maximumRows(relations, aliases),
                         )
                 }
@@ -214,6 +215,7 @@ internal fun parseMySqlPlan(raw: String): NormalizedQueryPlan? = runCatching {
                             aliases,
                             element.long("rows_produced_per_join")
                                 ?: element.long("estimated_rows")
+                                ?: nestedLoop?.let(::nestedLoopOutputRows)
                                 ?: maximumRows(relations, aliases),
                         )
                 }
@@ -257,6 +259,11 @@ private fun operationKindForMysqlText(operation: String): PlanOperationKind? =
         else -> null
     }
 
+// MySQL stamps each table node with the cumulative join-prefix output, so the last table of a
+// nested_loop carries the join's total output rows; the max-of-relations fallback under-counts.
+private fun nestedLoopOutputRows(nestedLoop: JsonArray): Long? =
+    (nestedLoop.lastOrNull() as? JsonObject)?.objectValue("table")?.long("rows_produced_per_join")
+
 private fun maximumRows(relations: List<PlanRelationAccess>, aliases: Set<String>): Long? =
     relations
         .filter { it.alias in aliases }
@@ -298,7 +305,13 @@ internal fun parseSqlServerPlan(raw: String): NormalizedQueryPlan? = runCatching
         val relOp = relationNodes.item(index) as? Element ?: continue
         val physical = relOp.getAttribute("PhysicalOp")
         val logical = relOp.getAttribute("LogicalOp")
-        val rows = relOp.getAttribute("EstimateRows").toDoubleOrNull()?.toLong()
+        // EstimateRows is per execution; rebinds/rewinds count the extra inner-loop executions.
+        val rows =
+            relOp.getAttribute("EstimateRows").toDoubleOrNull()?.let { estimate ->
+                val rebinds = relOp.getAttribute("EstimateRebinds").toDoubleOrNull() ?: 0.0
+                val rewinds = relOp.getAttribute("EstimateRewinds").toDoubleOrNull() ?: 0.0
+                (estimate * (1.0 + rebinds + rewinds)).toLong()
+            }
         val objects = relOp.getElementsByTagNameNS("*", "Object")
         val aliases = linkedSetOf<String>()
         for (objectIndex in 0 until objects.length) {

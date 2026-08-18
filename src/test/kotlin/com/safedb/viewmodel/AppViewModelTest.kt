@@ -19,6 +19,7 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
+import com.safedb.query.QUERY_RISK_SCORE_VERSION
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -1222,7 +1223,7 @@ private class FakeSafeDbService(
         if (riskGateFirstRun && queryAttempts == 1) {
             val assessment =
                 QueryRiskAssessment(
-                    scoreVersion = 2,
+                    scoreVersion = QUERY_RISK_SCORE_VERSION,
                     queryFingerprint = "blocked",
                     score = 6,
                     severity = QueryRiskSeverity.High,
@@ -1260,7 +1261,7 @@ private class FakeSafeDbService(
         if (confirmationRequired && request.confirmation != requiredConfirmation) {
             val assessment =
                 QueryRiskAssessment(
-                    scoreVersion = 2,
+                    scoreVersion = QUERY_RISK_SCORE_VERSION,
                     queryFingerprint = "confirmable",
                     score = 0,
                     severity = QueryRiskSeverity.Minimal,

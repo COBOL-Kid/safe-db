@@ -1,9 +1,11 @@
 package com.safedb.query
 
 import com.safedb.model.EvidenceConfidence
+import com.safedb.model.LARGE_TABLE_ROW_ESTIMATE
 import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.PlanAccessMethod
 import com.safedb.model.PlanOperationKind
+import com.safedb.model.PlanRelationAccess
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
@@ -43,14 +45,14 @@ fun refineRiskWithPlan(
         }
     }
 
-    for ((schema, table, planAlias, method, estimatedRows, specializedTextEvidence) in
-        plan.relations) {
-        val alias = resolvePlanAlias(planAlias, schema, table, spec)
+    for ((planSchema, table, planAlias, method, estimatedRows, specializedTextEvidence) in
+        mergePartitionedRelations(plan.relations, spec)) {
+        val alias = resolvePlanAlias(planAlias, planSchema, table, spec)
         if (alias == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_relation_unmapped",
-                    RiskSubject(schema = schema, table = table, tableAlias = planAlias),
+                    RiskSubject(schema = planSchema, table = table, tableAlias = planAlias),
                     "ambiguous_or_unmapped_relation",
                 )
             continue
@@ -58,7 +60,7 @@ fun refineRiskWithPlan(
         val tableInfo = tablesByAlias[alias]
         val subject =
             tableInfo?.subject(alias)
-                ?: RiskSubject(tableAlias = alias, schema = schema, table = table)
+                ?: RiskSubject(tableAlias = alias, schema = planSchema, table = table)
         if (specializedTextEvidence) {
             val textTarget = RiskTarget.Access(alias, AccessRiskKind.Text)
             replace(
@@ -103,7 +105,11 @@ fun refineRiskWithPlan(
                             continue
                         }
                     }
-                PlanAccessMethod.TableScan ->
+                // A full index scan reads the whole index, so it bands like a table scan; only
+                // true table scans can block outright because index-scan row estimates ignore
+                // ORDER BY ... LIMIT early exits.
+                PlanAccessMethod.TableScan,
+                PlanAccessMethod.FullIndexScan ->
                     when (band) {
                         EstimatedRowBand.Low -> null
                         EstimatedRowBand.Material,
@@ -117,7 +123,10 @@ fun refineRiskWithPlan(
                                 EvidenceConfidence.High,
                                 target,
                                 mandatoryBlockWhenGateEnabled =
-                                    band == EstimatedRowBand.High && tableInfo.isConfidentLarge(),
+                                    method == PlanAccessMethod.TableScan &&
+                                        band == EstimatedRowBand.High &&
+                                        (tableInfo.isConfidentLarge() ||
+                                            (estimatedRows ?: 0L) >= LARGE_TABLE_ROW_ESTIMATE),
                             )
                         null -> {
                             uncertainties +=
@@ -129,7 +138,6 @@ fun refineRiskWithPlan(
                             continue
                         }
                     }
-                PlanAccessMethod.FullIndexScan -> continue
                 PlanAccessMethod.Unknown,
                 PlanAccessMethod.Other -> {
                     uncertainties +=
@@ -146,7 +154,7 @@ fun refineRiskWithPlan(
 
     for ((kind, planAliases, estimatedRows) in plan.blockingOperations) {
         val aliases = resolvePlanAliases(planAliases, spec)
-        if (planAliases.isEmpty() || aliases.size != planAliases.size) {
+        if (planAliases.isEmpty() || aliases == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_operation_unmapped",
@@ -192,7 +200,7 @@ fun refineRiskWithPlan(
 
     for ((planAliases, estimatedOutputRows) in plan.joins) {
         val aliases = resolvePlanAliases(planAliases, spec)
-        if (planAliases.isEmpty() || aliases.size != planAliases.size) {
+        if (planAliases.isEmpty() || aliases == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_join_unmapped",
@@ -264,6 +272,38 @@ fun preserveStaticRiskForUnavailablePlan(
                 )
     )
 
+// Postgres appends a per-partition suffix to the query alias (t0_1, t0_2).
+private val partitionAliasSuffix = Regex("_\\d+$")
+
+// Partitioned scans arrive as one relation per child; collapse them onto the resolved alias so
+// summed rows band by the total scanned work instead of per-partition slices.
+private fun mergePartitionedRelations(
+    relations: List<PlanRelationAccess>,
+    spec: QuerySpec,
+): List<PlanRelationAccess> =
+    relations
+        .groupBy { relation ->
+            resolvePlanAlias(relation.alias, relation.schema, relation.table, spec)?.let { alias ->
+                alias to relation.method
+            }
+        }
+        .flatMap { (key, group) ->
+            if (key == null || group.size == 1) {
+                group
+            } else {
+                val rows = group.mapNotNull(PlanRelationAccess::estimatedRows)
+                listOf(
+                    group
+                        .first()
+                        .copy(
+                            estimatedRows = if (rows.isEmpty()) null else rows.sum(),
+                            specializedTextEvidence =
+                                group.any(PlanRelationAccess::specializedTextEvidence),
+                        )
+                )
+            }
+        }
+
 private fun resolvePlanAlias(
     alias: String?,
     schema: String?,
@@ -277,17 +317,33 @@ private fun resolvePlanAlias(
                 return it.alias
             }
     }
-    if (table == null) return null
-    val matches =
-        spec.tables.filter { ref ->
-            ref.name.equals(table, ignoreCase = true) &&
-                (schema == null || ref.schema.equals(schema, ignoreCase = true))
+    if (table != null) {
+        val matches =
+            spec.tables.filter { ref ->
+                ref.name.equals(table, ignoreCase = true) &&
+                    (schema == null || ref.schema.equals(schema, ignoreCase = true))
+            }
+        matches.singleOrNull()?.let {
+            return it.alias
         }
-    return matches.singleOrNull()?.alias
+    }
+    // Exact matches win above, so a spec alias that genuinely ends in _N is never misrouted.
+    val stripped = alias?.replace(partitionAliasSuffix, "")
+    if (stripped != null && stripped != alias) {
+        return spec.tables.singleOrNull { it.alias.equals(stripped, ignoreCase = true) }?.alias
+    }
+    return null
 }
 
-private fun resolvePlanAliases(aliases: Set<String>, spec: QuerySpec): Set<String> =
-    aliases.mapNotNullTo(linkedSetOf()) { value -> resolvePlanAlias(value, null, value, spec) }
+// Partition children resolve many-to-one onto the parent alias, so the resolved set may be
+// smaller than the plan's; null (an alias that resolves to nothing) marks true ambiguity.
+private fun resolvePlanAliases(aliases: Set<String>, spec: QuerySpec): Set<String>? {
+    val resolved = linkedSetOf<String>()
+    for (alias in aliases) {
+        resolved += resolvePlanAlias(alias, null, alias, spec) ?: return null
+    }
+    return resolved
+}
 
 private fun matchingOperationTarget(
     kind: PlanOperationKind,
@@ -324,6 +380,6 @@ private fun joinUniquenessProvesNeitherSideUnique(
         aliases.all { alias ->
             val table = tablesByAlias[alias] ?: return false
             table.indexMetadata.isComplete &&
-                !exactUniqueJoinKey(table, joinedColumns(alias, joins))
+                !provenUniqueJoinKey(table, joinedColumns(alias, joins))
         }
 }

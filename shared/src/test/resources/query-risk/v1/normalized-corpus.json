@@ -1,5 +1,5 @@
 {
-  "score_version": 2,
+  "score_version": 1,
   "cases": [
     {
       "id": "postgres-indexed-equality",
@@ -78,6 +78,62 @@
       "expected_signal_codes": ["NoEffectiveRestriction"],
       "expected_uncertainty_codes": ["table_size_unknown"],
       "expected_gate_state": "Allowed"
+    },
+    {
+      "id": "postgres-fk-join-without-supporting-index-blocks-cautious",
+      "dialect": "Postgres",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "join": "FkWithoutSupportingIndex",
+      "gate": "Cautious",
+      "expected_score": 6,
+      "expected_severity": "High",
+      "expected_category_scores": {"Access":4,"Joins":4,"Operations":0,"Volume":0},
+      "expected_signal_codes": ["NoEffectiveRestriction","AdditionalJoinedRelation","ForeignKeyWithoutSupportingIndex","JoinExpansionPossible"],
+      "expected_gate_state": "Blocked"
+    },
+    {
+      "id": "mysql-fk-join-without-supporting-index-passes-flexible",
+      "dialect": "MySql",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "join": "FkWithoutSupportingIndex",
+      "gate": "Flexible",
+      "expected_score": 6,
+      "expected_severity": "High",
+      "expected_category_scores": {"Access":4,"Joins":4,"Operations":0,"Volume":0},
+      "expected_signal_codes": ["NoEffectiveRestriction","AdditionalJoinedRelation","ForeignKeyWithoutSupportingIndex","JoinExpansionPossible"],
+      "expected_gate_state": "Allowed"
+    },
+    {
+      "id": "mssql-non-unique-join-passes-standard",
+      "dialect": "Mssql",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "join": "NonUniqueJoin",
+      "gate": "Standard",
+      "expected_score": 5,
+      "expected_severity": "Elevated",
+      "expected_category_scores": {"Access":4,"Joins":2,"Operations":0,"Volume":0},
+      "expected_signal_codes": ["NoEffectiveRestriction","AdditionalJoinedRelation","JoinExpansionPossible"],
+      "expected_gate_state": "Allowed"
+    },
+    {
+      "id": "oracle-three-table-chain-blocks-flexible",
+      "dialect": "Oracle",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "join": "ThreeTableChain",
+      "gate": "Flexible",
+      "expected_score": 8,
+      "expected_severity": "VeryHigh",
+      "expected_category_scores": {"Access":6,"Joins":4,"Operations":0,"Volume":0},
+      "expected_signal_codes": ["NoEffectiveRestriction","AdditionalJoinedRelation","JoinExpansionPossible"],
+      "expected_gate_state": "Blocked"
     }
   ]
 }

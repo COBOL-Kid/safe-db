@@ -44,7 +44,7 @@ class QueryRiskTest {
         val signals =
             listOf(
                 signal(RiskCategory.Access, 10),
-                signal(RiskCategory.Joins, 3),
+                signal(RiskCategory.Joins, 7),
                 signal(RiskCategory.Operations, 7),
                 signal(RiskCategory.Volume, 3),
             )
@@ -53,13 +53,13 @@ class QueryRiskTest {
         assertEquals(
             mapOf(
                 RiskCategory.Access to 6,
-                RiskCategory.Joins to 2,
+                RiskCategory.Joins to 4,
                 RiskCategory.Operations to 4,
                 RiskCategory.Volume to 2,
             ),
             assessment.categoryScores,
         )
-        assertEquals(10, assessment.score)
+        assertEquals(11, assessment.score)
     }
 
     @Test
@@ -592,6 +592,103 @@ class QueryRiskTest {
     }
 
     @Test
+    fun uniqueKeyOnSubsetOfJoinedColumnsProvesUniqueness() {
+        val query =
+            spec(
+                tables =
+                    listOf(
+                        TableRef("public", "left_side", "t0"),
+                        TableRef("public", "right_side", "t1"),
+                    ),
+                columns = listOf(ColumnSel("t0", "id")),
+                joins =
+                    listOf(
+                        JoinSpec("t0", "id", "t1", "id"),
+                        JoinSpec("t0", "tenant_id", "t1", "tenant_id"),
+                    ),
+            )
+        val assessment =
+            assess(
+                query,
+                listOf(
+                    table(
+                        "left_side",
+                        columns =
+                            listOf(
+                                column("id").copy(joinEligible = true),
+                                column("tenant_id").copy(joinEligible = true),
+                            ),
+                        indexes =
+                            listOf(
+                                index("left_pk", listOf(IndexKey("id")), unique = true),
+                                index("left_tenant", listOf(IndexKey("tenant_id"))),
+                            ),
+                    ),
+                    table(
+                        "right_side",
+                        columns =
+                            listOf(
+                                column("id").copy(joinEligible = true),
+                                column("tenant_id").copy(joinEligible = true),
+                            ),
+                        indexes =
+                            listOf(
+                                index("right_id", listOf(IndexKey("id"))),
+                                index("right_tenant", listOf(IndexKey("tenant_id"))),
+                            ),
+                    ),
+                ),
+            )
+
+        assertFalse(assessment.signals.any { it.code == RiskSignalCode.JoinExpansionPossible })
+    }
+
+    @Test
+    fun specializedTextPathOnOneColumnDoesNotHideScanProneTextOnAnother() {
+        val specializedNotes =
+            IndexInfo(
+                name = "notes_trgm",
+                columns = listOf("notes"),
+                keys = listOf(IndexKey("notes")),
+                capabilities =
+                    IndexCapabilities(
+                        equality = false,
+                        ordering = false,
+                        specializedText = true,
+                        expressionKeys = false,
+                        partialPredicate = false,
+                        includedColumns = false,
+                    ),
+                isPartial = false,
+            )
+        val assessment =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "notes")),
+                    filters =
+                        group(
+                            leaf("t0", "notes", FilterOp.Contains, "needle"),
+                            leaf("t0", "details", FilterOp.Contains, "needle"),
+                        ),
+                ),
+                listOf(
+                    table(
+                        columns =
+                            listOf(
+                                column("notes", ColumnCategory.Text),
+                                column("details", ColumnCategory.Text),
+                            ),
+                        indexes = listOf(specializedNotes),
+                    )
+                ),
+            )
+
+        val scanProne =
+            assessment.signals.filter { it.code == RiskSignalCode.ScanProneTextPredicate }
+        assertEquals(listOf("details"), scanProne.map { it.subject.column })
+    }
+
+    @Test
     fun joinedAliasesAreBoundedIndependently() {
         val assessment =
             assess(
@@ -727,6 +824,92 @@ class QueryRiskTest {
 
         assertEquals(1, assessment.signals.count { it.category == RiskCategory.Volume })
         assertTrue(assessment.signals.any { it.code == RiskSignalCode.HighProjectedPayload })
+    }
+
+    @Test
+    fun duplicateSelectionCountsProjectedWidthOnce() {
+        val assessment =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "payload"), ColumnSel("t0", "payload")),
+                    limit = 1_000,
+                ),
+                listOf(
+                    table(
+                        columns = listOf(column("payload", ColumnCategory.Binary)),
+                        indexes = emptyList(),
+                    )
+                ),
+            )
+
+        assertEquals(0, assessment.signals.count { it.category == RiskCategory.Volume })
+    }
+
+    @Test
+    fun startsWithOnEqualityOnlyIndexHasNoCompatiblePath() {
+        val hashIndex =
+            IndexInfo(
+                name = "orders_name_hash",
+                columns = listOf("name"),
+                keys = listOf(IndexKey("name")),
+                kind = "HASH",
+                capabilities =
+                    IndexCapabilities(
+                        equality = true,
+                        ordering = false,
+                        specializedText = false,
+                        expressionKeys = false,
+                        partialPredicate = false,
+                        includedColumns = false,
+                    ),
+                isPartial = false,
+            )
+        val assessment =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "name")),
+                    filters = group(leaf("t0", "name", FilterOp.StartsWith, "ab")),
+                ),
+                listOf(
+                    table(
+                        columns = listOf(column("name", ColumnCategory.Text)),
+                        indexes = listOf(hashIndex),
+                    )
+                ),
+            )
+
+        assertTrue(assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath })
+    }
+
+    @Test
+    fun equalityPrefixThenStartsWithOnOrderedIndexIsCompatible() {
+        val assessment =
+            assess(
+                spec(
+                    columns = listOf(ColumnSel("t0", "account_id")),
+                    filters =
+                        group(
+                            leaf("t0", "account_id", FilterOp.Eq, "1"),
+                            leaf("t0", "name", FilterOp.StartsWith, "ab"),
+                        ),
+                ),
+                listOf(
+                    table(
+                        columns = listOf(column("account_id"), column("name", ColumnCategory.Text)),
+                        indexes =
+                            listOf(
+                                index(
+                                    "orders_account_name",
+                                    listOf(IndexKey("account_id"), IndexKey("name")),
+                                )
+                            ),
+                    )
+                ),
+            )
+
+        assertFalse(
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+        )
     }
 
     @Test

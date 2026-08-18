@@ -659,6 +659,21 @@ class ApplyExploreTest {
     }
 
     @Test
+    fun querySampleWarningsAreNotCopiedIntoPivotPreview() {
+        val preview =
+            applyExplore(
+                sampleResult().copy(warnings = listOf("No columns selected — query will select all columns")),
+                ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("t0__status")),
+                    showColumnTotals = false,
+                ),
+            )
+
+        assertEquals(emptyList(), preview.warnings)
+        assertEquals(emptyList(), preview.result.warnings)
+    }
+
+    @Test
     fun guardsExcessiveVisibleColumnCardinality() {
         val rows =
             (1..510).map { index ->

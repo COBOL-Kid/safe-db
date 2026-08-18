@@ -11,10 +11,12 @@ import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
+import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.GroupSpec
 import com.safedb.model.IndexCapabilities
 import com.safedb.model.IndexInfo
 import com.safedb.model.IndexKey
+import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.MetadataCoverage
 import com.safedb.model.Outcome
@@ -36,7 +38,7 @@ class QueryRiskCorpusTest {
     @Test
     fun versionedCrossDialectCorpusMatchesGoldenOutcomes() {
         val resource =
-            requireNotNull(javaClass.getResource("/query-risk/v2/normalized-corpus.json"))
+            requireNotNull(javaClass.getResource("/query-risk/v1/normalized-corpus.json"))
         val corpus = SafeDbJson.lenient.decodeFromString<RiskCorpus>(resource.readText())
         assertEquals(QUERY_RISK_SCORE_VERSION, corpus.scoreVersion)
 
@@ -84,6 +86,7 @@ private data class RiskCorpusCase(
     @SerialName("size_class") val sizeClass: TableSizeClass = TableSizeClass.Medium,
     val confidence: EvidenceConfidence = EvidenceConfidence.Medium,
     val gate: QueryRiskGate = QueryRiskGate.Standard,
+    val join: CorpusJoin = CorpusJoin.None,
     @SerialName("expected_score") val expectedScore: Int,
     @SerialName("expected_severity") val expectedSeverity: QueryRiskSeverity,
     @SerialName("expected_category_scores") val expectedCategoryScores: Map<RiskCategory, Int>,
@@ -96,7 +99,14 @@ private data class RiskCorpusCase(
         val notes = predicate == CorpusPredicate.BroadTextWithoutIndex
         val column =
             if (notes) ColumnInfo("notes", "text", true, category = ColumnCategory.Text)
-            else ColumnInfo("id", "int", false, category = ColumnCategory.Integer)
+            else
+                ColumnInfo(
+                    "id",
+                    "int",
+                    false,
+                    joinEligible = join != CorpusJoin.None,
+                    category = ColumnCategory.Integer,
+                )
         val indexes =
             if (predicate == CorpusPredicate.IndexedEquality) {
                 listOf(
@@ -119,6 +129,9 @@ private data class RiskCorpusCase(
             } else {
                 emptyList()
             }
+        val size =
+            if (sizeClass == TableSizeClass.Unknown) TableSizeEstimate()
+            else TableSizeEstimate(sizeClass, MetadataCoverage.complete(), confidence)
         val table =
             TableInfo(
                 "public",
@@ -127,9 +140,7 @@ private data class RiskCorpusCase(
                 indexes,
                 indexMetadata = MetadataCoverage.complete(),
                 foreignKeyMetadata = MetadataCoverage.complete(),
-                tableSize =
-                    if (sizeClass == TableSizeClass.Unknown) TableSizeEstimate()
-                    else TableSizeEstimate(sizeClass, MetadataCoverage.complete(), confidence),
+                tableSize = size,
             )
         val filters =
             when (predicate) {
@@ -167,22 +178,88 @@ private data class RiskCorpusCase(
                             ),
                     )
             }
+        val tables = mutableListOf(table)
+        val tableRefs = mutableListOf(TableRef("public", "orders", "t0"))
+        val joins = mutableListOf<JoinSpec>()
+        if (join != CorpusJoin.None) {
+            tableRefs += TableRef("public", "items", "t1")
+            joins += JoinSpec("t0", "id", "t1", "order_id")
+            tables +=
+                joinedTable(
+                    "items",
+                    size,
+                    fkToOrders = join == CorpusJoin.FkWithoutSupportingIndex,
+                )
+        }
+        if (join == CorpusJoin.ThreeTableChain) {
+            tableRefs += TableRef("public", "events", "t2")
+            joins += JoinSpec("t1", "id", "t2", "item_id")
+            tables += joinedTable("events", size, keyColumn = "item_id")
+        }
         val selected = if (notes) "notes" else "id"
         val spec =
             QuerySpec(
-                tables = listOf(TableRef("public", "orders", "t0")),
+                tables = tableRefs,
                 columns = listOf(ColumnSel("t0", selected)),
+                joins = joins,
                 filters = filters,
                 limit = limit,
                 groups = if (blockingOperation) listOf(GroupSpec("t0", selected)) else emptyList(),
             )
-        return spec to Schema(listOf(table))
+        return spec to Schema(tables)
     }
 }
+
+private fun joinedTable(
+    name: String,
+    size: TableSizeEstimate,
+    keyColumn: String = "order_id",
+    fkToOrders: Boolean = false,
+): TableInfo =
+    TableInfo(
+        "public",
+        name,
+        listOf(
+            ColumnInfo("id", "int", false, joinEligible = true, category = ColumnCategory.Integer),
+            ColumnInfo(
+                keyColumn,
+                "int",
+                false,
+                joinEligible = true,
+                category = ColumnCategory.Integer,
+            ),
+        ),
+        indexes = emptyList(),
+        foreignKeys =
+            if (fkToOrders) {
+                listOf(
+                    ForeignKeyInfo(
+                        "fk_${name}_order",
+                        listOf(keyColumn),
+                        "public",
+                        "orders",
+                        listOf("id"),
+                    )
+                )
+            } else {
+                emptyList()
+            },
+        indexMetadata = MetadataCoverage.complete(),
+        foreignKeyMetadata = MetadataCoverage.complete(),
+        tableSize = size,
+    )
 
 @Serializable
 private enum class CorpusPredicate {
     None,
     IndexedEquality,
     BroadTextWithoutIndex,
+}
+
+@Serializable
+private enum class CorpusJoin {
+    None,
+    FkWithoutSupportingIndex,
+    NonUniqueJoin,
+    ThreeTableChain,
 }
