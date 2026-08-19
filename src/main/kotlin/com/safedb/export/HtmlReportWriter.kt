@@ -454,6 +454,8 @@ internal fun buildChartSection(
                     d = mark.sourceRowIndices.takeIf { it.isNotEmpty() },
                 )
             }
+        // Kpi cannot reach here: buildChartSection returns a KPI tile before shape emission.
+        ChartType.Kpi,
         ChartType.Auto,
         null -> Unit
     }
