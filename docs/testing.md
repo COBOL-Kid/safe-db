@@ -4,10 +4,11 @@
 | --- | --- |
 | `./gradlew help` | Validate root Gradle configuration after build logic changes. |
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
-| `./gradlew check` | Fast gate: desktop/shared unit tests, discovery, and Kover ratchets. |
+| `./gradlew check` | Fast gate: desktop/shared unit tests, discovery, Docker harness orchestration, and Kover ratchets. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh coverage proof for broad Kotlin/build changes. |
 | `./gradlew integrationTest` | Environment-gated `:shared` JDBC suite. |
 | `./gradlew renderPreview --rerun-tasks` | Render 44 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
+| `./gradlew renderHeroFrames` | Render the query-builder build-up sequence to `/tmp/safedb-preview/hero/`. |
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
 | `./gradlew seedMysql` | Generate the default 50,000-order MySQL fixture. |
 | `./gradlew seedPostgres` | Generate the default fixture in the Docker PostgreSQL endpoint. |

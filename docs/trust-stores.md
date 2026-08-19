@@ -33,7 +33,7 @@ For a protected password file, replace `password` with:
 
 ## Password provisioning
 
-For `credentialStore`, create a generic platform credential with service `com.safedb.app.trust-store` and the profile reference as its account. Windows uses the target `service|account`; macOS uses the same values as service and account. Use Keychain, Credential Manager, MDM, or a secret-management workflow—not command history. This lookup uses the strict platform backend and never falls back to the in-memory connection store, including when `SAFEDB_KEYCHAIN_BACKEND=disabled` is set for development or CI.
+For `credentialStore`, create a generic platform credential with service `com.safedb.app.trust-store` and the profile reference as its account. Windows uses the target `service|account`; macOS uses the same values as service and account. Use Keychain, Credential Manager, MDM, or a secret-management workflow, not command history. This lookup uses the strict platform backend and never falls back to the in-memory connection store, including when `SAFEDB_KEYCHAIN_BACKEND=disabled` is set for development or CI.
 
 For `file`, store one UTF-8 line. A final LF or CRLF is removed; other whitespace is preserved. Keep it outside the application and source tree, normally mode `0600` on macOS or an ACL limited to the user, SYSTEM, and required administrators on Windows.
 
@@ -41,7 +41,7 @@ For `file`, store one UTF-8 line. A final LF or CRLF is removed; other whitespac
 
 For verified PostgreSQL, MySQL, and SQL Server connections, launch profiles are the only custom trust-store path. Without one, MySQL and SQL Server use normal JVM trust, PostgreSQL retains pgjdbc's standard trust and client-certificate behavior, and Oracle remains wallet-based. The profile records only a password source: secret passwords never appear in JSON, command arguments, environment variables, or logs. PostgreSQL receives a temporary trusted-roots PEM derived from the PKCS12 certificates; MySQL and SQL Server use JSSE properties.
 
-Import only independently verified CA certificates—never private keys—and restart after changing the profile, store, or password.
+Import only independently verified CA certificates, never private keys, and restart after changing the profile, store, or password.
 
 ## Compatibility verification
 
