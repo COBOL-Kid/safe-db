@@ -239,6 +239,13 @@ tasks.register<JavaExec>("renderPreview") {
     mainClass.set("com.safedb.tools.RenderPreviewKt")
 }
 
+tasks.register<JavaExec>("renderReportExport") {
+    group = "safe-db"
+    description = "Export a genuine Explore HTML report to /tmp/safedb-preview/report."
+    classpath = render.runtimeClasspath
+    mainClass.set("com.safedb.tools.RenderReportExportKt")
+}
+
 tasks.register<JavaExec>("renderHeroFrames") {
     group = "safe-db"
     description = "Render the query-builder build-up sequence to /tmp/safedb-preview/hero."
