@@ -18,7 +18,7 @@ macOS and Windows, built with Compose Desktop.
 **JDK 25** && **Gradle**
 
 *Run the app:* `./gradlew run` 
-*Unit tests, discovery, coverage:* `./gradlew check` 
+*Unit tests, discovery, Docker harness orchestration, Kover coverage ratchets:* `./gradlew check` 
 *Unsigned installer:* `./gradlew packageDistributionForCurrentOS` 
 *Integration tests, Docker fixtures, headless UI renders, and seeders:* [docs/testing.md](docs/testing.md). 
 *TLS launch profiles and managed trust stores:* [docs/trust-stores.md](docs/trust-stores.md).
@@ -45,7 +45,7 @@ App data lives in `~/Library/Application Support/com.safedb.app/` on macOS and `
 ## Contributing
 
 - **Fix a bug, polish copy, add a test, improve docs.** All of that counts.
-- **Run `./gradlew check`** before you open a pull request. That is the fast gate: unit tests, test discovery, and coverage.
+- **Run `./gradlew check`** before you open a pull request. That is the fast gate: unit tests, test discovery, Docker harness orchestration, and Kover coverage ratchets.
 - **Need a real database?** [docs/testing.md](docs/testing.md) covers optional JDBC suites and the Docker stack. Integration tests skip when a fixture isn't around, so you can ship a unit-test change without standing up four engines.
 - **CI is on demand.** A maintainer applies the `ci:run` label to run `check` plus the required static-MySQL suite. After new commits, remove and reapply the label. Cross-platform durability is a manual **Run workflow** in GitHub Actions; see [.github/workflows](.github/workflows/).
 - **AI-assisted submissions are welcome.** We have deliberately not shipped `AGENTS.md` or `CLAUDE.md` instruction files. The absence of docs does not mean anything goes: keep changes scoped, match the existing style, and be respectful of reviewers' time.
