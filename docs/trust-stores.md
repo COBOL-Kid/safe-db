@@ -1,5 +1,7 @@
 # External trust stores
 
+This page is the launch-profile schema, fail-closed startup, and how to verify it. End-user TLS copy lives at [https://www.safe-db.dev/docs](https://www.safe-db.dev/docs).
+
 Managed installations can load a PKCS12 trust store at startup without putting its path or password in a saved connection. The selected profile is read after the supported-platform check but before Compose, JDBC, the credential session, or the data directory initializes; an invalid profile fails startup rather than weakening trust.
 
 ## Profile and launch

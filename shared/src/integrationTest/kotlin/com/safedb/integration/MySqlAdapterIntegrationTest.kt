@@ -177,7 +177,6 @@ class MySqlAdapterIntegrationTest {
         assertEquals(false, mySqlBackslashEscapes(pinned))
         val (pinnedMode, pinnedValue) = serverEvaluation(pinned)
         assertTrue(pinnedMode.contains("NO_BACKSLASH_ESCAPES"))
-        // Server and Safe-DB agree on the literal under the pinned session mode.
         assertEquals("a\\q", pinnedValue)
         val pinnedToken =
             tokenizeSql("'a\\q'", Dialect.MySql, mySqlBackslashEscapes(pinned)).single()

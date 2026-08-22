@@ -70,8 +70,8 @@ internal data class VisualizationGeometry(
     val plot: Rect,
     val yMin: Double,
     val yMax: Double,
-    // xKey -> center along the category axis: x for vertical bars/line/scatter, y for horizontal
-    // bars
+    // xKey -> center along the category axis: x for vertical bars/line/scatter, y for
+    // horizontal bars
     val categoryCenters: Map<String, Float> = emptyMap(),
 )
 
@@ -512,7 +512,6 @@ private fun PlotChart(
                         max(category + gapPx * 2f, tickWidth / 2f + gapPx)
                             .coerceIn(minGutter, maxGutter),
                     top = top,
-                    // The last bottom tick is centered on plot.right.
                     right = max(28f, tickWidth / 2f + gapPx),
                     bottom = bottom,
                 )

@@ -35,8 +35,6 @@ import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
 import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.SchemaViewModel
 
-// Shared chrome for the connected screens (SQL, Map): title block, connection and schema pickers,
-// and a trailing divider. Screen-specific controls slot in via trailingActions/bottomContent.
 @Composable
 internal fun WorkspaceScreenHeader(
     icon: ImageVector,
@@ -127,7 +125,6 @@ internal fun SchemaHistoryErrorBanner(
 
 internal data class SchemaFallback(val schema: String, val warning: String?)
 
-// Decides whether a finished load needs a display-only fallback to the first available schema.
 internal fun resolveSchemaFallback(
     loaded: Boolean,
     selectedSchema: String?,
@@ -139,10 +136,8 @@ internal fun resolveSchemaFallback(
     return SchemaFallback(first, preferredSchemaWarning?.let { "$it Showing \"$first\" instead." })
 }
 
-// Loads the schema whenever the connection or requested selection changes, falling back to the
-// first available schema (with a warning in the returned state) when the remembered one is gone.
-// The fallback is display-only: it never goes through the user-pick handler, so it cannot
-// overwrite remembered schema history.
+// Fallback is display-only: it never goes through the user-pick handler, so it cannot overwrite
+// remembered schema history.
 @Composable
 internal fun rememberSchemaLoad(
     connection: ConnectionDef?,

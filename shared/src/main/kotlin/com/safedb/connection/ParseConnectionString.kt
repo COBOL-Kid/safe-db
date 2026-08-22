@@ -736,9 +736,9 @@ fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
             "mysql://${encodeComponent(def.username)}@${def.host}:${def.port}/${encodeComponent(def.database)}?$query"
         }
         Dialect.Mssql -> {
-            // Deliberately not shared with applyMssqlSsl: an exported string carries only the
-            // properties a driver needs to reproduce the mode, while connecting also pins
-            // hostNameInCertificate.
+            // Deliberately not shared with applyMssqlSsl: an exported string carries only
+            // the properties a driver needs to reproduce the mode, while connecting also
+            // pins hostNameInCertificate.
             val security =
                 when (def.transportSecurity.mode) {
                     TransportSecurityMode.VerifyIdentity,

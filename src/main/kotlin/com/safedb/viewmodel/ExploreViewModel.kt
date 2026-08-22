@@ -350,8 +350,7 @@ class ExploreViewModel(
         )
     }
 
-    // A null spec means the origin screen has nothing runnable right now, which matches no
-    // executed query.
+    // A null spec means the origin screen has nothing runnable right now, which matches no executed query.
     fun isStale(
         currentSpec: QuerySpec?,
         currentConnectionId: String? = session.connectionId,

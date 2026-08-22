@@ -50,7 +50,6 @@ fun sqlKeywords(dialect: Dialect): Set<String> =
 // Completion may offer the clause words even though they are not reserved.
 fun sqlCompletionKeywords(dialect: Dialect): Set<String> = sqlKeywords(dialect) + CLAUSE_WORDS
 
-// First words that identify a non-SELECT statement for the "read-only" rejection.
 internal val BLOCKED_STATEMENT_STARTERS =
     setOf(
         "UPDATE",

@@ -68,11 +68,9 @@ private class SqlSpecBuilder(
                 val leftRef = resolveColumn(left)
                 val rightRef = resolveColumn(right)
                 // Every ON conjunct becomes an edge in the builder's join graph, and
-                // buildJoinClause
-                // only emits edges touching the alias being introduced. A conjunct that links two
-                // other aliases — or an alias to itself — would be dropped from the compiled SQL
-                // and
-                // silently widen the result set, so reject it here instead.
+                // buildJoinClause only emits edges touching the alias being introduced. A conjunct
+                // that links two other aliases — or an alias to itself — would be dropped from the
+                // compiled SQL and silently widen the result set, so reject it here instead.
                 val linksJoinedTable =
                     (leftRef.first == joined.alias) != (rightRef.first == joined.alias)
                 if (!linksJoinedTable) {
@@ -122,14 +120,13 @@ private class SqlSpecBuilder(
         return SqlParseResult.Success(spec, notes)
     }
 
-    // --- Identifier resolution -------------------------------------------------------------
-    //
     // One policy, applied everywhere. A quoted identifier means exactly what it spells, so it only
-    // ever matches verbatim. An unquoted one is folded by the database before lookup — Postgres
-    // lowercases, Oracle uppercases, MySQL and SQL Server compare case-insensitively — so the
-    // folded
-    // spelling is tried first and a case-insensitive sweep only serves as a fallback. Every tier
-    // fails on more than one match rather than binding whichever object happens to come first.
+    // ever matches verbatim — except quoted MySQL column lookups, which enable the
+    // case-insensitive fallback via quotedCaseInsensitive. An unquoted one is folded by the
+    // database before lookup — Postgres lowercases, Oracle uppercases, MySQL and SQL Server
+    // compare case-insensitively — so the folded spelling is tried first and a case-insensitive
+    // sweep only serves as a fallback. Every tier fails on more than one match rather than
+    // binding whichever object happens to come first.
 
     private fun exactSpelling(ident: SqlIdent): String =
         if (ident.quoted) ident.name else foldUnquoted(ident.name, dialect)
@@ -243,9 +240,9 @@ private class SqlSpecBuilder(
         }
     }
 
-    // Aliases win over table names, matching SQL scoping: once a table is aliased, the table name
-    // is
-    // no longer a valid qualifier. Both tiers reject ambiguity rather than taking the first match.
+    // Aliases are tried first so they win when an alias collides with another table's name.
+    // A table name remains a valid qualifier after aliasing and maps onto that instance's
+    // alias. Both tiers reject ambiguity rather than taking the first match.
     private fun resolveQualifier(ident: SqlIdent): ResolvedTable {
         val onMissing: () -> Nothing = {
             fail(
@@ -459,8 +456,8 @@ private class SqlSpecBuilder(
                 when {
                     parseDateTimeLiteral(raw).isSuccess -> FilterLiteral(kind, raw)
                     // Postgres and MySQL both accept a bare date against a timestamp column, so
-                    // widen
-                    // it to midnight rather than failing validation after the query looks runnable.
+                    // widen it to midnight rather than failing validation after the query looks
+                    // runnable.
                     parseDateLiteral(raw).isSuccess -> FilterLiteral(kind, "${raw.trim()}T00:00:00")
                     else ->
                         fail(

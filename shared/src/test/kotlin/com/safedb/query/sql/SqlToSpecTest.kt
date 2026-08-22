@@ -364,8 +364,7 @@ class SqlToSpecTest {
     @Test
     fun onConditionMustLinkTheJoinedTable() {
         // The second conjunct is not a join-graph edge, so buildJoinClause would have dropped it
-        // and
-        // executed a broader query than written.
+        // and executed a broader query than written.
         val issue =
             failure(
                 "SELECT u.id FROM users u JOIN categories c " +

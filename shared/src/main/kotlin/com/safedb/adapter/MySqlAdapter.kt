@@ -14,8 +14,8 @@ internal fun mysqlIndexCapabilities(kind: String): IndexCapabilities =
     IndexCapabilities(
         equality = kind in setOf("BTREE", "HASH"),
         ordering = kind == "BTREE",
-        // Builder text predicates compile to LIKE, not MATCH ... AGAINST, so FULLTEXT is not
-        // compatible.
+        // Builder text predicates compile to LIKE, not MATCH ... AGAINST, so FULLTEXT is
+        // not compatible.
         specializedText = false,
         expressionKeys = true,
         partialPredicate = false,

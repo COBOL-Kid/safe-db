@@ -119,8 +119,8 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
         exploreViewModel?.let { explore ->
             val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
             val exploreOrigin by viewModel.exploreOrigin.collectAsState()
-            // The session refreshes from whichever screen produced it, so staleness and the
-            // refreshed sample must come from that screen's current state.
+            // The session refreshes from whichever screen produced it, so staleness and the refreshed
+            // sample must come from that screen's current state.
             val sqlSpec = (sqlParseResult as? SqlParseResult.Success)?.spec
             val currentSpec =
                 when (exploreOrigin) {

@@ -459,9 +459,9 @@ fun Canvas(
                                     }
                                     event.changes.forEach { it.consume() }
                                 }
-                                // Act on the line captured at press time. Re-hit-testing on
-                                // release misses when the cursor drifts off the thin line or
-                                // when the routed edges changed between press and release.
+                                // Act on the line captured at press time. Re-hit-testing on release
+                                // misses when the cursor drifts off the thin line or when the
+                                // routed edges changed between press and release.
                                 when (pressedJoinLine) {
                                     is ClickableJoinLine.Existing ->
                                         queryViewModel.removeJoin(pressedJoinLine.join)

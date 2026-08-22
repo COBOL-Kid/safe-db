@@ -105,8 +105,8 @@ fun refineRiskWithPlan(
                             continue
                         }
                     }
-                // A full index scan reads the whole index, so it bands like a table scan; only
-                // true table scans can block outright because index-scan row estimates ignore
+                // A full index scan reads the whole index, so it bands like a table scan;
+                // only true table scans can block outright because index-scan row estimates ignore
                 // ORDER BY ... LIMIT early exits.
                 PlanAccessMethod.TableScan,
                 PlanAccessMethod.FullIndexScan ->

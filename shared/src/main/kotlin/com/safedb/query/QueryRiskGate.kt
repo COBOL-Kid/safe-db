@@ -89,8 +89,8 @@ fun applyRiskGate(
             assessment.signals
                 .sortedWith(
                     compareByDescending<RiskSignal> { it.mandatoryBlockWhenGateEnabled }
-                        // EvidenceConfidence declares High first, so ascending ordinal is
-                        // descending confidence.
+                        // EvidenceConfidence declares High first, so ascending ordinal
+                        // is descending confidence.
                         .thenBy { it.confidence.ordinal }
                         .thenByDescending(RiskSignal::points)
                 )

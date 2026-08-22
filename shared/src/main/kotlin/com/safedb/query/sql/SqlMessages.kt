@@ -1,6 +1,5 @@
 package com.safedb.query.sql
 
-// All user-facing rejection copy for the SQL screen lives here.
 internal object SqlMessages {
     fun notSelect(found: String) =
         "Only SELECT statements can run here — Safe-DB is read-only. (found ${sqlWord(found)})"

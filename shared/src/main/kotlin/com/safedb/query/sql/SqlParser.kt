@@ -115,7 +115,6 @@ private class SqlParser(
                     topToken.span,
                 )
             }
-            // MSSQL accepts both `TOP 7` and `TOP (7)`.
             val parenthesized = peek()?.type == SqlTokenType.LeftParen
             if (parenthesized) advance()
             topLimit = parseLimitNumber()

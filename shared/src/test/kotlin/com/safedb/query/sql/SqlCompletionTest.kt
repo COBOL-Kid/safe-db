@@ -140,8 +140,7 @@ class SqlCompletionTest {
     @Test
     fun schemaDotOffersThatSchemasTables() {
         // `public.` used to be scanned as a table named "public", which resolved to nothing and
-        // left
-        // the popup empty.
+        // left the popup empty.
         val result = complete("SELECT id FROM public.")
         assertEquals(
             listOf("categories", "users"),

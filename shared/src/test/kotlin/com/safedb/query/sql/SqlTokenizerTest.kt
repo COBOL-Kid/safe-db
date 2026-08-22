@@ -287,7 +287,6 @@ class SqlTokenizerTest {
                 it.type == SqlTokenType.Comment
             }
         )
-        // Other dialects keep the ANSI rule.
         assertTrue(
             tokenizeSql("SELECT id FROM t WHERE a = --2", Dialect.Postgres).any {
                 it.type == SqlTokenType.Comment
