@@ -17,7 +17,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.0.1"
+version = "0.1.0"
 
 kotlin { jvmToolchain(25) }
 
