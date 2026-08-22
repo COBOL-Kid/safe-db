@@ -53,7 +53,6 @@ class ResultsTableLayoutTest {
                 warnings = emptyList(),
             )
 
-        // Unaliased SQL: the table name itself is the alias prefix to strip.
         val unaliased =
             buildResultTableColumns(
                 result("users__id"),
@@ -61,7 +60,6 @@ class ResultsTableLayoutTest {
             )
         assertEquals(listOf("id"), unaliased.map { it.label })
 
-        // Explicit alias.
         val aliased =
             buildResultTableColumns(result("u__id"), listOf(TableRef("public", "users", "u")))
         assertEquals(listOf("id"), aliased.map { it.label })

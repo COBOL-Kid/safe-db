@@ -67,8 +67,8 @@ private val SENSITIVE_DRIVER_PROPERTY_FRAGMENTS =
 
 private val SENSITIVE_DRIVER_PROPERTY_NAMES =
     setOf(
-        // Microsoft JDBC's deprecated Azure Key Vault client-secret property does not contain a
-        // generic secret fragment.
+        // Microsoft JDBC's deprecated Azure Key Vault client-secret property does not
+        // contain a generic secret fragment.
         "keyvaultproviderclientkey"
     )
 

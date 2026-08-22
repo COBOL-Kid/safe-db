@@ -2,11 +2,9 @@ package com.safedb.buildlogic
 
 import org.gradle.api.GradleException
 
-/**
- * Splits the value of a `-Pseed<Dialect>Args=...` property into seeder arguments the way a POSIX
- * shell would: unquoted whitespace separates arguments, single and double quotes group them, and a
- * backslash escapes the next character. The `scripts/seed_*.sh` wrappers produce this encoding.
- */
+// Splits `-Pseed<Dialect>Args=...` the way a POSIX shell would: unquoted whitespace separates
+// arguments, quotes group them, and a backslash escapes the next character. The `scripts/seed_*.sh`
+// wrappers produce this encoding.
 fun splitSeedTaskArgs(raw: String, propertyName: String): List<String> {
     val args = mutableListOf<String>()
     val current = StringBuilder()

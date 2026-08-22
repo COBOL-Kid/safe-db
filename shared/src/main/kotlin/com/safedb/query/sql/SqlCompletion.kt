@@ -32,7 +32,6 @@ data class SqlCompletionRequest(
 
 data class SqlCompletionResult(
     val items: List<SqlCompletionItem>,
-    // Character range of the word being completed; inserted text replaces this range.
     val replaceStart: Int,
     val replaceEnd: Int,
 )
@@ -242,7 +241,6 @@ private fun columnCompletions(
     return aliases + columns.sortedBy { it.label }
 }
 
-// Lightweight scan of FROM/JOIN clauses; resolution failures simply yield no columns.
 private fun scanStatementTables(
     tokens: List<SqlToken>,
     request: SqlCompletionRequest,

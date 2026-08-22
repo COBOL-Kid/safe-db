@@ -668,9 +668,9 @@ private fun SidebarUtilities(
                                     .clip(RoundedCornerShape(50))
                                     .background(SafeDbTheme.colors.success)
                         )
-                        // Single-line: during the width animation this slot can shrink to ~0
-                        // wide, and wrapped text would grow tall enough to squeeze the last
-                        // nav rows (Map/History icons visibly shift up).
+                        // Single-line: during the width animation this slot can shrink to ~0 wide,
+                        // and wrapped text would grow tall enough to squeeze the last nav rows
+                        // (Map/History icons visibly shift up).
                         Column {
                             Text(
                                 "Safe Read Mode",

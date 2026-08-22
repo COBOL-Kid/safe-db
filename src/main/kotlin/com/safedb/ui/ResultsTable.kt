@@ -56,7 +56,6 @@ import com.safedb.ui.theme.SafeDbTheme
 fun ResultsTable(
     result: QueryResult,
     modifier: Modifier = Modifier,
-    // TableRefs of the spec that produced the result; used to strip alias prefixes from headers.
     tables: List<TableRef> = emptyList(),
     actions: @Composable RowScope.() -> Unit = {},
 ) {

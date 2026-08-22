@@ -14,8 +14,7 @@ import com.safedb.store.SettingsStore
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-    // Keep this order: reject unsupported platforms before trust, credential, or data
-    // initialization.
+    // Keep this order: reject unsupported platforms before trust, credential, or data initialization.
     val platform = requireSupportedDesktopPlatform()
     try {
         LaunchProfileBootstrap.configure(args)

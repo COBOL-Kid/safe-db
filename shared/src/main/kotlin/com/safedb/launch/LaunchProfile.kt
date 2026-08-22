@@ -14,8 +14,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 const val TRUST_STORE_CREDENTIAL_SERVICE = "com.safedb.app.trust-store"
-// Internal bridge for pgjdbc, whose native SSL factory consumes PEM roots rather than the JSSE
-// PKCS12 setting.
+// Internal bridge for pgjdbc, whose native SSL factory consumes PEM roots rather than
+// the JSSE PKCS12 setting.
 internal const val POSTGRES_LAUNCH_ROOT_CERT_PROPERTY = "com.safedb.launch.postgresSslRootCert"
 
 private const val MAX_PASSWORD_BYTES = 4_096

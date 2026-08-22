@@ -21,12 +21,8 @@ import com.safedb.viewmodel.createExploreSession
 import java.nio.file.Files
 import java.nio.file.Path
 
-/**
- * Exports a genuine Explore HTML report through the app's real export path
- * (ExploreViewModel.saveVisualizationHtml), so the marketing site can show and
- * record the actual artifact instead of a hand-built recreation. Output:
- * /tmp/safedb-preview/report/explore-production-replica-chart.html
- */
+// Real export path (ExploreViewModel.saveVisualizationHtml), so the marketing site records the
+// actual artifact. Output: /tmp/safedb-preview/report/explore-production-replica-chart.html
 fun main() {
     val statuses = listOf("pending", "shipped", "delivered", "returned", "cancelled")
     // Deterministic sample: weights and prices vary per status so the chart has shape.

@@ -632,7 +632,7 @@ class ExploreViewModelTest {
         }
     }
 
-    /** Fails every cell read once [failing] is set, so each engine's compute throws. */
+    // Fails every cell read once failing is set, so each engine's compute throws.
     private class FailingRows(private val rows: List<List<ResultCell>>) :
         AbstractList<List<ResultCell>>() {
         var failing = false

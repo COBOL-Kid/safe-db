@@ -6,10 +6,8 @@ import java.math.RoundingMode
 import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 
-/**
- * One grouped bucket. [sortKey] orders pivot axes, [ordinal] positions a chart mark, and the
- * worksheet builds its own comparable [ResultCell] from those two.
- */
+// sortKey orders pivot axes; ordinal positions a chart mark. The worksheet builds its own
+// comparable ResultCell from those two.
 internal data class ExploreBucket(
     val key: String,
     val label: String,
@@ -17,7 +15,7 @@ internal data class ExploreBucket(
     val ordinal: Double?,
 )
 
-/** Bucket keys reach persisted collapse paths, and the two engines padded ISO weeks differently. */
+// Bucket keys reach persisted collapse paths, and the two engines padded ISO weeks differently.
 internal enum class WeekKeyStyle {
     Unpadded,
     Padded,

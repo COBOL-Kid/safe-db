@@ -76,8 +76,8 @@ private fun applyPostgresSsl(
         TransportSecurityMode.VerifyIdentity,
         TransportSecurityMode.VerifyCa -> {
             if (!launchProfileRootCert.isNullOrBlank()) {
-                // Keep pgjdbc's LibPQFactory so its standard client certificate and key locations
-                // still work.
+                // Keep pgjdbc's LibPQFactory so its standard client certificate and key
+                // locations still work.
                 config.addDataSourceProperty("sslrootcert", launchProfileRootCert)
             }
         }

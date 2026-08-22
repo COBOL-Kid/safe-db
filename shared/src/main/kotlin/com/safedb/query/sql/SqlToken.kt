@@ -209,9 +209,8 @@ fun tokenizeSql(
                     i = sql.length
                 } else if (marker == '!' || marker == '+') {
                     // /*! … */ is executed by MySQL and /*+ … */ carries optimizer hints.
-                    // Discarding
-                    // either as an ordinary comment would silently reinterpret the statement, so
-                    // reject it rather than quietly dropping what the user wrote.
+                    // Discarding either as an ordinary comment would silently reinterpret the
+                    // statement, so reject it rather than quietly dropping what the user wrote.
                     add(
                         SqlTokenType.Error,
                         i,
@@ -406,7 +405,6 @@ fun lineColOf(text: String, offset: Int): Pair<Int, Int> {
     return line to (bounded - lineStart + 1)
 }
 
-// Exclusive end offset of the block comment opening at `start`, or -1 when unterminated.
 private fun blockCommentEnd(sql: String, start: Int, nested: Boolean): Int {
     var depth = 1
     var j = start + 2

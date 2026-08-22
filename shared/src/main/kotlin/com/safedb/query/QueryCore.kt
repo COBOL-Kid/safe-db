@@ -106,8 +106,8 @@ suspend fun runQueryCore(
                 )
         }
 
-    // EXPLAIN plan evidence refines query-risk scoring. Plan availability and a usable optimizer
-    // cost remain execution safeguards even when descriptive query-risk scoring is disabled.
+    // Plan availability and a usable optimizer cost remain execution safeguards even when
+    // descriptive query-risk scoring is disabled.
     val explain =
         try {
             runner.explain(compiled)

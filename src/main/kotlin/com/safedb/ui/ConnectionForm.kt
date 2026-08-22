@@ -64,8 +64,8 @@ import com.safedb.ui.components.SecondaryButton
 import com.safedb.viewmodel.ConnectionsViewModel
 import kotlinx.coroutines.launch
 
-// Leave a little vertical headroom beyond Material's 56 dp minimum. An exact
-// 56 dp constraint can clip glyph descenders on scaled desktop displays.
+// Leave a little vertical headroom beyond Material's 56 dp minimum. An exact 56 dp constraint
+// can clip glyph descenders on scaled desktop displays.
 private val CompactFieldHeight = 60.dp
 
 @Composable

@@ -19,8 +19,7 @@ import kotlinx.coroutines.launch
 // Retain ownership until the service settles because blocking JDBC work may ignore cancellation.
 private class ActiveRun
 
-// The run/risk/confirmation state machine shared by the builder and the SQL editor. Each editor
-// owns its own instance so settled results survive a run in the other editor.
+// Each editor owns its own instance so settled results survive a run in the other editor.
 internal class QueryRunController(
     private val service: SafeDbService,
     private val scope: CoroutineScope,

@@ -48,10 +48,9 @@ class SqlEditorViewModel(service: SafeDbService, scope: CoroutineScope) {
         if (edited) runController.invalidateSettledRunFailure()
     }
 
-    // sourceText is the editor text the spec was parsed from. A Run callback captured before a
-    // recomposition can carry a spec for text the editor no longer shows; executing it would run
-    // a query the user cannot see and later invalidation could not undo. Reject the stale snapshot
-    // instead — the recomposed callback resubmits cleanly.
+    // A Run callback captured before a recomposition can carry a spec for text the editor no longer
+    // shows; executing it would run a query the user cannot see and later invalidation could not
+    // undo. Reject the stale snapshot — the recomposed callback resubmits cleanly.
     fun run(connectionId: String, spec: QuerySpec, sourceText: String) {
         if (sourceText != text.text) return
         if (running || pendingRiskGate || pendingConfirmation != null) return
