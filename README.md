@@ -31,7 +31,7 @@ Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, va
 
 Integration tests, Docker fixtures, and headless renders: [docs/testing.md](docs/testing.md). Managed PKCS12 launch profiles: [docs/trust-stores.md](docs/trust-stores.md).
 
-For local development or CI, `SAFEDB_KEYCHAIN_BACKEND=disabled` keeps credentials in memory instead of the OS store.
+For local development or CI, `SAFEDB_KEYCHAIN_BACKEND=disabled` keeps connection credentials in memory instead of the OS store. Trust-store password lookup still uses the strict platform backend and never falls back to that in-memory store.
 
 ## Contributing
 
