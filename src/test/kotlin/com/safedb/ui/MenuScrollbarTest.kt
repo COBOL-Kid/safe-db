@@ -1,24 +1,24 @@
 package com.safedb.ui
 
-import com.safedb.ui.components.menuScrollbarHeightPx
+import com.safedb.ui.components.shouldShowMenuScrollbar
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class MenuScrollbarTest {
     @Test
     fun hidesScrollbarBeforeLayoutWhenMaxValueIsUnbounded() {
-        assertNull(menuScrollbarHeightPx(viewportHeightPx = 0, scrollMaxValue = Int.MAX_VALUE))
-        assertNull(menuScrollbarHeightPx(viewportHeightPx = 120, scrollMaxValue = Int.MAX_VALUE))
+        assertFalse(shouldShowMenuScrollbar(viewportHeightPx = 0, scrollMaxValue = Int.MAX_VALUE))
+        assertFalse(shouldShowMenuScrollbar(viewportHeightPx = 120, scrollMaxValue = Int.MAX_VALUE))
     }
 
     @Test
     fun hidesScrollbarWhenContentFits() {
-        assertNull(menuScrollbarHeightPx(viewportHeightPx = 120, scrollMaxValue = 0))
+        assertFalse(shouldShowMenuScrollbar(viewportHeightPx = 120, scrollMaxValue = 0))
     }
 
     @Test
-    fun usesMeasuredViewportHeightWhenContentOverflows() {
-        assertEquals(240, menuScrollbarHeightPx(viewportHeightPx = 240, scrollMaxValue = 80))
+    fun showsScrollbarWhenContentOverflows() {
+        assertTrue(shouldShowMenuScrollbar(viewportHeightPx = 240, scrollMaxValue = 80))
     }
 }

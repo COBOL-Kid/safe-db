@@ -685,7 +685,7 @@ private fun VisualizationValuePicker(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
                 ExploreSearchField(query, onQueryChange = { query = it })
-                ScrollableMenuColumn {
+                ScrollableMenuColumn(maxHeight = 280.dp) {
                     groupExploreFields(fields.filter { it.matchesSearch(query) }).forEach { group ->
                         MenuSectionLabel(group.label)
                         group.fields.forEach { field ->

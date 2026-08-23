@@ -79,23 +79,22 @@ fun ScrollableMenuColumn(
                     .verticalScroll(scroll),
             content = content,
         )
-        val scrollbarHeightPx = menuScrollbarHeightPx(viewportHeightPx, scroll.maxValue)
-        if (scrollbarHeightPx != null) {
+        if (shouldShowMenuScrollbar(viewportHeightPx, scroll.maxValue)) {
             VerticalScrollbar(
                 adapter = rememberScrollbarAdapter(scroll),
                 modifier =
                     Modifier.align(Alignment.CenterEnd)
-                        .height(with(density) { scrollbarHeightPx.toDp() }),
+                        .height(with(density) { viewportHeightPx.toDp() }),
             )
         }
     }
 }
 
 // ScrollState.maxValue is Int.MAX_VALUE until the first layout pass.
-internal fun menuScrollbarHeightPx(viewportHeightPx: Int, scrollMaxValue: Int): Int? {
-    if (viewportHeightPx <= 0) return null
-    if (scrollMaxValue <= 0 || scrollMaxValue == Int.MAX_VALUE) return null
-    return viewportHeightPx
+internal fun shouldShowMenuScrollbar(viewportHeightPx: Int, scrollMaxValue: Int): Boolean {
+    if (viewportHeightPx <= 0) return false
+    if (scrollMaxValue <= 0 || scrollMaxValue == Int.MAX_VALUE) return false
+    return true
 }
 
 @Composable

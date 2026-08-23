@@ -671,7 +671,7 @@ private fun MeasurePickerButton(
                     if (filteredFields.isEmpty()) {
                         EmptyPickerMessage("No more values available")
                     } else {
-                        ScrollableMenuColumn {
+                        ScrollableMenuColumn(maxHeight = 240.dp) {
                             groupExploreFields(filteredFields).forEach { group ->
                                 MenuSectionLabel(group.label)
                                 group.fields.forEach { option ->

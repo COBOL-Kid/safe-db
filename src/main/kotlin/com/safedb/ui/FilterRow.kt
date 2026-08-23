@@ -49,6 +49,7 @@ import com.safedb.query.opLabel
 import com.safedb.query.opsForColumn
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.viewmodel.QueryViewModel
 
 @Composable
@@ -303,15 +304,17 @@ private fun <T> FilterDropdown(
     Box(modifier = modifier) {
         CompactSelectSurface(label = label, value = value, onClick = { expanded = true })
         SafeDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            for ((option, display) in options) {
-                MenuActionRow(
-                    text = display,
-                    selected = display == value,
-                    onClick = {
-                        onSelected(option)
-                        expanded = false
-                    },
-                )
+            ScrollableMenuColumn {
+                for ((option, display) in options) {
+                    MenuActionRow(
+                        text = display,
+                        selected = display == value,
+                        onClick = {
+                            onSelected(option)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
     }
