@@ -116,6 +116,40 @@ class SecretsTest {
     }
 
     @Test
+    fun passwordForDefinitionSurfacesStoreReadFailures() {
+        SecretsManager.useStoreForTest(
+            object : CredentialStore {
+                override fun setPassword(service: String, account: String, password: String) = Unit
+
+                override fun getPassword(service: String, account: String): String? {
+                    throw IllegalStateException("credman exploded")
+                }
+
+                override fun deletePassword(service: String, account: String) = Unit
+
+                override fun vendor(): String = "throwing"
+            }
+        )
+
+        val result = SecretsManager.passwordForDefinition(connectionDef("conn-read-fail"))
+        assertTrue(result.isFailure)
+        assertEquals(
+            "Could not read credentials (credman exploded).",
+            result.exceptionOrNull()?.message,
+        )
+    }
+
+    @Test
+    fun saveErrorUnwrapsNestedCauses() {
+        val nested = IllegalStateException("Error code 5")
+        val wrapped = RuntimeException("wrapper", nested)
+        assertEquals(
+            "Could not store credentials (Error code 5).",
+            SecretsManager.formatSaveCredentialError(wrapped),
+        )
+    }
+
+    @Test
     fun definitionsWithoutDriverPropertiesKeepTheReleasedCredentialFingerprint() {
         val def =
             ConnectionDef(

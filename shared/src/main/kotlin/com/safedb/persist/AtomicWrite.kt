@@ -30,7 +30,8 @@ fun atomicWrite(path: Path, content: String) {
     val fileName = path.fileName?.toString() ?: error("invalid path: $path")
     val tmpPath = parent.resolve(".${fileName}.${UUID.randomUUID()}.tmp")
 
-    // Fsync the temporary file before renaming and the directory afterward so success survives a crash.
+    // Fsync the temporary file before renaming so success survives a crash. Directory fsync is
+    // POSIX-only: Windows rejects FileChannel.open(directory, READ) with AccessDeniedException.
     try {
         FileChannel.open(tmpPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW).use {
             channel ->
@@ -38,8 +39,10 @@ fun atomicWrite(path: Path, content: String) {
             channel.force(true)
         }
         replaceFile(tmpPath, path)
-        FileChannel.open(parent, StandardOpenOption.READ).use { parentChannel ->
-            parentChannel.force(true)
+        if (isPosix()) {
+            FileChannel.open(parent, StandardOpenOption.READ).use { parentChannel ->
+                parentChannel.force(true)
+            }
         }
     } catch (error: Exception) {
         runCatching { Files.deleteIfExists(tmpPath) }
