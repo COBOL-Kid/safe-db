@@ -1,39 +1,57 @@
 package com.safedb.secrets
 
+import com.github.javakeyring.Keyring
+import com.github.javakeyring.PasswordAccessException
 import com.safedb.platform.DesktopPlatform
 
-internal class JavaKeyringDelegate(private val keyring: Any) : CredentialStore {
-    private val setPassword =
-        keyring.javaClass.getMethod(
-            "setPassword",
-            String::class.java,
-            String::class.java,
-            String::class.java,
-        )
-    private val getPassword =
-        keyring.javaClass.getMethod("getPassword", String::class.java, String::class.java)
-    private val deletePassword =
-        keyring.javaClass.getMethod("deletePassword", String::class.java, String::class.java)
-
+internal class JavaKeyringDelegate(private val keyring: Keyring) : CredentialStore {
     override fun setPassword(service: String, account: String, password: String) {
-        setPassword.invoke(keyring, service, account, password)
+        keyring.setPassword(service, account, password)
     }
 
     override fun getPassword(service: String, account: String): String? =
-        getPassword.invoke(keyring, service, account) as String?
+        try {
+            keyring.getPassword(service, account)
+        } catch (error: PasswordAccessException) {
+            // java-keyring throws for a missing item instead of returning null.
+            if (!isMissingCredentialError(error.message)) {
+                throw error
+            }
+            null
+        }
 
     override fun deletePassword(service: String, account: String) {
-        deletePassword.invoke(keyring, service, account)
+        try {
+            keyring.deletePassword(service, account)
+        } catch (error: PasswordAccessException) {
+            if (!isMissingCredentialError(error.message)) {
+                throw error
+            }
+        }
     }
 
     override fun vendor(): String = "java-keyring"
 }
 
+internal fun isMissingCredentialError(message: String?): Boolean {
+    val lower = message.orEmpty().lowercase()
+    if ("failed to get credential" in lower) return false
+    return hasWindowsMissingItemCode(lower) ||
+        "password not found" in lower ||
+        "no stored credentials match" in lower ||
+        "item could not be found" in lower
+}
+
+private fun hasWindowsMissingItemCode(lower: String): Boolean {
+    val marker = "error code 1168"
+    val index = lower.indexOf(marker)
+    if (index < 0) return false
+    val after = index + marker.length
+    return after == lower.length || !lower[after].isDigit()
+}
+
 internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
-    val keyringClass = Class.forName("com.github.javakeyring.Keyring")
-    val create = keyringClass.getMethod("create")
-    val keyring = create.invoke(null)
-    JavaKeyringDelegate(keyring)
+    JavaKeyringDelegate(Keyring.create())
 }
     .getOrNull()
 

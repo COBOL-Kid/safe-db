@@ -102,7 +102,7 @@ class SeedMysqlTest {
         assertTrue(mssql.contains("SET XACT_ABORT ON"))
         assertTrue(mssql.contains("order_date DATETIME2(0)"))
         assertTrue(oracle.contains("DROP TABLE order_items CASCADE CONSTRAINTS PURGE"))
-        assertTrue(oracle.contains("INSERT ALL\nINTO categories"))
+        assertTrue(oracle.replace("\r\n", "\n").contains("INSERT ALL\nINTO categories"))
         assertEquals(oracle, generate(options, GeneratedSqlDialect.Oracle))
     }
 

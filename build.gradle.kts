@@ -17,7 +17,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.1.0"
+version = "0.1.4"
 
 kotlin { jvmToolchain(25) }
 
@@ -124,8 +124,8 @@ val verifyUnitTestDiscovery =
         dependsOn(tasks.test, ":shared:test")
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(240)
-        minimumSharedTests.set(365)
+        minimumDesktopTests.set(305)
+        minimumSharedTests.set(526)
     }
 
 val verifyCoverageRatchet =
@@ -134,7 +134,7 @@ val verifyCoverageRatchet =
         description = "Enforces checked-in line coverage floors for shared and desktop logic."
         dependsOn("koverXmlReport")
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
-        coverageFloors.set(mapOf("desktop" to 72, "shared" to 66))
+        coverageFloors.set(mapOf("desktop" to 91, "shared" to 86))
     }
 
 tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet) }

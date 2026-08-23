@@ -76,7 +76,7 @@ Hikari `maximumPoolSize` is 1 and `isReadOnly` is true ([`JdbcHelpers.kt`](../sh
 
 Settings are `Cautious`, `Standard`, `Flexible`, and `Disabled` ([`Settings.kt`](../shared/src/main/kotlin/com/safedb/model/Settings.kt)). [`applyRiskGate`](../shared/src/main/kotlin/com/safedb/query/QueryRiskGate.kt) blocks from `Elevated` for `Cautious`, `High` for `Standard`, and `VeryHigh` for `Flexible`; `Disabled` has no blocking threshold.
 
-A missing plan or a missing/expensive optimizer cost returns [`QueryError.ConfirmationRequired`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) rather than running. `Disabled` turns off descriptive scoring; `EXPLAIN` still runs as an execution safeguard.
+[`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) returns [`QueryError.RiskGate`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) first when `baseEvaluation.decision` violates the configured risk gate, including a missing plan or invalid optimizer cost that still fails that gate. Only when no earlier risk-gate block applies does a missing plan or a missing/invalid optimizer cost return [`QueryError.ConfirmationRequired`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) rather than running. A high but finite cost does not. `Disabled` turns off descriptive scoring; `EXPLAIN` still runs as an execution safeguard.
 
 ## Adapters
 

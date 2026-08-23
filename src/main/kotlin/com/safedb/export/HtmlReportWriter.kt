@@ -350,7 +350,8 @@ internal fun buildChartSection(
 ): HtmlChartSection {
     val width = CHART_EXPORT_WIDTH
     val height = CHART_EXPORT_HEIGHT
-    if (preview.chartType == ChartType.Kpi) {
+    val chartType = preview.chartType
+    if (chartType == ChartType.Kpi) {
         val mark = preview.marks.first()
         return HtmlChartSection(
             title = preview.title,
@@ -376,7 +377,7 @@ internal fun buildChartSection(
     }
 
     val horizontal =
-        preview.chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
+        chartType == ChartType.Bar && config.barOrientation == BarOrientation.Horizontal
     val maxCategoryExtent =
         preview.marks.distinctBy { it.xKey }.maxOfOrNull { estimatedLabelWidth(it.xLabel) } ?: 0f
     val insets =
@@ -391,7 +392,7 @@ internal fun buildChartSection(
     val seriesIndex = preview.series.mapIndexed { index, series -> series.key to index }.toMap()
 
     val shapes = mutableListOf<HtmlChartShape>()
-    when (preview.chartType) {
+    when (chartType) {
         ChartType.Bar,
         ChartType.Histogram ->
             geometry.regions.mapTo(shapes) { region ->
@@ -454,8 +455,6 @@ internal fun buildChartSection(
                     d = mark.sourceRowIndices.takeIf { it.isNotEmpty() },
                 )
             }
-        // Kpi cannot reach here: buildChartSection returns a KPI tile before shape emission.
-        ChartType.Kpi,
         ChartType.Auto,
         null -> Unit
     }

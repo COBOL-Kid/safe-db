@@ -84,7 +84,15 @@ object SecretsManager {
             return Result.success(it)
         }
         val raw =
-            readFromStore(def.id)
+            try {
+                readFromStore(def.id)
+            } catch (error: Exception) {
+                return Result.failure(
+                    IllegalStateException(
+                        "Could not read credentials (${unwrapCredentialError(error).message ?: error})."
+                    )
+                )
+            }
                 ?: return Result.failure(
                     IllegalStateException(
                         "Password not found for this connection. Delete and add the connection again to store the password."
@@ -128,7 +136,7 @@ object SecretsManager {
     fun lockCredentials() = CredentialSession.lockCredentials()
 
     fun formatSaveCredentialError(err: Throwable): String {
-        val message = err.message ?: err.toString()
+        val message = unwrapCredentialError(err).message ?: err.toString()
         return if (isMissingEntitlementError(message)) {
             "Could not store credentials in the platform credential store. For local development, set $ENV_BACKEND=disabled; otherwise check that the OS credential service is available."
         } else {
@@ -139,6 +147,14 @@ object SecretsManager {
     fun isMissingEntitlementError(message: String): Boolean {
         val lower = message.lowercase()
         return "entitlement" in lower || "platform failure" in lower
+    }
+
+    internal fun unwrapCredentialError(error: Throwable): Throwable {
+        var current = error
+        while (current.cause != null && current.cause !== current) {
+            current = current.cause!!
+        }
+        return current
     }
 
     private fun readFromStore(connectionId: String): String? {

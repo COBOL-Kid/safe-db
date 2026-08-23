@@ -119,7 +119,8 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
         exploreViewModel?.let { explore ->
             val exploreWindowState = rememberWindowState(width = 1120.dp, height = 760.dp)
             val exploreOrigin by viewModel.exploreOrigin.collectAsState()
-            // The session refreshes from whichever screen produced it, so staleness and the refreshed
+            // The session refreshes from whichever screen produced it, so staleness and the
+            // refreshed
             // sample must come from that screen's current state.
             val sqlSpec = (sqlParseResult as? SqlParseResult.Success)?.spec
             val currentSpec =
@@ -140,6 +141,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
             Window(
                 onCloseRequest = viewModel::closeExplore,
                 title = "Explore - Safe-DB",
+                icon = rememberAppWindowIcon(),
                 state = exploreWindowState,
             ) {
                 LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
@@ -222,6 +224,7 @@ fun runApp(appState: AppState, service: SafeDbService) = application {
             exitApplication()
         },
         title = "Safe-DB",
+        icon = rememberAppWindowIcon(),
         state = windowState,
     ) {
         LaunchedEffect(window) { window.minimumSize = Dimension(960, 600) }

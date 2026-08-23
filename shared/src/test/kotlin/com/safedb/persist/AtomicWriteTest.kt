@@ -1,6 +1,9 @@
 package com.safedb.persist
 
+import java.nio.channels.FileChannel
+import java.nio.file.AccessDeniedException
 import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,6 +17,18 @@ class AtomicWriteTest {
         val nested = dir.resolve("nested/data")
         ensurePrivateDir(nested)
         assertTrue(Files.isDirectory(nested))
+    }
+
+    @Test
+    fun fsyncParentDirectoryDoesNotThrowForATempDirectory() {
+        val dir = Files.createTempDirectory("safedb-atomic-test")
+        val rawOpen = runCatching {
+            FileChannel.open(dir, StandardOpenOption.READ).use { channel -> channel.force(true) }
+        }
+        fsyncParentDirectory(dir)
+        rawOpen.exceptionOrNull()?.let { error ->
+            assertTrue(error is AccessDeniedException, error.toString())
+        }
     }
 
     @Test

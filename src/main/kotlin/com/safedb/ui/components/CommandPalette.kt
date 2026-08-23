@@ -143,7 +143,8 @@ fun CommandPalette(
             runConnectionId != null &&
                 viewModel.schema.schema != null &&
                 viewModel.schema.loadedConnectionId == runConnectionId
-        // These act on the builder canvas. On the SQL screen they would run or clear a query the user
+        // These act on the builder canvas. On the SQL screen they would run or clear a query the
+        // user
         // cannot see — on a read-only tool, sending the wrong statement to the database.
         val builderCommandsApply = currentRoute != AppRoute.Sql
         if (

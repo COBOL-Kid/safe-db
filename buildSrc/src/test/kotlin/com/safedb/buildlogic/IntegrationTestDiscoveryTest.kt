@@ -67,18 +67,17 @@ class IntegrationTestDiscoveryTest {
         classNameFragment: String,
         count: Int,
         skipped: Set<Int> = emptySet(),
-    ): String =
-        buildString {
-            append("<testsuite>")
-            repeat(count) { index ->
-                append("<testcase classname=\"com.safedb.integration.")
-                append(classNameFragment)
-                append("AdapterIntegrationTest\" name=\"test")
-                append(index)
-                append("\">")
-                if (index in skipped) append("<skipped/>")
-                append("</testcase>")
-            }
-            append("</testsuite>")
+    ): String = buildString {
+        append("<testsuite>")
+        repeat(count) { index ->
+            append("<testcase classname=\"com.safedb.integration.")
+            append(classNameFragment)
+            append("AdapterIntegrationTest\" name=\"test")
+            append(index)
+            append("\">")
+            if (index in skipped) append("<skipped/>")
+            append("</testcase>")
         }
+        append("</testsuite>")
+    }
 }

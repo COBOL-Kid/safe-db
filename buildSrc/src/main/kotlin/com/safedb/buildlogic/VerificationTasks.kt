@@ -1,7 +1,7 @@
 package com.safedb.buildlogic
 
-import java.io.File
 import java.io.ByteArrayInputStream
+import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
@@ -119,13 +119,12 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
 
     @TaskAction
     fun verify() {
-        val requiredEngines =
-            buildSet {
-                if (requireMysql.get()) add("mysql")
-                if (requirePostgres.get()) add("postgres")
-                if (requireMssql.get()) add("mssql")
-                if (requireOracle.get()) add("oracle")
-            }
+        val requiredEngines = buildSet {
+            if (requireMysql.get()) add("mysql")
+            if (requirePostgres.get()) add("postgres")
+            if (requireMssql.get()) add("mssql")
+            if (requireOracle.get()) add("oracle")
+        }
         if (requiredEngines.isEmpty()) {
             logger.lifecycle("No JDBC engine is required; integration suites may skip locally.")
             return
@@ -184,8 +183,9 @@ internal fun verifyIntegrationTestDiscovery(
         for (index in 0 until testcases.length) {
             val testcase = testcases.item(index)
             val className = testcase.attributes.getNamedItem("classname")?.nodeValue ?: continue
-            val suite = integrationSuites.firstOrNull { className.contains(it.classNameFragment) }
-                ?: continue
+            val suite =
+                integrationSuites.firstOrNull { className.contains(it.classNameFragment) }
+                    ?: continue
             counts.getValue(suite.engine)[0] += 1
             val children = testcase.childNodes
             for (childIndex in 0 until children.length) {
