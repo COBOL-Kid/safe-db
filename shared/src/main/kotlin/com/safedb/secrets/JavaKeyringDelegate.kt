@@ -12,8 +12,11 @@ internal class JavaKeyringDelegate(private val keyring: Keyring) : CredentialSto
     override fun getPassword(service: String, account: String): String? =
         try {
             keyring.getPassword(service, account)
-        } catch (_: PasswordAccessException) {
+        } catch (error: PasswordAccessException) {
             // java-keyring throws for a missing item instead of returning null.
+            if (!isMissingCredentialError(error.message)) {
+                throw error
+            }
             null
         }
 
@@ -32,7 +35,7 @@ internal class JavaKeyringDelegate(private val keyring: Keyring) : CredentialSto
 
 internal fun isMissingCredentialError(message: String?): Boolean {
     val lower = message.orEmpty().lowercase()
-    return "1168" in lower || "not found" in lower
+    return "1168" in lower || "not found" in lower || "no stored credentials match" in lower
 }
 
 internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
