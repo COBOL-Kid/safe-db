@@ -140,6 +140,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
             Window(
                 onCloseRequest = viewModel::closeExplore,
                 title = "Explore - Safe-DB",
+                icon = rememberAppWindowIcon(),
                 state = exploreWindowState,
             ) {
                 LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
@@ -222,6 +223,7 @@ fun runApp(appState: AppState, service: SafeDbService) = application {
             exitApplication()
         },
         title = "Safe-DB",
+        icon = rememberAppWindowIcon(),
         state = windowState,
     ) {
         LaunchedEffect(window) { window.minimumSize = Dimension(960, 600) }
