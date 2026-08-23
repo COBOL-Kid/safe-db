@@ -1,6 +1,5 @@
 package com.safedb
 
-import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -8,7 +7,7 @@ import kotlin.test.assertNotNull
 class AppWindowIconTest {
     @Test
     fun windowIconResourceIsOnTheClasspath() {
-        val image = loadAppWindowIconBytes().inputStream().use(ImageIO::read)
+        val image = loadAppWindowIconImage()
         assertNotNull(image)
         assertEquals(32, image.width)
         assertEquals(32, image.height)

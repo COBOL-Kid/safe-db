@@ -5,6 +5,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
 
 internal const val APP_WINDOW_ICON_RESOURCE = "icons/icon-32.png"
@@ -18,11 +19,12 @@ internal fun loadAppWindowIconBytes(): ByteArray {
     return stream.use { it.readBytes() }
 }
 
+internal fun loadAppWindowIconImage(): BufferedImage =
+    requireNotNull(loadAppWindowIconBytes().inputStream().use(ImageIO::read)) {
+        "could not decode /$APP_WINDOW_ICON_RESOURCE"
+    }
+
 @Composable
 internal fun rememberAppWindowIcon(): Painter = remember {
-    val image =
-        requireNotNull(loadAppWindowIconBytes().inputStream().use(ImageIO::read)) {
-            "could not decode /$APP_WINDOW_ICON_RESOURCE"
-        }
-    BitmapPainter(image.toComposeImageBitmap())
+    BitmapPainter(loadAppWindowIconImage().toComposeImageBitmap())
 }
