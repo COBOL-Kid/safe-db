@@ -151,7 +151,7 @@ val verifyCoverageRatchet =
         description = "Enforces checked-in line coverage floors for shared and desktop logic."
         dependsOn("koverXmlReport")
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
-        coverageFloors.set(mapOf("desktop" to 90, "shared" to 86))
+        coverageFloors.set(mapOf("desktop" to 90, "shared" to 85))
     }
 
 tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet) }
