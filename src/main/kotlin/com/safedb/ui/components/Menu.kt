@@ -147,7 +147,7 @@ fun MenuActionRow(
         if (leading != null) {
             leading()
         }
-        androidx.compose.foundation.layout.Column(
+        Column(
             modifier =
                 Modifier.weight(1f).padding(horizontal = if (leading != null) 10.dp else 0.dp)
         ) {
