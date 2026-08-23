@@ -70,15 +70,7 @@ abstract class VerifyCoverageRatchet : DefaultTask() {
         for (index in 0 until packages.length) {
             val packageNode = packages.item(index)
             val packageName = packageNode.attributes.getNamedItem("name").nodeValue
-            val group =
-                if (
-                    packageName == "com/safedb" ||
-                        Regex("com/safedb/(platform|export|viewmodel|ui)").matches(packageName)
-                ) {
-                    "desktop"
-                } else {
-                    "shared"
-                }
+            val group = coverageGroupForPackage(packageName)
             val children = packageNode.childNodes
             for (childIndex in 0 until children.length) {
                 val child = children.item(childIndex)
@@ -143,6 +135,18 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
             )
         }
     }
+}
+
+internal fun coverageGroupForPackage(packageName: String): String {
+    // platform lives in :shared; schema map geometry lives in the desktop module.
+    val desktopPrefixes =
+        listOf("com/safedb/export", "com/safedb/viewmodel", "com/safedb/ui", "com/safedb/schema")
+    val desktop =
+        packageName == "com/safedb" ||
+            desktopPrefixes.any { prefix ->
+                packageName == prefix || packageName.startsWith("$prefix/")
+            }
+    return if (desktop) "desktop" else "shared"
 }
 
 internal data class IntegrationDiscoveryResult(

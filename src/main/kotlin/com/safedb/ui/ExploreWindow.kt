@@ -567,7 +567,7 @@ private fun chooseExportFile(connectionLabel: String, extension: String): java.n
             "explore"
         }
     val chooser =
-        JFileChooser().apply {
+        createAppFileChooser().apply {
             selectedFile = File("explore-$safeName.$extension")
             dialogTitle = "Export Explore ${extension.uppercase()}"
         }

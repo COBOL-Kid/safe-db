@@ -9,7 +9,7 @@ internal fun chooseRecipeFile(open: Boolean, suggestedName: String = "explore-re
             "explore-recipe"
         }
     val chooser =
-        JFileChooser().apply {
+        createAppFileChooser().apply {
             dialogTitle = if (open) "Import Explore recipe" else "Export Explore recipe"
             if (!open) selectedFile = File("$safeName.safedb-recipe.json")
         }

@@ -35,11 +35,11 @@ internal class JavaKeyringDelegate(private val keyring: Keyring) : CredentialSto
 
 internal fun isMissingCredentialError(message: String?): Boolean {
     val lower = message.orEmpty().lowercase()
-    if ("failed to get credential" in lower) return false
-    return hasWindowsMissingItemCode(lower) ||
-        "password not found" in lower ||
-        "no stored credentials match" in lower ||
-        "item could not be found" in lower
+    return "failed to get credential" !in lower &&
+        (hasWindowsMissingItemCode(lower) ||
+            "password not found" in lower ||
+            "no stored credentials match" in lower ||
+            "item could not be found" in lower)
 }
 
 private fun hasWindowsMissingItemCode(lower: String): Boolean {
