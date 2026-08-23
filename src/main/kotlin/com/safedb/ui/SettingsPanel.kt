@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.safedb.loadAppVersion
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QueryRiskGate
 import com.safedb.ui.components.ColorSchemePicker
@@ -64,6 +65,7 @@ fun SettingsPanel(
     val schemaLoading by viewModel.defaultSchemaLoading.collectAsState()
     val schemaError by viewModel.defaultSchemaError.collectAsState()
     val settingsScrollState = rememberScrollState()
+    val appVersion = remember { loadAppVersion() }
     var candidateConnectionId by remember { mutableStateOf<String?>(null) }
     var databaseMenuOpen by remember { mutableStateOf(false) }
     var schemaMenuOpen by remember { mutableStateOf(false) }
@@ -103,7 +105,20 @@ fun SettingsPanel(
         containerColor = MaterialTheme.colorScheme.surface,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text("Settings", style = MaterialTheme.typography.titleMedium) },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Settings", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Version $appVersion",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
         text = {
             Box(modifier = Modifier.fillMaxWidth()) {
                 Column(

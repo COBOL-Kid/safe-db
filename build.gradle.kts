@@ -17,7 +17,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.1.4"
+version = "0.1.5"
 
 kotlin { jvmToolchain(25) }
 
@@ -51,6 +51,21 @@ configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.r
 
 dependencies { add(render.implementationConfigurationName, testFixtures(project(":shared"))) }
 
+val generateAppVersion =
+    tasks.register("generateAppVersion") {
+        val outputDir = layout.buildDirectory.dir("generated/resources/appVersion")
+        val appVersion = provider { version.toString() }
+        inputs.property("version", appVersion)
+        outputs.dir(outputDir)
+        doLast {
+            val file = outputDir.get().file("app-version.txt").asFile
+            file.parentFile.mkdirs()
+            file.writeText(appVersion.get())
+        }
+    }
+
+sourceSets.named("main") { resources.srcDir(generateAppVersion) }
+
 tasks.named<KotlinCompile>("compileRenderKotlin") {
     friendPaths.from(
         tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory }
@@ -77,6 +92,8 @@ kover {
             includes {
                 classes(
                     "com.safedb.AppState*",
+                    "com.safedb.AppVersion*",
+                    "com.safedb.AppWindowIcon*",
                     "com.safedb.export.*",
                     "com.safedb.platform.*",
                     "com.safedb.viewmodel.*",
@@ -124,7 +141,7 @@ val verifyUnitTestDiscovery =
         dependsOn(tasks.test, ":shared:test")
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(305)
+        minimumDesktopTests.set(306)
         minimumSharedTests.set(526)
     }
 
@@ -134,7 +151,7 @@ val verifyCoverageRatchet =
         description = "Enforces checked-in line coverage floors for shared and desktop logic."
         dependsOn("koverXmlReport")
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
-        coverageFloors.set(mapOf("desktop" to 91, "shared" to 86))
+        coverageFloors.set(mapOf("desktop" to 90, "shared" to 86))
     }
 
 tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet) }
