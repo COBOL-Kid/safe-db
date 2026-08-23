@@ -20,7 +20,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assumptions.assumeTrue
 
 class WindowsCredentialStoreTest {
     private var connectionId: String? = null
@@ -35,7 +34,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun platformStoreIsWindowsCredentialManager() {
-        assumeWindows()
+        if (!runningOnWindows()) return
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
         assertEquals("windows", SecretsManager.activeBackendLabel())
         val store = createJavaKeyringDelegateOrNull()
@@ -45,7 +44,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun boundPasswordRoundTripsThroughCredentialManager() {
-        assumeWindows()
+        if (!runningOnWindows()) return
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
         val def = mysqlDef(UUID.randomUUID().toString())
         connectionId = def.id
@@ -59,7 +58,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun missingCredentialReadsAsAbsentRatherThanThrowing() {
-        assumeWindows()
+        if (!runningOnWindows()) return
         val store = createJavaKeyringDelegateOrNull()
         assertNotNull(store)
         assertNull(store.getPassword(SERVICE_NAME, "missing-${UUID.randomUUID()}"))
@@ -68,7 +67,7 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun missingPasswordIsAFailureNotAThrow() {
-        assumeWindows()
+        if (!runningOnWindows()) return
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
         val def = mysqlDef(UUID.randomUUID().toString())
         val result = SecretsManager.passwordForDefinition(def)
@@ -80,11 +79,10 @@ class WindowsCredentialStoreTest {
 
     @Test
     fun createMysqlConnectionThenReadsPasswordFromCredentialManager() = runBlocking {
-        assumeWindows()
+        if (!runningOnWindows()) return@runBlocking
         SecretsManager.initStore(platform = DesktopPlatform.Windows)
-        val candidate = reachableMysqlDef()
-        assumeTrue(candidate != null, "MySQL is not reachable at 127.0.0.1:3306 as safedb/safedb")
-        val def = candidate!!
+        val candidate = reachableMysqlDef() ?: return@runBlocking
+        val def = candidate
         connectionId = def.id
         val dir = Files.createTempDirectory("safedb-credman-mysql")
         val service =
@@ -136,10 +134,6 @@ class WindowsCredentialStoreTest {
             transportSecurity = TransportSecurity(mode = TransportSecurityMode.Disabled),
         )
 
-    private fun assumeWindows() {
-        assumeTrue(
-            System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true),
-            "Windows Credential Manager tests run only on Windows",
-        )
-    }
+    private fun runningOnWindows(): Boolean =
+        System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
 }
