@@ -35,7 +35,19 @@ internal class JavaKeyringDelegate(private val keyring: Keyring) : CredentialSto
 
 internal fun isMissingCredentialError(message: String?): Boolean {
     val lower = message.orEmpty().lowercase()
-    return "1168" in lower || "not found" in lower || "no stored credentials match" in lower
+    if ("failed to get credential" in lower) return false
+    return hasWindowsMissingItemCode(lower) ||
+        "password not found" in lower ||
+        "no stored credentials match" in lower ||
+        "item could not be found" in lower
+}
+
+private fun hasWindowsMissingItemCode(lower: String): Boolean {
+    val marker = "error code 1168"
+    val index = lower.indexOf(marker)
+    if (index < 0) return false
+    val after = index + marker.length
+    return after == lower.length || !lower[after].isDigit()
 }
 
 internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {

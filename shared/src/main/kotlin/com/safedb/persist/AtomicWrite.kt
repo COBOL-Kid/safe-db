@@ -1,6 +1,7 @@
 package com.safedb.persist
 
 import java.nio.channels.FileChannel
+import java.nio.file.AccessDeniedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -31,7 +32,7 @@ fun atomicWrite(path: Path, content: String) {
     val tmpPath = parent.resolve(".${fileName}.${UUID.randomUUID()}.tmp")
 
     // Fsync the temporary file before renaming so success survives a crash. Directory fsync is
-    // POSIX-only: Windows rejects FileChannel.open(directory, READ) with AccessDeniedException.
+    // best-effort: Windows rejects FileChannel.open(directory, READ) with AccessDeniedException.
     try {
         FileChannel.open(tmpPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW).use {
             channel ->
@@ -39,14 +40,20 @@ fun atomicWrite(path: Path, content: String) {
             channel.force(true)
         }
         replaceFile(tmpPath, path)
-        if (isPosix()) {
-            FileChannel.open(parent, StandardOpenOption.READ).use { parentChannel ->
-                parentChannel.force(true)
-            }
-        }
+        fsyncParentDirectory(parent)
     } catch (error: Exception) {
         runCatching { Files.deleteIfExists(tmpPath) }
         throw error
+    }
+}
+
+internal fun fsyncParentDirectory(directory: Path) {
+    try {
+        FileChannel.open(directory, StandardOpenOption.READ).use { parentChannel ->
+            parentChannel.force(true)
+        }
+    } catch (_: AccessDeniedException) {
+        // Windows rejects FileChannel.open(directory, READ).
     }
 }
 

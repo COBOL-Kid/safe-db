@@ -17,6 +17,12 @@ class AtomicWriteTest {
     }
 
     @Test
+    fun fsyncParentDirectoryDoesNotThrowForATempDirectory() {
+        val dir = Files.createTempDirectory("safedb-atomic-test")
+        fsyncParentDirectory(dir)
+    }
+
+    @Test
     fun atomicWriteRoundTripsContent() {
         val dir = Files.createTempDirectory("safedb-atomic-test")
         val path = dir.resolve("state.json")
