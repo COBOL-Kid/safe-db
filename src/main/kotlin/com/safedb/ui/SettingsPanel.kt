@@ -42,6 +42,7 @@ import com.safedb.ui.components.ColorSchemePicker
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.ModeToggle
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.DialogShape
@@ -181,31 +182,34 @@ fun SettingsPanel(
                                         modifier = Modifier.width(280.dp),
                                         minWidth = 280.dp,
                                     ) {
-                                        MenuActionRow(
-                                            text = "None",
-                                            selected = candidateConnectionId == null,
-                                            onClick = {
-                                                databaseMenuOpen = false
-                                                candidateConnectionId = null
-                                                viewModel.clearDefaultSchemaOptions()
-                                                viewModel.clearDefaultLocation(
-                                                    onDefaultLocationCleared
-                                                )
-                                            },
-                                        )
-                                        connections.forEach { connection ->
+                                        ScrollableMenuColumn {
                                             MenuActionRow(
-                                                text = connection.name,
-                                                supportingText = connection.database,
-                                                selected = connection.id == candidateConnectionId,
+                                                text = "None",
+                                                selected = candidateConnectionId == null,
                                                 onClick = {
                                                     databaseMenuOpen = false
-                                                    candidateConnectionId = connection.id
-                                                    viewModel.loadDefaultSchemaOptions(
-                                                        connection.id
+                                                    candidateConnectionId = null
+                                                    viewModel.clearDefaultSchemaOptions()
+                                                    viewModel.clearDefaultLocation(
+                                                        onDefaultLocationCleared
                                                     )
                                                 },
                                             )
+                                            connections.forEach { connection ->
+                                                MenuActionRow(
+                                                    text = connection.name,
+                                                    supportingText = connection.database,
+                                                    selected =
+                                                        connection.id == candidateConnectionId,
+                                                    onClick = {
+                                                        databaseMenuOpen = false
+                                                        candidateConnectionId = connection.id
+                                                        viewModel.loadDefaultSchemaOptions(
+                                                            connection.id
+                                                        )
+                                                    },
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -249,29 +253,31 @@ fun SettingsPanel(
                                         modifier = Modifier.width(280.dp),
                                         minWidth = 280.dp,
                                     ) {
-                                        schemaOptions.forEach { schema ->
-                                            MenuActionRow(
-                                                text = schema,
-                                                selected =
-                                                    candidateConnectionId ==
-                                                        settings.defaultConnectionId &&
-                                                        schema == settings.defaultSchema,
-                                                onClick = {
-                                                    schemaMenuOpen = false
-                                                    val connectionId =
-                                                        candidateConnectionId
-                                                            ?: return@MenuActionRow
-                                                    viewModel.saveDefaultLocation(
-                                                        connectionId,
-                                                        schema,
-                                                    ) {
-                                                        onDefaultLocationChanged(
+                                        ScrollableMenuColumn {
+                                            schemaOptions.forEach { schema ->
+                                                MenuActionRow(
+                                                    text = schema,
+                                                    selected =
+                                                        candidateConnectionId ==
+                                                            settings.defaultConnectionId &&
+                                                            schema == settings.defaultSchema,
+                                                    onClick = {
+                                                        schemaMenuOpen = false
+                                                        val connectionId =
+                                                            candidateConnectionId
+                                                                ?: return@MenuActionRow
+                                                        viewModel.saveDefaultLocation(
                                                             connectionId,
                                                             schema,
-                                                        )
-                                                    }
-                                                },
-                                            )
+                                                        ) {
+                                                            onDefaultLocationChanged(
+                                                                connectionId,
+                                                                schema,
+                                                            )
+                                                        }
+                                                    },
+                                                )
+                                            }
                                         }
                                     }
                                 }

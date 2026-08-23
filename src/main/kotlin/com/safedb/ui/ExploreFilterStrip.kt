@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.safedb.explore.PivotFilter
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.MemberOption
 
@@ -102,7 +102,7 @@ private fun SlicerControl(
             },
             minWidth = 280.dp,
         ) {
-            Column(modifier = Modifier.widthIn(min = 280.dp).heightIn(max = 440.dp)) {
+            Column(modifier = Modifier.widthIn(min = 280.dp)) {
                 ExploreSearchField(
                     query,
                     onQueryChange = { query = it },
@@ -113,24 +113,27 @@ private fun SlicerControl(
                     supportingText = "${options.size} sample values",
                     onClick = { onSelectionChange(emptySet()) },
                 )
-                visible.forEach { option ->
-                    val checked = selected.isEmpty() || option.key in selected
-                    MenuActionRow(
-                        text = option.label,
-                        supportingText = "${option.count} row${if (option.count == 1) "" else "s"}",
-                        leading = { Checkbox(checked = checked, onCheckedChange = null) },
-                        onClick = {
-                            val baseline = selected.ifEmpty { options.map { it.key }.toSet() }
-                            val next =
-                                if (option.key in baseline) baseline - option.key
-                                else baseline + option.key
-                            if (next.isNotEmpty()) {
-                                onSelectionChange(
-                                    if (next.size == options.size) emptySet() else next
-                                )
-                            }
-                        },
-                    )
+                ScrollableMenuColumn {
+                    visible.forEach { option ->
+                        val checked = selected.isEmpty() || option.key in selected
+                        MenuActionRow(
+                            text = option.label,
+                            supportingText =
+                                "${option.count} row${if (option.count == 1) "" else "s"}",
+                            leading = { Checkbox(checked = checked, onCheckedChange = null) },
+                            onClick = {
+                                val baseline = selected.ifEmpty { options.map { it.key }.toSet() }
+                                val next =
+                                    if (option.key in baseline) baseline - option.key
+                                    else baseline + option.key
+                                if (next.isNotEmpty()) {
+                                    onSelectionChange(
+                                        if (next.size == options.size) emptySet() else next
+                                    )
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }

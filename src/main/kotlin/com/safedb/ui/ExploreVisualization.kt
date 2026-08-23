@@ -75,6 +75,7 @@ import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SectionLabel
 import com.safedb.ui.components.SelectablePill
@@ -667,7 +668,7 @@ private fun VisualizationValuePicker(
             },
             minWidth = 286.dp,
         ) {
-            Column(modifier = Modifier.widthIn(min = 286.dp).heightIn(max = 420.dp)) {
+            Column(modifier = Modifier.widthIn(min = 286.dp)) {
                 if (countAllowed) {
                     MenuActionRow(
                         text = "Count rows",
@@ -684,39 +685,41 @@ private fun VisualizationValuePicker(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
                 ExploreSearchField(query, onQueryChange = { query = it })
-                groupExploreFields(fields.filter { it.matchesSearch(query) }).forEach { group ->
-                    MenuSectionLabel(group.label)
-                    group.fields.forEach { field ->
-                        val compatible = field.category.isNumeric() || !numericOnly
-                        MenuActionRow(
-                            text = field.label,
-                            supportingText =
-                                if (compatible) field.supportingText()
-                                else "${field.supportingText()} · Numeric fields only",
-                            modifier = Modifier.alpha(if (compatible) 1f else 0.45f),
-                            onClick = {
-                                if (compatible) {
-                                    expanded = false
-                                    query = ""
-                                    val raw = chartType == ChartType.Scatter
-                                    val function =
-                                        if (field.category.isNumeric()) MeasureFn.Sum
-                                        else MeasureFn.CountDistinct
-                                    onSelect(
-                                        VisualizationMeasure(
-                                            alias =
-                                                "${if (raw) "raw" else function.name.lowercase()}_${field.column}_${UUID.randomUUID().toString().take(6)}",
-                                            fn = function,
-                                            sourceColumn = field.column,
-                                            label =
-                                                if (raw) field.label
-                                                else "${function.shortLabel} ${field.label}",
-                                            aggregate = !raw,
+                ScrollableMenuColumn {
+                    groupExploreFields(fields.filter { it.matchesSearch(query) }).forEach { group ->
+                        MenuSectionLabel(group.label)
+                        group.fields.forEach { field ->
+                            val compatible = field.category.isNumeric() || !numericOnly
+                            MenuActionRow(
+                                text = field.label,
+                                supportingText =
+                                    if (compatible) field.supportingText()
+                                    else "${field.supportingText()} · Numeric fields only",
+                                modifier = Modifier.alpha(if (compatible) 1f else 0.45f),
+                                onClick = {
+                                    if (compatible) {
+                                        expanded = false
+                                        query = ""
+                                        val raw = chartType == ChartType.Scatter
+                                        val function =
+                                            if (field.category.isNumeric()) MeasureFn.Sum
+                                            else MeasureFn.CountDistinct
+                                        onSelect(
+                                            VisualizationMeasure(
+                                                alias =
+                                                    "${if (raw) "raw" else function.name.lowercase()}_${field.column}_${UUID.randomUUID().toString().take(6)}",
+                                                fn = function,
+                                                sourceColumn = field.column,
+                                                label =
+                                                    if (raw) field.label
+                                                    else "${function.shortLabel} ${field.label}",
+                                                aggregate = !raw,
+                                            )
                                         )
-                                    )
-                                }
-                            },
-                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -747,30 +750,32 @@ private fun VisualizationFieldPicker(
             },
             minWidth = 286.dp,
         ) {
-            Column(modifier = Modifier.widthIn(min = 286.dp).heightIn(max = 420.dp)) {
+            Column(modifier = Modifier.widthIn(min = 286.dp)) {
                 ExploreSearchField(query, onQueryChange = { query = it })
-                groupExploreFields(fields.filter { it.matchesSearch(query) }).forEach { group ->
-                    MenuSectionLabel(group.label)
-                    group.fields.forEach { field ->
-                        val enabled = compatible(field)
-                        MenuActionRow(
-                            text = field.label,
-                            supportingText =
-                                listOfNotNull(
-                                        field.supportingText(),
-                                        incompatibleReason(field).takeIf { !enabled },
-                                    )
-                                    .filter { it.isNotBlank() }
-                                    .joinToString(" · "),
-                            modifier = Modifier.alpha(if (enabled) 1f else 0.45f),
-                            onClick = {
-                                if (enabled) {
-                                    expanded = false
-                                    query = ""
-                                    onSelect(field)
-                                }
-                            },
-                        )
+                ScrollableMenuColumn {
+                    groupExploreFields(fields.filter { it.matchesSearch(query) }).forEach { group ->
+                        MenuSectionLabel(group.label)
+                        group.fields.forEach { field ->
+                            val enabled = compatible(field)
+                            MenuActionRow(
+                                text = field.label,
+                                supportingText =
+                                    listOfNotNull(
+                                            field.supportingText(),
+                                            incompatibleReason(field).takeIf { !enabled },
+                                        )
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" · "),
+                                modifier = Modifier.alpha(if (enabled) 1f else 0.45f),
+                                onClick = {
+                                    if (enabled) {
+                                        expanded = false
+                                        query = ""
+                                        onSelect(field)
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
