@@ -62,16 +62,18 @@ internal fun ConnectionPicker(
             Icon(Icons.Default.ExpandMore, contentDescription = null)
         }
         SafeDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            connections.forEach { option ->
-                MenuActionRow(
-                    text = option.name,
-                    supportingText = "${option.dialect} · ${option.database}",
-                    selected = option.id == connection?.id,
-                    onClick = {
-                        menuOpen = false
-                        onConnectionSelected(option)
-                    },
-                )
+            ScrollableMenuColumn {
+                connections.forEach { option ->
+                    MenuActionRow(
+                        text = option.name,
+                        supportingText = "${option.dialect} · ${option.database}",
+                        selected = option.id == connection?.id,
+                        onClick = {
+                            menuOpen = false
+                            onConnectionSelected(option)
+                        },
+                    )
+                }
             }
         }
     }
@@ -101,15 +103,17 @@ internal fun SchemaPicker(
             Icon(Icons.Default.ExpandMore, contentDescription = null)
         }
         SafeDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            schemaOptions.forEach { option ->
-                MenuActionRow(
-                    text = option,
-                    selected = option == selectedSchema,
-                    onClick = {
-                        menuOpen = false
-                        onSchemaSelected(option)
-                    },
-                )
+            ScrollableMenuColumn {
+                schemaOptions.forEach { option ->
+                    MenuActionRow(
+                        text = option,
+                        selected = option == selectedSchema,
+                        onClick = {
+                            menuOpen = false
+                            onSchemaSelected(option)
+                        },
+                    )
+                }
             }
         }
     }

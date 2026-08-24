@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -93,6 +92,7 @@ import com.safedb.model.ResultCell
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.SafeDbTheme
 
@@ -552,7 +552,7 @@ private fun WorksheetColumnMenu(
                 onDismissRequest = { expanded = false },
                 minWidth = 330.dp,
             ) {
-                Column(modifier = Modifier.widthIn(min = 330.dp).heightIn(max = 440.dp)) {
+                Column(modifier = Modifier.widthIn(min = 330.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -594,7 +594,7 @@ private fun WorksheetColumnMenu(
                         }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    ScrollableMenuColumn {
                         columns.forEachIndexed { index, resolved ->
                             val column = resolved.column
                             Row(

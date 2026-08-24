@@ -46,6 +46,7 @@ import com.safedb.model.TableInfo
 import com.safedb.model.qualifiedName
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.InputShape
@@ -118,16 +119,18 @@ fun SchemaBrowser(
                         onDismissRequest = { connectionMenuOpen = false },
                         modifier = Modifier.width(240.dp),
                     ) {
-                        connections.forEach { option ->
-                            MenuActionRow(
-                                text = option.name,
-                                supportingText = "${option.dialect} · ${option.database}",
-                                selected = option.id == connection?.id,
-                                onClick = {
-                                    connectionMenuOpen = false
-                                    onConnectionSelected(option)
-                                },
-                            )
+                        ScrollableMenuColumn {
+                            connections.forEach { option ->
+                                MenuActionRow(
+                                    text = option.name,
+                                    supportingText = "${option.dialect} · ${option.database}",
+                                    selected = option.id == connection?.id,
+                                    onClick = {
+                                        connectionMenuOpen = false
+                                        onConnectionSelected(option)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -149,16 +152,18 @@ fun SchemaBrowser(
                     onDismissRequest = { schemaMenuOpen = false },
                     modifier = Modifier.width(maxWidth),
                 ) {
-                    schemaViewModel.schemaOptions.forEach { schema ->
-                        MenuActionRow(
-                            text = schema,
-                            selected = schemaViewModel.selectedSchema == schema,
-                            onClick = {
-                                schemaMenuOpen = false
-                                schemaViewModel.selectSchema(schema)
-                                onSchemaSelected(schema)
-                            },
-                        )
+                    ScrollableMenuColumn {
+                        schemaViewModel.schemaOptions.forEach { schema ->
+                            MenuActionRow(
+                                text = schema,
+                                selected = schemaViewModel.selectedSchema == schema,
+                                onClick = {
+                                    schemaMenuOpen = false
+                                    schemaViewModel.selectSchema(schema)
+                                    onSchemaSelected(schema)
+                                },
+                            )
+                        }
                     }
                 }
             }

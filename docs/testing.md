@@ -2,7 +2,7 @@
 
 `./gradlew check` is enough for most pull requests: desktop and `:shared` unit tests, test discovery, Docker harness orchestration, and Kover ratchets. Integration tests skip when fixtures are absent.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 306 desktop and 526 shared tests, with 90% and 85% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 309 desktop and 526 shared tests, with 90% and 85% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
 
 | Command | Use |
 | --- | --- |

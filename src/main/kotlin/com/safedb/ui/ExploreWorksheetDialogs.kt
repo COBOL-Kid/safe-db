@@ -37,6 +37,7 @@ import com.safedb.explore.WorksheetGroup
 import com.safedb.explore.pivotCellKey
 import com.safedb.model.QueryResult
 import com.safedb.ui.components.PrimaryButton
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SectionLabel
 import com.safedb.ui.components.SelectablePill
@@ -73,7 +74,7 @@ internal fun WorksheetFilterDialog(
                     op = it
                 }
                 if (op == WorksheetFilterOp.Members) {
-                    Column(modifier = Modifier.height(220.dp)) {
+                    ScrollableMenuColumn(maxHeight = 220.dp) {
                         memberOptions.forEach { cell ->
                             val key = pivotCellKey(cell)
                             Row(

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -61,6 +60,7 @@ import com.safedb.explore.SubtotalPosition
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.MenuSectionLabel
 import com.safedb.ui.components.SafeDropdownMenu
+import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.MemberOption
 import java.util.UUID
@@ -576,23 +576,25 @@ private fun FieldPickerButton(
             },
             minWidth = 280.dp,
         ) {
-            Column(modifier = Modifier.widthIn(min = 280.dp).heightIn(max = 420.dp)) {
+            Column(modifier = Modifier.widthIn(min = 280.dp)) {
                 ExploreSearchField(query = query, onQueryChange = { query = it })
                 if (filtered.isEmpty()) {
                     EmptyPickerMessage("No matching fields")
                 } else {
-                    groupExploreFields(filtered).forEach { group ->
-                        MenuSectionLabel(group.label)
-                        group.fields.forEach { field ->
-                            MenuActionRow(
-                                text = field.label,
-                                supportingText = field.supportingText(),
-                                onClick = {
-                                    expanded = false
-                                    query = ""
-                                    onSelect(field)
-                                },
-                            )
+                    ScrollableMenuColumn {
+                        groupExploreFields(filtered).forEach { group ->
+                            MenuSectionLabel(group.label)
+                            group.fields.forEach { field ->
+                                MenuActionRow(
+                                    text = field.label,
+                                    supportingText = field.supportingText(),
+                                    onClick = {
+                                        expanded = false
+                                        query = ""
+                                        onSelect(field)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -631,7 +633,7 @@ private fun MeasurePickerButton(
             },
             minWidth = 292.dp,
         ) {
-            Column(modifier = Modifier.widthIn(min = 292.dp).heightIn(max = 440.dp)) {
+            Column(modifier = Modifier.widthIn(min = 292.dp)) {
                 val field = selectedField
                 if (field == null) {
                     MenuActionRow(
@@ -669,17 +671,19 @@ private fun MeasurePickerButton(
                     if (filteredFields.isEmpty()) {
                         EmptyPickerMessage("No more values available")
                     } else {
-                        groupExploreFields(filteredFields).forEach { group ->
-                            MenuSectionLabel(group.label)
-                            group.fields.forEach { option ->
-                                MenuActionRow(
-                                    text = option.label,
-                                    supportingText = option.supportingText(),
-                                    onClick = {
-                                        selectedField = option
-                                        query = ""
-                                    },
-                                )
+                        ScrollableMenuColumn(maxHeight = 240.dp) {
+                            groupExploreFields(filteredFields).forEach { group ->
+                                MenuSectionLabel(group.label)
+                                group.fields.forEach { option ->
+                                    MenuActionRow(
+                                        text = option.label,
+                                        supportingText = option.supportingText(),
+                                        onClick = {
+                                            selectedField = option
+                                            query = ""
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
