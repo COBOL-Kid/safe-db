@@ -11,8 +11,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    environment: durability
+    timeout-minutes: 5
+    steps:
+      - run: echo "Durability authorized for ${{ github.ref }}"
+
   platform-check:
     name: Check (${{ matrix.os }})
+    needs: authorize
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +39,7 @@ jobs:
         run: ./gradlew check --rerun-tasks
 
   postgres-integration:
+    needs: authorize
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -76,6 +85,7 @@ jobs:
             shared/build/test-results/integrationTest/
 
   mysql-generated-integration:
+    needs: authorize
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -122,6 +132,7 @@ jobs:
             shared/build/test-results/integrationTest/
 
   database-compatibility:
+    needs: authorize
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -151,6 +162,7 @@ jobs:
             .docker/safedb-ssl/reports/
 
   ui-tooling:
+    needs: authorize
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -199,6 +211,7 @@ jobs:
 
   native-package:
     name: Package (${{ matrix.package_name }})
+    needs: authorize
     strategy:
       fail-fast: false
       matrix:
