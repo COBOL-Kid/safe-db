@@ -14,7 +14,7 @@ If you change a documented command, environment variable, packaging path, or eng
 
 ## CI
 
-CI is on demand. A maintainer applies the `ci:run` label to run `check` plus the required static-MySQL suite. After new commits, remove and reapply the label. Cross-platform durability is a manual **Run workflow** in GitHub Actions; details are in [docs/testing.md](docs/testing.md) and [.github/workflows](.github/workflows/).
+CI is on demand. The repository owner applies the `ci:run` label to run `check` plus the required static-MySQL suite. After new commits, remove and reapply the label. Cross-platform durability is a manual **Run workflow** in GitHub Actions; details are in [docs/testing.md](docs/testing.md) and [.github/workflows](.github/workflows/).
 
 ## AI-assisted submissions
 

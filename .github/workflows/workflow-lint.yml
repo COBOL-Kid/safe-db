@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   actionlint:
-    if: github.event.label.name == 'ci:run'
+    if: github.event.label.name == 'ci:run' && github.actor == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

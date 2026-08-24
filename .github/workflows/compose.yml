@@ -13,8 +13,8 @@ on:
 
 jobs:
   test:
-    # Maintainers apply ci:run to request the full CI gate for a pull request.
-    if: github.event.label.name == 'ci:run'
+    # Repository owner applies ci:run to request the full CI gate for a pull request.
+    if: github.event.label.name == 'ci:run' && github.actor == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -46,8 +46,8 @@ jobs:
             build/reports/kover/
 
   integration:
-    # ci:run is maintainer-applied, including for pull requests from forks.
-    if: github.event.label.name == 'ci:run'
+    # ci:run is owner-applied, including for pull requests from forks.
+    if: github.event.label.name == 'ci:run' && github.actor == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

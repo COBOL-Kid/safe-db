@@ -41,6 +41,6 @@ PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `S
 
 ## CI
 
-A maintainer applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration. Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled.
+The repository owner applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration. Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled.
 
-Cross-platform durability is a manual **Run workflow** in GitHub Actions (`.github/workflows/durability.yml`). That suite adds full four-engine JDBC/TLS compatibility to the cross-platform, generated-MySQL, PostgreSQL, UI, and packaging jobs. Dependency submission remains automatic for qualifying trusted `main` changes.
+Cross-platform durability is a manual **Run workflow** in GitHub Actions (`.github/workflows/durability.yml`). That suite waits for the `durability` environment, then adds full four-engine JDBC/TLS compatibility to the cross-platform, generated-MySQL, PostgreSQL, UI, and packaging jobs. Dependency submission remains automatic for qualifying trusted `main` changes.
