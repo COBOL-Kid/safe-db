@@ -1,14 +1,14 @@
 # Commands and verification
 
-`./gradlew check` is enough for most pull requests: desktop and `:shared` unit tests, test discovery, Docker harness orchestration, and Kover ratchets. Integration tests skip when fixtures are absent.
+`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets. Integration tests skip when fixtures are absent.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 309 desktop and 526 shared tests, with 90% and 85% line-coverage floors respectively. Inspect JUnit XML if discovery is uncertain.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 309 desktop, 526 shared, and 8 mcp tests, with 90% and 85% line-coverage floors for desktop and shared respectively. Inspect JUnit XML if discovery is uncertain.
 
 | Command | Use |
 | --- | --- |
 | `./gradlew help` | Validate root Gradle configuration after build logic changes. |
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
-| `./gradlew check` | Fast gate: desktop/shared unit tests, discovery, Docker harness orchestration, and Kover ratchets. |
+| `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, discovery, Docker harness orchestration, and Kover ratchets. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh coverage proof for broad Kotlin/build changes. |
 | `./gradlew integrationTest` | Environment-gated `:shared` JDBC suite. |
 | `./gradlew renderPreview --rerun-tasks` | Render 44 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
@@ -22,6 +22,8 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `scripts/seed_mysql.sh --static` | Load the smaller checked-in MySQL fixture. |
 | `scripts/verify_ssl_compat.sh` | Environment-gated SSL/TLS launch-profile and dialect-compatibility suite. |
 | `scripts/docker_test_databases.sh up` | Start and seed all four engines and the plain/TLS test endpoints from the root Compose stack. |
+| `./gradlew :mcp:run` | Stdio MCP server. Speaks JSON-RPC on stdin/stdout; use an MCP client or Inspector. |
+| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-*-all.jar`. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 
 ## Integration tests

@@ -24,14 +24,21 @@ abstract class VerifyUnitTestDiscovery : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val sharedResults: DirectoryProperty
 
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val mcpResults: DirectoryProperty
+
     @get:Input abstract val minimumDesktopTests: Property<Int>
 
     @get:Input abstract val minimumSharedTests: Property<Int>
+
+    @get:Input abstract val minimumMcpTests: Property<Int>
 
     @TaskAction
     fun verify() {
         verifySuite("desktop", desktopResults.get().asFile, minimumDesktopTests.get())
         verifySuite("shared", sharedResults.get().asFile, minimumSharedTests.get())
+        verifySuite("mcp", mcpResults.get().asFile, minimumMcpTests.get())
     }
 
     private fun verifySuite(label: String, resultsDir: File, minimumTests: Int) {

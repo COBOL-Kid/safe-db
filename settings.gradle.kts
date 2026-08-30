@@ -2,6 +2,8 @@ rootProject.name = "safe-db"
 
 include(":shared")
 
+include(":mcp")
+
 pluginManagement {
     repositories {
         gradlePluginPortal()
@@ -17,6 +19,7 @@ pluginManagement {
         id("org.jetbrains.kotlinx.kover") version "0.9.9"
         id("com.ncorti.ktfmt.gradle") version "0.27.0"
         id("org.jetbrains.qodana") version "2026.2.0"
+        id("com.gradleup.shadow") version "9.6.1"
     }
 }
 

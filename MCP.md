@@ -103,7 +103,7 @@ The engine can still fetch up to `DEFAULT_LIMIT` / `MAX_LIMIT`. What the model s
 
 Order is the intended dependency, not a commitment to one PR.
 
-1. **`:mcp` module** — stdio server with the official Kotlin MCP SDK. Shadow JAR. `main` that wires `SafeDbServiceImpl` to a data directory (Windows: existing `DataDirectory`; Linux: new path; Mac: separate MCP data dir until Keychain sharing).
+1. **`:mcp` module** — stdio server with the official Kotlin MCP SDK. Shadow JAR. `main` that wires `SafeDbServiceImpl` to a data directory (Windows: existing `DataDirectory`; Linux: new path; Mac: separate MCP data dir until Keychain sharing). The module, stdio `main`, and Shadow JAR exist; tool handlers are not registered yet.
 2. **Platform gate** — allow Linux for the MCP process without enabling the Compose UI on Linux. Fail clearly if the desktop store is requested on an unsupported combo.
 3. **Connection bootstrap** — CLI `setup` / `connections add`; `list_connections` / `delete_connection` tools. Windows: `SecretsManager` as today. Elsewhere: file password source. No password fields on tools.
 4. **Schema tools** — `getSchema` / `introspect` once, cache, slice into `list_tables` and `describe_table`.

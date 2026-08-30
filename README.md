@@ -12,6 +12,7 @@ The app runs on macOS and Windows. Other operating systems fail in [`DesktopPlat
 | --- | --- |
 | Root (`src/`) | Compose Desktop UI, viewmodels, HTML/CSV/PNG export. Main class `com.safedb.MainKt`. |
 | [`:shared`](shared/) | Query engine, JDBC adapters, SQL parser, stores, secrets, launch profiles. Not a published library. |
+| [`:mcp`](mcp/) | Stdio MCP server CLI. Scaffold only: no agent tools or install package yet. |
 
 ## Contracts
 

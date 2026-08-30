@@ -138,11 +138,13 @@ val verifyUnitTestDiscovery =
         group = "verification"
         description =
             "Fails when JVM unit tests are missing from JUnit XML or contain failures or skips."
-        dependsOn(tasks.test, ":shared:test")
+        dependsOn(tasks.test, ":shared:test", ":mcp:test")
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
+        mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
         minimumDesktopTests.set(309)
         minimumSharedTests.set(526)
+        minimumMcpTests.set(8)
     }
 
 val verifyCoverageRatchet =

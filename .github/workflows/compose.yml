@@ -43,6 +43,8 @@ jobs:
             build/test-results/test/
             shared/build/reports/tests/test/
             shared/build/test-results/test/
+            mcp/build/reports/tests/test/
+            mcp/build/test-results/test/
             build/reports/kover/
 
   integration:
