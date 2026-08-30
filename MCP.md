@@ -41,7 +41,7 @@ New `:mcp` module (stdio CLI) depends on `:shared` only. It maps MCP tools onto 
 
 `run_query` always introspects fresh schema before `runQueryCore`, matching `getSchemaAndRunQueryAlwaysIntrospectFreshSchema`. List/describe tools may cache a `Schema` per connection with a TTL; stale index/FK metadata must not be used for the risk gate.
 
-Linux: `DesktopPlatform` and `DataDirectory` currently allow only macOS and Windows. MCP on Linux needs an XDG (or similar) data dir and must not hit the desktop platform hard-fail. The GUI app can stay macOS/Windows-only.
+Linux is a resolved `DesktopPlatform`. `DataDirectory` (`com.safedb.app`) and the OS credential store (`auto` / `protected`) stay desktop-app capabilities and throw `DesktopStoreUnavailableException` on Linux. The GUI still rejects Linux in `Main.kt` before Compose. MCP data paths live in `McpDataDirectory` (Windows shares the desktop app dir; Mac and Linux use `com.safedb.mcp`, Linux under XDG).
 
 ## Connections and credentials
 
@@ -103,8 +103,8 @@ The engine can still fetch up to `DEFAULT_LIMIT` / `MAX_LIMIT`. What the model s
 
 Order is the intended dependency, not a commitment to one PR.
 
-1. **`:mcp` module** — stdio server with the official Kotlin MCP SDK. Shadow JAR. `main` that wires `SafeDbServiceImpl` to a data directory (Windows: existing `DataDirectory`; Linux: new path; Mac: separate MCP data dir until Keychain sharing). The module, stdio `main`, and Shadow JAR exist; tool handlers are not registered yet.
-2. **Platform gate** — allow Linux for the MCP process without enabling the Compose UI on Linux. Fail clearly if the desktop store is requested on an unsupported combo.
+1. **`:mcp` module** — stdio server with the official Kotlin MCP SDK. Shadow JAR. `main` that wires `SafeDbServiceImpl` to `McpDataDirectory` (done — see Architecture). The module, stdio `main`, Shadow JAR, and `McpDataDirectory` exist; tool handlers are not registered yet.
+2. **Platform gate** — `DesktopPlatform` includes Linux. `DataDirectory` and OS credential `auto`/`protected` throw `DesktopStoreUnavailableException` on Linux. Compose UI still exits in `Main.kt` with the macOS/Windows-only message. MCP uses `DesktopPlatform` (no parallel `McpPlatform`).
 3. **Connection bootstrap** — CLI `setup` / `connections add`; `list_connections` / `delete_connection` tools. Windows: `SecretsManager` as today. Elsewhere: file password source. No password fields on tools.
 4. **Schema tools** — `getSchema` / `introspect` once, cache, slice into `list_tables` and `describe_table`.
 5. **`run_query`** — reuse `runQueryCore`; map `QueryError.RiskGate` and confirmation-required into tool errors the client can show. Fresh introspect on execute.

@@ -1,12 +1,13 @@
 package com.safedb.tools
 
 import com.safedb.platform.DataDirectory
+import com.safedb.platform.DesktopStoreUnavailableException
 import com.safedb.platform.PlatformEnvironment
 import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.nio.file.Path
 
-// baseDir() rejects a Windows environment without APPDATA; the seeder skips the app-state reset
-// instead of failing, so that one case becomes null here while unsupported platforms still throw.
+// Missing APPDATA is skippable (null). Unknown OS and Linux desktop-store unavailability still
+// throw here; safeDbAppDataDirForStateReset catches those and skips.
 internal fun safeDbAppDataDir(
     environment: PlatformEnvironment = PlatformEnvironment.current()
 ): Path? =
@@ -27,6 +28,9 @@ internal fun safeDbAppDataDirForStateReset(
                 null
             }
     } catch (error: UnsupportedDesktopPlatformException) {
+        report("-> skipping safe-db app state reset (${error.message})")
+        null
+    } catch (error: DesktopStoreUnavailableException) {
         report("-> skipping safe-db app state reset (${error.message})")
         null
     }

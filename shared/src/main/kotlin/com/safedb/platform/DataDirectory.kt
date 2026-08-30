@@ -20,6 +20,10 @@ object DataDirectory {
                 Path.of(appData)
             }
             DesktopPlatform.MacOs -> Path.of(environment.userHome, "Library", "Application Support")
+            DesktopPlatform.Linux ->
+                throw DesktopStoreUnavailableException(
+                    "desktop app data directory is not available on Linux"
+                )
         }
 }
 

@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.platform.DataDirectory
+import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,7 +11,7 @@ class McpDataDirectoryTest {
     @Test
     fun rejectsUnsupportedPlatformBeforeResolvingADataPath() {
         val error =
-            assertFailsWith<UnsupportedMcpPlatformException> {
+            assertFailsWith<UnsupportedDesktopPlatformException> {
                 McpDataDirectory.pathFor(McpEnvironment("FreeBSD", "/home/test"))
             }
         assertEquals(

@@ -1,9 +1,9 @@
 package com.safedb.mcp
 
 import com.safedb.platform.DataDirectory
+import com.safedb.platform.DesktopPlatform
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Locale
 
 object McpDataDirectory {
     const val MCP_APP_ID: String = "com.safedb.mcp"
@@ -15,15 +15,15 @@ object McpDataDirectory {
     }
 
     internal fun pathFor(environment: McpEnvironment): Path =
-        when (McpPlatform.resolve(environment.osName)) {
-            McpPlatform.Windows -> {
+        when (DesktopPlatform.resolve(environment.osName)) {
+            DesktopPlatform.Windows -> {
                 val appData = environment.appData
                 require(!appData.isNullOrBlank()) { "APPDATA is not set" }
                 Path.of(appData).resolve(DataDirectory.APP_ID)
             }
-            McpPlatform.MacOs ->
+            DesktopPlatform.MacOs ->
                 Path.of(environment.userHome, "Library", "Application Support", MCP_APP_ID)
-            McpPlatform.Linux -> {
+            DesktopPlatform.Linux -> {
                 val xdg = environment.xdgDataHome
                 val base =
                     if (!xdg.isNullOrBlank()) Path.of(xdg)
@@ -32,29 +32,6 @@ object McpDataDirectory {
             }
         }
 }
-
-internal enum class McpPlatform {
-    MacOs,
-    Windows,
-    Linux;
-
-    companion object {
-        fun resolve(osName: String): McpPlatform {
-            val normalized = osName.trim().lowercase(Locale.ROOT)
-            return when {
-                normalized.startsWith("mac") || normalized == "darwin" -> MacOs
-                normalized.startsWith("windows") -> Windows
-                normalized.startsWith("linux") -> Linux
-                else -> throw UnsupportedMcpPlatformException(osName)
-            }
-        }
-    }
-}
-
-class UnsupportedMcpPlatformException(osName: String) :
-    IllegalStateException(
-        "unsupported operating system '$osName'; supported platforms are macOS, Windows, and Linux"
-    )
 
 internal data class McpEnvironment(
     val osName: String,

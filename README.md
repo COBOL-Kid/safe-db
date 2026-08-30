@@ -4,7 +4,7 @@ Source for the [safe-db](https://www.safe-db.dev) desktop app: a Compose Desktop
 
 Packaged releases and the user guide live at [https://www.safe-db.dev](https://www.safe-db.dev). This repository is for building from source and changing the code.
 
-The app runs on macOS and Windows. Other operating systems fail in [`DesktopPlatform.kt`](shared/src/main/kotlin/com/safedb/platform/DesktopPlatform.kt) before Compose, JDBC, or app data initialize.
+The desktop app runs on macOS and Windows; [`Main.kt`](src/main/kotlin/com/safedb/Main.kt) rejects other operating systems before Compose, JDBC, or app data initialize. The MCP server also runs on Linux.
 
 ## Layout
 

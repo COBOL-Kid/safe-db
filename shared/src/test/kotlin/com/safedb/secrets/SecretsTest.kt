@@ -5,6 +5,8 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.platform.DesktopPlatform
+import com.safedb.platform.DesktopStoreUnavailableException
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -83,20 +85,25 @@ class SecretsTest {
     }
 
     @Test
-    fun unsupportedPlatformsCannotSelectACredentialBackend() {
-        val error =
-            assertFailsWith<com.safedb.platform.UnsupportedDesktopPlatformException> {
-                SecretsManager.initStoreForOsName("auto", "Linux")
-            }
+    fun linuxCannotSelectTheOsCredentialStore() {
+        listOf("auto", "protected").forEach { backend ->
+            val error =
+                assertFailsWith<DesktopStoreUnavailableException> {
+                    SecretsManager.initStoreForOsName(backend, "Linux")
+                }
 
-        assertEquals(
-            "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
-            error.message,
-        )
+            assertEquals("OS credential store is not available on Linux", error.message)
+        }
+        assertNull(createStrictPlatformCredentialStoreOrNull(DesktopPlatform.Linux))
+        val fallbackError =
+            assertFailsWith<DesktopStoreUnavailableException> {
+                PlatformCredentialStore.createOrFallback(DesktopPlatform.Linux)
+            }
+        assertEquals("OS credential store is not available on Linux", fallbackError.message)
     }
 
     @Test
-    fun disabledBackendRemainsAvailableOnUnsupportedBuildHosts() {
+    fun disabledBackendRemainsAvailableOnLinux() {
         SecretsManager.initStoreForOsName("disabled", "Linux")
 
         assertEquals("disabled", SecretsManager.activeBackendLabel())

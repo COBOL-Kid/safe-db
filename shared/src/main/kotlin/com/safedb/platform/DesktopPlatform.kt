@@ -4,7 +4,11 @@ import java.util.Locale
 
 enum class DesktopPlatform {
     MacOs,
-    Windows;
+    Windows,
+    Linux;
+
+    val supportsDesktopApp: Boolean
+        get() = this == MacOs || this == Windows
 
     companion object {
         fun current(): DesktopPlatform = resolve(System.getProperty("os.name").orEmpty())
@@ -14,6 +18,7 @@ enum class DesktopPlatform {
             return when {
                 normalized.startsWith("mac") || normalized == "darwin" -> MacOs
                 normalized.startsWith("windows") -> Windows
+                normalized.startsWith("linux") -> Linux
                 else -> throw UnsupportedDesktopPlatformException(osName)
             }
         }
@@ -22,5 +27,7 @@ enum class DesktopPlatform {
 
 class UnsupportedDesktopPlatformException(osName: String) :
     IllegalStateException(
-        "unsupported operating system '$osName'; supported platforms are macOS and Windows"
+        "unsupported operating system '$osName'; supported platforms are macOS, Windows, and Linux"
     )
+
+class DesktopStoreUnavailableException(message: String) : IllegalStateException(message)

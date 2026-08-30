@@ -1,5 +1,6 @@
 package com.safedb.mcp
 
+import com.safedb.platform.UnsupportedDesktopPlatformException
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
 import java.io.FileDescriptor
@@ -19,7 +20,7 @@ fun main() {
         val dataDir = McpDataDirectory.resolve()
         val service = createMcpService(dataDir)
         runMcpStdio(createSafeDbMcpServer(service), stdout)
-    } catch (error: UnsupportedMcpPlatformException) {
+    } catch (error: UnsupportedDesktopPlatformException) {
         System.err.println("safe-db-mcp: ${error.message}")
         exitProcess(2)
     }
