@@ -68,27 +68,24 @@ Progressive catalog, then a gated query. Do not return the full `Schema` as the 
 | Tool | Behavior |
 | --- | --- |
 | `list_connections` | id, name, dialect, database. No secrets. |
+| `delete_connection` | Delete a saved connection by id. No secrets. |
 | `list_tables` | `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `introspect()` (5 min TTL, optional `refresh`). Honor `blocked_schemas` (and built-in system catalogs). |
 | `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`), indexes, FKs. Same cache. Unknown or blocked → `Table not found`. |
-| `run_query` | Parse SQL to `QuerySpec` (or accept a spec), `SafeDbService.runQuery` / `runQueryCore`, same `query_risk_gate` and caps as the app. Fresh introspect on execute. Returns a receipt (columns, row_count, truncated, warnings, slim risk, ~10-row preview). `QueryError.RiskGate` and confirmation-required are structured tool errors; confirmation can be echoed back after showing reasons. `result_id`, JSONL, and paging tools are item 6. |
-| `get_result_rows` | Page an in-memory sample. Hard cap (e.g. 50 rows per call). |
-| `summarize_result` | Per-column null count, min/max, a few distinct values on the sample. |
+| `run_query` | Parse SQL to `QuerySpec` (or accept a spec), `SafeDbService.runQuery` / `runQueryCore`, same `query_risk_gate` and caps as the app. Fresh introspect on execute. Returns a receipt: columns, row_count, truncated, preview_truncated, warnings, slim risk, ~10 flattened rows. Full sample is not in this payload. On confirmation_required, show reasons then retry with the returned confirmation object; do not auto-confirm; do not invent the confirmation object. `result_id`, JSONL, and paging are item 6. |
 
-`search_schema` and saved-query listing can wait. MCP resources / resource links are out of scope for v1.
-
-Tool descriptions should tell the model to use `get_result_rows` / `summarize_result`, not to `Read` the whole artifact file into the chat.
+`search_schema` and saved-query listing can wait. MCP resources / resource links are out of scope for v1. `get_result_rows` and `summarize_result` are item 6 (not shipped).
 
 ## Query results
 
-Keep the fetched `QueryResult` in process under a `result_id` (TTL, last-N, max bytes). That is the MCP analogue of `ExploreSession.sample`.
-
 `run_query` returns a **receipt**, not the table:
 
-- columns (`name`, `data_type`), `row_count`, `truncated`, warnings, slim risk summary
+- columns (`name`, `data_type`), `row_count`, `truncated`, `preview_truncated`, warnings, slim risk summary
 - A short **preview** (about 10 rows) of flattened JSON primitives (`null` / bool / number / string). Do not serialize `ResultCell` tagged objects into the tool payload.
-- **Item 6:** `result_id`, in-process result store, and a **JSONL artifact** on disk (app data dir or a wiped temp dir): one object per row, same flattened cells. Use existing export ideas; CSV can wait. Path and byte size go on the receipt.
+- `truncated` is the engine byte/limit cap. `preview_truncated` is true when the preview is shorter than `row_count`.
 
-The engine can still fetch up to `DEFAULT_LIMIT` / `MAX_LIMIT`. What the model sees is the preview plus whatever `get_result_rows` asked for.
+The engine can still fetch up to `DEFAULT_LIMIT` / `MAX_LIMIT`. What the model currently sees is the ~10-row preview on the receipt. Full sample is not in the payload.
+
+**Item 6:** keep the fetched `QueryResult` in process under a `result_id` (TTL, last-N, max bytes). That is the MCP analogue of `ExploreSession.sample`. Write a **JSONL artifact** on disk (app data dir or a wiped temp dir): one object per row, same flattened cells. Use existing export ideas; CSV can wait. Path and byte size go on the receipt. Paging tools (`get_result_rows`, `summarize_result`) are that same item — not current catalog.
 
 ## Implementation sketch
 
@@ -99,7 +96,7 @@ Order is the intended dependency, not a commitment to one PR.
 3. **Connection bootstrap** — CLI `setup` / `connections add` / `list` / `delete`; `list_connections` / `delete_connection` tools. Windows: `SecretsManager` / Credential Manager. Mac/Linux: `initFileStore`. No password fields on tools. (done — see Connections.)
 4. **Schema tools** — `getSchema` / `introspect` once, cache 5 minutes in the MCP process (`refresh` bypasses), slice into `list_tables` and `describe_table`. Filter with `isSchemaBlocked`. Do not cache inside `SafeDbService`. (done — see Agent tools.)
 5. **`run_query`** — reuse `runQueryCore` via `SafeDbService.runQuery`; map `QueryError.RiskGate` and confirmation-required into tool errors the client can show. Fresh introspect on execute. (done — see Agent tools / Query results.)
-6. **Result store** — `result_id` map, JSONL write, preview in the tool result, `get_result_rows`, `summarize_result`.
+6. **Result store** — `result_id` map, JSONL write, `get_result_rows` (page the in-memory sample; hard cap e.g. 50 rows per call), `summarize_result` (per-column null count, min/max, a few distinct values on the sample). Tool descriptions should then tell the model to use those tools, not to `Read` the whole artifact file into the chat. Preview on the receipt is already item 5.
 7. **npm wrapper** — `bin` that downloads the GitHub Release artifact, caches by version, execs with stdio. CI publishes the JAR (and later OS bundles) then the npm package.
 8. **Docs and install snippet** — user-facing install on the site or README; this file stays the engineering outline until behavior is real.
 9. **Later** — signed Mac helper and Keychain sharing with the desktop app; optional `PasswordSource` config import; MCP Registry; Docker; `search_schema`.

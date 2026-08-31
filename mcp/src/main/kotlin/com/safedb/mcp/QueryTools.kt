@@ -32,9 +32,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 internal fun registerQueryTools(server: Server, service: SafeDbService) {
@@ -45,11 +43,12 @@ internal fun registerQueryTools(server: Server, service: SafeDbService) {
                 "compiler, row/time caps, and query_risk_gate as the desktop app. Pass " +
                 "connection_id from list_connections and exactly one of sql or spec. Do not " +
                 "pass a password or URL. Returns a receipt: columns, row_count, truncated, " +
-                "warnings, a slim risk summary, and a short preview (~10 flattened rows). " +
-                "The full sample is not in this payload. On error risk_gate, rewrite the query " +
-                "or change the gate in settings; do not retry the same query. On error " +
-                "confirmation_required, show the reasons to the user, then retry with the " +
-                "returned confirmation object; do not auto-confirm.",
+                "preview_truncated, warnings, a slim risk summary, and a short preview " +
+                "(~10 flattened rows). preview_truncated is true when the preview is shorter " +
+                "than row_count. The full sample is not in this payload. On error risk_gate, " +
+                "rewrite the query or change the gate in settings; do not retry the same query. " +
+                "On error confirmation_required, show the reasons to the user, then retry with " +
+                "the returned confirmation object; do not auto-confirm.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -265,6 +264,7 @@ private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
 
 private fun successReceipt(completed: QueryRunResult, parseNotes: List<String>): CallToolResult {
     val result = completed.queryResult
+    val preview = previewRows(result)
     val receipt =
         QueryReceipt(
             columns = result.columns,
@@ -272,7 +272,8 @@ private fun successReceipt(completed: QueryRunResult, parseNotes: List<String>):
             truncated = result.truncated,
             warnings = parseNotes + result.warnings,
             risk = riskSummary(completed.riskEvaluation),
-            preview = previewRows(result),
+            preview = preview,
+            previewTruncated = preview.size < result.rowCount,
         )
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
 }
@@ -334,15 +335,6 @@ private fun QueryExecutionConfirmation.toPayload(): McpQueryConfirmation =
                 .sortedWith(compareBy({ it.reasonCode }, { it.conditionKey })),
     )
 
-private fun requiredText(request: CallToolRequest, name: String): String? =
-    optionalText(request, name)
-
-private fun optionalText(request: CallToolRequest, name: String): String? =
-    request.arguments?.get(name)?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-
-private fun toolError(message: String): CallToolResult =
-    CallToolResult(content = listOf(TextContent(text = message)), isError = true)
-
 private inline fun <reified T> jsonError(payload: T): CallToolResult =
     CallToolResult(
         content = listOf(TextContent(text = toolJson.encodeToString(payload))),
@@ -371,6 +363,7 @@ internal data class QueryReceipt(
     val warnings: List<String>,
     val risk: QueryRiskSummary,
     val preview: List<JsonObject>,
+    @SerialName("preview_truncated") val previewTruncated: Boolean,
 )
 
 @Serializable

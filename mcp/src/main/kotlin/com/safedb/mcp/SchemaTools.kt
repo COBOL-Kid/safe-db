@@ -17,7 +17,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -249,11 +248,5 @@ private fun TableInfo.toDetail(): TableDetail =
             },
     )
 
-private fun requiredText(request: CallToolRequest, name: String): String? =
-    request.arguments?.get(name)?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-
 private fun optionalRefresh(request: CallToolRequest): Boolean =
     request.arguments?.get("refresh")?.jsonPrimitive?.booleanOrNull == true
-
-private fun toolError(message: String): CallToolResult =
-    CallToolResult(content = listOf(TextContent(text = message)), isError = true)

@@ -67,6 +67,7 @@ class QueryToolsTest {
             assertEquals("Standard", risk.getValue("effective_gate").jsonPrimitive.content)
             val preview = parsed.getValue("preview").jsonArray
             assertEquals(2, preview.size)
+            assertEquals("false", parsed.getValue("preview_truncated").jsonPrimitive.content)
             assertEquals("1", preview[0].jsonObject.getValue("id").jsonPrimitive.content)
             assertEquals(
                 "user1@example.com",
@@ -84,7 +85,8 @@ class QueryToolsTest {
     @Test
     fun previewIsCappedWhileRowCountKeepsTheFetchedSize() = runBlocking {
         val service = queryService()
-        service.runQueryResult = sampleMcpRunResult(rowCount = 50)
+        service.runQueryResult =
+            sampleMcpRunResult(rowCount = 50, truncated = true, warnings = listOf("engine warning"))
         withMcpClient(createSafeDbMcpServer(service)) { client ->
             val parsed =
                 client
@@ -97,7 +99,14 @@ class QueryToolsTest {
                     )
                     .json()
             assertEquals("50", parsed.getValue("row_count").jsonPrimitive.content)
+            assertEquals("true", parsed.getValue("truncated").jsonPrimitive.content)
+            assertTrue(
+                parsed.getValue("warnings").jsonArray.any {
+                    it.jsonPrimitive.content == "engine warning"
+                }
+            )
             assertEquals(PREVIEW_ROW_LIMIT, parsed.getValue("preview").jsonArray.size)
+            assertEquals("true", parsed.getValue("preview_truncated").jsonPrimitive.content)
         }
     }
 
@@ -127,6 +136,38 @@ class QueryToolsTest {
         }
         assertTrue(service.schemaCalls.isEmpty())
         assertEquals(sampleMcpQuerySpec(), service.runQueryRequests.single().spec)
+    }
+
+    @Test
+    fun sqlDefaultSchemaQualifiesUnqualifiedTables() = runBlocking {
+        val service = queryService()
+        withMcpClient(createSafeDbMcpServer(service)) { client ->
+            val withArg =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "sql" to "SELECT id FROM customers",
+                        "default_schema" to "public",
+                    ),
+                )
+            assertFalse(withArg.isError == true)
+            assertEquals("public", service.runQueryRequests.single().spec.tables.single().schema)
+
+            service.settings =
+                Settings(
+                    blockedSchemas = listOf("audit"),
+                    defaultConnectionId = "c1",
+                    defaultSchema = "public",
+                )
+            val fromSettings =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM customers"),
+                )
+            assertFalse(fromSettings.isError == true)
+            assertEquals("public", service.runQueryRequests.last().spec.tables.single().schema)
+        }
     }
 
     @Test
@@ -167,6 +208,29 @@ class QueryToolsTest {
             val body = parsed.json()
             assertEquals("parse", body.getValue("error").jsonPrimitive.content)
             assertTrue(body.getValue("message").jsonPrimitive.content.isNotBlank())
+
+            val specAsString =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "spec" to "not-an-object"),
+                )
+            assertEquals(true, specAsString.isError)
+            assertEquals("parse", specAsString.json().getValue("error").jsonPrimitive.content)
+
+            val confirmationAsString =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "sql" to "SELECT id FROM public.customers",
+                        "confirmation" to "not-an-object",
+                    ),
+                )
+            assertEquals(true, confirmationAsString.isError)
+            assertEquals(
+                "parse",
+                confirmationAsString.json().getValue("error").jsonPrimitive.content,
+            )
         }
         assertTrue(service.runQueryRequests.isEmpty())
     }

@@ -14,6 +14,7 @@ import com.safedb.store.RecipeStore
 import com.safedb.store.SettingsStore
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
@@ -34,6 +35,15 @@ internal const val MCP_VERSION_RESOURCE = "mcp-version.txt"
 private object McpVersionLoader
 
 internal val toolJson = Json { encodeDefaults = true }
+
+internal fun requiredText(request: CallToolRequest, name: String): String? =
+    optionalText(request, name)
+
+internal fun optionalText(request: CallToolRequest, name: String): String? =
+    request.arguments?.get(name)?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+
+internal fun toolError(message: String): CallToolResult =
+    CallToolResult(content = listOf(TextContent(text = message)), isError = true)
 
 internal fun mcpVersion(): String {
     val stream =
@@ -137,17 +147,11 @@ internal fun registerConnectionTools(
                 required = listOf("connection_id"),
             ),
     ) { request ->
-        val id = request.arguments?.get("connection_id")?.jsonPrimitive?.contentOrNull?.trim()
-        if (id.isNullOrEmpty()) {
-            CallToolResult(
-                content = listOf(TextContent(text = "connection_id is required")),
-                isError = true,
-            )
+        val id = requiredText(request, "connection_id")
+        if (id == null) {
+            toolError("connection_id is required")
         } else if (service.listConnections().none { it.id == id }) {
-            CallToolResult(
-                content = listOf(TextContent(text = "Connection not found")),
-                isError = true,
-            )
+            toolError("Connection not found")
         } else {
             try {
                 service.deleteConnection(id)
@@ -159,10 +163,7 @@ internal fun registerConnectionTools(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                CallToolResult(
-                    content = listOf(TextContent(text = error.message ?: "delete failed")),
-                    isError = true,
-                )
+                toolError(error.message ?: "delete failed")
             }
         }
     }
