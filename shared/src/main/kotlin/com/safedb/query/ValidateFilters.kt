@@ -321,6 +321,9 @@ internal fun checkJoinConnectivity(spec: QuerySpec): Boolean {
     return connected.size == spec.tables.size
 }
 
+fun isSchemaBlocked(schema: String, customBlocked: List<String>): Boolean =
+    isBlocked(schema, customBlocked)
+
 internal fun isBlocked(schema: String, custom: List<String>): Boolean =
     BLOCKED_SCHEMAS.any { it.equals(schema, ignoreCase = true) } ||
         custom.any { it.equals(schema, ignoreCase = true) }

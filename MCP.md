@@ -39,7 +39,7 @@ MCP Registry: `registryType: "npm"` when publishing. Maven/Gradle artifacts are 
 
 New `:mcp` module (stdio CLI) depends on `:shared` only. It maps MCP tools onto `SafeDbService` (and small helpers that slice `Schema` / `QueryResult`). It does not reimplement JDBC, validation, or gating.
 
-`run_query` always introspects fresh schema before `runQueryCore`, matching `getSchemaAndRunQueryAlwaysIntrospectFreshSchema`. List/describe tools may cache a `Schema` per connection with a TTL; stale index/FK metadata must not be used for the risk gate.
+`run_query` always introspects fresh schema before `runQueryCore`, matching `getSchemaAndRunQueryAlwaysIntrospectFreshSchema`. List/describe tools cache a `Schema` per connection for 5 minutes (optional `refresh=true` bypasses the cache); stale index/FK metadata must not be used for the risk gate.
 
 Linux is a resolved `DesktopPlatform`. `DataDirectory` (`com.safedb.app`) and the OS credential store (`auto` / `protected`) stay desktop-app capabilities and throw `DesktopStoreUnavailableException` on Linux. The GUI still rejects Linux in `Main.kt` before Compose. MCP data paths live in `McpDataDirectory` (Windows shares the desktop app dir; Mac and Linux use `com.safedb.mcp`, Linux under XDG). Windows MCP initializes `SecretsManager` against Credential Manager. Mac and Linux MCP use `SecretsManager.initFileStore` (`{dataDir}/credentials/`, POSIX 0600 files) and never open Keychain.
 
@@ -68,8 +68,8 @@ Progressive catalog, then a gated query. Do not return the full `Schema` as the 
 | Tool | Behavior |
 | --- | --- |
 | `list_connections` | id, name, dialect, database. No secrets. |
-| `list_tables` | schema-qualified names, size class, column count. From a cached `introspect()`. Honor `blocked_schemas`. |
-| `describe_table` | columns, types, indexes, FKs for one table. |
+| `list_tables` | `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `introspect()` (5 min TTL, optional `refresh`). Honor `blocked_schemas` (and built-in system catalogs). |
+| `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`), indexes, FKs. Same cache. Unknown or blocked → `Table not found`. |
 | `run_query` | Parse SQL to `QuerySpec` (or accept a spec), `runQueryCore`, same `query_risk_gate` and caps as the app. |
 | `get_result_rows` | Page an in-memory sample. Hard cap (e.g. 50 rows per call). |
 | `summarize_result` | Per-column null count, min/max, a few distinct values on the sample. |
@@ -97,7 +97,7 @@ Order is the intended dependency, not a commitment to one PR.
 1. **`:mcp` module** — stdio server with the official Kotlin MCP SDK. Shadow JAR. `main` that wires `SafeDbServiceImpl` to `McpDataDirectory` (done — see Architecture).
 2. **Platform gate** — `DesktopPlatform` includes Linux. `DataDirectory` and OS credential `auto`/`protected` throw `DesktopStoreUnavailableException` on Linux. Compose UI still exits in `Main.kt` with the macOS/Windows-only message. MCP uses `DesktopPlatform` (no parallel `McpPlatform`). (done — see Architecture.)
 3. **Connection bootstrap** — CLI `setup` / `connections add` / `list` / `delete`; `list_connections` / `delete_connection` tools. Windows: `SecretsManager` / Credential Manager. Mac/Linux: `initFileStore`. No password fields on tools. (done — see Connections.)
-4. **Schema tools** — `getSchema` / `introspect` once, cache, slice into `list_tables` and `describe_table`.
+4. **Schema tools** — `getSchema` / `introspect` once, cache 5 minutes in the MCP process (`refresh` bypasses), slice into `list_tables` and `describe_table`. Filter with `isSchemaBlocked`. Do not cache inside `SafeDbService`. (done — see Agent tools.)
 5. **`run_query`** — reuse `runQueryCore`; map `QueryError.RiskGate` and confirmation-required into tool errors the client can show. Fresh introspect on execute.
 6. **Result store** — `result_id` map, JSONL write, preview in the tool result, `get_result_rows`, `summarize_result`.
 7. **npm wrapper** — `bin` that downloads the GitHub Release artifact, caches by version, execs with stdio. CI publishes the JAR (and later OS bundles) then the npm package.

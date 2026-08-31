@@ -1,7 +1,15 @@
 package com.safedb.mcp
 
+import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.ForeignKeyInfo
+import com.safedb.model.IndexInfo
+import com.safedb.model.Schema
+import com.safedb.model.Settings
+import com.safedb.model.TableInfo
+import com.safedb.model.TableSizeClass
+import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.persist.restrictToOwnerReadWrite
@@ -44,9 +52,13 @@ internal fun sampleMcpConnection(
 internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     val connections = mutableListOf<ConnectionDef>()
     val passwords = mutableMapOf<String, String>()
+    val schemas = mutableMapOf<String, Schema>()
+    val schemaCalls = mutableListOf<String>()
+    var settings: Settings = Settings()
     var testResult: String = "ok"
     var testError: String? = null
     var tested: Pair<ConnectionDef, String?>? = null
+    var schemaError: Exception? = null
 
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         tested = def to password
@@ -67,7 +79,94 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         connections.removeAll { it.id == id }
         passwords.remove(id)
     }
+
+    override suspend fun getSchema(connectionId: String): Schema {
+        schemaCalls += connectionId
+        schemaError?.let { throw it }
+        if (connections.none { it.id == connectionId }) {
+            throw IllegalArgumentException("Connection not found")
+        }
+        return schemas[connectionId] ?: throw IllegalArgumentException("Connection not found")
+    }
+
+    override suspend fun getSettings(): Settings = settings
 }
+
+internal fun sampleMcpSchema(): Schema =
+    Schema(
+        tables =
+            listOf(
+                TableInfo(
+                    schema = "public",
+                    name = "customers",
+                    columns =
+                        listOf(
+                            ColumnInfo(name = "id", dataType = "int", nullable = false),
+                            ColumnInfo(name = "email", dataType = "text", nullable = true),
+                        ),
+                    indexes =
+                        listOf(
+                            IndexInfo(
+                                name = "customers_pkey",
+                                columns = listOf("id"),
+                                kind = "btree",
+                                isUnique = true,
+                                isPrimary = true,
+                            )
+                        ),
+                    tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Small),
+                ),
+                TableInfo(
+                    schema = "public",
+                    name = "orders",
+                    columns =
+                        listOf(
+                            ColumnInfo(
+                                name = "id",
+                                dataType = "int",
+                                nullable = false,
+                                joinEligible = true,
+                            ),
+                            ColumnInfo(name = "customer_id", dataType = "int", nullable = false),
+                        ),
+                    indexes =
+                        listOf(
+                            IndexInfo(
+                                name = "orders_pkey",
+                                columns = listOf("id"),
+                                includedColumns = listOf("customer_id"),
+                                kind = "btree",
+                                isUnique = true,
+                                isPrimary = true,
+                            )
+                        ),
+                    foreignKeys =
+                        listOf(
+                            ForeignKeyInfo(
+                                name = "orders_customer_fk",
+                                columns = listOf("customer_id"),
+                                referencedSchema = "public",
+                                referencedTable = "customers",
+                                referencedColumns = listOf("id"),
+                            )
+                        ),
+                    tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Medium),
+                ),
+                TableInfo(
+                    schema = "audit",
+                    name = "events",
+                    columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false)),
+                    indexes = emptyList(),
+                    tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Large),
+                ),
+                TableInfo(
+                    schema = "pg_catalog",
+                    name = "pg_class",
+                    columns = listOf(ColumnInfo(name = "oid", dataType = "oid", nullable = false)),
+                    indexes = emptyList(),
+                ),
+            )
+    )
 
 internal class BufferCliIo(
     private val lines: ArrayDeque<String> = ArrayDeque(),

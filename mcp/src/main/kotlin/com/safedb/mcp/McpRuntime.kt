@@ -33,7 +33,7 @@ internal const val MCP_VERSION_RESOURCE = "mcp-version.txt"
 
 private object McpVersionLoader
 
-private val toolJson = Json { encodeDefaults = true }
+internal val toolJson = Json { encodeDefaults = true }
 
 internal fun mcpVersion(): String {
     val stream =
@@ -77,7 +77,13 @@ internal fun createMcpService(dataDir: Path): SafeDbService =
         recipeStore = RecipeStore.new(dataDir),
     )
 
-internal fun createSafeDbMcpServer(service: SafeDbService): Server {
+internal fun createSafeDbMcpServer(
+    service: SafeDbService,
+    nowMs: () -> Long = { System.currentTimeMillis() },
+    schemaCacheTtlMs: Long = SCHEMA_CACHE_TTL_MS,
+): Server {
+    val schemaCache =
+        SchemaCache(load = service::getSchema, nowMs = nowMs, ttlMs = schemaCacheTtlMs)
     val server =
         Server(
             serverInfo = Implementation(name = "safe-db", version = mcpVersion()),
@@ -87,11 +93,16 @@ internal fun createSafeDbMcpServer(service: SafeDbService): Server {
                         ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = true))
                 ),
         )
-    registerConnectionTools(server, service)
+    registerConnectionTools(server, service, schemaCache)
+    registerSchemaTools(server, service, schemaCache)
     return server
 }
 
-internal fun registerConnectionTools(server: Server, service: SafeDbService) {
+internal fun registerConnectionTools(
+    server: Server,
+    service: SafeDbService,
+    schemaCache: SchemaCache,
+) {
     server.addTool(
         name = "list_connections",
         description =
@@ -139,6 +150,7 @@ internal fun registerConnectionTools(server: Server, service: SafeDbService) {
         } else {
             try {
                 service.deleteConnection(id)
+                schemaCache.invalidate(id)
                 CallToolResult(
                     content =
                         listOf(TextContent(text = toolJson.encodeToString(DeletedConnection(id))))
