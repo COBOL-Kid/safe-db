@@ -50,17 +50,34 @@ class AtomicWriteTest {
 
     @Test
     fun ensurePrivateDirRestrictsPosixPermissionsWhenSupported() {
-        if (
-            !runCatching { Files.getPosixFilePermissions(Files.createTempDirectory("posix-check")) }
-                .isSuccess
-        ) {
-            return
-        }
+        if (!isPosix()) return
         val dir = Files.createTempDirectory("safedb-atomic-test")
         val nested = dir.resolve("private")
         ensurePrivateDir(nested)
         val perms = Files.getPosixFilePermissions(nested)
         assertEquals(PosixFilePermissions.fromString("rwx------"), perms)
+    }
+
+    @Test
+    fun writePrivateFileRestrictsPosixPermissionsWhenSupported() {
+        val dir = Files.createTempDirectory("safedb-atomic-test")
+        val path = dir.resolve("secret.txt")
+        writePrivateFile(path, "secret")
+        assertEquals("secret", Files.readString(path))
+        if (isPosix()) {
+            assertEquals(
+                PosixFilePermissions.fromString("rw-------"),
+                Files.getPosixFilePermissions(path),
+            )
+            assertTrue(!hasGroupOrOtherPermissions(path))
+
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-r--r--"))
+            writePrivateFile(path, "secret")
+            assertEquals(
+                PosixFilePermissions.fromString("rw-------"),
+                Files.getPosixFilePermissions(path),
+            )
+        }
     }
 
     @Test

@@ -2,7 +2,7 @@
 
 `./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets. Integration tests skip when fixtures are absent.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 309 desktop, 528 shared, and 8 mcp tests, with 90% and 85% line-coverage floors for desktop and shared respectively. Inspect JUnit XML if discovery is uncertain.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 309 desktop, 538 shared, and 18 mcp tests, with 90% and 85% line-coverage floors for desktop and shared respectively. Inspect JUnit XML if discovery is uncertain.
 
 | Command | Use |
 | --- | --- |
@@ -23,6 +23,8 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `scripts/verify_ssl_compat.sh` | Environment-gated SSL/TLS launch-profile and dialect-compatibility suite. |
 | `scripts/docker_test_databases.sh up` | Start and seed all four engines and the plain/TLS test endpoints from the root Compose stack. |
 | `./gradlew :mcp:run` | Stdio MCP server. Speaks JSON-RPC on stdin/stdout; use an MCP client or Inspector. |
+| `./gradlew :mcp:run --args='connections list'` | List saved MCP connections (human CLI; not JSON-RPC). |
+| `./gradlew :mcp:run --args='setup --dialect postgres --database app --username readonly --password-file /absolute/path'` | Non-interactive connection add. Gradle typically has a null `System.console()`, so this is not a password prompt. |
 | `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-*-all.jar`. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 

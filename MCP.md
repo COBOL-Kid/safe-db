@@ -41,7 +41,7 @@ New `:mcp` module (stdio CLI) depends on `:shared` only. It maps MCP tools onto 
 
 `run_query` always introspects fresh schema before `runQueryCore`, matching `getSchemaAndRunQueryAlwaysIntrospectFreshSchema`. List/describe tools may cache a `Schema` per connection with a TTL; stale index/FK metadata must not be used for the risk gate.
 
-Linux is a resolved `DesktopPlatform`. `DataDirectory` (`com.safedb.app`) and the OS credential store (`auto` / `protected`) stay desktop-app capabilities and throw `DesktopStoreUnavailableException` on Linux. The GUI still rejects Linux in `Main.kt` before Compose. MCP data paths live in `McpDataDirectory` (Windows shares the desktop app dir; Mac and Linux use `com.safedb.mcp`, Linux under XDG).
+Linux is a resolved `DesktopPlatform`. `DataDirectory` (`com.safedb.app`) and the OS credential store (`auto` / `protected`) stay desktop-app capabilities and throw `DesktopStoreUnavailableException` on Linux. The GUI still rejects Linux in `Main.kt` before Compose. MCP data paths live in `McpDataDirectory` (Windows shares the desktop app dir; Mac and Linux use `com.safedb.mcp`, Linux under XDG). Windows MCP initializes `SecretsManager` against Credential Manager. Mac and Linux MCP use `SecretsManager.initFileStore` (`{dataDir}/credentials/`, POSIX 0600 files) and never open Keychain.
 
 ## Connections and credentials
 
@@ -53,18 +53,9 @@ Non-secrets stay in `connections.json` via `ConfigStore`. Passwords never go in 
 
 **macOS Keychain sharing with the signed desktop app is deferred.** An npm-launched `java` (or Node) process is a different code identity than `safe-db.app`. Silent, stable reuse of desktop Keychain items needs a Developer ID–signed MCP helper with the same Team ID; that work is later. Until then, Mac MCP connections are a separate store (MCP-only `connections.json` and/or the file password source below). Do not document “the agent uses your app passwords” on Mac in v1.
 
-**Without the desktop app:** an interactive CLI (`npx @safedb/mcp setup` or `connections add`) prompts for host/user/database and a no-echo password, then calls `createConnection`. After that, `mcp.json` stays command-only.
+**Without the desktop app:** `safe-db-mcp setup` or `connections add` prompts for host/user/database and a no-echo password (or `--password-file`), tests the connection, then calls `createConnection`. After that, `mcp.json` stays command-only.
 
-**Password file fallback** (Linux, and Mac until Keychain sharing exists): same shape as launch profiles — config points at an absolute `0600` (or Windows ACL) file; the secret is not in JSON.
-
-```json
-{
-  "source": "file",
-  "path": "/absolute/path/to/prod-pg.password"
-}
-```
-
-Optional later: importable overlay of `ConnectionDef` plus `PasswordSource` (`credentialStore` | `file`). Not required if CLI setup ships first.
+**Password file fallback** (Linux, and Mac until Keychain sharing exists): MCP `--password-file` is one line, an absolute path, and owner-only (`0600`). Launch profiles use the same one-line absolute format; `0600` is guidance there, not enforcement. Setup copies the secret into `{mcpDataDir}/credentials/` (owner-only files). `connections.json` stays non-secret. A live `PasswordSource` pointer overlay is later.
 
 **Do not** add MCP tools that accept a raw `password` or a URL with embedded credentials. List/delete connections is fine; add/update takes a password *source*, not the password.
 
@@ -103,9 +94,9 @@ The engine can still fetch up to `DEFAULT_LIMIT` / `MAX_LIMIT`. What the model s
 
 Order is the intended dependency, not a commitment to one PR.
 
-1. **`:mcp` module** — stdio server with the official Kotlin MCP SDK. Shadow JAR. `main` that wires `SafeDbServiceImpl` to `McpDataDirectory` (done — see Architecture). The module, stdio `main`, Shadow JAR, and `McpDataDirectory` exist; tool handlers are not registered yet.
-2. **Platform gate** — `DesktopPlatform` includes Linux. `DataDirectory` and OS credential `auto`/`protected` throw `DesktopStoreUnavailableException` on Linux. Compose UI still exits in `Main.kt` with the macOS/Windows-only message. MCP uses `DesktopPlatform` (no parallel `McpPlatform`).
-3. **Connection bootstrap** — CLI `setup` / `connections add`; `list_connections` / `delete_connection` tools. Windows: `SecretsManager` as today. Elsewhere: file password source. No password fields on tools.
+1. **`:mcp` module** — stdio server with the official Kotlin MCP SDK. Shadow JAR. `main` that wires `SafeDbServiceImpl` to `McpDataDirectory` (done — see Architecture).
+2. **Platform gate** — `DesktopPlatform` includes Linux. `DataDirectory` and OS credential `auto`/`protected` throw `DesktopStoreUnavailableException` on Linux. Compose UI still exits in `Main.kt` with the macOS/Windows-only message. MCP uses `DesktopPlatform` (no parallel `McpPlatform`). (done — see Architecture.)
+3. **Connection bootstrap** — CLI `setup` / `connections add` / `list` / `delete`; `list_connections` / `delete_connection` tools. Windows: `SecretsManager` / Credential Manager. Mac/Linux: `initFileStore`. No password fields on tools. (done — see Connections.)
 4. **Schema tools** — `getSchema` / `introspect` once, cache, slice into `list_tables` and `describe_table`.
 5. **`run_query`** — reuse `runQueryCore`; map `QueryError.RiskGate` and confirmation-required into tool errors the client can show. Fresh introspect on execute.
 6. **Result store** — `result_id` map, JSONL write, preview in the tool result, `get_result_rows`, `summarize_result`.

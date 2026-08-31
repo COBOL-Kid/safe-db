@@ -5,8 +5,11 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.persist.isPosix
 import com.safedb.platform.DesktopPlatform
 import com.safedb.platform.DesktopStoreUnavailableException
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -107,6 +110,36 @@ class SecretsTest {
         SecretsManager.initStoreForOsName("disabled", "Linux")
 
         assertEquals("disabled", SecretsManager.activeBackendLabel())
+    }
+
+    @Test
+    fun initFileStoreLocksDownPreexistingCredentialsDir() {
+        if (!isPosix()) return
+        val credentialsDir = Files.createTempDirectory("safedb-file-store")
+        Files.setPosixFilePermissions(credentialsDir, PosixFilePermissions.fromString("rwxr-xr-x"))
+
+        SecretsManager.initFileStore(credentialsDir)
+
+        assertEquals(
+            PosixFilePermissions.fromString("rwx------"),
+            Files.getPosixFilePermissions(credentialsDir),
+        )
+        assertEquals("file", SecretsManager.activeBackendLabel())
+    }
+
+    @Test
+    fun fileStoreRoundTripBindsFingerprint() {
+        val dir = Files.createTempDirectory("safedb-file-store")
+        SecretsManager.initFileStore(dir.resolve("credentials"))
+        val def = connectionDef("conn-file")
+
+        SecretsManager.savePasswordForDefinition(def, "secret").getOrThrow()
+        CredentialSession.lockCredentials()
+        assertEquals("secret", SecretsManager.passwordForDefinition(def).getOrThrow())
+        assertEquals("file", SecretsManager.activeBackendLabel())
+
+        SecretsManager.deletePassword(def.id).getOrThrow()
+        assertTrue(SecretsManager.passwordForDefinition(def).isFailure)
     }
 
     @Test

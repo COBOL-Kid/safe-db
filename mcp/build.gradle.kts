@@ -22,6 +22,7 @@ dependencies {
     implementation("org.slf4j:slf4j-simple:2.0.17")
 
     testImplementation(kotlin("test"))
+    testImplementation(testFixtures(project(":shared")))
     testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.15.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }

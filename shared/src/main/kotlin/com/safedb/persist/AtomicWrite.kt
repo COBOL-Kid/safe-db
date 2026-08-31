@@ -24,7 +24,7 @@ fun ensurePrivateDir(path: Path) {
     }
 }
 
-fun atomicWrite(path: Path, content: String) {
+fun atomicWrite(path: Path, content: String, ownerOnly: Boolean = false) {
     val parent = path.parent ?: error("path has no parent: $path")
     ensurePrivateDir(parent)
 
@@ -39,12 +39,32 @@ fun atomicWrite(path: Path, content: String) {
             channel.write(java.nio.ByteBuffer.wrap(content.toByteArray(Charsets.UTF_8)))
             channel.force(true)
         }
+        if (ownerOnly) {
+            restrictToOwnerReadWrite(tmpPath)
+        }
         replaceFile(tmpPath, path)
         fsyncParentDirectory(parent)
     } catch (error: Exception) {
         runCatching { Files.deleteIfExists(tmpPath) }
         throw error
     }
+}
+
+fun writePrivateFile(path: Path, content: String) {
+    atomicWrite(path, content, ownerOnly = true)
+}
+
+fun restrictToOwnerReadWrite(path: Path) {
+    if (!isPosix()) return
+    Files.setPosixFilePermissions(
+        path,
+        EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+    )
+}
+
+fun hasGroupOrOtherPermissions(path: Path): Boolean {
+    if (!isPosix()) return false
+    return Files.getPosixFilePermissions(path).any { it in GROUP_OR_OTHER }
 }
 
 internal fun fsyncParentDirectory(directory: Path) {
@@ -70,8 +90,18 @@ private fun replaceFile(source: Path, destination: Path) {
     )
 }
 
-private fun isPosix(): Boolean = runCatching {
+internal fun isPosix(): Boolean = runCatching {
     Files.getPosixFilePermissions(Path.of("."))
     true
 }
     .getOrDefault(false)
+
+private val GROUP_OR_OTHER =
+    EnumSet.of(
+        PosixFilePermission.GROUP_READ,
+        PosixFilePermission.GROUP_WRITE,
+        PosixFilePermission.GROUP_EXECUTE,
+        PosixFilePermission.OTHERS_READ,
+        PosixFilePermission.OTHERS_WRITE,
+        PosixFilePermission.OTHERS_EXECUTE,
+    )

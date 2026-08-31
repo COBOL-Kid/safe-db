@@ -143,8 +143,8 @@ val verifyUnitTestDiscovery =
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
         minimumDesktopTests.set(309)
-        minimumSharedTests.set(528)
-        minimumMcpTests.set(8)
+        minimumSharedTests.set(538)
+        minimumMcpTests.set(18)
     }
 
 val verifyCoverageRatchet =

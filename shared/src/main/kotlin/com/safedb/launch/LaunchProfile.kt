@@ -1,6 +1,8 @@
 package com.safedb.launch
 
 import com.safedb.secrets.CredentialStore
+import com.safedb.secrets.PasswordFile
+import com.safedb.secrets.PasswordFileException
 import com.safedb.secrets.createStrictPlatformCredentialStoreOrNull
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -18,7 +20,6 @@ const val TRUST_STORE_CREDENTIAL_SERVICE = "com.safedb.app.trust-store"
 // the JSSE PKCS12 setting.
 internal const val POSTGRES_LAUNCH_ROOT_CERT_PROPERTY = "com.safedb.launch.postgresSslRootCert"
 
-private const val MAX_PASSWORD_BYTES = 4_096
 private const val MAX_PROFILE_BYTES = 65_536
 private const val PROFILE_OPTION = "--launch-profile"
 
@@ -141,39 +142,17 @@ object LaunchProfileBootstrap {
                         "file passwords require path and do not allow reference"
                     )
                 }
-                readPasswordFile(
-                    requireAbsoluteRegularFile(source.path, "Trust-store password file")
-                )
+                try {
+                    PasswordFile.read(source.path, "Trust-store password file")
+                } catch (error: PasswordFileException) {
+                    throw LaunchProfileException(error.message ?: error.toString(), error.cause)
+                }
             }
             else ->
                 throw LaunchProfileException(
                     "Unsupported trust-store password source '${source.source}'"
                 )
         }
-
-    private fun readPasswordFile(path: Path): String {
-        val decoded = readUtf8File(path, MAX_PASSWORD_BYTES + 2, "Trust-store password file")
-        val password =
-            when {
-                decoded.endsWith("\r\n") -> decoded.dropLast(2)
-                decoded.endsWith("\n") -> decoded.dropLast(1)
-                else -> decoded
-            }
-        val passwordBytes = password.toByteArray(StandardCharsets.UTF_8)
-        val passwordTooLarge =
-            try {
-                passwordBytes.size > MAX_PASSWORD_BYTES
-            } finally {
-                passwordBytes.fill(0)
-            }
-        if (passwordTooLarge) {
-            throw LaunchProfileException("Trust-store password file is too large")
-        }
-        if (password.any { it == '\u0000' || it == '\r' || it == '\n' }) {
-            throw LaunchProfileException("Trust-store password file must contain exactly one line")
-        }
-        return password
-    }
 
     private fun readUtf8File(path: Path, maxBytes: Int, label: String): String {
         val bytes =
