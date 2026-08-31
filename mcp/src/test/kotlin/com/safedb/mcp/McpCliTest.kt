@@ -213,7 +213,12 @@ class McpCliTest {
         deleteService.connections += sampleMcpConnection()
         assertEquals(
             1,
-            executeMcpCommand(McpCommand.ConnectionsDelete("c1"), deleteService, deleteIo, tty = false),
+            executeMcpCommand(
+                McpCommand.ConnectionsDelete("c1"),
+                deleteService,
+                deleteIo,
+                tty = false,
+            ),
         )
         assertTrue(deleteIo.stderr.toString().contains("safe-db-mcp: store write failed"))
     }

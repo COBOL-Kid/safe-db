@@ -314,7 +314,8 @@ private fun promptWithDefault(
     if (!tty) return defaultValue ?: throw McpCliUsageException("Missing $prompt")
     val suffix = if (defaultValue != null) " [$defaultValue]" else ""
     while (true) {
-        val line = io.readLine("$prompt$suffix: ")?.trim() ?: throw IllegalStateException("canceled")
+        val line =
+            io.readLine("$prompt$suffix: ")?.trim() ?: throw IllegalStateException("canceled")
         if (line.isNotEmpty()) return line
         if (defaultValue != null) return defaultValue
     }

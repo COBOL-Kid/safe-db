@@ -80,7 +80,9 @@ class FileCredentialStoreTest {
         assertEquals("ok", Files.readString(sibling))
         assertEquals(
             setOf("keep"),
-            Files.list(dir).use { stream -> stream.map { it.fileName.toString() }.toList().toSet() },
+            Files.list(dir).use { stream ->
+                stream.map { it.fileName.toString() }.toList().toSet()
+            },
         )
         assertEquals(
             parentEntries,
