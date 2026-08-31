@@ -25,7 +25,13 @@ class McpRuntimeTest {
         withMcpClient(createSafeDbMcpServer(RecordingSafeDbService())) { client ->
             assertEquals("safe-db", client.serverVersion?.name)
             assertEquals(
-                listOf("delete_connection", "describe_table", "list_connections", "list_tables"),
+                listOf(
+                    "delete_connection",
+                    "describe_table",
+                    "list_connections",
+                    "list_tables",
+                    "run_query",
+                ),
                 client.listTools().tools.map { it.name }.sorted(),
             )
         }

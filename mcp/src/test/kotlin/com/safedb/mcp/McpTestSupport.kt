@@ -1,19 +1,37 @@
 package com.safedb.mcp
 
 import com.safedb.model.ColumnInfo
+import com.safedb.model.ColumnSel
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.FilterGroup
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
+import com.safedb.model.QueryResult
+import com.safedb.model.QueryRiskGate
+import com.safedb.model.QuerySpec
+import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
+import com.safedb.model.TableRef
 import com.safedb.model.TableSizeClass
 import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.persist.restrictToOwnerReadWrite
+import com.safedb.query.QUERY_RISK_SCORE_VERSION
+import com.safedb.query.QueryPlanStatus
+import com.safedb.query.QueryRiskAssessment
+import com.safedb.query.QueryRiskDecision
+import com.safedb.query.QueryRiskEvaluation
+import com.safedb.query.QueryRiskSeverity
+import com.safedb.query.RiskDecisionReason
+import com.safedb.query.RiskGateState
 import com.safedb.service.FakeSafeDbServiceSupport
+import com.safedb.service.QueryRunRequest
+import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import io.modelcontextprotocol.kotlin.sdk.server.Server
@@ -59,6 +77,10 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     var testError: String? = null
     var tested: Pair<ConnectionDef, String?>? = null
     var schemaError: Exception? = null
+    val runQueryRequests = mutableListOf<QueryRunRequest>()
+    var runQueryResult: QueryRunResult? = null
+    var runQueryError: Exception? = null
+    var runQueryHandler: ((QueryRunRequest) -> QueryRunResult)? = null
 
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         tested = def to password
@@ -90,7 +112,86 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     }
 
     override suspend fun getSettings(): Settings = settings
+
+    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
+        runQueryRequests += request
+        runQueryHandler?.let {
+            return it(request)
+        }
+        runQueryError?.let { throw it }
+        return runQueryResult ?: throw UnsupportedOperationException("runQuery")
+    }
 }
+
+internal fun sampleMcpQuerySpec(): QuerySpec =
+    QuerySpec(
+        tables = listOf(TableRef(schema = "public", name = "customers", alias = "customers")),
+        columns = listOf(ColumnSel("customers", "id"), ColumnSel("customers", "email")),
+        filters = FilterGroup(id = "g1"),
+        limit = 10,
+    )
+
+internal fun sampleMcpQueryResult(
+    rowCount: Int = 2,
+    truncated: Boolean = false,
+    warnings: List<String> = emptyList(),
+    rows: List<List<ResultCell>>? = null,
+): QueryResult {
+    val columns = listOf(ResultColumn("id", "int"), ResultColumn("email", "text"))
+    val resolvedRows =
+        rows
+            ?: (1..rowCount).map { index ->
+                listOf(
+                    ResultCell.integer(index.toLong()),
+                    ResultCell.text("user$index@example.com"),
+                )
+            }
+    return QueryResult(
+        columns = columns,
+        rows = resolvedRows,
+        rowCount = rowCount,
+        truncated = truncated,
+        warnings = warnings,
+    )
+}
+
+internal fun allowedMcpRisk(
+    state: RiskGateState = RiskGateState.Allowed,
+    severity: QueryRiskSeverity = QueryRiskSeverity.Minimal,
+    score: Int = 0,
+    reasons: List<RiskDecisionReason> = emptyList(),
+    planStatus: QueryPlanStatus = QueryPlanStatus.Available,
+): QueryRiskEvaluation =
+    QueryRiskEvaluation(
+        staticAssessment = null,
+        finalAssessment =
+            QueryRiskAssessment(
+                scoreVersion = QUERY_RISK_SCORE_VERSION,
+                queryFingerprint = "fp",
+                score = score,
+                severity = severity,
+                categoryScores = emptyMap(),
+                signals = emptyList(),
+                uncertainties = emptyList(),
+            ),
+        planStatus = planStatus,
+        decision =
+            QueryRiskDecision(
+                queryFingerprint = "fp",
+                state = state,
+                effectiveGate = QueryRiskGate.Standard,
+                blockingBand = QueryRiskSeverity.High,
+                reasons = reasons,
+            ),
+        optimizerCost = 1.0,
+    )
+
+internal fun sampleMcpRunResult(
+    rowCount: Int = 2,
+    truncated: Boolean = false,
+    warnings: List<String> = emptyList(),
+): QueryRunResult =
+    QueryRunResult(sampleMcpQueryResult(rowCount, truncated, warnings), allowedMcpRisk())
 
 internal fun sampleMcpSchema(): Schema =
     Schema(

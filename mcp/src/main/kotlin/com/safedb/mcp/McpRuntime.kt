@@ -95,6 +95,7 @@ internal fun createSafeDbMcpServer(
         )
     registerConnectionTools(server, service, schemaCache)
     registerSchemaTools(server, service, schemaCache)
+    registerQueryTools(server, service)
     return server
 }
 
