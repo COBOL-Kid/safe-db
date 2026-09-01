@@ -7,6 +7,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class McpSecretsTest {
@@ -44,6 +45,17 @@ class McpSecretsTest {
             envValue = "disabled",
         )
         assertEquals("disabled", SecretsManager.activeBackendLabel())
+    }
+
+    @Test
+    fun windowsAutoAndProtectedDoNotUseFileStore() {
+        listOf(null, "auto", "protected").forEach { envValue ->
+            val dataDir = Files.createTempDirectory("safedb-mcp-secrets-win-auto")
+            initMcpSecrets(DesktopPlatform.Windows, dataDir, envValue)
+
+            assertNotEquals("file", SecretsManager.activeBackendLabel(), "envValue=$envValue")
+            assertFalse(Files.exists(dataDir.resolve("credentials")), "envValue=$envValue")
+        }
     }
 
     @Test

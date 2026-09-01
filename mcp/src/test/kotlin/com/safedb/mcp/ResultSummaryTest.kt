@@ -73,4 +73,47 @@ class ResultSummaryTest {
         assertFalse(encoded.contains("\"max\""))
         assertTrue(blob.distinctTruncated)
     }
+
+    @Test
+    fun allNullColumnOmitsMinMaxWithoutThrowing() {
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("empty", "int")),
+                rows = listOf(listOf(ResultCell.Null), listOf(ResultCell.Null)),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val columns = summarizeColumns(result)
+        val empty = columns.single()
+        assertEquals(result.rowCount, empty.nullCount)
+        assertNull(empty.min)
+        assertNull(empty.max)
+        val encoded = toolJson.encodeToString(ColumnSummary.serializer(), empty)
+        assertFalse(encoded.contains("\"min\""))
+        assertFalse(encoded.contains("\"max\""))
+    }
+
+    @Test
+    fun mixedIntegerAndTextColumnOmitsMinMax() {
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("mixed", "text")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.IntegerCell(1L)),
+                        listOf(ResultCell.text("a")),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val columns = summarizeColumns(result)
+        val mixed = columns.single()
+        assertNull(mixed.min)
+        assertNull(mixed.max)
+        val encoded = toolJson.encodeToString(ColumnSummary.serializer(), mixed)
+        assertFalse(encoded.contains("\"min\""))
+        assertFalse(encoded.contains("\"max\""))
+    }
 }

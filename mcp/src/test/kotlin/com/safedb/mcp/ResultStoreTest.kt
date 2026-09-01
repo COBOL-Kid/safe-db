@@ -137,31 +137,47 @@ class ResultStoreTest {
     @Test
     fun jsonlWriteFailureKeepsInMemoryResultWithoutArtifact() = runBlocking {
         withTempResults { dir ->
+            val store =
+                ResultStore(
+                    dir,
+                    nowMs = { 1_000L },
+                    onAfterJsonlWrite = { error("simulated artifact failure") },
+                )
+            val stored = store.put(sampleMcpQueryResult())
+            assertNull(stored.artifactPath)
+            assertNull(stored.artifactBytes)
+            assertEquals(sampleMcpQueryResult(), store.get(stored.resultId))
+            Files.list(dir).use { files -> assertEquals(0L, files.count()) }
+
             val posix = runCatching {
                 Files.getPosixFilePermissions(dir)
                 true
             }
                 .getOrDefault(false)
-            if (!posix) return@withTempResults
-            val store = ResultStore(dir, nowMs = { 1_000L })
-            Files.setPosixFilePermissions(
-                dir,
-                EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE),
-            )
-            try {
-                val stored = store.put(sampleMcpQueryResult())
-                assertNull(stored.artifactPath)
-                assertNull(stored.artifactBytes)
-                assertEquals(sampleMcpQueryResult(), store.get(stored.resultId))
-            } finally {
+            if (posix) {
+                val chmodStore = ResultStore(dir, nowMs = { 1_000L })
                 Files.setPosixFilePermissions(
                     dir,
                     EnumSet.of(
                         PosixFilePermission.OWNER_READ,
-                        PosixFilePermission.OWNER_WRITE,
                         PosixFilePermission.OWNER_EXECUTE,
                     ),
                 )
+                try {
+                    val chmodStored = chmodStore.put(sampleMcpQueryResult())
+                    assertNull(chmodStored.artifactPath)
+                    assertNull(chmodStored.artifactBytes)
+                    assertEquals(sampleMcpQueryResult(), chmodStore.get(chmodStored.resultId))
+                } finally {
+                    Files.setPosixFilePermissions(
+                        dir,
+                        EnumSet.of(
+                            PosixFilePermission.OWNER_READ,
+                            PosixFilePermission.OWNER_WRITE,
+                            PosixFilePermission.OWNER_EXECUTE,
+                        ),
+                    )
+                }
             }
         }
     }

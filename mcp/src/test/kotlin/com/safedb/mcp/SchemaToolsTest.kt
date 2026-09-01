@@ -75,6 +75,10 @@ class SchemaToolsTest {
             val columns = parsed.getValue("columns").jsonArray
             assertEquals("id", columns[0].jsonObject.getValue("name").jsonPrimitive.content)
             assertEquals("int", columns[0].jsonObject.getValue("data_type").jsonPrimitive.content)
+            assertEquals(
+                "false",
+                columns[0].jsonObject.getValue("nullable").jsonPrimitive.content,
+            )
             val index = parsed.getValue("indexes").jsonArray.single().jsonObject
             assertEquals("orders_pkey", index.getValue("name").jsonPrimitive.content)
             assertEquals("id", index.getValue("columns").jsonArray.single().jsonPrimitive.content)
@@ -205,6 +209,16 @@ class SchemaToolsTest {
             assertEquals(true, blocked.isError)
             assertEquals("Table not found", blocked.text())
             assertFalse(blocked.text().contains("blocked", ignoreCase = true))
+
+            val catalog =
+                client.callTool(
+                    "describe_table",
+                    mapOf("connection_id" to "c1", "schema" to "pg_catalog", "table" to "pg_class"),
+                )
+            assertEquals(true, catalog.isError)
+            assertEquals("Table not found", catalog.text())
+            assertFalse(catalog.text().contains("oid"))
+            assertFalse(catalog.text().contains("pg_class"))
         }
     }
 

@@ -128,6 +128,7 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
             verifyMcpIntegrationTestDiscovery(
                 junitReports(mcpResultsDir).map(File::readText),
                 requireMysql = "mysql" in requiredEngines,
+                requirePostgres = "postgres" in requiredEngines,
                 resultsLocation = mcpResultsDir.toString(),
             )
         for (result in mcpResults) {
@@ -271,6 +272,7 @@ internal fun verifyIntegrationTestDiscovery(
 internal fun verifyMcpIntegrationTestDiscovery(
     reports: List<String>,
     requireMysql: Boolean,
+    requirePostgres: Boolean = false,
     resultsLocation: String = "the MCP integration test results directory",
 ): List<IntegrationDiscoveryResult> {
     check(reports.isNotEmpty()) {
@@ -280,6 +282,9 @@ internal fun verifyMcpIntegrationTestDiscovery(
         add(IntegrationSuite("mcp packaged stdio", "McpPackagedStdioIntegrationTest", 1))
         if (requireMysql) {
             add(IntegrationSuite("mcp mysql", "McpMySqlIntegrationTest", 1))
+        }
+        if (requirePostgres) {
+            add(IntegrationSuite("mcp postgres", "McpPostgresIntegrationTest", 1))
         }
     }
     val counts = suites.associate { it.engine to intArrayOf(0, 0) }

@@ -203,6 +203,33 @@ class QueryToolsTest {
                 )
             assertFalse(fromSettings.isError == true)
             assertEquals("public", service.runQueryRequests.last().spec.tables.single().schema)
+
+            val requestsAfterMatchingConnection = service.runQueryRequests.size
+            service.settings =
+                Settings(
+                    blockedSchemas = listOf("audit"),
+                    defaultConnectionId = "other",
+                    defaultSchema = "public",
+                )
+            val otherConnection =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM customers"),
+                )
+            assertEquals(true, otherConnection.isError)
+            val mismatched = otherConnection.json()
+            assertEquals("parse", mismatched.getValue("error").jsonPrimitive.content)
+            assertTrue(
+                mismatched
+                    .getValue("message")
+                    .jsonPrimitive
+                    .content
+                    .contains(
+                        "schema",
+                        ignoreCase = true,
+                    )
+            )
+            assertEquals(requestsAfterMatchingConnection, service.runQueryRequests.size)
         }
     }
 
@@ -461,6 +488,11 @@ class QueryToolsTest {
             assertEquals(true, first.isError)
             val body = first.json()
             assertEquals("confirmation_required", body.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                listOf("Query plan assessment is unavailable: timeout."),
+                body.getValue("reasons").jsonArray.map { it.jsonPrimitive.content },
+            )
+            assertTrue(body.getValue("message").jsonPrimitive.content.isNotBlank())
             val echoed = body.getValue("confirmation")
             val success =
                 client.callTool(

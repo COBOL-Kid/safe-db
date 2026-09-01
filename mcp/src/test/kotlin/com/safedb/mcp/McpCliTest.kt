@@ -228,6 +228,42 @@ class McpCliTest {
     }
 
     @Test
+    fun interactiveAddWithFlagsTestsThenSavesWithoutLeakingPassword() = runBlocking {
+        val service = RecordingSafeDbService()
+        val io = BufferCliIo(passwords = ArrayDeque(listOf("tty-secret")))
+        val command =
+            parseMcpArgs(
+                arrayOf(
+                    "setup",
+                    "--name",
+                    "Interactive mysql",
+                    "--dialect",
+                    "mysql",
+                    "--host",
+                    "db.example",
+                    "--port",
+                    "3306",
+                    "--database",
+                    "app",
+                    "--username",
+                    "readonly",
+                    "--transport",
+                    "disabled",
+                )
+            )
+
+        assertEquals(0, executeMcpCommand(command, service, io, tty = true))
+        assertEquals(1, service.connections.size)
+        val def = service.connections.single()
+        assertEquals("Interactive mysql", def.name)
+        assertEquals(def to "tty-secret", service.tested)
+        assertEquals("tty-secret", service.passwords[def.id])
+        assertTrue(io.stdout.toString().contains("Added connection ${def.id}"))
+        assertFalse(io.stdout.toString().contains("tty-secret"))
+        assertFalse(io.stderr.toString().contains("tty-secret"))
+    }
+
+    @Test
     fun invalidDialectExits2() = runBlocking {
         val service = RecordingSafeDbService()
         val io = BufferCliIo()
@@ -276,6 +312,26 @@ class McpCliTest {
     }
 
     @Test
+    fun oracleSecureTransportSavesWalletLocation() = runBlocking {
+        val directory = Files.createTempDirectory("safedb-mcp-cli")
+        val passwordFile = writeOwnerOnlyPasswordFile(directory, "oracle-secret")
+        val service = RecordingSafeDbService()
+        val io = BufferCliIo()
+        val command =
+            parseMcpArgs(
+                validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
+                    arrayOf("--transport", "verify-identity", "--oracle-wallet", "/abs/path")
+            )
+
+        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+        val saved = service.connections.single()
+        assertEquals("/abs/path", saved.transportSecurity.oracleWalletLocation)
+        assertEquals(TransportSecurityMode.VerifyIdentity, saved.transportSecurity.mode)
+        assertFalse(io.stdout.toString().contains("oracle-secret"))
+        assertFalse(io.stderr.toString().contains("oracle-secret"))
+    }
+
+    @Test
     fun nonInteractiveAddUsesDocumentedDefaults() = runBlocking {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
         val passwordFile = writeOwnerOnlyPasswordFile(directory, "default-secret")
@@ -303,6 +359,37 @@ class McpCliTest {
         assertEquals(3306, saved.port)
         assertEquals(TransportSecurityMode.Disabled, saved.transportSecurity.mode)
         assertFalse(io.stdout.toString().contains("default-secret"))
+    }
+
+    @Test
+    fun nonInteractiveRemoteAddDefaultsToVerifyIdentity() = runBlocking {
+        val directory = Files.createTempDirectory("safedb-mcp-cli")
+        val passwordFile = writeOwnerOnlyPasswordFile(directory, "remote-secret")
+        val service = RecordingSafeDbService()
+        val io = BufferCliIo()
+        val command =
+            parseMcpArgs(
+                arrayOf(
+                    "setup",
+                    "--host",
+                    "db.example.com",
+                    "--dialect",
+                    "postgres",
+                    "--database",
+                    "app",
+                    "--username",
+                    "readonly",
+                    "--password-file",
+                    passwordFile.toString(),
+                )
+            )
+
+        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+        val saved = service.connections.single()
+        assertEquals("db.example.com", saved.host)
+        assertEquals(TransportSecurityMode.VerifyIdentity, saved.transportSecurity.mode)
+        assertFalse(io.stdout.toString().contains("remote-secret"))
+        assertFalse(io.stderr.toString().contains("remote-secret"))
     }
 
     @Test

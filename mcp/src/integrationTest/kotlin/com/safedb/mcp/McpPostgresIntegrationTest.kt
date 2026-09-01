@@ -20,18 +20,19 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 @Tag("integration")
-class McpMySqlIntegrationTest {
+class McpPostgresIntegrationTest {
     @Test
-    fun mysqlToolsUseSavedConnectionAndKeepCredentialsPrivate() = runBlocking {
-        IntegrationAssumptions.assumeMysqlAvailable()
-        val dataDir = Files.createTempDirectory("safedb-mcp-mysql-integration")
+    fun postgresToolsUseSavedConnectionAndKeepCredentialsPrivate() = runBlocking {
+        IntegrationAssumptions.assumePostgresAvailable()
+        val dataDir = Files.createTempDirectory("safedb-mcp-postgres-integration")
         val resultsDir = dataDir.resolve("results")
         val connection =
-            IntegrationAssumptions.mysqlConnectionDef(
-                id = "mcp-integration-mysql",
-                name = "MCP Integration MySQL",
+            IntegrationAssumptions.postgresConnectionDef(
+                id = "mcp-integration-postgres",
+                name = "MCP Integration PostgreSQL",
             )
-        val password = IntegrationAssumptions.mysqlPassword
+        val password = IntegrationAssumptions.postgresPassword
+        val schema = "public"
 
         SecretsManager.lockCredentials()
         SecretsManager.initStore("disabled")
@@ -54,14 +55,14 @@ class McpMySqlIntegrationTest {
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject
-                        table.getValue("schema").jsonPrimitive.content == connection.database &&
+                        table.getValue("schema").jsonPrimitive.content == schema &&
                             table.getValue("name").jsonPrimitive.content == "customers"
                     }
                 )
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject
-                        table.getValue("schema").jsonPrimitive.content == connection.database &&
+                        table.getValue("schema").jsonPrimitive.content == schema &&
                             table.getValue("name").jsonPrimitive.content == "orders"
                     }
                 )
@@ -71,7 +72,7 @@ class McpMySqlIntegrationTest {
                         "describe_table",
                         mapOf(
                             "connection_id" to connection.id,
-                            "schema" to connection.database,
+                            "schema" to schema,
                             "table" to "orders",
                         ),
                     )
@@ -94,7 +95,7 @@ class McpMySqlIntegrationTest {
                         mapOf(
                             "connection_id" to connection.id,
                             "sql" to "SELECT id, email FROM customers LIMIT 3",
-                            "default_schema" to connection.database,
+                            "default_schema" to schema,
                         ),
                     )
                 assertNotEquals(true, receiptResult.isError, receiptResult.text())
@@ -139,68 +140,6 @@ class McpMySqlIntegrationTest {
             SecretsManager.initStore("disabled")
             SecretsManager.resetStoreReadCountForTest()
             dataDir.toFile().deleteRecursively()
-        }
-    }
-
-    @Test
-    fun packagedJarMysqlToolsUseSavedConnectionAndKeepCredentialsPrivate() = runBlocking {
-        IntegrationAssumptions.assumeMysqlAvailable()
-        val connection =
-            IntegrationAssumptions.mysqlConnectionDef(
-                id = "mcp-packaged-mysql",
-                name = "MCP Packaged MySQL",
-            )
-        val password = IntegrationAssumptions.mysqlPassword
-        try {
-            withPackagedMcpClient(
-                keychainBackend = null,
-                prepare = { tempRoot, home ->
-                    seedMcpConnectionForPackagedJar(
-                        isolatedMcpDataDir(tempRoot, home),
-                        connection,
-                        password,
-                    )
-                },
-            ) { client ->
-                val listed = client.callTool("list_tables", mapOf("connection_id" to connection.id))
-                assertNotEquals(true, listed.isError)
-                val listedText = listed.text()
-                assertPayloadIsPrivate(listedText, connection, password)
-                val tables = Json.parseToJsonElement(listedText).jsonArray
-                assertNotNull(
-                    tables.find {
-                        val table = it.jsonObject
-                        table.getValue("schema").jsonPrimitive.content == connection.database &&
-                            table.getValue("name").jsonPrimitive.content == "customers"
-                    }
-                )
-                assertNotNull(
-                    tables.find {
-                        val table = it.jsonObject
-                        table.getValue("schema").jsonPrimitive.content == connection.database &&
-                            table.getValue("name").jsonPrimitive.content == "orders"
-                    }
-                )
-
-                val receiptResult =
-                    client.callTool(
-                        "run_query",
-                        mapOf(
-                            "connection_id" to connection.id,
-                            "sql" to "SELECT id, email FROM customers LIMIT 3",
-                            "default_schema" to connection.database,
-                        ),
-                    )
-                assertNotEquals(true, receiptResult.isError, receiptResult.text())
-                val receiptText = receiptResult.text()
-                assertPayloadIsPrivate(receiptText, connection, password)
-                val receipt = Json.parseToJsonElement(receiptText).jsonObject
-                assertEquals("3", receipt.getValue("row_count").jsonPrimitive.content)
-                val resultId = receipt.getValue("result_id").jsonPrimitive.content
-                assertTrue(resultId.isNotBlank())
-            }
-        } finally {
-            cleanupPackagedJarWindowsSecret(connection.id)
         }
     }
 }
