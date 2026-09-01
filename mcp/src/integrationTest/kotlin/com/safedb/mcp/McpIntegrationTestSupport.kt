@@ -168,7 +168,7 @@ internal suspend fun seedMcpConnectionForPackagedJar(
     connection: ConnectionDef,
     password: String,
 ) {
-    Files.createDirectories(dataDir)
+    withContext(Dispatchers.IO) { Files.createDirectories(dataDir) }
     SecretsManager.lockCredentials()
     try {
         if (isWindows()) {
@@ -314,7 +314,7 @@ internal suspend fun withPackagedMcpClient(
     block: suspend (Client) -> Unit,
 ) {
     val shadowJar = resolveShadowJar()
-    val tempRoot = Files.createTempDirectory("safedb-mcp-packaged-")
+    val tempRoot = withContext(Dispatchers.IO) { Files.createTempDirectory("safedb-mcp-packaged-") }
     val protocolCapture = ByteArrayOutputStream()
     val stderrCapture = ByteArrayOutputStream()
     val stderrFailure = AtomicReference<Throwable?>()
