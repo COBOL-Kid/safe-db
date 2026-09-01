@@ -23,7 +23,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.nio.file.Path
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive

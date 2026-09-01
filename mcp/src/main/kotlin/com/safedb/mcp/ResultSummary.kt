@@ -3,7 +3,6 @@ package com.safedb.mcp
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -18,7 +17,6 @@ internal data class ResultSummary(
     val columns: List<ColumnSummary>,
 )
 
-@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 internal data class ColumnSummary(
     val name: String,

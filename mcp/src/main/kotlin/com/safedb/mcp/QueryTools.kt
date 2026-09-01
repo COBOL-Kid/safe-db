@@ -25,16 +25,13 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 
 internal fun registerQueryTools(server: Server, service: SafeDbService, resultStore: ResultStore) {
@@ -479,7 +476,6 @@ private sealed interface ConfirmationParse {
     data class Invalid(val result: CallToolResult) : ConfirmationParse
 }
 
-@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 internal data class QueryReceipt(
     val columns: List<ResultColumn>,

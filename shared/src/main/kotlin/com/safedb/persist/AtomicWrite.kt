@@ -62,10 +62,8 @@ fun restrictToOwnerReadWrite(path: Path) {
     )
 }
 
-fun hasGroupOrOtherPermissions(path: Path): Boolean {
-    if (!isPosix()) return false
-    return Files.getPosixFilePermissions(path).any { it in GROUP_OR_OTHER }
-}
+fun hasGroupOrOtherPermissions(path: Path): Boolean =
+    isPosix() && Files.getPosixFilePermissions(path).any { it in GROUP_OR_OTHER }
 
 internal fun fsyncParentDirectory(directory: Path) {
     try {

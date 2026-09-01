@@ -9,8 +9,10 @@ import java.nio.file.StandardOpenOption
 import java.util.LinkedHashMap
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 
 internal const val RESULT_STORE_TTL_MS = 300_000L
@@ -54,11 +56,16 @@ internal class ResultStore(
         var inserted = false
         try {
             try {
-                writeJsonl(path, result)
-                restrictToOwnerReadWrite(path)
-                artifactBytes = Files.size(path)
-                artifactPath = path.toString()
-                onAfterJsonlWrite()
+                val written =
+                    withContext(Dispatchers.IO) {
+                        writeJsonl(path, result)
+                        restrictToOwnerReadWrite(path)
+                        val bytes = Files.size(path)
+                        onAfterJsonlWrite()
+                        bytes to path.toString()
+                    }
+                artifactBytes = written.first
+                artifactPath = written.second
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
