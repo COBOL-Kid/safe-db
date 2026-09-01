@@ -7,10 +7,13 @@ import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.asSink
 import kotlinx.io.asSource
@@ -21,9 +24,11 @@ private const val MCP_TEST_TIMEOUT_MS = 30_000L
 
 internal suspend fun withIntegrationMcpClient(server: Server, block: suspend (Client) -> Unit) {
     val clientToServer = PipedInputStream(PIPE_BUFFER_SIZE)
-    val clientOutput = PipedOutputStream(clientToServer)
     val serverToClient = PipedInputStream(PIPE_BUFFER_SIZE)
-    val serverOutput = PipedOutputStream(serverToClient)
+    val (clientOutput, serverOutput) =
+        withContext(Dispatchers.IO) {
+            PipedOutputStream(clientToServer) to PipedOutputStream(serverToClient)
+        }
     val serverTransport =
         StdioServerTransport(
             input = clientToServer.asSource().buffered(),
@@ -44,7 +49,7 @@ internal suspend fun withIntegrationMcpClient(server: Server, block: suspend (Cl
             closed.join()
         }
         try {
-            withTimeout(MCP_TEST_TIMEOUT_MS) {
+            withTimeout(MCP_TEST_TIMEOUT_MS.milliseconds) {
                 client.connect(clientTransport)
                 block(client)
             }

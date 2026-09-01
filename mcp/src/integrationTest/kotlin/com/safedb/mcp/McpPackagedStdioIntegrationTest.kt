@@ -15,7 +15,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.asSink
 import kotlinx.io.asSource
@@ -60,7 +64,7 @@ private suspend fun runPackagedSmokeTest(shadowJar: Path, tempRoot: Path) {
     var failure: Throwable? = null
 
     try {
-        val home = Files.createDirectories(tempRoot.resolve("home"))
+        val home = withContext(Dispatchers.IO) { Files.createDirectories(tempRoot.resolve("home")) }
         val javaExecutable =
             Path.of(System.getProperty("java.home"))
                 .resolve("bin")
@@ -78,7 +82,7 @@ private suspend fun runPackagedSmokeTest(shadowJar: Path, tempRoot: Path) {
                 shadowJar.toAbsolutePath().toString(),
             )
         configureIsolatedEnvironment(processBuilder, tempRoot, home)
-        process = processBuilder.start()
+        process = withContext(Dispatchers.IO) { processBuilder.start() }
 
         val runningProcess = process
         stderrThread =
@@ -99,7 +103,7 @@ private suspend fun runPackagedSmokeTest(shadowJar: Path, tempRoot: Path) {
         client =
             Client(clientInfo = Implementation(name = "packaged-integration-test", version = "0"))
 
-        withTimeout(CLIENT_TIMEOUT_MS) {
+        withTimeout(CLIENT_TIMEOUT_MS.milliseconds) {
             client.connect(transport)
             assertEquals("safe-db", client.serverVersion?.name)
             assertTrue(client.serverVersion?.version.orEmpty().isNotBlank())
@@ -119,12 +123,14 @@ private suspend fun runPackagedSmokeTest(shadowJar: Path, tempRoot: Path) {
             client = null
         }
 
-        runningProcess.outputStream.close()
-        assertTrue(
-            runningProcess.waitFor(PROCESS_EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
-            "MCP process did not exit after the client closed",
-        )
-        stderrThread.join(STDERR_DRAIN_TIMEOUT_MS)
+        withContext(Dispatchers.IO) {
+            runningProcess.outputStream.close()
+            assertTrue(
+                runningProcess.waitFor(PROCESS_EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                "MCP process did not exit after the client closed",
+            )
+            stderrThread.join(STDERR_DRAIN_TIMEOUT_MS)
+        }
         assertFalse(stderrThread.isAlive, "stderr drain did not finish")
         stderrFailure.get()?.let { throw AssertionError("stderr drain failed", it) }
         assertEquals(0, runningProcess.exitValue(), "MCP process exited nonzero")
@@ -133,7 +139,7 @@ private suspend fun runPackagedSmokeTest(shadowJar: Path, tempRoot: Path) {
     } catch (error: Throwable) {
         failure = error
     } finally {
-        runCatching { withTimeout(PROCESS_CLEANUP_TIMEOUT_SECONDS * 1_000) { client?.close() } }
+        runCatching { withTimeout(PROCESS_CLEANUP_TIMEOUT_SECONDS.seconds) { client?.close() } }
         runCatching { process?.outputStream?.close() }
         process?.let { runningProcess ->
             if (runningProcess.isAlive) {
@@ -151,7 +157,9 @@ private suspend fun runPackagedSmokeTest(shadowJar: Path, tempRoot: Path) {
             runCatching { runningProcess.inputStream.close() }
             runCatching { runningProcess.errorStream.close() }
         }
-        stderrThread?.join(STDERR_DRAIN_TIMEOUT_MS)
+        stderrThread?.let { draining ->
+            withContext(Dispatchers.IO) { draining.join(STDERR_DRAIN_TIMEOUT_MS) }
+        }
 
         if (!tempRoot.toFile().deleteRecursively()) {
             val cleanupFailure = AssertionError("Failed to delete temporary data: $tempRoot")

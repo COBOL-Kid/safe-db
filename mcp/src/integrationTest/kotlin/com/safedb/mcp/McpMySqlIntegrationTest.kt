@@ -12,6 +12,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -51,7 +52,7 @@ class McpMySqlIntegrationTest {
 
             withIntegrationMcpClient(server) { client ->
                 val listed = client.callTool("list_tables", mapOf("connection_id" to connection.id))
-                assertFalse(listed.isError == true)
+                assertNotEquals(true, listed.isError)
                 val listedText = listed.text()
                 assertPayloadIsPrivate(listedText, connection, password)
                 val tables = Json.parseToJsonElement(listedText).jsonArray
@@ -79,7 +80,7 @@ class McpMySqlIntegrationTest {
                             "table" to "orders",
                         ),
                     )
-                assertFalse(described.isError == true)
+                assertNotEquals(true, described.isError)
                 val describedText = described.text()
                 assertPayloadIsPrivate(describedText, connection, password)
                 val order = Json.parseToJsonElement(describedText).jsonObject
@@ -101,7 +102,7 @@ class McpMySqlIntegrationTest {
                             "default_schema" to connection.database,
                         ),
                     )
-                assertFalse(receiptResult.isError == true, receiptResult.text())
+                assertNotEquals(true, receiptResult.isError, receiptResult.text())
                 val receiptText = receiptResult.text()
                 assertPayloadIsPrivate(receiptText, connection, password)
                 val receipt = Json.parseToJsonElement(receiptText).jsonObject
@@ -114,7 +115,7 @@ class McpMySqlIntegrationTest {
                         "get_result_rows",
                         mapOf("result_id" to resultId, "offset" to 1, "limit" to 1),
                     )
-                assertFalse(pageResult.isError == true)
+                assertNotEquals(true, pageResult.isError)
                 val pageText = pageResult.text()
                 assertPayloadIsPrivate(pageText, connection, password)
                 val page = Json.parseToJsonElement(pageText).jsonObject
@@ -124,7 +125,7 @@ class McpMySqlIntegrationTest {
 
                 val summaryResult =
                     client.callTool("summarize_result", mapOf("result_id" to resultId))
-                assertFalse(summaryResult.isError == true)
+                assertNotEquals(true, summaryResult.isError)
                 val summaryText = summaryResult.text()
                 assertPayloadIsPrivate(summaryText, connection, password)
                 val summary = Json.parseToJsonElement(summaryText).jsonObject
