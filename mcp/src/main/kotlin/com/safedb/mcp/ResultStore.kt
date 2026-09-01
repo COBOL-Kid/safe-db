@@ -41,6 +41,7 @@ internal class ResultStore(
     )
 
     private val mutex = Mutex()
+    // Access-order LRU: get() moves a result to most-recent so evictLocked drops the coldest JSONL.
     private val entries = LinkedHashMap<String, Entry>(16, 0.75f, true)
 
     init {
@@ -126,6 +127,8 @@ internal class ResultStore(
     private fun evictLocked(keepId: String) {
         while (entries.size > maxEntries || totalBytesLocked() > maxBytes) {
             val eldest = entries.keys.first()
+            // A single oversize result must stay; evicting keepId would delete the file
+            // we just put.
             if (eldest == keepId && entries.size == 1) break
             removeLocked(eldest)
         }

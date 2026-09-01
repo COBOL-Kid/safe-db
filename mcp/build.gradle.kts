@@ -98,6 +98,8 @@ val generateMcpVersion =
 
 sourceSets.named("main") { resources.srcDir(generateMcpVersion) }
 
+// Running the MCP suite needs live engines, but compiling it does not; without this a source-set
+// change can break it and stay hidden until someone runs integrationTest by hand.
 tasks.check { dependsOn("compileIntegrationTestKotlin") }
 
 tasks.register<Test>("integrationTest") {
@@ -122,7 +124,8 @@ tasks.register<Test>("integrationTest") {
     shouldRunAfter(tasks.test)
 }
 
-// Integration tests exercise internal MCP server wiring without widening the production API.
+// Custom integrationTest is not a friend of main unless associateWith is set, so tests can call
+// internal MCP APIs without making those declarations public.
 kotlin.target.compilations.named("integrationTest") {
     associateWith(kotlin.target.compilations.getByName("main"))
 }

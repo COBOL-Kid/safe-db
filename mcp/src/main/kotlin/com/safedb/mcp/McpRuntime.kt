@@ -74,6 +74,8 @@ internal fun initMcpSecrets(
         RequestedBackend.Auto,
         RequestedBackend.Protected ->
             when (platform) {
+                // Windows shares the desktop Credential Manager; Mac/Linux MCP keeps passwords
+                // in dataDir and does not open Keychain.
                 DesktopPlatform.Windows -> SecretsManager.initStore(envValue, platform)
                 DesktopPlatform.MacOs,
                 DesktopPlatform.Linux ->

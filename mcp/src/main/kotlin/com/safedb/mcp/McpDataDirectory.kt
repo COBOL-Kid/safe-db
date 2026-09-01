@@ -19,6 +19,7 @@ object McpDataDirectory {
             DesktopPlatform.Windows -> {
                 val appData = environment.appData
                 require(!appData.isNullOrBlank()) { "APPDATA is not set" }
+                // Same roaming dir as the desktop app so Windows MCP reuses the UI's connections.
                 Path.of(appData).resolve(DataDirectory.APP_ID)
             }
             DesktopPlatform.MacOs ->

@@ -30,6 +30,8 @@ fun main(args: Array<String>) {
     try {
         when (command) {
             McpCommand.Stdio -> {
+                // Bind JSON-RPC to the real stdout, then point System.out at stderr so println
+                // cannot corrupt the protocol stream.
                 val stdout = System.out
                 redirectStdoutToStderr()
                 val dataDir = McpDataDirectory.resolve()

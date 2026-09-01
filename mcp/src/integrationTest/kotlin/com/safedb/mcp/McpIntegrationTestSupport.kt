@@ -132,6 +132,8 @@ internal fun configureIsolatedEnvironment(
     val environment = processBuilder.environment()
     environment.clear()
 
+    // Process start on Windows still needs these after a full env wipe; dropping them
+    // fails only there.
     if (isWindows()) {
         listOf("SystemRoot", "ComSpec", "PATHEXT", "WINDIR").forEach { name ->
             inherited.entries
@@ -306,6 +308,7 @@ internal fun runPackagedMcpProcess(args: List<String>): PackagedProcessResult {
 }
 
 internal suspend fun withPackagedMcpClient(
+    // null leaves SAFEDB_KEYCHAIN_BACKEND unset so the child can read seeded secrets.
     keychainBackend: String? = "disabled",
     prepare: suspend (tempRoot: Path, home: Path) -> Unit = { _, _ -> },
     block: suspend (Client) -> Unit,

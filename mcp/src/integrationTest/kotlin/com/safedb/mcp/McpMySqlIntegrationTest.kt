@@ -153,6 +153,8 @@ class McpMySqlIntegrationTest {
         val password = IntegrationAssumptions.mysqlPassword
         try {
             withPackagedMcpClient(
+                // Default "disabled" would hide secrets that seedMcpConnectionForPackagedJar
+                // just wrote.
                 keychainBackend = null,
                 prepare = { tempRoot, home ->
                     seedMcpConnectionForPackagedJar(
