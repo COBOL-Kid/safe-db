@@ -1,14 +1,30 @@
 package com.safedb.mcp
 
+import com.safedb.platform.DesktopPlatform
+import com.safedb.secrets.SecretsManager
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 class McpRuntimeTest {
+    @AfterTest
+    fun resetSecrets() {
+        SecretsManager.initStore("disabled")
+    }
+
+    @Test
+    fun generatedVersionIsLoadedFromTheRuntimeResource() {
+        val version = mcpVersion()
+        assertTrue(version.isNotBlank())
+        assertFalse(version.contains("\${"))
+    }
+
     @Test
     fun wiredServiceListsEmptyConnections() = runBlocking {
         val dataDir = Files.createTempDirectory("safedb-mcp-service")
@@ -21,9 +37,28 @@ class McpRuntimeTest {
     }
 
     @Test
+    fun runtimeInitializesDeterministicFileBackendAndStores() = runBlocking {
+        val dataDir = Files.createTempDirectory("safedb-mcp-runtime")
+        try {
+            val service =
+                createMcpRuntime(
+                    dataDir,
+                    platform = DesktopPlatform.Linux,
+                    envValue = "protected",
+                )
+            assertEquals("file", SecretsManager.activeBackendLabel())
+            assertTrue(Files.isDirectory(dataDir.resolve("credentials")))
+            assertEquals(emptyList(), service.listConnections())
+        } finally {
+            dataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun initializeListsConnectionTools() = runBlocking {
         withTempMcpClient(RecordingSafeDbService()) { client ->
             assertEquals("safe-db", client.serverVersion?.name)
+            assertEquals(mcpVersion(), client.serverVersion?.version)
             assertEquals(
                 listOf(
                     "delete_connection",

@@ -83,6 +83,8 @@ jobs:
           path: |
             shared/build/reports/tests/integrationTest/
             shared/build/test-results/integrationTest/
+            mcp/build/reports/tests/integrationTest/
+            mcp/build/test-results/integrationTest/
 
   mysql-generated-integration:
     needs: authorize
@@ -130,6 +132,8 @@ jobs:
           path: |
             shared/build/reports/tests/integrationTest/
             shared/build/test-results/integrationTest/
+            mcp/build/reports/tests/integrationTest/
+            mcp/build/test-results/integrationTest/
 
   database-compatibility:
     needs: authorize
@@ -159,6 +163,8 @@ jobs:
           path: |
             shared/build/reports/tests/integrationTest/
             shared/build/test-results/integrationTest/
+            mcp/build/reports/tests/integrationTest/
+            mcp/build/test-results/integrationTest/
             .docker/safedb-ssl/reports/
 
   ui-tooling:

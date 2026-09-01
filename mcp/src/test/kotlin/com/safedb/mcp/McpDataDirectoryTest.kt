@@ -36,8 +36,14 @@ class McpDataDirectoryTest {
 
     @Test
     fun windowsRequiresAppData() {
-        assertFailsWith<IllegalArgumentException> {
-            McpDataDirectory.pathFor(McpEnvironment("Windows 11", "C:/Users/test"))
+        listOf(null, "", "   ").forEach { appData ->
+            val error =
+                assertFailsWith<IllegalArgumentException> {
+                    McpDataDirectory.pathFor(
+                        McpEnvironment("Windows 11", "C:/Users/test", appData = appData)
+                    )
+                }
+            assertEquals("APPDATA is not set", error.message)
         }
     }
 
@@ -61,6 +67,12 @@ class McpDataDirectoryTest {
             Path.of("/custom/data", McpDataDirectory.MCP_APP_ID),
             McpDataDirectory.pathFor(
                 McpEnvironment("Linux", "/home/test", xdgDataHome = "/custom/data")
+            ),
+        )
+        assertEquals(
+            Path.of("/home/test/.local/share", McpDataDirectory.MCP_APP_ID),
+            McpDataDirectory.pathFor(
+                McpEnvironment("linux-gnu", "/home/test", xdgDataHome = "   ")
             ),
         )
     }

@@ -12,6 +12,18 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class ConnectionToolsTest {
     @Test
+    fun emptyListReturnsAnEmptyJsonArray() = runBlocking {
+        withTempMcpClient(RecordingSafeDbService()) { client ->
+            val listed = client.callTool("list_connections", emptyMap())
+            assertFalse(listed.isError == true)
+            val text =
+                (listed.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                    .text
+            assertEquals(0, kotlinx.serialization.json.Json.parseToJsonElement(text).jsonArray.size)
+        }
+    }
+
+    @Test
     fun listAndDeleteToolsRoundTripWithoutSecrets() = runBlocking {
         val service = RecordingSafeDbService()
         service.connections +=
@@ -76,6 +88,41 @@ class ConnectionToolsTest {
             )
             assertTrue(service.connections.isEmpty())
             assertFalse(service.passwords.containsKey("c1"))
+        }
+    }
+
+    @Test
+    fun listAndDeleteServiceFailuresAreToolErrors() = runBlocking {
+        val listService =
+            object : RecordingSafeDbService() {
+                override suspend fun listConnections() = error("store read failed")
+            }
+        withTempMcpClient(listService) { client ->
+            val listed = client.callTool("list_connections", emptyMap())
+            assertEquals(true, listed.isError)
+            val text =
+                (listed.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                    .text
+            assertTrue(text.contains("store read failed"))
+        }
+
+        val deleteService =
+            object : RecordingSafeDbService() {
+                override suspend fun deleteConnection(id: String) {
+                    error("store write failed")
+                }
+            }
+        deleteService.connections += sampleMcpConnection()
+        deleteService.passwords["c1"] = "should-not-leak"
+        withTempMcpClient(deleteService) { client ->
+            val deleted = client.callTool("delete_connection", mapOf("connection_id" to "c1"))
+            assertEquals(true, deleted.isError)
+            val text =
+                (deleted.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                    .text
+            assertEquals("store write failed", text)
+            assertFalse(text.contains("should-not-leak"))
+            assertEquals(listOf("c1"), deleteService.connections.map { it.id })
         }
     }
 }

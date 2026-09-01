@@ -101,3 +101,5 @@ jobs:
           path: |
             shared/build/reports/tests/integrationTest/
             shared/build/test-results/integrationTest/
+            mcp/build/reports/tests/integrationTest/
+            mcp/build/test-results/integrationTest/

@@ -1,8 +1,8 @@
 # Commands and verification
 
-`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets. Integration tests skip when fixtures are absent.
+`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 309 desktop, 540 shared, and 58 mcp tests, with 90% and 85% line-coverage floors for desktop and shared respectively. Inspect JUnit XML if discovery is uncertain.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 309 desktop, 540 shared, and 78 MCP tests, with 90% desktop, 85% shared, and 91% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain.
 
 | Command | Use |
 | --- | --- |
@@ -10,7 +10,9 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
 | `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, discovery, Docker harness orchestration, and Kover ratchets. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh coverage proof for broad Kotlin/build changes. |
-| `./gradlew integrationTest` | Environment-gated `:shared` JDBC suite. |
+| `./gradlew :mcp:koverXmlReportUnit verifyMcpCoverageRatchet` | Generate the unit-only MCP XML report and enforce its independent coverage floor. |
+| `./gradlew integrationTest` | Run the optional `:shared` JDBC and `:mcp` integration suites, including the packaged MCP stdio smoke. |
+| `./gradlew :mcp:integrationTest` | Run the packaged MCP stdio smoke and the environment-gated MCP MySQL case. |
 | `./gradlew renderPreview --rerun-tasks` | Render 44 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
 | `./gradlew renderHeroFrames` | Render the query-builder build-up sequence to `/tmp/safedb-preview/hero/`. |
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
@@ -29,6 +31,8 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 
 ## Integration tests
+
+The root `integrationTest` task runs both the shared JDBC suite and the MCP integration suite. The MCP suite always exercises the packaged shadow JAR over stdio; its MySQL tool test skips when MySQL is unavailable. Required MySQL verification checks the shared and MCP JUnit reports separately, so shared MySQL cases cannot hide a missing or skipped MCP case. PostgreSQL-only runs require shared PostgreSQL coverage but do not require the MCP MySQL case.
 
 Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true`, `SAFEDB_TEST_REQUIRE_POSTGRES=true`, `SAFEDB_TEST_REQUIRE_MSSQL=true`, and `SAFEDB_TEST_REQUIRE_ORACLE=true` to require configured engines. Each engine has matching `SAFEDB_TEST_{MYSQL,POSTGRES,MSSQL,ORACLE}_{HOST,PORT,USER,PASSWORD,DATABASE}` variables; MySQL also accepts optional `SAFEDB_TEST_MYSQL_DOCKER`. Reproduce the required MySQL job with:
 

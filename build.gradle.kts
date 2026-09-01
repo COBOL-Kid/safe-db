@@ -34,6 +34,16 @@ dependencies {
     kover(project(":shared"))
 }
 
+// Kover 0.9.9 broadens the root total report when standalone subproject report/verify tasks share
+// an unqualified task-selector graph. The root aggregate and MCP unit variant are canonical.
+listOf(project(":shared"), project(":mcp")).forEach { subproject ->
+    subproject.pluginManager.withPlugin("org.jetbrains.kotlinx.kover") {
+        listOf("koverXmlReport", "koverVerify").forEach { taskName ->
+            subproject.tasks.named(taskName).configure { enabled = false }
+        }
+    }
+}
+
 ktfmt { kotlinLangStyle() }
 
 // Dev-only headless renderers: compiled and run on demand, never packaged into the shipped app.
@@ -112,6 +122,34 @@ kover {
             }
             excludes { classes("*ComposableSingletons*", "*\$\$serializer*") }
         }
+        // Keep the aggregate filters attached to the total variant even when task selectors also
+        // match Kover tasks in subprojects.
+        total {
+            filters {
+                includes {
+                    classes(
+                        "com.safedb.AppState*",
+                        "com.safedb.AppVersion*",
+                        "com.safedb.AppWindowIcon*",
+                        "com.safedb.export.*",
+                        "com.safedb.platform.*",
+                        "com.safedb.viewmodel.*",
+                        "com.safedb.ui.ConnectionFormState*",
+                        "com.safedb.adapter.*",
+                        "com.safedb.connection.*",
+                        "com.safedb.explore.*",
+                        "com.safedb.model.*",
+                        "com.safedb.persist.*",
+                        "com.safedb.query.*",
+                        "com.safedb.schema.*",
+                        "com.safedb.secrets.*",
+                        "com.safedb.service.*",
+                        "com.safedb.store.*",
+                    )
+                }
+                excludes { classes("*ComposableSingletons*", "*\$\$serializer*") }
+            }
+        }
     }
 }
 
@@ -144,19 +182,28 @@ val verifyUnitTestDiscovery =
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
         minimumDesktopTests.set(309)
         minimumSharedTests.set(540)
-        minimumMcpTests.set(58)
+        minimumMcpTests.set(78)
     }
 
 val verifyCoverageRatchet =
     tasks.register<VerifyCoverageRatchet>("verifyCoverageRatchet") {
         group = "verification"
-        description = "Enforces checked-in line coverage floors for shared and desktop logic."
+        description = "Enforces checked-in line coverage floors for desktop and shared logic."
         dependsOn("koverXmlReport")
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
         coverageFloors.set(mapOf("desktop" to 90, "shared" to 85))
     }
 
-tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet) }
+val verifyMcpCoverageRatchet =
+    tasks.register<VerifyCoverageRatchet>("verifyMcpCoverageRatchet") {
+        group = "verification"
+        description = "Enforces the checked-in MCP line coverage floor."
+        dependsOn(":mcp:koverXmlReportUnit")
+        reportFile.set(project(":mcp").layout.buildDirectory.file("reports/kover/reportUnit.xml"))
+        coverageFloors.set(mapOf("mcp" to 91))
+    }
+
+tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet, verifyMcpCoverageRatchet) }
 
 val testDockerDatabaseHarness =
     tasks.register<Exec>("testDockerDatabaseHarness") {
@@ -172,10 +219,14 @@ tasks.check { dependsOn(verifyUnitTestDiscovery, testDockerDatabaseHarness, "kov
 val verifyIntegrationTestDiscovery =
     tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {
         group = "verification"
-        description = "Ensures required JDBC engine suites executed instead of silently skipping."
-        dependsOn(":shared:integrationTest")
-        resultsDirectory.set(
+        description =
+            "Ensures required JDBC and MCP integration suites executed instead of silently skipping."
+        dependsOn(":shared:integrationTest", ":mcp:integrationTest")
+        sharedResultsDirectory.set(
             project(":shared").layout.buildDirectory.dir("test-results/integrationTest")
+        )
+        mcpResultsDirectory.set(
+            project(":mcp").layout.buildDirectory.dir("test-results/integrationTest")
         )
         requireMysql.set(
             providers
@@ -205,7 +256,7 @@ val verifyIntegrationTestDiscovery =
 
 tasks.register("integrationTest") {
     group = "verification"
-    description = "Runs :shared JDBC integration tests."
+    description = "Runs :shared JDBC and :mcp integration tests."
     dependsOn(verifyIntegrationTestDiscovery)
 }
 

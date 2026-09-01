@@ -99,6 +99,69 @@ class SchemaToolsTest {
     }
 
     @Test
+    fun describeRefreshesAndSurfacesRefreshFailure() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val first =
+                client.callTool(
+                    "describe_table",
+                    mapOf("connection_id" to "c1", "schema" to "public", "table" to "orders"),
+                )
+            assertFalse(first.isError == true)
+
+            val refreshed =
+                client.callTool(
+                    "describe_table",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "schema" to "public",
+                        "table" to "orders",
+                        "refresh" to true,
+                    ),
+                )
+            assertFalse(refreshed.isError == true)
+            assertEquals(listOf("c1", "c1"), service.schemaCalls)
+
+            service.schemaError = IllegalStateException("refresh failed")
+            val failed =
+                client.callTool(
+                    "describe_table",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "schema" to "public",
+                        "table" to "orders",
+                        "refresh" to true,
+                    ),
+                )
+            assertEquals(true, failed.isError)
+            assertEquals("refresh failed", failed.text())
+        }
+    }
+
+    @Test
+    fun failedRefreshPreservesThePreviousCatalog() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val first = client.callTool("list_tables", mapOf("connection_id" to "c1"))
+            assertFalse(first.isError == true)
+
+            service.schemaError = IllegalStateException("temporary catalog failure")
+            val refresh =
+                client.callTool(
+                    "list_tables",
+                    mapOf("connection_id" to "c1", "refresh" to true),
+                )
+            assertEquals(true, refresh.isError)
+            assertEquals("temporary catalog failure", refresh.text())
+
+            val cached = client.callTool("list_tables", mapOf("connection_id" to "c1"))
+            assertFalse(cached.isError == true)
+            assertTrue(cached.text().contains("public.customers"))
+            assertEquals(listOf("c1", "c1"), service.schemaCalls)
+        }
+    }
+
+    @Test
     fun missingArgsUnknownTablesAndConnectionsAreErrors() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
@@ -109,6 +172,14 @@ class SchemaToolsTest {
             val unknownConnection = client.callTool("list_tables", mapOf("connection_id" to "nope"))
             assertEquals(true, unknownConnection.isError)
             assertEquals("Connection not found", unknownConnection.text())
+
+            val missingSchema =
+                client.callTool(
+                    "describe_table",
+                    mapOf("connection_id" to "c1", "table" to "orders"),
+                )
+            assertEquals(true, missingSchema.isError)
+            assertEquals("schema is required", missingSchema.text())
 
             val missingTable =
                 client.callTool(

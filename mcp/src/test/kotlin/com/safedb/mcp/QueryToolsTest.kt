@@ -25,6 +25,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -129,6 +130,34 @@ class QueryToolsTest {
             assertEquals(listOf("c1", "c1"), service.schemaCalls)
             assertEquals(1, service.runQueryRequests.size)
         }
+    }
+
+    @Test
+    fun sqlSchemaAndUnexpectedExecutionFailuresAreToolErrors() = runBlocking {
+        val service = queryService()
+        service.schemaError = IllegalStateException("catalog unavailable")
+        withTempMcpClient(service) { client ->
+            val schemaFailure =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                )
+            assertEquals(true, schemaFailure.isError)
+            assertEquals("catalog unavailable", schemaFailure.text())
+            assertTrue(service.runQueryRequests.isEmpty())
+
+            service.schemaError = null
+            service.runQueryError = IllegalStateException("unexpected executor failure")
+            val executionFailure =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                )
+            assertEquals(true, executionFailure.isError)
+            assertEquals("unexpected executor failure", executionFailure.text())
+        }
+        assertEquals(2, service.schemaCalls.size)
+        assertEquals(1, service.runQueryRequests.size)
     }
 
     @Test
@@ -243,6 +272,70 @@ class QueryToolsTest {
     }
 
     @Test
+    fun malformedSpecAndConfirmationObjectsAreParseErrors() = runBlocking {
+        val service = queryService()
+        withTempMcpClient(service) { client ->
+            val malformedSpec =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "spec" to JsonObject(mapOf("tables" to JsonPrimitive("not-an-array"))),
+                    ),
+                )
+            assertEquals(true, malformedSpec.isError)
+            assertEquals("parse", malformedSpec.json().getValue("error").jsonPrimitive.content)
+
+            val missingConfirmationFields =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "sql" to "SELECT id FROM public.customers",
+                        "confirmation" to JsonObject(mapOf("connection_id" to JsonPrimitive("c1"))),
+                    ),
+                )
+            assertEquals(true, missingConfirmationFields.isError)
+            assertEquals(
+                "parse",
+                missingConfirmationFields.json().getValue("error").jsonPrimitive.content,
+            )
+
+            val invalidConfirmationCondition =
+                JsonObject(
+                    mapOf(
+                        "connection_id" to JsonPrimitive("c1"),
+                        "connection_fingerprint" to JsonPrimitive("fp-conn"),
+                        "query_fingerprint" to JsonPrimitive("fp-query"),
+                        "conditions" to
+                            kotlinx.serialization.json.JsonArray(
+                                listOf(
+                                    JsonObject(
+                                        mapOf(
+                                            "reason_code" to JsonPrimitive("NotAReason"),
+                                            "condition_key" to JsonPrimitive("key"),
+                                        )
+                                    )
+                                )
+                            ),
+                    )
+                )
+            val invalidCondition =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "sql" to "SELECT id FROM public.customers",
+                        "confirmation" to invalidConfirmationCondition,
+                    ),
+                )
+            assertEquals(true, invalidCondition.isError)
+            assertEquals("parse", invalidCondition.json().getValue("error").jsonPrimitive.content)
+        }
+        assertTrue(service.runQueryRequests.isEmpty())
+    }
+
+    @Test
     fun riskGateIsAStructuredToolError() = runBlocking {
         val service = queryService()
         val evaluation =
@@ -270,6 +363,45 @@ class QueryToolsTest {
                 body.getValue("risk").jsonObject.getValue("state").jsonPrimitive.content,
             )
             assertFalse(body.containsKey("preview"))
+        }
+    }
+
+    @Test
+    fun structuredErrorsIncludeWarningsAndFallBackToStaticRisk() = runBlocking {
+        val service = queryService()
+        val base =
+            allowedMcpRisk(
+                state = RiskGateState.Blocked,
+                severity = QueryRiskSeverity.Elevated,
+                score = 42,
+                reasons = listOf(RiskDecisionReason("static_risk", "Static analysis blocked it.")),
+            )
+        val evaluation = base.copy(staticAssessment = base.finalAssessment, finalAssessment = null)
+        service.runQueryError =
+            QueryFailureException(
+                QueryError.RiskGate(evaluation, sampleMcpQuerySpec()),
+                warnings = listOf("Query plan unavailable; using static risk."),
+            )
+
+        withTempMcpClient(service) { client ->
+            val result =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                )
+            assertEquals(true, result.isError)
+            val body = result.json()
+            assertEquals(
+                "Query plan unavailable; using static risk.",
+                body.getValue("warnings").jsonArray.single().jsonPrimitive.content,
+            )
+            val risk = body.getValue("risk").jsonObject
+            assertEquals("Elevated", risk.getValue("severity").jsonPrimitive.content)
+            assertEquals("42", risk.getValue("score").jsonPrimitive.content)
+            assertEquals(
+                "Static analysis blocked it.",
+                risk.getValue("reasons").jsonArray.single().jsonPrimitive.content,
+            )
         }
     }
 
@@ -529,6 +661,137 @@ class QueryToolsTest {
                 assertEquals("60", idCol.getValue("max").jsonPrimitive.content)
                 assertEquals(DISTINCT_VALUE_LIMIT, idCol.getValue("distinct").jsonArray.size)
                 assertEquals("true", idCol.getValue("distinct_truncated").jsonPrimitive.content)
+            }
+        } finally {
+            resultsDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun getResultRowsCoercesPagingArguments() = runBlocking {
+        val service = queryService()
+        service.runQueryResult = sampleMcpRunResult(rowCount = 3)
+        withTempMcpClient(service) { client ->
+            val receipt =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to "SELECT id FROM public.customers LIMIT 3",
+                        ),
+                    )
+                    .json()
+            val resultId = receipt.getValue("result_id").jsonPrimitive.content
+
+            val clamped =
+                client
+                    .callTool(
+                        "get_result_rows",
+                        mapOf("result_id" to resultId, "offset" to -7, "limit" to 0),
+                    )
+                    .json()
+            assertEquals("0", clamped.getValue("offset").jsonPrimitive.content)
+            assertEquals(1, clamped.getValue("rows").jsonArray.size)
+            assertEquals(
+                "1",
+                clamped
+                    .getValue("rows")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("id")
+                    .jsonPrimitive
+                    .content,
+            )
+
+            val numericStrings =
+                client
+                    .callTool(
+                        "get_result_rows",
+                        mapOf("result_id" to resultId, "offset" to "1", "limit" to "2"),
+                    )
+                    .json()
+            assertEquals("1", numericStrings.getValue("offset").jsonPrimitive.content)
+            assertEquals(2, numericStrings.getValue("rows").jsonArray.size)
+            assertEquals(
+                "2",
+                numericStrings
+                    .getValue("rows")
+                    .jsonArray[0]
+                    .jsonObject
+                    .getValue("id")
+                    .jsonPrimitive
+                    .content,
+            )
+
+            val invalidValues =
+                client
+                    .callTool(
+                        "get_result_rows",
+                        mapOf(
+                            "result_id" to resultId,
+                            "offset" to JsonObject(emptyMap()),
+                            "limit" to "not-a-number",
+                        ),
+                    )
+                    .json()
+            assertEquals("0", invalidValues.getValue("offset").jsonPrimitive.content)
+            assertEquals(3, invalidValues.getValue("rows").jsonArray.size)
+        }
+    }
+
+    @Test
+    fun artifactWriteFailureStillReturnsPageableInMemoryResult() = runBlocking {
+        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+        try {
+            val service = queryService()
+            val store =
+                ResultStore(
+                    resultsDir = resultsDir,
+                    onAfterJsonlWrite = { error("simulated artifact failure") },
+                )
+            withMcpClient(
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = resultsDir,
+                    resultStore = store,
+                )
+            ) { client ->
+                val receipt =
+                    client
+                        .callTool(
+                            "run_query",
+                            mapOf(
+                                "connection_id" to "c1",
+                                "sql" to "SELECT id FROM public.customers",
+                            ),
+                        )
+                        .json()
+                assertFalse(receipt.containsKey("artifact_path"))
+                assertFalse(receipt.containsKey("artifact_bytes"))
+                val resultId = receipt.getValue("result_id").jsonPrimitive.content
+
+                val page =
+                    client
+                        .callTool(
+                            "get_result_rows",
+                            mapOf("result_id" to resultId, "offset" to 1, "limit" to 1),
+                        )
+                        .json()
+                assertEquals(1, page.getValue("rows").jsonArray.size)
+                assertEquals(
+                    "2",
+                    page
+                        .getValue("rows")
+                        .jsonArray
+                        .single()
+                        .jsonObject
+                        .getValue("id")
+                        .jsonPrimitive
+                        .content,
+                )
+                Files.list(resultsDir).use { files -> assertEquals(0L, files.count()) }
             }
         } finally {
             resultsDir.toFile().deleteRecursively()

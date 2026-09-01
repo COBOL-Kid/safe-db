@@ -28,6 +28,10 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
+
+    testFixturesImplementation(kotlin("test"))
+    testFixturesImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    testFixturesImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
 }
 
 // Dev-only seeding tooling: compiled and run on demand, never packaged into the shipped jar.
@@ -45,9 +49,11 @@ configurations[tools.runtimeOnlyConfigurationName].extendsFrom(configurations.ru
 
 val integrationTest = sourceSets.create("integrationTest")
 
-integrationTest.compileClasspath += sourceSets.main.get().output
+integrationTest.compileClasspath +=
+    sourceSets.main.get().output + sourceSets.testFixtures.get().output
 
-integrationTest.runtimeClasspath += sourceSets.main.get().output
+integrationTest.runtimeClasspath +=
+    sourceSets.main.get().output + sourceSets.testFixtures.get().output
 
 configurations[integrationTest.implementationConfigurationName].extendsFrom(
     configurations.testImplementation.get()
