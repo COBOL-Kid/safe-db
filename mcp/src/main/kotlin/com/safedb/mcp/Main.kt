@@ -32,8 +32,12 @@ fun main(args: Array<String>) {
             McpCommand.Stdio -> {
                 val stdout = System.out
                 redirectStdoutToStderr()
-                val service = createMcpRuntime(McpDataDirectory.resolve())
-                runMcpStdio(createSafeDbMcpServer(service), stdout)
+                val dataDir = McpDataDirectory.resolve()
+                val service = createMcpRuntime(dataDir)
+                runMcpStdio(
+                    createSafeDbMcpServer(service, resultsDir = dataDir.resolve("results")),
+                    stdout,
+                )
             }
             else -> {
                 val service = createMcpRuntime(McpDataDirectory.resolve())

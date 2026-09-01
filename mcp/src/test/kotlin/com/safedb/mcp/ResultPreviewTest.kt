@@ -52,4 +52,28 @@ class ResultPreviewTest {
         assertEquals("10", preview.last().getValue("id").jsonPrimitive.content)
         assertTrue(preview.none { "kind" in it.toString() })
     }
+
+    @Test
+    fun flattenRowsPagesByOffsetAndLimit() {
+        val rows =
+            (1..15).map { index ->
+                listOf(ResultCell.integer(index.toLong()), ResultCell.text("r$index"))
+            }
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("id", "int"), ResultColumn("email", "text")),
+                rows = rows,
+                rowCount = 15,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val page = flattenRows(result, offset = 10, limit = 3)
+        assertEquals(3, page.size)
+        assertEquals("11", page.first().getValue("id").jsonPrimitive.content)
+        assertEquals("r11", page.first().getValue("email").jsonPrimitive.content)
+        assertEquals("13", page.last().getValue("id").jsonPrimitive.content)
+        val fromStart = flattenRows(result, offset = -4, limit = 2)
+        assertEquals("1", fromStart.first().getValue("id").jsonPrimitive.content)
+        assertEquals("2", fromStart.last().getValue("id").jsonPrimitive.content)
+    }
 }

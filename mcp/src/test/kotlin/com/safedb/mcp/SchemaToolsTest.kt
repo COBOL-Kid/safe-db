@@ -16,7 +16,7 @@ class SchemaToolsTest {
     @Test
     fun listTablesReturnsSummariesAndOmitsBlockedSchemas() = runBlocking {
         val service = catalogService()
-        withMcpClient(createSafeDbMcpServer(service)) { client ->
+        withTempMcpClient(service) { client ->
             val listed = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             val text = listed.text()
             assertFalse(listed.isError == true)
@@ -45,7 +45,7 @@ class SchemaToolsTest {
     @Test
     fun listAndDescribeShareTheCatalogCache() = runBlocking {
         val service = catalogService()
-        withMcpClient(createSafeDbMcpServer(service)) { client ->
+        withTempMcpClient(service) { client ->
             client.callTool("list_tables", mapOf("connection_id" to "c1"))
             client.callTool(
                 "describe_table",
@@ -59,7 +59,7 @@ class SchemaToolsTest {
     @Test
     fun describeTableReturnsColumnsIndexesAndForeignKeys() = runBlocking {
         val service = catalogService()
-        withMcpClient(createSafeDbMcpServer(service)) { client ->
+        withTempMcpClient(service) { client ->
             val described =
                 client.callTool(
                     "describe_table",
@@ -91,7 +91,7 @@ class SchemaToolsTest {
     @Test
     fun refreshForcesASecondIntrospect() = runBlocking {
         val service = catalogService()
-        withMcpClient(createSafeDbMcpServer(service)) { client ->
+        withTempMcpClient(service) { client ->
             client.callTool("list_tables", mapOf("connection_id" to "c1"))
             client.callTool("list_tables", mapOf("connection_id" to "c1", "refresh" to true))
             assertEquals(listOf("c1", "c1"), service.schemaCalls)
@@ -101,7 +101,7 @@ class SchemaToolsTest {
     @Test
     fun missingArgsUnknownTablesAndConnectionsAreErrors() = runBlocking {
         val service = catalogService()
-        withMcpClient(createSafeDbMcpServer(service)) { client ->
+        withTempMcpClient(service) { client ->
             val missingId = client.callTool("list_tables", emptyMap())
             assertEquals(true, missingId.isError)
             assertEquals("connection_id is required", missingId.text())
@@ -141,7 +141,7 @@ class SchemaToolsTest {
     fun introspectFailureIsAToolError() = runBlocking {
         val service = catalogService()
         service.schemaError = IllegalStateException("jdbc down")
-        withMcpClient(createSafeDbMcpServer(service)) { client ->
+        withTempMcpClient(service) { client ->
             val listed = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             assertEquals(true, listed.isError)
             assertEquals("jdbc down", listed.text())
@@ -151,7 +151,7 @@ class SchemaToolsTest {
     @Test
     fun deleteConnectionDropsTheCachedCatalog() = runBlocking {
         val service = catalogService()
-        withMcpClient(createSafeDbMcpServer(service)) { client ->
+        withTempMcpClient(service) { client ->
             val first = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             assertFalse(first.isError == true)
             assertTrue(first.text().contains("orders"))

@@ -25,8 +25,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -41,6 +44,16 @@ internal fun requiredText(request: CallToolRequest, name: String): String? =
 
 internal fun optionalText(request: CallToolRequest, name: String): String? =
     request.arguments?.get(name)?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+
+internal fun optionalInt(request: CallToolRequest, name: String): Int? {
+    val element = request.arguments?.get(name) ?: return null
+    if (element is JsonNull) return null
+    val primitive = element as? JsonPrimitive ?: return null
+    primitive.intOrNull?.let {
+        return it
+    }
+    return primitive.content.trim().toIntOrNull()
+}
 
 internal fun toolError(message: String): CallToolResult =
     CallToolResult(content = listOf(TextContent(text = message)), isError = true)
@@ -91,9 +104,23 @@ internal fun createSafeDbMcpServer(
     service: SafeDbService,
     nowMs: () -> Long = { System.currentTimeMillis() },
     schemaCacheTtlMs: Long = SCHEMA_CACHE_TTL_MS,
+    resultsDir: Path,
+    resultStoreTtlMs: Long = RESULT_STORE_TTL_MS,
+    resultStoreMaxEntries: Int = RESULT_STORE_MAX_ENTRIES,
+    resultStoreMaxBytes: Long = RESULT_STORE_MAX_BYTES,
+    resultStore: ResultStore? = null,
 ): Server {
     val schemaCache =
         SchemaCache(load = service::getSchema, nowMs = nowMs, ttlMs = schemaCacheTtlMs)
+    val store =
+        resultStore
+            ?: ResultStore(
+                resultsDir = resultsDir,
+                nowMs = nowMs,
+                ttlMs = resultStoreTtlMs,
+                maxEntries = resultStoreMaxEntries,
+                maxBytes = resultStoreMaxBytes,
+            )
     val server =
         Server(
             serverInfo = Implementation(name = "safe-db", version = mcpVersion()),
@@ -105,7 +132,7 @@ internal fun createSafeDbMcpServer(
         )
     registerConnectionTools(server, service, schemaCache)
     registerSchemaTools(server, service, schemaCache)
-    registerQueryTools(server, service)
+    registerQueryTools(server, service, store)
     return server
 }
 

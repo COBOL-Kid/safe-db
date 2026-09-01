@@ -22,15 +22,17 @@ class McpRuntimeTest {
 
     @Test
     fun initializeListsConnectionTools() = runBlocking {
-        withMcpClient(createSafeDbMcpServer(RecordingSafeDbService())) { client ->
+        withTempMcpClient(RecordingSafeDbService()) { client ->
             assertEquals("safe-db", client.serverVersion?.name)
             assertEquals(
                 listOf(
                     "delete_connection",
                     "describe_table",
+                    "get_result_rows",
                     "list_connections",
                     "list_tables",
                     "run_query",
+                    "summarize_result",
                 ),
                 client.listTools().tools.map { it.name }.sorted(),
             )

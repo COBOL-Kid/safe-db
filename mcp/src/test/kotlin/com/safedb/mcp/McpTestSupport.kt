@@ -32,6 +32,7 @@ import com.safedb.query.RiskGateState
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.QueryRunResult
+import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import io.modelcontextprotocol.kotlin.sdk.server.Server
@@ -294,6 +295,15 @@ internal fun writeOwnerOnlyPasswordFile(directory: Path, contents: String): Path
     Files.writeString(path, contents)
     restrictToOwnerReadWrite(path)
     return path
+}
+
+internal suspend fun withTempMcpClient(service: SafeDbService, block: suspend (Client) -> Unit) {
+    val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+    try {
+        withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir), block)
+    } finally {
+        resultsDir.toFile().deleteRecursively()
+    }
 }
 
 internal suspend fun withMcpClient(server: Server, block: suspend (Client) -> Unit) {

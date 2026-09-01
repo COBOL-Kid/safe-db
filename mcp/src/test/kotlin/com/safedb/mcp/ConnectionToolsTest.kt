@@ -22,9 +22,8 @@ class ConnectionToolsTest {
                 database = "shop",
             )
         service.passwords["c1"] = "should-not-leak"
-        val server = createSafeDbMcpServer(service)
 
-        withMcpClient(server) { client ->
+        withTempMcpClient(service) { client ->
             val listed = client.callTool("list_connections", emptyMap())
             val text =
                 (listed.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)

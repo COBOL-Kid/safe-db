@@ -24,6 +24,8 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -35,7 +37,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 
-internal fun registerQueryTools(server: Server, service: SafeDbService) {
+internal fun registerQueryTools(server: Server, service: SafeDbService, resultStore: ResultStore) {
     server.addTool(
         name = "run_query",
         description =
@@ -43,12 +45,14 @@ internal fun registerQueryTools(server: Server, service: SafeDbService) {
                 "compiler, row/time caps, and query_risk_gate as the desktop app. Pass " +
                 "connection_id from list_connections and exactly one of sql or spec. Do not " +
                 "pass a password or URL. Returns a receipt: columns, row_count, truncated, " +
-                "preview_truncated, warnings, a slim risk summary, and a short preview " +
-                "(~10 flattened rows). preview_truncated is true when the preview is shorter " +
-                "than row_count. The full sample is not in this payload. On error risk_gate, " +
-                "rewrite the query or change the gate in settings; do not retry the same query. " +
-                "On error confirmation_required, show the reasons to the user, then retry with " +
-                "the returned confirmation object; do not auto-confirm.",
+                "preview_truncated, warnings, a slim risk summary, a short preview " +
+                "(~10 flattened rows), result_id, and optional artifact_path / artifact_bytes. " +
+                "preview_truncated is true when the preview is shorter than row_count. The " +
+                "full sample is not in this payload. Page it with get_result_rows or " +
+                "summarize_result using result_id; do not Read the artifact file into chat. " +
+                "On error risk_gate, rewrite the query or change the gate in settings; do not " +
+                "retry the same query. On error confirmation_required, show the reasons to " +
+                "the user, then retry with the returned confirmation object; do not auto-confirm.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -106,12 +110,86 @@ internal fun registerQueryTools(server: Server, service: SafeDbService) {
                 required = listOf("connection_id"),
             ),
     ) { request ->
-        handleRunQuery(service, request)
+        handleRunQuery(service, resultStore, request)
+    }
+
+    server.addTool(
+        name = "get_result_rows",
+        description =
+            "Page flattened rows from a previous run_query by result_id. Reads the in-memory " +
+                "sample, not the JSONL artifact. offset defaults to 0 (negative clamps to 0); " +
+                "limit defaults to 50 with a hard cap of 50. truncated is the engine cap from " +
+                "the original query. page_truncated is true when this page is shorter than the " +
+                "remaining in-memory sample. Use summarize_result for column stats. Do not Read " +
+                "the artifact file into chat. Unknown or expired result_id returns Result not found.",
+        inputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put(
+                            "result_id",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "result_id from a successful run_query receipt")
+                            },
+                        )
+                        put(
+                            "offset",
+                            buildJsonObject {
+                                put("type", "integer")
+                                put(
+                                    "description",
+                                    "Row offset into the in-memory sample. Default 0.",
+                                )
+                            },
+                        )
+                        put(
+                            "limit",
+                            buildJsonObject {
+                                put("type", "integer")
+                                put(
+                                    "description",
+                                    "Max rows to return. Default 50, hard cap 50.",
+                                )
+                            },
+                        )
+                    },
+                required = listOf("result_id"),
+            ),
+    ) { request ->
+        handleGetResultRows(resultStore, request)
+    }
+
+    server.addTool(
+        name = "summarize_result",
+        description =
+            "Summarize a previous run_query by result_id using the in-memory sample: " +
+                "per-column null_count, min/max (numeric, text, bool; omitted for binary), " +
+                "and up to 8 distinct flattened values. truncated is the engine cap from the " +
+                "original query. Do not Read the artifact file into chat. Unknown or expired " +
+                "result_id returns Result not found.",
+        inputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put(
+                            "result_id",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "result_id from a successful run_query receipt")
+                            },
+                        )
+                    },
+                required = listOf("result_id"),
+            ),
+    ) { request ->
+        handleSummarizeResult(resultStore, request)
     }
 }
 
 private suspend fun handleRunQuery(
     service: SafeDbService,
+    resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
     val connectionId =
@@ -150,7 +228,7 @@ private suspend fun handleRunQuery(
 
     return try {
         val completed = service.runQuery(QueryRunRequest(connectionId, spec, confirmation))
-        successReceipt(completed, parseNotes)
+        successReceipt(completed, parseNotes, resultStore)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -262,8 +340,13 @@ private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
     }
 }
 
-private fun successReceipt(completed: QueryRunResult, parseNotes: List<String>): CallToolResult {
+private suspend fun successReceipt(
+    completed: QueryRunResult,
+    parseNotes: List<String>,
+    resultStore: ResultStore,
+): CallToolResult {
     val result = completed.queryResult
+    val stored = resultStore.put(result)
     val preview = previewRows(result)
     val receipt =
         QueryReceipt(
@@ -274,8 +357,49 @@ private fun successReceipt(completed: QueryRunResult, parseNotes: List<String>):
             risk = riskSummary(completed.riskEvaluation),
             preview = preview,
             previewTruncated = preview.size < result.rowCount,
+            resultId = stored.resultId,
+            artifactPath = stored.artifactPath,
+            artifactBytes = stored.artifactBytes,
         )
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
+}
+
+private suspend fun handleGetResultRows(
+    resultStore: ResultStore,
+    request: CallToolRequest,
+): CallToolResult {
+    val resultId = requiredText(request, "result_id") ?: return toolError("result_id is required")
+    val result = resultStore.get(resultId) ?: return toolError("Result not found")
+    val offset = (optionalInt(request, "offset") ?: 0).coerceAtLeast(0)
+    val limit =
+        (optionalInt(request, "limit") ?: GET_RESULT_ROWS_MAX).coerceIn(1, GET_RESULT_ROWS_MAX)
+    val pageRows = flattenRows(result, offset, limit)
+    val page =
+        ResultRowsPage(
+            resultId = resultId,
+            offset = offset,
+            rowCount = result.rowCount,
+            truncated = result.truncated,
+            pageTruncated = offset + pageRows.size < result.rowCount,
+            rows = pageRows,
+        )
+    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(page))))
+}
+
+private suspend fun handleSummarizeResult(
+    resultStore: ResultStore,
+    request: CallToolRequest,
+): CallToolResult {
+    val resultId = requiredText(request, "result_id") ?: return toolError("result_id is required")
+    val result = resultStore.get(resultId) ?: return toolError("Result not found")
+    val summary =
+        ResultSummary(
+            resultId = resultId,
+            rowCount = result.rowCount,
+            truncated = result.truncated,
+            columns = summarizeColumns(result),
+        )
+    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(summary))))
 }
 
 private fun mapQueryFailure(failure: QueryFailureException): CallToolResult {
@@ -355,6 +479,7 @@ private sealed interface ConfirmationParse {
     data class Invalid(val result: CallToolResult) : ConfirmationParse
 }
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 internal data class QueryReceipt(
     val columns: List<ResultColumn>,
@@ -364,6 +489,23 @@ internal data class QueryReceipt(
     val risk: QueryRiskSummary,
     val preview: List<JsonObject>,
     @SerialName("preview_truncated") val previewTruncated: Boolean,
+    @SerialName("result_id") val resultId: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("artifact_path")
+    val artifactPath: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("artifact_bytes")
+    val artifactBytes: Long? = null,
+)
+
+@Serializable
+internal data class ResultRowsPage(
+    @SerialName("result_id") val resultId: String,
+    val offset: Int,
+    @SerialName("row_count") val rowCount: Int,
+    val truncated: Boolean,
+    @SerialName("page_truncated") val pageTruncated: Boolean,
+    val rows: List<JsonObject>,
 )
 
 @Serializable
