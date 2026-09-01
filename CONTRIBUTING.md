@@ -2,7 +2,7 @@
 
 Fix a bug, polish copy, add a test, or improve docs. All of that counts. Issues and pull requests are welcome; if you are unsure where something belongs, open a small PR or an issue.
 
-Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, validator, compiler, risk gate, or an adapter.
+Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, validator, compiler, risk gate, or an adapter. Read [docs/mcp.md](docs/mcp.md) before changing MCP tools, credentials, the result store, or the CLI.
 
 ## Before you open a pull request
 
