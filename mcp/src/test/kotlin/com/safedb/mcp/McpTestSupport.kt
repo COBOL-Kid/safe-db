@@ -37,7 +37,9 @@ import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.Job
@@ -48,6 +50,8 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 internal const val PIPE_BUFFER = 64 * 1024
 
@@ -295,6 +299,18 @@ internal fun writeOwnerOnlyPasswordFile(directory: Path, contents: String): Path
     Files.writeString(path, contents)
     restrictToOwnerReadWrite(path)
     return path
+}
+
+internal suspend fun Client.deleteConnectionConfirmed(connectionId: String): CallToolResult {
+    val pending = callTool("delete_connection", mapOf("connection_id" to connectionId))
+    val confirmation =
+        Json.parseToJsonElement((pending.content.single() as TextContent).text)
+            .jsonObject
+            .getValue("confirmation")
+    return callTool(
+        "delete_connection",
+        mapOf("connection_id" to connectionId, "confirmation" to confirmation),
+    )
 }
 
 internal suspend fun withTempMcpClient(service: SafeDbService, block: suspend (Client) -> Unit) {

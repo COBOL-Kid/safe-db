@@ -73,14 +73,14 @@ Progressive catalog, then a gated query. Do not expect the full [`Schema`](../sh
 | Tool | Behavior |
 | --- | --- |
 | `list_connections` | `id`, `name`, `dialect`, `database`. No secrets. `readOnlyHint`. |
-| `delete_connection` | Delete a saved connection by `connection_id`. Invalidates the schema cache for that id. `destructiveHint`. |
+| `delete_connection` | Delete a saved connection by `connection_id`. First call returns `confirmation_required` with reasons and a confirmation object; show the user, then retry with that object. Do not auto-confirm or invent the object. Invalidates the schema cache for that id. `destructiveHint`. |
 | `list_tables` | `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `getSchema` (5 min TTL, optional `refresh=true`). Honors `blocked_schemas` and built-in system catalogs. `readOnlyHint`. |
 | `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`), indexes, FKs. Same cache. Unknown or blocked → `not_found`. `readOnlyHint`. |
 | `run_query` | `connection_id` and `sql`. Optional `default_schema` (required for unqualified names; take `schema` from `list_tables` — on MySQL often the connection database — or qualify as `schema.table`). Not filled from `connection.database`. Parses SQL to `QuerySpec` internally, then `SafeDbService.runQuery` (fresh introspect on execute). Receipt, not the grid. No tool annotations. |
 | `get_result_rows` | Page the in-memory sample for a `result_id`. `offset` default 0 (negative clamps to 0); `limit` default 50, hard cap 50. Unknown or expired → `not_found`. `readOnlyHint`. |
 | `summarize_result` | Per-column stats on that same sample. Echoes `sample_capped` when the original fetch was capped. Unknown or expired → `not_found`. `readOnlyHint`. |
 
-Initialize includes a short `instructions` string: add connections with the CLI; start with `list_connections`; pass `id` as `connection_id`; pass `default_schema` from `list_tables` for unqualified SQL; page with `result_id`; never send passwords. Tool list capability is `listChanged: false`.
+Initialize includes a short `instructions` string: add connections with the CLI; start with `list_connections`; pass `id` as `connection_id`; pass `default_schema` from `list_tables` for unqualified SQL; page with `result_id`; `delete_connection` requires an echoed confirmation; never send passwords. Tool list capability is `listChanged: false`.
 
 Page with `get_result_rows` or summarize with `summarize_result`. Results expire after 30 minutes (16 entries, 32 MiB).
 
@@ -124,7 +124,7 @@ Every tool error is JSON `{error, message, warnings}` with `isError=true`. Extra
 | `parse` | Fix `sql`. Unqualified tables: pass `default_schema` from `list_tables.schema`, or qualify as `schema.table`. Aggregates: run the base query, then `summarize_result`. |
 | `validation` / `compilation` / `execution` | Same meanings as [`QueryError`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). |
 | `risk_gate` | Includes a slim `risk` summary. Rewrite the query or change `query_risk_gate` in settings. Do not retry the same query. |
-| `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry `run_query` with that object. Do not auto-confirm. Do not invent the object. |
+| `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query` or `delete_connection`) with that object. Do not auto-confirm. Do not invent the object. |
 | `internal` | Unexpected store or runtime failure. |
 
 ## Result store

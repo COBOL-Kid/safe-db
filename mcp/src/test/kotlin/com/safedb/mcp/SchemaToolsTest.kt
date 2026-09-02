@@ -287,7 +287,7 @@ class SchemaToolsTest {
             assertFalse(first.isError == true)
             assertTrue(first.text().contains("orders"))
 
-            client.callTool("delete_connection", mapOf("connection_id" to "c1"))
+            client.deleteConnectionConfirmed("c1")
             val listed = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             assertEquals(true, listed.isError)
             assertEquals("not_found", listed.json().getValue("error").jsonPrimitive.content)

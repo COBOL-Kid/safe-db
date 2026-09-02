@@ -1,11 +1,16 @@
 package com.safedb.mcp
 
 import com.safedb.model.Dialect
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -100,7 +105,7 @@ class ConnectionToolsTest {
             assertEquals(listOf("c1"), service.connections.map { it.id })
             assertTrue(service.passwords.containsKey("c1"))
 
-            val deleted = client.callTool("delete_connection", mapOf("connection_id" to "c1"))
+            val deleted = client.deleteConnectionConfirmed("c1")
             assertFalse(deleted.isError == true)
             assertTrue(
                 (deleted.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
@@ -109,6 +114,88 @@ class ConnectionToolsTest {
             )
             assertTrue(service.connections.isEmpty())
             assertFalse(service.passwords.containsKey("c1"))
+        }
+    }
+
+    @Test
+    fun deleteRequiresEchoedConfirmation() = runBlocking {
+        val service = RecordingSafeDbService()
+        service.connections +=
+            sampleMcpConnection(
+                id = "c1",
+                name = "Prod",
+                dialect = Dialect.MySql,
+                database = "shop",
+            )
+        service.passwords["c1"] = "should-not-leak"
+
+        withTempMcpClient(service) { client ->
+            val first = client.callTool("delete_connection", mapOf("connection_id" to "c1"))
+            assertEquals(true, first.isError)
+            val firstBody = first.json()
+            assertEquals("confirmation_required", firstBody.getValue("error").jsonPrimitive.content)
+            assertTrue(firstBody.getValue("message").jsonPrimitive.content.contains("Prod"))
+            assertTrue(firstBody.getValue("message").jsonPrimitive.content.contains("shop"))
+            assertFalse(
+                firstBody.getValue("message").jsonPrimitive.content.contains("should-not-leak")
+            )
+            assertFalse(firstBody.getValue("message").jsonPrimitive.content.contains("localhost"))
+            val reasons = firstBody.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(listOf("This deletes saved connection Prod (MySql / shop)."), reasons)
+            val confirmation = firstBody.getValue("confirmation").jsonObject
+            assertEquals("c1", confirmation.getValue("connection_id").jsonPrimitive.content)
+            assertTrue(confirmation.getValue("token").jsonPrimitive.content.isNotBlank())
+            assertEquals(listOf("c1"), service.connections.map { it.id })
+
+            val invented =
+                client.callTool(
+                    "delete_connection",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "confirmation" to
+                            JsonObject(
+                                mapOf(
+                                    "connection_id" to JsonPrimitive("c1"),
+                                    "token" to JsonPrimitive("invented"),
+                                )
+                            ),
+                    ),
+                )
+            assertEquals(true, invented.isError)
+            assertEquals(
+                "confirmation_required",
+                invented.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(listOf("c1"), service.connections.map { it.id })
+
+            val asString =
+                client.callTool(
+                    "delete_connection",
+                    mapOf("connection_id" to "c1", "confirmation" to "not-an-object"),
+                )
+            assertEquals(true, asString.isError)
+            assertEquals("parse", asString.json().getValue("error").jsonPrimitive.content)
+            assertEquals(listOf("c1"), service.connections.map { it.id })
+
+            val stale =
+                client.callTool(
+                    "delete_connection",
+                    mapOf("connection_id" to "c1", "confirmation" to confirmation),
+                )
+            assertEquals(true, stale.isError)
+            assertEquals(
+                "confirmation_required",
+                stale.json().getValue("error").jsonPrimitive.content,
+            )
+            val echoed = stale.json().getValue("confirmation")
+            val deleted =
+                client.callTool(
+                    "delete_connection",
+                    mapOf("connection_id" to "c1", "confirmation" to echoed),
+                )
+            assertFalse(deleted.isError == true)
+            assertTrue(deleted.text().contains("c1"))
+            assertTrue(service.connections.isEmpty())
         }
     }
 
@@ -143,7 +230,7 @@ class ConnectionToolsTest {
         deleteService.connections += sampleMcpConnection()
         deleteService.passwords["c1"] = "should-not-leak"
         withTempMcpClient(deleteService) { client ->
-            val deleted = client.callTool("delete_connection", mapOf("connection_id" to "c1"))
+            val deleted = client.deleteConnectionConfirmed("c1")
             assertEquals(true, deleted.isError)
             val deletedBody =
                 kotlinx.serialization.json.Json.parseToJsonElement(
@@ -164,3 +251,7 @@ class ConnectionToolsTest {
         }
     }
 }
+
+private fun CallToolResult.text(): String = (content.single() as TextContent).text
+
+private fun CallToolResult.json(): JsonObject = Json.parseToJsonElement(text()).jsonObject

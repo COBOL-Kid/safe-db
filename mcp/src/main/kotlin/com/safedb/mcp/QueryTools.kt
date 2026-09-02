@@ -33,6 +33,8 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 internal fun registerQueryTools(server: Server, service: SafeDbService, resultStore: ResultStore) {
@@ -394,7 +396,10 @@ private fun mapQueryFailure(failure: QueryFailureException): CallToolResult {
                 error.message,
                 warnings,
                 reasons = error.requirement.reasons.map { it.message },
-                confirmation = error.requirement.confirmation.toPayload(),
+                confirmation =
+                    toolJson
+                        .encodeToJsonElement(error.requirement.confirmation.toPayload())
+                        .jsonObject,
             )
     }
 }

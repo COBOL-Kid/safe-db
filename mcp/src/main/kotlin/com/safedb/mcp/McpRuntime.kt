@@ -22,15 +22,22 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.nio.file.Path
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -54,7 +61,8 @@ internal const val MCP_SERVER_INSTRUCTIONS =
     "Add connections with the safe-db-mcp CLI, not tools. Start with list_connections; " +
         "pass id as connection_id. For unqualified SQL, pass default_schema from list_tables " +
         "(on MySQL often the connection database) or qualify as schema.table. Page results " +
-        "with result_id. Never send passwords."
+        "with result_id. delete_connection returns confirmation_required; show the user, then " +
+        "retry with the returned confirmation object. Never send passwords."
 
 @Serializable
 internal data class McpToolError(
@@ -63,7 +71,7 @@ internal data class McpToolError(
     val warnings: List<String> = emptyList(),
     @EncodeDefault(EncodeDefault.Mode.NEVER) val risk: QueryRiskSummary? = null,
     @EncodeDefault(EncodeDefault.Mode.NEVER) val reasons: List<String>? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER) val confirmation: McpQueryConfirmation? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val confirmation: JsonObject? = null,
 )
 
 internal fun toolError(
@@ -72,7 +80,7 @@ internal fun toolError(
     warnings: List<String> = emptyList(),
     risk: QueryRiskSummary? = null,
     reasons: List<String>? = null,
-    confirmation: McpQueryConfirmation? = null,
+    confirmation: JsonObject? = null,
 ): CallToolResult =
     CallToolResult(
         content =
@@ -196,6 +204,7 @@ internal fun registerConnectionTools(
     service: SafeDbService,
     schemaCache: SchemaCache,
 ) {
+    val deleteTokens = DeleteConfirmationTokens()
     server.addTool(
         name = "list_connections",
         description =
@@ -219,8 +228,11 @@ internal fun registerConnectionTools(
     server.addTool(
         name = "delete_connection",
         description =
-            "Delete a saved connection by id from list_connections. Does not accept a password. " +
-                "Add connections with `safe-db-mcp setup` or `safe-db-mcp connections add`.",
+            "Delete a saved connection by id from list_connections. First call returns " +
+                "confirmation_required; show the reasons to the user, then retry with the " +
+                "returned confirmation object. Do not auto-confirm. Do not invent the object. " +
+                "Does not accept a password. Add connections with `safe-db-mcp setup` or " +
+                "`safe-db-mcp connections add`.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -232,30 +244,24 @@ internal fun registerConnectionTools(
                                 put("description", "Connection id from list_connections")
                             },
                         )
+                        put(
+                            "confirmation",
+                            buildJsonObject {
+                                put("type", "object")
+                                put(
+                                    "description",
+                                    "Echo the confirmation object from a confirmation_required " +
+                                        "error after showing the reasons to the user. Do not " +
+                                        "invent this object.",
+                                )
+                            },
+                        )
                     },
                 required = listOf("connection_id"),
             ),
         toolAnnotations = ToolAnnotations(destructiveHint = true),
     ) { request ->
-        val id = requiredText(request, "connection_id")
-        if (id == null) {
-            toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
-        } else if (service.listConnections().none { it.id == id }) {
-            toolError(ERROR_NOT_FOUND, "Connection not found")
-        } else {
-            try {
-                service.deleteConnection(id)
-                schemaCache.invalidate(id)
-                CallToolResult(
-                    content =
-                        listOf(TextContent(text = toolJson.encodeToString(DeletedConnection(id))))
-                )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                toolError(ERROR_INTERNAL, error.message ?: "delete failed")
-            }
-        }
+        handleDeleteConnection(service, schemaCache, deleteTokens, request)
     }
 }
 
@@ -267,7 +273,111 @@ internal data class ConnectionSummary(
     val database: String,
 )
 
+@Serializable
+internal data class McpDeleteConfirmation(
+    @SerialName("connection_id") val connectionId: String,
+    val token: String,
+)
+
 @Serializable private data class DeletedConnection(val deleted: String)
 
 private fun ConnectionDef.toSummary(): ConnectionSummary =
     ConnectionSummary(id = id, name = name, dialect = dialect, database = database)
+
+private suspend fun handleDeleteConnection(
+    service: SafeDbService,
+    schemaCache: SchemaCache,
+    tokens: DeleteConfirmationTokens,
+    request: CallToolRequest,
+): CallToolResult {
+    val id =
+        requiredText(request, "connection_id")
+            ?: return toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
+    val connection =
+        service.listConnections().find { it.id == id }
+            ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
+    when (val parsed = parseDeleteConfirmation(request)) {
+        DeleteConfirmationParse.Missing -> return deleteConfirmationRequired(connection, tokens)
+        is DeleteConfirmationParse.Invalid -> return parsed.result
+        is DeleteConfirmationParse.Ready -> {
+            if (
+                parsed.confirmation.connectionId != id ||
+                    !tokens.matches(id, parsed.confirmation.token)
+            ) {
+                return deleteConfirmationRequired(connection, tokens)
+            }
+        }
+    }
+    return try {
+        service.deleteConnection(id)
+        tokens.consume(id)
+        schemaCache.invalidate(id)
+        CallToolResult(
+            content = listOf(TextContent(text = toolJson.encodeToString(DeletedConnection(id))))
+        )
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        toolError(ERROR_INTERNAL, error.message ?: "delete failed")
+    }
+}
+
+private fun deleteConfirmationRequired(
+    connection: ConnectionDef,
+    tokens: DeleteConfirmationTokens,
+): CallToolResult {
+    val confirmation = tokens.issue(connection.id)
+    return toolError(
+        ERROR_CONFIRMATION_REQUIRED,
+        "Deleting connection '${connection.name}' (${connection.dialect}, ${connection.database}) " +
+            "removes it from this MCP store. Show the user, then retry with the returned " +
+            "confirmation object; do not auto-confirm.",
+        reasons =
+            listOf(
+                "This deletes saved connection ${connection.name} (${connection.dialect} / ${connection.database})."
+            ),
+        confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
+    )
+}
+
+private fun parseDeleteConfirmation(request: CallToolRequest): DeleteConfirmationParse {
+    val raw =
+        request.arguments?.get("confirmation").takeUnless { it == null || it is JsonNull }
+            ?: return DeleteConfirmationParse.Missing
+    val obj =
+        raw as? JsonObject
+            ?: return DeleteConfirmationParse.Invalid(
+                toolError(ERROR_PARSE, "confirmation is invalid")
+            )
+    return try {
+        DeleteConfirmationParse.Ready(
+            toolJson.decodeFromJsonElement(McpDeleteConfirmation.serializer(), obj)
+        )
+    } catch (_: SerializationException) {
+        DeleteConfirmationParse.Invalid(toolError(ERROR_PARSE, "confirmation is invalid"))
+    }
+}
+
+private sealed interface DeleteConfirmationParse {
+    data object Missing : DeleteConfirmationParse
+
+    data class Ready(val confirmation: McpDeleteConfirmation) : DeleteConfirmationParse
+
+    data class Invalid(val result: CallToolResult) : DeleteConfirmationParse
+}
+
+private class DeleteConfirmationTokens {
+    private val tokens = ConcurrentHashMap<String, String>()
+
+    fun issue(connectionId: String): McpDeleteConfirmation {
+        val token = UUID.randomUUID().toString()
+        tokens[connectionId] = token
+        return McpDeleteConfirmation(connectionId, token)
+    }
+
+    fun matches(connectionId: String, token: String): Boolean = tokens[connectionId] == token
+
+    fun consume(connectionId: String) {
+        tokens.remove(connectionId)
+    }
+}

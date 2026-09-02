@@ -80,6 +80,17 @@ class McpRuntimeTest {
             assertEquals(true, tools.getValue("get_result_rows").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("summarize_result").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("delete_connection").annotations?.destructiveHint)
+            assertEquals(
+                listOf("connection_id"),
+                tools.getValue("delete_connection").inputSchema.required,
+            )
+            assertTrue(
+                tools
+                    .getValue("delete_connection")
+                    .inputSchema
+                    .properties
+                    ?.containsKey("confirmation") == true
+            )
             assertEquals(null, tools.getValue("run_query").annotations)
             assertEquals(
                 listOf("connection_id", "sql"),
