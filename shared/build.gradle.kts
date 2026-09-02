@@ -20,7 +20,7 @@ dependencies {
 
     implementation("com.zaxxer:HikariCP:7.1.0")
     implementation("org.postgresql:postgresql:42.7.13")
-    implementation("com.mysql:mysql-connector-j:9.7.0")
+    implementation("com.mysql:mysql-connector-j:26.7.0")
     implementation("com.microsoft.sqlserver:mssql-jdbc:13.4.0.jre11")
     implementation("com.oracle.database.jdbc:ojdbc11:23.26.3.0.0")
     implementation("com.github.javakeyring:java-keyring:1.0.4")
