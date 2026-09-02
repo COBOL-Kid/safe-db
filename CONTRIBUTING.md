@@ -8,7 +8,7 @@ Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, va
 
 Run `./gradlew check`. That is the fast gate: unit tests, test discovery, Docker harness orchestration, and Kover coverage ratchets.
 
-Need a real database? [docs/testing.md](docs/testing.md) covers optional JDBC suites and the Docker stack. Integration tests skip when a fixture isn't around, so you can ship a unit-test change without standing up four engines.
+Need a real database? [docs/testing.md](docs/testing.md) covers optional JDBC suites and the Docker stack. Database cases skip when a fixture isn't around, so you can ship a unit-test change without standing up four engines. The packaged MCP stdio smoke still runs as part of `integrationTest`.
 
 If you change a documented command, environment variable, packaging path, or engine contract, update the matching docs in the same change.
 

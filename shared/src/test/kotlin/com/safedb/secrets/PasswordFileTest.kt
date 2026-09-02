@@ -68,8 +68,8 @@ class PasswordFileTest {
 
     @Test
     fun requireOwnerOnlyRejectsGroupOrOtherBitsWhenPosix() {
-        if (!isPosix()) return
         val directory = Files.createTempDirectory("safedb-password-file")
+        if (!isPosix(directory)) return
         val path = directory.resolve("password.txt").apply { writeText("secret") }
         Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-r--r--"))
         assertTrue(

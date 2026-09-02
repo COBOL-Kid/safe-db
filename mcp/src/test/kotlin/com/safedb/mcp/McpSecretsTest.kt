@@ -3,6 +3,7 @@ package com.safedb.mcp
 import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.SecretsManager
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,27 +12,34 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class McpSecretsTest {
+    private val tempDirs = mutableListOf<Path>()
+
     @AfterTest
     fun resetSecrets() {
         SecretsManager.initStore("disabled")
+        tempDirs.forEach { it.toFile().deleteRecursively() }
+        tempDirs.clear()
     }
+
+    private fun tempDir(prefix: String): Path =
+        Files.createTempDirectory(prefix).also { tempDirs.add(it) }
 
     @Test
     fun linuxAndMacUseFileStoreUnlessDisabled() {
-        val linuxDir = Files.createTempDirectory("safedb-mcp-secrets-linux")
+        val linuxDir = tempDir("safedb-mcp-secrets-linux")
         initMcpSecrets(DesktopPlatform.Linux, linuxDir, envValue = null)
         assertEquals("file", SecretsManager.activeBackendLabel())
         SecretsManager.savePasswordForDefinition(sampleMcpConnection("linux"), "secret")
             .getOrThrow()
         assertTrue(Files.isRegularFile(linuxDir.resolve("credentials").resolve("linux")))
 
-        val macDir = Files.createTempDirectory("safedb-mcp-secrets-mac")
+        val macDir = tempDir("safedb-mcp-secrets-mac")
         initMcpSecrets(DesktopPlatform.MacOs, macDir, envValue = null)
         assertEquals("file", SecretsManager.activeBackendLabel())
 
         initMcpSecrets(
             DesktopPlatform.Linux,
-            Files.createTempDirectory("safedb-mcp-secrets-disabled"),
+            tempDir("safedb-mcp-secrets-disabled"),
             envValue = "disabled",
         )
         assertEquals("disabled", SecretsManager.activeBackendLabel())
@@ -41,7 +49,7 @@ class McpSecretsTest {
     fun windowsDisabledStillUsesMemory() {
         initMcpSecrets(
             DesktopPlatform.Windows,
-            Files.createTempDirectory("safedb-mcp-secrets-win"),
+            tempDir("safedb-mcp-secrets-win"),
             envValue = "disabled",
         )
         assertEquals("disabled", SecretsManager.activeBackendLabel())
@@ -50,7 +58,7 @@ class McpSecretsTest {
     @Test
     fun windowsAutoAndProtectedDoNotUseFileStore() {
         listOf(null, "auto", "protected").forEach { envValue ->
-            val dataDir = Files.createTempDirectory("safedb-mcp-secrets-win-auto")
+            val dataDir = tempDir("safedb-mcp-secrets-win-auto")
             initMcpSecrets(DesktopPlatform.Windows, dataDir, envValue)
 
             assertNotEquals("file", SecretsManager.activeBackendLabel(), "envValue=$envValue")
@@ -62,7 +70,7 @@ class McpSecretsTest {
     fun unixAutoLikeBackendValuesDeterministicallyUseFileStorage() {
         listOf("auto", "protected", "legacy", "keychain", "unexpected", "AUTO", "   ").forEach {
             envValue ->
-            val dataDir = Files.createTempDirectory("safedb-mcp-secrets-auto")
+            val dataDir = tempDir("safedb-mcp-secrets-auto")
             initMcpSecrets(DesktopPlatform.Linux, dataDir, envValue)
 
             assertEquals("file", SecretsManager.activeBackendLabel(), "envValue=$envValue")
@@ -74,7 +82,7 @@ class McpSecretsTest {
     fun disabledBackendDoesNotCreateCredentialFiles() {
         listOf(DesktopPlatform.Linux, DesktopPlatform.MacOs, DesktopPlatform.Windows).forEach {
             platform ->
-            val dataDir = Files.createTempDirectory("safedb-mcp-secrets-disabled")
+            val dataDir = tempDir("safedb-mcp-secrets-disabled")
             initMcpSecrets(platform, dataDir, envValue = "disabled")
 
             assertEquals("disabled", SecretsManager.activeBackendLabel())

@@ -114,8 +114,8 @@ class SecretsTest {
 
     @Test
     fun initFileStoreLocksDownPreexistingCredentialsDir() {
-        if (!isPosix()) return
         val credentialsDir = Files.createTempDirectory("safedb-file-store")
+        if (!isPosix(credentialsDir)) return
         Files.setPosixFilePermissions(credentialsDir, PosixFilePermissions.fromString("rwxr-xr-x"))
 
         SecretsManager.initFileStore(credentialsDir)

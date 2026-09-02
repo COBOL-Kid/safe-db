@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import java.math.BigDecimal
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -78,8 +79,8 @@ private fun columnMinMax(cells: List<ResultCell>): Pair<JsonElement?, JsonElemen
                 }
             }
             if (usable.isEmpty()) return null to null
-            flattenCell(usable.minBy { numericValue(it) }) to
-                flattenCell(usable.maxBy { numericValue(it) })
+            flattenCell(usable.minWith(::compareNumeric)) to
+                flattenCell(usable.maxWith(::compareNumeric))
         }
         allText -> {
             val texts = cells.filterIsInstance<ResultCell.TextCell>()
@@ -93,9 +94,18 @@ private fun columnMinMax(cells: List<ResultCell>): Pair<JsonElement?, JsonElemen
     }
 }
 
-private fun numericValue(cell: ResultCell): Double =
+private fun compareNumeric(left: ResultCell, right: ResultCell): Int =
+    when {
+        left is ResultCell.IntegerCell && right is ResultCell.IntegerCell ->
+            left.value.compareTo(right.value)
+        left is ResultCell.FloatCell && right is ResultCell.FloatCell ->
+            left.value.compareTo(right.value)
+        else -> numericDecimal(left).compareTo(numericDecimal(right))
+    }
+
+private fun numericDecimal(cell: ResultCell): BigDecimal =
     when (cell) {
-        is ResultCell.IntegerCell -> cell.value.toDouble()
-        is ResultCell.FloatCell -> cell.value
+        is ResultCell.IntegerCell -> BigDecimal.valueOf(cell.value)
+        is ResultCell.FloatCell -> BigDecimal.valueOf(cell.value)
         else -> error("not numeric")
     }

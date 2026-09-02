@@ -29,8 +29,8 @@ class FileCredentialStoreTest {
 
     @Test
     fun writesOwnerOnlyFilesOnPosix() {
-        if (!isPosix()) return
         val dir = Files.createTempDirectory("safedb-file-store")
+        if (!isPosix(dir)) return
         val store = FileCredentialStore(dir)
         store.setPassword("safe-db", "conn-1", "secret")
         val path = dir.resolve("conn-1")
@@ -43,8 +43,8 @@ class FileCredentialStoreTest {
 
     @Test
     fun rejectsWorldReadableFilesOnPosix() {
-        if (!isPosix()) return
         val dir = Files.createTempDirectory("safedb-file-store")
+        if (!isPosix(dir)) return
         val store = FileCredentialStore(dir)
         store.setPassword("safe-db", "conn-1", "secret")
         val path = dir.resolve("conn-1")

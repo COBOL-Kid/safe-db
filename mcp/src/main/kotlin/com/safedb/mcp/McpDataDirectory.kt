@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.platform.DataDirectory
 import com.safedb.platform.DesktopPlatform
+import com.safedb.platform.DesktopStoreUnavailableException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -18,7 +19,9 @@ object McpDataDirectory {
         when (DesktopPlatform.resolve(environment.osName)) {
             DesktopPlatform.Windows -> {
                 val appData = environment.appData
-                require(!appData.isNullOrBlank()) { "APPDATA is not set" }
+                if (appData.isNullOrBlank()) {
+                    throw DesktopStoreUnavailableException("APPDATA is not set")
+                }
                 // Same roaming dir as the desktop app so Windows MCP reuses the UI's connections.
                 Path.of(appData).resolve(DataDirectory.APP_ID)
             }

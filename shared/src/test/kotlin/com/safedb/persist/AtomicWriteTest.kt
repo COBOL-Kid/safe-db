@@ -49,9 +49,21 @@ class AtomicWriteTest {
     }
 
     @Test
-    fun ensurePrivateDirRestrictsPosixPermissionsWhenSupported() {
-        if (!isPosix()) return
+    fun isPosixProbesTheGivenPath() {
         val dir = Files.createTempDirectory("safedb-atomic-test")
+        val expected = runCatching {
+            Files.getPosixFilePermissions(dir)
+            true
+        }
+            .getOrDefault(false)
+        assertEquals(expected, isPosix(dir))
+        assertEquals(expected, isPosix(dir.resolve("does-not-exist-yet")))
+    }
+
+    @Test
+    fun ensurePrivateDirRestrictsPosixPermissionsWhenSupported() {
+        val dir = Files.createTempDirectory("safedb-atomic-test")
+        if (!isPosix(dir)) return
         val nested = dir.resolve("private")
         ensurePrivateDir(nested)
         val perms = Files.getPosixFilePermissions(nested)
@@ -64,7 +76,7 @@ class AtomicWriteTest {
         val path = dir.resolve("secret.txt")
         writePrivateFile(path, "secret")
         assertEquals("secret", Files.readString(path))
-        if (isPosix()) {
+        if (isPosix(path)) {
             assertEquals(
                 PosixFilePermissions.fromString("rw-------"),
                 Files.getPosixFilePermissions(path),

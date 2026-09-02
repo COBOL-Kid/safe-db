@@ -12,7 +12,7 @@ import java.util.UUID
 
 fun ensurePrivateDir(path: Path) {
     Files.createDirectories(path)
-    if (isPosix()) {
+    if (isPosix(path)) {
         Files.setPosixFilePermissions(
             path,
             EnumSet.of(
@@ -55,7 +55,7 @@ fun writePrivateFile(path: Path, content: String) {
 }
 
 fun restrictToOwnerReadWrite(path: Path) {
-    if (!isPosix()) return
+    if (!isPosix(path)) return
     Files.setPosixFilePermissions(
         path,
         EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
@@ -63,7 +63,7 @@ fun restrictToOwnerReadWrite(path: Path) {
 }
 
 fun hasGroupOrOtherPermissions(path: Path): Boolean =
-    isPosix() && Files.getPosixFilePermissions(path).any { it in GROUP_OR_OTHER }
+    isPosix(path) && Files.getPosixFilePermissions(path).any { it in GROUP_OR_OTHER }
 
 internal fun fsyncParentDirectory(directory: Path) {
     try {
@@ -88,11 +88,15 @@ private fun replaceFile(source: Path, destination: Path) {
     )
 }
 
-internal fun isPosix(): Boolean = runCatching {
-    Files.getPosixFilePermissions(Path.of("."))
-    true
+internal fun isPosix(path: Path): Boolean {
+    val probe =
+        generateSequence(path.normalize()) { it.parent }.firstOrNull { Files.exists(it) } ?: path
+    return runCatching {
+            Files.getPosixFilePermissions(probe)
+            true
+        }
+        .getOrDefault(false)
 }
-    .getOrDefault(false)
 
 private val GROUP_OR_OTHER =
     EnumSet.of(

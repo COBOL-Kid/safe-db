@@ -23,8 +23,15 @@ internal fun flattenCell(cell: ResultCell): JsonElement =
 
 internal fun flattenRow(columnNames: List<String>, row: List<ResultCell>): JsonObject =
     buildJsonObject {
-        columnNames.forEachIndexed { index, name ->
-            put(name, flattenCell(row.getOrElse(index) { ResultCell.Null }))
+        val used = mutableSetOf<String>()
+        columnNames.forEachIndexed { index, original ->
+            var key = original
+            var n = 2
+            while (!used.add(key)) {
+                key = "${original}_$n"
+                n++
+            }
+            put(key, flattenCell(row.getOrElse(index) { ResultCell.Null }))
         }
     }
 

@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.model.SafeDbJson
 import com.safedb.model.Settings
+import com.safedb.model.TableRef
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -184,7 +185,14 @@ class QueryToolsTest {
     @Test
     fun specArgumentIsIgnoredAndSqlIsRequired() = runBlocking {
         val service = queryService()
-        val specJson = SafeDbJson.lenient.encodeToJsonElement(sampleMcpQuerySpec())
+        val specJson =
+            SafeDbJson.lenient.encodeToJsonElement(
+                sampleMcpQuerySpec()
+                    .copy(
+                        tables =
+                            listOf(TableRef(schema = "public", name = "orders", alias = "orders"))
+                    )
+            )
         withTempMcpClient(service) { client ->
             val specOnly =
                 client.callTool("run_query", mapOf("connection_id" to "c1", "spec" to specJson))
@@ -211,10 +219,7 @@ class QueryToolsTest {
             assertEquals("2", withStraySpec.json().getValue("row_count").jsonPrimitive.content)
         }
         assertEquals(listOf("c1"), service.schemaCalls)
-        assertEquals(
-            sampleMcpQuerySpec().tables.single().name,
-            service.runQueryRequests.single().spec.tables.single().name,
-        )
+        assertEquals("customers", service.runQueryRequests.single().spec.tables.single().name)
     }
 
     @Test

@@ -95,6 +95,29 @@ class ResultSummaryTest {
     }
 
     @Test
+    fun integerMinMaxAroundTwoToThe53StaysExact() {
+        val smaller = 1L shl 53
+        val larger = smaller + 1
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("big", "bigint")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.integer(larger)),
+                        listOf(ResultCell.integer(smaller)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val column = summarizeColumns(result).single()
+        assertEquals(JsonPrimitive(smaller), column.min)
+        assertEquals(JsonPrimitive(larger), column.max)
+        assertEquals("9007199254740992", (column.min as JsonPrimitive).content)
+        assertEquals("9007199254740993", (column.max as JsonPrimitive).content)
+    }
+
+    @Test
     fun mixedIntegerAndTextColumnOmitsMinMax() {
         val result =
             QueryResult(

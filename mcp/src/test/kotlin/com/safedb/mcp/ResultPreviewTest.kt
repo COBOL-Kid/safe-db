@@ -54,6 +54,37 @@ class ResultPreviewTest {
     }
 
     @Test
+    fun flattenRowKeepsDuplicateColumnLabels() {
+        val unique =
+            flattenRow(
+                listOf("id", "email"),
+                listOf(ResultCell.integer(1), ResultCell.text("a@b.com")),
+            )
+        assertEquals("1", unique.getValue("id").jsonPrimitive.content)
+        assertEquals("a@b.com", unique.getValue("email").jsonPrimitive.content)
+        assertEquals(2, unique.size)
+
+        val duplicates =
+            flattenRow(
+                listOf("id", "id"),
+                listOf(ResultCell.integer(1), ResultCell.integer(2)),
+            )
+        assertEquals("1", duplicates.getValue("id").jsonPrimitive.content)
+        assertEquals("2", duplicates.getValue("id_2").jsonPrimitive.content)
+        assertEquals(2, duplicates.size)
+
+        val collisionWithExisting =
+            flattenRow(
+                listOf("id", "id_2", "id"),
+                listOf(ResultCell.integer(1), ResultCell.integer(2), ResultCell.integer(3)),
+            )
+        assertEquals("1", collisionWithExisting.getValue("id").jsonPrimitive.content)
+        assertEquals("2", collisionWithExisting.getValue("id_2").jsonPrimitive.content)
+        assertEquals("3", collisionWithExisting.getValue("id_3").jsonPrimitive.content)
+        assertEquals(3, collisionWithExisting.size)
+    }
+
+    @Test
     fun flattenRowsPagesByOffsetAndLimit() {
         val rows =
             (1..15).map { index ->

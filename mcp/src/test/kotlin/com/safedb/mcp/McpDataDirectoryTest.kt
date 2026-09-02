@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.platform.DataDirectory
+import com.safedb.platform.DesktopStoreUnavailableException
 import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.nio.file.Path
 import kotlin.test.Test
@@ -38,7 +39,7 @@ class McpDataDirectoryTest {
     fun windowsRequiresAppData() {
         listOf(null, "", "   ").forEach { appData ->
             val error =
-                assertFailsWith<IllegalArgumentException> {
+                assertFailsWith<DesktopStoreUnavailableException> {
                     McpDataDirectory.pathFor(
                         McpEnvironment("Windows 11", "C:/Users/test", appData = appData)
                     )
