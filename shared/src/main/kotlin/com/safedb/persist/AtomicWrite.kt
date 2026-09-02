@@ -12,7 +12,7 @@ import java.util.UUID
 
 fun ensurePrivateDir(path: Path) {
     Files.createDirectories(path)
-    if (isPosix()) {
+    if (isPosix(path)) {
         Files.setPosixFilePermissions(
             path,
             EnumSet.of(
@@ -24,7 +24,7 @@ fun ensurePrivateDir(path: Path) {
     }
 }
 
-fun atomicWrite(path: Path, content: String) {
+fun atomicWrite(path: Path, content: String, ownerOnly: Boolean = false) {
     val parent = path.parent ?: error("path has no parent: $path")
     ensurePrivateDir(parent)
 
@@ -39,6 +39,9 @@ fun atomicWrite(path: Path, content: String) {
             channel.write(java.nio.ByteBuffer.wrap(content.toByteArray(Charsets.UTF_8)))
             channel.force(true)
         }
+        if (ownerOnly) {
+            restrictToOwnerReadWrite(tmpPath)
+        }
         replaceFile(tmpPath, path)
         fsyncParentDirectory(parent)
     } catch (error: Exception) {
@@ -46,6 +49,21 @@ fun atomicWrite(path: Path, content: String) {
         throw error
     }
 }
+
+fun writePrivateFile(path: Path, content: String) {
+    atomicWrite(path, content, ownerOnly = true)
+}
+
+fun restrictToOwnerReadWrite(path: Path) {
+    if (!isPosix(path)) return
+    Files.setPosixFilePermissions(
+        path,
+        EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+    )
+}
+
+fun hasGroupOrOtherPermissions(path: Path): Boolean =
+    isPosix(path) && Files.getPosixFilePermissions(path).any { it in GROUP_OR_OTHER }
 
 internal fun fsyncParentDirectory(directory: Path) {
     try {
@@ -70,8 +88,22 @@ private fun replaceFile(source: Path, destination: Path) {
     )
 }
 
-private fun isPosix(): Boolean = runCatching {
-    Files.getPosixFilePermissions(Path.of("."))
-    true
+internal fun isPosix(path: Path): Boolean {
+    val probe =
+        generateSequence(path.normalize()) { it.parent }.firstOrNull { Files.exists(it) } ?: path
+    return runCatching {
+            Files.getPosixFilePermissions(probe)
+            true
+        }
+        .getOrDefault(false)
 }
-    .getOrDefault(false)
+
+private val GROUP_OR_OTHER =
+    EnumSet.of(
+        PosixFilePermission.GROUP_READ,
+        PosixFilePermission.GROUP_WRITE,
+        PosixFilePermission.GROUP_EXECUTE,
+        PosixFilePermission.OTHERS_READ,
+        PosixFilePermission.OTHERS_WRITE,
+        PosixFilePermission.OTHERS_EXECUTE,
+    )

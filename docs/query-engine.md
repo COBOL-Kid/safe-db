@@ -1,14 +1,14 @@
 # Query engine
 
-This is the contract for [`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Read it before changing the parser, validator, compiler, risk gate, or a JDBC adapter. User-facing product docs live at [https://www.safe-db.dev/docs](https://www.safe-db.dev/docs).
+This is the contract for [`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Read it before changing the parser, validator, compiler, risk gate, or a JDBC adapter. The desktop UI and the MCP `run_query` tool both go through this pipeline. MCP receipts, paging, and credentials are in [mcp.md](mcp.md). User-facing product docs live at [https://www.safe-db.dev/docs](https://www.safe-db.dev/docs).
 
 ## Pipeline
 
-Builder and SQL screen both produce a [`QuerySpec`](../shared/src/main/kotlin/com/safedb/model/Ir.kt). Typed SQL is parsed in [`SqlToSpec.kt`](../shared/src/main/kotlin/com/safedb/query/sql/SqlToSpec.kt); the original text is not sent to the database.
+Builder, SQL screen, and MCP `run_query` all produce a [`QuerySpec`](../shared/src/main/kotlin/com/safedb/model/Ir.kt). Typed SQL is parsed in [`SqlToSpec.kt`](../shared/src/main/kotlin/com/safedb/query/sql/SqlToSpec.kt); the original text is not sent to the database.
 
 ```mermaid
 flowchart TD
-  input[Builder or SQL screen]
+  input[Builder, SQL screen, or MCP run_query]
   spec[QuerySpec]
   validate[validateQuery]
   compile["compileValidated (bind params)"]
@@ -92,3 +92,5 @@ Launch-profile schema, fail-closed startup, and the SSL harness are in [trust-st
 ## Explore and export
 
 Pivot, worksheet, and visualization mutate an immutable sample, not the `QuerySpec`. CSV, chart PNG, and the HTML report carry the rows already fetched: no connection, credentials, or live query. Recipes store layout only; they can be imported on another machine without secrets or result rows.
+
+MCP `run_query` uses this same pipeline and returns a receipt with a short preview, not the full sample. Page or summarize with `get_result_rows` / `summarize_result`. See [mcp.md](mcp.md).

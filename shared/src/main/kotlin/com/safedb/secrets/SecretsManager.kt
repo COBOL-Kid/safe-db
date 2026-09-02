@@ -2,7 +2,9 @@ package com.safedb.secrets
 
 import com.safedb.adapter.SERVICE_NAME
 import com.safedb.model.ConnectionDef
+import com.safedb.persist.ensurePrivateDir
 import com.safedb.platform.DesktopPlatform
+import java.nio.file.Path
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -70,12 +72,14 @@ object SecretsManager {
                 RequestedBackend.Auto ->
                     PlatformCredentialStore.createOrFallback(platformResolver())
             }
-        activeLabel =
-            when (val store = activeStore) {
-                is DisabledMemoryStore -> "disabled"
-                is PlatformCredentialStore -> store.label
-                else -> "unknown"
-            }
+        activeLabel = labelFor(activeStore)
+    }
+
+    fun initFileStore(credentialsDir: Path) {
+        storeReadCountForTest = 0
+        ensurePrivateDir(credentialsDir)
+        activeStore = FileCredentialStore(credentialsDir)
+        activeLabel = labelFor(activeStore)
     }
 
     fun passwordForDefinition(def: ConnectionDef): Result<String> {
@@ -170,6 +174,14 @@ object SecretsManager {
         activeStore = store
         activeLabel = "test"
     }
+
+    private fun labelFor(store: CredentialStore): String =
+        when (store) {
+            is DisabledMemoryStore -> "disabled"
+            is PlatformCredentialStore -> store.label
+            is FileCredentialStore -> "file"
+            else -> "unknown"
+        }
 }
 
 private fun <T> Result<T>.mapError(transform: (Throwable) -> String): Result<T> =

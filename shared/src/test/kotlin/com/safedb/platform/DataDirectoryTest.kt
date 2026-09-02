@@ -7,15 +7,12 @@ import kotlin.test.assertFailsWith
 
 class DataDirectoryTest {
     @Test
-    fun rejectsUnsupportedPlatformBeforeResolvingADataPath() {
+    fun rejectsLinuxBeforeResolvingADesktopDataPath() {
         val error =
-            assertFailsWith<UnsupportedDesktopPlatformException> {
+            assertFailsWith<DesktopStoreUnavailableException> {
                 DataDirectory.baseDir(PlatformEnvironment("Linux", "/home/test"))
             }
-        assertEquals(
-            "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
-            error.message,
-        )
+        assertEquals("desktop app data directory is not available on Linux", error.message)
     }
 
     @Test

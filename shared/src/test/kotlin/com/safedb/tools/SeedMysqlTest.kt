@@ -1,5 +1,6 @@
 package com.safedb.tools
 
+import com.safedb.platform.DesktopStoreUnavailableException
 import com.safedb.platform.PlatformEnvironment
 import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.io.BufferedWriter
@@ -223,16 +224,13 @@ class SeedMysqlTest {
     }
 
     @Test
-    fun linuxAppDataLookupReportsUnsupportedPlatform() {
+    fun linuxAppDataLookupReportsDesktopStoreUnavailable() {
         val error =
-            assertFailsWith<UnsupportedDesktopPlatformException> {
+            assertFailsWith<DesktopStoreUnavailableException> {
                 safeDbAppDataDir(PlatformEnvironment("Linux", "/home/test"))
             }
 
-        assertEquals(
-            "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
-            error.message,
-        )
+        assertEquals("desktop app data directory is not available on Linux", error.message)
 
         var resetMessage = ""
         assertNull(
@@ -243,7 +241,33 @@ class SeedMysqlTest {
         )
         assertEquals(
             "-> skipping safe-db app state reset " +
-                "(unsupported operating system 'Linux'; supported platforms are macOS and Windows)",
+                "(desktop app data directory is not available on Linux)",
+            resetMessage,
+        )
+    }
+
+    @Test
+    fun unknownOsAppDataLookupSkipsStateReset() {
+        val error =
+            assertFailsWith<UnsupportedDesktopPlatformException> {
+                safeDbAppDataDir(PlatformEnvironment("Haiku", "/home/test"))
+            }
+
+        assertEquals(
+            "unsupported operating system 'Haiku'; supported platforms are macOS, Windows, and Linux",
+            error.message,
+        )
+
+        var resetMessage = ""
+        assertNull(
+            safeDbAppDataDirForStateReset(
+                environment = PlatformEnvironment("Haiku", "/home/test"),
+                report = { resetMessage = it },
+            )
+        )
+        assertEquals(
+            "-> skipping safe-db app state reset " +
+                "(unsupported operating system 'Haiku'; supported platforms are macOS, Windows, and Linux)",
             resetMessage,
         )
     }

@@ -39,10 +39,18 @@ internal fun requireSupportedDesktopPlatform(
     osName: String = System.getProperty("os.name").orEmpty(),
     reportError: (String) -> Unit = System.err::println,
     exit: (Int) -> Nothing = ::exitProcess,
-): DesktopPlatform =
-    try {
-        DesktopPlatform.resolve(osName)
-    } catch (error: UnsupportedDesktopPlatformException) {
-        reportError("safe-db: ${error.message}")
+): DesktopPlatform {
+    val platform =
+        try {
+            DesktopPlatform.resolve(osName)
+        } catch (_: UnsupportedDesktopPlatformException) {
+            null
+        }
+    if (platform == null || !platform.supportsDesktopApp) {
+        reportError(
+            "safe-db: unsupported operating system '$osName'; supported platforms are macOS and Windows"
+        )
         exit(2)
     }
+    return platform
+}

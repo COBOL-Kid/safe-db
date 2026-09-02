@@ -5,6 +5,11 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.persist.isPosix
+import com.safedb.platform.DesktopPlatform
+import com.safedb.platform.DesktopStoreUnavailableException
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -83,23 +88,58 @@ class SecretsTest {
     }
 
     @Test
-    fun unsupportedPlatformsCannotSelectACredentialBackend() {
-        val error =
-            assertFailsWith<com.safedb.platform.UnsupportedDesktopPlatformException> {
-                SecretsManager.initStoreForOsName("auto", "Linux")
-            }
+    fun linuxCannotSelectTheOsCredentialStore() {
+        listOf("auto", "protected").forEach { backend ->
+            val error =
+                assertFailsWith<DesktopStoreUnavailableException> {
+                    SecretsManager.initStoreForOsName(backend, "Linux")
+                }
 
-        assertEquals(
-            "unsupported operating system 'Linux'; supported platforms are macOS and Windows",
-            error.message,
-        )
+            assertEquals("OS credential store is not available on Linux", error.message)
+        }
+        assertNull(createStrictPlatformCredentialStoreOrNull(DesktopPlatform.Linux))
+        val fallbackError =
+            assertFailsWith<DesktopStoreUnavailableException> {
+                PlatformCredentialStore.createOrFallback(DesktopPlatform.Linux)
+            }
+        assertEquals("OS credential store is not available on Linux", fallbackError.message)
     }
 
     @Test
-    fun disabledBackendRemainsAvailableOnUnsupportedBuildHosts() {
+    fun disabledBackendRemainsAvailableOnLinux() {
         SecretsManager.initStoreForOsName("disabled", "Linux")
 
         assertEquals("disabled", SecretsManager.activeBackendLabel())
+    }
+
+    @Test
+    fun initFileStoreLocksDownPreexistingCredentialsDir() {
+        val credentialsDir = Files.createTempDirectory("safedb-file-store")
+        if (!isPosix(credentialsDir)) return
+        Files.setPosixFilePermissions(credentialsDir, PosixFilePermissions.fromString("rwxr-xr-x"))
+
+        SecretsManager.initFileStore(credentialsDir)
+
+        assertEquals(
+            PosixFilePermissions.fromString("rwx------"),
+            Files.getPosixFilePermissions(credentialsDir),
+        )
+        assertEquals("file", SecretsManager.activeBackendLabel())
+    }
+
+    @Test
+    fun fileStoreRoundTripBindsFingerprint() {
+        val dir = Files.createTempDirectory("safedb-file-store")
+        SecretsManager.initFileStore(dir.resolve("credentials"))
+        val def = connectionDef("conn-file")
+
+        SecretsManager.savePasswordForDefinition(def, "secret").getOrThrow()
+        CredentialSession.lockCredentials()
+        assertEquals("secret", SecretsManager.passwordForDefinition(def).getOrThrow())
+        assertEquals("file", SecretsManager.activeBackendLabel())
+
+        SecretsManager.deletePassword(def.id).getOrThrow()
+        assertTrue(SecretsManager.passwordForDefinition(def).isFailure)
     }
 
     @Test

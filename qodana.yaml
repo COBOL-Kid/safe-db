@@ -22,9 +22,11 @@ exclude:
     paths:
       - build
       - shared/build
+      - mcp/build
       - buildSrc
       - src/test
       - shared/src/test
+      - mcp/src/test
       - shared/src/integrationTest
       - scripts
       - packaging

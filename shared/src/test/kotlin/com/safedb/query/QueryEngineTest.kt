@@ -71,6 +71,13 @@ class QueryEngineTest {
     }
 
     @Test
+    fun isSchemaBlockedMatchesValidateRules() {
+        assertTrue(isSchemaBlocked("pg_catalog", emptyList()))
+        assertTrue(isSchemaBlocked("Audit", listOf("audit")))
+        assertFalse(isSchemaBlocked("public", listOf("audit")))
+    }
+
+    @Test
     fun validateRejectsJoinOnNonIndexedColumn() {
         val spec =
             sampleSpec()

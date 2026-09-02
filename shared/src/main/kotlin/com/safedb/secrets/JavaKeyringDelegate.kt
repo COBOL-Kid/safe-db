@@ -62,4 +62,5 @@ internal fun createStrictPlatformCredentialStoreOrNull(
     when (platform) {
         DesktopPlatform.MacOs,
         DesktopPlatform.Windows -> createJavaKeyringDelegateOrNull()
+        DesktopPlatform.Linux -> null
     }
