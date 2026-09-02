@@ -15,8 +15,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 
-internal const val RESULT_STORE_TTL_MS = 300_000L
-internal const val RESULT_STORE_MAX_ENTRIES = 8
+internal const val RESULT_STORE_TTL_MS = 1_800_000L
+internal const val RESULT_STORE_MAX_ENTRIES = 16
 internal const val RESULT_STORE_MAX_BYTES = 32L * 1024 * 1024
 
 internal data class StoredResult(

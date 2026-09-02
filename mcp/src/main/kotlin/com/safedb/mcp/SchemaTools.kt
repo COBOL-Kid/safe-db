@@ -10,6 +10,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
@@ -53,12 +54,13 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                     },
                 required = listOf("connection_id"),
             ),
+        toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         val connectionId = requiredText(request, "connection_id")
         if (connectionId == null) {
-            toolError("connection_id is required")
+            toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
         } else if (service.listConnections().none { it.id == connectionId }) {
-            toolError("Connection not found")
+            toolError(ERROR_NOT_FOUND, "Connection not found")
         } else {
             try {
                 val schema = cache.get(connectionId, refresh = optionalRefresh(request))
@@ -68,7 +70,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                toolError(error.message ?: "list_tables failed")
+                toolError(ERROR_INTERNAL, error.message ?: "list_tables failed")
             }
         }
     }
@@ -118,18 +120,19 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                     },
                 required = listOf("connection_id", "schema", "table"),
             ),
+        toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         val connectionId = requiredText(request, "connection_id")
         val schemaName = requiredText(request, "schema")
         val tableName = requiredText(request, "table")
         if (connectionId == null) {
-            toolError("connection_id is required")
+            toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
         } else if (schemaName == null) {
-            toolError("schema is required")
+            toolError(ERROR_INVALID_ARGUMENTS, "schema is required")
         } else if (tableName == null) {
-            toolError("table is required")
+            toolError(ERROR_INVALID_ARGUMENTS, "table is required")
         } else if (service.listConnections().none { it.id == connectionId }) {
-            toolError("Connection not found")
+            toolError(ERROR_NOT_FOUND, "Connection not found")
         } else {
             try {
                 val schema = cache.get(connectionId, refresh = optionalRefresh(request))
@@ -138,7 +141,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                         it.schema == schemaName && it.name == tableName
                     }
                 if (table == null) {
-                    toolError("Table not found")
+                    toolError(ERROR_NOT_FOUND, "Table not found")
                 } else {
                     CallToolResult(
                         content =
@@ -148,7 +151,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                toolError(error.message ?: "describe_table failed")
+                toolError(ERROR_INTERNAL, error.message ?: "describe_table failed")
             }
         }
     }

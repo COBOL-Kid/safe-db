@@ -56,25 +56,46 @@ class ConnectionToolsTest {
 
             val missing = client.callTool("delete_connection", emptyMap())
             assertEquals(true, missing.isError)
+            val missingBody =
+                kotlinx.serialization.json.Json.parseToJsonElement(
+                        (missing.content.single()
+                                as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                            .text
+                    )
+                    .jsonObject
+            assertEquals("invalid_arguments", missingBody.getValue("error").jsonPrimitive.content)
             assertEquals(
                 "connection_id is required",
-                (missing.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
-                    .text,
+                missingBody.getValue("message").jsonPrimitive.content,
             )
             val blank = client.callTool("delete_connection", mapOf("connection_id" to "  "))
             assertEquals(true, blank.isError)
+            val blankBody =
+                kotlinx.serialization.json.Json.parseToJsonElement(
+                        (blank.content.single()
+                                as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                            .text
+                    )
+                    .jsonObject
+            assertEquals("invalid_arguments", blankBody.getValue("error").jsonPrimitive.content)
             assertEquals(
                 "connection_id is required",
-                (blank.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
-                    .text,
+                blankBody.getValue("message").jsonPrimitive.content,
             )
 
             val unknown = client.callTool("delete_connection", mapOf("connection_id" to "nope"))
             assertEquals(true, unknown.isError)
+            val unknownBody =
+                kotlinx.serialization.json.Json.parseToJsonElement(
+                        (unknown.content.single()
+                                as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                            .text
+                    )
+                    .jsonObject
+            assertEquals("not_found", unknownBody.getValue("error").jsonPrimitive.content)
             assertEquals(
                 "Connection not found",
-                (unknown.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
-                    .text,
+                unknownBody.getValue("message").jsonPrimitive.content,
             )
             assertEquals(listOf("c1"), service.connections.map { it.id })
             assertTrue(service.passwords.containsKey("c1"))
@@ -100,10 +121,17 @@ class ConnectionToolsTest {
         withTempMcpClient(listService) { client ->
             val listed = client.callTool("list_connections", emptyMap())
             assertEquals(true, listed.isError)
-            val text =
-                (listed.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
-                    .text
-            assertTrue(text.contains("store read failed"))
+            val listedBody =
+                kotlinx.serialization.json.Json.parseToJsonElement(
+                        (listed.content.single()
+                                as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                            .text
+                    )
+                    .jsonObject
+            assertEquals("internal", listedBody.getValue("error").jsonPrimitive.content)
+            assertTrue(
+                listedBody.getValue("message").jsonPrimitive.content.contains("store read failed")
+            )
         }
 
         val deleteService =
@@ -117,11 +145,21 @@ class ConnectionToolsTest {
         withTempMcpClient(deleteService) { client ->
             val deleted = client.callTool("delete_connection", mapOf("connection_id" to "c1"))
             assertEquals(true, deleted.isError)
-            val text =
-                (deleted.content.single() as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
-                    .text
-            assertEquals("store write failed", text)
-            assertFalse(text.contains("should-not-leak"))
+            val deletedBody =
+                kotlinx.serialization.json.Json.parseToJsonElement(
+                        (deleted.content.single()
+                                as io.modelcontextprotocol.kotlin.sdk.types.TextContent)
+                            .text
+                    )
+                    .jsonObject
+            assertEquals("internal", deletedBody.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "store write failed",
+                deletedBody.getValue("message").jsonPrimitive.content,
+            )
+            assertFalse(
+                deletedBody.getValue("message").jsonPrimitive.content.contains("should-not-leak")
+            )
             assertEquals(listOf("c1"), deleteService.connections.map { it.id })
         }
     }

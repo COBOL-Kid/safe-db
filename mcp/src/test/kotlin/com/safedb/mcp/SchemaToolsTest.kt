@@ -138,7 +138,8 @@ class SchemaToolsTest {
                     ),
                 )
             assertEquals(true, failed.isError)
-            assertEquals("refresh failed", failed.text())
+            assertEquals("internal", failed.json().getValue("error").jsonPrimitive.content)
+            assertEquals("refresh failed", failed.json().getValue("message").jsonPrimitive.content)
         }
     }
 
@@ -156,7 +157,11 @@ class SchemaToolsTest {
                     mapOf("connection_id" to "c1", "refresh" to true),
                 )
             assertEquals(true, refresh.isError)
-            assertEquals("temporary catalog failure", refresh.text())
+            assertEquals("internal", refresh.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "temporary catalog failure",
+                refresh.json().getValue("message").jsonPrimitive.content,
+            )
 
             val cached = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             assertFalse(cached.isError == true)
@@ -171,11 +176,25 @@ class SchemaToolsTest {
         withTempMcpClient(service) { client ->
             val missingId = client.callTool("list_tables", emptyMap())
             assertEquals(true, missingId.isError)
-            assertEquals("connection_id is required", missingId.text())
+            assertEquals(
+                "invalid_arguments",
+                missingId.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "connection_id is required",
+                missingId.json().getValue("message").jsonPrimitive.content,
+            )
 
             val unknownConnection = client.callTool("list_tables", mapOf("connection_id" to "nope"))
             assertEquals(true, unknownConnection.isError)
-            assertEquals("Connection not found", unknownConnection.text())
+            assertEquals(
+                "not_found",
+                unknownConnection.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "Connection not found",
+                unknownConnection.json().getValue("message").jsonPrimitive.content,
+            )
 
             val missingSchema =
                 client.callTool(
@@ -183,7 +202,14 @@ class SchemaToolsTest {
                     mapOf("connection_id" to "c1", "table" to "orders"),
                 )
             assertEquals(true, missingSchema.isError)
-            assertEquals("schema is required", missingSchema.text())
+            assertEquals(
+                "invalid_arguments",
+                missingSchema.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "schema is required",
+                missingSchema.json().getValue("message").jsonPrimitive.content,
+            )
 
             val missingTable =
                 client.callTool(
@@ -191,7 +217,14 @@ class SchemaToolsTest {
                     mapOf("connection_id" to "c1", "schema" to "public"),
                 )
             assertEquals(true, missingTable.isError)
-            assertEquals("table is required", missingTable.text())
+            assertEquals(
+                "invalid_arguments",
+                missingTable.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "table is required",
+                missingTable.json().getValue("message").jsonPrimitive.content,
+            )
 
             val unknownTable =
                 client.callTool(
@@ -199,7 +232,11 @@ class SchemaToolsTest {
                     mapOf("connection_id" to "c1", "schema" to "public", "table" to "missing"),
                 )
             assertEquals(true, unknownTable.isError)
-            assertEquals("Table not found", unknownTable.text())
+            assertEquals("not_found", unknownTable.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Table not found",
+                unknownTable.json().getValue("message").jsonPrimitive.content,
+            )
 
             val blocked =
                 client.callTool(
@@ -207,7 +244,11 @@ class SchemaToolsTest {
                     mapOf("connection_id" to "c1", "schema" to "audit", "table" to "events"),
                 )
             assertEquals(true, blocked.isError)
-            assertEquals("Table not found", blocked.text())
+            assertEquals("not_found", blocked.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Table not found",
+                blocked.json().getValue("message").jsonPrimitive.content,
+            )
             assertFalse(blocked.text().contains("blocked", ignoreCase = true))
 
             val catalog =
@@ -216,7 +257,11 @@ class SchemaToolsTest {
                     mapOf("connection_id" to "c1", "schema" to "pg_catalog", "table" to "pg_class"),
                 )
             assertEquals(true, catalog.isError)
-            assertEquals("Table not found", catalog.text())
+            assertEquals("not_found", catalog.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Table not found",
+                catalog.json().getValue("message").jsonPrimitive.content,
+            )
             assertFalse(catalog.text().contains("oid"))
             assertFalse(catalog.text().contains("pg_class"))
         }
@@ -229,7 +274,8 @@ class SchemaToolsTest {
         withTempMcpClient(service) { client ->
             val listed = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             assertEquals(true, listed.isError)
-            assertEquals("jdbc down", listed.text())
+            assertEquals("internal", listed.json().getValue("error").jsonPrimitive.content)
+            assertEquals("jdbc down", listed.json().getValue("message").jsonPrimitive.content)
         }
     }
 
@@ -244,7 +290,11 @@ class SchemaToolsTest {
             client.callTool("delete_connection", mapOf("connection_id" to "c1"))
             val listed = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             assertEquals(true, listed.isError)
-            assertEquals("Connection not found", listed.text())
+            assertEquals("not_found", listed.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Connection not found",
+                listed.json().getValue("message").jsonPrimitive.content,
+            )
             assertFalse(listed.text().contains("orders"))
         }
     }
@@ -260,3 +310,6 @@ private fun catalogService(): RecordingSafeDbService {
 }
 
 private fun CallToolResult.text(): String = (content.single() as TextContent).text
+
+private fun CallToolResult.json(): kotlinx.serialization.json.JsonObject =
+    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject

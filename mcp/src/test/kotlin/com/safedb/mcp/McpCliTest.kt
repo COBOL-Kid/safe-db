@@ -33,6 +33,11 @@ class McpCliTest {
         assertTrue(add is McpCommand.ConnectionsAdd)
         assertEquals("mysql", setup.flags.dialect)
         assertEquals("mysql", add.flags.dialect)
+        assertTrue(
+            MCP_USAGE.contains(
+                "safe-db-mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path"
+            )
+        )
     }
 
     @Test

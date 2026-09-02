@@ -71,6 +71,23 @@ class McpRuntimeTest {
                 ),
                 client.listTools().tools.map { it.name }.sorted(),
             )
+            assertEquals(MCP_SERVER_INSTRUCTIONS, client.serverInstructions)
+            assertEquals(false, client.serverCapabilities?.tools?.listChanged)
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(true, tools.getValue("list_connections").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("list_tables").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("describe_table").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("get_result_rows").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("summarize_result").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("delete_connection").annotations?.destructiveHint)
+            assertEquals(null, tools.getValue("run_query").annotations)
+            assertEquals(
+                listOf("connection_id", "sql"),
+                tools.getValue("run_query").inputSchema.required,
+            )
+            assertFalse(
+                tools.getValue("run_query").inputSchema.properties?.containsKey("spec") == true
+            )
         }
     }
 

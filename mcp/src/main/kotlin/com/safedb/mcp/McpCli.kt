@@ -23,6 +23,9 @@ internal const val MCP_USAGE =
 Add a connection interactively or with flags. Passwords are never flags; use a prompt
 or --password-file /absolute/path.
 
+Example:
+  safe-db-mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path
+
 Options:
   --name NAME
   --dialect postgres|mysql|mssql|oracle

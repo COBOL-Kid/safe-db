@@ -13,7 +13,9 @@ internal const val DISTINCT_VALUE_LIMIT = 8
 internal data class ResultSummary(
     @SerialName("result_id") val resultId: String,
     @SerialName("row_count") val rowCount: Int,
-    val truncated: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("sample_capped")
+    val sampleCapped: Boolean = false,
     val columns: List<ColumnSummary>,
 )
 

@@ -19,9 +19,11 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.nio.file.Path
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -38,6 +40,60 @@ private object McpVersionLoader
 
 internal val toolJson = Json { encodeDefaults = true }
 
+internal const val ERROR_INVALID_ARGUMENTS = "invalid_arguments"
+internal const val ERROR_NOT_FOUND = "not_found"
+internal const val ERROR_PARSE = "parse"
+internal const val ERROR_VALIDATION = "validation"
+internal const val ERROR_COMPILATION = "compilation"
+internal const val ERROR_EXECUTION = "execution"
+internal const val ERROR_RISK_GATE = "risk_gate"
+internal const val ERROR_CONFIRMATION_REQUIRED = "confirmation_required"
+internal const val ERROR_INTERNAL = "internal"
+
+internal const val MCP_SERVER_INSTRUCTIONS =
+    "Add connections with the safe-db-mcp CLI, not tools. Start with list_connections; " +
+        "pass id as connection_id. For unqualified SQL, pass default_schema from list_tables " +
+        "(on MySQL often the connection database) or qualify as schema.table. Page results " +
+        "with result_id. Never send passwords."
+
+@Serializable
+internal data class McpToolError(
+    val error: String,
+    val message: String,
+    val warnings: List<String> = emptyList(),
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val risk: QueryRiskSummary? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val reasons: List<String>? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val confirmation: McpQueryConfirmation? = null,
+)
+
+internal fun toolError(
+    code: String,
+    message: String,
+    warnings: List<String> = emptyList(),
+    risk: QueryRiskSummary? = null,
+    reasons: List<String>? = null,
+    confirmation: McpQueryConfirmation? = null,
+): CallToolResult =
+    CallToolResult(
+        content =
+            listOf(
+                TextContent(
+                    text =
+                        toolJson.encodeToString(
+                            McpToolError(
+                                error = code,
+                                message = message,
+                                warnings = warnings,
+                                risk = risk,
+                                reasons = reasons,
+                                confirmation = confirmation,
+                            )
+                        )
+                )
+            ),
+        isError = true,
+    )
+
 internal fun requiredText(request: CallToolRequest, name: String): String? =
     optionalText(request, name)
 
@@ -53,9 +109,6 @@ internal fun optionalInt(request: CallToolRequest, name: String): Int? {
     }
     return primitive.content.trim().toIntOrNull()
 }
-
-internal fun toolError(message: String): CallToolResult =
-    CallToolResult(content = listOf(TextContent(text = message)), isError = true)
 
 internal fun mcpVersion(): String {
     val stream =
@@ -128,8 +181,9 @@ internal fun createSafeDbMcpServer(
             options =
                 ServerOptions(
                     capabilities =
-                        ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = true))
+                        ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false))
                 ),
+            instructions = MCP_SERVER_INSTRUCTIONS,
         )
     registerConnectionTools(server, service, schemaCache)
     registerSchemaTools(server, service, schemaCache)
@@ -150,9 +204,16 @@ internal fun registerConnectionTools(
                 "`safe-db-mcp setup` or `safe-db-mcp connections add`; do not pass a password " +
                 "or URL to any tool.",
         inputSchema = ToolSchema(properties = buildJsonObject {}),
+        toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) {
-        val payload = toolJson.encodeToString(service.listConnections().map { it.toSummary() })
-        CallToolResult(content = listOf(TextContent(text = payload)))
+        try {
+            val payload = toolJson.encodeToString(service.listConnections().map { it.toSummary() })
+            CallToolResult(content = listOf(TextContent(text = payload)))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            toolError(ERROR_INTERNAL, error.message ?: "list_connections failed")
+        }
     }
 
     server.addTool(
@@ -174,12 +235,13 @@ internal fun registerConnectionTools(
                     },
                 required = listOf("connection_id"),
             ),
+        toolAnnotations = ToolAnnotations(destructiveHint = true),
     ) { request ->
         val id = requiredText(request, "connection_id")
         if (id == null) {
-            toolError("connection_id is required")
+            toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
         } else if (service.listConnections().none { it.id == id }) {
-            toolError("Connection not found")
+            toolError(ERROR_NOT_FOUND, "Connection not found")
         } else {
             try {
                 service.deleteConnection(id)
@@ -191,7 +253,7 @@ internal fun registerConnectionTools(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                toolError(error.message ?: "delete failed")
+                toolError(ERROR_INTERNAL, error.message ?: "delete failed")
             }
         }
     }

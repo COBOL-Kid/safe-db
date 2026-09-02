@@ -16,7 +16,6 @@ import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
-import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -59,7 +58,10 @@ class QueryToolsTest {
                 parsed.columns()[0].jsonObject.getValue("data_type").jsonPrimitive.content,
             )
             assertEquals("2", parsed.getValue("row_count").jsonPrimitive.content)
-            assertEquals("false", parsed.getValue("truncated").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("sample_capped"))
+            assertFalse(parsed.containsKey("truncated"))
+            assertFalse(parsed.containsKey("artifact_path"))
+            assertFalse(parsed.containsKey("artifact_bytes"))
             assertTrue(
                 parsed.getValue("warnings").jsonArray.any {
                     it.jsonPrimitive.content.contains("defaulting to")
@@ -103,17 +105,25 @@ class QueryToolsTest {
                     )
                     .json()
             assertEquals("50", parsed.getValue("row_count").jsonPrimitive.content)
-            assertEquals("true", parsed.getValue("truncated").jsonPrimitive.content)
+            assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("truncated"))
             assertTrue(
                 parsed.getValue("warnings").jsonArray.any {
                     it.jsonPrimitive.content == "engine warning"
+                }
+            )
+            assertTrue(
+                parsed.getValue("warnings").jsonArray.any {
+                    it.jsonPrimitive.content.contains("paging does not get more table rows") &&
+                        it.jsonPrimitive.content.contains("LIMIT 50")
                 }
             )
             assertEquals(PREVIEW_ROW_LIMIT, parsed.getValue("preview").jsonArray.size)
             assertEquals("true", parsed.getValue("preview_truncated").jsonPrimitive.content)
             val resultId = parsed.getValue("result_id").jsonPrimitive.content
             val page = client.callTool("get_result_rows", mapOf("result_id" to resultId)).json()
-            assertEquals("true", page.getValue("truncated").jsonPrimitive.content)
+            assertFalse(page.containsKey("sample_capped"))
+            assertFalse(page.containsKey("truncated"))
             assertEquals("false", page.getValue("page_truncated").jsonPrimitive.content)
         }
     }
@@ -143,7 +153,11 @@ class QueryToolsTest {
                     mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
                 )
             assertEquals(true, schemaFailure.isError)
-            assertEquals("catalog unavailable", schemaFailure.text())
+            assertEquals("internal", schemaFailure.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "catalog unavailable",
+                schemaFailure.json().getValue("message").jsonPrimitive.content,
+            )
             assertTrue(service.runQueryRequests.isEmpty())
 
             service.schemaError = null
@@ -154,24 +168,53 @@ class QueryToolsTest {
                     mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
                 )
             assertEquals(true, executionFailure.isError)
-            assertEquals("unexpected executor failure", executionFailure.text())
+            assertEquals(
+                "internal",
+                executionFailure.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "unexpected executor failure",
+                executionFailure.json().getValue("message").jsonPrimitive.content,
+            )
         }
         assertEquals(2, service.schemaCalls.size)
         assertEquals(1, service.runQueryRequests.size)
     }
 
     @Test
-    fun specPathRunsWithoutGetSchema() = runBlocking {
+    fun specArgumentIsIgnoredAndSqlIsRequired() = runBlocking {
         val service = queryService()
         val specJson = SafeDbJson.lenient.encodeToJsonElement(sampleMcpQuerySpec())
         withTempMcpClient(service) { client ->
-            val result =
+            val specOnly =
                 client.callTool("run_query", mapOf("connection_id" to "c1", "spec" to specJson))
-            assertFalse(result.isError == true)
-            assertEquals("2", result.json().getValue("row_count").jsonPrimitive.content)
+            assertEquals(true, specOnly.isError)
+            assertEquals(
+                "invalid_arguments",
+                specOnly.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "sql is required",
+                specOnly.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val withStraySpec =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "sql" to "SELECT id, email FROM public.customers",
+                        "spec" to specJson,
+                    ),
+                )
+            assertFalse(withStraySpec.isError == true)
+            assertEquals("2", withStraySpec.json().getValue("row_count").jsonPrimitive.content)
         }
-        assertTrue(service.schemaCalls.isEmpty())
-        assertEquals(sampleMcpQuerySpec(), service.runQueryRequests.single().spec)
+        assertEquals(listOf("c1"), service.schemaCalls)
+        assertEquals(
+            sampleMcpQuerySpec().tables.single().name,
+            service.runQueryRequests.single().spec.tables.single().name,
+        )
     }
 
     @Test
@@ -220,14 +263,10 @@ class QueryToolsTest {
             val mismatched = otherConnection.json()
             assertEquals("parse", mismatched.getValue("error").jsonPrimitive.content)
             assertTrue(
-                mismatched
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .contains(
-                        "schema",
-                        ignoreCase = true,
-                    )
+                mismatched.getValue("message").jsonPrimitive.content.contains("default_schema")
+            )
+            assertTrue(
+                mismatched.getValue("message").jsonPrimitive.content.contains("list_tables.schema")
             )
             assertEquals(requestsAfterMatchingConnection, service.runQueryRequests.size)
         }
@@ -239,16 +278,36 @@ class QueryToolsTest {
         withTempMcpClient(service) { client ->
             val missingId = client.callTool("run_query", emptyMap())
             assertEquals(true, missingId.isError)
-            assertEquals("connection_id is required", missingId.text())
+            val missingIdBody = missingId.json()
+            assertEquals("invalid_arguments", missingIdBody.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "connection_id is required",
+                missingIdBody.getValue("message").jsonPrimitive.content,
+            )
+            assertTrue(missingIdBody.containsKey("warnings"))
+            assertFalse(missingIdBody.containsKey("risk"))
+            assertFalse(missingIdBody.containsKey("reasons"))
+            assertFalse(missingIdBody.containsKey("confirmation"))
 
             val unknown =
                 client.callTool("run_query", mapOf("connection_id" to "nope", "sql" to "SELECT 1"))
             assertEquals(true, unknown.isError)
-            assertEquals("Connection not found", unknown.text())
+            assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Connection not found",
+                unknown.json().getValue("message").jsonPrimitive.content,
+            )
 
             val neither = client.callTool("run_query", mapOf("connection_id" to "c1"))
             assertEquals(true, neither.isError)
-            assertEquals("sql or spec is required", neither.text())
+            assertEquals(
+                "invalid_arguments",
+                neither.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "sql is required",
+                neither.json().getValue("message").jsonPrimitive.content,
+            )
 
             val both =
                 client.callTool(
@@ -259,8 +318,7 @@ class QueryToolsTest {
                         "spec" to SafeDbJson.lenient.encodeToJsonElement(sampleMcpQuerySpec()),
                     ),
                 )
-            assertEquals(true, both.isError)
-            assertEquals("Provide sql or spec, not both", both.text())
+            assertFalse(both.isError == true)
 
             val parsed =
                 client.callTool(
@@ -272,13 +330,42 @@ class QueryToolsTest {
             assertEquals("parse", body.getValue("error").jsonPrimitive.content)
             assertTrue(body.getValue("message").jsonPrimitive.content.isNotBlank())
 
+            val functions =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "sql" to "SELECT COUNT(*) FROM public.customers",
+                    ),
+                )
+            assertEquals(true, functions.isError)
+            val functionsMessage = functions.json().getValue("message").jsonPrimitive.content
+            assertTrue(functionsMessage.contains("summarize_result"))
+            assertFalse(functionsMessage.contains("Explore"))
+
+            val having =
+                client.callTool(
+                    "run_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "sql" to "SELECT id FROM public.customers HAVING id > 1",
+                    ),
+                )
+            assertEquals(true, having.isError)
+            val havingMessage = having.json().getValue("message").jsonPrimitive.content
+            assertTrue(havingMessage.contains("summarize_result"))
+            assertFalse(havingMessage.contains("Explore"))
+
             val specAsString =
                 client.callTool(
                     "run_query",
                     mapOf("connection_id" to "c1", "spec" to "not-an-object"),
                 )
             assertEquals(true, specAsString.isError)
-            assertEquals("parse", specAsString.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "invalid_arguments",
+                specAsString.json().getValue("error").jsonPrimitive.content,
+            )
 
             val confirmationAsString =
                 client.callTool(
@@ -295,7 +382,7 @@ class QueryToolsTest {
                 confirmationAsString.json().getValue("error").jsonPrimitive.content,
             )
         }
-        assertTrue(service.runQueryRequests.isEmpty())
+        assertEquals(1, service.runQueryRequests.size)
     }
 
     @Test
@@ -311,7 +398,10 @@ class QueryToolsTest {
                     ),
                 )
             assertEquals(true, malformedSpec.isError)
-            assertEquals("parse", malformedSpec.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "invalid_arguments",
+                malformedSpec.json().getValue("error").jsonPrimitive.content,
+            )
 
             val missingConfirmationFields =
                 client.callTool(
@@ -591,11 +681,10 @@ class QueryToolsTest {
                         .json()
                 val resultId = parsed.getValue("result_id").jsonPrimitive.content
                 assertTrue(resultId.isNotBlank())
-                val artifactPath = parsed.getValue("artifact_path").jsonPrimitive.content
-                val artifactBytes = parsed.getValue("artifact_bytes").jsonPrimitive.content.toLong()
-                val file = Path.of(artifactPath)
+                assertFalse(parsed.containsKey("artifact_path"))
+                assertFalse(parsed.containsKey("artifact_bytes"))
+                val file = resultsDir.resolve("$resultId.jsonl")
                 assertTrue(Files.isRegularFile(file))
-                assertEquals(Files.size(file), artifactBytes)
                 val lines = Files.readAllLines(file)
                 val expected = flattenRows(sampleMcpQueryResult())
                 assertEquals(expected.size, lines.size)
@@ -636,7 +725,8 @@ class QueryToolsTest {
                 assertEquals(resultId, page.getValue("result_id").jsonPrimitive.content)
                 assertEquals("0", page.getValue("offset").jsonPrimitive.content)
                 assertEquals("60", page.getValue("row_count").jsonPrimitive.content)
-                assertEquals("true", page.getValue("truncated").jsonPrimitive.content)
+                assertFalse(page.containsKey("sample_capped"))
+                assertFalse(page.containsKey("truncated"))
                 assertEquals(GET_RESULT_ROWS_MAX, page.getValue("rows").jsonArray.size)
                 assertEquals("true", page.getValue("page_truncated").jsonPrimitive.content)
                 assertEquals(
@@ -683,7 +773,8 @@ class QueryToolsTest {
                     client.callTool("summarize_result", mapOf("result_id" to resultId)).json()
                 assertEquals(resultId, summary.getValue("result_id").jsonPrimitive.content)
                 assertEquals("60", summary.getValue("row_count").jsonPrimitive.content)
-                assertEquals("true", summary.getValue("truncated").jsonPrimitive.content)
+                assertEquals("true", summary.getValue("sample_capped").jsonPrimitive.content)
+                assertFalse(summary.containsKey("truncated"))
                 val columns = summary.getValue("columns").jsonArray
                 assertEquals(2, columns.size)
                 val idCol = columns[0].jsonObject
@@ -846,11 +937,22 @@ class QueryToolsTest {
             ) { client ->
                 val missing = client.callTool("get_result_rows", emptyMap())
                 assertEquals(true, missing.isError)
-                assertEquals("result_id is required", missing.text())
+                assertEquals(
+                    "invalid_arguments",
+                    missing.json().getValue("error").jsonPrimitive.content,
+                )
+                assertEquals(
+                    "result_id is required",
+                    missing.json().getValue("message").jsonPrimitive.content,
+                )
 
                 val unknown = client.callTool("get_result_rows", mapOf("result_id" to "missing"))
                 assertEquals(true, unknown.isError)
-                assertEquals("Result not found", unknown.text())
+                assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
+                assertEquals(
+                    "Result not found",
+                    unknown.json().getValue("message").jsonPrimitive.content,
+                )
 
                 val receipt =
                     client
@@ -869,12 +971,23 @@ class QueryToolsTest {
                 clock[0] = 1_100
                 val expired = client.callTool("get_result_rows", mapOf("result_id" to resultId))
                 assertEquals(true, expired.isError)
-                assertEquals("Result not found", expired.text())
+                assertEquals("not_found", expired.json().getValue("error").jsonPrimitive.content)
+                assertEquals(
+                    "Result not found",
+                    expired.json().getValue("message").jsonPrimitive.content,
+                )
 
                 val expiredSummary =
                     client.callTool("summarize_result", mapOf("result_id" to resultId))
                 assertEquals(true, expiredSummary.isError)
-                assertEquals("Result not found", expiredSummary.text())
+                assertEquals(
+                    "not_found",
+                    expiredSummary.json().getValue("error").jsonPrimitive.content,
+                )
+                assertEquals(
+                    "Result not found",
+                    expiredSummary.json().getValue("message").jsonPrimitive.content,
+                )
             }
         } finally {
             resultsDir.toFile().deleteRecursively()
@@ -887,26 +1000,23 @@ class QueryToolsTest {
             QueryReceipt(
                 columns = emptyList(),
                 rowCount = 0,
-                truncated = false,
+                sampleCapped = false,
                 warnings = emptyList(),
                 risk = riskSummary(allowedMcpRisk()),
                 preview = emptyList(),
                 previewTruncated = false,
                 resultId = "rid",
-                artifactPath = null,
-                artifactBytes = null,
             )
         val omitted = toolJson.encodeToString(receipt)
         assertTrue(omitted.contains("\"result_id\""))
         assertFalse(omitted.contains("\"artifact_path\""))
         assertFalse(omitted.contains("\"artifact_bytes\""))
+        assertFalse(omitted.contains("\"sample_capped\""))
 
-        val included =
-            toolJson.encodeToString(
-                receipt.copy(artifactPath = "/tmp/x.jsonl", artifactBytes = 12L)
-            )
-        assertTrue(included.contains("\"artifact_path\""))
-        assertTrue(included.contains("\"artifact_bytes\""))
+        val capped = toolJson.encodeToString(receipt.copy(sampleCapped = true))
+        assertTrue(capped.contains("\"sample_capped\""))
+        assertFalse(capped.contains("\"artifact_path\""))
+        assertFalse(capped.contains("\"artifact_bytes\""))
     }
 }
 
