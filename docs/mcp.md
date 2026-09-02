@@ -2,13 +2,30 @@
 
 Stdio MCP server so agents can inspect schema and run a single `SELECT` through the same parser, validator, compiler, risk gate, and row/time caps as the desktop app. It maps tools onto [`SafeDbService`](../shared/src/main/kotlin/com/safedb/service/SafeDbService.kt). It does not reimplement JDBC, validation, or gating.
 
-The server is intended to ship as an npm package. That package is not published yet; this page covers behavior, connections, tools, and data paths once a client is launching the `safe-db-mcp` binary. Client install and download steps will land here when it ships.
+Install with npm. The package bundles a Temurin 25 jlink runtime, so the machine does not need Java:
 
-Developer Gradle commands (`:mcp:run`, `:mcp:shadowJar`) stay in [testing.md](testing.md). Query-engine contracts stay in [query-engine.md](query-engine.md).
+```bash
+npx -y @safe-db/mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path
+```
+
+MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "safe-db": {
+      "command": "npx",
+      "args": ["-y", "@safe-db/mcp"]
+    }
+  }
+}
+```
+
+Developer Gradle commands (`:mcp:run`, `:mcp:shadowJar`, `:mcp:assembleNpm`) stay in [testing.md](testing.md). Query-engine contracts stay in [query-engine.md](query-engine.md).
 
 ## Platforms
 
-macOS, Windows, and Linux. The desktop app still rejects Linux in [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) before Compose.
+macOS (arm64 and x64), Windows x64, and glibc Linux (x64 and arm64). Alpine/musl is not supported. `@safe-db/mcp` bundles a jlink image of Eclipse Temurin 25, so Java does not need to be installed. The desktop app still rejects Linux in [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) before Compose.
 
 MCP does not load a desktop `--launch-profile`. Transport is per connection (`--transport` on setup). Oracle TCPS still needs `--oracle-wallet`.
 

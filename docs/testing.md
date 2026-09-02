@@ -28,6 +28,10 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:run --args='connections list'` | List saved MCP connections (human CLI; not JSON-RPC). |
 | `./gradlew :mcp:run --args='setup --dialect postgres --database app --username readonly --password-file /absolute/path'` | Non-interactive connection add. Gradle typically has a null `System.console()`, so this is not a password prompt. |
 | `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-*-all.jar`. |
+| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package. Downloads a pinned Temurin 25 JDK/JMODs into `mcp/build/npm-cache/`. |
+| `./gradlew :mcp:assembleNpmAllPlatforms` | Same, for every platform. Linux x64 only (cross-links with Temurin JMODs). |
+| `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Skips when `node` is not on `PATH`. |
+| `./gradlew :mcp:npmPackagedTest` | Packaged MCP stdio/MySQL smoke against the current-OS jlink image. Not part of `check`. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 
 ## Integration tests
@@ -52,3 +56,5 @@ PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `S
 The repository owner applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration. Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled.
 
 Cross-platform durability is a manual **Run workflow** in GitHub Actions (`.github/workflows/durability.yml`). That suite waits for the `durability` environment, then adds full four-engine JDBC/TLS compatibility to the cross-platform, generated-MySQL, PostgreSQL, UI, and packaging jobs. Dependency submission remains automatic for qualifying trusted `main` changes.
+
+MCP npm packaging is a separate manual **Run workflow** (`.github/workflows/npm.yml`). It jlink-cross-compiles Temurin 25 runtimes for every platform, packs `@safe-db/mcp`, smokes `--help` on macOS/Windows/Linux ARM, and optionally publishes with `NPM_TOKEN` plus provenance when the `publish` input is true. The secret is a GitHub Actions repository secret; do not commit it.

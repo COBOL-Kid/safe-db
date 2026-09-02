@@ -1,0 +1,34 @@
+{
+  "name": "@safe-db/mcp",
+  "version": "0.0.0-dev",
+  "description": "Stdio MCP server for safe-db: inspect schema and run a gated SELECT.",
+  "bin": {
+    "safe-db-mcp": "cli.js"
+  },
+  "files": [
+    "cli.js",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/COBOL-Kid/safe-db.git",
+    "directory": "mcp/npm"
+  },
+  "homepage": "https://www.safe-db.dev",
+  "bugs": {
+    "url": "https://github.com/COBOL-Kid/safe-db/issues"
+  },
+  "keywords": [
+    "mcp",
+    "database",
+    "safe-db"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {}
+}

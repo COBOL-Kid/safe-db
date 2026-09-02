@@ -1,0 +1,22 @@
+{
+  "name": "@safe-db/mcp-PLATFORM",
+  "version": "0.0.0-dev",
+  "description": "PLATFORM jlink runtime for @safe-db/mcp.",
+  "os": [],
+  "cpu": [],
+  "files": [
+    "jre",
+    "lib",
+    "LICENSE"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/COBOL-Kid/safe-db.git",
+    "directory": "mcp/npm"
+  },
+  "homepage": "https://www.safe-db.dev",
+  "publishConfig": {
+    "access": "public"
+  }
+}

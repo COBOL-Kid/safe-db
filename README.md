@@ -4,7 +4,7 @@ Source for the [safe-db](https://www.safe-db.dev) desktop app and MCP server: a 
 
 Packaged desktop releases and the user guide live at [https://www.safe-db.dev](https://www.safe-db.dev). This repository is for building from source and changing the code.
 
-The desktop app runs on macOS and Windows; [`Main.kt`](src/main/kotlin/com/safedb/Main.kt) rejects other operating systems before Compose, JDBC, or app data initialize. The MCP server also runs on Linux. Connections, tools, and result receipts: [docs/mcp.md](docs/mcp.md). The npm package is not published yet.
+The desktop app runs on macOS and Windows; [`Main.kt`](src/main/kotlin/com/safedb/Main.kt) rejects other operating systems before Compose, JDBC, or app data initialize. The MCP server also runs on Linux and is packaged as `@safe-db/mcp` (`npx -y @safe-db/mcp`). Connections, tools, and result receipts: [docs/mcp.md](docs/mcp.md).
 
 ## Layout
 
@@ -12,7 +12,7 @@ The desktop app runs on macOS and Windows; [`Main.kt`](src/main/kotlin/com/safed
 | --- | --- |
 | Root (`src/`) | Compose Desktop UI, viewmodels, HTML/CSV/PNG export. Main class `com.safedb.MainKt`. |
 | [`:shared`](shared/) | Query engine, JDBC adapters, SQL parser, stores, secrets, launch profiles. Not a published library. |
-| [`:mcp`](mcp/) | Stdio MCP server CLI (`safe-db-mcp`). `setup` / `connections add` to save connections; tools for list/describe/query/page/summarize. See [docs/mcp.md](docs/mcp.md). |
+| [`:mcp`](mcp/) | Stdio MCP server CLI (`safe-db-mcp`), published as `@safe-db/mcp` with a bundled Temurin 25 jlink runtime. `setup` / `connections add` to save connections; tools for list/describe/query/page/summarize. See [docs/mcp.md](docs/mcp.md). |
 
 ## Contracts
 

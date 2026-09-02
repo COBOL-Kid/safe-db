@@ -104,10 +104,15 @@ internal fun resolveShadowJar(): Path {
 }
 
 internal fun resolveJavaExecutable(): Path {
+    val bundled = System.getProperty("safedb.mcp.bundledJava")
     val javaExecutable =
-        Path.of(System.getProperty("java.home"))
-            .resolve("bin")
-            .resolve(if (isWindows()) "java.exe" else "java")
+        if (!bundled.isNullOrBlank()) {
+            Path.of(bundled)
+        } else {
+            Path.of(System.getProperty("java.home"))
+                .resolve("bin")
+                .resolve(if (isWindows()) "java.exe" else "java")
+        }
     assertTrue(Files.isRegularFile(javaExecutable), "Java executable not found: $javaExecutable")
     return javaExecutable
 }

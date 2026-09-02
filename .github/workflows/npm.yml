@@ -1,0 +1,137 @@
+name: npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish packed tarballs to npm
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SAFEDB_KEYCHAIN_BACKEND: disabled
+      SAFEDB_TEST_MYSQL_HOST: 127.0.0.1
+      SAFEDB_TEST_MYSQL_USER: root
+      SAFEDB_TEST_MYSQL_PASSWORD: ""
+      SAFEDB_TEST_MYSQL_DATABASE: safedb_test
+      SAFEDB_TEST_REQUIRE_MYSQL: "true"
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: safedb_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+
+      - name: Seed static MySQL fixture
+        env:
+          SAFEDB_TEST_MYSQL_DOCKER: ${{ job.services.mysql.id }}
+        run: ./scripts/seed_mysql.sh --static
+
+      - name: Assemble npm packages and test the Linux jlink image
+        run: ./gradlew :mcp:assembleNpmAllPlatforms :mcp:npmCliTest :mcp:npmPackagedTest --stacktrace
+
+      - name: Pack npm tarballs
+        run: |
+          set -euo pipefail
+          mkdir -p mcp/build/npm-tarballs
+          for dir in mcp/build/npm/@safe-db/*; do
+            npm pack --pack-destination "$PWD/mcp/build/npm-tarballs" --silent "$dir"
+          done
+          ls -l mcp/build/npm-tarballs
+
+      - name: Upload npm tarballs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-tarballs
+          retention-days: 14
+          path: mcp/build/npm-tarballs/*.tgz
+
+      - name: Publish to npm
+        if: ${{ inputs.publish }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd mcp/build/npm-tarballs
+          for tarball in safe-db-mcp-darwin-*.tgz safe-db-mcp-linux-*.tgz safe-db-mcp-win32-*.tgz; do
+            npm publish "$tarball" --access public --provenance
+          done
+          npm publish safe-db-mcp-[0-9]*.tgz --access public --provenance
+
+  smoke:
+    name: Smoke (${{ matrix.package }})
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            package: darwin-arm64
+          - os: macos-13
+            package: darwin-x64
+          - os: windows-latest
+            package: win32-x64
+          - os: ubuntu-24.04-arm
+            package: linux-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-tarballs
+          path: tarballs
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install packed packages and print usage
+        shell: bash
+        run: |
+          set -euo pipefail
+          meta="$(ls tarballs/safe-db-mcp-[0-9]*.tgz)"
+          platform="$(ls tarballs/safe-db-mcp-${{ matrix.package }}-*.tgz)"
+          mkdir install
+          cd install
+          npm init -y >/dev/null
+          npm install "../$meta" "../$platform"
+          npx safe-db-mcp --help
