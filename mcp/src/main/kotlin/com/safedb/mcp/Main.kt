@@ -6,6 +6,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
 import java.io.FileDescriptor
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.io.PrintStream
 import kotlin.system.exitProcess
 import kotlinx.coroutines.Job
@@ -63,8 +64,9 @@ fun main(args: Array<String>) {
     }
 }
 
-internal fun redirectStdoutToStderr() {
-    System.setOut(PrintStream(FileOutputStream(FileDescriptor.err), true, Charsets.UTF_8))
+// Use fd 2, not System.err: a wrapped System.err must not become the protocol stream.
+internal fun redirectStdoutToStderr(err: OutputStream = FileOutputStream(FileDescriptor.err)) {
+    System.setOut(PrintStream(err, true, Charsets.UTF_8))
 }
 
 internal fun runMcpStdio(server: Server, stdout: PrintStream) {

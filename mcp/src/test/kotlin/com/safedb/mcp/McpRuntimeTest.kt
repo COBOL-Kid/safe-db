@@ -105,12 +105,19 @@ class McpRuntimeTest {
     @Test
     fun printlnAfterRedirectLandsOnStderrNotProtocolStream() {
         val protocol = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
         val previous = System.out
         try {
-            System.setOut(PrintStream(protocol, true, Charsets.UTF_8))
-            redirectStdoutToStderr()
+            val protocolStream = PrintStream(protocol, true, Charsets.UTF_8)
+            System.setOut(protocolStream)
+            redirectStdoutToStderr(stderr)
             println("should-not-leak")
             assertFalse(protocol.toString(Charsets.UTF_8).contains("should-not-leak"))
+            assertTrue(stderr.toString(Charsets.UTF_8).contains("should-not-leak"))
+
+            System.setOut(protocolStream)
+            redirectStdoutToStderr()
+            assertFalse(System.out === protocolStream)
         } finally {
             System.setOut(previous)
         }

@@ -135,7 +135,11 @@ tasks.shadowJar {
     archiveClassifier.set("all")
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
-    filesNotMatching("META-INF/services/**") { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
+    // EXCLUDE drops extras before transformers. Services and .kotlin_module must stay
+    // INCLUDE so mergeServiceFiles and KotlinModuleMetadataTransformer see every copy.
+    filesNotMatching(listOf("META-INF/services/**", "META-INF/*.kotlin_module")) {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
     manifest { attributes["Main-Class"] = "com.safedb.mcp.MainKt" }
 }
 
