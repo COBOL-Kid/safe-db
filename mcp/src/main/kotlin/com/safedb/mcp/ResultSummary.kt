@@ -95,10 +95,10 @@ private fun columnMinMax(cells: List<ResultCell>): Pair<JsonElement?, JsonElemen
 }
 
 private fun compareNumeric(left: ResultCell, right: ResultCell): Int =
-    when {
-        left is ResultCell.IntegerCell && right is ResultCell.IntegerCell ->
+    when (left) {
+        is ResultCell.IntegerCell if right is ResultCell.IntegerCell ->
             left.value.compareTo(right.value)
-        left is ResultCell.FloatCell && right is ResultCell.FloatCell ->
+        is ResultCell.FloatCell if right is ResultCell.FloatCell ->
             left.value.compareTo(right.value)
         else -> numericDecimal(left).compareTo(numericDecimal(right))
     }
