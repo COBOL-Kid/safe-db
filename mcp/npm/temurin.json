@@ -15,14 +15,6 @@
       "filename": "OpenJDK25U-jmods_aarch64_mac_hotspot_25.0.4_7.tar.gz"
     },
     {
-      "npm": "darwin-x64",
-      "os": ["darwin"],
-      "cpu": ["x64"],
-      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jmods_x64_mac_hotspot_25.0.4_7.tar.gz",
-      "sha256": "f050f88c64cc01747bd762babbbef4f7b4be5189a2a10e7f13bf0b9c417edacb",
-      "filename": "OpenJDK25U-jmods_x64_mac_hotspot_25.0.4_7.tar.gz"
-    },
-    {
       "npm": "linux-arm64",
       "os": ["linux"],
       "cpu": ["arm64"],

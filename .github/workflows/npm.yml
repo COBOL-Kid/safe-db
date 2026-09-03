@@ -19,9 +19,6 @@ jobs:
   pack:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: read
-      id-token: write
     env:
       SAFEDB_KEYCHAIN_BACKEND: disabled
       SAFEDB_TEST_MYSQL_HOST: 127.0.0.1
@@ -58,7 +55,6 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-          registry-url: https://registry.npmjs.org
 
       - name: Seed static MySQL fixture
         env:
@@ -72,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p mcp/build/npm-tarballs
-          for dir in mcp/build/npm/@safe-db/*; do
+          for dir in mcp/build/npm-all/@safe-db/*; do
             npm pack --pack-destination "$PWD/mcp/build/npm-tarballs" --silent "$dir"
           done
           ls -l mcp/build/npm-tarballs
@@ -84,18 +80,6 @@ jobs:
           retention-days: 14
           path: mcp/build/npm-tarballs/*.tgz
 
-      - name: Publish to npm
-        if: ${{ inputs.publish }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          cd mcp/build/npm-tarballs
-          for tarball in safe-db-mcp-darwin-*.tgz safe-db-mcp-linux-*.tgz safe-db-mcp-win32-*.tgz; do
-            npm publish "$tarball" --access public --provenance
-          done
-          npm publish safe-db-mcp-[0-9]*.tgz --access public --provenance
-
   smoke:
     name: Smoke (${{ matrix.package }})
     needs: pack
@@ -105,8 +89,6 @@ jobs:
         include:
           - os: macos-latest
             package: darwin-arm64
-          - os: macos-13
-            package: darwin-x64
           - os: windows-latest
             package: win32-x64
           - os: ubuntu-24.04-arm
@@ -135,3 +117,47 @@ jobs:
           npm init -y >/dev/null
           npm install "../$meta" "../$platform"
           npx safe-db-mcp --help
+
+  publish:
+    needs: [pack, smoke]
+    if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-tarballs
+          path: tarballs
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          cd tarballs
+          darwin=(safe-db-mcp-darwin-arm64-*.tgz)
+          linux_arm=(safe-db-mcp-linux-arm64-*.tgz)
+          linux_x64=(safe-db-mcp-linux-x64-*.tgz)
+          win=(safe-db-mcp-win32-x64-*.tgz)
+          meta=(safe-db-mcp-[0-9]*.tgz)
+          if [[ ${#darwin[@]} -ne 1 || ${#linux_arm[@]} -ne 1 || ${#linux_x64[@]} -ne 1 || ${#win[@]} -ne 1 || ${#meta[@]} -ne 1 ]]; then
+            echo "expected 4 platform tarballs + 1 meta; got:" >&2
+            ls -l
+            exit 1
+          fi
+          npm publish "${darwin[0]}" --access public --provenance
+          npm publish "${linux_arm[0]}" --access public --provenance
+          npm publish "${linux_x64[0]}" --access public --provenance
+          npm publish "${win[0]}" --access public --provenance
+          npm publish "${meta[0]}" --access public --provenance

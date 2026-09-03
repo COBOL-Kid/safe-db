@@ -25,7 +25,7 @@ Developer Gradle commands (`:mcp:run`, `:mcp:shadowJar`, `:mcp:assembleNpm`) sta
 
 ## Platforms
 
-macOS (arm64 and x64), Windows x64, and glibc Linux (x64 and arm64). Alpine/musl is not supported. `@safe-db/mcp` bundles a jlink image of Eclipse Temurin 25, so Java does not need to be installed. The desktop app still rejects Linux in [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) before Compose.
+macOS arm64 (not x64), Windows x64, and glibc Linux (x64 and arm64). Alpine/musl is not supported. `@safe-db/mcp` bundles a jlink image of Eclipse Temurin 25, so Java does not need to be installed. The desktop app still rejects Linux in [`Main.kt`](../src/main/kotlin/com/safedb/Main.kt) before Compose.
 
 MCP does not load a desktop `--launch-profile`. Transport is per connection (`--transport` on setup). Oracle TCPS still needs `--oracle-wallet`.
 

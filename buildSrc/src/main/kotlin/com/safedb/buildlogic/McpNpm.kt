@@ -25,6 +25,7 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -239,7 +240,9 @@ fun extraModulesFromJdeps(
     jar: File,
     known: Set<String>,
 ): List<String> {
-    if (!jdeps.isFile) return emptyList()
+    if (!jdeps.isFile) {
+        throw GradleException("jdeps not found at $jdeps")
+    }
     val stdout = ByteArrayOutputStream()
     val result = exec.exec {
         commandLine(
@@ -253,13 +256,54 @@ fun extraModulesFromJdeps(
         isIgnoreExitValue = true
         standardOutput = stdout
     }
-    if (result.exitValue != 0) return emptyList()
-    return stdout
-        .toString(Charsets.UTF_8)
-        .trim()
-        .split(',')
-        .map { it.trim() }
-        .filter { it.isNotEmpty() && it !in known }
+    val extras =
+        extraModulesFromJdepsOutput(stdout.toString(Charsets.UTF_8), known, result.exitValue)
+    if (extras.isNotEmpty()) {
+        throw GradleException("jdeps reported modules not listed in jlink-modules.txt: $extras")
+    }
+    return extras
+}
+
+fun extraModulesFromJdepsOutput(
+    stdout: String,
+    known: Set<String>,
+    exitValue: Int = 0,
+): List<String> {
+    if (exitValue != 0) {
+        throw GradleException("jdeps failed with exit $exitValue")
+    }
+    return stdout.trim().split(',').map { it.trim() }.filter { it.isNotEmpty() && it !in known }
+}
+
+fun String.replaceRequired(sentinel: String, replacement: String): String {
+    if (!contains(sentinel)) {
+        throw GradleException("Missing package.json sentinel: $sentinel")
+    }
+    return replace(sentinel, replacement)
+}
+
+fun stampMetaPackageJson(template: String, version: String, platforms: List<NpmPlatform>): String {
+    val optional =
+        platforms.joinToString(",\n    ") { platform ->
+            "\"@safe-db/mcp-${platform.npm}\": \"$version\""
+        }
+    return template
+        .replaceRequired("\"version\": \"0.0.0-dev\"", "\"version\": \"$version\"")
+        .replaceRequired(
+            "\"optionalDependencies\": {}",
+            "\"optionalDependencies\": {\n    $optional\n  }",
+        )
+}
+
+fun stampPlatformPackageJson(template: String, platform: NpmPlatform, version: String): String {
+    val os = platform.os.joinToString(", ") { "\"$it\"" }
+    val cpu = platform.cpu.joinToString(", ") { "\"$it\"" }
+    return template
+        .replaceRequired("@safe-db/mcp-PLATFORM", "@safe-db/mcp-${platform.npm}")
+        .replaceRequired("PLATFORM jlink runtime", "${platform.npm} jlink runtime")
+        .replaceRequired("\"version\": \"0.0.0-dev\"", "\"version\": \"$version\"")
+        .replaceRequired("\"os\": []", "\"os\": [$os]")
+        .replaceRequired("\"cpu\": []", "\"cpu\": [$cpu]")
 }
 
 fun stampMetaPackage(
@@ -278,20 +322,15 @@ fun stampMetaPackage(
         into(destDir)
     }
     Files.copy(license.toPath(), destDir.resolve("LICENSE").toPath())
-    val optional =
-        platforms.joinToString(",\n    ") { platform ->
-            "\"@safe-db/mcp-${platform.npm}\": \"$version\""
-        }
-    val packageJson =
-        sourceDir
-            .resolve("package.json")
-            .readText()
-            .replace("\"version\": \"0.0.0-dev\"", "\"version\": \"$version\"")
-            .replace(
-                "\"optionalDependencies\": {}",
-                "\"optionalDependencies\": {\n    $optional\n  }",
+    destDir
+        .resolve("package.json")
+        .writeText(
+            stampMetaPackageJson(
+                sourceDir.resolve("package.json").readText(),
+                version,
+                platforms,
             )
-    destDir.resolve("package.json").writeText(packageJson)
+        )
 }
 
 fun stampPlatformPackage(
@@ -315,17 +354,9 @@ fun stampPlatformPackage(
     libDest.mkdirs()
     Files.copy(jar.toPath(), libDest.resolve("safe-db-mcp.jar").toPath())
     Files.copy(license.toPath(), destDir.resolve("LICENSE").toPath())
-    val os = platform.os.joinToString(", ") { "\"$it\"" }
-    val cpu = platform.cpu.joinToString(", ") { "\"$it\"" }
-    val packageJson =
-        template
-            .readText()
-            .replace("@safe-db/mcp-PLATFORM", "@safe-db/mcp-${platform.npm}")
-            .replace("PLATFORM jlink runtime", "${platform.npm} jlink runtime")
-            .replace("\"version\": \"0.0.0-dev\"", "\"version\": \"$version\"")
-            .replace("\"os\": []", "\"os\": [$os]")
-            .replace("\"cpu\": []", "\"cpu\": [$cpu]")
-    destDir.resolve("package.json").writeText(packageJson)
+    destDir
+        .resolve("package.json")
+        .writeText(stampPlatformPackageJson(template.readText(), platform, version))
 }
 
 abstract class AssembleMcpNpm : DefaultTask() {
@@ -365,6 +396,10 @@ abstract class AssembleMcpNpm : DefaultTask() {
 
     @get:Input abstract val downloadJlinkJdk: Property<Boolean>
 
+    @get:Input @get:Optional abstract val hostJavaHome: Property<String>
+
+    @get:Input @get:Optional abstract val hostJavaVersion: Property<String>
+
     @get:Internal abstract val cacheDir: DirectoryProperty
 
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
@@ -379,7 +414,7 @@ abstract class AssembleMcpNpm : DefaultTask() {
             throw GradleException("Unknown MCP npm platforms: $unknown")
         }
         val cache = cacheDir.get().asFile
-        val modules = readJlinkModules(jlinkModulesFile.get().asFile).toMutableList()
+        val modules = readJlinkModules(jlinkModulesFile.get().asFile)
         val jlinkHome =
             if (downloadJlinkJdk.get()) {
                 val archive = downloadVerified(manifest.jlinkJdk, cache.resolve("downloads"))
@@ -387,14 +422,14 @@ abstract class AssembleMcpNpm : DefaultTask() {
                 extractArchive(archive, extracted, fileSystem, archives)
                 findJavaHome(extracted)
             } else {
-                File(System.getProperty("java.home"))
+                File(hostJavaHome.get())
             }
         val jlink = jlinkHome.resolve("bin").resolve(if (isWindowsHost()) "jlink.exe" else "jlink")
         if (!jlink.isFile) {
             throw GradleException("jlink not found at $jlink")
         }
         val jdeps = jlink.parentFile.resolve(if (isWindowsHost()) "jdeps.exe" else "jdeps")
-        modules += extraModulesFromJdeps(exec, jdeps, shadowJar.get().asFile, modules.toSet())
+        extraModulesFromJdeps(exec, jdeps, shadowJar.get().asFile, modules.toSet())
         val npmOut = outputDir.get().asFile
         npmOut.deleteRecursively()
         npmOut.mkdirs()

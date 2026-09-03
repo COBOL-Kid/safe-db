@@ -103,7 +103,7 @@ sourceSets.named("main") { resources.srcDir(generateMcpVersion) }
 
 // Running the MCP suite needs live engines, but compiling it does not; without this a source-set
 // change can break it and stay hidden until someone runs integrationTest by hand.
-tasks.check { dependsOn("compileIntegrationTestKotlin") }
+tasks.check { dependsOn("compileIntegrationTestKotlin", "npmCliTest") }
 
 tasks.register<Test>("integrationTest") {
     description = "Runs MCP integration tests tagged @Tag(\"integration\")."
@@ -156,9 +156,6 @@ val currentMcpNpmPlatform = provider {
         System.getProperty("os.arch").orEmpty(),
     )
 }
-val linuxHost = provider {
-    System.getProperty("os.name").orEmpty().startsWith("Linux", ignoreCase = true)
-}
 
 fun configureMcpNpm(task: com.safedb.buildlogic.AssembleMcpNpm) {
     task.group = "distribution"
@@ -183,13 +180,23 @@ val assembleNpm =
         description = "jlink the current OS into @safe-db/mcp plus one platform package."
         configureMcpNpm(this)
         platforms.set(currentMcpNpmPlatform.map { listOf(it) })
-        downloadJlinkJdk.set(linuxHost)
+        val downloadHostJlinkJdk = com.safedb.buildlogic.isLinuxX64()
+        downloadJlinkJdk.set(downloadHostJlinkJdk)
+        if (!downloadHostJlinkJdk) {
+            hostJavaHome.set(System.getProperty("java.home"))
+            hostJavaVersion.set(System.getProperty("java.version"))
+        }
     }
 
 tasks.register<com.safedb.buildlogic.AssembleMcpNpm>("assembleNpmAllPlatforms") {
     description = "jlink every MCP npm platform package. Requires Linux (Temurin jlink JDK)."
     configureMcpNpm(this)
-    platforms.set(listOf("darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-x64"))
+    outputDir.set(layout.buildDirectory.dir("npm-all"))
+    platforms.set(
+        com.safedb.buildlogic.parseTemurinManifest(temurinManifestFile.asFile).platforms.map {
+            it.npm
+        }
+    )
     downloadJlinkJdk.set(true)
     onlyIf { com.safedb.buildlogic.isLinuxX64() }
 }

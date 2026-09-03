@@ -19,4 +19,4 @@ MCP client config:
 }
 ```
 
-Requires glibc Linux, macOS, or Windows x64. Alpine/musl is not supported. Connections and tools: [docs/mcp.md](https://github.com/COBOL-Kid/safe-db/blob/main/docs/mcp.md).
+Requires Apple Silicon / arm64 macOS (not Intel), Windows x64, or glibc Linux (x64 and arm64). Alpine/musl is not supported. Connections and tools: [docs/mcp.md](https://github.com/COBOL-Kid/safe-db/blob/main/docs/mcp.md).
