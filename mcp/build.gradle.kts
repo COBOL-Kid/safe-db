@@ -19,7 +19,10 @@ application { mainClass.set("com.safedb.mcp.MainKt") }
 
 kover {
     currentProject {
-        instrumentation { disabledForTestTasks.add("integrationTest") }
+        instrumentation {
+            disabledForTestTasks.add("integrationTest")
+            disabledForTestTasks.add("npmPackagedTest")
+        }
         sources { excludedSourceSets.add("integrationTest") }
         createVariant("unit") { add("jvm") }
     }
@@ -100,7 +103,7 @@ sourceSets.named("main") { resources.srcDir(generateMcpVersion) }
 
 // Running the MCP suite needs live engines, but compiling it does not; without this a source-set
 // change can break it and stay hidden until someone runs integrationTest by hand.
-tasks.check { dependsOn("compileIntegrationTestKotlin") }
+tasks.check { dependsOn("compileIntegrationTestKotlin", "npmCliTest") }
 
 tasks.register<Test>("integrationTest") {
     description = "Runs MCP integration tests tagged @Tag(\"integration\")."
@@ -144,3 +147,101 @@ tasks.shadowJar {
 }
 
 tasks.test { useJUnitPlatform() }
+
+val npmSourceDir = layout.projectDirectory.dir("npm")
+val temurinManifestFile = npmSourceDir.file("temurin.json")
+val currentMcpNpmPlatform = provider {
+    com.safedb.buildlogic.npmPlatform(
+        System.getProperty("os.name").orEmpty(),
+        System.getProperty("os.arch").orEmpty(),
+    )
+}
+
+fun configureMcpNpm(task: com.safedb.buildlogic.AssembleMcpNpm) {
+    task.group = "distribution"
+    task.temurinManifest.set(temurinManifestFile)
+    task.jlinkModulesFile.set(npmSourceDir.file("jlink-modules.txt"))
+    task.npmSource.set(npmSourceDir)
+    task.platformTemplate.set(npmSourceDir.file("platform-package.json"))
+    task.license.set(rootProject.layout.projectDirectory.file("LICENSE.txt"))
+    task.shadowJar.set(
+        tasks
+            .named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar")
+            .flatMap { it.archiveFile }
+    )
+    task.packageVersion.set(provider { version.toString() })
+    task.cacheDir.set(layout.buildDirectory.dir("npm-cache"))
+    task.outputDir.set(layout.buildDirectory.dir("npm"))
+    task.dependsOn(tasks.named("shadowJar"))
+}
+
+val assembleNpm =
+    tasks.register<com.safedb.buildlogic.AssembleMcpNpm>("assembleNpm") {
+        description = "jlink the current OS into @safe-db/mcp plus one platform package."
+        configureMcpNpm(this)
+        platforms.set(currentMcpNpmPlatform.map { listOf(it) })
+        val downloadHostJlinkJdk = com.safedb.buildlogic.isLinuxX64()
+        downloadJlinkJdk.set(downloadHostJlinkJdk)
+        if (!downloadHostJlinkJdk) {
+            hostJavaHome.set(System.getProperty("java.home"))
+            hostJavaVersion.set(System.getProperty("java.version"))
+        }
+    }
+
+tasks.register<com.safedb.buildlogic.AssembleMcpNpm>("assembleNpmAllPlatforms") {
+    description = "jlink every MCP npm platform package. Requires Linux (Temurin jlink JDK)."
+    configureMcpNpm(this)
+    outputDir.set(layout.buildDirectory.dir("npm-all"))
+    platforms.set(
+        com.safedb.buildlogic.parseTemurinManifest(temurinManifestFile.asFile).platforms.map {
+            it.npm
+        }
+    )
+    downloadJlinkJdk.set(true)
+    onlyIf { com.safedb.buildlogic.isLinuxX64() }
+}
+
+tasks.register<Exec>("npmCliTest") {
+    group = "verification"
+    description = "Runs node --test for the @safe-db/mcp CLI shim."
+    workingDir = npmSourceDir.asFile
+    commandLine("node", "--test", "cli.test.js")
+    onlyIf { com.safedb.buildlogic.nodeOnPath() }
+}
+
+val npmPackagedTest =
+    tasks.register<Test>("npmPackagedTest") {
+        description = "Runs MCP packaged tests against the current-OS jlink runtime."
+        group = "verification"
+        dependsOn(assembleNpm)
+        val bundledJava = assembleNpm.flatMap { task ->
+            task.outputDir.file(
+                currentMcpNpmPlatform.map { platform ->
+                    val java = com.safedb.buildlogic.javaExecutableName(platform)
+                    "@safe-db/mcp-$platform/jre/bin/$java"
+                }
+            )
+        }
+        val bundledJar = assembleNpm.flatMap { task ->
+            task.outputDir.file(
+                currentMcpNpmPlatform.map { platform ->
+                    "@safe-db/mcp-$platform/lib/safe-db-mcp.jar"
+                }
+            )
+        }
+        inputs.file(bundledJava)
+        inputs.file(bundledJar)
+        testClassesDirs = integrationTest.output.classesDirs
+        classpath = integrationTest.runtimeClasspath
+        systemProperty("safedb.mcp.shadowJar", bundledJar.get().asFile.absolutePath)
+        systemProperty("safedb.mcp.bundledJava", bundledJava.get().asFile.absolutePath)
+        useJUnitPlatform { includeTags("integration") }
+        testLogging {
+            events("failed", "skipped")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showExceptions = true
+            showCauses = true
+            showStackTraces = true
+        }
+        shouldRunAfter(tasks.named("integrationTest"))
+    }
