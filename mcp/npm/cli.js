@@ -26,7 +26,7 @@ function platformPackageName() {
   return `@safe-db/mcp-${process.platform}-${process.arch}`;
 }
 
-function resolvePlatformRoot() {
+function resolvePlatformRoot(modulePaths) {
   if (isMuslLinux()) {
     fail(
       'Alpine/musl Linux is not supported. Use glibc Linux (Debian, Ubuntu, RHEL, Fedora).\n' +
@@ -35,7 +35,10 @@ function resolvePlatformRoot() {
   }
   const name = platformPackageName();
   try {
-    return path.dirname(require.resolve(`${name}/package.json`));
+    const resolved = modulePaths
+      ? require.resolve(`${name}/package.json`, {paths: modulePaths})
+      : require.resolve(`${name}/package.json`);
+    return path.dirname(resolved);
   } catch {
     fail(
       `No bundled runtime for ${process.platform}-${process.arch}. Install ${name}.\n` +
@@ -44,8 +47,12 @@ function resolvePlatformRoot() {
   }
 }
 
-function main() {
-  const root = resolvePlatformRoot();
+function launch({
+  spawn: spawnImpl = spawn,
+  modulePaths,
+  argv = process.argv.slice(2),
+} = {}) {
+  const root = resolvePlatformRoot(modulePaths);
   const javaName = process.platform === 'win32' ? 'java.exe' : 'java';
   const java = path.join(root, 'jre', 'bin', javaName);
   const jar = path.join(root, 'lib', 'safe-db-mcp.jar');
@@ -55,17 +62,21 @@ function main() {
   if (!fs.existsSync(jar)) {
     fail(`Bundled jar not found at ${jar}`);
   }
-  const child = spawn(
+  return spawnImpl(
     java,
     [
       '-Dfile.encoding=UTF-8',
       '--enable-native-access=ALL-UNNAMED',
       '-jar',
       jar,
-      ...process.argv.slice(2),
+      ...argv,
     ],
     {stdio: 'inherit'},
   );
+}
+
+function main() {
+  const child = launch();
   child.on('error', (error) => fail(error.message));
   child.on('exit', (code, signal) => {
     if (signal) {
@@ -75,4 +86,8 @@ function main() {
   });
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {launch};
