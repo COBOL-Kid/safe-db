@@ -75,5 +75,19 @@ upload text/html       "$NO_CACHE"   '*.html'
 upload image/svg+xml   "$IMMUTABLE"  '*.svg'
 upload image/png       "$IMMUTABLE"  '*.png'
 
+assert_no_cache() {
+	local object="$1"
+	local json
+	json="$(gcloud --quiet storage objects describe "$object" --format=json)"
+	if ! grep -Eiq '"cacheControl"[[:space:]]*:[[:space:]]*"[^"]*no-cache|"cache_control"[[:space:]]*:[[:space:]]*"[^"]*no-cache' <<<"$json"; then
+		echo "expected $object Cache-Control to contain no-cache; got:" >&2
+		printf '%s\n' "$json" >&2
+		exit 1
+	fi
+}
+
+assert_no_cache "$BUCKET/metadata.properties"
+assert_no_cache "$BUCKET/safedb.appinstaller"
+
 echo
 echo "Published to https://storage.googleapis.com/${BUCKET#gs://}/"

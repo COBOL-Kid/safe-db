@@ -90,6 +90,28 @@ Upload-ReleaseFiles text/html $NoCache @("*.html")
 Upload-ReleaseFiles image/svg+xml $Immutable @("*.svg")
 Upload-ReleaseFiles image/png $Immutable @("*.png")
 
+function Assert-NoCacheControl {
+    param(
+        [string]$Object
+    )
+
+    $jsonText = & gcloud --quiet storage objects describe "$Object" --format=json | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw "gcloud storage objects describe failed with exit code $LASTEXITCODE"
+    }
+    $json = $jsonText | ConvertFrom-Json
+    $cacheControl = $json.cacheControl
+    if (-not $cacheControl) {
+        $cacheControl = $json.cache_control
+    }
+    if ($cacheControl -notmatch "no-cache") {
+        throw "expected $Object Cache-Control to contain no-cache; got: $cacheControl"
+    }
+}
+
+Assert-NoCacheControl "$Bucket/metadata.properties"
+Assert-NoCacheControl "$Bucket/safedb.appinstaller"
+
 $HostName = $Bucket -replace "^gs://", ""
 Write-Host ""
 Write-Host "Published to https://storage.googleapis.com/$HostName/"

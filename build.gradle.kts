@@ -216,7 +216,23 @@ val testDockerDatabaseHarness =
         onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
     }
 
-tasks.check { dependsOn(verifyUnitTestDiscovery, testDockerDatabaseHarness, "koverVerify") }
+val testAssertConveyorSite =
+    tasks.register<Exec>("testAssertConveyorSite") {
+        group = "verification"
+        description = "Tests Conveyor site assertions against fixture files."
+        workingDir = projectDir
+        commandLine("bash", "scripts/test_assert_conveyor_site.sh")
+        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+    }
+
+tasks.check {
+    dependsOn(
+        verifyUnitTestDiscovery,
+        testDockerDatabaseHarness,
+        testAssertConveyorSite,
+        "koverVerify",
+    )
+}
 
 val verifyIntegrationTestDiscovery =
     tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {
