@@ -115,34 +115,35 @@ fun downloadVerified(artifact: TemurinArtifact, cacheDir: File): File {
     if (dest.isFile && sha256(dest) == artifact.sha256) {
         return dest
     }
-    val tmp = File(cacheDir, "${artifact.filename}.part")
-    tmp.delete()
-    val client =
-        HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.ALWAYS)
-            .connectTimeout(Duration.ofSeconds(30))
-            .build()
-    val request =
-        HttpRequest.newBuilder(URI.create(artifact.url))
-            .timeout(Duration.ofMinutes(5))
-            .GET()
-            .build()
-    val response = client.send(request, HttpResponse.BodyHandlers.ofFile(tmp.toPath()))
-    if (response.statusCode() !in 200..299) {
+    val tmp = Files.createTempFile(cacheDir.toPath(), artifact.filename, ".part").toFile()
+    try {
+        val client =
+            HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .connectTimeout(Duration.ofSeconds(30))
+                .build()
+        val request =
+            HttpRequest.newBuilder(URI.create(artifact.url))
+                .timeout(Duration.ofMinutes(5))
+                .GET()
+                .build()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofFile(tmp.toPath()))
+        if (response.statusCode() !in 200..299) {
+            throw GradleException(
+                "Download failed (${response.statusCode()}) for ${artifact.filename} from ${artifact.url}"
+            )
+        }
+        val actual = sha256(tmp)
+        if (actual != artifact.sha256) {
+            throw GradleException(
+                "SHA-256 mismatch for ${artifact.filename}: expected ${artifact.sha256}, got $actual"
+            )
+        }
+        Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        return dest
+    } finally {
         tmp.delete()
-        throw GradleException(
-            "Download failed (${response.statusCode()}) for ${artifact.filename} from ${artifact.url}"
-        )
     }
-    val actual = sha256(tmp)
-    if (actual != artifact.sha256) {
-        tmp.delete()
-        throw GradleException(
-            "SHA-256 mismatch for ${artifact.filename}: expected ${artifact.sha256}, got $actual"
-        )
-    }
-    Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
-    return dest
 }
 
 fun sha256(file: File): String {

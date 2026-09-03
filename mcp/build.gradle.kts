@@ -191,6 +191,8 @@ val assembleNpm =
 tasks.register<com.safedb.buildlogic.AssembleMcpNpm>("assembleNpmAllPlatforms") {
     description = "jlink every MCP npm platform package. Requires Linux (Temurin jlink JDK)."
     configureMcpNpm(this)
+    // Shared npm-cache is not safe under configuration-cache parallel execution.
+    mustRunAfter(assembleNpm)
     outputDir.set(layout.buildDirectory.dir("npm-all"))
     platforms.set(
         com.safedb.buildlogic.parseTemurinManifest(temurinManifestFile.asFile).platforms.map {

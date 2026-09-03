@@ -19,6 +19,8 @@ jdk.jfr
 jdk.localedata
 jdk.management
 jdk.naming.dns
+jdk.net
 jdk.security.auth
+jdk.security.jgss
 jdk.unsupported
 jdk.zipfs
