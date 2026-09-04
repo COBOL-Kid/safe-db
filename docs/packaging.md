@@ -19,7 +19,8 @@ Bump `version` in `build.gradle.kts` for every release so the MSIX filename chan
 These live in GitHub and cloud consoles, not in this repository. Use the **existing** Conveyor root key; a new key would break auto-update for installed copies.
 
 - GitHub Environment `conveyor` (unprotected until reviewers are added, same pattern as `npm`). Required reviewers for Environment `conveyor` are configured in the GitHub UI; add them before treating `publish: true` as a production release.
-- Secret `CONVEYOR_SIGNING_KEY`: existing root key from the local Hydraulic config.
+- Secret `CONVEYOR_SIGNING_KEY`: the existing Conveyor **root key**, a single line of dictionary words immediately followed by `/` and a UTC timestamp, for example `loud apology vital … multiply/2022-08-09T12:07:08Z`. Copy the value from `app.signing-key` in the local Hydraulic `defaults.conf` (or the Keychain Access item **Hydraulic Conveyor Root Key** on macOS). Do not include quotes or the `app.signing-key =` prefix. Do not store `keyring`, a PEM, or the Azure profile alias `safe-db/safe-db` (that alias is already in `conveyor.conf`). A new root key would break auto-update for installed copies.
+- Secret `CONVEYOR_PASS`: the passphrase for that root key, same value as local `CONVEYOR_PASS`. Linux CI has no console, so the job always passes `--passphrase "env:CONVEYOR_PASS"`. If you never set a passphrase (pressed Enter on `keys generate`, or copied the 24-word key from macOS Keychain), leave this secret unset.
 - Azure OIDC secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The federated credential subject must be `repo:COBOL-Kid/safe-db:environment:conveyor`. The identity needs **Code Signing Certificate Profile Signer** for alias `safe-db/safe-db`.
 - GCP Workload Identity Federation secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`, with write access to `gs://safedb-download` (not the default Firebase bucket).
 

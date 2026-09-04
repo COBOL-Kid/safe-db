@@ -170,14 +170,53 @@ jobs:
         env:
           CONVEYOR_AGREE_TO_LICENSE: '1'
           SIGNING_KEY: ${{ secrets.CONVEYOR_SIGNING_KEY }}
+          # Empty when unset: Linux still needs --passphrase so it does not prompt.
+          CONVEYOR_PASS: ${{ secrets.CONVEYOR_PASS }}
         run: |
           set -euo pipefail
           if [ -z "${SIGNING_KEY}" ]; then
             echo "Missing CONVEYOR_SIGNING_KEY" >&2
             exit 1
           fi
+          # Conveyor wants the unquoted 24-word root key, not -K (spaces break HOCON)
+          # and not a pasted defaults.conf line / keyring / Azure alias.
+          key="${SIGNING_KEY//$'\r'/}"
+          key="${key#"${key%%[![:space:]]*}"}"
+          key="${key%"${key##*[![:space:]]}"}"
+          if [[ "${key}" == app.signing-key* ]]; then
+            key="${key#app.signing-key}"
+            key="${key#"${key%%[![:space:]]*}"}"
+            key="${key#=}"
+            key="${key#"${key%%[![:space:]]*}"}"
+          fi
+          if [[ "${#key}" -ge 2 && "${key:0:1}" == '"' && "${key: -1}" == '"' ]]; then
+            key="${key:1:-1}"
+          elif [[ "${#key}" -ge 2 && "${key:0:1}" == "'" && "${key: -1}" == "'" ]]; then
+            key="${key:1:-1}"
+          fi
+          key="$(printf '%s' "${key}" | tr -s '[:space:]' ' ')"
+          key="${key#"${key%%[![:space:]]*}"}"
+          key="${key%"${key##*[![:space:]]}"}"
+          key="${key// \/ /\/}"
+          if [ "${key}" = "keyring" ]; then
+            echo "CONVEYOR_SIGNING_KEY is the keyring placeholder." >&2
+            echo "Paste the 24-word root key (words immediately followed by / and a UTC timestamp)." >&2
+            exit 1
+          fi
+          if [[ ! "${key}" =~ ^[a-z]+(\ [a-z]+)+/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]]; then
+            echo "CONVEYOR_SIGNING_KEY is not a Conveyor root key." >&2
+            echo "Expected dictionary words immediately followed by / and a UTC timestamp," >&2
+            echo "copied from defaults.conf or Keychain Access (Hydraulic Conveyor Root Key)." >&2
+            echo "Do not use the Azure alias (account/profile), a PEM, keyring, or the quoted assignment line." >&2
+            exit 1
+          fi
+          export SIGNING_KEY="${key}"
+          export CONVEYOR_PASS="${CONVEYOR_PASS-}"
           export PATH="${PATH}:${GITHUB_WORKSPACE}/.conveyor/install/conveyor-${CONVEYOR_VERSION}/bin"
-          conveyor --cache-dir="${GITHUB_WORKSPACE}/.conveyor/cache" "-Kapp.signing-key=${SIGNING_KEY}" --console=plain --parallelism=2 make site
+          # --console=plain has no TTY. Linux encrypts the root key and will
+          # otherwise stop with "To enter a passphrase you must have an attached
+          # console." Empty CONVEYOR_PASS is the same as pressing Enter locally.
+          conveyor --cache-dir="${GITHUB_WORKSPACE}/.conveyor/cache" --console=plain --passphrase "env:CONVEYOR_PASS" --parallelism=2 make site
 
       - name: Upload Conveyor log
         if: failure()
