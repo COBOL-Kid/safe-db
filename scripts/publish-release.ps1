@@ -35,6 +35,30 @@ $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
 $Immutable = "public, max-age=31536000, immutable"
 $NoCache = "no-cache, max-age=0"
 
+function Assert-RequiredReleaseFile {
+    param(
+        [string]$Name
+    )
+    $path = Join-Path $OutputDir $Name
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -le 0) {
+        throw "publish aborted: expected nonempty $path"
+    }
+}
+
+Assert-RequiredReleaseFile "metadata.properties"
+Assert-RequiredReleaseFile "safedb.appinstaller"
+Assert-RequiredReleaseFile "safedb-windows-x64.exe"
+
+$msixFiles = @(Get-ChildItem -LiteralPath $OutputDir -File -Filter "*.msix" -ErrorAction SilentlyContinue)
+if ($msixFiles.Count -eq 0) {
+    throw "publish aborted: expected at least one nonempty .msix in $OutputDir"
+}
+foreach ($msix in $msixFiles) {
+    if ($msix.Length -le 0) {
+        throw "publish aborted: expected nonempty $($msix.FullName)"
+    }
+}
+
 function Get-ReleaseFiles {
     param(
         [string[]]$Patterns

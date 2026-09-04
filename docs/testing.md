@@ -33,7 +33,7 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Part of `check` when `node` is on `PATH`; skips otherwise. |
 | `./gradlew :mcp:npmPackagedTest` | Packaged MCP stdio/MySQL smoke against the current-OS jlink image. Not part of `check`. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
-| `./scripts/assert-conveyor-site.sh ./output` | Check Conveyor site version, update URL, and MSIX signature presence. |
+| `./scripts/assert-conveyor-site.sh ./output` | Check Conveyor site version, AppInstaller URLs, and MSIX signature presence. |
 
 ## Integration tests
 
@@ -60,4 +60,4 @@ Cross-platform durability is a manual **Run workflow** in GitHub Actions (`.gith
 
 MCP npm packaging is a separate manual **Run workflow** (`.github/workflows/npm.yml`). It jlink-cross-compiles Temurin 25 runtimes for every platform, packs `@safe-db/mcp` from `mcp/build/npm-all`, smokes `--help` on macOS arm64, Windows, and Linux ARM, and publishes only from `main` after smoke when the `publish` input is true. Publish uses `environment: npm` plus `NPM_TOKEN` provenance. Required reviewers for Environment `npm` are configured in the GitHub UI (workflow reference auto-creates an unprotected environment until you add rules). Do not commit the token.
 
-Windows Conveyor packaging is a separate manual **Run workflow** (`.github/workflows/conveyor.yml`). It runs `check` plus required static-MySQL `integrationTest`, builds a signed Windows site on Linux with Azure Trusted Signing, checks Authenticode on Windows, uploads `output/` as a 14-day artifact, and publishes to `gs://safedb-download` only from `main` when the `publish` input is true. See [packaging.md](packaging.md). Environment `conveyor` plus Azure OIDC, the existing Conveyor root key, and GCP WIF are configured in the GitHub UI. Required reviewers for Environment `conveyor` are configured in the GitHub UI (workflow reference auto-creates an unprotected environment until you add rules). Do not commit signing keys or cloud tokens.
+Windows Conveyor packaging is a separate manual **Run workflow** (`.github/workflows/conveyor.yml`). It runs `check` plus required static-MySQL `integrationTest`, builds a signed Windows site on Linux with Azure Trusted Signing, checks Authenticode on Windows for the stub installer and the `.msix`, uploads `output/` as a 14-day artifact, and publishes to `gs://safedb-download` only from `main` when the `publish` input is true. See [packaging.md](packaging.md). Environment `conveyor` plus Azure OIDC, the existing Conveyor root key, and GCP WIF are configured in the GitHub UI. Required reviewers for Environment `conveyor` are configured in the GitHub UI (workflow reference auto-creates an unprotected environment until you add rules). Do not commit signing keys or cloud tokens.

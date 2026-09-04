@@ -31,6 +31,29 @@ fi
 IMMUTABLE="public, max-age=31536000, immutable"
 NO_CACHE="no-cache, max-age=0"
 
+require_file() {
+	local path="$1"
+	[[ -s "$path" ]] || {
+		echo "publish aborted: expected nonempty $path" >&2
+		exit 1
+	}
+}
+
+require_file "$OUTPUT_DIR/metadata.properties"
+require_file "$OUTPUT_DIR/safedb.appinstaller"
+require_file "$OUTPUT_DIR/safedb-windows-x64.exe"
+
+shopt -s nullglob
+msix_files=("$OUTPUT_DIR"/*.msix)
+shopt -u nullglob
+if ((${#msix_files[@]} < 1)); then
+	echo "publish aborted: expected at least one nonempty .msix in $OUTPUT_DIR" >&2
+	exit 1
+fi
+for msix in "${msix_files[@]}"; do
+	require_file "$msix"
+done
+
 # upload <content-type> <cache-control> <glob>...
 upload() {
 	local content_type="$1" cache_control="$2"

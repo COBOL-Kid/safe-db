@@ -175,14 +175,21 @@ jobs:
       - name: Verify Authenticode signature
         shell: pwsh
         run: |
-          $exe = Join-Path (Get-Location) "output/safedb-windows-x64.exe"
-          if (-not (Test-Path -LiteralPath $exe) -or (Get-Item -LiteralPath $exe).Length -le 0) {
-            throw "expected nonempty output/safedb-windows-x64.exe"
+          $output = Join-Path (Get-Location) "output"
+          $exe = Join-Path $output "safedb-windows-x64.exe"
+          $msixFiles = @(Get-ChildItem -LiteralPath $output -File -Filter "*.msix" -ErrorAction SilentlyContinue)
+          if ($msixFiles.Count -ne 1) {
+            throw "expected exactly one .msix in output, found $($msixFiles.Count)"
           }
-          $sig = Get-AuthenticodeSignature -LiteralPath $exe
-          Write-Host "Status=$($sig.Status) Subject=$($sig.SignerCertificate.Subject)"
-          if ($sig.Status -ne "Valid" -or -not $sig.SignerCertificate) {
-            throw "Authenticode status $($sig.Status): $($sig.StatusMessage)"
+          foreach ($path in @($exe, $msixFiles[0].FullName)) {
+            if (-not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -le 0) {
+              throw "expected nonempty $path"
+            }
+            $sig = Get-AuthenticodeSignature -LiteralPath $path
+            Write-Host "$([IO.Path]::GetFileName($path)) Status=$($sig.Status) Subject=$($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne "Valid" -or -not $sig.SignerCertificate) {
+              throw "$path Authenticode status $($sig.Status): $($sig.StatusMessage)"
+            }
           }
 
   publish:

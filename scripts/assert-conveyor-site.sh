@@ -89,12 +89,54 @@ fi
 [[ "$(property_value app.windows.manifests.version-quad "$metadata")" == "$QUAD" ]] ||
 	fail "metadata.properties version-quad is not $QUAD"
 
-url_hits="$(grep -oF "$EXPECTED_SITE_BASE_URL" "$appinstaller" | wc -l | tr -d ' ')"
-if ((url_hits < 2)); then
-	fail "safedb.appinstaller must reference $EXPECTED_SITE_BASE_URL at least twice (AppInstaller Uri and MainPackage Uri)"
+expected_appinstaller_uri="$EXPECTED_SITE_BASE_URL/safedb.appinstaller"
+expected_msix_uri="$EXPECTED_SITE_BASE_URL/$msix_base"
+if ! python3 - "$appinstaller" "$expected_appinstaller_uri" "$expected_msix_uri" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path, expected_appinstaller, expected_msix = sys.argv[1], sys.argv[2], sys.argv[3]
+
+
+def local_name(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def attr(elem, name):
+    for key, value in elem.attrib.items():
+        if key.rsplit("}", 1)[-1] == name:
+            return value
+    return None
+
+
+try:
+    root = ET.parse(path).getroot()
+except ET.ParseError as exc:
+    sys.stderr.write(f"{path} is not valid XML: {exc}\n")
+    sys.exit(1)
+
+if local_name(root.tag) != "AppInstaller":
+    sys.stderr.write(f"{path} root element is {local_name(root.tag)}, not AppInstaller\n")
+    sys.exit(1)
+
+uri = attr(root, "Uri")
+if uri != expected_appinstaller:
+    sys.stderr.write(f"AppInstaller Uri is {uri!r}, expected {expected_appinstaller!r}\n")
+    sys.exit(1)
+
+packages = [child for child in root.iter() if local_name(child.tag) == "MainPackage"]
+if len(packages) != 1:
+    sys.stderr.write(f"{path} has {len(packages)} MainPackage elements, expected 1\n")
+    sys.exit(1)
+
+package_uri = attr(packages[0], "Uri")
+if package_uri != expected_msix:
+    sys.stderr.write(f"MainPackage Uri is {package_uri!r}, expected {expected_msix!r}\n")
+    sys.exit(1)
+PY
+then
+	fail "safedb.appinstaller Uri attributes are not the expected site URLs"
 fi
-grep -qF "$msix_base" "$appinstaller" ||
-	fail "safedb.appinstaller does not reference $msix_base"
 
 if ! python3 - "$msix" "$QUAD" <<'PY'
 import sys
@@ -104,6 +146,7 @@ path, quad = sys.argv[1], sys.argv[2]
 try:
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
+        # Presence only. Cryptographic Authenticode is the Windows smoke job.
         if not any(name.endswith("AppxSignature.p7x") for name in names):
             sys.stderr.write(f"{path} is not a signed MSIX (missing AppxSignature.p7x)\n")
             sys.exit(1)
