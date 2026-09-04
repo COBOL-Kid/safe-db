@@ -109,6 +109,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: conveyor
+    env:
+      CONVEYOR_VERSION: '22.2'
     permissions:
       contents: read
       id-token: write
@@ -141,14 +143,49 @@ jobs:
           echo "::add-mask::$token"
           echo "AZURE_CODESIGNING_TOKEN=$token" >> "$GITHUB_ENV"
 
-      - name: Build the Windows site
-        uses: hydraulic-software/conveyor/actions/build@0bb33f7c91992f451c02afb714d9bbc551e0cdfa # v22.2
+      # hydraulic-software/conveyor/actions/build is a composite action whose
+      # nested uses: actions/cache@v4 and actions/upload-artifact@v4 are not
+      # SHA-pinned, so org policy rejects them. Install and run Conveyor here.
+      - name: Cache Conveyor
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          signing_key: ${{ secrets.CONVEYOR_SIGNING_KEY }}
-          agree_to_license: '1'
-          conveyor_version: '22.2'
-          command: make site
-          extra_flags: '--console=plain --parallelism=2'
+          path: .conveyor
+          key: conveyor-${{ env.CONVEYOR_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            conveyor-${{ env.CONVEYOR_VERSION }}-
+
+      - name: Install Conveyor
+        run: |
+          set -euo pipefail
+          install_dir=".conveyor/install/conveyor-${CONVEYOR_VERSION}"
+          if [ ! -d "$install_dir" ]; then
+            archive="conveyor-${CONVEYOR_VERSION}-linux-amd64.tar.gz"
+            curl -fsSL "https://downloads.hydraulic.dev/conveyor/${archive}" -o "${archive}"
+            mkdir -p .conveyor/install
+            tar xzf "${archive}" -C .conveyor/install
+            rm -f "${archive}"
+          fi
+
+      - name: Build the Windows site
+        env:
+          CONVEYOR_AGREE_TO_LICENSE: '1'
+          SIGNING_KEY: ${{ secrets.CONVEYOR_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SIGNING_KEY}" ]; then
+            echo "Missing CONVEYOR_SIGNING_KEY" >&2
+            exit 1
+          fi
+          export PATH="${PATH}:${GITHUB_WORKSPACE}/.conveyor/install/conveyor-${CONVEYOR_VERSION}/bin"
+          conveyor --cache-dir="${GITHUB_WORKSPACE}/.conveyor/cache" "-Kapp.signing-key=${SIGNING_KEY}" --console=plain --parallelism=2 make site
+
+      - name: Upload Conveyor log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: conveyor-log-package
+          path: ~/.cache/hydraulic/conveyor/logs/log.latest.txt
+          if-no-files-found: ignore
 
       - name: Assert site outputs
         run: ./scripts/assert-conveyor-site.sh ./output
