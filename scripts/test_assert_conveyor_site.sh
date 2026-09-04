@@ -49,9 +49,19 @@ site="$TEST_ROOT/ok"
 write_site "$site" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.msix"
 run_assert "$site" >/dev/null || fail "valid 0.1.7 site was rejected"
 
+arch_site="$TEST_ROOT/ok-x64"
+write_site "$arch_site" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.x64.msix"
+run_assert "$arch_site" >/dev/null || fail "valid 0.1.7.x64 site was rejected"
+
 padded="$TEST_ROOT/padded"
 write_site "$padded" 1.2 1.2.0.0 "https://storage.googleapis.com/safedb-download" "safedb-1.2.msix"
 VERSION=1.2 run_assert "$padded" >/dev/null || fail "valid 1.2 site was rejected"
+
+prefix_version="$TEST_ROOT/prefix-version"
+write_site "$prefix_version" 0.1 0.1.0.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.x64.msix"
+if VERSION=0.1 run_assert "$prefix_version" >/dev/null 2>&1; then
+	fail "accepted MSIX 0.1.7.x64 as desktop version 0.1"
+fi
 
 wrong_version="$TEST_ROOT/wrong-version"
 write_site "$wrong_version" 0.1.6 0.1.6.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.6.msix"
