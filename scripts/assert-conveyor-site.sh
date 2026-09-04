@@ -80,7 +80,12 @@ msix="${msix_files[0]}"
 [[ -s "$msix" ]] || fail "expected nonempty $msix"
 
 msix_base="$(basename "$msix")"
-if [[ "$msix_base" != *"$VERSION".msix && "$msix_base" != *"$VERSION"-*.msix ]]; then
+# Conveyor 22 names the package {fsname}-{version}.msix or
+# {fsname}-{version}.{arch}.msix (safedb-0.1.7.x64.msix). A dash suffix
+# is also accepted. VERSION must be a whole token, and any extra dotted
+# component must start with a letter, so 0.1 does not match 0.1.7.
+escaped_version="${VERSION//./\\.}"
+if [[ ! "$msix_base" =~ (^|[^0-9])${escaped_version}(\.msix$|[-.][A-Za-z][^/]*\.msix$) ]]; then
 	fail "MSIX filename '$msix_base' does not include desktop version $VERSION"
 fi
 
