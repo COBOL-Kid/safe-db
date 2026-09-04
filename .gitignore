@@ -4,6 +4,9 @@
 build/
 bin/
 .idea/
+output/
+generated.conveyor.conf
+.conveyor/
 
 # OS
 .DS_Store

@@ -13,6 +13,7 @@ plugins {
     id("org.jetbrains.kotlinx.kover")
     id("com.ncorti.ktfmt.gradle")
     id("org.jetbrains.qodana")
+    id("dev.hydraulic.conveyor")
 }
 
 group = "com.safedb"
@@ -25,6 +26,7 @@ dependencies {
     implementation(project(":shared"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation(compose.desktop.currentOs)
+    "windowsAmd64"(compose.desktop.windows_x64)
     implementation("org.jetbrains.compose.material3:material3:1.9.0")
     implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
@@ -214,7 +216,23 @@ val testDockerDatabaseHarness =
         onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
     }
 
-tasks.check { dependsOn(verifyUnitTestDiscovery, testDockerDatabaseHarness, "koverVerify") }
+val testAssertConveyorSite =
+    tasks.register<Exec>("testAssertConveyorSite") {
+        group = "verification"
+        description = "Tests Conveyor site assertions against fixture files."
+        workingDir = projectDir
+        commandLine("bash", "scripts/test_assert_conveyor_site.sh")
+        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+    }
+
+tasks.check {
+    dependsOn(
+        verifyUnitTestDiscovery,
+        testDockerDatabaseHarness,
+        testAssertConveyorSite,
+        "koverVerify",
+    )
+}
 
 val verifyIntegrationTestDiscovery =
     tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {

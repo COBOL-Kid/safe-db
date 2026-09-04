@@ -10,6 +10,7 @@ pluginManagement {
         google()
         mavenCentral()
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
+        maven("https://maven.hq.hydraulic.software")
     }
     plugins {
         kotlin("jvm") version "2.4.10"
@@ -20,6 +21,7 @@ pluginManagement {
         id("com.ncorti.ktfmt.gradle") version "0.27.0"
         id("org.jetbrains.qodana") version "2026.2.0"
         id("com.gradleup.shadow") version "9.6.1"
+        id("dev.hydraulic.conveyor") version "2.0"
     }
 }
 
