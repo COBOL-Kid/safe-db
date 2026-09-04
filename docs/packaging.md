@@ -2,7 +2,7 @@
 
 GitHub Actions is the release path. [`.github/workflows/conveyor.yml`](../.github/workflows/conveyor.yml) builds a signed Windows download site on Linux and, when asked, publishes it to `gs://safedb-download`. Local `make site` and unsigned `--key` overrides remain a fallback.
 
-`conveyor.conf` pulls the app definition out of Gradle via `include "#!/./gradlew -q printConveyorConfig"`. That include only prints configuration; it does not assemble anything, so `./gradlew jar` must run first. The Windows installer file is `safedb-windows-x64.exe`. The app identity (`app.fsname`) is `safedb`, so a later macOS build can share the same name, data directories, and update site.
+`conveyor.conf` pulls the app definition out of Gradle via `include "#!./gradlew -q printConveyorConfig"`. That include only prints configuration; it does not assemble anything, so `./gradlew jar` must run first. The Windows installer file is `safedb-windows-x64.exe`. The app identity (`app.fsname`) is `safedb`, so a later macOS build can share the same name, data directories, and update site.
 
 Durability CI still produces unsigned jpackage MSI/DMG artifacts. Those jobs are not this release path.
 
