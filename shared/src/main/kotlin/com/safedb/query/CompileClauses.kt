@@ -10,6 +10,7 @@ import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
 import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
+import com.safedb.model.TableRef
 import com.safedb.model.sqlOperator
 
 internal fun buildSelectClause(columns: List<ValidatedColumn>, dialect: Dialect): String =
@@ -19,8 +20,7 @@ internal fun buildSelectClause(columns: List<ValidatedColumn>, dialect: Dialect)
 
 internal fun buildFromClause(spec: QuerySpec, dialect: Dialect): String {
     if (spec.tables.isEmpty()) return ""
-    val table = spec.tables[0]
-    return "${quote(table.schema, dialect)}.${quote(table.name, dialect)} AS ${quote(table.alias, dialect)}"
+    return quotedTableAlias(spec.tables[0], dialect)
 }
 
 internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
@@ -50,14 +50,7 @@ internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
         included.add(alias)
 
         val tableRef = spec.tables.first { it.alias == alias }
-        val joinTarget = buildString {
-            append("INNER JOIN ")
-            append(quote(tableRef.schema, dialect))
-            append('.')
-            append(quote(tableRef.name, dialect))
-            append(" AS ")
-            append(quote(tableRef.alias, dialect))
-        }
+        val joinTarget = "INNER JOIN ${quotedTableAlias(tableRef, dialect)}"
 
         val onClause =
             spec.joins
@@ -74,6 +67,20 @@ internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
     }
 
     return clauses.joinToString("\n")
+}
+
+// Oracle rejects table-alias AS (ORA-03048); column AS remains valid.
+private fun quotedTableAlias(table: TableRef, dialect: Dialect): String {
+    val relation = "${quote(table.schema, dialect)}.${quote(table.name, dialect)}"
+    val alias = quote(table.alias, dialect)
+    val separator =
+        when (dialect) {
+            Dialect.Oracle -> " "
+            Dialect.Postgres,
+            Dialect.MySql,
+            Dialect.Mssql -> " AS "
+        }
+    return "$relation$separator$alias"
 }
 
 internal fun buildOrderByClause(spec: QuerySpec, dialect: Dialect): String =

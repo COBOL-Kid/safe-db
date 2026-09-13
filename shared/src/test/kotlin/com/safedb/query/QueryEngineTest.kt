@@ -952,6 +952,11 @@ class QueryEngineTest {
         val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Oracle).unwrap()
         assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"))
         assertTrue(compiled.sql.contains(":1"))
+        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" \"t0\""))
+        assertTrue(compiled.sql.contains("INNER JOIN \"public\".\"categories\" \"t1\""))
+        assertTrue(compiled.sql.contains(" AS "))
+        assertFalse(compiled.sql.contains(" AS \"t0\""))
+        assertFalse(compiled.sql.contains(" AS \"t1\""))
     }
 
     @Test
