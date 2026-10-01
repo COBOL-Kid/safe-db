@@ -43,7 +43,7 @@ kover {
 dependencies {
     implementation(project(":shared"))
     implementation("io.modelcontextprotocol:kotlin-sdk-server:0.15.0")
-    implementation("org.slf4j:slf4j-simple:2.0.17")
+    implementation("org.slf4j:slf4j-simple:2.0.20")
 
     testImplementation(kotlin("test"))
     testImplementation(testFixtures(project(":shared")))
