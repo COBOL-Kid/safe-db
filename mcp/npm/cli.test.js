@@ -63,12 +63,13 @@ test('spawns bundled java with the jar, flags, and inherited stdio', () => {
     argv: ['connections', 'list'],
   });
   assert.equal(returned, child);
-  assert.equal(spawned.command, java);
+  // require.resolve() realpaths module roots; macOS tmp is /var -> /private/var.
+  assert.equal(spawned.command, fs.realpathSync(java));
   assert.deepEqual(spawned.args, [
     '-Dfile.encoding=UTF-8',
     '--enable-native-access=ALL-UNNAMED',
     '-jar',
-    jar,
+    fs.realpathSync(jar),
     'connections',
     'list',
   ]);

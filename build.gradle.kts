@@ -18,7 +18,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.1.8"
+version = "0.1.9"
 
 kotlin { jvmToolchain(25) }
 
@@ -36,7 +36,7 @@ dependencies {
     kover(project(":shared"))
 }
 
-// Kover 0.9.9 broadens the root total report when standalone subproject report/verify tasks share
+// Kover 0.9.11 broadens the root total report when standalone subproject report/verify tasks share
 // an unqualified task-selector graph. The root aggregate and MCP unit variant are canonical.
 listOf(project(":shared"), project(":mcp")).forEach { subproject ->
     subproject.pluginManager.withPlugin("org.jetbrains.kotlinx.kover") {

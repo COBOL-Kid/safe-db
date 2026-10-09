@@ -23,7 +23,7 @@ class McpNpmTest {
     @Test
     fun parseTemurinManifestIncludesPinnedPlatforms() {
         val manifest = parseTemurinManifest(temurinManifestFile())
-        assertEquals("jdk-25.0.4+7", manifest.releaseName)
+        assertEquals("jdk-25.0.4.1+1", manifest.releaseName)
         assertTrue(manifest.jlinkJdk.sha256.matches(Regex("[0-9a-f]{64}")))
         assertEquals(
             listOf("darwin-arm64", "linux-arm64", "linux-x64", "win32-x64"),
