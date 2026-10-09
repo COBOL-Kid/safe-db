@@ -13,13 +13,13 @@ pluginManagement {
         maven("https://maven.hq.hydraulic.software")
     }
     plugins {
-        kotlin("jvm") version "2.4.20"
-        kotlin("plugin.serialization") version "2.4.20"
-        kotlin("plugin.compose") version "2.4.20"
+        kotlin("jvm") version "2.4.21"
+        kotlin("plugin.serialization") version "2.4.21"
+        kotlin("plugin.compose") version "2.4.21"
         id("org.jetbrains.compose") version "1.12.1"
-        id("org.jetbrains.kotlinx.kover") version "0.9.9"
+        id("org.jetbrains.kotlinx.kover") version "0.9.11"
         id("com.ncorti.ktfmt.gradle") version "0.27.0"
-        id("org.jetbrains.qodana") version "2026.2.1"
+        id("org.jetbrains.qodana") version "2026.2.2"
         id("com.gradleup.shadow") version "9.6.1"
         id("dev.hydraulic.conveyor") version "2.0"
     }

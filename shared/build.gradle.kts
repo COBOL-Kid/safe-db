@@ -19,7 +19,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
     implementation("com.zaxxer:HikariCP:7.1.0")
-    implementation("org.postgresql:postgresql:42.7.13")
+    implementation("org.postgresql:postgresql:42.7.14")
     implementation("com.mysql:mysql-connector-j:26.7.0")
     implementation("com.microsoft.sqlserver:mssql-jdbc:13.6.0.jre11")
     implementation("com.oracle.database.jdbc:ojdbc11:23.26.3.0.0")

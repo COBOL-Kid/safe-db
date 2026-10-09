@@ -76,7 +76,7 @@ jobs:
         run: ./gradlew integrationTest --stacktrace --rerun-tasks
       - name: Upload PostgreSQL reports
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: postgres-integration-reports
           retention-days: 14
@@ -125,7 +125,7 @@ jobs:
         run: ./gradlew integrationTest --stacktrace --rerun-tasks
       - name: Upload MySQL reports
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mysql-generated-integration-reports
           retention-days: 14
@@ -155,7 +155,7 @@ jobs:
         run: scripts/docker_test_databases.sh down
       - name: Upload database compatibility reports
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: database-compatibility-reports
           retention-days: 14
@@ -209,7 +209,7 @@ jobs:
           done
       - name: Upload preview renders
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: preview-renders
           retention-days: 14
@@ -259,7 +259,7 @@ jobs:
           echo "Verified nonempty installer: $installer"
       - name: Upload packaging logs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packaging-logs-${{ matrix.log_suffix }}
           retention-days: 14
