@@ -93,6 +93,15 @@ class SslCompatIntegrationTest {
                         "oracle.net.wallet_location",
                         "oracle.net.ssl_server_dn_match",
                     ),
+                Dialect.Db2 to
+                    listOf(
+                        "sslConnection",
+                        "sslTrustStoreLocation",
+                        "sslTrustStorePassword",
+                        "securityMechanism",
+                        "sslClientHostnameValidation",
+                        "sslCertLocation",
+                    ),
             )
         cases.forEach { (dialect, names) ->
             names.forEach { name ->
@@ -108,6 +117,9 @@ class SslCompatIntegrationTest {
             assertTrue(buildJdbcUrl(mysql(mode)).contains("sslMode="))
             assertTrue(buildJdbcUrl(postgres(mode)).contains("sslmode="))
             assertTrue(buildJdbcUrl(mssql(mode)).startsWith("jdbc:sqlserver://"))
+            val db2Url = buildJdbcUrl(db2(mode))
+            assertTrue(db2Url.startsWith("jdbc:db2://"))
+            assertTrue(db2Url.contains("sslConnection=${mode != TransportSecurityMode.Disabled}"))
             if (mode == TransportSecurityMode.Disabled) {
                 assertTrue(buildJdbcUrl(oracle(mode)).contains("@//"))
             } else {
@@ -130,6 +142,16 @@ class SslCompatIntegrationTest {
                 .dataSourceProperties
         assertEquals("true", oracleIdentity.getProperty("oracle.net.ssl_server_dn_match"))
         assertEquals("/wallet", oracleIdentity.getProperty("oracle.net.wallet_location"))
+
+        val db2Verified =
+            createDataSourceConfig(db2(TransportSecurityMode.VerifyIdentity), "pw")
+                .dataSourceProperties
+        assertEquals("true", db2Verified.getProperty("sslConnection"))
+        assertEquals("BASIC", db2Verified.getProperty("sslClientHostnameValidation"))
+        val db2Disabled =
+            createDataSourceConfig(db2(TransportSecurityMode.Disabled), "pw").dataSourceProperties
+        assertEquals("false", db2Disabled.getProperty("sslConnection"))
+        assertEquals(null, db2Disabled.getProperty("sslClientHostnameValidation"))
     }
 
     @Test
@@ -338,6 +360,19 @@ class SslCompatIntegrationTest {
             database = env["SAFEDB_TEST_ORACLE_SSL_DATABASE"] ?: "FREEPDB1",
             username = env["SAFEDB_TEST_ORACLE_SSL_USER"] ?: "safedb",
             transportSecurity = TransportSecurity(mode = mode, oracleWalletLocation = wallet),
+        )
+
+    // Offline URL/property mapping only; Db2 has no SSL harness endpoint yet.
+    private fun db2(mode: TransportSecurityMode) =
+        ConnectionDef(
+            id = "ssl-db2",
+            name = "SSL Db2",
+            dialect = Dialect.Db2,
+            host = "127.0.0.1",
+            port = 50000,
+            database = "safedb_ssl",
+            username = "safedb",
+            transportSecurity = TransportSecurity(mode = mode),
         )
 
     private fun mysqlPassword() = env["SAFEDB_TEST_MYSQL_SSL_PASSWORD"] ?: "safedb"

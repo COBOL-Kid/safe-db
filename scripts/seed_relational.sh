@@ -5,7 +5,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "usage: seed_relational.sh <mysql|postgres|mssql|oracle> [seeder args...]" >&2
+  echo "usage: seed_relational.sh <mysql|postgres|mssql|oracle|db2> [seeder args...]" >&2
   exit 1
 fi
 
@@ -17,8 +17,9 @@ case "$dialect" in
   postgres) task="seedPostgres" ;;
   mssql) task="seedMssql" ;;
   oracle) task="seedOracle" ;;
+  db2) task="seedDb2" ;;
   *)
-    echo "error: unknown dialect '$dialect' (expected mysql, postgres, mssql, or oracle)" >&2
+    echo "error: unknown dialect '$dialect' (expected mysql, postgres, mssql, oracle, or db2)" >&2
     exit 1
     ;;
 esac

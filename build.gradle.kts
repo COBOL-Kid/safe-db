@@ -270,6 +270,12 @@ val verifyIntegrationTestDiscovery =
                 .map { it.equals("true", ignoreCase = true) }
                 .orElse(false)
         )
+        requireDb2.set(
+            providers
+                .environmentVariable("SAFEDB_TEST_REQUIRE_DB2")
+                .map { it.equals("true", ignoreCase = true) }
+                .orElse(false)
+        )
     }
 
 tasks.register("integrationTest") {
@@ -319,6 +325,8 @@ registerRelationalSeedTask("seedPostgres", "postgres")
 registerRelationalSeedTask("seedMssql", "mssql")
 
 registerRelationalSeedTask("seedOracle", "oracle")
+
+registerRelationalSeedTask("seedDb2", "db2")
 
 tasks.register<JavaExec>("renderPreview") {
     group = "safe-db"

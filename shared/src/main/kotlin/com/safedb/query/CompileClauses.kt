@@ -78,7 +78,8 @@ private fun quotedTableAlias(table: TableRef, dialect: Dialect): String {
             Dialect.Oracle -> " "
             Dialect.Postgres,
             Dialect.MySql,
-            Dialect.Mssql -> " AS "
+            Dialect.Mssql,
+            Dialect.Db2 -> " AS "
         }
     return "$relation$separator$alias"
 }

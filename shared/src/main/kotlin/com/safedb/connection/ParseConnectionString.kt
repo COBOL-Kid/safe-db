@@ -1,5 +1,6 @@
 package com.safedb.connection
 
+import com.safedb.adapter.db2JdbcAuthority
 import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
 import com.safedb.model.TransportSecurity
@@ -48,6 +49,7 @@ fun parseConnectionString(input: String): ParsedConnection {
         matchesPrefix(raw, "^jdbc:mysql://") -> parseMysqlJdbc(raw)
         matchesPrefix(raw, "^mysql://") -> parseMysqlUri(raw)
         matchesPrefix(raw, "^jdbc:sqlserver://") -> parseSqlServerJdbc(raw)
+        matchesPrefix(raw, "^jdbc:db2://") -> parseDb2Jdbc(raw)
         matchesPrefix(raw, "^jdbc:oracle:thin:") ||
             matchesPrefix(raw, "^@?tcps?:") ||
             raw.startsWith("@//") -> parseOracle(raw)
@@ -223,6 +225,113 @@ private fun sqlServerResult(
         warnings = extracted.warnings,
         sanitizedInput = sanitizeSqlServerKeyValue(raw),
     )
+}
+
+// IBM JCC form: jdbc:db2://host[:port]/database[:property=value;...]. The database keeps its
+// exact case — on z/OS it is an uppercase location name, on LUW it is usually lowercase —
+// because the driver matches it literally, unlike unquoted SQL identifiers.
+private fun parseDb2Jdbc(raw: String): ParsedConnection {
+    val rest = raw.replace(Regex("^jdbc:db2://", RegexOption.IGNORE_CASE), "")
+    val slashIndex = rest.indexOf('/')
+    if (slashIndex < 0) {
+        throw ConnectionStringParseError("Db2 connection string is missing a database name.")
+    }
+    val (host, port) = parseDb2Host(rest.substring(0, slashIndex))
+    val afterSlash = rest.substring(slashIndex + 1)
+    val dbEnd =
+        afterSlash.indexOfFirst { it == ':' || it == ';' }.takeIf { it >= 0 } ?: afterSlash.length
+    val database = afterSlash.substring(0, dbEnd)
+    if (database.any { it == '?' || it == '#' || it == '@' }) {
+        throw ConnectionStringParseError("Db2 connection string has an invalid database name.")
+    }
+    val remainder = afterSlash.substring(dbEnd)
+    if (remainder.isNotEmpty() && !remainder.startsWith(':')) {
+        throw ConnectionStringParseError("Db2 connection string has a malformed property list.")
+    }
+    val pairs =
+        remainder.removePrefix(":").split(';').filter(String::isNotEmpty).map { segment ->
+            val eqIndex = segment.indexOf('=')
+            if (eqIndex < 0) {
+                throw ConnectionStringParseError(
+                    "Db2 connection string has a malformed property '$segment'."
+                )
+            }
+            segment.substring(0, eqIndex).trim() to segment.substring(eqIndex + 1)
+        }
+    val sslConnection =
+        pairs.firstOrNull { (name, _) -> name.equals("sslConnection", ignoreCase = true) }?.second
+    val extracted = extractDriverProperties(Dialect.Db2, pairs, setOf("sslconnection"))
+
+    return baseResult(
+        dialect = Dialect.Db2,
+        host = host,
+        port = port,
+        database = database,
+        username = null,
+        password = null,
+        transport = db2Transport(sslConnection, host),
+        driverProperties = extracted.properties,
+        warnings = extracted.warnings,
+        sanitizedInput = sanitizeDb2Input(raw),
+    )
+}
+
+private fun parseDb2Host(authority: String): Pair<String, Int?> {
+    val server = authority.trim()
+    if (server.isEmpty()) {
+        throw ConnectionStringParseError("Db2 connection string is missing a host.")
+    }
+    if (server.startsWith('[')) {
+        val close = server.indexOf(']')
+        if (close < 0) {
+            throw ConnectionStringParseError("Db2 connection string is not a valid URL.")
+        }
+        val tail = server.substring(close + 1)
+        if (tail.isNotEmpty() && !tail.startsWith(':')) {
+            throw ConnectionStringParseError("Db2 connection string is not a valid URL.")
+        }
+        val portText = tail.removePrefix(":")
+        if (portText.isNotEmpty() && portText.toIntOrNull() == null) {
+            throw ConnectionStringParseError("Db2 connection string has an invalid port.")
+        }
+        return server.substring(1, close) to portText.toIntOrNull()
+    }
+    val parts = server.split(':')
+    if (parts.size > 2) {
+        throw ConnectionStringParseError("Db2 connection string is not a valid URL.")
+    }
+    val portText = parts.getOrNull(1)
+    if (portText != null && portText.toIntOrNull() == null) {
+        throw ConnectionStringParseError("Db2 connection string has an invalid port.")
+    }
+    return parts[0] to portText?.toIntOrNull()
+}
+
+private fun db2Transport(sslConnection: String?, host: String): MutableTransport =
+    when {
+        sslConnection == null ->
+            MutableTransport(
+                if (isLocalHost(host)) TransportSecurityMode.Disabled
+                else TransportSecurityMode.VerifyIdentity
+            )
+        sslConnection.equals("true", ignoreCase = true) ->
+            MutableTransport(TransportSecurityMode.VerifyIdentity)
+        sslConnection.equals("false", ignoreCase = true) ->
+            MutableTransport(TransportSecurityMode.Disabled)
+        else -> throw ConnectionStringParseError("Db2 sslConnection must be 'true' or 'false'.")
+    }
+
+private fun sanitizeDb2Input(raw: String): String {
+    val slashIndex = raw.indexOf('/', raw.indexOf("://") + 3)
+    if (slashIndex < 0) return raw
+    val colonIndex = raw.indexOf(':', slashIndex)
+    if (colonIndex < 0) return raw
+    val head = raw.substring(0, colonIndex + 1)
+    val safeTail =
+        raw.substring(colonIndex + 1).split(';').filter(String::isNotEmpty).filterNot { segment ->
+            isSensitiveDriverPropertyName(segment.substringBefore('='))
+        }
+    return head + safeTail.joinToString(";").takeIf(String::isNotEmpty)?.let { "$it;" }.orEmpty()
 }
 
 private fun parseOracle(raw: String): ParsedConnection {
@@ -769,6 +878,15 @@ fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
             val query = listOf(wallet, properties).filter(String::isNotEmpty).joinToString("&")
             val suffix = query.takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
             "jdbc:oracle:thin:$protocol${def.host}:${def.port}/${encodeComponent(def.database)}$suffix"
+        }
+        Dialect.Db2 -> {
+            // Same IBM JCC shape the driver connects with (see buildDb2Url): credentials ride
+            // outside the URL, so like Oracle nothing secret is ever written into the string.
+            val sslConnection =
+                if (def.transportSecurity.mode == TransportSecurityMode.Disabled) "false"
+                else "true"
+            val extra = def.driverProperties.joinToString("") { ";${it.name}=${it.value}" }
+            "jdbc:db2://${db2JdbcAuthority(def.host, def.port)}/${def.database}:sslConnection=$sslConnection$extra;"
         }
     }
 }

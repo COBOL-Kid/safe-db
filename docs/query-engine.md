@@ -32,7 +32,7 @@ A single `SELECT`. Columns are real schema columns (or `table.*`), not expressio
 
 - `INNER JOIN` on column equality only (`a.x = b.y`). Each join column must be the leading key of an equality-capable index, or the join must be a complete foreign key ([`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt)).
 - Filters, including nested groups, up to `MAX_FILTER_DEPTH`.
-- Optional `DISTINCT`, `GROUP BY` of columns, `ORDER BY`, and `LIMIT` (SQL Server `TOP`; Oracle `FETCH FIRST`).
+- Optional `DISTINCT`, `GROUP BY` of columns, `ORDER BY`, and `LIMIT` (SQL Server `TOP`; Oracle and Db2 `FETCH FIRST`).
 
 ## Rejected SQL
 
@@ -86,6 +86,7 @@ Settings are `Cautious`, `Standard`, `Flexible`, and `Disabled` ([`Settings.kt`]
 | MySQL | `SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED` | JVM trust, or a launch-profile PKCS12 store. |
 | SQL Server | `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED` and `SET LOCK_TIMEOUT`; no `SET TRANSACTION READ ONLY` | JVM trust, or a launch-profile PKCS12 store. |
 | Oracle | `SET TRANSACTION READ ONLY` | Verified TCPS uses an Oracle wallet. A generic PKCS12 launch profile is not a substitute. |
+| Db2 | No session SQL. JDBC `autoCommit = false`, `isReadOnly = true`, and isolation `READ UNCOMMITTED` | JVM trust, no wallet. Disabled sets `sslConnection=false`. Other modes set `sslConnection=true` and JCC `sslClientHostnameValidation=BASIC`. |
 
 Launch-profile schema, fail-closed startup, and the SSL harness are in [trust-stores.md](trust-stores.md).
 

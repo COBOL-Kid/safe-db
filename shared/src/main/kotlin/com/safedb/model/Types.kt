@@ -48,6 +48,7 @@ enum class Dialect {
     @SerialName("MySql") MySql,
     @SerialName("Mssql") Mssql,
     @SerialName("Oracle") Oracle,
+    @SerialName("Db2") Db2,
 }
 
 @Serializable data class DriverProperty(val name: String, val value: String)
@@ -113,6 +114,17 @@ private val DIALECT_RESERVED_DRIVER_PROPERTIES =
             ),
         Dialect.Oracle to
             setOf("walletlocation", "oraclenetwalletlocation", "oraclenetsslserverdnmatch"),
+        Dialect.Db2 to
+            setOf(
+                "sslconnection",
+                "ssltruststorelocation",
+                "ssltruststorepassword",
+                "sslkeystorelocation",
+                "sslkeystorepassword",
+                "securitymechanism",
+                "sslclienthostnamevalidation",
+                "sslcertlocation",
+            ),
     )
 
 private fun normalizedDriverPropertyName(name: String): String =
@@ -165,6 +177,13 @@ fun validateDriverProperties(dialect: Dialect, properties: List<DriverProperty>)
         if (property.name.any(Char::isISOControl) || property.value.any(Char::isISOControl)) {
             return Result.failure(
                 IllegalArgumentException("Driver parameters cannot contain control characters")
+            )
+        }
+        if (dialect == Dialect.Db2 && (';' in property.name || ';' in property.value)) {
+            return Result.failure(
+                IllegalArgumentException(
+                    "Db2 driver parameters cannot contain ';'; the JDBC URL uses it as a separator"
+                )
             )
         }
         if (isSensitiveDriverPropertyName(property.name)) {

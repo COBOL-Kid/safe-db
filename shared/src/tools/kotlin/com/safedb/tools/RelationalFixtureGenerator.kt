@@ -12,6 +12,7 @@ internal enum class GeneratedSqlDialect {
     Postgres,
     Mssql,
     Oracle,
+    Db2,
 }
 
 internal class RelationalFixtureGenerator(
@@ -27,6 +28,7 @@ internal class RelationalFixtureGenerator(
             GeneratedSqlDialect.Postgres -> emitPostgresSchema()
             GeneratedSqlDialect.Mssql -> emitMssqlSchema()
             GeneratedSqlDialect.Oracle -> emitOracleSchema()
+            GeneratedSqlDialect.Db2 -> emitDb2Schema()
         }
         emitBatched("categories", listOf("id", "name", "description"), makeCategories())
         emitBatched(
@@ -268,6 +270,19 @@ internal class RelationalFixtureGenerator(
             booleanType = "NUMBER(1)",
             timestampType = "TIMESTAMP(0)",
             floatType = "BINARY_DOUBLE",
+        )
+    }
+
+    private fun emitDb2Schema() {
+        write("-- Generated safe-db Db2 fixture")
+        // Db2 LUW has no DROP ... IF EXISTS, so drops stay out of the generated script:
+        // the seed path issues best-effort drops before loading this output.
+        emitPortableSchema(
+            integerType = "INTEGER",
+            textType = "CLOB",
+            booleanType = "SMALLINT",
+            timestampType = "TIMESTAMP",
+            floatType = "DOUBLE",
         )
     }
 

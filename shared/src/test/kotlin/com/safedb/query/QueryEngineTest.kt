@@ -62,6 +62,27 @@ class QueryEngineTest {
     }
 
     @Test
+    fun validateRejectsDb2CatalogSchemas() {
+        for (schema in
+            listOf(
+                "SYSCAT",
+                "SYSIBM",
+                "SYSSTAT",
+                "SYSFUN",
+                "SYSTOOLS",
+                "SYSIBMADM",
+                "SYSIBMINTERNAL",
+                "syscat",
+            )) {
+            val spec =
+                sampleSpec()
+                    .copy(tables = listOf(TableRef(schema = schema, name = "users", alias = "t0")))
+            val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
+            assertTrue(err.contains("blocked"), schema)
+        }
+    }
+
+    @Test
     fun validateRejectsCustomBlockedSchemaCaseInsensitive() {
         val spec =
             sampleSpec()
@@ -379,6 +400,7 @@ class QueryEngineTest {
                 Dialect.MySql to "`t0`.`name` LIKE ? ESCAPE '!'",
                 Dialect.Mssql to "[t0].[name] LIKE @P1 ESCAPE '!'",
                 Dialect.Oracle to "\"t0\".\"name\" LIKE :1 ESCAPE '!'",
+                Dialect.Db2 to "\"t0\".\"name\" LIKE ? ESCAPE '!'",
             )
 
         for ((dialect, fragment) in expectedSql) {
@@ -398,6 +420,7 @@ class QueryEngineTest {
                 Dialect.MySql to "LOWER(`t0`.`name`) LIKE LOWER(?) ESCAPE '!'",
                 Dialect.Mssql to "LOWER([t0].[name]) LIKE LOWER(@P1) ESCAPE '!'",
                 Dialect.Oracle to "UPPER(\"t0\".\"name\") LIKE UPPER(:1) ESCAPE '!'",
+                Dialect.Db2 to "UPPER(\"t0\".\"name\") LIKE UPPER(?) ESCAPE '!'",
             )
 
         for ((dialect, fragment) in expectedSql) {
@@ -661,6 +684,17 @@ class QueryEngineTest {
         assertEquals(ColumnCategory.Decimal, classifyColumn("NUMBER"))
         assertEquals(ColumnCategory.Text, classifyColumn("varchar"))
         assertEquals(ColumnCategory.Text, classifyColumn("VARCHAR2"))
+        assertEquals(ColumnCategory.Text, classifyColumn("DBCLOB"))
+        assertEquals(ColumnCategory.Integer, classifyColumn("INTEGER "))
+        assertEquals(ColumnCategory.Date, classifyColumn("DATE    "))
+        assertEquals(ColumnCategory.DateTime, classifyColumn("TIMESTMP"))
+        assertEquals(ColumnCategory.DateTime, classifyColumn("TIMESTZ"))
+        assertEquals(ColumnCategory.Text, classifyColumn("VARG"))
+        assertEquals(ColumnCategory.Binary, classifyColumn("VARBIN"))
+        assertEquals(ColumnCategory.Text, classifyColumn("GRAPHIC"))
+        assertEquals(ColumnCategory.Text, classifyColumn("VARGRAPHIC"))
+        assertEquals(ColumnCategory.Text, classifyColumn("LONG VARCHAR"))
+        assertEquals(ColumnCategory.Decimal, classifyColumn("DECFLOAT"))
         assertEquals(ColumnCategory.Bool, classifyColumn("boolean"))
         assertEquals(ColumnCategory.Date, classifyColumn("date"))
         assertEquals(ColumnCategory.DateTime, classifyColumn("timestamp without time zone"))
@@ -908,6 +942,8 @@ class QueryEngineTest {
         assertTrue(supportsGroupingAndSorting("jsonb", Dialect.Postgres))
         assertFalse(supportsGroupingAndSorting("CLOB", Dialect.Oracle))
         assertFalse(supportsGroupingAndSorting("ntext", Dialect.Mssql))
+        assertFalse(supportsGroupingAndSorting("LONG VARCHAR", Dialect.Db2))
+        assertFalse(supportsGroupingAndSorting("long vargraphic", Dialect.Db2))
     }
 
     @Test
@@ -957,6 +993,17 @@ class QueryEngineTest {
         assertTrue(compiled.sql.contains(" AS "))
         assertFalse(compiled.sql.contains(" AS \"t0\""))
         assertFalse(compiled.sql.contains(" AS \"t1\""))
+    }
+
+    @Test
+    fun db2CompilesFetchFirstWithQuestionMarkParams() {
+        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Db2).unwrap()
+        assertTrue(compiled.sql.contains("SELECT \"t0\".\"id\""), compiled.sql)
+        assertTrue(compiled.sql.contains("\"t0\".\"name\" = ?"), compiled.sql)
+        assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"), compiled.sql)
+        assertFalse(compiled.sql.contains(":1"))
+        assertFalse(compiled.sql.contains("LIMIT"))
+        assertEquals(1, compiled.params.size)
     }
 
     @Test

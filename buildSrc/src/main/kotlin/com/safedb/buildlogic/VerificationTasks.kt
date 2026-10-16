@@ -97,6 +97,8 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
 
     @get:Input abstract val requireOracle: Property<Boolean>
 
+    @get:Input abstract val requireDb2: Property<Boolean>
+
     @TaskAction
     fun verify() {
         val requiredEngines = buildSet {
@@ -104,6 +106,7 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
             if (requirePostgres.get()) add("postgres")
             if (requireMssql.get()) add("mssql")
             if (requireOracle.get()) add("oracle")
+            if (requireDb2.get()) add("db2")
         }
         if (requiredEngines.isEmpty()) {
             logger.lifecycle("No JDBC engine is required; integration suites may skip locally.")
@@ -222,6 +225,7 @@ private val integrationSuites =
         IntegrationSuite("postgres", "Postgres", 3),
         IntegrationSuite("mssql", "Mssql", 2),
         IntegrationSuite("oracle", "Oracle", 2),
+        IntegrationSuite("db2", "Db2", 3),
     )
 
 internal fun verifyIntegrationTestDiscovery(

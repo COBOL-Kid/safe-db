@@ -23,6 +23,7 @@ dependencies {
     implementation("com.mysql:mysql-connector-j:26.7.0")
     implementation("com.microsoft.sqlserver:mssql-jdbc:13.6.0.jre11")
     implementation("com.oracle.database.jdbc:ojdbc11:23.26.3.0.0")
+    implementation("com.ibm.db2:jcc:12.1.5.0")
     implementation("com.github.javakeyring:java-keyring:1.0.4")
 
     testImplementation(kotlin("test"))

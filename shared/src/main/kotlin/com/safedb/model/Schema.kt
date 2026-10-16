@@ -140,8 +140,30 @@ fun ColumnCategory?.isNumeric(): Boolean =
 fun ColumnCategory?.isTemporal(): Boolean =
     this == ColumnCategory.Date || this == ColumnCategory.DateTime
 
+internal val DB2_SYSTEM_SCHEMAS =
+    listOf(
+        "SYSIBM",
+        "SYSCAT",
+        "SYSSTAT",
+        "SYSFUN",
+        "SYSTOOLS",
+        "SYSIBMADM",
+        "SYSIBMINTERNAL",
+    )
+
 fun classifyColumn(dataType: String): ColumnCategory {
-    val dt = dataType.lowercase()
+    val raw = dataType.lowercase().trim().substringBefore('(').trim()
+    // z/OS SYSIBM.SYSCOLUMNS.COLTYPE is CHAR(8) and uses these abbreviations.
+    val dt =
+        when (raw) {
+            "timestmp",
+            "timestz" -> "timestamp"
+            "varg" -> "vargraphic"
+            "varbin" -> "varbinary"
+            "longvar" -> "long varchar"
+            "longvarg" -> "long vargraphic"
+            else -> raw
+        }
     return when {
         dt in setOf("bool", "boolean", "bit") -> ColumnCategory.Bool
         dt == "date" -> ColumnCategory.Date
@@ -164,6 +186,7 @@ fun classifyColumn(dataType: String): ColumnCategory {
                 "decimal",
                 "numeric",
                 "number",
+                "decfloat",
                 "real",
                 "double",
                 "float",
@@ -174,8 +197,8 @@ fun classifyColumn(dataType: String): ColumnCategory {
                 "double precision",
             ) || dt.startsWith("decimal") || dt.startsWith("numeric") || dt.startsWith("number") ->
             ColumnCategory.Decimal
-        dt.contains("binary") || dt.contains("blob") || dt in setOf("bytea", "raw") ->
-            ColumnCategory.Binary
+        (dt.contains("binary") || dt.contains("blob") || dt in setOf("bytea", "raw")) &&
+            dt != "dbclob" -> ColumnCategory.Binary
         dt in setOf("json", "jsonb") -> ColumnCategory.Json
         dt in
             setOf(
@@ -194,6 +217,12 @@ fun classifyColumn(dataType: String): ColumnCategory {
                 "nvarchar2",
                 "clob",
                 "nclob",
+                "dbclob",
+                "graphic",
+                "vargraphic",
+                "long varchar",
+                "longvarchar",
+                "long vargraphic",
                 "xml",
                 "uuid",
             ) ||

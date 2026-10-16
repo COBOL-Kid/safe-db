@@ -41,20 +41,20 @@ For `file`, store one UTF-8 line. A final LF or CRLF is removed; other whitespac
 
 ## Trust behavior
 
-For verified PostgreSQL, MySQL, and SQL Server connections, launch profiles are the only custom trust-store path. Without one, MySQL and SQL Server use normal JVM trust, PostgreSQL retains pgjdbc's standard trust and client-certificate behavior, and Oracle remains wallet-based. The profile records only a password source: secret passwords never appear in JSON, command arguments, environment variables, or logs. PostgreSQL receives a temporary trusted-roots PEM derived from the PKCS12 certificates; MySQL and SQL Server use JSSE properties.
+For verified PostgreSQL, MySQL, SQL Server, and Db2 connections, launch profiles are the only custom trust-store path. Without one, MySQL, SQL Server, and Db2 use normal JVM trust, PostgreSQL retains pgjdbc's standard trust and client-certificate behavior, and Oracle remains wallet-based. The profile records only a password source: secret passwords never appear in JSON, command arguments, environment variables, or logs. PostgreSQL receives a temporary trusted-roots PEM derived from the PKCS12 certificates; MySQL, SQL Server, and Db2 use JSSE properties.
 
 Import only independently verified CA certificates, never private keys, and restart after changing the profile, store, or password.
 
 ## Compatibility verification
 
-For a self-contained local harness, start the root Docker Compose stack. It creates the endpoints, seeds each dialect (including the SQL Server and Oracle sample schemas), and creates trusted and untrusted PKCS12 stores, password-file launch profiles, hostname/IP SAN certificates, and the Oracle wallet-path fixture expected by the integration test:
+For a self-contained local harness, start the root Docker Compose stack. It creates the endpoints, seeds each dialect (including the SQL Server, Oracle, and Db2 sample schemas), and creates trusted and untrusted PKCS12 stores, password-file launch profiles, hostname/IP SAN certificates, and the Oracle wallet-path fixture expected by the integration test:
 
 ```sh
 scripts/docker_test_databases.sh up
 scripts/docker_test_databases.sh verify
 ```
 
-Run `scripts/docker_test_databases.sh seed` to reload only the SQL Server and Oracle fixtures in an already-running stack.
+Run `scripts/docker_test_databases.sh seed` to reload the SQL Server, Oracle, and Db2 fixtures in an already-running stack.
 
 All generated private keys and trust artifacts remain under the Git-ignored `.docker/safedb-ssl/` directory. They are disposable test credentials and must not be reused outside this local stack. Run `scripts/docker_test_databases.sh certs` only while the project services are stopped. It refuses to replace certificates for an active stack because MySQL, PostgreSQL, and SQL Server would continue serving the previous certificate chain; use `reset` to rotate certificates and safely recreate the stack.
 
@@ -67,4 +67,4 @@ SAFEDB_TEST_SSL_WRONG_LAUNCH_PROFILE=/absolute/path/to/wrong.json \
 ./scripts/verify_ssl_compat.sh
 ```
 
-The harness `verify` command first requires the standard adapter contracts for MySQL, PostgreSQL, SQL Server, and Oracle. `SslCompatIntegrationTest` then covers PKCS12 launch-profile application, reserved TLS driver properties, JDBC URL/property mapping for all four dialects, live EncryptOnly/VerifyCa/VerifyIdentity against MySQL, PostgreSQL, and SQL Server when those endpoints are provisioned, Oracle TCP plus wallet-required TCPS configuration, and rejection of an untrusted launch-profile CA. Oracle remains wallet-based: a generic PKCS12 file is not a substitute for an Oracle wallet.
+The harness `verify` command first requires the standard adapter contracts for MySQL, PostgreSQL, SQL Server, Oracle, and Db2. `SslCompatIntegrationTest` then covers PKCS12 launch-profile application, reserved TLS driver properties, JDBC URL/property mapping for all five dialects, live EncryptOnly/VerifyCa/VerifyIdentity against MySQL, PostgreSQL, and SQL Server when those endpoints are provisioned, Oracle TCP plus wallet-required TCPS configuration, and rejection of an untrusted launch-profile CA. Oracle remains wallet-based: a generic PKCS12 file is not a substitute for an Oracle wallet. Db2 honors `disabled` and `verify-identity`. Other stored modes still connect with `sslConnection=true` and JCC BASIC hostname checks. Db2 uses JVM trust and needs no wallet.

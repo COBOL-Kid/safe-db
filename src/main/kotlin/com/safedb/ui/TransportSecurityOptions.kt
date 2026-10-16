@@ -53,11 +53,17 @@ private val ORACLE_DISABLED =
         description =
             "Disables TCPS; database traffic uses unencrypted TCP and the server identity is not verified.",
     )
+private val DB2_VERIFY_IDENTITY =
+    VERIFY_IDENTITY.copy(
+        description =
+            "Encrypts traffic with sslConnection, validates the certificate chain, and checks the database hostname (JCC BASIC) using the JVM truststore."
+    )
 
 internal fun transportOptionsFor(dialect: Dialect): List<TransportSecurityOption> =
     when (dialect) {
         Dialect.Postgres,
         Dialect.MySql -> listOf(VERIFY_IDENTITY, VERIFY_CA, ENCRYPT_ONLY, DISABLED)
+        Dialect.Db2 -> listOf(DB2_VERIFY_IDENTITY, DISABLED)
         Dialect.Mssql -> listOf(VERIFY_IDENTITY, ENCRYPT_ONLY, DISABLED)
         Dialect.Oracle -> listOf(ORACLE_VERIFY_IDENTITY, ORACLE_VERIFY_CA, ORACLE_DISABLED)
     }
@@ -71,6 +77,9 @@ internal fun displayedTransportMode(
             TransportSecurityMode.VerifyIdentity
         Dialect.Oracle if mode == TransportSecurityMode.EncryptOnly ->
             TransportSecurityMode.VerifyCa
+        Dialect.Db2 if
+            mode == TransportSecurityMode.VerifyCa || mode == TransportSecurityMode.EncryptOnly
+         -> TransportSecurityMode.VerifyIdentity
         else -> mode
     }
 
@@ -85,5 +94,9 @@ internal fun transportCompatibilityWarning(dialect: Dialect, mode: TransportSecu
             "SQL Server validates the certificate hostname in this mode; it is shown as certificate and hostname verification."
         Dialect.Oracle if mode == TransportSecurityMode.EncryptOnly ->
             "Oracle wallet-based TCPS validates certificate trust; this legacy mode is shown as certificate-only verification."
+        Dialect.Db2 if
+            mode == TransportSecurityMode.VerifyCa || mode == TransportSecurityMode.EncryptOnly
+         ->
+            "Db2 SSL is either on with hostname verification or off; this mode is shown as SSL with hostname verification."
         else -> null
     }

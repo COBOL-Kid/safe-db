@@ -8,4 +8,5 @@ internal fun dialectLabel(dialect: Dialect): String =
         Dialect.MySql -> "MySQL"
         Dialect.Mssql -> "SQL Server"
         Dialect.Oracle -> "Oracle"
+        Dialect.Db2 -> "Db2"
     }
