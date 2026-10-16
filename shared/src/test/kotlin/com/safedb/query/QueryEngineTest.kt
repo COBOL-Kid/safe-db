@@ -694,6 +694,8 @@ class QueryEngineTest {
         assertEquals(ColumnCategory.Text, classifyColumn("GRAPHIC"))
         assertEquals(ColumnCategory.Text, classifyColumn("VARGRAPHIC"))
         assertEquals(ColumnCategory.Text, classifyColumn("LONG VARCHAR"))
+        assertEquals(ColumnCategory.Text, classifyColumn("LONGVAR"))
+        assertEquals(ColumnCategory.Text, classifyColumn("LONGVARG"))
         assertEquals(ColumnCategory.Decimal, classifyColumn("DECFLOAT"))
         assertEquals(ColumnCategory.Bool, classifyColumn("boolean"))
         assertEquals(ColumnCategory.Date, classifyColumn("date"))
@@ -939,11 +941,32 @@ class QueryEngineTest {
                 .unwrapErr()
                 .contains("cannot be sorted by PostgreSQL")
         )
+        val notes =
+            jsonColumn.copy(
+                name = "notes",
+                dataType = "LONG VARCHAR",
+                category = ColumnCategory.Text,
+            )
+        val db2Schema =
+            sampleSchema().copy(tables = listOf(users.copy(columns = users.columns + notes)))
+        val db2Grouped =
+            sampleSpec()
+                .copy(
+                    columns = listOf(ColumnSel("t0", "notes")),
+                    groups = listOf(GroupSpec("t0", "notes")),
+                )
+        assertTrue(
+            validate(db2Grouped, db2Schema, emptyList(), Dialect.Db2)
+                .unwrapErr()
+                .contains("cannot be grouped by Db2")
+        )
         assertTrue(supportsGroupingAndSorting("jsonb", Dialect.Postgres))
         assertFalse(supportsGroupingAndSorting("CLOB", Dialect.Oracle))
         assertFalse(supportsGroupingAndSorting("ntext", Dialect.Mssql))
         assertFalse(supportsGroupingAndSorting("LONG VARCHAR", Dialect.Db2))
         assertFalse(supportsGroupingAndSorting("long vargraphic", Dialect.Db2))
+        assertFalse(supportsGroupingAndSorting("LONGVAR", Dialect.Db2))
+        assertFalse(supportsGroupingAndSorting("LONGVARG", Dialect.Db2))
     }
 
     @Test
@@ -1000,6 +1023,11 @@ class QueryEngineTest {
         val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Db2).unwrap()
         assertTrue(compiled.sql.contains("SELECT \"t0\".\"id\""), compiled.sql)
         assertTrue(compiled.sql.contains("\"t0\".\"name\" = ?"), compiled.sql)
+        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""), compiled.sql)
+        assertTrue(
+            compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""),
+            compiled.sql,
+        )
         assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"), compiled.sql)
         assertFalse(compiled.sql.contains(":1"))
         assertFalse(compiled.sql.contains("LIMIT"))

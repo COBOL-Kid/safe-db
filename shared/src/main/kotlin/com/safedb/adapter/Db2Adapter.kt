@@ -784,12 +784,12 @@ object Db2Adapter {
 
     // Delimited identifier. Control characters and over-long names are rejected so a
     // CURRENT SQLID or session authorization id cannot break out of the qualifier.
-    private fun quoteDb2Ident(name: String): String? {
+    internal fun quoteDb2Ident(name: String): String? {
         if (name.length > 128 || name.any { it.isISOControl() }) return null
         return "\"${name.replace("\"", "\"\"")}\""
     }
 
-    private fun Throwable.isUndefinedObject(): Boolean {
+    internal fun Throwable.isUndefinedObject(): Boolean {
         val sqlException = this as? SQLException ?: return false
         return sqlException.sqlState == "42704" ||
             sqlException.errorCode == -204 ||

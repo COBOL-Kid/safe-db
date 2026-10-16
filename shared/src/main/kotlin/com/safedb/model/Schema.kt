@@ -151,19 +151,22 @@ internal val DB2_SYSTEM_SCHEMAS =
         "SYSIBMINTERNAL",
     )
 
-fun classifyColumn(dataType: String): ColumnCategory {
+// z/OS SYSIBM.SYSCOLUMNS.COLTYPE is CHAR(8) and uses these abbreviations.
+internal fun normalizeCatalogTypeName(dataType: String): String {
     val raw = dataType.lowercase().trim().substringBefore('(').trim()
-    // z/OS SYSIBM.SYSCOLUMNS.COLTYPE is CHAR(8) and uses these abbreviations.
-    val dt =
-        when (raw) {
-            "timestmp",
-            "timestz" -> "timestamp"
-            "varg" -> "vargraphic"
-            "varbin" -> "varbinary"
-            "longvar" -> "long varchar"
-            "longvarg" -> "long vargraphic"
-            else -> raw
-        }
+    return when (raw) {
+        "timestmp",
+        "timestz" -> "timestamp"
+        "varg" -> "vargraphic"
+        "varbin" -> "varbinary"
+        "longvar" -> "long varchar"
+        "longvarg" -> "long vargraphic"
+        else -> raw
+    }
+}
+
+fun classifyColumn(dataType: String): ColumnCategory {
+    val dt = normalizeCatalogTypeName(dataType)
     return when {
         dt in setOf("bool", "boolean", "bit") -> ColumnCategory.Bool
         dt == "date" -> ColumnCategory.Date

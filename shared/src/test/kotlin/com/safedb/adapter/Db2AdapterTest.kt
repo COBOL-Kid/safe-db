@@ -7,11 +7,15 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
+import com.safedb.model.SortDirection
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.zaxxer.hikari.HikariDataSource
+import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class Db2AdapterTest {
@@ -75,31 +79,30 @@ class Db2AdapterTest {
     fun db2ReservedDriverPropertiesAreRejected() {
         val base = connection(TransportSecurityMode.Disabled)
 
-        assertTrue(
-            base
-                .copy(driverProperties = listOf(DriverProperty("sslConnection", "true")))
-                .validate()
-                .isFailure
-        )
+        for (name in
+            listOf(
+                "sslConnection",
+                "sslTrustStoreLocation",
+                "sslTrustStorePassword",
+                "sslKeyStoreLocation",
+                "sslKeyStorePassword",
+                "securityMechanism",
+                "sslClientHostnameValidation",
+                "sslCertLocation",
+            )) {
+            assertTrue(
+                base
+                    .copy(driverProperties = listOf(DriverProperty(name, "x")))
+                    .validate()
+                    .isFailure,
+                name,
+            )
+        }
         assertTrue(
             base
                 .copy(driverProperties = listOf(DriverProperty("currentSchema", "REPORTING")))
                 .validate()
                 .isSuccess
-        )
-        assertTrue(
-            base
-                .copy(
-                    driverProperties = listOf(DriverProperty("sslClientHostnameValidation", "OFF"))
-                )
-                .validate()
-                .isFailure
-        )
-        assertTrue(
-            base
-                .copy(driverProperties = listOf(DriverProperty("sslCertLocation", "/tmp/cert")))
-                .validate()
-                .isFailure
         )
         assertTrue(
             base
@@ -166,6 +169,79 @@ class Db2AdapterTest {
     }
 
     @Test
+    fun db2IndexEncodesPrimaryDescendingTextAndExpressionKeys() {
+        val table = MetadataTableKey("APP", "ORDERS")
+        val schema =
+            assembleSchema(
+                tables = listOf(table),
+                columns = emptyList(),
+                indexes =
+                    listOf(
+                        Db2Adapter.db2Index("APP", "ORDERS", "ORDERS_PK", "ID", "P", "A"),
+                        Db2Adapter.db2Index("APP", "ORDERS", "ORDERS_DESC", "CREATED", "D", "D"),
+                        Db2Adapter.db2Index(
+                            "APP",
+                            "ORDERS",
+                            "ORDERS_TEXT",
+                            "NOTES",
+                            "D",
+                            "A",
+                            indexType = "TEXT",
+                        ),
+                        Db2Adapter.db2Index(
+                            "APP",
+                            "ORDERS",
+                            "ORDERS_EXPR",
+                            null,
+                            "D",
+                            "A",
+                            virtual = true,
+                        ),
+                        Db2Adapter.db2Index(
+                            "APP",
+                            "ORDERS",
+                            "ORDERS_CLUS",
+                            "STATUS",
+                            "U",
+                            "A",
+                            indexType = "CLUS",
+                        ),
+                    ),
+                foreignKeys = emptyList(),
+            )
+        val indexes = schema.tables.single().indexes.associateBy { it.name }
+
+        val primary = indexes.getValue("ORDERS_PK")
+        assertEquals(true, primary.isPrimary)
+        assertEquals(true, primary.isUnique)
+        assertEquals(SortDirection.Asc, primary.keys.single().direction)
+        assertEquals(true, primary.capabilities.ordering)
+
+        // UNIQUERULE D means duplicates are allowed. Descending order comes from ORDERING.
+        val descending = indexes.getValue("ORDERS_DESC")
+        assertEquals(false, descending.isUnique)
+        assertEquals(false, descending.isPrimary)
+        assertEquals(SortDirection.Desc, descending.keys.single().direction)
+
+        val text = indexes.getValue("ORDERS_TEXT")
+        assertEquals("TEXT", text.kind)
+        assertEquals(false, text.supportsEquality)
+        assertEquals(false, text.capabilities.equality)
+        assertEquals(true, text.capabilities.specializedText)
+        assertEquals(false, text.capabilities.ordering)
+
+        val expression = indexes.getValue("ORDERS_EXPR")
+        assertEquals(true, expression.keys.single().expression)
+        assertEquals(null, expression.keys.single().column)
+        assertEquals(true, expression.capabilities.expressionKeys)
+
+        val clustered = indexes.getValue("ORDERS_CLUS")
+        assertEquals(true, clustered.isUnique)
+        assertEquals(false, clustered.isPrimary)
+        assertEquals(true, clustered.capabilities.ordering)
+    }
+
+    @Test
     fun db2VerifiedTransportNeedsNoWallet() {
         assertTrue(connection(TransportSecurityMode.VerifyIdentity).validate().isSuccess)
     }
@@ -194,6 +270,29 @@ class Db2AdapterTest {
             sql,
             jdbcSql(CompiledQuery(sql = sql, params = emptyList()), Dialect.Db2),
         )
+    }
+
+    @Test
+    fun db2QuotesExplainIdentifiersAndRejectsBreakout() {
+        assertEquals("\"APP\"", Db2Adapter.quoteDb2Ident("APP"))
+        assertEquals("\"A\"\"B\"", Db2Adapter.quoteDb2Ident("A\"B"))
+        assertEquals("\"" + "A".repeat(128) + "\"", Db2Adapter.quoteDb2Ident("A".repeat(128)))
+        assertNull(Db2Adapter.quoteDb2Ident("A".repeat(129)))
+        assertNull(Db2Adapter.quoteDb2Ident("APP\n"))
+    }
+
+    @Test
+    fun db2TreatsUndefinedObjectsAsMissingExplainTables() {
+        assertTrue(with(Db2Adapter) { SQLException("no", "42704", 0).isUndefinedObject() })
+        assertTrue(with(Db2Adapter) { SQLException("no", "HY000", -204).isUndefinedObject() })
+        assertTrue(
+            with(Db2Adapter) { SQLException("SQLCODE=-204", "HY000", 0).isUndefinedObject() }
+        )
+        assertTrue(
+            with(Db2Adapter) { SQLException("undefined name", "HY000", 0).isUndefinedObject() }
+        )
+        assertFalse(with(Db2Adapter) { SQLException("other", "HY000", 0).isUndefinedObject() })
+        assertFalse(with(Db2Adapter) { RuntimeException("undefined name").isUndefinedObject() })
     }
 
     @Test

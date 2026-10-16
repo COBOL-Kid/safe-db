@@ -612,16 +612,40 @@ class ParseConnectionStringTest {
     }
 
     @Test
+    fun db2JdbcWithoutSslConnectionFollowsTheHost() {
+        val remote = parseConnectionString("jdbc:db2://db.example.com/app")
+        assertEquals(TransportSecurityMode.VerifyIdentity, remote.transportSecurity.mode)
+        assertEquals(50000, remote.port)
+        assertEquals("app", remote.database)
+        assertEquals(DatabaseLocation.Cloud, remote.inferredLocation)
+
+        val local = parseConnectionString("jdbc:db2://localhost/SAMPLE")
+        assertEquals(TransportSecurityMode.Disabled, local.transportSecurity.mode)
+        assertEquals("SAMPLE", local.database)
+        assertEquals(DatabaseLocation.Local, local.inferredLocation)
+    }
+
+    @Test
     fun rejectsMalformedDb2JdbcStrings() {
-        assertFailsWith<ConnectionStringParseError> {
-            parseConnectionString("jdbc:db2://db.example.com:50000")
-        }
-        assertFailsWith<ConnectionStringParseError> {
-            parseConnectionString("jdbc:db2://db.example.com:50000/app:notAProperty;")
-        }
-        assertFailsWith<ConnectionStringParseError> {
-            parseConnectionString("jdbc:db2://db.example.com:50000/app:sslConnection=maybe;")
-        }
+        assertDb2Rejects("jdbc:db2://db.example.com:50000", "missing a database")
+        assertDb2Rejects("jdbc:db2://db.example.com:50000/app:notAProperty;", "malformed property")
+        assertDb2Rejects(
+            "jdbc:db2://db.example.com:50000/app:sslConnection=maybe;",
+            "sslConnection must be",
+        )
+        assertDb2Rejects("jdbc:db2:///app", "missing a host")
+        assertDb2Rejects("jdbc:db2://[::1/app", "not a valid URL")
+        assertDb2Rejects("jdbc:db2://[::1]x/app", "not a valid URL")
+        assertDb2Rejects("jdbc:db2://[::1]:nope/app", "invalid port")
+        assertDb2Rejects("jdbc:db2://host:1:2/app", "not a valid URL")
+        assertDb2Rejects("jdbc:db2://host:nope/app", "invalid port")
+        assertDb2Rejects("jdbc:db2://host/app?x", "invalid database")
+        assertDb2Rejects("jdbc:db2://host/app;sslConnection=true", "malformed property list")
+    }
+
+    private fun assertDb2Rejects(raw: String, message: String) {
+        val error = assertFailsWith<ConnectionStringParseError> { parseConnectionString(raw) }
+        assertTrue(error.message!!.contains(message), error.message)
     }
 
     @Test

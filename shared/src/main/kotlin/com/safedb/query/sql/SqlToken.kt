@@ -200,8 +200,8 @@ fun tokenizeSql(
                 i = j
             }
             c == '/' && i + 1 < sql.length && sql[i + 1] == '*' -> {
-                // PostgreSQL and SQL Server nest block comments; MySQL and Oracle close at the
-                // first */, so `/* /* */` already ends the comment there.
+                // PostgreSQL and SQL Server nest block comments. MySQL, Oracle, and Db2 close
+                // at the first */, so `/* /* */` already ends the comment there.
                 val nested = dialect == Dialect.Postgres || dialect == Dialect.Mssql
                 val end = blockCommentEnd(sql, i, nested)
                 val marker = sql.getOrNull(i + 2)

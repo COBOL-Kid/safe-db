@@ -15,6 +15,7 @@ import com.safedb.model.SafeDbJson
 import com.safedb.model.Schema
 import com.safedb.model.SortSpec
 import com.safedb.model.classifyColumn
+import com.safedb.model.normalizeCatalogTypeName
 import java.security.MessageDigest
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
@@ -428,7 +429,7 @@ internal fun findTableByAlias(schema: Schema, spec: QuerySpec, alias: String) =
         ?.let { tableRef -> findTable(schema, tableRef.schema, tableRef.name) }
 
 internal fun supportsGroupingAndSorting(dataType: String, dialect: Dialect): Boolean {
-    val normalized = dataType.lowercase().substringBefore('(').trim()
+    val normalized = normalizeCatalogTypeName(dataType)
     return when (dialect) {
         Dialect.Postgres -> normalized !in setOf("json", "xml")
         Dialect.Mssql ->

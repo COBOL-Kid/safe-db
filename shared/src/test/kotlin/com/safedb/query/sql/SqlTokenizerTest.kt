@@ -320,8 +320,8 @@ class SqlTokenizerTest {
             assertEquals(SqlTokenType.Comment, tokens.single().type)
         }
 
-        // MySQL and Oracle close at the first */, so the SELECT is live again.
-        for (dialect in listOf(Dialect.MySql, Dialect.Oracle)) {
+        // MySQL, Oracle, and Db2 close at the first */, so the SELECT is live again.
+        for (dialect in listOf(Dialect.MySql, Dialect.Oracle, Dialect.Db2)) {
             val tokens = significant(input, dialect)
             assertEquals(SqlTokenType.Comment, tokens.first().type)
             assertTrue(
