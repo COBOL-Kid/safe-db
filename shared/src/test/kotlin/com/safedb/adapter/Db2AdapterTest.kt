@@ -296,6 +296,118 @@ class Db2AdapterTest {
     }
 
     @Test
+    fun db2SelectsQuotedAuthExplainPrefixAheadOfSystools() {
+        assertEquals(
+            Db2Adapter.LuwExplainPrefix.Found("\"APP\"."),
+            Db2Adapter.selectLuwExplainPrefix(
+                "\"APP\"",
+                Db2Adapter.ExplainTablePresence.Present,
+                Db2Adapter.ExplainTablePresence.Present,
+            ),
+        )
+    }
+
+    @Test
+    fun db2UsesSystoolsOnlyWhenAuthExplainTablesAreAbsent() {
+        assertEquals(
+            Db2Adapter.LuwExplainPrefix.Found("SYSTOOLS."),
+            Db2Adapter.selectLuwExplainPrefix(
+                "\"APP\"",
+                Db2Adapter.ExplainTablePresence.Absent,
+                Db2Adapter.ExplainTablePresence.Present,
+            ),
+        )
+        assertEquals(
+            Db2Adapter.LuwExplainPrefix.Missing,
+            Db2Adapter.selectLuwExplainPrefix(
+                "\"APP\"",
+                Db2Adapter.ExplainTablePresence.Absent,
+                Db2Adapter.ExplainTablePresence.Absent,
+            ),
+        )
+    }
+
+    @Test
+    fun db2LeavesExplainPrefixUnreadableWhenAuthLookupFails() {
+        assertEquals(
+            Db2Adapter.LuwExplainPrefix.Unreadable,
+            Db2Adapter.selectLuwExplainPrefix(
+                "\"APP\"",
+                Db2Adapter.ExplainTablePresence.Failed,
+                Db2Adapter.ExplainTablePresence.Present,
+            ),
+        )
+        assertEquals(
+            Db2Adapter.LuwExplainPrefix.Unreadable,
+            Db2Adapter.selectLuwExplainPrefix(
+                null,
+                Db2Adapter.ExplainTablePresence.Present,
+                Db2Adapter.ExplainTablePresence.Present,
+            ),
+        )
+    }
+
+    @Test
+    fun db2KeepsCompleteForeignKeysAndDropsPartialMatches() {
+        val orders = MetadataTableKey("APP", "ORDERS")
+        val lines = MetadataTableKey("APP", "ORDER_LINES")
+        val customer =
+            MetadataForeignKey(
+                orders,
+                "ORDERS_CUSTOMER_FK",
+                "CUSTOMER_ID",
+                "APP",
+                "CUSTOMERS",
+                "ID",
+            )
+        val blankOrder =
+            MetadataForeignKey(lines, "LINES_BLANK_FK", "ORDER_ID", "APP", "ORDERS", "ID")
+        val blankLine = MetadataForeignKey(lines, "LINES_BLANK_FK", "LINE_NO", "APP", "ORDERS", "")
+        val partial =
+            MetadataForeignKey(lines, "LINES_PARTIAL_FK", "ORDER_ID", "APP", "ORDERS", "ID")
+        val orderId = MetadataForeignKey(lines, "LINES_ORDER_FK", "ORDER_ID", "APP", "ORDERS", "ID")
+        val lineNo =
+            MetadataForeignKey(lines, "LINES_ORDER_FK", "LINE_NO", "APP", "ORDERS", "LINE_NO")
+
+        assertEquals(
+            listOf(customer, orderId, lineNo),
+            Db2Adapter.completeDb2ForeignKeys(
+                listOf(
+                    Db2Adapter.CountedForeignKey(customer, 1),
+                    Db2Adapter.CountedForeignKey(blankOrder, 2),
+                    Db2Adapter.CountedForeignKey(blankLine, 2),
+                    Db2Adapter.CountedForeignKey(partial, 2),
+                    Db2Adapter.CountedForeignKey(orderId, 2),
+                    Db2Adapter.CountedForeignKey(lineNo, 2),
+                )
+            ),
+        )
+    }
+
+    @Test
+    fun db2RejectsUrlDelimitersInDatabaseAndHost() {
+        val base = connection(TransportSecurityMode.Disabled)
+
+        assertTrue(
+            base.copy(database = "app:sslTrustStoreLocation=/tmp/store").validate().isFailure
+        )
+        assertTrue(base.copy(host = "db.example/app").validate().isFailure)
+        assertTrue(base.copy(host = "::1").validate().isSuccess)
+        for (character in listOf(':', ';', '/', '?', '#', '@')) {
+            assertTrue(
+                base.copy(database = "app$character").validate().isFailure,
+                "database $character",
+            )
+        }
+        for (character in listOf(';', '/', '?', '#', '@')) {
+            assertTrue(
+                base.copy(host = "db.example$character").validate().isFailure,
+                "host $character",
+            )
+        }
+    }
+
+    @Test
     fun db2ExplainWithoutConnectionThrows() {
         // EXPLAIN needs a live connection; without explain tables the adapter returns
         // Unavailable instead of failing, so only a missing datasource can be asserted here.

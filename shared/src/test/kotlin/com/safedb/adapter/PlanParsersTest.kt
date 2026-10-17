@@ -211,6 +211,40 @@ class PlanParsersTest {
     }
 
     @Test
+    fun db2LuwExplainIndexScanDoesNotUseSiblingFetchTable() {
+        val plan =
+            parseDb2LuwExplain(
+                listOf(
+                    Db2LuwExplainRow(1, null, "RETURN", null, null, null, "", null, null),
+                    Db2LuwExplainRow(2, 1, "NLJOIN", null, null, null, "", null, null),
+                    Db2LuwExplainRow(
+                        3,
+                        2,
+                        "IXSCAN",
+                        "APP",
+                        "ORDERS_PK",
+                        "IX",
+                        "Q1.ID = 1",
+                        null,
+                        null,
+                    ),
+                    Db2LuwExplainRow(4, 2, "FETCH", "APP", "ITEMS", "TA", "", null, null),
+                )
+            )
+
+        assertNotNull(plan)
+        assertTrue(
+            plan.relations.none {
+                it.table == "ITEMS" && it.method == PlanAccessMethod.BoundedLookup
+            }
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedLookup,
+            plan.relations.first { it.table == "ORDERS_PK" }.method,
+        )
+    }
+
+    @Test
     fun db2LuwIxscanWithoutEqualityFallsBackToRangeOrFullScan() {
         val plan =
             parseDb2LuwExplain(

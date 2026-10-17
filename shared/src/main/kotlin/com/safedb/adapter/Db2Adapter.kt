@@ -92,26 +92,30 @@ object Db2Adapter {
                 )
             }
         val foreignKeys =
-            conn.metadataRows(
-                """
-                SELECT R.TABSCHEMA AS table_schema, R.TABNAME AS table_name,
-                       R.CONSTNAME AS constraint_name, CK.COLNAME AS column_name,
-                       R.REFTABSCHEMA AS referenced_schema, R.REFTABNAME AS referenced_table,
-                       PK.COLNAME AS referenced_column
-                FROM SYSCAT.REFERENCES R
-                JOIN SYSCAT.KEYCOLUSE CK
-                  ON CK.TABSCHEMA = R.TABSCHEMA AND CK.TABNAME = R.TABNAME
-                 AND CK.CONSTNAME = R.CONSTNAME
-                JOIN SYSCAT.KEYCOLUSE PK
-                  ON PK.TABSCHEMA = R.REFTABSCHEMA AND PK.TABNAME = R.REFTABNAME
-                 AND PK.CONSTNAME = R.REFKEYNAME AND PK.COLSEQ = CK.COLSEQ
-                WHERE UPPER(R.TABSCHEMA) NOT IN $excludedSchemas
-                ORDER BY R.TABSCHEMA, R.TABNAME, R.CONSTNAME, CK.COLSEQ
-                """
-                    .trimIndent()
-            ) { rs ->
-                foreignKeyRow(rs)
-            }
+            completeDb2ForeignKeys(
+                conn
+                    .metadataRows(
+                        """
+                        SELECT R.TABSCHEMA AS table_schema, R.TABNAME AS table_name,
+                               R.CONSTNAME AS constraint_name, CK.COLNAME AS column_name,
+                               R.REFTABSCHEMA AS referenced_schema, R.REFTABNAME AS referenced_table,
+                               PK.COLNAME AS referenced_column, R.COLCOUNT AS column_count
+                        FROM SYSCAT.REFERENCES R
+                        JOIN SYSCAT.KEYCOLUSE CK
+                          ON CK.TABSCHEMA = R.TABSCHEMA AND CK.TABNAME = R.TABNAME
+                         AND CK.CONSTNAME = R.CONSTNAME
+                        JOIN SYSCAT.KEYCOLUSE PK
+                          ON PK.TABSCHEMA = R.REFTABSCHEMA AND PK.TABNAME = R.REFTABNAME
+                         AND PK.CONSTNAME = R.REFKEYNAME AND PK.COLSEQ = CK.COLSEQ
+                        WHERE UPPER(R.TABSCHEMA) NOT IN $excludedSchemas
+                        ORDER BY R.TABSCHEMA, R.TABNAME, R.CONSTNAME, CK.COLSEQ
+                        """
+                            .trimIndent()
+                    ) { rs ->
+                        countedForeignKey(rs)
+                    }
+                    .filterNotNull()
+            )
         val tableSizes =
             conn.tableSizes(
                 "SELECT TABSCHEMA, TABNAME, CARD FROM SYSCAT.TABLES " +
@@ -170,36 +174,38 @@ object Db2Adapter {
                 )
             }
         val foreignKeys =
-            conn
-                .metadataRows(
-                    """
-                SELECT R.CREATOR AS table_schema, R.TBNAME AS table_name,
-                       R.RELNAME AS constraint_name, F.COLNAME AS column_name,
-                       R.REFTBCREATOR AS referenced_schema, R.REFTBNAME AS referenced_table,
-                       CASE WHEN TRIM(R.IXNAME) = '' THEN PK.COLNAME ELSE UK.COLNAME END
-                           AS referenced_column
-                FROM SYSIBM.SYSRELS R
-                JOIN SYSIBM.SYSFOREIGNKEYS F
-                  ON F.CREATOR = R.CREATOR AND F.TBNAME = R.TBNAME AND F.RELNAME = R.RELNAME
-                LEFT JOIN SYSIBM.SYSINDEXES PI
-                  ON TRIM(R.IXNAME) = ''
-                 AND PI.TBCREATOR = R.REFTBCREATOR AND PI.TBNAME = R.REFTBNAME
-                 AND PI.UNIQUERULE = 'P'
-                LEFT JOIN SYSIBM.SYSKEYS PK
-                  ON PK.IXCREATOR = PI.CREATOR AND PK.IXNAME = PI.NAME AND PK.COLSEQ = F.COLSEQ
-                LEFT JOIN SYSIBM.SYSKEYS UK
-                  ON TRIM(R.IXNAME) <> ''
-                 AND UK.IXCREATOR = R.IXOWNER AND UK.IXNAME = R.IXNAME
-                 AND UK.COLSEQ = F.COLSEQ
-                WHERE UPPER(R.CREATOR) NOT IN $excludedSchemas
-                ORDER BY R.CREATOR, R.TBNAME, R.RELNAME, F.COLSEQ
-                """
-                        .trimIndent()
-                ) { rs ->
-                    if (rs.getString("referenced_column").isNullOrBlank()) null
-                    else foreignKeyRow(rs)
-                }
-                .filterNotNull()
+            completeDb2ForeignKeys(
+                conn
+                    .metadataRows(
+                        """
+                        SELECT R.CREATOR AS table_schema, R.TBNAME AS table_name,
+                               R.RELNAME AS constraint_name, F.COLNAME AS column_name,
+                               R.REFTBCREATOR AS referenced_schema, R.REFTBNAME AS referenced_table,
+                               CASE WHEN TRIM(R.IXNAME) = '' THEN PK.COLNAME ELSE UK.COLNAME END
+                                   AS referenced_column,
+                               R.COLCOUNT AS column_count
+                        FROM SYSIBM.SYSRELS R
+                        JOIN SYSIBM.SYSFOREIGNKEYS F
+                          ON F.CREATOR = R.CREATOR AND F.TBNAME = R.TBNAME AND F.RELNAME = R.RELNAME
+                        LEFT JOIN SYSIBM.SYSINDEXES PI
+                          ON TRIM(R.IXNAME) = ''
+                         AND PI.TBCREATOR = R.REFTBCREATOR AND PI.TBNAME = R.REFTBNAME
+                         AND PI.UNIQUERULE = 'P'
+                        LEFT JOIN SYSIBM.SYSKEYS PK
+                          ON PK.IXCREATOR = PI.CREATOR AND PK.IXNAME = PI.NAME AND PK.COLSEQ = F.COLSEQ
+                        LEFT JOIN SYSIBM.SYSKEYS UK
+                          ON TRIM(R.IXNAME) <> ''
+                         AND UK.IXCREATOR = R.IXOWNER AND UK.IXNAME = R.IXNAME
+                         AND UK.COLSEQ = F.COLSEQ
+                        WHERE UPPER(R.CREATOR) NOT IN $excludedSchemas
+                        ORDER BY R.CREATOR, R.TBNAME, R.RELNAME, F.COLSEQ
+                        """
+                            .trimIndent()
+                    ) { rs ->
+                        countedForeignKey(rs)
+                    }
+                    .filterNotNull()
+            )
         val tableSizes =
             conn.tableSizes(
                 "SELECT CREATOR, NAME, CARDF FROM SYSIBM.SYSTABLES " +
@@ -307,7 +313,14 @@ object Db2Adapter {
             if (e.isUndefinedObject()) return missingLuwExplainTables()
             throw e
         }
-        val prefix = conn.luwExplainPrefix() ?: return missingLuwExplainTables()
+        val prefix =
+            when (val resolved = conn.resolveLuwExplainPrefix()) {
+                // EXPLAIN PLAN already wrote these rows, so a failed probe returns without deleting
+                // them.
+                LuwExplainPrefix.Unreadable -> return explainTablesUnreadable()
+                LuwExplainPrefix.Missing -> return missingLuwExplainTables()
+                is LuwExplainPrefix.Found -> resolved.prefix
+            }
         var cleanupFailure: Throwable? = null
         var statementCost: Double? = null
         val explainKey = runCatching {
@@ -352,19 +365,34 @@ object Db2Adapter {
     }
 
     private fun explainZos(conn: Connection, compiled: CompiledQuery): ExplainResult {
-        val creator = conn.planTableCreator()
-        val qualifier = creator?.let(::quoteDb2Ident)
-        if (creator != null && qualifier == null) {
+        val sqlId =
+            try {
+                conn.currentSqlId()
+            } catch (_: SQLException) {
+                null
+            }
+        if (sqlId == null) {
             return ExplainResult.Unavailable(
-                PlanUnavailableReason.UnsupportedShape,
-                "Db2 PLAN_TABLE qualifier is not a usable identifier",
+                PlanUnavailableReason.ExecutionFailure,
+                "Db2 CURRENT SQLID could not be read",
             )
         }
-        val planTable = if (qualifier != null) "$qualifier.PLAN_TABLE" else "PLAN_TABLE"
-        val statementTable =
-            if (qualifier != null) "$qualifier.DSN_STATEMNT_TABLE" else "DSN_STATEMNT_TABLE"
-        if (!conn.explainTableProbe("SELECT 1 FROM $planTable FETCH FIRST 1 ROW ONLY")) {
-            return missingZosPlanTable()
+        val qualifier =
+            quoteDb2Ident(sqlId)
+                ?: return ExplainResult.Unavailable(
+                    PlanUnavailableReason.UnsupportedShape,
+                    "Db2 PLAN_TABLE qualifier is not a usable identifier",
+                )
+        val planTable = "$qualifier.PLAN_TABLE"
+        val statementTable = "$qualifier.DSN_STATEMNT_TABLE"
+        when (conn.explainTablePresence("SELECT 1 FROM $planTable FETCH FIRST 1 ROW ONLY")) {
+            ExplainTablePresence.Absent -> return missingZosPlanTable()
+            ExplainTablePresence.Failed ->
+                return ExplainResult.Unavailable(
+                    PlanUnavailableReason.ExecutionFailure,
+                    "Db2 PLAN_TABLE could not be read",
+                )
+            ExplainTablePresence.Present -> Unit
         }
         val queryNo = Random.nextInt(100_000, Int.MAX_VALUE)
         try {
@@ -440,6 +468,12 @@ object Db2Adapter {
                 "CAST(NULL AS VARCHAR(128)), CAST(NULL AS VARCHAR(128)))",
         )
 
+    private fun explainTablesUnreadable(): ExplainResult.Unavailable =
+        ExplainResult.Unavailable(
+            PlanUnavailableReason.ExecutionFailure,
+            "Db2 EXPLAIN tables could not be read",
+        )
+
     private fun missingZosPlanTable(): ExplainResult.Unavailable =
         ExplainResult.Unavailable(
             PlanUnavailableReason.UnsupportedShape,
@@ -448,30 +482,40 @@ object Db2Adapter {
         )
 
     // EXPLAIN writes under the session authorization ID, then SYSTOOLS. CURRENT SCHEMA does not
-    // choose the tables, so currentSchema must not be the probe.
-    private fun Connection.luwExplainPrefix(): String? {
-        val auth = sessionAuthId()?.let(::quoteDb2Ident)
-        if (
-            auth != null &&
-                explainTableProbe("SELECT 1 FROM $auth.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY")
-        ) {
-            return "$auth."
+    // choose the tables, so currentSchema must not be the probe. SYSTOOLS is probed only after
+    // the authorization-id tables are confirmed absent.
+    private fun Connection.resolveLuwExplainPrefix(): LuwExplainPrefix {
+        val quotedAuthId =
+            try {
+                sessionAuthId()?.let(::quoteDb2Ident)
+            } catch (_: SQLException) {
+                null
+            }
+        if (quotedAuthId == null) {
+            return selectLuwExplainPrefix(null, ExplainTablePresence.Failed, null)
         }
-        if (explainTableProbe("SELECT 1 FROM SYSTOOLS.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY")) {
-            return "SYSTOOLS."
-        }
-        return null
+        val authTables =
+            explainTablePresence(
+                "SELECT 1 FROM $quotedAuthId.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY"
+            )
+        val systoolsTables =
+            if (authTables == ExplainTablePresence.Absent) {
+                explainTablePresence(
+                    "SELECT 1 FROM SYSTOOLS.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY"
+                )
+            } else {
+                null
+            }
+        return selectLuwExplainPrefix(quotedAuthId, authTables, systoolsTables)
     }
 
-    private fun Connection.sessionAuthId(): String? = runCatching {
+    private fun Connection.sessionAuthId(): String? =
         createStatement().use { stmt ->
             stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
             stmt.executeQuery("SELECT SESSION_USER FROM SYSIBM.SYSDUMMY1").use { rs ->
                 if (rs.next()) rs.getString(1)?.trim()?.takeIf(String::isNotEmpty) else null
             }
         }
-    }
-        .getOrNull()
 
     private fun Connection.queryLuwExplainKey(prefix: String, queryNo: Int): LuwExplainKey? =
         prepareStatement(
@@ -534,13 +578,16 @@ object Db2Adapter {
         return if (failure == null) Result.success(Unit) else Result.failure(failure)
     }
 
-    private fun Connection.explainTableProbe(sql: String): Boolean = runCatching {
-        createStatement().use { stmt ->
-            stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-            stmt.executeQuery(sql).use {}
+    private fun Connection.explainTablePresence(sql: String): ExplainTablePresence =
+        try {
+            createStatement().use { stmt ->
+                stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+                stmt.executeQuery(sql).use {}
+            }
+            ExplainTablePresence.Present
+        } catch (e: SQLException) {
+            if (e.isUndefinedObject()) ExplainTablePresence.Absent else ExplainTablePresence.Failed
         }
-    }
-        .isSuccess
 
     private fun Connection.queryLuwStatementCost(prefix: String, key: LuwExplainKey): Double? =
     // Best-effort: older explain table sets may lack EXPLAIN_STATEMENT entirely.
@@ -667,17 +714,13 @@ object Db2Adapter {
         }
     }
 
-    private fun Connection.planTableCreator(): String? =
-        runCatching {
-            createStatement().use { stmt ->
-                stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                stmt.executeQuery("SELECT CURRENT SQLID FROM SYSIBM.SYSDUMMY1").use { rs ->
-                    if (rs.next()) rs.getString(1)?.trim()?.takeIf(String::isNotBlank) else null
-                }
+    private fun Connection.currentSqlId(): String? =
+        createStatement().use { stmt ->
+            stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+            stmt.executeQuery("SELECT CURRENT SQLID FROM SYSIBM.SYSDUMMY1").use { rs ->
+                if (rs.next()) rs.getString(1)?.trim()?.takeIf(String::isNotBlank) else null
             }
         }
-            .getOrNull()
-            ?: runCatching { metaData.userName?.trim()?.takeIf(String::isNotBlank) }.getOrNull()
 
     private fun Connection.queryZosPlanRows(
         planTable: String,
@@ -781,6 +824,70 @@ object Db2Adapter {
             }
     }
         .getOrNull()
+
+    internal enum class ExplainTablePresence {
+        Present,
+        Absent,
+        Failed,
+    }
+
+    internal sealed interface LuwExplainPrefix {
+        data class Found(val prefix: String) : LuwExplainPrefix
+
+        data object Missing : LuwExplainPrefix
+
+        data object Unreadable : LuwExplainPrefix
+    }
+
+    internal fun selectLuwExplainPrefix(
+        quotedAuthId: String?,
+        authTables: ExplainTablePresence,
+        systoolsTables: ExplainTablePresence?,
+    ): LuwExplainPrefix {
+        if (quotedAuthId == null) return LuwExplainPrefix.Unreadable
+        return when (authTables) {
+            ExplainTablePresence.Present -> LuwExplainPrefix.Found("$quotedAuthId.")
+            ExplainTablePresence.Failed -> LuwExplainPrefix.Unreadable
+            ExplainTablePresence.Absent ->
+                when (systoolsTables) {
+                    ExplainTablePresence.Present -> LuwExplainPrefix.Found("SYSTOOLS.")
+                    ExplainTablePresence.Absent -> LuwExplainPrefix.Missing
+                    ExplainTablePresence.Failed,
+                    null -> LuwExplainPrefix.Unreadable
+                }
+        }
+    }
+
+    internal data class CountedForeignKey(val key: MetadataForeignKey, val columnCount: Int)
+
+    internal fun countedForeignKey(rs: java.sql.ResultSet): CountedForeignKey? {
+        val columnCount = rs.getObject("column_count") as? Number ?: return null
+        return CountedForeignKey(foreignKeyRow(rs), columnCount.toInt())
+    }
+
+    // A partial parent match must not become a shorter key.
+    internal fun completeDb2ForeignKeys(rows: List<CountedForeignKey>): List<MetadataForeignKey> =
+        rows
+            .groupBy { row ->
+                Triple(
+                    row.key.table,
+                    row.key.name,
+                    row.key.referencedSchema to row.key.referencedTable,
+                )
+            }
+            .values
+            .flatMap { group ->
+                val columnCount = group.map { it.columnCount }.distinct().singleOrNull()
+                if (
+                    columnCount == null ||
+                        group.size != columnCount ||
+                        group.any { it.key.referencedColumn.isBlank() }
+                ) {
+                    emptyList()
+                } else {
+                    group.map { it.key }
+                }
+            }
 
     // Delimited identifier. Control characters and over-long names are rejected so a
     // CURRENT SQLID or session authorization id cannot break out of the qualifier.

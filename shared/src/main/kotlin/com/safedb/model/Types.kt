@@ -275,6 +275,23 @@ data class ConnectionDef(
             return Result.failure(IllegalArgumentException("Host is required"))
         if (database.trim().isEmpty())
             return Result.failure(IllegalArgumentException("Database is required"))
+        // ':' stays legal in the host so IPv6 literals such as "::1" still validate;
+        // db2JdbcAuthority brackets those hosts. It is illegal in the database, where
+        // it would start extra JDBC URL properties.
+        if (dialect == Dialect.Db2) {
+            if (host.any { it in ";/?#@" }) {
+                return Result.failure(
+                    IllegalArgumentException("Host cannot contain ';', '/', '?', '#', or '@'")
+                )
+            }
+            if (database.any { it in ":;/?#@" }) {
+                return Result.failure(
+                    IllegalArgumentException(
+                        "Database cannot contain ':', ';', '/', '?', '#', or '@'"
+                    )
+                )
+            }
+        }
         if (username.trim().isEmpty())
             return Result.failure(IllegalArgumentException("Username is required"))
         if (port !in 1..65535) {

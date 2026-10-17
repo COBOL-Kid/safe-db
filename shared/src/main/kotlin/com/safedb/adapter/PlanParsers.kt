@@ -529,14 +529,13 @@ internal fun parseDb2LuwExplain(
     if (rows.isEmpty()) return null
     val byId = rows.associateBy(Db2LuwExplainRow::operatorId)
     val children = rows.groupBy(Db2LuwExplainRow::parentId)
-    // An IXSCAN names its index. The base table comes from the neighboring FETCH operator.
+    // An IXSCAN names its index. Use this row, or its parent when that parent is a table object
+    // (the usual FETCH).
     fun tableFor(row: Db2LuwExplainRow): Db2LuwExplainRow {
         if (!isDb2IndexObject(row.objectType)) return row
         val parent = row.parentId?.let(byId::get)
         if (parent != null && isDb2TableObject(parent.objectType)) return parent
-        return row.parentId?.let(children::get).orEmpty().firstOrNull {
-            it.operatorId != row.operatorId && isDb2TableObject(it.objectType)
-        } ?: row
+        return row
     }
     fun subtreeTables(id: Int): Set<String> = buildSet {
         byId[id]?.let { row ->
