@@ -550,9 +550,14 @@ private fun SidebarHeader(
                     .clickable(onClick = onToggleCollapsed)
                     .pointerHoverIcon(PointerIcon.Hand)
                     .semantics { contentDescription = "Expand sidebar" },
-            contentAlignment = Alignment.Center,
         ) {
-            LogoMark()
+            // Shared inset so the mark stays put when the header swaps layouts.
+            Box(
+                modifier =
+                    Modifier.align(Alignment.CenterStart).padding(start = SidebarHeaderInset),
+            ) {
+                LogoMark()
+            }
             Icon(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
@@ -563,7 +568,9 @@ private fun SidebarHeader(
     } else {
         Row(
             modifier =
-                Modifier.fillMaxWidth().height(SidebarHeaderHeight).padding(horizontal = 16.dp),
+                Modifier.fillMaxWidth()
+                    .height(SidebarHeaderHeight)
+                    .padding(horizontal = SidebarHeaderInset),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -932,6 +939,7 @@ private data class NavItem(val route: AppRoute, val label: String, val icon: Ima
 private val ExpandedSidebarWidth = 232.dp
 private val CollapsedSidebarWidth = 72.dp
 private val SidebarHeaderHeight = 78.dp
+private val SidebarHeaderInset = 16.dp
 private val NavRailIndicatorWidth = 3.dp
 private val NavRailIconStartGap = 9.dp
 private val NavRailIconSize = 18.dp
