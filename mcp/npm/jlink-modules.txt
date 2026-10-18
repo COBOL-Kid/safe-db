@@ -6,6 +6,7 @@ java.management
 java.naming
 java.net.http
 java.prefs
+java.rmi
 java.scripting
 java.security.jgss
 java.security.sasl
