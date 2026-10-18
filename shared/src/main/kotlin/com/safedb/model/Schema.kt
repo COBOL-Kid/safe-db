@@ -152,9 +152,8 @@ internal val DB2_SYSTEM_SCHEMAS =
     )
 
 // z/OS SYSIBM.SYSCOLUMNS.COLTYPE is CHAR(8) and uses these abbreviations.
-internal fun normalizeCatalogTypeName(dataType: String): String {
-    val raw = dataType.lowercase().trim().substringBefore('(').trim()
-    return when (raw) {
+internal fun normalizeCatalogTypeName(dataType: String): String =
+    when (val raw = dataType.lowercase().trim().substringBefore('(').trim()) {
         "timestmp",
         "timestz" -> "timestamp"
         "varg" -> "vargraphic"
@@ -163,7 +162,6 @@ internal fun normalizeCatalogTypeName(dataType: String): String {
         "longvarg" -> "long vargraphic"
         else -> raw
     }
-}
 
 fun classifyColumn(dataType: String): ColumnCategory {
     val dt = normalizeCatalogTypeName(dataType)

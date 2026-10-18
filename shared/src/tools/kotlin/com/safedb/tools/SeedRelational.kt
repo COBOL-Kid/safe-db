@@ -102,9 +102,9 @@ private class SeedRelational(
         val loop = drops.joinToString(" ") { "\"$it\"" }
         // settings.user/database are validated SQL identifiers above, so interpolation is safe.
         val script =
-            ". \"\$(getent passwd ${settings.user} | cut -d: -f6)/sqllib/db2profile\" && " +
-                "db2 CONNECT TO ${settings.database} >/dev/null && " +
-                "for s in $loop; do db2 \"\$s\" >/dev/null 2>&1 || true; done; true"
+            $$". \"$(getent passwd $${settings.user} | cut -d: -f6)/sqllib/db2profile\" && " +
+                $$"db2 CONNECT TO $${settings.database} >/dev/null && " +
+                $$"for s in $$loop; do db2 \"$s\" >/dev/null 2>&1 || true; done; true"
         println("-> dropping existing Db2 objects (best-effort)")
         runCommand(
             listOf(
@@ -244,7 +244,7 @@ private class SeedRelational(
                     settings.container,
                     "bash",
                     "-c",
-                    ". \"\$(getent passwd ${settings.user} | cut -d: -f6)/sqllib/db2profile\" && db2 -s -t -x",
+                    $$". \"$(getent passwd $${settings.user} | cut -d: -f6)/sqllib/db2profile\" && db2 -s -t -x",
                 )
             GeneratedSqlDialect.Mysql -> error("MySQL uses SeedMysql")
         }

@@ -411,11 +411,10 @@ object Db2Adapter {
         }
         return try {
             var cleanupFailure: Throwable? = null
-            var statementCost: Double? = null
-            val explainRows =
+            val explained =
                 try {
-                    statementCost = conn.queryZosStatementCost(statementTable, queryNo)
-                    conn.queryZosPlanRows(planTable, queryNo)
+                    val statementCost = conn.queryZosStatementCost(statementTable, queryNo)
+                    statementCost to conn.queryZosPlanRows(planTable, queryNo)
                 } finally {
                     // Mirror OracleAdapter: a failed cleanup discards the plan evidence.
                     runCatching {
@@ -438,6 +437,7 @@ object Db2Adapter {
                             }
                     }
                 }
+            val (statementCost, explainRows) = explained
             if (cleanupFailure != null) {
                 ExplainResult.Unavailable(
                     PlanUnavailableReason.CleanupFailure,

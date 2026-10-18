@@ -342,6 +342,22 @@ class PlanParsersTest {
                         sortOrderBy = true,
                     ),
                     Db2ZosPlanRow(7001, 1, 3, 0, 1, "APP", "AUDIT", "N", 0, "APP", "AUDIT_IX"),
+                    Db2ZosPlanRow(
+                        7001,
+                        1,
+                        4,
+                        0,
+                        0,
+                        "APP",
+                        "STATS",
+                        "T",
+                        0,
+                        null,
+                        null,
+                        sortUnique = true,
+                        sortGroupBy = true,
+                    ),
+                    Db2ZosPlanRow(7001, 1, 5, 0, 0, "APP", "   ", "R", 0, null, null),
                 ),
                 statementCost = 18.0,
             )
@@ -359,8 +375,14 @@ class PlanParsersTest {
             PlanAccessMethod.FullIndexScan,
             plan.relations.first { it.table == "AUDIT" }.method,
         )
-        assertTrue(plan.joins.single().aliases == setOf("ORDERS", "ITEMS", "AUDIT"))
+        assertEquals(PlanAccessMethod.Other, plan.relations.first { it.table == "STATS" }.method)
+        assertTrue(plan.joins.single().aliases == setOf("ORDERS", "ITEMS", "AUDIT", "STATS"))
         assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Sort })
+        assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Distinct })
+        assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Grouping })
         assertEquals(18.0, plan.rawOptimizerCost)
+        assertNull(
+            parseDb2ZosPlan(listOf(Db2ZosPlanRow(1, 1, 1, 0, 0, "APP", null, "R", 0, null, null)))
+        )
     }
 }

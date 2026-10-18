@@ -345,6 +345,22 @@ class Db2AdapterTest {
                 Db2Adapter.ExplainTablePresence.Present,
             ),
         )
+        assertEquals(
+            Db2Adapter.LuwExplainPrefix.Unreadable,
+            Db2Adapter.selectLuwExplainPrefix(
+                "\"APP\"",
+                Db2Adapter.ExplainTablePresence.Absent,
+                Db2Adapter.ExplainTablePresence.Failed,
+            ),
+        )
+        assertEquals(
+            Db2Adapter.LuwExplainPrefix.Unreadable,
+            Db2Adapter.selectLuwExplainPrefix(
+                "\"APP\"",
+                Db2Adapter.ExplainTablePresence.Absent,
+                null,
+            ),
+        )
     }
 
     @Test
