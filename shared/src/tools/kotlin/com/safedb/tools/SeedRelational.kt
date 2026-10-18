@@ -16,6 +16,7 @@ fun main(rawArgs: Array<String>) {
                 "postgres" -> GeneratedSqlDialect.Postgres
                 "mssql" -> GeneratedSqlDialect.Mssql
                 "oracle" -> GeneratedSqlDialect.Oracle
+                "db2" -> GeneratedSqlDialect.Db2
                 else -> throw UsageError("unsupported generated fixture dialect: $dialectName")
             }
         SeedRelational(dialect, args.drop(1)).run()
@@ -49,6 +50,7 @@ private class SeedRelational(
             throw RuntimeException("SQL file not found: ${settings.staticSql}")
         }
         requireContainer()
+        dropDb2ObjectsIfPresent()
         resetStateIfRequested()
         println("-> loading ${dialect.displayName()} fixture into '${settings.database}'")
         runClient { output ->
@@ -82,6 +84,43 @@ private class SeedRelational(
         }
     }
 
+    // Db2 LUW has no DROP ... IF EXISTS, so neither the static fixture nor the generated
+    // DDL can drop objects itself. Issue best-effort drops up front (ignoring SQL0204N)
+    // so both fresh and repeat seeds load cleanly.
+    private fun dropDb2ObjectsIfPresent() {
+        if (dialect != GeneratedSqlDialect.Db2) return
+        val drops =
+            listOf(
+                "DROP VIEW CUSTOMER_ORDER_SUMMARY",
+                "DROP TABLE ORDER_ITEMS",
+                "DROP TABLE INVENTORY_LOG",
+                "DROP TABLE ORDERS",
+                "DROP TABLE PRODUCTS",
+                "DROP TABLE CUSTOMERS",
+                "DROP TABLE CATEGORIES",
+            )
+        val loop = drops.joinToString(" ") { "\"$it\"" }
+        // settings.user/database are validated SQL identifiers above, so interpolation is safe.
+        val script =
+            $$". \"$(getent passwd $${settings.user} | cut -d: -f6)/sqllib/db2profile\" && " +
+                $$"db2 CONNECT TO $${settings.database} >/dev/null && " +
+                $$"for s in $$loop; do db2 \"$s\" >/dev/null 2>&1 || true; done; true"
+        println("-> dropping existing Db2 objects (best-effort)")
+        runCommand(
+            listOf(
+                "docker",
+                "exec",
+                "-i",
+                "-u",
+                settings.user,
+                settings.container,
+                "bash",
+                "-c",
+                script,
+            )
+        )
+    }
+
     private fun resetStateIfRequested() {
         if (!options.resetState) return
         val dataDir = safeDbAppDataDirForStateReset() ?: return
@@ -103,7 +142,7 @@ private class SeedRelational(
                     "order_items",
                     "inventory_log",
                 )
-        val query = "SELECT " + tables.joinToString(", ") { "(SELECT COUNT(*) FROM $it)" } + ";"
+        val query = relationalVerifyCountQuery(dialect, tables)
         println("-> verifying row counts (${tables.joinToString(" ")})")
         val output =
             runClient(captureOutput = true) { stream ->
@@ -193,10 +232,29 @@ private class SeedRelational(
                 )
             GeneratedSqlDialect.Oracle ->
                 listOf("docker", "exec", "-i", settings.container, "sqlplus", "-s", "/nolog")
+            GeneratedSqlDialect.Db2 ->
+                // The CLP runs as the instance owner so local CONNECT needs no password;
+                // -s stops the load on the first real error, -x keeps count output parseable.
+                listOf(
+                    "docker",
+                    "exec",
+                    "-i",
+                    "-u",
+                    settings.user,
+                    settings.container,
+                    "bash",
+                    "-c",
+                    $$". \"$(getent passwd $${settings.user} | cut -d: -f6)/sqllib/db2profile\" && db2 -s -t -x",
+                )
             GeneratedSqlDialect.Mysql -> error("MySQL uses SeedMysql")
         }
 
     private fun writePreamble(sql: BufferedWriter) {
+        if (dialect == GeneratedSqlDialect.Db2) {
+            sql.write("CONNECT TO ${settings.database};")
+            sql.newLine()
+            return
+        }
         if (dialect != GeneratedSqlDialect.Oracle) return
         sql.write("WHENEVER OSERROR EXIT FAILURE")
         sql.newLine()
@@ -293,6 +351,18 @@ internal fun relationalSeedSettings(
                 staticSql = repoRoot.resolve("testdata_oracle.sql"),
                 clientEnvironment = emptyMap(),
             )
+        GeneratedSqlDialect.Db2 ->
+            SeedSettings(
+                database = value("SAFEDB_TEST_DB2_DATABASE", "safedb_test"),
+                databaseVariable = "SAFEDB_TEST_DB2_DATABASE",
+                user = value("SAFEDB_TEST_DB2_USER", "db2inst1"),
+                userVariable = "SAFEDB_TEST_DB2_USER",
+                container = value("SAFEDB_TEST_DB2_DOCKER", "safedb-test-db2"),
+                containerVariable = "SAFEDB_TEST_DB2_DOCKER",
+                staticSql = repoRoot.resolve("testdata_db2.sql"),
+                // Local CONNECT as the instance owner needs no password.
+                clientEnvironment = emptyMap(),
+            )
         GeneratedSqlDialect.Mysql -> error("MySQL uses SeedMysql")
     }
 }
@@ -309,11 +379,21 @@ private fun validateContainerName(value: String, label: String) {
     }
 }
 
+// Db2 rejects a top-level SELECT that has no FROM clause. The other clients accept it.
+internal fun relationalVerifyCountQuery(
+    dialect: GeneratedSqlDialect,
+    tables: List<String>,
+): String {
+    val fromClause = if (dialect == GeneratedSqlDialect.Db2) " FROM SYSIBM.SYSDUMMY1" else ""
+    return "SELECT " + tables.joinToString(", ") { "(SELECT COUNT(*) FROM $it)" } + "$fromClause;"
+}
+
 private fun GeneratedSqlDialect.displayName(): String =
     when (this) {
         GeneratedSqlDialect.Postgres -> "PostgreSQL"
         GeneratedSqlDialect.Mssql -> "SQL Server"
         GeneratedSqlDialect.Oracle -> "Oracle"
+        GeneratedSqlDialect.Db2 -> "Db2"
         GeneratedSqlDialect.Mysql -> "MySQL"
     }
 

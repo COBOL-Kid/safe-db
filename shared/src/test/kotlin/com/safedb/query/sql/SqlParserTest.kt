@@ -279,6 +279,10 @@ class SqlParserTest {
             SqlIssueCode.Unsupported,
             failParse("SELECT TOP 7 id FROM t", Dialect.Postgres).code,
         )
+        assertEquals(
+            SqlIssueCode.Unsupported,
+            failParse("SELECT TOP 7 id FROM t", Dialect.Db2).code,
+        )
         assertEquals(7, parse("SELECT TOP 7 id FROM t", Dialect.Mssql).limit)
         assertEquals(7, parse("SELECT TOP (7) id FROM t", Dialect.Mssql).limit)
     }
@@ -289,7 +293,7 @@ class SqlParserTest {
         val pred = assertIs<SqlConditionAst.Predicate>(parse(sql, Dialect.Postgres).where)
         assertEquals(FilterOp.Ilike, pred.op)
 
-        for (dialect in listOf(Dialect.MySql, Dialect.Mssql, Dialect.Oracle)) {
+        for (dialect in listOf(Dialect.MySql, Dialect.Mssql, Dialect.Oracle, Dialect.Db2)) {
             val issue = failParse(sql, dialect)
             assertEquals(SqlIssueCode.Unsupported, issue.code)
             assertTrue(issue.message.contains("ILIKE is PostgreSQL syntax"))

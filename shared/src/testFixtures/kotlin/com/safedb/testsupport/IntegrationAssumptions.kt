@@ -73,6 +73,21 @@ object IntegrationAssumptions {
     val oracleDatabase: String
         get() = env["SAFEDB_TEST_ORACLE_DATABASE"] ?: "FREEPDB1"
 
+    val db2Host: String
+        get() = env["SAFEDB_TEST_DB2_HOST"] ?: "127.0.0.1"
+
+    val db2Port: Int
+        get() = env["SAFEDB_TEST_DB2_PORT"]?.toIntOrNull() ?: 50000
+
+    val db2User: String
+        get() = env["SAFEDB_TEST_DB2_USER"] ?: "db2inst1"
+
+    val db2Password: String
+        get() = env["SAFEDB_TEST_DB2_PASSWORD"] ?: "SafeDb_Db2_Passw0rd!"
+
+    val db2Database: String
+        get() = env["SAFEDB_TEST_DB2_DATABASE"] ?: "safedb_test"
+
     fun assumeMysqlAvailable() {
         requireOrAssume(
             available = isMysqlReachable(),
@@ -110,6 +125,16 @@ object IntegrationAssumptions {
             message =
                 "Seeded Oracle fixture not reachable at $oracleHost:$oraclePort; " +
                     "set SAFEDB_TEST_ORACLE_* or run scripts/docker_test_databases.sh up",
+        )
+    }
+
+    fun assumeDb2Available() {
+        requireOrAssume(
+            available = isDb2Reachable(),
+            required = env["SAFEDB_TEST_REQUIRE_DB2"].equals("true", ignoreCase = true),
+            message =
+                "Seeded Db2 fixture not reachable at $db2Host:$db2Port; " +
+                    "set SAFEDB_TEST_DB2_* or run scripts/docker_test_databases.sh up",
         )
     }
 
@@ -165,6 +190,18 @@ object IntegrationAssumptions {
             oracleConnectionDef(),
             oraclePassword,
             "SAFEDB",
+            "CUSTOMERS",
+            "ORDERS",
+        )
+    }
+
+    fun isDb2Reachable(): Boolean = runBlocking {
+        isSeededEndpointReachable(
+            db2Host,
+            db2Port,
+            db2ConnectionDef(),
+            db2Password,
+            db2User.uppercase(),
             "CUSTOMERS",
             "ORDERS",
         )
@@ -264,6 +301,21 @@ object IntegrationAssumptions {
             port = oraclePort,
             database = oracleDatabase,
             username = oracleUser,
+            transportSecurity = TransportSecurity(mode = TransportSecurityMode.Disabled),
+        )
+
+    fun db2ConnectionDef(
+        id: String = "integration-db2",
+        name: String = "Integration Db2",
+    ): ConnectionDef =
+        ConnectionDef(
+            id = id,
+            name = name,
+            dialect = Dialect.Db2,
+            host = db2Host,
+            port = db2Port,
+            database = db2Database,
+            username = db2User,
             transportSecurity = TransportSecurity(mode = TransportSecurityMode.Disabled),
         )
 }

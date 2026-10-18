@@ -143,3 +143,28 @@ services:
       timeout: 5s
       retries: 60
       start_period: 60s
+
+  db2:
+    image: icr.io/db2_community/db2:11.5.9.0
+    platform: linux/amd64
+    container_name: safedb-test-db2
+    privileged: true
+    restart: unless-stopped
+    environment:
+      LICENSE: accept
+      DB2INSTANCE: db2inst1
+      DB2INST1_PASSWORD: ${SAFEDB_DOCKER_DB2_PASSWORD:-SafeDb_Db2_Passw0rd!}
+      DBNAME: safedb_test
+    ports:
+      - "50000:50000"
+    volumes:
+      - /database
+      - ./docker/test-databases/db2-init.sh:/usr/local/bin/safedb-db2-init.sh:ro
+      - ./testdata_db2.sql:/fixtures/testdata_db2.sql:ro
+    healthcheck:
+      # The image PATH is system-only. A login shell loads db2inst1's db2profile.
+      test: ["CMD-SHELL", "su - db2inst1 -c 'db2 CONNECT TO safedb_test' >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 180s

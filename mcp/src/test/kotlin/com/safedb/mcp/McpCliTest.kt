@@ -337,6 +337,30 @@ class McpCliTest {
     }
 
     @Test
+    fun db2AddDefaultsToPort50000WithoutWallet() = runBlocking {
+        val directory = Files.createTempDirectory("safedb-mcp-cli")
+        val passwordFile = writeOwnerOnlyPasswordFile(directory, "db2-secret")
+        val service = RecordingSafeDbService()
+        val io = BufferCliIo()
+        val command = parseMcpArgs(validNonInteractiveAddArgs(passwordFile, dialect = "db2"))
+
+        assertEquals(0, executeMcpCommand(command, service, io, tty = false))
+        val saved = service.connections.single()
+        assertEquals(Dialect.Db2, saved.dialect)
+        assertEquals(50000, saved.port)
+        assertEquals(null, saved.transportSecurity.oracleWalletLocation)
+        assertFalse(io.stdout.toString().contains("db2-secret"))
+
+        val secureIo = BufferCliIo()
+        val secure =
+            parseMcpArgs(
+                validNonInteractiveAddArgs(passwordFile, dialect = "db2") +
+                    arrayOf("--transport", "verify-identity")
+            )
+        assertEquals(0, executeMcpCommand(secure, RecordingSafeDbService(), secureIo, tty = false))
+    }
+
+    @Test
     fun nonInteractiveAddUsesDocumentedDefaults() = runBlocking {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
         val passwordFile = writeOwnerOnlyPasswordFile(directory, "default-secret")

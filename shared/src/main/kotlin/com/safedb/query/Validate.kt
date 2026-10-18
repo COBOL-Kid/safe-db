@@ -3,6 +3,7 @@ package com.safedb.query
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ColumnCategory
 import com.safedb.model.ColumnSel
+import com.safedb.model.DB2_SYSTEM_SCHEMAS
 import com.safedb.model.Dialect
 import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
@@ -14,6 +15,7 @@ import com.safedb.model.SafeDbJson
 import com.safedb.model.Schema
 import com.safedb.model.SortSpec
 import com.safedb.model.classifyColumn
+import com.safedb.model.normalizeCatalogTypeName
 import java.security.MessageDigest
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
@@ -59,7 +61,7 @@ internal val BLOCKED_SCHEMAS =
         $$"XS$NULL",
         "DVSYS",
         "LBACSYS",
-    )
+    ) + DB2_SYSTEM_SCHEMAS
 
 data class ValidationOutcome(val warnings: List<String>)
 
@@ -427,12 +429,14 @@ internal fun findTableByAlias(schema: Schema, spec: QuerySpec, alias: String) =
         ?.let { tableRef -> findTable(schema, tableRef.schema, tableRef.name) }
 
 internal fun supportsGroupingAndSorting(dataType: String, dialect: Dialect): Boolean {
-    val normalized = dataType.lowercase().substringBefore('(').trim()
+    val normalized = normalizeCatalogTypeName(dataType)
     return when (dialect) {
         Dialect.Postgres -> normalized !in setOf("json", "xml")
         Dialect.Mssql ->
             normalized !in setOf("text", "ntext", "image", "xml", "geometry", "geography")
         Dialect.Oracle -> normalized !in setOf("blob", "clob", "nclob", "bfile", "long", "xmltype")
+        Dialect.Db2 ->
+            normalized !in setOf("blob", "clob", "dbclob", "xml", "long varchar", "long vargraphic")
         Dialect.MySql -> true
     }
 }
@@ -443,6 +447,7 @@ private fun Dialect.displayName(): String =
         Dialect.MySql -> "MySQL"
         Dialect.Mssql -> "SQL Server"
         Dialect.Oracle -> "Oracle"
+        Dialect.Db2 -> "Db2"
     }
 
 private fun isPartOfCompleteForeignKey(schema: Schema, spec: QuerySpec, join: JoinSpec): Boolean {

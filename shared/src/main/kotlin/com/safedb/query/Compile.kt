@@ -60,7 +60,8 @@ fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<Compi
         }
         when (dialect) {
             Dialect.Mssql -> Unit
-            Dialect.Oracle -> {
+            Dialect.Oracle,
+            Dialect.Db2 -> {
                 append("\nFETCH FIRST $fetchLimit ROWS ONLY")
             }
             else -> {

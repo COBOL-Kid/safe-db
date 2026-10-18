@@ -11,23 +11,28 @@ MYSQL_PASSWORD="${SAFEDB_DOCKER_MYSQL_PASSWORD:-safedb}"
 POSTGRES_PASSWORD="${SAFEDB_DOCKER_POSTGRES_PASSWORD:-postgres}"
 MSSQL_PASSWORD="${SAFEDB_DOCKER_MSSQL_PASSWORD:-SafeDb_Ssl_Passw0rd!}"
 ORACLE_PASSWORD="${SAFEDB_DOCKER_ORACLE_PASSWORD:-safedb}"
+DB2_PASSWORD="${SAFEDB_DOCKER_DB2_PASSWORD:-SafeDb_Db2_Passw0rd!}"
 
 usage() {
   cat <<'EOF'
 Usage: scripts/docker_test_databases.sh <command>
 
 Commands:
-  up       Generate local test certificates and start all four databases.
-  seed     Reload the SQL Server and Oracle sample schemas and data.
+  up       Generate local test certificates and start all five databases.
+  seed     Reload the SQL Server, Oracle, and Db2 sample schemas and data.
   down     Remove the containers and their anonymous database volumes.
   reset    Regenerate certificates and recreate the ephemeral stack.
-  verify   Run required four-engine JDBC tests and the four-dialect TLS suite.
+  verify   Run required five-engine JDBC tests and the four-dialect TLS suite.
   certs    Regenerate certificates and profiles while the stack is stopped.
 
 The generated CA keys, server keys, trust stores, profiles, and reports live under
 .docker/safedb-ssl (or SAFEDB_SSL_ROOT) and are excluded from Git.
 Certificate rotation refuses to run while project services are active; use reset
 to rotate certificates and recreate the ephemeral stack safely.
+
+Db2 runs from icr.io/db2_community/db2 behind the same Compose network. It needs
+privileged mode, is linux/amd64-only, and serves plain TCP on 50000 with no TLS
+by default, so it joins the JDBC stack but stays out of the TLS suite.
 EOF
 }
 
@@ -174,14 +179,17 @@ start_stack() {
   require_tool docker
   ensure_certificates true
   "${COMPOSE[@]}" up -d --wait --renew-anon-volumes \
-    mysql-connectivity mysql postgres mssql oracle
-  seed_mssql_and_oracle
+    mysql-connectivity mysql postgres mssql oracle db2
+  seed_mssql_oracle_and_db2
   echo "All safe-db test databases are healthy and seeded."
 }
 
-seed_mssql_and_oracle() {
+seed_mssql_oracle_and_db2() {
   "${COMPOSE[@]}" up --no-deps --exit-code-from mssql-init mssql-init
   "${COMPOSE[@]}" exec -T oracle /usr/local/bin/safedb-oracle-init.sh
+  # Db2 needs privileged linux/amd64 with no TLS by default; the init script runs
+  # as the instance owner so local CONNECT needs no password.
+  "${COMPOSE[@]}" exec -T -u db2inst1 db2 /usr/local/bin/safedb-db2-init.sh
 }
 
 verify_stack() {
@@ -212,6 +220,12 @@ verify_stack() {
   SAFEDB_TEST_ORACLE_USER=safedb \
   SAFEDB_TEST_ORACLE_PASSWORD="$ORACLE_PASSWORD" \
   SAFEDB_TEST_ORACLE_DATABASE=FREEPDB1 \
+  SAFEDB_TEST_REQUIRE_DB2=true \
+  SAFEDB_TEST_DB2_HOST=127.0.0.1 \
+  SAFEDB_TEST_DB2_PORT=50000 \
+  SAFEDB_TEST_DB2_USER=db2inst1 \
+  SAFEDB_TEST_DB2_PASSWORD="$DB2_PASSWORD" \
+  SAFEDB_TEST_DB2_DATABASE=safedb_test \
     ./gradlew integrationTest --rerun-tasks --no-build-cache --stacktrace
   SAFEDB_TEST_MYSQL_SSL_PASSWORD="$MYSQL_PASSWORD" \
   SAFEDB_TEST_POSTGRES_SSL_PASSWORD="$POSTGRES_PASSWORD" \
@@ -228,7 +242,7 @@ case "$command" in
     ;;
   seed)
     require_tool docker
-    seed_mssql_and_oracle
+    seed_mssql_oracle_and_db2
     ;;
   down)
     require_tool docker

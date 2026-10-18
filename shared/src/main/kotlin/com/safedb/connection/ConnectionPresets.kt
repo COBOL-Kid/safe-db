@@ -17,6 +17,7 @@ val DIALECTS: List<DialectInfo> =
         DialectInfo(com.safedb.model.Dialect.MySql, "MySQL", 3306),
         DialectInfo(com.safedb.model.Dialect.Mssql, "SQL Server", 1433),
         DialectInfo(com.safedb.model.Dialect.Oracle, "Oracle", 1521),
+        DialectInfo(com.safedb.model.Dialect.Db2, "Db2", 50000),
     )
 
 fun transportPresetForLocation(location: DatabaseLocation): TransportSecurity =

@@ -72,14 +72,14 @@ safe-db-mcp setup --dialect mysql --database app --username readonly --password-
 | Flag | Notes |
 | --- | --- |
 | `--name` | Defaults to the database name |
-| `--dialect` | `postgres`, `mysql`, `mssql`, or `oracle` |
+| `--dialect` | `postgres`, `mysql`, `mssql`, `oracle`, or `db2` |
 | `--host` | Defaults to `localhost` |
 | `--port` | Dialect default when omitted |
 | `--database` | Required |
 | `--username` | Required |
 | `--password-file` | Absolute path; one UTF-8 line; owner-only (`0600`). Setup copies the secret into the credential store. |
-| `--transport` | `disabled`, `encrypt-only`, `verify-ca`, or `verify-identity`. Off a TTY, defaults from host location. |
-| `--oracle-wallet` | Absolute path; required for Oracle when transport is not `disabled` |
+| `--transport` | `disabled`, `encrypt-only`, `verify-ca`, or `verify-identity`. Off a TTY, defaults from host location. Db2 honors `disabled` and `verify-identity`; other modes connect with `sslConnection=true` and JCC BASIC hostname checks. |
+| `--oracle-wallet` | Absolute path; required for Oracle when transport is not `disabled`. Db2 uses JVM trust and needs no wallet |
 
 `--password` and `-p` are rejected. Do not put host, user, database, or password in environment variables.
 

@@ -28,7 +28,7 @@ Example:
 
 Options:
   --name NAME
-  --dialect postgres|mysql|mssql|oracle
+  --dialect postgres|mysql|mssql|oracle|db2
   --host HOST
   --port PORT
   --database NAME
@@ -330,9 +330,10 @@ private fun parseDialect(raw: String): Dialect =
         "mysql" -> Dialect.MySql
         "mssql" -> Dialect.Mssql
         "oracle" -> Dialect.Oracle
+        "db2" -> Dialect.Db2
         else ->
             throw McpCliUsageException(
-                "Unknown dialect '$raw'; expected postgres, mysql, mssql, or oracle"
+                "Unknown dialect '$raw'; expected postgres, mysql, mssql, oracle, or db2"
             )
     }
 

@@ -155,5 +155,234 @@ class PlanParsersTest {
                 "<!DOCTYPE x [<!ENTITY ext SYSTEM 'file:///etc/passwd'>]><x>&ext;</x>"
             )
         )
+        assertNull(parseDb2LuwExplain(emptyList()))
+        assertNull(parseDb2ZosPlan(emptyList()))
+    }
+
+    @Test
+    fun db2LuwExplainNormalizesIndexJoinAndSortEvidence() {
+        val plan =
+            parseDb2LuwExplain(
+                listOf(
+                    Db2LuwExplainRow(1, null, "RETURN", null, null, null, "", null, 42.0),
+                    Db2LuwExplainRow(2, 1, "NLJOIN", null, null, null, "", 50_000, 41.0),
+                    Db2LuwExplainRow(3, 2, "FETCH", "APP", "ORDERS", "TA", "", 10, 4.0),
+                    Db2LuwExplainRow(
+                        4,
+                        3,
+                        "IXSCAN",
+                        "APP",
+                        "ORDERS_PK",
+                        "IX",
+                        "Q1.ID = 1",
+                        1,
+                        1.0,
+                    ),
+                    Db2LuwExplainRow(
+                        5,
+                        2,
+                        "TBSCAN",
+                        "APP",
+                        "ITEMS",
+                        "TA",
+                        "",
+                        120_000,
+                        12.0,
+                    ),
+                    Db2LuwExplainRow(6, 1, "SORT", null, null, null, "", 50_000, 42.0),
+                ),
+                statementCost = 42.0,
+            )
+
+        assertNotNull(plan)
+        // The FETCH row is index-fed, so only the IXSCAN carries the ORDERS access.
+        assertEquals(
+            PlanAccessMethod.BoundedLookup,
+            plan.relations.first { it.table == "ORDERS" }.method,
+        )
+        assertEquals(1, plan.relations.count { it.table == "ORDERS" })
+        assertEquals(
+            PlanAccessMethod.TableScan,
+            plan.relations.first { it.table == "ITEMS" }.method,
+        )
+        assertEquals(setOf("ORDERS", "ITEMS"), plan.joins.single().aliases)
+        assertEquals(PlanOperationKind.Sort, plan.blockingOperations.single().kind)
+        assertEquals(42.0, plan.rawOptimizerCost)
+    }
+
+    @Test
+    fun db2LuwExplainIndexScanDoesNotUseSiblingFetchTable() {
+        val plan =
+            parseDb2LuwExplain(
+                listOf(
+                    Db2LuwExplainRow(1, null, "RETURN", null, null, null, "", null, null),
+                    Db2LuwExplainRow(2, 1, "NLJOIN", null, null, null, "", null, null),
+                    Db2LuwExplainRow(
+                        3,
+                        2,
+                        "IXSCAN",
+                        "APP",
+                        "ORDERS_PK",
+                        "IX",
+                        "Q1.ID = 1",
+                        null,
+                        null,
+                    ),
+                    Db2LuwExplainRow(4, 2, "FETCH", "APP", "ITEMS", "TA", "", null, null),
+                )
+            )
+
+        assertNotNull(plan)
+        assertTrue(
+            plan.relations.none {
+                it.table == "ITEMS" && it.method == PlanAccessMethod.BoundedLookup
+            }
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedLookup,
+            plan.relations.first { it.table == "ORDERS_PK" }.method,
+        )
+    }
+
+    @Test
+    fun db2LuwIxscanWithoutEqualityFallsBackToRangeOrFullScan() {
+        val plan =
+            parseDb2LuwExplain(
+                listOf(
+                    Db2LuwExplainRow(1, null, "RETURN", null, null, null, "", null, null),
+                    Db2LuwExplainRow(
+                        2,
+                        1,
+                        "IXSCAN",
+                        "APP",
+                        "ORDERS",
+                        "IX",
+                        "Q1.AMOUNT > 100",
+                        800,
+                        3.0,
+                    ),
+                    Db2LuwExplainRow(3, 1, "IXSCAN", "APP", "ITEMS", "IX", "", 50_000, 9.0),
+                    Db2LuwExplainRow(
+                        4,
+                        1,
+                        "IXSCAN",
+                        "APP",
+                        "RANGE_GE",
+                        "IX",
+                        "Q1.ORDER_DATE >= ?",
+                        10,
+                        1.0,
+                    ),
+                    Db2LuwExplainRow(
+                        5,
+                        1,
+                        "IXSCAN",
+                        "APP",
+                        "RANGE_LE",
+                        "IX",
+                        "Q1.ORDER_DATE <= ?",
+                        10,
+                        1.0,
+                    ),
+                    Db2LuwExplainRow(
+                        6,
+                        1,
+                        "IXSCAN",
+                        "APP",
+                        "MIXED",
+                        "IX",
+                        "Q1.ID = 1 AND Q1.ORDER_DATE >= ?",
+                        10,
+                        1.0,
+                    ),
+                )
+            )
+
+        assertNotNull(plan)
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            plan.relations.first { it.table == "ORDERS" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.FullIndexScan,
+            plan.relations.first { it.table == "ITEMS" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            plan.relations.first { it.table == "RANGE_GE" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            plan.relations.first { it.table == "RANGE_LE" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            plan.relations.first { it.table == "MIXED" }.method,
+        )
+    }
+
+    @Test
+    fun db2ZosPlanNormalizesAccessJoinAndSortEvidence() {
+        val plan =
+            parseDb2ZosPlan(
+                listOf(
+                    Db2ZosPlanRow(7001, 1, 1, 0, 0, "APP", "ORDERS", "I", 2, "APP", "ORDERS_PK"),
+                    Db2ZosPlanRow(
+                        7001,
+                        1,
+                        2,
+                        0,
+                        1,
+                        "APP",
+                        "ITEMS",
+                        "R",
+                        0,
+                        null,
+                        null,
+                        sortOrderBy = true,
+                    ),
+                    Db2ZosPlanRow(7001, 1, 3, 0, 1, "APP", "AUDIT", "N", 0, "APP", "AUDIT_IX"),
+                    Db2ZosPlanRow(
+                        7001,
+                        1,
+                        4,
+                        0,
+                        0,
+                        "APP",
+                        "STATS",
+                        "T",
+                        0,
+                        null,
+                        null,
+                        sortUnique = true,
+                        sortGroupBy = true,
+                    ),
+                    Db2ZosPlanRow(7001, 1, 5, 0, 0, "APP", "   ", "R", 0, null, null),
+                ),
+                statementCost = 18.0,
+            )
+
+        assertNotNull(plan)
+        assertEquals(
+            PlanAccessMethod.BoundedRange,
+            plan.relations.first { it.table == "ORDERS" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.TableScan,
+            plan.relations.first { it.table == "ITEMS" }.method,
+        )
+        assertEquals(
+            PlanAccessMethod.FullIndexScan,
+            plan.relations.first { it.table == "AUDIT" }.method,
+        )
+        assertEquals(PlanAccessMethod.Other, plan.relations.first { it.table == "STATS" }.method)
+        assertTrue(plan.joins.single().aliases == setOf("ORDERS", "ITEMS", "AUDIT", "STATS"))
+        assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Sort })
+        assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Distinct })
+        assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Grouping })
+        assertEquals(18.0, plan.rawOptimizerCost)
+        assertNull(
+            parseDb2ZosPlan(listOf(Db2ZosPlanRow(1, 1, 1, 0, 0, "APP", null, "R", 0, null, null)))
+        )
     }
 }

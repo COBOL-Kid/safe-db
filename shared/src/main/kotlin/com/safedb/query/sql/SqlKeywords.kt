@@ -44,7 +44,8 @@ fun sqlKeywords(dialect: Dialect): Set<String> =
         Dialect.Postgres -> CORE_KEYWORDS + "ILIKE"
         Dialect.MySql -> CORE_KEYWORDS
         Dialect.Mssql -> CORE_KEYWORDS + "TOP"
-        Dialect.Oracle -> CORE_KEYWORDS
+        Dialect.Oracle,
+        Dialect.Db2 -> CORE_KEYWORDS
     }
 
 // Completion may offer the clause words even though they are not reserved.

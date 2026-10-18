@@ -30,6 +30,7 @@ fun buildJdbcUrl(def: ConnectionDef): String =
         Dialect.MySql -> buildMySqlUrl(def)
         Dialect.Mssql -> buildMssqlUrl(def)
         Dialect.Oracle -> buildOracleUrl(def)
+        Dialect.Db2 -> buildDb2Url(def)
     }
 
 fun createDataSource(def: ConnectionDef, password: String): HikariDataSource =
@@ -58,6 +59,7 @@ internal fun createDataSourceConfig(
         Dialect.MySql -> Unit
         Dialect.Mssql -> applyMssqlSsl(config, def)
         Dialect.Oracle -> applyOracleSsl(config, def)
+        Dialect.Db2 -> applyDb2Ssl(config, def)
     }
     return config
 }
@@ -118,6 +120,27 @@ private fun applyMssqlSsl(config: HikariConfig, def: ConnectionDef) {
             config.addDataSourceProperty("encrypt", "false")
             config.addDataSourceProperty("trustServerCertificate", "true")
         }
+    }
+}
+
+internal fun db2JdbcAuthority(host: String, port: Int): String {
+    val literal = if (host.contains(':')) "[$host]" else host
+    return "$literal:$port"
+}
+
+private fun buildDb2Url(def: ConnectionDef): String {
+    val ssl = def.transportSecurity.mode != TransportSecurityMode.Disabled
+    return "jdbc:db2://${db2JdbcAuthority(def.host, def.port)}/${def.database}:sslConnection=$ssl;"
+}
+
+// sslConnection and hostname validation are pinned after user properties so a pasted
+// driver property cannot turn TLS or BASIC hostname checks off. Encrypt-only and
+// certificate-only modes are not distinct on JCC: anything other than Disabled is SSL on.
+private fun applyDb2Ssl(config: HikariConfig, def: ConnectionDef) {
+    val ssl = def.transportSecurity.mode != TransportSecurityMode.Disabled
+    config.addDataSourceProperty("sslConnection", ssl.toString())
+    if (ssl) {
+        config.addDataSourceProperty("sslClientHostnameValidation", "BASIC")
     }
 }
 
@@ -185,6 +208,7 @@ fun jdbcSql(compiled: CompiledQuery, dialect: Dialect): String =
         Dialect.MySql -> compiled.sql
         Dialect.Mssql -> compiled.sql.replace(Regex("@P(\\d+)"), "?")
         Dialect.Oracle -> compiled.sql.replace(Regex(":(\\d+)"), "?")
+        Dialect.Db2 -> compiled.sql
     }
 
 fun prepareStatement(

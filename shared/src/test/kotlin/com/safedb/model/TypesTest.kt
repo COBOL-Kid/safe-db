@@ -81,6 +81,23 @@ class TypesTest {
 
         assertFailsWith<IllegalArgumentException> {
             base
+                .copy(
+                    driverProperties =
+                        List(MAX_DRIVER_PROPERTIES + 1) { index ->
+                            DriverProperty("param$index", "value")
+                        }
+                )
+                .validate()
+                .getOrThrow()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            base
+                .copy(driverProperties = listOf(DriverProperty(" ", "value")))
+                .validate()
+                .getOrThrow()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            base
                 .copy(driverProperties = listOf(DriverProperty("accessToken", "secret")))
                 .validate()
                 .getOrThrow()

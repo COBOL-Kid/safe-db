@@ -48,11 +48,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.safedb.connection.DIALECTS
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
@@ -301,19 +307,7 @@ private fun MainConnectionFields(form: ConnectionFormState) {
             singleLine = true,
         )
         Text("Database type", style = MaterialTheme.typography.labelLarge)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            DIALECTS.forEach { entry ->
-                SegmentButton(
-                    text = entry.label,
-                    selected = form.dialect == entry.value,
-                    onClick = { form.selectDialect(entry.value) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
+        DialectTypeRow(selected = form.dialect, onSelect = form::selectDialect)
         ResponsiveFieldRow {
             OutlinedTextField(
                 value = form.host,
@@ -645,11 +639,77 @@ private fun ResponsiveFieldRow(
     }
 }
 
+// Five equal segments share the column. Keep the longest vendor name on one line by tightening
+// the insets and stepping the shared label size down only when the slot is still too narrow.
+private val DialectSegmentGap = 4.dp
+private val DialectSegmentHorizontalPadding = 6.dp
+private val DialectSegmentMinFontSize = 11.sp
+private val DialectSegmentFontStep = 0.5.sp
+
+@Composable
+private fun DialectTypeRow(selected: Dialect, onSelect: (Dialect) -> Unit) {
+    val labels = DIALECTS.map { it.label }
+    val baseStyle = MaterialTheme.typography.labelLarge
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val buttonWidth = (maxWidth - DialectSegmentGap * (labels.size - 1)) / labels.size
+        val textMaxWidth = buttonWidth - DialectSegmentHorizontalPadding * 2
+        // Leave a pixel of room so rounding in the button row cannot clip the last glyph.
+        val textMaxPx =
+            with(LocalDensity.current) { (textMaxWidth - 1.dp).toPx().coerceAtLeast(0f) }
+        val fontSize =
+            fittedDialectLabelSize(preferred = baseStyle.fontSize) { size ->
+                val candidate = baseStyle.copy(fontSize = size)
+                labels.all { label ->
+                    measurer
+                        .measure(
+                            text = label,
+                            style = candidate,
+                            overflow = TextOverflow.Clip,
+                            softWrap = false,
+                            maxLines = 1,
+                        )
+                        .size
+                        .width <= textMaxPx
+                }
+            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DialectSegmentGap),
+        ) {
+            DIALECTS.forEach { entry ->
+                SegmentButton(
+                    text = entry.label,
+                    selected = selected == entry.value,
+                    onClick = { onSelect(entry.value) },
+                    textStyle = baseStyle.copy(fontSize = fontSize),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+internal fun fittedDialectLabelSize(
+    preferred: TextUnit = 14.sp,
+    minimum: TextUnit = DialectSegmentMinFontSize,
+    step: TextUnit = DialectSegmentFontStep,
+    fits: (TextUnit) -> Boolean,
+): TextUnit {
+    var size = preferred
+    while (size > minimum && !fits(size)) {
+        val next = (size.value - step.value).sp
+        size = if (next < minimum) minimum else next
+    }
+    return size
+}
+
 @Composable
 private fun SegmentButton(
     text: String,
     selected: Boolean,
     onClick: () -> Unit,
+    textStyle: TextStyle,
     modifier: Modifier = Modifier,
 ) {
     val action = com.safedb.ui.theme.SafeDbTheme.colors.actionPrimary
@@ -660,12 +720,14 @@ private fun SegmentButton(
                 .background(if (selected) action.copy(alpha = 0.08f) else Color.Transparent, shape)
                 .border(1.dp, if (selected) action else MaterialTheme.colorScheme.outline, shape)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 9.dp),
+                .padding(horizontal = DialectSegmentHorizontalPadding, vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text,
-            style = MaterialTheme.typography.labelLarge,
+            style = textStyle,
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
             color = if (selected) action else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

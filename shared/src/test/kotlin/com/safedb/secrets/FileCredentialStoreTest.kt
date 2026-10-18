@@ -63,8 +63,6 @@ class FileCredentialStoreTest {
         val sibling = dir.resolve("keep")
         Files.writeString(sibling, "ok")
         val parent = checkNotNull(dir.parent)
-        val parentEntries =
-            Files.list(parent).use { stream -> stream.map { it.toString() }.toList().toSet() }
 
         listOf("../escape", "a/b", ".", "..").forEach { account ->
             val error =
@@ -84,9 +82,8 @@ class FileCredentialStoreTest {
                 stream.map { it.fileName.toString() }.toList().toSet()
             },
         )
-        assertEquals(
-            parentEntries,
-            Files.list(parent).use { stream -> stream.map { it.toString() }.toList().toSet() },
-        )
+        // ../escape would land next to the store. Other tests also write under the temp parent,
+        // so check that path instead of snapshotting the whole directory.
+        assertFalse(Files.exists(parent.resolve("escape")))
     }
 }

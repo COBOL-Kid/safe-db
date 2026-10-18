@@ -111,6 +111,25 @@ class ConnectionFormStateTest {
             displayedTransportMode(oracle.dialect, oracle.transportMode),
         )
         assertEquals(TransportSecurityMode.EncryptOnly, oracle.buildDef().transportSecurity.mode)
+
+        val db2 =
+            ConnectionFormState(
+                sampleConnection()
+                    .copy(
+                        dialect = Dialect.Db2,
+                        port = 50000,
+                        transportSecurity = TransportSecurity(TransportSecurityMode.VerifyCa),
+                    )
+            )
+        assertEquals(
+            TransportSecurityMode.VerifyIdentity,
+            displayedTransportMode(db2.dialect, db2.transportMode),
+        )
+        assertEquals(TransportSecurityMode.VerifyCa, db2.buildDef().transportSecurity.mode)
+        assertEquals(
+            "Db2 SSL is either on with hostname verification or off; this mode is shown as SSL with hostname verification.",
+            transportCompatibilityWarning(db2.dialect, db2.transportMode),
+        )
     }
 
     @Test
@@ -236,6 +255,31 @@ class ConnectionFormStateTest {
 
         state.removeDriverProperty(1)
         assertEquals(1, state.buildDef().driverProperties.size)
+    }
+
+    @Test
+    fun db2OffersDisabledAndVerifyIdentity() {
+        val options = transportOptionsFor(Dialect.Db2)
+        assertEquals(
+            listOf(TransportSecurityMode.VerifyIdentity, TransportSecurityMode.Disabled),
+            options.map { it.value },
+        )
+        assertTrue(options.first().description.contains("BASIC"))
+        assertEquals("Db2", dialectLabel(Dialect.Db2))
+    }
+
+    @Test
+    fun db2SelectionSwitchesToDefaultPortWithoutWallet() {
+        val state = ConnectionFormState()
+        state.selectDialect(Dialect.Db2)
+
+        assertEquals(50000, state.port)
+
+        state.updateDatabase("sample")
+        state.updateUsername("readonly")
+        state.changeTransportMode(TransportSecurityMode.VerifyIdentity)
+        assertNull(state.validateForm())
+        assertNull(state.buildDef().transportSecurity.oracleWalletLocation)
     }
 
     @Test

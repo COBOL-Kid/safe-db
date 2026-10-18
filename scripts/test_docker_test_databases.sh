@@ -7,6 +7,7 @@ TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/safedb-docker-harness-test.XXXXXX")"
 FAKE_BIN="$TEST_ROOT/bin"
 DOCKER_LOG="$TEST_ROOT/docker.log"
 ORACLE_MARKER="$TEST_ROOT/oracle-invoked"
+DB2_MARKER="$TEST_ROOT/db2-invoked"
 OPENSSL_MARKER="$TEST_ROOT/openssl-invoked"
 KEYTOOL_MARKER="$TEST_ROOT/keytool-invoked"
 mkdir -p "$FAKE_BIN"
@@ -25,6 +26,10 @@ case " $* " in
     ;;
   *" compose "*" exec -T oracle /usr/local/bin/safedb-oracle-init.sh "*)
     touch "$FAKE_ORACLE_MARKER"
+    exit "${FAKE_ORACLE_EXIT:-0}"
+    ;;
+  *" compose "*" exec -T -u db2inst1 db2 /usr/local/bin/safedb-db2-init.sh "*)
+    touch "$FAKE_DB2_MARKER"
     ;;
 esac
 EOF
@@ -52,16 +57,20 @@ run_harness() {
   local command="$1"
   local running_services="${2:-}"
   local mssql_exit="${3:-0}"
+  local oracle_exit="${4:-0}"
   local ssl_root="$TEST_ROOT/$command-ssl"
+  rm -f "$ORACLE_MARKER" "$DB2_MARKER"
   env \
     PATH="$FAKE_BIN:$PATH" \
     SAFEDB_SSL_ROOT="$ssl_root" \
     FAKE_DOCKER_LOG="$DOCKER_LOG" \
     FAKE_ORACLE_MARKER="$ORACLE_MARKER" \
+    FAKE_DB2_MARKER="$DB2_MARKER" \
     FAKE_OPENSSL_MARKER="$OPENSSL_MARKER" \
     FAKE_KEYTOOL_MARKER="$KEYTOOL_MARKER" \
     FAKE_RUNNING_SERVICES="$running_services" \
     FAKE_MSSQL_EXIT="$mssql_exit" \
+    FAKE_ORACLE_EXIT="$oracle_exit" \
     "$ROOT/scripts/docker_test_databases.sh" "$command"
 }
 
@@ -71,8 +80,28 @@ seed_status=$?
 set -e
 [[ "$seed_status" -eq 37 ]] || fail "seed returned $seed_status instead of mssql-init status 37"
 [[ ! -e "$ORACLE_MARKER" ]] || fail "Oracle seeding ran after mssql-init failed"
+[[ ! -e "$DB2_MARKER" ]] || fail "Db2 seeding ran after mssql-init failed"
 grep -q -- "up --no-deps --exit-code-from mssql-init mssql-init" "$DOCKER_LOG" ||
   fail "mssql-init was not run with --exit-code-from"
+
+set +e
+run_harness seed "" 0 9 >/dev/null 2>&1
+oracle_seed_status=$?
+set -e
+[[ "$oracle_seed_status" -eq 9 ]] ||
+  fail "seed returned $oracle_seed_status instead of oracle status 9"
+[[ -e "$ORACLE_MARKER" ]] || fail "Oracle seeding did not run"
+[[ ! -e "$DB2_MARKER" ]] || fail "Db2 seeding ran after Oracle init failed"
+
+set +e
+run_harness seed >/dev/null 2>&1
+seed_ok_status=$?
+set -e
+[[ "$seed_ok_status" -eq 0 ]] || fail "seed returned $seed_ok_status"
+[[ -e "$ORACLE_MARKER" ]] || fail "Oracle seeding did not run on success"
+[[ -e "$DB2_MARKER" ]] || fail "Db2 seeding did not run on success"
+grep -q -- "exec -T -u db2inst1 db2 /usr/local/bin/safedb-db2-init.sh" "$DOCKER_LOG" ||
+  fail "Db2 init was not run as db2inst1"
 
 set +e
 certs_output="$(run_harness certs $'mysql\npostgres\n' 0 2>&1)"

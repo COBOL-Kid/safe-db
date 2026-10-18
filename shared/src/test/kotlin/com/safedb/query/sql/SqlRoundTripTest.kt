@@ -52,6 +52,13 @@ class SqlRoundTripTest {
     }
 
     @Test
+    fun db2RoundTripUsesFetchFirst() {
+        val sql = compile("SELECT u.id FROM users u FETCH FIRST 5 ROWS ONLY", Dialect.Db2)
+        assertTrue(sql.contains("FROM \"public\".\"users\" AS \"U\""), sql)
+        assertTrue(sql.contains("FETCH FIRST 6 ROWS ONLY"), sql)
+    }
+
+    @Test
     fun parsedSpecFeedsRiskScoring() {
         val parsed =
             parseSqlToSpec(

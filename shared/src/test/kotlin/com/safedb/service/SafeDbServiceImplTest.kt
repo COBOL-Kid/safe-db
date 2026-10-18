@@ -157,6 +157,8 @@ class SafeDbServiceImplTest {
                 password = null,
             )
         }
+        // JUnit discovers only void tests. assertFailsWith would otherwise be the return value.
+        Unit
     }
 
     @Test
@@ -185,6 +187,8 @@ class SafeDbServiceImplTest {
         assertFailsWith<IllegalArgumentException> {
             service.testConnection(sampleConnection().copy(host = "other.example.com"), null)
         }
+        // JUnit discovers only void tests. assertFailsWith would otherwise be the return value.
+        Unit
     }
 
     @Test

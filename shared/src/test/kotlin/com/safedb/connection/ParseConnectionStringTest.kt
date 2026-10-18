@@ -474,6 +474,181 @@ class ParseConnectionStringTest {
     }
 
     @Test
+    fun parsesDb2JdbcWithSslConnectionEnabled() {
+        val parsed =
+            parseConnectionString("jdbc:db2://db.example.com:50000/app:sslConnection=true;")
+
+        assertEquals(Dialect.Db2, parsed.dialect)
+        assertEquals("db.example.com", parsed.host)
+        assertEquals(50000, parsed.port)
+        assertEquals("app", parsed.database)
+        assertEquals("", parsed.username)
+        assertEquals(null, parsed.password)
+        assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
+        assertEquals(DatabaseLocation.Cloud, parsed.inferredLocation)
+        assertEquals(emptyList(), parsed.driverProperties)
+        assertEquals(emptyList(), parsed.warnings)
+        assertEquals(
+            "jdbc:db2://db.example.com:50000/app:sslConnection=true;",
+            parsed.sanitizedInput,
+        )
+    }
+
+    @Test
+    fun parsesDb2JdbcWithSslConnectionDisabled() {
+        val parsed =
+            parseConnectionString("jdbc:db2://db.example.com:50000/app:sslConnection=false;")
+
+        assertEquals(Dialect.Db2, parsed.dialect)
+        assertEquals(TransportSecurityMode.Disabled, parsed.transportSecurity.mode)
+    }
+
+    @Test
+    fun parsesDb2JdbcWithDefaultPortAndUppercaseZosLocation() {
+        val parsed =
+            parseConnectionString("jdbc:db2://mainframe.example.com/DSN9:sslConnection=true;")
+
+        assertEquals(Dialect.Db2, parsed.dialect)
+        assertEquals("mainframe.example.com", parsed.host)
+        assertEquals(50000, parsed.port)
+        assertEquals("DSN9", parsed.database)
+        assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
+    }
+
+    @Test
+    fun db2JdbcImportsSafeExtrasAndDropsSensitiveValues() {
+        val parsed =
+            parseConnectionString(
+                "jdbc:db2://db.example.com:50000/app:sslConnection=true;currentSchema=REPORTING;apiToken=do-not-store;"
+            )
+
+        assertEquals(Dialect.Db2, parsed.dialect)
+        assertEquals(listOf(DriverProperty("currentSchema", "REPORTING")), parsed.driverProperties)
+        assertTrue(parsed.warnings.single().contains("apiToken"))
+        assertTrue(parsed.sanitizedInput.contains("sslConnection=true"))
+        assertFalse(parsed.sanitizedInput.contains("do-not-store"))
+    }
+
+    @Test
+    fun db2ImportDropsHostnameValidationProperty() {
+        val parsed =
+            parseConnectionString(
+                "jdbc:db2://db.example.com:50000/app:sslConnection=true;sslClientHostnameValidation=OFF;"
+            )
+
+        assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
+        assertTrue(parsed.driverProperties.isEmpty())
+        assertTrue(parsed.warnings.single().contains("sslClientHostnameValidation"))
+    }
+
+    @Test
+    fun db2FormattingRoundTripsIpv6Host() {
+        val formatted =
+            formatConnectionString(
+                ConnectionDef(
+                    id = "c1",
+                    name = "Test",
+                    dialect = Dialect.Db2,
+                    host = "::1",
+                    port = 50000,
+                    database = "app",
+                    username = "readonly",
+                    transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
+                )
+            )
+
+        assertTrue(formatted.contains("jdbc:db2://[::1]:50000/app:"))
+        val parsed = parseConnectionString(formatted)
+        assertEquals("::1", parsed.host)
+        assertEquals(50000, parsed.port)
+        assertEquals(TransportSecurityMode.Disabled, parsed.transportSecurity.mode)
+    }
+
+    @Test
+    fun db2FormattingRoundTripsTlsFlagAndExtras() {
+        for ((mode, flag) in
+            listOf(
+                TransportSecurityMode.Disabled to "false",
+                TransportSecurityMode.VerifyIdentity to "true",
+            )) {
+            val def =
+                ConnectionDef(
+                    id = "c1",
+                    name = "Test",
+                    dialect = Dialect.Db2,
+                    host = "db.example.com",
+                    port = 50000,
+                    database = "app",
+                    username = "readonly",
+                    transportSecurity = TransportSecurity(mode),
+                )
+
+            val formatted = formatConnectionString(def)
+
+            assertEquals("jdbc:db2://db.example.com:50000/app:sslConnection=$flag;", formatted)
+            val parsed = parseConnectionString(formatted)
+            assertEquals(mode, parsed.transportSecurity.mode, "$mode")
+            assertEquals("app", parsed.database)
+            assertEquals("", parsed.username)
+            assertEquals(null, parsed.password)
+        }
+
+        val withExtras =
+            ConnectionDef(
+                id = "c1",
+                name = "Test",
+                dialect = Dialect.Db2,
+                host = "db.example.com",
+                port = 50000,
+                database = "app",
+                username = "readonly",
+                transportSecurity = TransportSecurity(TransportSecurityMode.VerifyIdentity),
+                driverProperties = listOf(DriverProperty("currentSchema", "REPORTING")),
+            )
+        val parsed = parseConnectionString(formatConnectionString(withExtras))
+
+        assertEquals(withExtras.driverProperties, parsed.driverProperties)
+        assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
+    }
+
+    @Test
+    fun db2JdbcWithoutSslConnectionFollowsTheHost() {
+        val remote = parseConnectionString("jdbc:db2://db.example.com/app")
+        assertEquals(TransportSecurityMode.VerifyIdentity, remote.transportSecurity.mode)
+        assertEquals(50000, remote.port)
+        assertEquals("app", remote.database)
+        assertEquals(DatabaseLocation.Cloud, remote.inferredLocation)
+
+        val local = parseConnectionString("jdbc:db2://localhost/SAMPLE")
+        assertEquals(TransportSecurityMode.Disabled, local.transportSecurity.mode)
+        assertEquals("SAMPLE", local.database)
+        assertEquals(DatabaseLocation.Local, local.inferredLocation)
+    }
+
+    @Test
+    fun rejectsMalformedDb2JdbcStrings() {
+        assertDb2Rejects("jdbc:db2://db.example.com:50000", "missing a database")
+        assertDb2Rejects("jdbc:db2://db.example.com:50000/app:notAProperty;", "malformed property")
+        assertDb2Rejects(
+            "jdbc:db2://db.example.com:50000/app:sslConnection=maybe;",
+            "sslConnection must be",
+        )
+        assertDb2Rejects("jdbc:db2:///app", "missing a host")
+        assertDb2Rejects("jdbc:db2://[::1/app", "not a valid URL")
+        assertDb2Rejects("jdbc:db2://[::1]x/app", "not a valid URL")
+        assertDb2Rejects("jdbc:db2://[::1]:nope/app", "invalid port")
+        assertDb2Rejects("jdbc:db2://host:1:2/app", "not a valid URL")
+        assertDb2Rejects("jdbc:db2://host:nope/app", "invalid port")
+        assertDb2Rejects("jdbc:db2://host/app?x", "invalid database")
+        assertDb2Rejects("jdbc:db2://host/app;sslConnection=true", "malformed property list")
+    }
+
+    private fun assertDb2Rejects(raw: String, message: String) {
+        val error = assertFailsWith<ConnectionStringParseError> { parseConnectionString(raw) }
+        assertTrue(error.message!!.contains(message), error.message)
+    }
+
+    @Test
     fun failsOnMalformedInputWithStructuredError() {
         assertFailsWith<ConnectionStringParseError> {
             parseConnectionString("not a connection string")

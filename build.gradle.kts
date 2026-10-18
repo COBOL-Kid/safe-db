@@ -18,7 +18,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.1.9"
+version = "0.2.0"
 
 kotlin { jvmToolchain(25) }
 
@@ -182,9 +182,9 @@ val verifyUnitTestDiscovery =
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(309)
-        minimumSharedTests.set(541)
-        minimumMcpTests.set(87)
+        minimumDesktopTests.set(311)
+        minimumSharedTests.set(615)
+        minimumMcpTests.set(88)
     }
 
 val verifyCoverageRatchet =
@@ -270,6 +270,12 @@ val verifyIntegrationTestDiscovery =
                 .map { it.equals("true", ignoreCase = true) }
                 .orElse(false)
         )
+        requireDb2.set(
+            providers
+                .environmentVariable("SAFEDB_TEST_REQUIRE_DB2")
+                .map { it.equals("true", ignoreCase = true) }
+                .orElse(false)
+        )
     }
 
 tasks.register("integrationTest") {
@@ -319,6 +325,8 @@ registerRelationalSeedTask("seedPostgres", "postgres")
 registerRelationalSeedTask("seedMssql", "mssql")
 
 registerRelationalSeedTask("seedOracle", "oracle")
+
+registerRelationalSeedTask("seedDb2", "db2")
 
 tasks.register<JavaExec>("renderPreview") {
     group = "safe-db"

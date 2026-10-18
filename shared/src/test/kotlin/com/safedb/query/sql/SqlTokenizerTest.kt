@@ -47,6 +47,13 @@ class SqlTokenizerTest {
     }
 
     @Test
+    fun db2DoubleQuotedIdentifierUnescapes() {
+        val token = significant("\"we\"\"ird\"", Dialect.Db2).single()
+        assertEquals(SqlTokenType.QuotedIdentifier, token.type)
+        assertEquals("we\"ird", token.value)
+    }
+
+    @Test
     fun mysqlBacktickIdentifierUnescapes() {
         val token = significant("`a``b`", Dialect.MySql).single()
         assertEquals(SqlTokenType.QuotedIdentifier, token.type)
@@ -269,11 +276,13 @@ class SqlTokenizerTest {
 
     @Test
     fun nationalStringLiteralIsRejected() {
-        val token =
-            tokenizeSql("SELECT id FROM t WHERE name = N'alice'", Dialect.Mssql).single {
-                it.type == SqlTokenType.Error
-            }
-        assertEquals(SqlMessages.NATIONAL_STRING, token.error)
+        for (dialect in listOf(Dialect.Mssql, Dialect.Db2)) {
+            val token =
+                tokenizeSql("SELECT id FROM t WHERE name = N'alice'", dialect).single {
+                    it.type == SqlTokenType.Error
+                }
+            assertEquals(SqlMessages.NATIONAL_STRING, token.error, dialect.name)
+        }
     }
 
     @Test
@@ -311,8 +320,8 @@ class SqlTokenizerTest {
             assertEquals(SqlTokenType.Comment, tokens.single().type)
         }
 
-        // MySQL and Oracle close at the first */, so the SELECT is live again.
-        for (dialect in listOf(Dialect.MySql, Dialect.Oracle)) {
+        // MySQL, Oracle, and Db2 close at the first */, so the SELECT is live again.
+        for (dialect in listOf(Dialect.MySql, Dialect.Oracle, Dialect.Db2)) {
             val tokens = significant(input, dialect)
             assertEquals(SqlTokenType.Comment, tokens.first().type)
             assertTrue(

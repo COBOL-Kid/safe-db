@@ -97,6 +97,7 @@ class SeedMysqlTest {
         val postgres = generate(options, GeneratedSqlDialect.Postgres)
         val mssql = generate(options, GeneratedSqlDialect.Mssql)
         val oracle = generate(options, GeneratedSqlDialect.Oracle)
+        val db2 = generate(options, GeneratedSqlDialect.Db2)
 
         assertTrue(postgres.contains("DROP TABLE IF EXISTS order_items"))
         assertTrue(postgres.contains("is_active BOOLEAN DEFAULT TRUE NOT NULL"))
@@ -105,6 +106,44 @@ class SeedMysqlTest {
         assertTrue(oracle.contains("DROP TABLE order_items CASCADE CONSTRAINTS PURGE"))
         assertTrue(oracle.replace("\r\n", "\n").contains("INSERT ALL\nINTO categories"))
         assertEquals(oracle, generate(options, GeneratedSqlDialect.Oracle))
+        // Db2 LUW has no DROP ... IF EXISTS, so drops stay out of the generated script.
+        assertTrue(db2.contains("CREATE TABLE customers ("))
+        assertTrue(db2.contains("loyalty_points INTEGER DEFAULT 0 NOT NULL"))
+        assertTrue(db2.contains("is_vip SMALLINT DEFAULT 0 NOT NULL"))
+        assertTrue(db2.contains("signed_up_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL"))
+        assertTrue(db2.contains("INSERT INTO customers"))
+        assertTrue(!db2.contains("DROP TABLE"))
+        assertEquals(db2, generate(options, GeneratedSqlDialect.Db2))
+    }
+
+    @Test
+    fun db2CountQuerySelectsFromSysdummy1() {
+        val tables = listOf("categories", "products")
+
+        assertEquals(
+            "SELECT (SELECT COUNT(*) FROM categories), (SELECT COUNT(*) FROM products) FROM SYSIBM.SYSDUMMY1;",
+            relationalVerifyCountQuery(GeneratedSqlDialect.Db2, tables),
+        )
+        assertEquals(
+            "SELECT (SELECT COUNT(*) FROM categories), (SELECT COUNT(*) FROM products);",
+            relationalVerifyCountQuery(GeneratedSqlDialect.Postgres, tables),
+        )
+        assertEquals(
+            relationalVerifyCountQuery(GeneratedSqlDialect.Postgres, tables),
+            relationalVerifyCountQuery(GeneratedSqlDialect.Oracle, tables),
+        )
+    }
+
+    @Test
+    fun db2SeedSettingsResolveDb2Defaults() {
+        val repoRoot = Path.of("/repo")
+        val settings = relationalSeedSettings(GeneratedSqlDialect.Db2, emptyMap(), repoRoot)
+
+        assertEquals("safedb_test", settings.database)
+        assertEquals("db2inst1", settings.user)
+        assertEquals("safedb-test-db2", settings.container)
+        assertEquals(repoRoot.resolve("testdata_db2.sql"), settings.staticSql)
+        assertTrue(settings.clientEnvironment.isEmpty())
     }
 
     @Test

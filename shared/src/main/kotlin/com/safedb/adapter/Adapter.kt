@@ -126,6 +126,20 @@ sealed class Adapter {
             withContext(Dispatchers.IO) { OracleAdapter.explain(dataSource, compiled) }
     }
 
+    data class Db2(val dataSource: HikariDataSource) : Adapter() {
+        override suspend fun test(): String =
+            withContext(Dispatchers.IO) { Db2Adapter.test(dataSource) }
+
+        override suspend fun introspect(): Schema =
+            withContext(Dispatchers.IO) { Db2Adapter.introspect(dataSource) }
+
+        override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
+            withContext(Dispatchers.IO) { Db2Adapter.executeQuery(dataSource, compiled, timeoutMs) }
+
+        override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+            withContext(Dispatchers.IO) { Db2Adapter.explain(dataSource, compiled) }
+    }
+
     companion object {
         suspend fun connect(def: ConnectionDef, password: String): Adapter {
             def.validate().getOrElse { throw IllegalArgumentException(it.message) }
@@ -137,6 +151,7 @@ sealed class Adapter {
                         Dialect.Mssql ->
                             Mssql(MssqlState(createDataSource(def, password), def, password))
                         Dialect.Oracle -> Oracle(createDataSource(def, password))
+                        Dialect.Db2 -> Db2(createDataSource(def, password))
                     }
                 }
             }
@@ -170,6 +185,7 @@ sealed class Adapter {
             is MySql -> closeDataSource(dataSource)
             is Mssql -> state.dataSource?.let(::closeDataSource)
             is Oracle -> closeDataSource(dataSource)
+            is Db2 -> closeDataSource(dataSource)
         }
     }
 }
@@ -205,7 +221,8 @@ fun columnsFromCompiledSql(sql: String, dialect: Dialect): List<String> {
 private fun unquoteIdentifier(identifier: String, dialect: Dialect): String =
     when (dialect) {
         Dialect.Postgres,
-        Dialect.Oracle -> identifier.trim('"')
+        Dialect.Oracle,
+        Dialect.Db2 -> identifier.trim('"')
         Dialect.MySql -> identifier.trim('`')
         Dialect.Mssql -> identifier.removePrefix("[").removeSuffix("]")
     }

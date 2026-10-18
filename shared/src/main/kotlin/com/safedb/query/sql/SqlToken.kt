@@ -35,7 +35,8 @@ data class SqlToken(
 private fun quoteHint(dialect: Dialect): String =
     when (dialect) {
         Dialect.Postgres,
-        Dialect.Oracle -> "double quotes (\"name\")"
+        Dialect.Oracle,
+        Dialect.Db2 -> "double quotes (\"name\")"
         Dialect.MySql -> "backticks (`name`)"
         Dialect.Mssql -> "brackets ([name])"
     }
@@ -199,8 +200,8 @@ fun tokenizeSql(
                 i = j
             }
             c == '/' && i + 1 < sql.length && sql[i + 1] == '*' -> {
-                // PostgreSQL and SQL Server nest block comments; MySQL and Oracle close at the
-                // first */, so `/* /* */` already ends the comment there.
+                // PostgreSQL and SQL Server nest block comments. MySQL, Oracle, and Db2 close
+                // at the first */, so `/* /* */` already ends the comment there.
                 val nested = dialect == Dialect.Postgres || dialect == Dialect.Mssql
                 val end = blockCommentEnd(sql, i, nested)
                 val marker = sql.getOrNull(i + 2)
@@ -229,7 +230,9 @@ fun tokenizeSql(
             // string and fails downstream as an unsupported column comparison.
             (c == 'N' || c == 'n') &&
                 sql.getOrNull(i + 1) == '\'' &&
-                (dialect == Dialect.Mssql || dialect == Dialect.Postgres) -> {
+                (dialect == Dialect.Mssql ||
+                    dialect == Dialect.Postgres ||
+                    dialect == Dialect.Db2) -> {
                 val end = scanQuoted('\'', i + 1, backslashEscapes = false).end
                 add(SqlTokenType.Error, i, end, error = SqlMessages.NATIONAL_STRING)
                 i = end
@@ -239,7 +242,11 @@ fun tokenizeSql(
                     if (dialect == Dialect.MySql) readMySqlString(i)
                     else readQuoted('\'', i, SqlTokenType.StringLiteral, "string")
             c == '"' ->
-                if (dialect == Dialect.Postgres || dialect == Dialect.Oracle) {
+                if (
+                    dialect == Dialect.Postgres ||
+                        dialect == Dialect.Oracle ||
+                        dialect == Dialect.Db2
+                ) {
                     i = readQuoted('"', i, SqlTokenType.QuotedIdentifier, "quoted identifier")
                 } else {
                     var j = i + 1
@@ -388,6 +395,7 @@ internal fun dialectDisplay(dialect: Dialect): String =
         Dialect.MySql -> "MySQL"
         Dialect.Mssql -> "SQL Server"
         Dialect.Oracle -> "Oracle"
+        Dialect.Db2 -> "Db2"
     }
 
 fun lineColOf(text: String, offset: Int): Pair<Int, Int> {
