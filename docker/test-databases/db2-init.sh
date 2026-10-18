@@ -36,6 +36,13 @@ done
 
 db2 -s -t -f /fixtures/testdata_db2.sql
 # sqllib ships the LUW EXPLAIN DDL; without these tables EXPLAIN reports
-# UnsupportedShape instead of a normalized plan.
-db2 -s -t -f "$INSTANCE_HOME/sqllib/misc/EXPLAIN.DDL"
+# UnsupportedShape instead of a normalized plan. The DDL is plain CREATE TABLE,
+# so a second seed (scripts/docker_test_databases.sh seed) must skip it once
+# EXPLAIN_INSTANCE exists. COUNT(*) still returns a row when the table is
+# absent, which keeps this query off the CLP's SQL0100W warning path.
+explain_tables="$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABLES WHERE TABSCHEMA = CURRENT SCHEMA AND TABNAME = 'EXPLAIN_INSTANCE'")"
+explain_tables="${explain_tables//[[:space:]]/}"
+if [ "$explain_tables" = "0" ]; then
+  db2 -s -t -f "$INSTANCE_HOME/sqllib/misc/EXPLAIN.DDL"
+fi
 db2 CONNECT RESET

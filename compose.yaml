@@ -162,7 +162,8 @@ services:
       - ./docker/test-databases/db2-init.sh:/usr/local/bin/safedb-db2-init.sh:ro
       - ./testdata_db2.sql:/fixtures/testdata_db2.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "su db2inst1 -c 'db2 CONNECT TO safedb_test' >/dev/null 2>&1"]
+      # The image PATH is system-only. A login shell loads db2inst1's db2profile.
+      test: ["CMD-SHELL", "su - db2inst1 -c 'db2 CONNECT TO safedb_test' >/dev/null 2>&1"]
       interval: 15s
       timeout: 10s
       retries: 60

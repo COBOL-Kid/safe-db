@@ -364,6 +364,37 @@ class Db2AdapterTest {
     }
 
     @Test
+    fun db2LuwExplainKeyReadsThePlanRowFromExplainStatement() {
+        val sql = Db2Adapter.luwExplainKeySql("\"APP\".")
+
+        assertTrue(sql.contains("FROM \"APP\".EXPLAIN_STATEMENT"))
+        assertTrue(sql.contains("QUERYNO = ?"))
+        assertTrue(sql.contains("EXPLAIN_LEVEL = 'P'"))
+        assertTrue(sql.contains("EXPLAIN_REQUESTER = SESSION_USER"))
+        assertFalse(sql.contains("EXPLAIN_INSTANCE"))
+    }
+
+    @Test
+    fun db2LuwExplainDeleteUsesTheInstanceKey() {
+        val keyed = Db2Adapter.luwExplainDeleteSql("SYSTOOLS.", keyed = true)
+        val fallback = Db2Adapter.luwExplainDeleteSql("\"APP\".", keyed = false)
+
+        assertEquals(
+            "DELETE FROM SYSTOOLS.EXPLAIN_INSTANCE WHERE EXPLAIN_REQUESTER = ? AND " +
+                "EXPLAIN_TIME = ? AND SOURCE_NAME = ? AND SOURCE_SCHEMA = ? AND SOURCE_VERSION = ?",
+            keyed,
+        )
+        assertFalse(keyed.contains("QUERYNO"))
+        assertFalse(keyed.contains("EXPLAIN_LEVEL"))
+        assertTrue(fallback.startsWith("DELETE FROM \"APP\".EXPLAIN_INSTANCE WHERE "))
+        assertTrue(fallback.contains("FROM \"APP\".EXPLAIN_STATEMENT"))
+        assertTrue(fallback.contains("QUERYNO = ?"))
+        assertTrue(fallback.contains("EXPLAIN_REQUESTER = SESSION_USER"))
+        assertFalse(fallback.contains("EXPLAIN_LEVEL"))
+        assertFalse(fallback.contains("STMTNO"))
+    }
+
+    @Test
     fun db2KeepsCompleteForeignKeysAndDropsPartialMatches() {
         val orders = MetadataTableKey("APP", "ORDERS")
         val lines = MetadataTableKey("APP", "ORDER_LINES")

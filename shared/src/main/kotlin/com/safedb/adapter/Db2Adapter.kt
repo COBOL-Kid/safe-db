@@ -518,64 +518,46 @@ object Db2Adapter {
         }
 
     private fun Connection.queryLuwExplainKey(prefix: String, queryNo: Int): LuwExplainKey? =
-        prepareStatement(
-                """
-                SELECT EXPLAIN_REQUESTER, EXPLAIN_TIME, SOURCE_NAME, SOURCE_SCHEMA, SOURCE_VERSION,
-                       EXPLAIN_LEVEL, STMTNO, SECTNO
-                FROM ${prefix}EXPLAIN_INSTANCE
-                WHERE QUERYNO = ? AND EXPLAIN_REQUESTER = SESSION_USER
-                ORDER BY EXPLAIN_TIME DESC
-                FETCH FIRST 1 ROW ONLY
-                """
-                    .trimIndent()
-            )
-            .use { ps ->
-                ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                ps.setInt(1, queryNo)
-                ps.executeQuery().use { rs ->
-                    if (!rs.next() || rs.getTimestamp(2) == null) return null
-                    LuwExplainKey(
-                        requester = rs.getString(1),
-                        explainTime = rs.getTimestamp(2),
-                        sourceName = rs.getString(3).orEmpty(),
-                        sourceSchema = rs.getString(4).orEmpty(),
-                        sourceVersion = rs.getString(5).orEmpty(),
-                        explainLevel = rs.getString(6).orEmpty(),
-                        stmtNo = (rs.getObject(7) as Number).toInt(),
-                        sectNo = (rs.getObject(8) as Number).toInt(),
-                    )
-                }
+        prepareStatement(luwExplainKeySql(prefix)).use { ps ->
+            ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+            ps.setInt(1, queryNo)
+            ps.executeQuery().use { rs ->
+                if (!rs.next() || rs.getTimestamp(2) == null) return null
+                LuwExplainKey(
+                    requester = rs.getString(1),
+                    explainTime = rs.getTimestamp(2),
+                    sourceName = rs.getString(3).orEmpty(),
+                    sourceSchema = rs.getString(4).orEmpty(),
+                    sourceVersion = rs.getString(5).orEmpty(),
+                    explainLevel = rs.getString(6).orEmpty(),
+                    stmtNo = (rs.getObject(7) as Number).toInt(),
+                    sectNo = (rs.getObject(8) as Number).toInt(),
+                )
             }
+        }
 
+    // EXPLAIN_INSTANCE is keyed by requester, time, and source identity. QUERYNO and the
+    // section columns live on EXPLAIN_STATEMENT. Child explain tables reference that statement,
+    // which references the instance ON DELETE CASCADE in EXPLAIN.DDL, so one instance delete
+    // removes the plan. The unkeyed form is the fallback when the section key was not loaded.
     private fun Connection.deleteLuwExplain(
         prefix: String,
         queryNo: Int,
         key: LuwExplainKey?,
-    ): Result<Unit> {
-        var failure: Throwable? = null
-        for (table in LUW_EXPLAIN_TABLES) {
-            val sql =
-                if (key != null) {
-                    "DELETE FROM $prefix$table WHERE $LUW_KEY_PREDICATE"
-                } else if (table == "EXPLAIN_INSTANCE" || table == "EXPLAIN_STATEMENT") {
-                    "DELETE FROM $prefix$table WHERE QUERYNO = ? AND EXPLAIN_REQUESTER = SESSION_USER"
-                } else {
-                    "DELETE FROM $prefix$table WHERE EXPLAIN_REQUESTER = SESSION_USER AND " +
-                        "(EXPLAIN_TIME, SOURCE_NAME, SOURCE_SCHEMA, SOURCE_VERSION, EXPLAIN_LEVEL, " +
-                        "STMTNO, SECTNO) IN (SELECT EXPLAIN_TIME, SOURCE_NAME, SOURCE_SCHEMA, " +
-                        "SOURCE_VERSION, EXPLAIN_LEVEL, STMTNO, SECTNO FROM ${prefix}EXPLAIN_INSTANCE " +
-                        "WHERE QUERYNO = ? AND EXPLAIN_REQUESTER = SESSION_USER)"
-                }
-            runCatching {
-                prepareStatement(sql).use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                    if (key != null) ps.bindLuwKey(key) else ps.setInt(1, queryNo)
-                    ps.execute()
-                }
+    ): Result<Unit> = runCatching {
+        prepareStatement(luwExplainDeleteSql(prefix, key != null)).use { ps ->
+            ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+            if (key != null) {
+                ps.setString(1, key.requester)
+                ps.setTimestamp(2, key.explainTime)
+                ps.setString(3, key.sourceName)
+                ps.setString(4, key.sourceSchema)
+                ps.setString(5, key.sourceVersion)
+            } else {
+                ps.setInt(1, queryNo)
             }
-                .onFailure { if (failure == null && !it.isUndefinedObject()) failure = it }
+            ps.execute()
         }
-        return if (failure == null) Result.success(Unit) else Result.failure(failure)
     }
 
     private fun Connection.explainTablePresence(sql: String): ExplainTablePresence =
@@ -839,6 +821,30 @@ object Db2Adapter {
         data object Unreadable : LuwExplainPrefix
     }
 
+    // Operators, objects, and streams belong to the plan row (EXPLAIN_LEVEL 'P'), not the
+    // original-text row ('O') that shares the same EXPLAIN_TIME.
+    internal fun luwExplainKeySql(prefix: String): String =
+        """
+        SELECT EXPLAIN_REQUESTER, EXPLAIN_TIME, SOURCE_NAME, SOURCE_SCHEMA, SOURCE_VERSION,
+               EXPLAIN_LEVEL, STMTNO, SECTNO
+        FROM ${prefix}EXPLAIN_STATEMENT
+        WHERE QUERYNO = ? AND EXPLAIN_LEVEL = 'P' AND EXPLAIN_REQUESTER = SESSION_USER
+        ORDER BY EXPLAIN_TIME DESC
+        FETCH FIRST 1 ROW ONLY
+        """
+            .trimIndent()
+
+    internal fun luwExplainDeleteSql(prefix: String, keyed: Boolean): String =
+        if (keyed) {
+            "DELETE FROM ${prefix}EXPLAIN_INSTANCE WHERE EXPLAIN_REQUESTER = ? AND " +
+                "EXPLAIN_TIME = ? AND SOURCE_NAME = ? AND SOURCE_SCHEMA = ? AND SOURCE_VERSION = ?"
+        } else {
+            "DELETE FROM ${prefix}EXPLAIN_INSTANCE WHERE (EXPLAIN_REQUESTER, EXPLAIN_TIME, " +
+                "SOURCE_NAME, SOURCE_SCHEMA, SOURCE_VERSION) IN (SELECT EXPLAIN_REQUESTER, " +
+                "EXPLAIN_TIME, SOURCE_NAME, SOURCE_SCHEMA, SOURCE_VERSION FROM " +
+                "${prefix}EXPLAIN_STATEMENT WHERE QUERYNO = ? AND EXPLAIN_REQUESTER = SESSION_USER)"
+        }
+
     internal fun selectLuwExplainPrefix(
         quotedAuthId: String?,
         authTables: ExplainTablePresence,
@@ -926,20 +932,6 @@ object Db2Adapter {
         val accessCreator: String?,
         val accessName: String?,
     )
-
-    // Child tables have no QUERYNO. When the instance key was not loaded, their delete
-    // selects that key from EXPLAIN_INSTANCE, so INSTANCE has to be removed last.
-    private val LUW_EXPLAIN_TABLES =
-        listOf(
-            "EXPLAIN_PREDICATE",
-            "EXPLAIN_STREAM",
-            "EXPLAIN_OBJECT",
-            "EXPLAIN_OPERATOR",
-            "EXPLAIN_ARGUMENT",
-            "EXPLAIN_ACTUALS",
-            "EXPLAIN_STATEMENT",
-            "EXPLAIN_INSTANCE",
-        )
 
     private data class LuwExplainKey(
         val requester: String,

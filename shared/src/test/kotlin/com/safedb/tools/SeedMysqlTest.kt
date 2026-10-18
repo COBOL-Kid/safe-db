@@ -117,6 +117,24 @@ class SeedMysqlTest {
     }
 
     @Test
+    fun db2CountQuerySelectsFromSysdummy1() {
+        val tables = listOf("categories", "products")
+
+        assertEquals(
+            "SELECT (SELECT COUNT(*) FROM categories), (SELECT COUNT(*) FROM products) FROM SYSIBM.SYSDUMMY1;",
+            relationalVerifyCountQuery(GeneratedSqlDialect.Db2, tables),
+        )
+        assertEquals(
+            "SELECT (SELECT COUNT(*) FROM categories), (SELECT COUNT(*) FROM products);",
+            relationalVerifyCountQuery(GeneratedSqlDialect.Postgres, tables),
+        )
+        assertEquals(
+            relationalVerifyCountQuery(GeneratedSqlDialect.Postgres, tables),
+            relationalVerifyCountQuery(GeneratedSqlDialect.Oracle, tables),
+        )
+    }
+
+    @Test
     fun db2SeedSettingsResolveDb2Defaults() {
         val repoRoot = Path.of("/repo")
         val settings = relationalSeedSettings(GeneratedSqlDialect.Db2, emptyMap(), repoRoot)

@@ -142,7 +142,7 @@ private class SeedRelational(
                     "order_items",
                     "inventory_log",
                 )
-        val query = "SELECT " + tables.joinToString(", ") { "(SELECT COUNT(*) FROM $it)" } + ";"
+        val query = relationalVerifyCountQuery(dialect, tables)
         println("-> verifying row counts (${tables.joinToString(" ")})")
         val output =
             runClient(captureOutput = true) { stream ->
@@ -377,6 +377,15 @@ private fun validateContainerName(value: String, label: String) {
     if (!Regex("""^[A-Za-z0-9][A-Za-z0-9_.-]*$""").matches(value)) {
         throw RuntimeException("invalid $label")
     }
+}
+
+// Db2 rejects a top-level SELECT that has no FROM clause. The other clients accept it.
+internal fun relationalVerifyCountQuery(
+    dialect: GeneratedSqlDialect,
+    tables: List<String>,
+): String {
+    val fromClause = if (dialect == GeneratedSqlDialect.Db2) " FROM SYSIBM.SYSDUMMY1" else ""
+    return "SELECT " + tables.joinToString(", ") { "(SELECT COUNT(*) FROM $it)" } + "$fromClause;"
 }
 
 private fun GeneratedSqlDialect.displayName(): String =
