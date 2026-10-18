@@ -41,7 +41,14 @@ class McpNpmTest {
         val modules = readJlinkModules(jlinkModulesFile())
         assertTrue(
             modules.containsAll(
-                listOf("java.base", "java.sql", "jdk.net", "jdk.security.jgss", "jdk.unsupported")
+                listOf(
+                    "java.base",
+                    "java.rmi",
+                    "java.sql",
+                    "jdk.net",
+                    "jdk.security.jgss",
+                    "jdk.unsupported",
+                )
             )
         )
         assertEquals(modules, modules.distinct())
