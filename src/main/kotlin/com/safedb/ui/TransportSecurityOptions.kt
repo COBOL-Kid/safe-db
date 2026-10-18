@@ -78,7 +78,7 @@ internal fun displayedTransportMode(
         Dialect.Oracle if mode == TransportSecurityMode.EncryptOnly ->
             TransportSecurityMode.VerifyCa
         Dialect.Db2 if
-            mode == TransportSecurityMode.VerifyCa || mode == TransportSecurityMode.EncryptOnly
+            (mode == TransportSecurityMode.VerifyCa || mode == TransportSecurityMode.EncryptOnly)
          -> TransportSecurityMode.VerifyIdentity
         else -> mode
     }
@@ -95,7 +95,7 @@ internal fun transportCompatibilityWarning(dialect: Dialect, mode: TransportSecu
         Dialect.Oracle if mode == TransportSecurityMode.EncryptOnly ->
             "Oracle wallet-based TCPS validates certificate trust; this legacy mode is shown as certificate-only verification."
         Dialect.Db2 if
-            mode == TransportSecurityMode.VerifyCa || mode == TransportSecurityMode.EncryptOnly
+            (mode == TransportSecurityMode.VerifyCa || mode == TransportSecurityMode.EncryptOnly)
          ->
             "Db2 SSL is either on with hostname verification or off; this mode is shown as SSL with hostname verification."
         else -> null

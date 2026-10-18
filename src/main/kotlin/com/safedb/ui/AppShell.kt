@@ -549,12 +549,11 @@ private fun SidebarHeader(
                     .height(SidebarHeaderHeight)
                     .clickable(onClick = onToggleCollapsed)
                     .pointerHoverIcon(PointerIcon.Hand)
-                    .semantics { contentDescription = "Expand sidebar" },
+                    .semantics { contentDescription = "Expand sidebar" }
         ) {
             // Shared inset so the mark stays put when the header swaps layouts.
             Box(
-                modifier =
-                    Modifier.align(Alignment.CenterStart).padding(start = SidebarHeaderInset),
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = SidebarHeaderInset)
             ) {
                 LogoMark()
             }

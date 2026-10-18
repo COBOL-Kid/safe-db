@@ -105,8 +105,7 @@ class SidebarLogoPositionTest {
 private data class SidebarFrame(val logoLeft: Int, val logoTop: Int, val railWidth: Int)
 
 private fun measureSidebar(image: Image): SidebarFrame {
-    val pixels =
-        image.peekPixels() ?: error("rendered sidebar frame has no readable pixels")
+    val pixels = image.peekPixels() ?: error("rendered sidebar frame has no readable pixels")
     val width = pixels.info.width
     var logoTop = Int.MAX_VALUE
     var logoBottom = -1
@@ -134,16 +133,15 @@ private fun measureSidebar(image: Image): SidebarFrame {
     return SidebarFrame(logoLeft = midLeft, logoTop = logoTop, railWidth = railRight + 1)
 }
 
-private fun headerColorSample(pixels: org.jetbrains.skia.Pixmap): String =
-    buildString {
-        append("logo pixels not found; header samples:")
-        for (y in 0 until HeaderHeightPx step 8) {
-            for (x in 0 until 80 step 4) {
-                append(" ($x,$y)=")
-                append(pixels.getColor(x, y).toUInt().toString(16))
-            }
+private fun headerColorSample(pixels: org.jetbrains.skia.Pixmap): String = buildString {
+    append("logo pixels not found; header samples:")
+    for (y in 0 until HeaderHeightPx step 8) {
+        for (x in 0 until 80 step 4) {
+            append(" ($x,$y)=")
+            append(pixels.getColor(x, y).toUInt().toString(16))
         }
     }
+}
 
 private fun Int.isLogoBlue(): Boolean {
     val red = (this shr 16) and 0xFF
