@@ -319,10 +319,10 @@ private fun ProtectionInfoCard() {
             Spacer(Modifier.height(16.dp))
             val items =
                 listOf(
-                    "Non-locking reads" to
-                        "Dirty-read tolerant isolation — never blocks production writes.",
-                    "Indexed joins only" to
-                        "Joins on non-indexed columns are rejected before execution.",
+                    "Read-only sessions" to
+                        "Non-locking reads on most engines — Oracle only sets the transaction read-only.",
+                    "Indexed or foreign-key joins" to
+                        "Non-indexed joins are rejected unless they are a complete foreign key.",
                     "Guided row limits & timeouts" to
                         "Every query is bounded, with coaching when reporting needs more rows.",
                     "Read-only by construction" to

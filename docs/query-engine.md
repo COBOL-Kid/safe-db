@@ -86,7 +86,9 @@ Settings are `Cautious`, `Standard`, `Flexible`, and `Disabled` ([`Settings.kt`]
 | MySQL | `SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED` | JVM trust, or a launch-profile PKCS12 store. |
 | SQL Server | `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED` and `SET LOCK_TIMEOUT`; no `SET TRANSACTION READ ONLY` | JVM trust, or a launch-profile PKCS12 store. |
 | Oracle | `SET TRANSACTION READ ONLY` | Verified TCPS uses an Oracle wallet. A generic PKCS12 launch profile is not a substitute. |
-| Db2 | No session SQL. JDBC `autoCommit = false`, `isReadOnly = true`, and isolation `READ UNCOMMITTED` | JVM trust, no wallet. Disabled sets `sslConnection=false`. Other modes set `sslConnection=true` and JCC `sslClientHostnameValidation=BASIC`. |
+| Db2 | No session SQL. JDBC `autoCommit = false`, `isReadOnly = true`, and isolation `READ UNCOMMITTED` | JVM trust, no wallet. `sslConnection` is a connection property, not part of the connect URL. |
+
+A pasted Db2 connection string is not the connect URL. [`formatConnectionString`](../shared/src/main/kotlin/com/safedb/connection/ParseConnectionString.kt) keeps `sslConnection=true` or `sslConnection=false` on that string so the transport mode round-trips. [`buildDb2Url`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) omits `sslConnection`. JCC 12 rejects `Driver.connect` when the property is in both the URL and the `Properties` object (`ERRORCODE=-4461`). [`applyDb2Ssl`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) sets it as a connection property after any pasted driver properties: `false` when transport is disabled, `true` otherwise, plus `sslClientHostnameValidation=BASIC` when SSL is on. Encrypt-only and verify-ca are not distinct from verify-identity on JCC.
 
 Launch-profile schema, fail-closed startup, and the SSL harness are in [trust-stores.md](trust-stores.md).
 

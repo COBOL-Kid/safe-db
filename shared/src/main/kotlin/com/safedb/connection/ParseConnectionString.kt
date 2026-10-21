@@ -227,9 +227,10 @@ private fun sqlServerResult(
     )
 }
 
-// IBM JCC form: jdbc:db2://host[:port]/database[:property=value;...]. The database keeps its
-// exact case — on z/OS it is an uppercase location name, on LUW it is usually lowercase —
-// because the driver matches it literally, unlike unquoted SQL identifiers.
+// IBM JCC form: jdbc:db2://host[:port]/database[:property=value;...]. The database keeps the
+// exact case typed in the string — LUW fixtures and docs use uppercase SAFEDB, and a z/OS
+// location name is uppercase too — because the driver matches it literally, unlike unquoted
+// SQL identifiers.
 private fun parseDb2Jdbc(raw: String): ParsedConnection {
     val rest = raw.replace(Regex("^jdbc:db2://", RegexOption.IGNORE_CASE), "")
     val slashIndex = rest.indexOf('/')
