@@ -20,15 +20,13 @@ import kotlin.test.assertTrue
 
 class Db2AdapterTest {
     @Test
-    fun db2JdbcUrlEncodesTlsFlag() {
-        assertEquals(
-            "jdbc:db2://db.example.com:50000/app:sslConnection=false;",
-            buildJdbcUrl(connection(TransportSecurityMode.Disabled)),
-        )
-        assertEquals(
-            "jdbc:db2://db.example.com:50000/app:sslConnection=true;",
-            buildJdbcUrl(connection(TransportSecurityMode.VerifyIdentity)),
-        )
+    fun db2ConnectUrlOmitsSslConnection() {
+        // JCC 12 rejects Driver.connect when this property is also passed in Properties.
+        for (mode in listOf(TransportSecurityMode.Disabled, TransportSecurityMode.VerifyIdentity)) {
+            val url = buildJdbcUrl(connection(mode))
+            assertEquals("jdbc:db2://db.example.com:50000/app", url)
+            assertFalse(url.contains("sslConnection"))
+        }
     }
 
     @Test
@@ -122,7 +120,7 @@ class Db2AdapterTest {
     fun db2Ipv6HostIsBracketedInUrlAndConnectionString() {
         val def = connection(TransportSecurityMode.Disabled).copy(host = "::1")
 
-        assertTrue(buildJdbcUrl(def).contains("jdbc:db2://[::1]:50000/app:"))
+        assertEquals("jdbc:db2://[::1]:50000/app", buildJdbcUrl(def))
         assertTrue(formatConnectionString(def).contains("jdbc:db2://[::1]:50000/app:"))
         val parsed = parseConnectionString("jdbc:db2://[::1]:50000/app:sslConnection=false;")
         assertEquals("::1", parsed.host)

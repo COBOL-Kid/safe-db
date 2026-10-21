@@ -245,6 +245,37 @@ class PlanParsersTest {
     }
 
     @Test
+    fun db2LuwListPrefetchUsesTheAncestorTable() {
+        val plan =
+            parseDb2LuwExplain(
+                listOf(
+                    Db2LuwExplainRow(1, null, "RETURN", null, null, null, "", null, 8.0),
+                    Db2LuwExplainRow(2, 1, "FETCH", "APP", "ORDERS", "TA", "", 4, 6.0),
+                    Db2LuwExplainRow(3, 2, "RIDSCN", null, null, null, "", 4, 5.0),
+                    Db2LuwExplainRow(4, 3, "SORT", null, null, null, "", 4, 4.0),
+                    Db2LuwExplainRow(
+                        5,
+                        4,
+                        "IXSCAN",
+                        "APP",
+                        "ORDERS_IX",
+                        "IX",
+                        "Q1.STATUS = 'OPEN'",
+                        4,
+                        2.0,
+                    ),
+                )
+            )
+
+        assertNotNull(plan)
+        val relation = plan.relations.single()
+        assertEquals("ORDERS", relation.table)
+        assertEquals("APP", relation.schema)
+        assertEquals(PlanAccessMethod.BoundedLookup, relation.method)
+        assertEquals(setOf("ORDERS"), plan.blockingOperations.single().aliases)
+    }
+
+    @Test
     fun db2LuwIxscanWithoutEqualityFallsBackToRangeOrFullScan() {
         val plan =
             parseDb2LuwExplain(

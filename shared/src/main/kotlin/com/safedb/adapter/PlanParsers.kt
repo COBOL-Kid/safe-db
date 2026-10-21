@@ -529,13 +529,20 @@ internal fun parseDb2LuwExplain(
     if (rows.isEmpty()) return null
     val byId = rows.associateBy(Db2LuwExplainRow::operatorId)
     val children = rows.groupBy(Db2LuwExplainRow::parentId)
-    // An IXSCAN names its index. Use this row, or its parent when that parent is a table object
-    // (the usual FETCH).
+    // An IXSCAN names its index. List prefetch inserts SORT and RIDSCN between that scan
+    // and the FETCH that names the table, so follow parents to the first table. Siblings
+    // stay out of the walk, which keeps a nested-loop join from borrowing the other side.
     fun tableFor(row: Db2LuwExplainRow): Db2LuwExplainRow {
         if (!isDb2IndexObject(row.objectType)) return row
-        val parent = row.parentId?.let(byId::get)
-        if (parent != null && isDb2TableObject(parent.objectType)) return parent
-        return row
+        val seen = mutableSetOf(row.operatorId)
+        var current = row
+        while (true) {
+            val parentId = current.parentId ?: return row
+            if (!seen.add(parentId)) return row
+            val parent = byId[parentId] ?: return row
+            if (isDb2TableObject(parent.objectType)) return parent
+            current = parent
+        }
     }
     fun subtreeTables(id: Int): Set<String> = buildSet {
         byId[id]?.let { row ->

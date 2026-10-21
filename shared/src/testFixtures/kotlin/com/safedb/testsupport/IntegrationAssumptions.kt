@@ -86,7 +86,7 @@ object IntegrationAssumptions {
         get() = env["SAFEDB_TEST_DB2_PASSWORD"] ?: "SafeDb_Db2_Passw0rd!"
 
     val db2Database: String
-        get() = env["SAFEDB_TEST_DB2_DATABASE"] ?: "safedb_test"
+        get() = env["SAFEDB_TEST_DB2_DATABASE"] ?: "SAFEDB"
 
     fun assumeMysqlAvailable() {
         requireOrAssume(
