@@ -10,7 +10,8 @@ INSTANCE_HOME="${INSTANCE_HOME:-/home/db2inst1}"
 # shellcheck disable=SC1091
 . "$INSTANCE_HOME/sqllib/db2profile"
 
-DBNAME="${DBNAME:-safedb_test}"
+# LUW database names are at most 8 characters and cannot contain "_".
+DBNAME="${DBNAME:-SAFEDB}"
 
 # The instance can take several minutes to accept connections on first start.
 for _ in $(seq 1 60); do

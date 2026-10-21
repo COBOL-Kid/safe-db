@@ -128,14 +128,15 @@ internal fun db2JdbcAuthority(host: String, port: Int): String {
     return "$literal:$port"
 }
 
-private fun buildDb2Url(def: ConnectionDef): String {
-    val ssl = def.transportSecurity.mode != TransportSecurityMode.Disabled
-    return "jdbc:db2://${db2JdbcAuthority(def.host, def.port)}/${def.database}:sslConnection=$ssl;"
-}
+// JCC 12 rejects Driver.connect when sslConnection is in both the URL and the Properties
+// object (ERRORCODE=-4461). The flag is applied only in applyDb2Ssl.
+private fun buildDb2Url(def: ConnectionDef): String =
+    "jdbc:db2://${db2JdbcAuthority(def.host, def.port)}/${def.database}"
 
 // sslConnection and hostname validation are pinned after user properties so a pasted
-// driver property cannot turn TLS or BASIC hostname checks off. Encrypt-only and
-// certificate-only modes are not distinct on JCC: anything other than Disabled is SSL on.
+// driver property cannot turn TLS or BASIC hostname checks off. They stay out of the
+// JDBC URL because JCC 12 rejects a property that appears in both places. Encrypt-only
+// and certificate-only modes are not distinct on JCC: anything other than Disabled is SSL on.
 private fun applyDb2Ssl(config: HikariConfig, def: ConnectionDef) {
     val ssl = def.transportSecurity.mode != TransportSecurityMode.Disabled
     config.addDataSourceProperty("sslConnection", ssl.toString())

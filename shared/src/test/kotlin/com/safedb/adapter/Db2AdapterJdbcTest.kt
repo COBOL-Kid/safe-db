@@ -165,6 +165,73 @@ class Db2AdapterJdbcTest {
     }
 
     @Test
+    fun db2ExplainLuwListPrefetchNamesTheBaseTable() {
+        val operators =
+            query(
+                listOf("OPERATOR_ID", "OPERATOR_TYPE", "TOTAL_COST"),
+                listOf(
+                    listOf(1, "RETURN", 8.0),
+                    listOf(2, "FETCH", 6.0),
+                    listOf(3, "RIDSCN", 5.0),
+                    listOf(4, "SORT", 4.0),
+                    listOf(5, "IXSCAN", 2.0),
+                ),
+            )
+        val objects =
+            query(
+                listOf("OBJECT_SCHEMA", "OBJECT_NAME", "OBJECT_TYPE"),
+                listOf(listOf("APP", "ORDERS", "TA"), listOf("APP", "ORDERS_IX", "IX")),
+            )
+        val streams =
+            query(
+                listOf(
+                    "SOURCE_TYPE",
+                    "SOURCE_ID",
+                    "TARGET_TYPE",
+                    "TARGET_ID",
+                    "STREAM_COUNT",
+                    "OBJECT_SCHEMA",
+                    "OBJECT_NAME",
+                ),
+                listOf(
+                    listOf("O", 5, "O", 4, 4, null, null),
+                    listOf("O", 4, "O", 3, 4, null, null),
+                    listOf("O", 3, "O", 2, 4, null, null),
+                    listOf("O", 2, "O", 1, 4, null, null),
+                    listOf("D", -1, "O", 5, 4, "APP", "ORDERS_IX"),
+                    listOf("D", -1, "O", 2, 4, "APP", "ORDERS"),
+                ),
+            )
+        val predicates =
+            query(
+                listOf("OPERATOR_ID", "PREDICATE_TEXT"),
+                listOf(listOf(5, "Q1.STATUS = 'OPEN'")),
+            )
+        val jdbc =
+            script(
+                { raw ->
+                    val sql = raw.compact()
+                    when {
+                        sql.contains("EXPLAIN_OPERATOR") -> operators
+                        sql.contains("EXPLAIN_OBJECT") -> objects
+                        sql.contains("EXPLAIN_STREAM") -> streams
+                        sql.contains("EXPLAIN_PREDICATE") -> predicates
+                        else -> null
+                    }
+                },
+                luwExplain(),
+            )
+
+        val plan = assertIs<ExplainResult.Available>(explain(jdbc)).plan
+
+        val relation = plan.relations.single()
+        assertEquals("ORDERS", relation.table)
+        assertEquals("APP", relation.schema)
+        assertEquals(PlanAccessMethod.BoundedLookup, relation.method)
+        assertEquals(4L, relation.estimatedRows)
+    }
+
+    @Test
     fun db2ExplainLuwReturnsTheNormalizedPlan() {
         val jdbc = script(luwExplain())
 
@@ -719,13 +786,24 @@ private fun luwExplain(
         sql.contains("EXPLAIN_OPERATOR") -> operators
         sql.contains("EXPLAIN_OBJECT") ->
             query(
-                listOf("OPERATOR_ID", "OBJECT_SCHEMA", "OBJECT_NAME", "OBJECT_TYPE"),
-                listOf(listOf(1, "APP", "ORDERS", "TA")),
+                listOf("OBJECT_SCHEMA", "OBJECT_NAME", "OBJECT_TYPE"),
+                listOf(listOf("APP", "ORDERS", "TA")),
             )
         sql.contains("EXPLAIN_STREAM") ->
             query(
-                listOf("SOURCE_ID", "TARGET_ID", "STREAM_COUNT", "OBJECT_NAME"),
-                listOf(listOf(1, 2, 10, null)),
+                listOf(
+                    "SOURCE_TYPE",
+                    "SOURCE_ID",
+                    "TARGET_TYPE",
+                    "TARGET_ID",
+                    "STREAM_COUNT",
+                    "OBJECT_SCHEMA",
+                    "OBJECT_NAME",
+                ),
+                listOf(
+                    listOf("O", 1, "O", 2, 10, null, null),
+                    listOf("D", -1, "O", 1, 10, "APP", "ORDERS"),
+                ),
             )
         sql.contains("EXPLAIN_PREDICATE") ->
             query(listOf("OPERATOR_ID", "PREDICATE_TEXT"), listOf(listOf(1, "STATUS = 'OPEN'")))

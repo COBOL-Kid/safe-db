@@ -119,7 +119,7 @@ class SslCompatIntegrationTest {
             assertTrue(buildJdbcUrl(mssql(mode)).startsWith("jdbc:sqlserver://"))
             val db2Url = buildJdbcUrl(db2(mode))
             assertTrue(db2Url.startsWith("jdbc:db2://"))
-            assertTrue(db2Url.contains("sslConnection=${mode != TransportSecurityMode.Disabled}"))
+            assertFalse(db2Url.contains("sslConnection"))
             if (mode == TransportSecurityMode.Disabled) {
                 assertTrue(buildJdbcUrl(oracle(mode)).contains("@//"))
             } else {

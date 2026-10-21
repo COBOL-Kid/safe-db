@@ -880,8 +880,9 @@ fun formatConnectionString(def: com.safedb.model.ConnectionDef): String {
             "jdbc:oracle:thin:$protocol${def.host}:${def.port}/${encodeComponent(def.database)}$suffix"
         }
         Dialect.Db2 -> {
-            // Same IBM JCC shape the driver connects with (see buildDb2Url): credentials ride
-            // outside the URL, so like Oracle nothing secret is ever written into the string.
+            // Credentials ride outside the URL, so like Oracle nothing secret is written into
+            // the string. sslConnection stays here so a pasted URL round-trips the transport
+            // mode. The connect URL omits it; JCC 12 rejects the property in both places.
             val sslConnection =
                 if (def.transportSecurity.mode == TransportSecurityMode.Disabled) "false"
                 else "true"

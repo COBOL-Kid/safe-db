@@ -300,15 +300,7 @@ object Db2Adapter {
     private fun explainLuw(conn: Connection, compiled: CompiledQuery): ExplainResult {
         val queryNo = Random.nextInt(100_000, Int.MAX_VALUE)
         try {
-            prepareStatement(
-                    conn,
-                    compiled.copy(sql = "EXPLAIN PLAN SET QUERYNO = $queryNo FOR ${compiled.sql}"),
-                    Dialect.Db2,
-                )
-                .use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                    ps.execute()
-                }
+            conn.executeExplainPlan(compiled, queryNo)
         } catch (e: SQLException) {
             if (e.isUndefinedObject()) return missingLuwExplainTables()
             throw e
@@ -396,15 +388,7 @@ object Db2Adapter {
         }
         val queryNo = Random.nextInt(100_000, Int.MAX_VALUE)
         try {
-            prepareStatement(
-                    conn,
-                    compiled.copy(sql = "EXPLAIN PLAN SET QUERYNO = $queryNo FOR ${compiled.sql}"),
-                    Dialect.Db2,
-                )
-                .use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                    ps.execute()
-                }
+            conn.executeExplainPlan(compiled, queryNo)
         } catch (e: SQLException) {
             if (e.isUndefinedObject()) return missingZosPlanTable()
             throw e
@@ -457,6 +441,16 @@ object Db2Adapter {
             }
         } catch (e: SQLException) {
             if (e.isUndefinedObject()) missingZosPlanTable() else throw e
+        }
+    }
+
+    // JCC 12 reports no JDBC parameters for EXPLAIN PLAN (getParameterCount is 0). Binding
+    // the statement's markers throws ERRORCODE=-4461. The markers stay in the text, and Db2
+    // still explains them.
+    private fun Connection.executeExplainPlan(compiled: CompiledQuery, queryNo: Int) {
+        prepareStatement("EXPLAIN PLAN SET QUERYNO = $queryNo FOR ${compiled.sql}").use { ps ->
+            ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+            ps.execute()
         }
     }
 
@@ -614,52 +608,75 @@ object Db2Adapter {
                     }
                 }
         if (operators.isEmpty()) return emptyList()
-        val objects =
-            prepareStatement(
-                    "SELECT OPERATOR_ID, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE " +
-                        "FROM ${prefix}EXPLAIN_OBJECT WHERE $LUW_KEY_PREDICATE"
-                )
-                .use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                    ps.bindLuwKey(key)
-                    ps.executeQuery().use { rs ->
-                        buildList {
-                            while (rs.next()) {
-                                add(
-                                    LuwObjectRef(
-                                        (rs.getObject(1) as Number).toInt(),
-                                        rs.getString(2),
-                                        rs.getString(3),
-                                        rs.getString(4),
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-                .groupBy(LuwObjectRef::operatorId)
-        // Hierarchy edges are the streams without an object payload, mirroring the
-        // last_explained reference view; SOURCE_ID is the child, TARGET_ID the parent.
-        val parents = mutableMapOf<Int, Int>()
-        val producedRows = mutableMapOf<Int, Long>()
+        // EXPLAIN_OBJECT identifies the object, not the operator. EXPLAIN_STREAM carries the
+        // operator id: a data object flows from SOURCE_TYPE 'D' (SOURCE_ID -1) to TARGET_ID.
+        val objectTypes = mutableMapOf<Pair<String, String>, String>()
         prepareStatement(
-                "SELECT SOURCE_ID, TARGET_ID, STREAM_COUNT, OBJECT_NAME " +
-                    "FROM ${prefix}EXPLAIN_STREAM WHERE $LUW_KEY_PREDICATE"
+                "SELECT OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE " +
+                    "FROM ${prefix}EXPLAIN_OBJECT WHERE $LUW_KEY_PREDICATE"
             )
             .use { ps ->
                 ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                 ps.bindLuwKey(key)
                 ps.executeQuery().use { rs ->
                     while (rs.next()) {
-                        val source = (rs.getObject(1) as Number).toInt()
-                        val target = (rs.getObject(2) as Number).toInt()
-                        if (rs.getString(4) == null) parents.putIfAbsent(source, target)
-                        val count = (rs.getObject(3) as? Number)?.toDouble()?.toLong()
-                        if (count != null)
-                            producedRows[source] = maxOf(producedRows[source] ?: 0, count)
+                        val objectKey =
+                            rs.getString(1).orEmpty().trim() to rs.getString(2).orEmpty().trim()
+                        objectTypes[objectKey] =
+                            preferredDb2ObjectType(objectTypes[objectKey], rs.getString(3))
                     }
                 }
             }
+        // Operator streams have no object. SOURCE_ID is the child and TARGET_ID the parent,
+        // matching the last_explained reference view.
+        val parents = mutableMapOf<Int, Int>()
+        val producedRows = mutableMapOf<Int, Long>()
+        val objectRefs = mutableListOf<LuwObjectRef>()
+        prepareStatement(
+                "SELECT SOURCE_TYPE, SOURCE_ID, TARGET_TYPE, TARGET_ID, STREAM_COUNT, " +
+                    "OBJECT_SCHEMA, OBJECT_NAME FROM ${prefix}EXPLAIN_STREAM " +
+                    "WHERE $LUW_KEY_PREDICATE"
+            )
+            .use { ps ->
+                ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+                ps.bindLuwKey(key)
+                ps.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        val sourceType = rs.getString(1)?.trim()
+                        val source = (rs.getObject(2) as Number).toInt()
+                        val targetType = rs.getString(3)?.trim()
+                        val target = (rs.getObject(4) as Number).toInt()
+                        val objectName = rs.getString(7)?.trim()?.takeIf(String::isNotEmpty)
+                        if (objectName == null) {
+                            if (sourceType == "O" && targetType == "O") {
+                                parents.putIfAbsent(source, target)
+                            }
+                        } else {
+                            val operatorId =
+                                when {
+                                    sourceType == "D" && targetType == "O" -> target
+                                    sourceType == "O" && targetType == "D" -> source
+                                    else -> null
+                                }
+                            if (operatorId != null) {
+                                val objectSchema = rs.getString(6)?.trim()
+                                objectRefs +=
+                                    LuwObjectRef(
+                                        operatorId,
+                                        objectSchema,
+                                        objectName,
+                                        objectTypes[objectSchema.orEmpty() to objectName],
+                                    )
+                            }
+                        }
+                        val count = (rs.getObject(5) as? Number)?.toDouble()?.toLong()
+                        if (sourceType == "O" && count != null) {
+                            producedRows[source] = maxOf(producedRows[source] ?: 0, count)
+                        }
+                    }
+                }
+            }
+        val objects = objectRefs.groupBy(LuwObjectRef::operatorId)
         val predicates =
             prepareStatement(
                     "SELECT OPERATOR_ID, PREDICATE_TEXT " +
@@ -912,6 +929,17 @@ object Db2Adapter {
 
     private fun java.sql.ResultSet.isYes(index: Int): Boolean =
         getString(index)?.trim().equals("Y", ignoreCase = true)
+
+    // One object name can be both a table and another code in the same plan. Keep the table.
+    private fun preferredDb2ObjectType(current: String?, candidate: String?): String {
+        val next = candidate?.trim().orEmpty()
+        if (current == null) return next
+        if (isDb2TableObject(next) && !isDb2TableObject(current)) return next
+        if (isDb2IndexObject(next) && !isDb2TableObject(current) && !isDb2IndexObject(current)) {
+            return next
+        }
+        return current
+    }
 
     private data class LuwObjectRef(
         val operatorId: Int,

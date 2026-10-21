@@ -139,7 +139,7 @@ class SeedMysqlTest {
         val repoRoot = Path.of("/repo")
         val settings = relationalSeedSettings(GeneratedSqlDialect.Db2, emptyMap(), repoRoot)
 
-        assertEquals("safedb_test", settings.database)
+        assertEquals("SAFEDB", settings.database)
         assertEquals("db2inst1", settings.user)
         assertEquals("safedb-test-db2", settings.container)
         assertEquals(repoRoot.resolve("testdata_db2.sql"), settings.staticSql)

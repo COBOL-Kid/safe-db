@@ -353,7 +353,8 @@ internal fun relationalSeedSettings(
             )
         GeneratedSqlDialect.Db2 ->
             SeedSettings(
-                database = value("SAFEDB_TEST_DB2_DATABASE", "safedb_test"),
+                // LUW database names are at most 8 characters and cannot contain "_".
+                database = value("SAFEDB_TEST_DB2_DATABASE", "SAFEDB"),
                 databaseVariable = "SAFEDB_TEST_DB2_DATABASE",
                 user = value("SAFEDB_TEST_DB2_USER", "db2inst1"),
                 userVariable = "SAFEDB_TEST_DB2_USER",
