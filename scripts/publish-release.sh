@@ -95,7 +95,7 @@ upload() {
 upload application/msix       "$IMMUTABLE" '*.msix'
 upload application/msixbundle "$IMMUTABLE" '*.msixbundle'
 upload application/appx       "$IMMUTABLE" '*.appx'
-upload application/octet-stream "$IMMUTABLE" '*.zip' '*.dmg' '*.pkg' '*.deb' '*.tar.gz'
+upload application/octet-stream "$IMMUTABLE" '*.zip' '*.dmg' '*.pkg' '*.deb' '*.tar.gz' '*.delta'
 
 # The Windows stub installer keeps a stable filename (safedb-windows-x64.exe).
 # Sites that link to it would keep serving a stale installer if it were immutable.

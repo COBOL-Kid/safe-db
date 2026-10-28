@@ -34,7 +34,7 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Part of `check` when `node` is on `PATH`; skips otherwise. |
 | `./gradlew :mcp:npmPackagedTest` | Packaged MCP stdio/MySQL smoke against the current-OS jlink image. Not part of `check`. |
 | `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
-| `./scripts/assert-conveyor-site.sh ./output` | Check Conveyor site version, AppInstaller URLs, and MSIX signature presence. |
+| `./scripts/assert-conveyor-site.sh ./output` | Check Conveyor site version, AppInstaller URLs, MSIX signature presence, the Apple Silicon zip, and the appcast URL. |
 
 ## Integration tests
 

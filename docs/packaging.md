@@ -90,11 +90,12 @@ Do not use `make copied-site` against this bucket. Conveyor's S3 uploader cannot
 
 On macOS or Linux, `./scripts/publish-release.sh ./output` does the same thing. Both default to `gs://safedb-download`.
 
-The layout must stay flat: `base-url` resolves each file directly under the bucket root. The `.appinstaller`, `metadata.properties`, `safedb-windows-x64.exe`, and `appcast-aarch64.rss` files are uploaded `Cache-Control: no-cache`. Versioned `.msix` and the Apple Silicon `.zip` are immutable. The publish scripts check `Cache-Control` on `metadata.properties`, `safedb.appinstaller`, and `appcast-aarch64.rss` after upload. You can also confirm:
+The layout must stay flat: `base-url` resolves each file directly under the bucket root. The `.appinstaller`, `metadata.properties`, `safedb-windows-x64.exe`, and `appcast-aarch64.rss` files are uploaded `Cache-Control: no-cache`. Versioned `.msix`, the Apple Silicon `.zip`, and Sparkle `*.delta` patches are immutable. Conveyor writes those patches once a previous Apple Silicon zip is already on the site, and the appcast links to them. The publish scripts check `Cache-Control` on `metadata.properties`, `safedb.appinstaller`, and `appcast-aarch64.rss` after upload. You can also confirm:
 
 ```powershell
 curl.exe -sI https://storage.googleapis.com/safedb-download/metadata.properties
 curl.exe -sI https://storage.googleapis.com/safedb-download/safedb.appinstaller
+curl.exe -sI https://storage.googleapis.com/safedb-download/appcast-aarch64.rss
 ```
 
 `Cache-Control` should contain `no-cache`. The default Firebase bucket (`safe-db-35169.firebasestorage.app`) is unrelated and must stay deny-all; never grant `allUsers` objectViewer on it.
