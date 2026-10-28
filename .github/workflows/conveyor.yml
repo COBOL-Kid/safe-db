@@ -198,6 +198,9 @@ jobs:
             issuer-id = \${env.APPLE_NOTARIZATION_ISSUER_ID}
             key-id = \${env.APPLE_NOTARIZATION_KEY_ID}
             private-key = "${p8}"
+            # Apple's notarization queue has no default deadline. A slow ticket
+            # otherwise fails the build.
+            timeout-seconds = 3600
           }
           EOF
           )"
@@ -215,6 +218,9 @@ jobs:
               # literal text, so the PKCS#12 password would not match the secret.
               password = \${env.APPLE_SIGNING_P12_PASSWORD}
             }
+            # The .p12 holds the Developer ID cert too. Leaving this unset keeps
+            # the default self-signed certificate, which notarization rejects.
+            mac.certificate = "${APPLE_SIGNING_P12_FILE}"
           ${notarization}
           }
           EOF
