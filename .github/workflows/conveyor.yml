@@ -181,7 +181,13 @@ jobs:
           chmod 600 "${converted}"
           echo "PKCS#12 encryption after conversion:"
           openssl pkcs12 -legacy -in "${converted}" -info -nokeys -nocerts -passin env:APPLE_SIGNING_P12_PASSWORD
-          conveyor_java="$(find "${GITHUB_WORKSPACE}/.conveyor/install/conveyor-${CONVEYOR_VERSION}" -type f -path '*/runtime/bin/java' -print -quit)"
+          # The runtime java is a symlink, so a search limited to regular files misses it.
+          conveyor_java="${GITHUB_WORKSPACE}/.conveyor/install/conveyor-${CONVEYOR_VERSION}/lib/runtime/bin/java"
+          if [ ! -x "${conveyor_java}" ]; then
+            echo "Conveyor JDK is not executable at ${conveyor_java}" >&2
+            find "${GITHUB_WORKSPACE}/.conveyor/install/conveyor-${CONVEYOR_VERSION}" -name java -print >&2
+            exit 1
+          fi
           check_src="${RUNNER_TEMP}/CheckPkcs12.java"
           cat > "${check_src}" <<'EOF'
           import java.nio.file.Files;
