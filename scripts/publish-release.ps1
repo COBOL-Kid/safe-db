@@ -49,6 +49,21 @@ Assert-RequiredReleaseFile "metadata.properties"
 Assert-RequiredReleaseFile "safedb.appinstaller"
 Assert-RequiredReleaseFile "safedb-windows-x64.exe"
 
+$siteVersion = ""
+Get-Content -LiteralPath (Join-Path $OutputDir "metadata.properties") | ForEach-Object {
+    $line = $_.TrimEnd("`r")
+    if ($line.StartsWith("app.version=")) {
+        $script:siteVersion = $line.Substring("app.version=".Length)
+    }
+}
+if (-not $siteVersion) {
+    throw "publish aborted: metadata.properties is missing app.version"
+}
+Assert-RequiredReleaseFile "safedb-$siteVersion-mac-amd64.zip"
+Assert-RequiredReleaseFile "safedb-$siteVersion-mac-aarch64.zip"
+Assert-RequiredReleaseFile "appcast-amd64.rss"
+Assert-RequiredReleaseFile "appcast-aarch64.rss"
+
 $msixFiles = @(Get-ChildItem -LiteralPath $OutputDir -File -Filter "*.msix" -ErrorAction SilentlyContinue)
 if ($msixFiles.Count -eq 0) {
     throw "publish aborted: expected at least one nonempty .msix in $OutputDir"
@@ -135,6 +150,8 @@ function Assert-NoCacheControl {
 
 Assert-NoCacheControl "$Bucket/metadata.properties"
 Assert-NoCacheControl "$Bucket/safedb.appinstaller"
+Assert-NoCacheControl "$Bucket/appcast-amd64.rss"
+Assert-NoCacheControl "$Bucket/appcast-aarch64.rss"
 
 $HostName = $Bucket -replace "^gs://", ""
 Write-Host ""

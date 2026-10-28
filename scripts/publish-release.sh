@@ -54,6 +54,21 @@ for msix in "${msix_files[@]}"; do
 	require_file "$msix"
 done
 
+site_version="$(
+	awk -F= '
+		{ sub(/\r$/, "") }
+		$1 == "app.version" { print substr($0, index($0, "=") + 1); exit }
+	' "$OUTPUT_DIR/metadata.properties"
+)"
+[[ -n "$site_version" ]] || {
+	echo "publish aborted: metadata.properties is missing app.version" >&2
+	exit 1
+}
+require_file "$OUTPUT_DIR/safedb-${site_version}-mac-amd64.zip"
+require_file "$OUTPUT_DIR/safedb-${site_version}-mac-aarch64.zip"
+require_file "$OUTPUT_DIR/appcast-amd64.rss"
+require_file "$OUTPUT_DIR/appcast-aarch64.rss"
+
 # upload <content-type> <cache-control> <glob>...
 upload() {
 	local content_type="$1" cache_control="$2"
@@ -111,6 +126,8 @@ assert_no_cache() {
 
 assert_no_cache "$BUCKET/metadata.properties"
 assert_no_cache "$BUCKET/safedb.appinstaller"
+assert_no_cache "$BUCKET/appcast-amd64.rss"
+assert_no_cache "$BUCKET/appcast-aarch64.rss"
 
 echo
 echo "Published to https://storage.googleapis.com/${BUCKET#gs://}/"
