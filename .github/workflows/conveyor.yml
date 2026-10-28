@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the Windows site to gs://safedb-download
+        description: Publish the Windows and macOS site to gs://safedb-download
         type: boolean
         default: false
 
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   package:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     environment: conveyor
     env:
       CONVEYOR_VERSION: '22.2'
@@ -77,12 +77,17 @@ jobs:
             rm -f "${archive}"
           fi
 
-      - name: Build the Windows site
+      - name: Build the Windows and macOS site
         env:
           CONVEYOR_AGREE_TO_LICENSE: '1'
           SIGNING_KEY: ${{ secrets.CONVEYOR_SIGNING_KEY }}
           # Empty when unset: Linux still needs --passphrase so it does not prompt.
           CONVEYOR_PASS: ${{ secrets.CONVEYOR_PASS }}
+          APPLE_SIGNING_P12: ${{ secrets.APPLE_SIGNING_P12 }}
+          APPLE_SIGNING_P12_PASSWORD: ${{ secrets.APPLE_SIGNING_P12_PASSWORD }}
+          APPLE_NOTARIZATION_ISSUER_ID: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
+          APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
+          APPLE_NOTARIZATION_PRIVATE_KEY: ${{ secrets.APPLE_NOTARIZATION_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${SIGNING_KEY}" ]; then
@@ -124,10 +129,70 @@ jobs:
           export SIGNING_KEY="${key}"
           export CONVEYOR_PASS="${CONVEYOR_PASS-}"
           export PATH="${PATH}:${GITHUB_WORKSPACE}/.conveyor/install/conveyor-${CONVEYOR_VERSION}/bin"
+          if [ -z "${APPLE_SIGNING_P12}" ] || [ -z "${APPLE_SIGNING_P12_PASSWORD}" ]; then
+            echo "Missing APPLE_SIGNING_P12 or APPLE_SIGNING_P12_PASSWORD on the conveyor environment." >&2
+            exit 1
+          fi
+          echo "::add-mask::${APPLE_SIGNING_P12_PASSWORD}"
+          p12="${RUNNER_TEMP}/apple-signing.p12"
+          printf '%s' "${APPLE_SIGNING_P12}" | base64 -d > "${p12}"
+          chmod 600 "${p12}"
+          if [ ! -s "${p12}" ]; then
+            echo "APPLE_SIGNING_P12 decoded to an empty file. Store base64 of the .p12, not the raw file." >&2
+            exit 1
+          fi
+          subject=""
+          if ! subject="$(openssl pkcs12 -in "${p12}" -nokeys -passin env:APPLE_SIGNING_P12_PASSWORD -clcerts 2>/dev/null | openssl x509 -noout -subject)"; then
+            if ! subject="$(openssl pkcs12 -legacy -in "${p12}" -nokeys -passin env:APPLE_SIGNING_P12_PASSWORD -clcerts 2>/dev/null | openssl x509 -noout -subject)"; then
+              echo "Could not read APPLE_SIGNING_P12. Check that the secret is base64 and the password matches the export passphrase." >&2
+              exit 1
+            fi
+          fi
+          echo "Apple signing identity: ${subject}"
+          case "${subject}" in
+            *"Developer ID Application: ERIK MICHAEL KLINGENBERG (X935BGBPLW)"*) ;;
+            *)
+              echo "APPLE_SIGNING_P12 is not the Developer ID Application certificate." >&2
+              exit 1
+              ;;
+          esac
+          export APPLE_SIGNING_P12_FILE="${p12}"
+          notarization=""
+          if [ -n "${APPLE_NOTARIZATION_ISSUER_ID}" ] || [ -n "${APPLE_NOTARIZATION_KEY_ID}" ] || [ -n "${APPLE_NOTARIZATION_PRIVATE_KEY}" ]; then
+            if [ -z "${APPLE_NOTARIZATION_ISSUER_ID}" ] || [ -z "${APPLE_NOTARIZATION_KEY_ID}" ] || [ -z "${APPLE_NOTARIZATION_PRIVATE_KEY}" ]; then
+              echo "Set all of APPLE_NOTARIZATION_ISSUER_ID, APPLE_NOTARIZATION_KEY_ID, and APPLE_NOTARIZATION_PRIVATE_KEY, or none of them." >&2
+              exit 1
+            fi
+            p8="${RUNNER_TEMP}/AuthKey.p8"
+            printf '%s\n' "${APPLE_NOTARIZATION_PRIVATE_KEY}" > "${p8}"
+            chmod 600 "${p8}"
+            notarization="$(cat <<EOF
+          mac.notarization {
+            issuer-id = \${env.APPLE_NOTARIZATION_ISSUER_ID}
+            key-id = \${env.APPLE_NOTARIZATION_KEY_ID}
+            private-key = "${p8}"
+          }
+          EOF
+          )"
+          else
+            echo "Apple notarization secrets are unset. Mac apps will be Developer ID signed, and Gatekeeper will block them until notarization is configured."
+          fi
+          overlay="${RUNNER_TEMP}/ci.conveyor.conf"
+          cat > "${overlay}" <<EOF
+          include required("${GITHUB_WORKSPACE}/conveyor.conf")
+
+          app {
+            mac.signing-key.file {
+              path = "${APPLE_SIGNING_P12_FILE}"
+              password = "\${env.APPLE_SIGNING_P12_PASSWORD}"
+            }
+          ${notarization}
+          }
+          EOF
           # --console=plain has no TTY. Linux encrypts the root key and will
           # otherwise stop with "To enter a passphrase you must have an attached
           # console." Empty CONVEYOR_PASS is the same as pressing Enter locally.
-          conveyor --cache-dir="${GITHUB_WORKSPACE}/.conveyor/cache" --console=plain --passphrase "env:CONVEYOR_PASS" --parallelism=2 make site
+          conveyor -f "${overlay}" --cache-dir="${GITHUB_WORKSPACE}/.conveyor/cache" --console=plain --passphrase "env:CONVEYOR_PASS" --parallelism=2 make site
 
       - name: Upload Conveyor log
         if: failure()
@@ -179,8 +244,45 @@ jobs:
             }
           }
 
+  smoke-mac:
+    name: Smoke (macOS Developer ID)
+    needs: package
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: conveyor-site
+          path: output
+
+      - name: Verify Developer ID signature
+        run: |
+          set -euo pipefail
+          version="$(awk -F= '/^app\.version=/{ sub(/\r$/, ""); print substr($0, index($0, "=") + 1); exit }' output/metadata.properties)"
+          [ -n "${version}" ]
+          work="$(mktemp -d)"
+          zip="output/safedb-${version}-mac-aarch64.zip"
+          [ -s "${zip}" ]
+          unzip -q "${zip}" -d "${work}"
+          app=""
+          while IFS= read -r candidate; do
+            app="${candidate}"
+            break
+          done < <(find "${work}" -name '*.app' -type d)
+          [ -n "${app}" ]
+          codesign --verify --deep --strict --verbose=2 "${app}"
+          authority="$(codesign -dvvv "${app}" 2>&1 | awk -F= '/^Authority=/{ print substr($0, index($0, "=") + 1); exit }')"
+          echo "aarch64 Authority=${authority}"
+          case "${authority}" in
+            "Developer ID Application: ERIK MICHAEL KLINGENBERG (X935BGBPLW)") ;;
+            *)
+              echo "unexpected Authority: ${authority}" >&2
+              exit 1
+              ;;
+          esac
+
   publish:
-    needs: [package, smoke]
+    needs: [package, smoke, smoke-mac]
     if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15

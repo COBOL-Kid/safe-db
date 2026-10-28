@@ -1,16 +1,16 @@
-# Windows packaging
+# Windows and macOS packaging
 
-GitHub Actions is the release path. [`.github/workflows/conveyor.yml`](../.github/workflows/conveyor.yml) builds a signed Windows download site on Linux and, when asked, publishes it to `gs://safedb-download`. Local `make site` and unsigned `--key` overrides remain a fallback.
+GitHub Actions is the release path. [`.github/workflows/conveyor.yml`](../.github/workflows/conveyor.yml) builds a signed Windows and macOS download site on Linux and, when asked, publishes it to `gs://safedb-download`. Local `make site` and unsigned `--key` overrides remain a fallback. A local Mac build is self-signed. CI applies the Developer ID `.p12`.
 
-`conveyor.conf` pulls the app definition out of Gradle via `include "#!./gradlew -q printConveyorConfig"`. That include only prints configuration; it does not assemble anything, so `./gradlew jar` must run first. The Windows installer file is `safedb-windows-x64.exe`. The app identity (`app.fsname`) is `safedb`, so a later macOS build can share the same name, data directories, and update site.
+`conveyor.conf` pulls the app definition out of Gradle via `include "#!./gradlew -q printConveyorConfig"`. That include only prints configuration; it does not assemble anything, so `./gradlew jar` must run first. The Windows installer file is `safedb-windows-x64.exe`. The Mac download is `safedb-<version>-mac-aarch64.zip`. The app identity (`app.fsname`) is `safedb`, so Windows and macOS share the same name, data directories, and update site.
 
 Durability CI still produces unsigned jpackage MSI/DMG artifacts. Those jobs are not this release path.
 
 ## GitHub Actions release
 
-On GitHub, **Run workflow** on `.github/workflows/conveyor.yml`. Leave `publish` false to package and keep a 14-day artifact after Authenticode smoke. Set `publish` true only from `main` to upload `output/` to `gs://safedb-download`.
+On GitHub, **Run workflow** on `.github/workflows/conveyor.yml`. Leave `publish` false to package and keep a 14-day artifact after Authenticode and Developer ID smoke. Set `publish` true only from `main` to upload `output/` to `gs://safedb-download`.
 
-The `package` job runs on `ubuntu-latest`. It assembles the jar, logs into Azure with OIDC, mints `AZURE_CODESIGNING_TOKEN`, installs Conveyor 22.2, runs `make site` with the existing root key, and asserts `output/` contains `safedb-windows-x64.exe`, `safedb.appinstaller`, `metadata.properties`, and a nonempty `.msix` whose version and `AppInstaller`/`MainPackage` URLs match `build.gradle.kts` and `https://storage.googleapis.com/safedb-download`. Conveyor is installed in the workflow rather than via `hydraulic-software/conveyor/actions/build`, whose nested unpinned actions org policy rejects. A Windows `smoke` job checks Authenticode on the stub installer and the `.msix`. The `publish` job downloads that artifact, refuses incomplete `output/` directories, runs `./scripts/publish-release.sh ./output`, and checks that `metadata.properties` and `safedb.appinstaller` were stored with `Cache-Control` containing `no-cache`.
+The `package` job runs on `ubuntu-latest`. It assembles the jar, logs into Azure with OIDC, mints `AZURE_CODESIGNING_TOKEN`, writes the Developer ID `.p12` from `APPLE_SIGNING_P12`, installs Conveyor 22.2, and runs `make site` with the existing root key. It asserts `output/` contains `safedb-windows-x64.exe`, `safedb.appinstaller`, `metadata.properties`, the Apple Silicon zip, its Sparkle appcast, and a nonempty `.msix` whose version and `AppInstaller`/`MainPackage` URLs match `build.gradle.kts` and `https://storage.googleapis.com/safedb-download`. Conveyor is installed in the workflow rather than via `hydraulic-software/conveyor/actions/build`, whose nested unpinned actions org policy rejects. A Windows `smoke` job checks Authenticode on the stub installer and the `.msix`. A macOS `smoke` job checks that the Apple Silicon `.app` is signed by `Developer ID Application: ERIK MICHAEL KLINGENBERG (X935BGBPLW)`. The `publish` job downloads that artifact, refuses incomplete `output/` directories, runs `./scripts/publish-release.sh ./output`, and checks that `metadata.properties`, `safedb.appinstaller`, and `appcast-aarch64.rss` were stored with `Cache-Control` containing `no-cache`.
 
 Bump `version` in `build.gradle.kts` for every release so the MSIX filename changes. Windows misbehaves when an MSIX filename is reused with different content, and Conveyor refuses to overwrite an existing MSIX of the same version. The `shared` module carries its own independent version and does not need to move with the desktop version.
 
@@ -23,8 +23,17 @@ These live in GitHub and cloud consoles, not in this repository. Use the **exist
 - Secret `CONVEYOR_PASS`: the passphrase for that root key, same value as local `CONVEYOR_PASS`. Linux CI has no console, so the job always passes `--passphrase "env:CONVEYOR_PASS"`. If you never set a passphrase (pressed Enter on `keys generate`, or copied the 24-word key from macOS Keychain), leave this secret unset.
 - Azure OIDC secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The federated credential subject must be `repo:COBOL-Kid/safe-db:environment:conveyor`. The identity needs **Code Signing Certificate Profile Signer** for alias `safe-db/safe-db`.
 - GCP Workload Identity Federation secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`, with write access to `gs://safedb-download` (not the default Firebase bucket).
+- Secret `APPLE_SIGNING_P12`: base64 of the Developer ID Application `.p12` exported from Keychain Access. Secret `APPLE_SIGNING_P12_PASSWORD`: the passphrase chosen at export. From the Mac that holds the file:
 
-Do not commit signing keys, Azure tokens, or GCP credentials.
+```sh
+base64 < Certificates.p12 | gh secret set APPLE_SIGNING_P12 --env conveyor --repo COBOL-Kid/safe-db
+gh secret set APPLE_SIGNING_P12_PASSWORD --env conveyor --repo COBOL-Kid/safe-db
+```
+
+`base64` wraps lines. The workflow accepts that. Do not commit the `.p12`. The passphrase is read from the environment, so spaces and punctuation are fine.
+- Optional notarization secrets, all three or none. Without them the Mac apps are Developer ID signed and Gatekeeper blocks them. Create an App Store Connect API key with the Developer role, then set `APPLE_NOTARIZATION_ISSUER_ID`, `APPLE_NOTARIZATION_KEY_ID`, and `APPLE_NOTARIZATION_PRIVATE_KEY` (the full `AuthKey_….p8` text) on the same environment.
+
+Do not commit signing keys, the `.p12`, Azure tokens, or GCP credentials.
 
 ## Local fallback
 
@@ -51,7 +60,7 @@ Uploading a local release needs the Google Cloud CLI (`gcloud`), signed into an 
 & "$env:LOCALAPPDATA\Hydraulic\bin\conveyor.exe" --console=plain --passphrase "env:CONVEYOR_PASS" make site
 ```
 
-`make site` produces the download site in `output/`, including the stub installer, MSIX, `download.html`, and update metadata. `make windows-app` produces the unpacked application tree only. `output/` is gitignored. After a local `make site`, `./scripts/assert-conveyor-site.sh ./output` checks the same version, URL, and signature-presence rules the workflow uses.
+`make site` produces the download site in `output/`, including the stub installer, MSIX, the Apple Silicon zip, `download.html`, and update metadata. `make windows-app` produces the unpacked Windows application tree only. `output/` is gitignored. After a local `make site`, `./scripts/assert-conveyor-site.sh ./output` checks the same version, URL, and signature-presence rules the workflow uses. The local Apple Silicon zip is self-signed. CI replaces that with the Developer ID `.p12`.
 
 `api-access-token` is optional. When `AZURE_CODESIGNING_TOKEN` is unset, Conveyor runs `az account get-access-token --resource https://codesigning.azure.net` itself, so an `az login` session is enough. There is no client-id or client-secret option. Tokens last about an hour; mint one per CI run rather than storing it.
 
@@ -81,11 +90,12 @@ Do not use `make copied-site` against this bucket. Conveyor's S3 uploader cannot
 
 On macOS or Linux, `./scripts/publish-release.sh ./output` does the same thing. Both default to `gs://safedb-download`.
 
-The layout must stay flat: `base-url` resolves each file directly under the bucket root. The `.appinstaller`, `metadata.properties`, and `safedb-windows-x64.exe` objects are uploaded `Cache-Control: no-cache`. Versioned `.msix` files are immutable. The publish scripts check `Cache-Control` on `metadata.properties` and `safedb.appinstaller` after upload. You can also confirm:
+The layout must stay flat: `base-url` resolves each file directly under the bucket root. The `.appinstaller`, `metadata.properties`, `safedb-windows-x64.exe`, and `appcast-aarch64.rss` files are uploaded `Cache-Control: no-cache`. Versioned `.msix`, the Apple Silicon `.zip`, and Sparkle `*.delta` patches are immutable. Conveyor writes those patches once a previous Apple Silicon zip is already on the site, and the appcast links to them. The publish scripts check `Cache-Control` on `metadata.properties`, `safedb.appinstaller`, and `appcast-aarch64.rss` after upload. You can also confirm:
 
 ```powershell
 curl.exe -sI https://storage.googleapis.com/safedb-download/metadata.properties
 curl.exe -sI https://storage.googleapis.com/safedb-download/safedb.appinstaller
+curl.exe -sI https://storage.googleapis.com/safedb-download/appcast-aarch64.rss
 ```
 
 `Cache-Control` should contain `no-cache`. The default Firebase bucket (`safe-db-35169.firebasestorage.app`) is unrelated and must stay deny-all; never grant `allUsers` objectViewer on it.

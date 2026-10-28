@@ -37,6 +37,8 @@ with zipfile.ZipFile(path, "w") as z:
     if signed == "yes":
         z.writestr("AppxSignature.p7x", "sig")
 PY
+	printf 'zip\n' >"$dir/safedb-${version}-mac-aarch64.zip"
+	printf 'enclosure url="%s/safedb-%s-mac-aarch64.zip"\n' "$base_url" "$version" >"$dir/appcast-aarch64.rss"
 }
 
 run_assert() {
@@ -106,6 +108,13 @@ if run_assert "$spoofed_urls" >/dev/null 2>&1; then
 	fail "accepted appinstaller whose Uri attributes are not the site URLs"
 fi
 
+missing_mac="$TEST_ROOT/missing-mac"
+write_site "$missing_mac" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.msix"
+rm -f "$missing_mac/safedb-0.1.7-mac-aarch64.zip"
+if run_assert "$missing_mac" >/dev/null 2>&1; then
+	fail "accepted a site missing the Apple Silicon zip"
+fi
+
 PUBLISH="$ROOT/scripts/publish-release.sh"
 reject_publish() {
 	local dir="$1" reason="$2" out
@@ -128,3 +137,8 @@ empty_msix="$TEST_ROOT/publish-empty-msix"
 write_site "$empty_msix" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.msix"
 : >"$empty_msix/safedb-0.1.7.msix"
 reject_publish "$empty_msix" "accepted a site with an empty MSIX"
+
+no_mac_zip="$TEST_ROOT/publish-no-mac"
+write_site "$no_mac_zip" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.msix"
+rm -f "$no_mac_zip"/safedb-*-mac-*.zip
+reject_publish "$no_mac_zip" "accepted a site with no Mac zip"
