@@ -211,7 +211,9 @@ jobs:
           app {
             mac.signing-key.file {
               path = "${APPLE_SIGNING_P12_FILE}"
-              password = "\${env.APPLE_SIGNING_P12_PASSWORD}"
+              # Unquoted. Conveyor HOCON leaves substitutions inside quotes as
+              # literal text, so the PKCS#12 password would not match the secret.
+              password = \${env.APPLE_SIGNING_P12_PASSWORD}
             }
           ${notarization}
           }
