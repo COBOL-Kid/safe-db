@@ -171,13 +171,11 @@ then
 	fail "signed MSIX/AppxManifest checks failed for $msix_base"
 fi
 
-for arch in amd64 aarch64; do
-	mac_zip="$OUTPUT_DIR/safedb-${VERSION}-mac-${arch}.zip"
-	appcast="$OUTPUT_DIR/appcast-${arch}.rss"
-	[[ -s "$mac_zip" ]] || fail "expected nonempty $mac_zip"
-	[[ -s "$appcast" ]] || fail "expected nonempty $appcast"
-	mac_url="$EXPECTED_SITE_BASE_URL/safedb-${VERSION}-mac-${arch}.zip"
-	grep -F -q "$mac_url" "$appcast" || fail "$appcast does not reference $mac_url"
-done
+mac_zip="$OUTPUT_DIR/safedb-${VERSION}-mac-aarch64.zip"
+appcast="$OUTPUT_DIR/appcast-aarch64.rss"
+[[ -s "$mac_zip" ]] || fail "expected nonempty $mac_zip"
+[[ -s "$appcast" ]] || fail "expected nonempty $appcast"
+mac_url="$EXPECTED_SITE_BASE_URL/safedb-${VERSION}-mac-aarch64.zip"
+grep -F -q "$mac_url" "$appcast" || fail "$appcast does not reference $mac_url"
 
 ls -l "$OUTPUT_DIR"

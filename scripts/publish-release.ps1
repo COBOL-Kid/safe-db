@@ -59,9 +59,7 @@ Get-Content -LiteralPath (Join-Path $OutputDir "metadata.properties") | ForEach-
 if (-not $siteVersion) {
     throw "publish aborted: metadata.properties is missing app.version"
 }
-Assert-RequiredReleaseFile "safedb-$siteVersion-mac-amd64.zip"
 Assert-RequiredReleaseFile "safedb-$siteVersion-mac-aarch64.zip"
-Assert-RequiredReleaseFile "appcast-amd64.rss"
 Assert-RequiredReleaseFile "appcast-aarch64.rss"
 
 $msixFiles = @(Get-ChildItem -LiteralPath $OutputDir -File -Filter "*.msix" -ErrorAction SilentlyContinue)
@@ -150,7 +148,6 @@ function Assert-NoCacheControl {
 
 Assert-NoCacheControl "$Bucket/metadata.properties"
 Assert-NoCacheControl "$Bucket/safedb.appinstaller"
-Assert-NoCacheControl "$Bucket/appcast-amd64.rss"
 Assert-NoCacheControl "$Bucket/appcast-aarch64.rss"
 
 $HostName = $Bucket -replace "^gs://", ""

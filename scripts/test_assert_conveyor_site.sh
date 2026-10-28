@@ -37,11 +37,8 @@ with zipfile.ZipFile(path, "w") as z:
     if signed == "yes":
         z.writestr("AppxSignature.p7x", "sig")
 PY
-	local arch
-	for arch in amd64 aarch64; do
-		printf 'zip\n' >"$dir/safedb-${version}-mac-${arch}.zip"
-		printf 'enclosure url="%s/safedb-%s-mac-%s.zip"\n' "$base_url" "$version" "$arch" >"$dir/appcast-${arch}.rss"
-	done
+	printf 'zip\n' >"$dir/safedb-${version}-mac-aarch64.zip"
+	printf 'enclosure url="%s/safedb-%s-mac-aarch64.zip"\n' "$base_url" "$version" >"$dir/appcast-aarch64.rss"
 }
 
 run_assert() {

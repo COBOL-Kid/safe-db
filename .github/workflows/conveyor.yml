@@ -261,29 +261,25 @@ jobs:
           version="$(awk -F= '/^app\.version=/{ sub(/\r$/, ""); print substr($0, index($0, "=") + 1); exit }' output/metadata.properties)"
           [ -n "${version}" ]
           work="$(mktemp -d)"
-          for arch in amd64 aarch64; do
-            zip="output/safedb-${version}-mac-${arch}.zip"
-            [ -s "${zip}" ]
-            rm -rf "${work}"
-            mkdir -p "${work}"
-            unzip -q "${zip}" -d "${work}"
-            app=""
-            while IFS= read -r candidate; do
-              app="${candidate}"
-              break
-            done < <(find "${work}" -name '*.app' -type d)
-            [ -n "${app}" ]
-            codesign --verify --deep --strict --verbose=2 "${app}"
-            authority="$(codesign -dvvv "${app}" 2>&1 | awk -F= '/^Authority=/{ print substr($0, index($0, "=") + 1); exit }')"
-            echo "${arch} Authority=${authority}"
-            case "${authority}" in
-              "Developer ID Application: ERIK MICHAEL KLINGENBERG (X935BGBPLW)") ;;
-              *)
-                echo "unexpected Authority for ${arch}: ${authority}" >&2
-                exit 1
-                ;;
-            esac
-          done
+          zip="output/safedb-${version}-mac-aarch64.zip"
+          [ -s "${zip}" ]
+          unzip -q "${zip}" -d "${work}"
+          app=""
+          while IFS= read -r candidate; do
+            app="${candidate}"
+            break
+          done < <(find "${work}" -name '*.app' -type d)
+          [ -n "${app}" ]
+          codesign --verify --deep --strict --verbose=2 "${app}"
+          authority="$(codesign -dvvv "${app}" 2>&1 | awk -F= '/^Authority=/{ print substr($0, index($0, "=") + 1); exit }')"
+          echo "aarch64 Authority=${authority}"
+          case "${authority}" in
+            "Developer ID Application: ERIK MICHAEL KLINGENBERG (X935BGBPLW)") ;;
+            *)
+              echo "unexpected Authority: ${authority}" >&2
+              exit 1
+              ;;
+          esac
 
   publish:
     needs: [package, smoke, smoke-mac]
