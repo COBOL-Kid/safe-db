@@ -156,7 +156,55 @@ jobs:
               exit 1
               ;;
           esac
-          export APPLE_SIGNING_P12_FILE="${p12}"
+          # Conveyor 22.2 reads this keystore with the JDK it ships, 17.0.4.2.
+          # Keychain and OpenSSL 3 exports use PBES2, which that JDK reports as a
+          # wrong password. Rewrite to PBE-SHA1-3DES and a SHA-1 MAC first.
+          echo "PKCS#12 encryption before conversion:"
+          if ! openssl pkcs12 -in "${p12}" -info -nokeys -nocerts -passin env:APPLE_SIGNING_P12_PASSWORD; then
+            openssl pkcs12 -legacy -in "${p12}" -info -nokeys -nocerts -passin env:APPLE_SIGNING_P12_PASSWORD
+          fi
+          pem="${RUNNER_TEMP}/apple-identity.pem"
+          converted="${RUNNER_TEMP}/apple-signing-jdk17.p12"
+          rm -f "${pem}" "${converted}"
+          if ! openssl pkcs12 -in "${p12}" -out "${pem}" -nodes -passin env:APPLE_SIGNING_P12_PASSWORD >/dev/null; then
+            openssl pkcs12 -legacy -in "${p12}" -out "${pem}" -nodes -passin env:APPLE_SIGNING_P12_PASSWORD >/dev/null
+          fi
+          chmod 600 "${pem}"
+          openssl pkcs12 -export -legacy \
+            -in "${pem}" \
+            -out "${converted}" \
+            -keypbe PBE-SHA1-3DES \
+            -certpbe PBE-SHA1-3DES \
+            -macalg SHA1 \
+            -passout env:APPLE_SIGNING_P12_PASSWORD
+          rm -f "${pem}"
+          chmod 600 "${converted}"
+          echo "PKCS#12 encryption after conversion:"
+          openssl pkcs12 -legacy -in "${converted}" -info -nokeys -nocerts -passin env:APPLE_SIGNING_P12_PASSWORD
+          conveyor_java="$(find "${GITHUB_WORKSPACE}/.conveyor/install/conveyor-${CONVEYOR_VERSION}" -type f -path '*/runtime/bin/java' -print -quit)"
+          check_src="${RUNNER_TEMP}/CheckPkcs12.java"
+          cat > "${check_src}" <<'EOF'
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+          import java.security.KeyStore;
+
+          public class CheckPkcs12 {
+            public static void main(String[] args) throws Exception {
+              KeyStore keyStore = KeyStore.getInstance("PKCS12");
+              char[] password = System.getenv("APPLE_SIGNING_P12_PASSWORD").toCharArray();
+              try (var in = Files.newInputStream(Path.of(args[0]))) {
+                keyStore.load(in, password);
+              }
+              if (keyStore.size() < 1) {
+                throw new IllegalStateException("PKCS12 keystore has no entries");
+              }
+              System.out.println("Conveyor JDK loaded the PKCS12 keystore (" + keyStore.size() + " entries).");
+            }
+          }
+          EOF
+          javac --release 17 -d "${RUNNER_TEMP}" "${check_src}"
+          "${conveyor_java}" -cp "${RUNNER_TEMP}" CheckPkcs12 "${converted}"
+          export APPLE_SIGNING_P12_FILE="${converted}"
           notarization=""
           if [ -n "${APPLE_NOTARIZATION_ISSUER_ID}" ] || [ -n "${APPLE_NOTARIZATION_KEY_ID}" ] || [ -n "${APPLE_NOTARIZATION_PRIVATE_KEY}" ]; then
             if [ -z "${APPLE_NOTARIZATION_ISSUER_ID}" ] || [ -z "${APPLE_NOTARIZATION_KEY_ID}" ] || [ -z "${APPLE_NOTARIZATION_PRIVATE_KEY}" ]; then
