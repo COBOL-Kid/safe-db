@@ -83,13 +83,12 @@ internal val BUILDER_LIMIT_CHOICES =
 internal fun builderLimitChoiceLabel(choice: Int): String = "%,d".format(choice)
 
 /** Null keeps the committed limit. Blank and zero are not a new cap. */
-internal fun commitBuilderLimitDraft(text: String): Pair<Int, Boolean>? {
+internal fun commitBuilderLimitDraft(text: String): Int? {
     val digits = text.filter { it.isDigit() }
     if (digits.isEmpty() || digits.all { it == '0' }) return null
     val value = digits.toLongOrNull()
-    if (value == null || value > Int.MAX_VALUE.toLong()) return Int.MAX_VALUE to false
-    if (value < 1L) return null
-    return value.toInt() to false
+    if (value == null || value > Int.MAX_VALUE.toLong()) return Int.MAX_VALUE
+    return value.toInt()
 }
 
 internal val QueryControlsMaxHeight = 208.dp
@@ -597,7 +596,7 @@ private fun QueryOrderMoveAction(
 internal fun LimitValueField(
     limit: Int,
     uncapped: Boolean,
-    onCommit: (limit: Int, uncapped: Boolean) -> Unit,
+    onCommit: (Int) -> Unit,
 ) {
     var draft by remember { mutableStateOf(limitFieldText(limit, uncapped)) }
     var focused by remember { mutableStateOf(false) }
@@ -617,9 +616,7 @@ internal fun LimitValueField(
                         draft = limitFieldText(limit, uncapped)
                     }
                     if (focused && !state.isFocused) {
-                        commitBuilderLimitDraft(draft)?.let { (parsed, parsedUncapped) ->
-                            onCommit(parsed, parsedUncapped)
-                        }
+                        commitBuilderLimitDraft(draft)?.let(onCommit)
                     }
                     focused = state.isFocused
                 }

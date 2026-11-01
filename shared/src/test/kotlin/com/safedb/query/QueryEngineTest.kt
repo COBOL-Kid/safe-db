@@ -1280,6 +1280,68 @@ class QueryEngineTest {
     }
 
     @Test
+    fun runQueryCoreUncappedKeepsRowsWhenAdapterDidNotTruncate() = runBlocking {
+        val def = sampleConnection("c1")
+        val spec = sampleSpec().copy(limit = 1, uncapped = true)
+        val runner =
+            MockRunner(
+                explainResult = availablePlan(0.0),
+                execute =
+                    Outcome.ok(
+                        QueryResult(
+                            columns = emptyList(),
+                            rows = listOf(emptyList(), emptyList(), emptyList()),
+                            rowCount = 3,
+                            truncated = false,
+                            warnings = listOf("adapter warning"),
+                        )
+                    ),
+            )
+
+        val result =
+            when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings())) {
+                is QueryCoreOutcome.Success -> outcome.result
+                is QueryCoreOutcome.Failure -> error(outcome.error.message)
+            }
+
+        assertEquals(3, result.rowCount)
+        assertEquals(3, result.rows.size)
+        assertFalse(result.truncated)
+        assertEquals(listOf("adapter warning"), result.warnings)
+    }
+
+    @Test
+    fun runQueryCoreUncappedPreservesAdapterTruncation() = runBlocking {
+        val def = sampleConnection("c1")
+        val spec = sampleSpec().copy(limit = 1, uncapped = true)
+        val runner =
+            MockRunner(
+                explainResult = availablePlan(0.0),
+                execute =
+                    Outcome.ok(
+                        QueryResult(
+                            columns = emptyList(),
+                            rows = listOf(emptyList(), emptyList(), emptyList()),
+                            rowCount = 3,
+                            truncated = true,
+                            warnings = listOf("adapter warning"),
+                        )
+                    ),
+            )
+
+        val result =
+            when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings())) {
+                is QueryCoreOutcome.Success -> outcome.result
+                is QueryCoreOutcome.Failure -> error(outcome.error.message)
+            }
+
+        assertEquals(3, result.rowCount)
+        assertEquals(3, result.rows.size)
+        assertTrue(result.truncated)
+        assertEquals(listOf("adapter warning"), result.warnings)
+    }
+
+    @Test
     fun runQueryCoreSuccessCarriesNormalizedHistorySpec() = runBlocking {
         val def = sampleConnection("c1")
         val spec = sampleSpec().copy(limit = 20_000)

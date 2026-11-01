@@ -27,10 +27,10 @@ class BuilderLimitChoicesTest {
 
     @Test
     fun draftCommitsANumericCapAndLeavesBlankOrZeroAlone() {
-        assertEquals(10_000 to false, commitBuilderLimitDraft("10000"))
-        assertEquals(Int.MAX_VALUE to false, commitBuilderLimitDraft("2147483647"))
-        assertEquals(Int.MAX_VALUE to false, commitBuilderLimitDraft("2147483648"))
-        assertEquals(Int.MAX_VALUE to false, commitBuilderLimitDraft("99999999999999999999"))
+        assertEquals(10_000, commitBuilderLimitDraft("10000"))
+        assertEquals(Int.MAX_VALUE, commitBuilderLimitDraft("2147483647"))
+        assertEquals(Int.MAX_VALUE, commitBuilderLimitDraft("2147483648"))
+        assertEquals(Int.MAX_VALUE, commitBuilderLimitDraft("99999999999999999999"))
         assertNull(commitBuilderLimitDraft(""))
         assertNull(commitBuilderLimitDraft("0"))
         assertNull(commitBuilderLimitDraft("000"))

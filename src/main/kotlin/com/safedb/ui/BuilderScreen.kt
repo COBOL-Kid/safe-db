@@ -304,10 +304,7 @@ internal fun BuilderScreen(
                         LimitValueField(
                             limit = queryViewModel.limit,
                             uncapped = queryViewModel.uncapped,
-                            onCommit = { parsed, parsedUncapped ->
-                                if (parsedUncapped) queryViewModel.setUncapped(true)
-                                else queryViewModel.setLimit(parsed)
-                            },
+                            onCommit = { parsed -> queryViewModel.setLimit(parsed) },
                         )
                     }
                     TextButton(

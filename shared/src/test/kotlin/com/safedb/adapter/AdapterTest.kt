@@ -73,7 +73,7 @@ class AdapterTest {
         val url = buildJdbcUrl(mysqlConnection(TransportSecurityMode.Disabled))
 
         assertEquals(
-            "jdbc:mysql://localhost:3306/safedb_test?sslMode=DISABLED&allowPublicKeyRetrieval=true&useCursorFetch=true",
+            "jdbc:mysql://localhost:3306/safedb_test?sslMode=DISABLED&allowPublicKeyRetrieval=true",
             url,
         )
     }
@@ -83,7 +83,7 @@ class AdapterTest {
         val url = buildJdbcUrl(mysqlConnection(TransportSecurityMode.VerifyIdentity))
 
         assertEquals(
-            "jdbc:mysql://localhost:3306/safedb_test?sslMode=VERIFY_IDENTITY&useCursorFetch=true",
+            "jdbc:mysql://localhost:3306/safedb_test?sslMode=VERIFY_IDENTITY",
             url,
         )
     }
@@ -136,6 +136,30 @@ class AdapterTest {
 
         assertEquals(4L, cell.value)
         assertEquals(listOf("getLong", "wasNull"), calls)
+    }
+
+    @Test
+    fun jdbcDecoderReadsDateAndDecimalWithGetString() {
+        for ((type, value) in listOf("DATE" to "2026-01-02", "DECIMAL" to "123.45")) {
+            val calls = mutableListOf<String>()
+            val rs =
+                Proxy.newProxyInstance(
+                    ResultSet::class.java.classLoader,
+                    arrayOf(ResultSet::class.java),
+                ) { _, method, _ ->
+                    if (method.name != "toString") calls += method.name
+                    when (method.name) {
+                        "getString" -> value
+                        "toString" -> "rs"
+                        else -> throw UnsupportedOperationException(method.name)
+                    }
+                } as ResultSet
+
+            val cell = assertIs<ResultCell.TextCell>(decodeJdbcValue(rs, 1, type))
+
+            assertEquals(value, cell.value.text)
+            assertEquals(listOf("getString"), calls)
+        }
     }
 
     @Test
@@ -439,6 +463,37 @@ class AdapterTest {
     }
 
     @Test
+    fun mysqlPrepareStatementStreamsOneRowAtATime() {
+        var fetchSize: Int? = null
+        val statement =
+            Proxy.newProxyInstance(
+                PreparedStatement::class.java.classLoader,
+                arrayOf(PreparedStatement::class.java),
+            ) { _, method, args ->
+                if (method.name == "setFetchSize") fetchSize = args?.first() as Int
+                when (method.name) {
+                    "toString" -> "FakePreparedStatement"
+                    else -> null
+                }
+            } as PreparedStatement
+        val connection =
+            Proxy.newProxyInstance(
+                Connection::class.java.classLoader,
+                arrayOf(Connection::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "prepareStatement" -> statement
+                    "toString" -> "FakeConnection"
+                    else -> null
+                }
+            } as Connection
+
+        prepareStatement(connection, CompiledQuery("SELECT 1", emptyList()), Dialect.MySql)
+
+        assertEquals(Int.MIN_VALUE, fetchSize)
+    }
+
+    @Test
     fun decodeQueryResultStopsAtByteBudgetWithoutReadingLaterRows() {
         val totalRows = 40
         val payload = "x".repeat(512 * 1024)
@@ -539,6 +594,7 @@ private fun fakeResultSet(value: Any?): ResultSet =
             "getLong" -> (value as? Number)?.toLong() ?: 0L
             "getDouble" -> (value as? Number)?.toDouble() ?: 0.0
             "getBytes" -> value as? ByteArray
+            "getString" -> value?.toString()
             "getCharacterStream" -> value?.toString()?.reader()
             "getBinaryStream" -> (value as? ByteArray)?.inputStream()
             "wasNull" -> value == null

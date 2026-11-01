@@ -871,7 +871,7 @@ private fun resultSet(query: JdbcReply.Rows): ResultSet {
             "getLong" -> {
                 val value = cell(query, index, args!!.first())
                 sqlNull = value == null
-                (value as Number).toLong()
+                (value as? Number)?.toLong() ?: 0L
             }
             "wasNull" -> sqlNull
             "getMetaData" -> metaData(query)

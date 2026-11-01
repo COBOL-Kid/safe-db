@@ -101,9 +101,6 @@ private fun buildMySqlUrl(def: ConnectionDef): String {
     if (def.transportSecurity.mode == TransportSecurityMode.Disabled) {
         params += "allowPublicKeyRetrieval=true"
     }
-    // Connector/J opens a server cursor only when this is set and the statement fetch size is
-    // positive. Schema statements leave fetch size at 0, so they stay buffered.
-    params += "useCursorFetch=true"
     return "jdbc:mysql://${def.host}:${def.port}/${def.database}?${params.joinToString("&")}"
 }
 
@@ -232,7 +229,8 @@ fun prepareStatement(
 ): PreparedStatement {
     val sql = jdbcSql(compiled, dialect)
     val stmt = connection.prepareStatement(sql)
-    stmt.fetchSize = QUERY_FETCH_SIZE
+    // Connector/J streams one row at a time only when fetch size is Integer.MIN_VALUE.
+    stmt.fetchSize = if (dialect == Dialect.MySql) Int.MIN_VALUE else QUERY_FETCH_SIZE
     compiled.params.forEachIndexed { index, param -> bindParam(stmt, index + 1, param) }
     return stmt
 }
@@ -330,6 +328,7 @@ fun decodeJdbcValue(rs: ResultSet, index: Int, typeName: String): ResultCell {
         in INTEGER_TYPES -> readInteger(rs, index)
         in FLOAT_TYPES -> readFloat(rs, index)
         in BINARY_TYPES -> readBinary(rs, index)
+        in TEMPORAL_AND_DECIMAL_TYPES -> readTemporalOrDecimal(rs, index)
         in TEXT_TYPES -> readText(rs, index)
         else -> readFallback(rs, index)
     }
@@ -367,7 +366,7 @@ private val BINARY_TYPES =
         "BINARY LARGE OBJECT",
     )
 
-private val TEXT_TYPES =
+private val TEMPORAL_AND_DECIMAL_TYPES =
     setOf(
         "DECIMAL",
         "NEWDECIMAL",
@@ -385,6 +384,10 @@ private val TEXT_TYPES =
         "SMALLDATETIME",
         "DATETIME2",
         "DATETIMEOFFSET",
+    )
+
+private val TEXT_TYPES =
+    setOf(
         "JSON",
         "JSONB",
         "UUID",
@@ -435,6 +438,11 @@ private fun readInteger(rs: ResultSet, index: Int): ResultCell {
 private fun readFloat(rs: ResultSet, index: Int): ResultCell {
     val value = rs.getDouble(index)
     return if (rs.wasNull()) ResultCell.Null else ResultCell.FloatCell(value)
+}
+
+private fun readTemporalOrDecimal(rs: ResultSet, index: Int): ResultCell {
+    val value = rs.getString(index) ?: return ResultCell.Null
+    return ResultCell.text(value)
 }
 
 private fun readText(rs: ResultSet, index: Int): ResultCell {

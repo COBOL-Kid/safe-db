@@ -70,7 +70,7 @@ Numbers are the constants, not copy. Change the constant and update this page in
 | `DEFAULT_TIMEOUT_MS` | 10s query timeout | [`QueryCore.kt`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) |
 | `CONNECT_TIMEOUT_MS` | 10s connect timeout | [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) |
 
-A positive SQL limit is kept as given, up to the maximum value of a 32-bit integer. A larger whole number clamps to that maximum and remains a numeric cap. `0` and a missing SQL `LIMIT` still become `DEFAULT_LIMIT` with `uncapped` false; typed `LIMIT 0` is rejected. ALL is the builder's `uncapped` flag and emits no SQL row limit (`LIMIT`, `TOP`, or `FETCH FIRST`); the numeric limit is ignored for that SQL. The client reads with a statement fetch size and stops at `MAX_RESULT_BYTES`, then marks the sample truncated. The query timeout still applies.
+A positive SQL limit is kept as given, up to the maximum value of a 32-bit integer. A larger whole number clamps to that maximum and remains a numeric cap. `0` and a missing SQL `LIMIT` still become `DEFAULT_LIMIT` with `uncapped` false; typed `LIMIT 0` is rejected. ALL is the builder's `uncapped` flag and emits no SQL row limit (`LIMIT`, `TOP`, or `FETCH FIRST`); the numeric limit is ignored for that SQL. The client reads with a statement fetch size (MySQL streams one row at a time; the other dialects use fetch size 128) and stops at `MAX_RESULT_BYTES`, then marks the sample truncated. The query timeout still applies.
 
 Hikari `maximumPoolSize` is 1 and `isReadOnly` is true ([`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt)).
 
