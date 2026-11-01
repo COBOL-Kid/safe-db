@@ -655,9 +655,9 @@ object Db2Adapter {
                             }
                         } else {
                             val operatorId =
-                                when {
-                                    sourceType == "D" && targetType == "O" -> target
-                                    sourceType == "O" && targetType == "D" -> source
+                                when (sourceType) {
+                                    "D" if targetType == "O" -> target
+                                    "O" if targetType == "D" -> source
                                     else -> null
                                 }
                             if (operatorId != null) {
