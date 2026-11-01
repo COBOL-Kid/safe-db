@@ -4,6 +4,8 @@ GitHub Actions is the release path. [`.github/workflows/conveyor.yml`](../.githu
 
 `conveyor.conf` pulls the app definition out of Gradle via `include "#!./gradlew -q printConveyorConfig"`. That include only prints configuration; it does not assemble anything, so `./gradlew jar` must run first. The Windows installer file is `safedb-windows-x64.exe`. The Mac download is `safedb-<version>-mac-aarch64.zip`. The app identity (`app.fsname`) is `safedb`, so Windows and macOS share the same name, data directories, and update site.
 
+`./gradlew jar` also writes `build/skiko-natives/libskiko-macos-arm64.dylib`. `conveyor.conf` passes that file as a macOS input. Conveyor moves a shared library to the bundled JVM's `lib` directory (`Contents/runtime/Contents/Home/lib`) and signs it with the app. Skiko loads `java.home/lib/libskiko-macos-arm64.dylib` before it extracts the copy sealed inside `skiko-awt-runtime-macos-arm64-*.jar`. With extraction left off, Conveyor re-signs that JAR member in place and leaves Skiko's `.sha256` cache key on the JetBrains-signed bytes, so launch dlopens `~/.skiko`'s cached library and the hardened runtime rejects the team id. Do not set `app.mac.notarization.best-effort-stapling`; a missing notarization ticket must fail the build. The site check refuses a Mac zip that does not contain one arm64 `libskiko-macos-arm64.dylib` at that JVM path.
+
 Durability CI still produces unsigned jpackage MSI/DMG artifacts. Those jobs are not this release path.
 
 ## GitHub Actions release

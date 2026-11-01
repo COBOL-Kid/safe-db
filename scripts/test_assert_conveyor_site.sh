@@ -13,7 +13,7 @@ fail() {
 }
 
 write_site() {
-	local dir="$1" version="$2" quad="$3" base_url="$4" msix_name="$5" signed="${6:-yes}"
+	local dir="$1" version="$2" quad="$3" base_url="$4" msix_name="$5" signed="${6:-yes}" skiko="${7:-bundled}"
 	mkdir -p "$dir"
 	printf 'stub\n' >"$dir/safedb-windows-x64.exe"
 	cat >"$dir/metadata.properties" <<EOF
@@ -37,7 +37,34 @@ with zipfile.ZipFile(path, "w") as z:
     if signed == "yes":
         z.writestr("AppxSignature.p7x", "sig")
 PY
-	printf 'zip\n' >"$dir/safedb-${version}-mac-aarch64.zip"
+	python3 - "$dir/safedb-${version}-mac-aarch64.zip" "$skiko" <<'PY'
+import struct
+import sys
+import zipfile
+
+path, mode = sys.argv[1], sys.argv[2]
+arm64 = struct.pack("<II", 0xFEEDFACF, 0x0100000C) + b"\x00" * 24
+intel = struct.pack("<II", 0xFEEDFACF, 0x01000007) + b"\x00" * 24
+with zipfile.ZipFile(path, "w") as z:
+    if mode == "bundled":
+        z.writestr(
+            "safe-db.app/Contents/runtime/Contents/Home/lib/libskiko-macos-arm64.dylib",
+            arm64,
+        )
+    elif mode == "intel":
+        z.writestr(
+            "safe-db.app/Contents/runtime/Contents/Home/lib/libskiko-macos-arm64.dylib",
+            intel,
+        )
+    elif mode == "jar-only":
+        z.writestr(
+            "safe-db.app/Contents/Resources/skiko-awt-runtime-macos-arm64.jar",
+            b"jar",
+        )
+    else:
+        sys.stderr.write(f"unknown skiko fixture mode {mode}\n")
+        sys.exit(1)
+PY
 	printf 'enclosure url="%s/safedb-%s-mac-aarch64.zip"\n' "$base_url" "$version" >"$dir/appcast-aarch64.rss"
 }
 
@@ -106,6 +133,18 @@ cat >"$spoofed_urls/safedb.appinstaller" <<'EOF'
 EOF
 if run_assert "$spoofed_urls" >/dev/null 2>&1; then
 	fail "accepted appinstaller whose Uri attributes are not the site URLs"
+fi
+
+jar_only="$TEST_ROOT/jar-only-skiko"
+write_site "$jar_only" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.msix" yes jar-only
+if run_assert "$jar_only" >/dev/null 2>&1; then
+	fail "accepted a Mac zip whose Skiko dylib exists only inside the runtime JAR"
+fi
+
+intel_skiko="$TEST_ROOT/intel-skiko"
+write_site "$intel_skiko" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.msix" yes intel
+if run_assert "$intel_skiko" >/dev/null 2>&1; then
+	fail "accepted an Intel Mach-O at the arm64 Skiko path"
 fi
 
 missing_mac="$TEST_ROOT/missing-mac"

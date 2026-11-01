@@ -199,8 +199,10 @@ jobs:
             key-id = \${env.APPLE_NOTARIZATION_KEY_ID}
             private-key = "${p8}"
             # Apple's notarization queue has no default deadline. A slow ticket
-            # otherwise fails the build.
+            # otherwise fails the build. Stapling stays mandatory: a missing ticket
+            # fails the build instead of publishing an unstapled app.
             timeout-seconds = 3600
+            best-effort-stapling = false
           }
           EOF
           )"
@@ -306,6 +308,25 @@ jobs:
           done < <(find "${work}" -name '*.app' -type d)
           [ -n "${app}" ]
           codesign --verify --deep --strict --verbose=2 "${app}"
+          dylib="${app}/Contents/runtime/Contents/Home/lib/libskiko-macos-arm64.dylib"
+          if [[ ! -f "${dylib}" ]]; then
+            echo "Skiko arm64 library is not in the JVM lib directory: ${dylib}" >&2
+            find "${app}" -iname '*skiko*' -print >&2
+            exit 1
+          fi
+          python3 - "${dylib}" <<'PY'
+          import struct
+          import sys
+
+          data = open(sys.argv[1], "rb").read(8)
+          if len(data) < 8:
+              sys.stderr.write(f"{sys.argv[1]} is too small to be a Mach-O library\n")
+              sys.exit(1)
+          magic, cpu = struct.unpack("<II", data)
+          if magic != 0xFEEDFACF or cpu != 0x0100000C:
+              sys.stderr.write(f"{sys.argv[1]} is not a 64-bit arm64 Mach-O\n")
+              sys.exit(1)
+          PY
           authority="$(codesign -dvvv "${app}" 2>&1 | awk -F= '/^Authority=/{ print substr($0, index($0, "=") + 1); exit }')"
           echo "aarch64 Authority=${authority}"
           case "${authority}" in

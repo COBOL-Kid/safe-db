@@ -178,4 +178,38 @@ appcast="$OUTPUT_DIR/appcast-aarch64.rss"
 mac_url="$EXPECTED_SITE_BASE_URL/safedb-${VERSION}-mac-aarch64.zip"
 grep -F -q "$mac_url" "$appcast" || fail "$appcast does not reference $mac_url"
 
+# Skiko loads this path from java.home/lib before extracting the JAR copy into ~/.skiko.
+# A dylib that exists only inside skiko-awt-runtime-macos-arm64-*.jar is not enough.
+if ! python3 - "$mac_zip" <<'PY'
+import struct
+import sys
+import zipfile
+
+path = sys.argv[1]
+suffix = "Contents/runtime/Contents/Home/lib/libskiko-macos-arm64.dylib"
+try:
+    archive = zipfile.ZipFile(path)
+except zipfile.BadZipFile:
+    sys.stderr.write(f"{path} is not a zip\n")
+    sys.exit(1)
+with archive:
+    matches = [name for name in archive.namelist() if name.endswith(suffix)]
+    if len(matches) != 1:
+        sys.stderr.write(
+            f"{path} has {len(matches)} {suffix} entries, expected 1\n"
+        )
+        sys.exit(1)
+    data = archive.read(matches[0])
+if len(data) < 8:
+    sys.stderr.write(f"{matches[0]} is too small to be a Mach-O library\n")
+    sys.exit(1)
+magic, cpu = struct.unpack_from("<II", data, 0)
+if magic != 0xFEEDFACF or cpu != 0x0100000C:
+    sys.stderr.write(f"{matches[0]} is not a 64-bit arm64 Mach-O\n")
+    sys.exit(1)
+PY
+then
+	fail "Apple Silicon zip is missing a bundled arm64 libskiko-macos-arm64.dylib"
+fi
+
 ls -l "$OUTPUT_DIR"
