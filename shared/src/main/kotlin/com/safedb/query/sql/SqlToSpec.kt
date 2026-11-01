@@ -58,8 +58,6 @@ private class SqlSpecBuilder(
     private var groupCounter = 0
 
     fun build(): SqlParseResult {
-        val notes = mutableListOf<String>()
-
         resolveTable(ast.from)
         val joinSpecs = mutableListOf<JoinSpec>()
         for ((table, conditions) in ast.joins) {
@@ -99,9 +97,10 @@ private class SqlSpecBuilder(
                 val (alias, column) = resolveColumn(ref)
                 SortSpec(tableAlias = alias, column = column.name, direction = direction)
             }
-        val limit =
-            ast.limit
-                ?: DEFAULT_LIMIT.also { notes.add("No LIMIT specified — defaulting to $it rows.") }
+        // Omitting the row limit is the builder's ALL choice. The numeric default stays on the
+        // spec for the field, and uncapped keeps it out of the compiled SQL.
+        val uncapped = ast.limit == null
+        val limit = ast.limit ?: DEFAULT_LIMIT
 
         val spec =
             QuerySpec(
@@ -113,12 +112,12 @@ private class SqlSpecBuilder(
                 joins = joinSpecs,
                 filters = filters,
                 limit = limit,
-                uncapped = false,
+                uncapped = uncapped,
                 distinct = ast.distinct,
                 sorts = sorts,
                 groups = groups,
             )
-        return SqlParseResult.Success(spec, notes)
+        return SqlParseResult.Success(spec, emptyList())
     }
 
     // One policy, applied everywhere. A quoted identifier means exactly what it spells, so it only

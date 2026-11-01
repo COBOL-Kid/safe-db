@@ -404,11 +404,11 @@ class SqlToSpecTest {
     }
 
     @Test
-    fun missingLimitDefaultsWithNote() {
+    fun missingLimitIsUncapped() {
         val result = success("SELECT id FROM users")
         assertEquals(DEFAULT_LIMIT, result.spec.limit)
-        assertFalse(result.spec.uncapped)
-        assertTrue(result.notes.single().contains("defaulting to $DEFAULT_LIMIT"))
+        assertTrue(result.spec.uncapped)
+        assertTrue(result.notes.isEmpty())
 
         val explicit = success("SELECT id FROM users LIMIT 42")
         assertEquals(42, explicit.spec.limit)

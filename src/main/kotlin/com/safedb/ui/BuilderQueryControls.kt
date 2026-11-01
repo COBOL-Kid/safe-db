@@ -72,13 +72,12 @@ import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.ui.theme.ChipShape
-import com.safedb.ui.util.limitFieldText
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.util.limitFieldText
 
 internal const val BUILDER_ALL_LIMIT_LABEL = "ALL"
 
-internal val BUILDER_LIMIT_CHOICES =
-    listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000)
+internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000)
 
 internal fun builderLimitChoiceLabel(choice: Int): String = "%,d".format(choice)
 

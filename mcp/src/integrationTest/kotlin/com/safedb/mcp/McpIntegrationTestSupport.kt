@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -41,7 +42,9 @@ import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -440,6 +443,84 @@ internal fun assertProtocolAndDiagnostics(protocol: String, stderr: String) {
     val secretKey = Regex("""(?i)"(?:password|secret|token|credentials?)"\s*:""")
     assertFalse(secretKey.containsMatchIn(protocol), "Secret-like data found in stdout protocol")
     assertFalse(secretKey.containsMatchIn(stderr), "Secret-like data found in stderr")
+}
+
+internal suspend fun assertLiveQueryLimitAndTypedReads(
+    client: Client,
+    connectionId: String,
+    defaultSchema: String,
+    customerRows: Int,
+) {
+    val defaulted = runQuery(client, connectionId, defaultSchema, "SELECT id FROM customers")
+    assertEquals(customerRows.toString(), defaulted.rowCount())
+    assertFalse(defaulted.containsKey("sample_capped"))
+    assertTrue(defaulted.warnings().none { "defaulting to" in it })
+    assertEquals(
+        (customerRows > PREVIEW_ROW_LIMIT).toString(),
+        defaulted.getValue("preview_truncated").jsonPrimitive.content,
+    )
+
+    val capped = runQuery(client, connectionId, defaultSchema, "SELECT id FROM customers LIMIT 2")
+    assertEquals("2", capped.rowCount())
+    assertEquals("true", capped.getValue("sample_capped").jsonPrimitive.content)
+    assertTrue(
+        capped.warnings().any { "LIMIT 2" in it && "paging does not get more table rows" in it }
+    )
+
+    // Above the old 10_000 cap. The whole fixture still fits, so the sample is not capped.
+    val largeLimit =
+        runQuery(client, connectionId, defaultSchema, "SELECT id FROM customers LIMIT 20000")
+    assertEquals(customerRows.toString(), largeLimit.rowCount())
+    assertFalse(largeLimit.containsKey("sample_capped"))
+
+    val typed =
+        runQuery(
+            client,
+            connectionId,
+            defaultSchema,
+            "SELECT total, order_date FROM orders ORDER BY id LIMIT 1",
+        )
+    assertEquals("1", typed.rowCount())
+    val total = typed.previewField("total")
+    val orderDate = typed.previewField("order_date")
+    assertTrue(total.isString, total.toString())
+    assertTrue(total.content.startsWith("146.97"), total.content)
+    assertTrue(orderDate.isString, orderDate.toString())
+    assertTrue("2025-06-01" in orderDate.content, orderDate.content)
+}
+
+private suspend fun runQuery(
+    client: Client,
+    connectionId: String,
+    defaultSchema: String,
+    sql: String,
+): JsonObject {
+    val result =
+        client.callTool(
+            "run_query",
+            mapOf(
+                "connection_id" to connectionId,
+                "sql" to sql,
+                "default_schema" to defaultSchema,
+            ),
+        )
+    assertNotEquals(true, result.isError, result.text())
+    return Json.parseToJsonElement(result.text()).jsonObject
+}
+
+private fun JsonObject.rowCount(): String = getValue("row_count").jsonPrimitive.content
+
+private fun JsonObject.warnings(): List<String> =
+    getValue("warnings").jsonArray.map { it.jsonPrimitive.content }
+
+private fun JsonObject.previewField(suffix: String): JsonPrimitive {
+    val row = getValue("preview").jsonArray.first().jsonObject
+    val field =
+        assertNotNull(
+            row.entries.firstOrNull { it.key.endsWith(suffix) },
+            "No preview field ending with $suffix in ${row.keys}",
+        )
+    return field.value.jsonPrimitive
 }
 
 internal fun CallToolResult.text(): String = (content.single() as TextContent).text

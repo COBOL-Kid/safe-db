@@ -3,6 +3,7 @@ package com.safedb.mcp
 import com.safedb.model.SafeDbJson
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
+import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -63,11 +64,7 @@ class QueryToolsTest {
             assertFalse(parsed.containsKey("truncated"))
             assertFalse(parsed.containsKey("artifact_path"))
             assertFalse(parsed.containsKey("artifact_bytes"))
-            assertTrue(
-                parsed.getValue("warnings").jsonArray.any {
-                    it.jsonPrimitive.content.contains("defaulting to")
-                }
-            )
+            assertTrue(parsed.getValue("warnings").jsonArray.isEmpty())
             val risk = parsed.getValue("risk").jsonObject
             assertEquals("Allowed", risk.getValue("state").jsonPrimitive.content)
             assertEquals("Minimal", risk.getValue("severity").jsonPrimitive.content)
@@ -86,6 +83,8 @@ class QueryToolsTest {
         val spec = service.runQueryRequests.single().spec
         assertEquals("customers", spec.tables.single().name)
         assertEquals("public", spec.tables.single().schema)
+        assertTrue(spec.uncapped)
+        assertEquals(DEFAULT_LIMIT, spec.limit)
         assertNull(service.runQueryRequests.single().confirmation)
     }
 

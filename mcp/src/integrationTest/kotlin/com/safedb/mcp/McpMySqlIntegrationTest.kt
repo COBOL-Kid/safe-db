@@ -143,6 +143,44 @@ class McpMySqlIntegrationTest {
     }
 
     @Test
+    fun mysqlRunQueryKeepsLargeLimitsAndReadsTemporalValuesAsText() = runBlocking {
+        IntegrationAssumptions.assumeMysqlAvailable()
+        val dataDir = Files.createTempDirectory("safedb-mcp-mysql-limits")
+        val connection =
+            IntegrationAssumptions.mysqlConnectionDef(
+                id = "mcp-integration-mysql-limits",
+                name = "MCP Integration MySQL Limits",
+            )
+        val password = IntegrationAssumptions.mysqlPassword
+
+        SecretsManager.lockCredentials()
+        SecretsManager.initStore("disabled")
+        try {
+            val service =
+                SafeDbServiceImpl(
+                    configStore = ConfigStore.new(dataDir),
+                    queryStore = QueryStore.new(dataDir),
+                    settingsStore = SettingsStore.new(dataDir),
+                )
+            service.createConnection(connection, password)
+            val server = createSafeDbMcpServer(service, resultsDir = dataDir.resolve("results"))
+            withIntegrationMcpClient(server) { client ->
+                assertLiveQueryLimitAndTypedReads(
+                    client,
+                    connection.id,
+                    connection.database,
+                    customerRows = 15,
+                )
+            }
+        } finally {
+            SecretsManager.lockCredentials()
+            SecretsManager.initStore("disabled")
+            SecretsManager.resetStoreReadCountForTest()
+            dataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun packagedJarMysqlToolsUseSavedConnectionAndKeepCredentialsPrivate() = runBlocking {
         IntegrationAssumptions.assumeMysqlAvailable()
         val connection =
