@@ -1,3 +1,4 @@
+import com.safedb.buildlogic.ExtractMacSkikoNative
 import com.safedb.buildlogic.VerifyCoverageRatchet
 import com.safedb.buildlogic.VerifyIntegrationTestDiscovery
 import com.safedb.buildlogic.VerifyUnitTestDiscovery
@@ -18,7 +19,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.3.0"
+version = "0.3.1"
 
 kotlin { jvmToolchain(25) }
 
@@ -78,6 +79,22 @@ val generateAppVersion =
     }
 
 sourceSets.named("main") { resources.srcDir(generateAppVersion) }
+
+// Skiko loads java.home/lib/libskiko-macos-arm64.dylib before it extracts the JAR copy into
+// ~/.skiko. Conveyor signs the JAR copy in place and leaves the upstream .sha256 cache key, so a
+// notarized Mac launch dlopens a library signed by a different team. jar produces the loose dylib
+// conveyor.conf passes as a mac input; Conveyor moves that shared library next to the JVM's and
+// signs it with the app. Windows keeps loading the DLL from the JAR.
+val extractMacSkikoNative =
+    tasks.register<ExtractMacSkikoNative>("extractMacSkikoNative") {
+        group = "build"
+        description =
+            "Unpacks the upstream libskiko-macos-arm64.dylib so Conveyor can sign it outside the JAR."
+        macRuntimeJars.from(configurations.named("macAarch64"))
+        dylib.set(layout.buildDirectory.file("skiko-natives/libskiko-macos-arm64.dylib"))
+    }
+
+tasks.named("jar") { dependsOn(extractMacSkikoNative) }
 
 tasks.named<KotlinCompile>("compileRenderKotlin") {
     friendPaths.from(
