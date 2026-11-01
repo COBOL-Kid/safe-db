@@ -208,9 +208,8 @@ private suspend fun handleRunQuery(
             is ConfirmationParse.Ready -> parsed.confirmation
         }
 
-    val prepared = prepareSql(service, connection, sql, request)
     val spec =
-        when (prepared) {
+        when (val prepared = prepareSql(service, connection, sql, request)) {
             is PreparedQuery.Ok -> prepared.spec
             is PreparedQuery.Err -> return prepared.result
         }
