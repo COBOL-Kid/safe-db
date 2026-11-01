@@ -7,6 +7,8 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.EvidenceConfidence
+import com.safedb.model.MAX_CELL_BYTES
+import com.safedb.model.ResultCell
 import com.safedb.model.ResultRowBudget
 import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurityMode
@@ -14,6 +16,8 @@ import com.safedb.model.mySqlSslMode
 import com.safedb.model.postgresSslMode
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import java.io.InputStream
+import java.io.Reader
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -24,6 +28,9 @@ const val DEFAULT_TIMEOUT_MS = 10_000
 const val CONNECT_TIMEOUT_MS = 10_000L
 const val INTROSPECTION_TIMEOUT_MS = 30_000L
 const val SERVICE_NAME = "safe-db"
+
+// 0 buffers the whole result (pgjdbc's default). A positive size is what opens a forward cursor.
+const val QUERY_FETCH_SIZE = 128
 
 fun buildJdbcUrl(def: ConnectionDef): String =
     when (def.dialect) {
@@ -94,6 +101,9 @@ private fun buildMySqlUrl(def: ConnectionDef): String {
     if (def.transportSecurity.mode == TransportSecurityMode.Disabled) {
         params += "allowPublicKeyRetrieval=true"
     }
+    // Connector/J opens a server cursor only when this is set and the statement fetch size is
+    // positive. Schema statements leave fetch size at 0, so they stay buffered.
+    params += "useCursorFetch=true"
     return "jdbc:mysql://${def.host}:${def.port}/${def.database}?${params.joinToString("&")}"
 }
 
@@ -222,6 +232,7 @@ fun prepareStatement(
 ): PreparedStatement {
     val sql = jdbcSql(compiled, dialect)
     val stmt = connection.prepareStatement(sql)
+    stmt.fetchSize = QUERY_FETCH_SIZE
     compiled.params.forEachIndexed { index, param -> bindParam(stmt, index + 1, param) }
     return stmt
 }
@@ -312,13 +323,22 @@ internal fun probeVersion(dataSource: HikariDataSource, sql: String): String =
         }
     }
 
-fun decodeJdbcValue(rs: ResultSet, index: Int, typeName: String): com.safedb.model.ResultCell {
-    if (rs.getObject(index) == null) return com.safedb.model.ResultCell.Null
+fun decodeJdbcValue(rs: ResultSet, index: Int, typeName: String): ResultCell {
     val normalizedType = typeName.uppercase().substringBefore('(')
     return when (normalizedType) {
-        "BOOL",
-        "BOOLEAN",
-        "BIT" -> com.safedb.model.ResultCell.BoolCell(rs.getBoolean(index))
+        in BOOLEAN_TYPES -> readBoolean(rs, index)
+        in INTEGER_TYPES -> readInteger(rs, index)
+        in FLOAT_TYPES -> readFloat(rs, index)
+        in BINARY_TYPES -> readBinary(rs, index)
+        in TEXT_TYPES -> readText(rs, index)
+        else -> readFallback(rs, index)
+    }
+}
+
+private val BOOLEAN_TYPES = setOf("BOOL", "BOOLEAN", "BIT")
+
+private val INTEGER_TYPES =
+    setOf(
         "INT2",
         "SMALLINT",
         "TINYINT",
@@ -327,13 +347,13 @@ fun decodeJdbcValue(rs: ResultSet, index: Int, typeName: String): com.safedb.mod
         "INTEGER",
         "INT4",
         "BIGINT",
-        "INT8" -> com.safedb.model.ResultCell.IntegerCell(rs.getLong(index))
-        "FLOAT",
-        "REAL",
-        "FLOAT4",
-        "DOUBLE",
-        "FLOAT8",
-        "DOUBLE PRECISION" -> com.safedb.model.ResultCell.FloatCell(rs.getDouble(index))
+        "INT8",
+    )
+
+private val FLOAT_TYPES = setOf("FLOAT", "REAL", "FLOAT4", "DOUBLE", "FLOAT8", "DOUBLE PRECISION")
+
+private val BINARY_TYPES =
+    setOf(
         "BYTEA",
         "BINARY",
         "VARBINARY",
@@ -341,10 +361,14 @@ fun decodeJdbcValue(rs: ResultSet, index: Int, typeName: String): com.safedb.mod
         "TINYBLOB",
         "MEDIUMBLOB",
         "LONGBLOB",
-        "RAW" -> {
-            val bytes = rs.getBytes(index) ?: return com.safedb.model.ResultCell.Null
-            com.safedb.model.ResultCell.binary(bytes)
-        }
+        "RAW",
+        "LONG RAW",
+        "IMAGE",
+        "BINARY LARGE OBJECT",
+    )
+
+private val TEXT_TYPES =
+    setOf(
         "DECIMAL",
         "NEWDECIMAL",
         "NUMERIC",
@@ -364,15 +388,126 @@ fun decodeJdbcValue(rs: ResultSet, index: Int, typeName: String): com.safedb.mod
         "JSON",
         "JSONB",
         "UUID",
-        "XML" -> com.safedb.model.ResultCell.text(rs.getObject(index)?.toString().orEmpty())
-        else -> {
-            when (val value = rs.getObject(index)) {
-                is Boolean -> com.safedb.model.ResultCell.BoolCell(value)
-                is ByteArray -> com.safedb.model.ResultCell.binary(value)
-                else -> com.safedb.model.ResultCell.text(value?.toString() ?: "")
+        "XML",
+        "CHAR",
+        "CHARACTER",
+        "VARCHAR",
+        "NVARCHAR",
+        "NCHAR",
+        "NTEXT",
+        "TEXT",
+        "TINYTEXT",
+        "MEDIUMTEXT",
+        "LONGTEXT",
+        "CLOB",
+        "NCLOB",
+        "DBCLOB",
+        "LONGVARCHAR",
+        "LONGNVARCHAR",
+        "VARCHAR2",
+        "NVARCHAR2",
+        "BPCHAR",
+        "LONG",
+        "GRAPHIC",
+        "VARGRAPHIC",
+        "LONG VARCHAR",
+        "LONG VARGRAPHIC",
+        "CHARACTER VARYING",
+        "CHARACTER LARGE OBJECT",
+        "CHAR VARYING",
+        "NCHAR VARYING",
+        "NATIONAL CHARACTER",
+        "NATIONAL CHAR",
+        "NATIONAL CHARACTER VARYING",
+        "NATIONAL CHAR VARYING",
+    )
+
+private fun readBoolean(rs: ResultSet, index: Int): ResultCell {
+    val value = rs.getBoolean(index)
+    return if (rs.wasNull()) ResultCell.Null else ResultCell.BoolCell(value)
+}
+
+private fun readInteger(rs: ResultSet, index: Int): ResultCell {
+    val value = rs.getLong(index)
+    return if (rs.wasNull()) ResultCell.Null else ResultCell.IntegerCell(value)
+}
+
+private fun readFloat(rs: ResultSet, index: Int): ResultCell {
+    val value = rs.getDouble(index)
+    return if (rs.wasNull()) ResultCell.Null else ResultCell.FloatCell(value)
+}
+
+private fun readText(rs: ResultSet, index: Int): ResultCell {
+    val reader = rs.getCharacterStream(index) ?: return ResultCell.Null
+    reader.use {
+        return ResultCell.text(readBoundedUtf8(it, MAX_CELL_BYTES))
+    }
+}
+
+private fun readBinary(rs: ResultSet, index: Int): ResultCell {
+    val stream = rs.getBinaryStream(index) ?: return ResultCell.Null
+    stream.use {
+        return ResultCell.binary(readBoundedBytes(it, MAX_CELL_BYTES))
+    }
+}
+
+private fun readFallback(rs: ResultSet, index: Int): ResultCell =
+    when (val value = rs.getObject(index)) {
+        null -> ResultCell.Null
+        is Boolean -> ResultCell.BoolCell(value)
+        is ByteArray -> ResultCell.binary(value)
+        else -> ResultCell.text(value.toString())
+    }
+
+// A character is at most 4 UTF-8 bytes, so a chunk of room/4 cannot cross the cap. The last
+// read is one code point, which is the extra byte (or one extra character) that detects truncation.
+private fun readBoundedUtf8(reader: Reader, maxBytes: Int): String {
+    val out = StringBuilder()
+    var usedBytes = 0
+    val buf = CharArray(4096)
+    while (usedBytes <= maxBytes) {
+        val room = maxBytes - usedBytes + 1
+        val want = if (room < 4) 1 else minOf(buf.size, room / 4)
+        val n = reader.read(buf, 0, want)
+        if (n <= 0) break
+        var index = 0
+        while (index < n) {
+            val highSurrogateAtEnd = Character.isHighSurrogate(buf[index]) && index == n - 1
+            if (highSurrogateAtEnd) {
+                val low = reader.read()
+                val piece =
+                    if (low < 0) buf[index].toString()
+                    else String(charArrayOf(buf[index], low.toChar()))
+                usedBytes += appendPiece(out, piece)
+                if (usedBytes > maxBytes) return out.toString()
+                break
             }
+            val count = if (Character.isHighSurrogate(buf[index]) && index + 1 < n) 2 else 1
+            val piece = String(buf, index, count)
+            usedBytes += appendPiece(out, piece)
+            index += count
+            if (usedBytes > maxBytes) return out.toString()
         }
     }
+    return out.toString()
+}
+
+private fun appendPiece(out: StringBuilder, piece: String): Int {
+    out.append(piece)
+    return piece.toByteArray(Charsets.UTF_8).size
+}
+
+// Read one extra byte past the cap so ResultCell.binary can see that the value was longer.
+private fun readBoundedBytes(stream: InputStream, maxBytes: Int): ByteArray {
+    val limit = maxBytes + 1
+    val buffer = ByteArray(limit)
+    var read = 0
+    while (read < limit) {
+        val n = stream.read(buffer, read, limit - read)
+        if (n <= 0) break
+        read += n
+    }
+    return if (read == buffer.size) buffer else buffer.copyOf(read)
 }
 
 class QueryTimedOutException(val timeoutMs: Int) :

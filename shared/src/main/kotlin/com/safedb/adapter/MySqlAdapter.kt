@@ -122,13 +122,15 @@ object MySqlAdapter {
                 conn.createStatement().use {
                     it.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
                 }
-                prepareStatement(conn, compiled, Dialect.MySql).use { ps ->
-                    ps.executeQuery().use { rs ->
-                        val result = decodeQueryResult(rs, compiled.sql, Dialect.MySql)
-                        conn.commit()
-                        result
+                val result =
+                    prepareStatement(conn, compiled, Dialect.MySql).use { ps ->
+                        ps.executeQuery().use { rs ->
+                            decodeQueryResult(rs, compiled.sql, Dialect.MySql)
+                        }
                     }
-                }
+                // Close the cursor before commit, and before the finally block clears the timeout.
+                conn.commit()
+                result
             } finally {
                 runCatching {
                     conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = 0") }

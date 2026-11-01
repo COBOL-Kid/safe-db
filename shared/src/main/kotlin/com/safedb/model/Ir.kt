@@ -324,14 +324,12 @@ internal class ResultRowBudget {
 
     /** Returns false when [row] does not fit. The caller must not read another row. */
     fun accept(row: List<ResultCell>): Boolean {
-        cellTruncated = cellTruncated || row.any(ResultCell::wasTruncated)
-        val rowBytes = runCatching {
-            rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size
-        }.getOrDefault(MAX_RESULT_BYTES + 1)
+        val rowBytes = rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size
         if (encodedBytes + rowBytes > MAX_RESULT_BYTES) {
             resultTruncated = true
             return false
         }
+        cellTruncated = cellTruncated || row.any(ResultCell::wasTruncated)
         encodedBytes += rowBytes
         kept.add(row)
         return true
@@ -356,7 +354,10 @@ internal class ResultRowBudget {
     }
 
     private companion object {
-        val rowJson = Json { encodeDefaults = true }
+        val rowJson = Json {
+            encodeDefaults = true
+            allowSpecialFloatingPointValues = true
+        }
     }
 }
 

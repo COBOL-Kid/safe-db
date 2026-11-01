@@ -1344,6 +1344,72 @@ class QueryEngineTest {
     }
 
     @Test
+    fun queryResultKeepsNonFiniteFloatsInsideTheByteBudget() {
+        val rows =
+            listOf(
+                listOf(ResultCell.float(1.0)),
+                listOf(ResultCell.float(Double.NaN)),
+                listOf(ResultCell.float(Double.POSITIVE_INFINITY)),
+                listOf(ResultCell.float(Double.NEGATIVE_INFINITY)),
+                listOf(ResultCell.float(2.0)),
+            )
+
+        val result = QueryResult.fromRows(listOf(ResultColumn.of("value", "float8")), rows)
+
+        assertFalse(result.truncated)
+        assertEquals(rows, result.rows)
+        assertEquals(rows.size, result.rowCount)
+        assertEquals(emptyList(), result.warnings)
+    }
+
+    @Test
+    fun queryResultDropsAnOverBudgetFirstRow() {
+        val cell = ResultCell.text("x".repeat(com.safedb.model.MAX_CELL_BYTES))
+        val overflowing = List(10) { cell }
+        val later = listOf(ResultCell.text("later"))
+
+        val result =
+            QueryResult.fromRows(
+                listOf(ResultColumn.of("payload", "text")),
+                listOf(overflowing, later),
+            )
+
+        assertTrue(result.truncated)
+        assertEquals(0, result.rowCount)
+        assertEquals(emptyList(), result.rows)
+        assertEquals(
+            listOf(
+                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated"
+            ),
+            result.warnings,
+        )
+    }
+
+    @Test
+    fun queryResultIgnoresCellTruncationOnARejectedRow() {
+        val kept = listOf(ResultCell.text("ok"))
+        val filler = ResultCell.text("x".repeat(com.safedb.model.MAX_CELL_BYTES))
+        val truncated = ResultCell.text("y".repeat(com.safedb.model.MAX_CELL_BYTES + 1))
+        val rejected = List(9) { filler } + truncated
+
+        val result =
+            QueryResult.fromRows(
+                listOf(ResultColumn.of("payload", "text")),
+                listOf(kept, rejected),
+            )
+
+        assertTrue(result.truncated)
+        assertEquals(1, result.rowCount)
+        assertEquals(listOf(kept), result.rows)
+        assertEquals(
+            listOf(
+                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated"
+            ),
+            result.warnings,
+        )
+    }
+
+    @Test
     fun offsetDateTimeLiteralIsRejectedNotNormalized() {
         // Normalizing to UTC would compare a different wall-clock value than the database does
         // against a local timestamp column.
