@@ -5,7 +5,7 @@ import com.safedb.model.PlanOperationKind
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryRiskGate
 
-const val QUERY_RISK_SCORE_VERSION: Int = 1
+const val QUERY_RISK_SCORE_VERSION: Int = 2
 
 enum class RiskCategory {
     Access,

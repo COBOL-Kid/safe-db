@@ -7,6 +7,7 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.EvidenceConfidence
+import com.safedb.model.ResultRowBudget
 import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.mySqlSslMode
@@ -193,14 +194,16 @@ fun decodeQueryResult(
         (1..meta.columnCount).map { index ->
             com.safedb.model.ResultColumn(meta.getColumnLabel(index), meta.getColumnTypeName(index))
         }
-    val rows = mutableListOf<List<com.safedb.model.ResultCell>>()
+    val budget = ResultRowBudget()
     do {
-        rows +=
+        val row =
             (1..meta.columnCount).map { index ->
                 decodeJdbcValue(rs, index, meta.getColumnTypeName(index))
             }
+        // This row was already read to measure it. Stop so the following rows stay on the server.
+        if (!budget.accept(row)) break
     } while (rs.next())
-    return com.safedb.model.QueryResult.fromRows(columns, rows)
+    return budget.toResult(columns)
 }
 
 fun jdbcSql(compiled: CompiledQuery, dialect: Dialect): String =

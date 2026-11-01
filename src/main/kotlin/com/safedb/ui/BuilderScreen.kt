@@ -295,6 +295,10 @@ internal fun BuilderScreen(
                                 onClick = { queryViewModel.setLimit(choice) },
                             )
                         }
+                        LimitValueField(
+                            limit = queryViewModel.limit,
+                            onLimitChange = queryViewModel::setLimit,
+                        )
                     }
                     TextButton(
                         onClick = {

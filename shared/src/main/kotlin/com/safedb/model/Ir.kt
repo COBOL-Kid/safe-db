@@ -306,45 +306,57 @@ data class QueryResult(
     val warnings: List<String>,
 ) {
     companion object {
-        private val rowJson = Json { encodeDefaults = true }
-
         fun fromRows(columns: List<ResultColumn>, rows: List<List<ResultCell>>): QueryResult {
-            val kept = mutableListOf<List<ResultCell>>()
-            var encodedBytes = 0
-            var resultTruncated = false
-            var cellTruncated = false
-
+            val budget = ResultRowBudget()
             for (row in rows) {
-                cellTruncated = cellTruncated || row.any { it.wasTruncated() }
-                val rowBytes = runCatching {
-                    rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size
-                }
-                    .getOrDefault(MAX_RESULT_BYTES + 1)
-                if (encodedBytes + rowBytes > MAX_RESULT_BYTES) {
-                    resultTruncated = true
-                    break
-                }
-                encodedBytes += rowBytes
-                kept.add(row)
+                if (!budget.accept(row)) break
             }
-
-            val warnings = buildList {
-                if (cellTruncated) {
-                    add("One or more cells exceeded $MAX_CELL_BYTES bytes and were truncated")
-                }
-                if (resultTruncated) {
-                    add("Result exceeded $MAX_RESULT_BYTES encoded bytes and was truncated")
-                }
-            }
-
-            return QueryResult(
-                columns = columns,
-                rows = kept,
-                rowCount = kept.size,
-                truncated = resultTruncated,
-                warnings = warnings,
-            )
+            return budget.toResult(columns)
         }
+    }
+}
+
+internal class ResultRowBudget {
+    private val kept = mutableListOf<List<ResultCell>>()
+    private var encodedBytes = 0
+    private var resultTruncated = false
+    private var cellTruncated = false
+
+    /** Returns false when [row] does not fit. The caller must not read another row. */
+    fun accept(row: List<ResultCell>): Boolean {
+        cellTruncated = cellTruncated || row.any(ResultCell::wasTruncated)
+        val rowBytes = runCatching {
+            rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size
+        }.getOrDefault(MAX_RESULT_BYTES + 1)
+        if (encodedBytes + rowBytes > MAX_RESULT_BYTES) {
+            resultTruncated = true
+            return false
+        }
+        encodedBytes += rowBytes
+        kept.add(row)
+        return true
+    }
+
+    fun toResult(columns: List<ResultColumn>): QueryResult {
+        val warnings = buildList {
+            if (cellTruncated) {
+                add("One or more cells exceeded $MAX_CELL_BYTES bytes and were truncated")
+            }
+            if (resultTruncated) {
+                add("Result exceeded $MAX_RESULT_BYTES encoded bytes and was truncated")
+            }
+        }
+        return QueryResult(
+            columns = columns,
+            rows = kept,
+            rowCount = kept.size,
+            truncated = resultTruncated,
+            warnings = warnings,
+        )
+    }
+
+    private companion object {
+        val rowJson = Json { encodeDefaults = true }
     }
 }
 

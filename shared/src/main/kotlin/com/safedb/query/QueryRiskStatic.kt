@@ -173,7 +173,7 @@ internal fun buildAssessment(
             // plan-confirmed expansion evidence can still raise the category.
             RiskCategory.Joins to 4,
             RiskCategory.Operations to 4,
-            RiskCategory.Volume to 2,
+            RiskCategory.Volume to 1,
         )
     val categoryScores =
         RiskCategory.entries.associateWith { category ->
@@ -495,6 +495,9 @@ private fun SortDirection.reverse(): SortDirection =
         SortDirection.Desc -> SortDirection.Asc
     }
 
+private const val MATERIAL_PROJECTED_BYTES = 4L * 1024 * 1024
+private const val HIGH_PROJECTED_BYTES = 16L * 1024 * 1024
+
 private fun addVolumeSignal(
     validated: ValidatedQuery,
     tablesByAlias: Map<String, TableInfo?>,
@@ -515,8 +518,9 @@ private fun addVolumeSignal(
     val projectedBytes = width.toLong() * validated.spec().limit
     val (code, points) =
         when {
-            projectedBytes >= 5L * 1024 * 1024 -> RiskSignalCode.HighProjectedPayload to 2
-            projectedBytes >= 1024L * 1024 -> RiskSignalCode.MaterialProjectedPayload to 1
+            projectedBytes >= HIGH_PROJECTED_BYTES -> RiskSignalCode.HighProjectedPayload to 1
+            projectedBytes >= MATERIAL_PROJECTED_BYTES ->
+                RiskSignalCode.MaterialProjectedPayload to 1
             else -> return
         }
     signals +=

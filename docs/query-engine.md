@@ -63,12 +63,14 @@ Numbers are the constants, not copy. Change the constant and update this page in
 | Constant | Value | File |
 | --- | --- | --- |
 | `DEFAULT_LIMIT` | 500 rows | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
-| `MAX_LIMIT` | 10,000 rows | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
 | `LARGE_LIMIT_WARNING_THRESHOLD` | 1,000 rows | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
+| `MAX_RESULT_BYTES` | 10 MiB encoded | [`Ir.kt`](../shared/src/main/kotlin/com/safedb/model/Ir.kt) |
 | `MAX_IN_LIST_SIZE` | 1,000 values | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
 | `MAX_FILTER_DEPTH` | 5 | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
 | `DEFAULT_TIMEOUT_MS` | 10s query timeout | [`QueryCore.kt`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) |
 | `CONNECT_TIMEOUT_MS` | 10s connect timeout | [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) |
+
+A positive row limit is kept as given, up to the maximum value of a 32-bit integer. `0` and a missing SQL `LIMIT` still become `DEFAULT_LIMIT`. The client reads until the next row would pass `MAX_RESULT_BYTES`, then stops and marks the sample truncated. The query timeout still applies.
 
 Hikari `maximumPoolSize` is 1 and `isReadOnly` is true ([`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt)).
 

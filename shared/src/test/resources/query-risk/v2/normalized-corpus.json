@@ -1,5 +1,5 @@
 {
-  "score_version": 1,
+  "score_version": 2,
   "cases": [
     {
       "id": "postgres-indexed-equality",
@@ -43,10 +43,10 @@
       "predicate": "BroadTextWithoutIndex",
       "blocking_operation": true,
       "limit": 5000,
-      "expected_score": 7,
+      "expected_score": 6,
       "expected_severity": "High",
-      "expected_category_scores": {"Access":5,"Joins":0,"Operations":3,"Volume":1},
-      "expected_signal_codes": ["NoKnownCompatibleAccessPath","ScanProneTextPredicate","LimitCannotBoundWork","MaterialProjectedPayload"],
+      "expected_category_scores": {"Access":5,"Joins":0,"Operations":3,"Volume":0},
+      "expected_signal_codes": ["NoKnownCompatibleAccessPath","ScanProneTextPredicate","LimitCannotBoundWork"],
       "expected_gate_state": "Blocked"
     },
     {

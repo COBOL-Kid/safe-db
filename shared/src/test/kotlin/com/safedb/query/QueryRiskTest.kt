@@ -55,11 +55,11 @@ class QueryRiskTest {
                 RiskCategory.Access to 6,
                 RiskCategory.Joins to 4,
                 RiskCategory.Operations to 4,
-                RiskCategory.Volume to 2,
+                RiskCategory.Volume to 1,
             ),
             assessment.categoryScores,
         )
-        assertEquals(11, assessment.score)
+        assertEquals(10, assessment.score)
     }
 
     @Test
@@ -822,8 +822,9 @@ class QueryRiskTest {
                 listOf(table(columns = binaryColumns, indexes = emptyList())),
             )
 
-        assertEquals(1, assessment.signals.count { it.category == RiskCategory.Volume })
-        assertTrue(assessment.signals.any { it.code == RiskSignalCode.HighProjectedPayload })
+        val volume = assessment.signals.single { it.category == RiskCategory.Volume }
+        assertEquals(RiskSignalCode.HighProjectedPayload, volume.code)
+        assertEquals(1, volume.points)
     }
 
     @Test

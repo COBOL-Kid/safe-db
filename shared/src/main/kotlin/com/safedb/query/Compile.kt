@@ -28,7 +28,8 @@ fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<Compi
     val orderByClause = buildOrderByClause(spec, dialect)
     val groupByClause = buildGroupByClause(spec, dialect)
 
-    val fetchLimit = spec.limit + 1
+    // Long, so Int.MAX_VALUE + 1 stays a positive fetch size instead of overflowing.
+    val fetchLimit = spec.limit.toLong() + 1
     val sql = buildString {
         append("SELECT ")
         if (spec.distinct) {

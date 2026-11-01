@@ -227,7 +227,7 @@ class QueryEngineTest {
     }
 
     @Test
-    fun validateDefaultsZeroLimitAndCapsExcess() {
+    fun validateDefaultsZeroLimitAndKeepsLargeLimits() {
         var spec = sampleSpec().copy(limit = 0)
         val (normalized, outcome) = validate(spec, sampleSchema(), emptyList()).unwrap()
         assertEquals(DEFAULT_LIMIT, normalized.limit)
@@ -238,15 +238,11 @@ class QueryEngineTest {
         assertEquals(5_000, result.first.limit)
         assertTrue(result.second.warnings.any { it.contains("useful for reporting") })
 
-        spec = sampleSpec().copy(limit = MAX_LIMIT)
+        spec = sampleSpec().copy(limit = 20_000)
         result = validate(spec, sampleSchema(), emptyList()).unwrap()
-        assertEquals(MAX_LIMIT, result.first.limit)
+        assertEquals(20_000, result.first.limit)
         assertTrue(result.second.warnings.any { it.contains("useful for reporting") })
-
-        spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
-        val capped = validate(spec, sampleSchema(), emptyList()).unwrap()
-        assertEquals(MAX_LIMIT, capped.first.limit)
-        assertTrue(capped.second.warnings.any { it.contains("capped") })
+        assertFalse(result.second.warnings.any { it.contains("capped") })
     }
 
     @Test
@@ -987,10 +983,10 @@ class QueryEngineTest {
     }
 
     @Test
-    fun postgresCompilesLargeLimitPlusOneForTruncationDetection() {
-        val spec = twoTableSpec().copy(limit = MAX_LIMIT)
+    fun postgresCompilesMaxIntLimitPlusOneWithoutOverflow() {
+        val spec = twoTableSpec().copy(limit = Int.MAX_VALUE)
         val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.endsWith("LIMIT 10001"))
+        assertTrue(compiled.sql.endsWith("LIMIT 2147483648"))
     }
 
     @Test
@@ -1266,7 +1262,7 @@ class QueryEngineTest {
     @Test
     fun runQueryCoreSuccessCarriesNormalizedHistorySpec() = runBlocking {
         val def = sampleConnection("c1")
-        val spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
+        val spec = sampleSpec().copy(limit = 20_000)
         val runner = MockRunner(explainResult = availablePlan(0.0))
 
         val success =
@@ -1275,8 +1271,8 @@ class QueryEngineTest {
                 is QueryCoreOutcome.Failure -> error(outcome.error.message)
             }
 
-        assertEquals(MAX_LIMIT, success.historySpec.limit)
-        assertEquals(MAX_LIMIT + 1, spec.limit)
+        assertEquals(20_000, success.historySpec.limit)
+        assertEquals(20_000, spec.limit)
     }
 
     @Test
@@ -1300,7 +1296,7 @@ class QueryEngineTest {
     @Test
     fun runQueryCoreRiskGateCarriesNormalizedHistorySpec() = runBlocking {
         val def = sampleConnection("c1")
-        val spec = textFilterSpec(FilterOp.Contains, "term").copy(limit = MAX_LIMIT + 1)
+        val spec = textFilterSpec(FilterOp.Contains, "term").copy(limit = 20_000)
         val settings =
             sampleSettings().copy(queryRiskGate = com.safedb.model.QueryRiskGate.Cautious)
         val runner = MockRunner(explainResult = availablePlan(5.0))
@@ -1312,7 +1308,7 @@ class QueryEngineTest {
             }
 
         assertTrue(failure.error is QueryError.RiskGate)
-        assertEquals(MAX_LIMIT, failure.historySpec?.limit)
+        assertEquals(20_000, failure.historySpec?.limit)
     }
 
     @Test

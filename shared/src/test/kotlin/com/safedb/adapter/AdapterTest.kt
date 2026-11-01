@@ -14,6 +14,7 @@ import java.nio.file.Files
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.sql.ResultSetMetaData
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.test.Test
@@ -347,6 +348,57 @@ class AdapterTest {
         assertEquals(LocalDate.of(2026, 1, 2), calls[5].second)
         assertEquals(LocalDateTime.of(2026, 1, 2, 3, 4, 5), calls[6].second)
         assertTrue(calls.last().second is Int)
+    }
+
+    @Test
+    fun decodeQueryResultStopsAtByteBudgetWithoutReadingLaterRows() {
+        val totalRows = 40
+        val payload = "x".repeat(512 * 1024)
+        var cursor = -1
+        var nextCalls = 0
+        var objectCalls = 0
+        val meta =
+            Proxy.newProxyInstance(
+                ResultSetMetaData::class.java.classLoader,
+                arrayOf(ResultSetMetaData::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getColumnCount" -> 1
+                    "getColumnLabel" -> "payload"
+                    "getColumnTypeName" -> "VARCHAR"
+                    "toString" -> "meta"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSetMetaData
+        val rs =
+            Proxy.newProxyInstance(
+                ResultSet::class.java.classLoader,
+                arrayOf(ResultSet::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getMetaData" -> meta
+                    "next" -> {
+                        nextCalls += 1
+                        cursor += 1
+                        cursor < totalRows
+                    }
+                    "getObject" -> {
+                        objectCalls += 1
+                        check(cursor < totalRows)
+                        payload
+                    }
+                    "toString" -> "rs"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSet
+
+        val result = decodeQueryResult(rs, "SELECT payload FROM t", Dialect.Postgres)
+
+        assertTrue(result.truncated)
+        assertTrue(result.rowCount in 1 until totalRows)
+        assertEquals(result.rowCount + 1, nextCalls)
+        assertEquals((result.rowCount + 1) * 2, objectCalls)
+        assertTrue(result.warnings.any { it.contains("encoded bytes") })
     }
 
     @Test

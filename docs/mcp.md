@@ -126,7 +126,7 @@ A successful call returns JSON with:
 - `preview`: about 10 flattened rows (`null` / bool / number / string; binary as base64). Not tagged `ResultCell` objects.
 - `result_id` for later paging and summary
 
-`sample_capped` is the engine byte/limit cap from [query-engine.md](query-engine.md). `preview_truncated` is true when the preview is shorter than `row_count`. The engine can still fetch up to `DEFAULT_LIMIT` / `MAX_LIMIT`; the receipt does not include the full sample.
+`sample_capped` is the engine byte or caller `LIMIT` cap from [query-engine.md](query-engine.md). `preview_truncated` is true when the preview is shorter than `row_count`. The engine fetches the caller’s `LIMIT` (default `DEFAULT_LIMIT` when SQL omits one) and stops early at the 10 MiB encoded budget; the receipt does not include the full sample.
 
 Accepted and rejected SQL are the same as the desktop app. A stray `spec` argument is ignored; agents send `sql`.
 

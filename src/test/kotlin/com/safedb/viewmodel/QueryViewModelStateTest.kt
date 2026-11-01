@@ -368,7 +368,9 @@ class QueryViewModelStateTest {
         viewModel.setLimit(0)
         assertEquals(500, viewModel.limit)
         viewModel.setLimit(Int.MAX_VALUE)
-        assertEquals(10_000, viewModel.limit)
+        assertEquals(Int.MAX_VALUE, viewModel.limit)
+        viewModel.setLimit(20_000)
+        assertEquals(20_000, viewModel.limit)
 
         viewModel.clear()
 
