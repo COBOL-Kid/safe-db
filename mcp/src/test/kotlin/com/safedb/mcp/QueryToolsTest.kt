@@ -3,6 +3,7 @@ package com.safedb.mcp
 import com.safedb.model.SafeDbJson
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
+import com.safedb.model.byteBudgetTruncationWarning
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
@@ -125,6 +126,65 @@ class QueryToolsTest {
             assertFalse(page.containsKey("sample_capped"))
             assertFalse(page.containsKey("truncated"))
             assertEquals("false", page.getValue("page_truncated").jsonPrimitive.content)
+        }
+    }
+
+    @Test
+    fun uncappedByteBudgetDoesNotClaimTheStoredDefaultLimit() = runBlocking {
+        val service = queryService()
+        service.runQueryResult =
+            sampleMcpRunResult(
+                rowCount = 800,
+                truncated = true,
+                warnings = listOf(byteBudgetTruncationWarning()),
+            )
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to "SELECT id FROM public.customers",
+                        ),
+                    )
+                    .json()
+            assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            val warnings = parsed.warningTexts()
+            assertTrue(warnings.any { it == byteBudgetTruncationWarning() })
+            assertTrue(warnings.any { "encoded-byte budget" in it })
+            assertTrue(warnings.any { "Raising LIMIT does not read past this budget" in it })
+            assertTrue(warnings.none { "LIMIT $DEFAULT_LIMIT" in it })
+            assertTrue(warnings.none { it.contains("Raise LIMIT") })
+            assertTrue(service.runQueryRequests.single().spec.uncapped)
+        }
+    }
+
+    @Test
+    fun byteBudgetOnALimitedQueryDoesNotSayToRaiseTheLimit() = runBlocking {
+        val service = queryService()
+        service.runQueryResult =
+            sampleMcpRunResult(
+                rowCount = 4,
+                truncated = true,
+                warnings = listOf(byteBudgetTruncationWarning()),
+            )
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to "SELECT id FROM public.customers LIMIT 50",
+                        ),
+                    )
+                    .json()
+            val warnings = parsed.warningTexts()
+            assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertTrue(warnings.any { "encoded-byte budget" in it })
+            assertTrue(warnings.none { "LIMIT 50" in it })
+            assertTrue(warnings.none { it.contains("Raise LIMIT") })
         }
     }
 
@@ -1040,3 +1100,6 @@ private fun CallToolResult.json(): JsonObject =
     kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject
 
 private fun JsonObject.columns() = getValue("columns").jsonArray
+
+private fun JsonObject.warningTexts(): List<String> =
+    getValue("warnings").jsonArray.map { it.jsonPrimitive.content }

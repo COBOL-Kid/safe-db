@@ -121,7 +121,7 @@ A successful call returns JSON with:
 
 - `columns` (`name`, `data_type`)
 - `row_count`, `preview_truncated`, `warnings`
-- `sample_capped` when the fetched sample hit the engine/LIMIT cap (omitted when false). When present, `warnings` also explains that this sample is the full fetch; paging does not get more table rows — raise `LIMIT` or add filters
+- `sample_capped` when the fetched sample hit a caller `LIMIT` or the encoded-byte budget (omitted when false). A row-limit stop names that `LIMIT` and says to raise it or add filters. A byte-budget stop, including a query that omitted `LIMIT`, says to add filters or select fewer columns. Raising `LIMIT` does not read past the budget
 - `risk`: `state`, `severity`, `score`, `effective_gate`, `reasons`, `plan_status`
 - `preview`: about 10 flattened rows (`null` / bool / number / string; binary as base64). Not tagged `ResultCell` objects.
 - `result_id` for later paging and summary

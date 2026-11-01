@@ -29,6 +29,9 @@ const val CURRENT_SCHEMA_VERSION: Int = 1
 const val MAX_CELL_BYTES: Int = 1024 * 1024
 const val MAX_RESULT_BYTES: Int = 10 * 1024 * 1024
 
+fun byteBudgetTruncationWarning(): String =
+    "Result exceeded $MAX_RESULT_BYTES encoded bytes and was truncated"
+
 @Serializable
 data class QuerySpec(
     val tables: List<TableRef> = emptyList(),
@@ -342,7 +345,7 @@ internal class ResultRowBudget {
                 add("One or more cells exceeded $MAX_CELL_BYTES bytes and were truncated")
             }
             if (resultTruncated) {
-                add("Result exceeded $MAX_RESULT_BYTES encoded bytes and was truncated")
+                add(byteBudgetTruncationWarning())
             }
         }
         return QueryResult(
