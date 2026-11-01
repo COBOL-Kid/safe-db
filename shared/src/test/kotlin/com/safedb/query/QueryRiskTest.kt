@@ -823,8 +823,19 @@ class QueryRiskTest {
             )
 
         val volume = assessment.signals.single { it.category == RiskCategory.Volume }
-        assertEquals(RiskSignalCode.HighProjectedPayload, volume.code)
+        assertEquals(RiskSignalCode.MaterialProjectedPayload, volume.code)
         assertEquals(1, volume.points)
+        assertEquals(1, assessment.categoryScores.getValue(RiskCategory.Volume))
+    }
+
+    @Test
+    fun uncappedProjectionScoresTheByteBudgetOnce() {
+        val assessment = assess(spec(limit = 1, uncapped = true), listOf(table()))
+
+        val volume = assessment.signals.single { it.category == RiskCategory.Volume }
+        assertEquals(RiskSignalCode.MaterialProjectedPayload, volume.code)
+        assertEquals(1, volume.points)
+        assertFalse(assessment.signals.any { it.code == RiskSignalCode.HighProjectedPayload })
     }
 
     @Test
@@ -969,6 +980,7 @@ private fun spec(
     joins: List<JoinSpec> = emptyList(),
     filters: FilterGroup = FilterGroup("root"),
     limit: Int = 100,
+    uncapped: Boolean = false,
     sorts: List<SortSpec> = emptyList(),
     groups: List<GroupSpec> = emptyList(),
     connectorOverrides: Map<String, GroupConnector> = emptyMap(),
@@ -979,6 +991,7 @@ private fun spec(
         joins = joins,
         filters = filters,
         limit = limit,
+        uncapped = uncapped,
         sorts = sorts,
         groups = groups,
         schemaVersion = CURRENT_SCHEMA_VERSION,

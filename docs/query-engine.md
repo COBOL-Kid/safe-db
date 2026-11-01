@@ -24,7 +24,7 @@ flowchart TD
   gate --> exec
 ```
 
-[`compileValidated`](../shared/src/main/kotlin/com/safedb/query/Compile.kt) emits dialect SQL with bind parameters. The compiled fetch size is `limit + 1` so the UI can tell a hit cap from an exact row count.
+[`compileValidated`](../shared/src/main/kotlin/com/safedb/query/Compile.kt) emits dialect SQL with bind parameters. Below the maximum 32-bit row cap, the compiled fetch size is `limit + 1` so the UI can tell a hit cap from an exact row count. That maximum is compiled as itself. An uncapped query emits no row-limit clause.
 
 ## Accepted SQL
 
@@ -70,7 +70,7 @@ Numbers are the constants, not copy. Change the constant and update this page in
 | `DEFAULT_TIMEOUT_MS` | 10s query timeout | [`QueryCore.kt`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) |
 | `CONNECT_TIMEOUT_MS` | 10s connect timeout | [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) |
 
-A positive row limit is kept as given, up to the maximum value of a 32-bit integer. `0` and a missing SQL `LIMIT` still become `DEFAULT_LIMIT`. The client reads until the next row would pass `MAX_RESULT_BYTES`, then stops and marks the sample truncated. The query timeout still applies.
+A positive SQL limit is kept as given, up to the maximum value of a 32-bit integer. A larger whole number clamps to that maximum and remains a numeric cap. `0` and a missing SQL `LIMIT` still become `DEFAULT_LIMIT` with `uncapped` false; typed `LIMIT 0` is rejected. ALL is the builder's `uncapped` flag and emits no SQL row limit (`LIMIT`, `TOP`, or `FETCH FIRST`); the numeric limit is ignored for that SQL. The client reads with a statement fetch size and stops at `MAX_RESULT_BYTES`, then marks the sample truncated. The query timeout still applies.
 
 Hikari `maximumPoolSize` is 1 and `isReadOnly` is true ([`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt)).
 

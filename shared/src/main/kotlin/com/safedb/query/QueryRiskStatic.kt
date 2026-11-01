@@ -7,6 +7,7 @@ import com.safedb.model.FilterOp
 import com.safedb.model.FilterValue
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexKey
+import com.safedb.model.MAX_RESULT_BYTES
 import com.safedb.model.PlanOperationKind
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
@@ -496,7 +497,6 @@ private fun SortDirection.reverse(): SortDirection =
     }
 
 private const val MATERIAL_PROJECTED_BYTES = 4L * 1024 * 1024
-private const val HIGH_PROJECTED_BYTES = 16L * 1024 * 1024
 
 private fun addVolumeSignal(
     validated: ValidatedQuery,
@@ -515,23 +515,32 @@ private fun addVolumeSignal(
                         ?.category
                 widthClassBytes(category)
             }
-    val projectedBytes = width.toLong() * validated.spec().limit
-    val (code, points) =
-        when {
-            projectedBytes >= HIGH_PROJECTED_BYTES -> RiskSignalCode.HighProjectedPayload to 1
-            projectedBytes >= MATERIAL_PROJECTED_BYTES ->
-                RiskSignalCode.MaterialProjectedPayload to 1
-            else -> return
-        }
+    val projectedBytes = projectedPayloadBytes(width, validated.spec())
+    if (projectedBytes < MATERIAL_PROJECTED_BYTES) return
     signals +=
         RiskSignal(
-            code,
+            RiskSignalCode.MaterialProjectedPayload,
             RiskCategory.Volume,
             RiskSubject(operation = "projected result payload"),
-            points,
+            1,
             SignalBasis.StaticSchema,
             EvidenceConfidence.Medium,
         )
+}
+
+private fun projectedPayloadBytes(width: Int, spec: QuerySpec): Long {
+    if (spec.uncapped) return MAX_RESULT_BYTES.toLong()
+    val widthLong = width.toLong()
+    val limitLong = spec.limit.toLong()
+    val product =
+        if (widthLong <= 0L || limitLong <= 0L) {
+            0L
+        } else if (limitLong > Long.MAX_VALUE / widthLong) {
+            Long.MAX_VALUE
+        } else {
+            widthLong * limitLong
+        }
+    return minOf(product, MAX_RESULT_BYTES.toLong())
 }
 
 private fun widthClassBytes(category: ColumnCategory?): Int =

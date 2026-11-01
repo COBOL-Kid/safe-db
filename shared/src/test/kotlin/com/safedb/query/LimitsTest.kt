@@ -28,5 +28,7 @@ class LimitsTest {
         assertEquals(20_000, parseLimit("20000 rows"))
         assertEquals(Int.MAX_VALUE, parseLimit("2147483648"))
         assertEquals(Int.MAX_VALUE, parseLimit("999999999999"))
+        assertEquals(DEFAULT_LIMIT, parseLimit("ALL"))
+        assertEquals(DEFAULT_LIMIT, parseLimit(" all "))
     }
 }

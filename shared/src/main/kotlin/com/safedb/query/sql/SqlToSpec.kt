@@ -113,6 +113,7 @@ private class SqlSpecBuilder(
                 joins = joinSpecs,
                 filters = filters,
                 limit = limit,
+                uncapped = false,
                 distinct = ast.distinct,
                 sorts = sorts,
                 groups = groups,

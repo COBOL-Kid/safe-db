@@ -27,6 +27,8 @@ interface QueryHydrationTarget {
 
     fun setLimit(limit: Int)
 
+    fun setUncapped(uncapped: Boolean) {}
+
     fun setDistinct(distinct: Boolean)
 
     fun setSorts(sorts: List<SortSpec>)
@@ -169,6 +171,7 @@ fun hydrateQueryFromSpec(
 
     target.setConnectorOverrides(spec.connectorOverrides)
     target.setLimit(spec.limit)
+    target.setUncapped(spec.uncapped)
     target.setDistinct(spec.distinct)
 
     var droppedSorts = 0

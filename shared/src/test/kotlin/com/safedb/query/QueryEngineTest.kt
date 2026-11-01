@@ -231,7 +231,13 @@ class QueryEngineTest {
         var spec = sampleSpec().copy(limit = 0)
         val (normalized, outcome) = validate(spec, sampleSchema(), emptyList()).unwrap()
         assertEquals(DEFAULT_LIMIT, normalized.limit)
+        assertFalse(normalized.uncapped)
         assertTrue(outcome.warnings.any { it.contains("defaulted") })
+
+        val keptUncapped =
+            validate(spec.copy(uncapped = true), sampleSchema(), emptyList()).unwrap()
+        assertEquals(DEFAULT_LIMIT, keptUncapped.first.limit)
+        assertTrue(keptUncapped.first.uncapped)
 
         spec = sampleSpec().copy(limit = 5_000)
         var result = validate(spec, sampleSchema(), emptyList()).unwrap()
@@ -980,13 +986,27 @@ class QueryEngineTest {
         assertTrue(decoded.groups.isEmpty())
         assertFalse(decoded.distinct)
         assertEquals(100, decoded.limit)
+        assertFalse(decoded.uncapped)
     }
 
     @Test
-    fun postgresCompilesMaxIntLimitPlusOneWithoutOverflow() {
+    fun postgresCompilesMaxIntLimitWithoutAddingOne() {
         val spec = twoTableSpec().copy(limit = Int.MAX_VALUE)
         val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.endsWith("LIMIT 2147483648"))
+        assertFalse(spec.uncapped)
+        assertTrue(compiled.sql.endsWith("LIMIT 2147483647"))
+        assertFalse(compiled.sql.contains("2147483648"))
+    }
+
+    @Test
+    fun uncappedCompilesWithoutRowLimitClause() {
+        val spec = twoTableSpec().copy(limit = 50, uncapped = true)
+        for (dialect in listOf(Dialect.Postgres, Dialect.Mssql, Dialect.Oracle)) {
+            val sql = compileValidated(validatedQuery(spec), dialect).unwrap().sql
+            assertFalse(sql.contains("LIMIT"), sql)
+            assertFalse(sql.contains("TOP "), sql)
+            assertFalse(sql.contains("FETCH FIRST"), sql)
+        }
     }
 
     @Test
