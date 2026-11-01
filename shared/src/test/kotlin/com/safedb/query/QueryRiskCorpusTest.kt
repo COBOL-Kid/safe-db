@@ -38,7 +38,7 @@ class QueryRiskCorpusTest {
     @Test
     fun versionedCrossDialectCorpusMatchesGoldenOutcomes() {
         val resource =
-            requireNotNull(javaClass.getResource("/query-risk/v2/normalized-corpus.json"))
+            requireNotNull(javaClass.getResource("/query-risk/v3/normalized-corpus.json"))
         val corpus = SafeDbJson.lenient.decodeFromString<RiskCorpus>(resource.readText())
         assertEquals(QUERY_RISK_SCORE_VERSION, corpus.scoreVersion)
 

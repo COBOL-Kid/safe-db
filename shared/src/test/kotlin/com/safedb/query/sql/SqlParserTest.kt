@@ -134,6 +134,18 @@ class SqlParserTest {
     }
 
     @Test
+    fun limitAboveMaxIntClampsToMaxInt() {
+        assertEquals(Int.MAX_VALUE, parse("SELECT id FROM t LIMIT 2147483647").limit)
+        assertEquals(Int.MAX_VALUE, parse("SELECT id FROM t LIMIT 2147483648").limit)
+        assertEquals(Int.MAX_VALUE, parse("SELECT id FROM t LIMIT 999999999999999999999").limit)
+        assertEquals(Int.MAX_VALUE, parse("SELECT TOP 2147483648 id FROM t", Dialect.Mssql).limit)
+        assertEquals(
+            Int.MAX_VALUE,
+            parse("SELECT id FROM t FETCH FIRST 2147483648 ROWS ONLY", Dialect.Oracle).limit,
+        )
+    }
+
+    @Test
     fun rejectsNonSelectStatements() {
         val update = failParse("UPDATE users SET name = 'x'")
         assertEquals(SqlIssueCode.NotSelect, update.code)

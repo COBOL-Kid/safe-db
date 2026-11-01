@@ -36,6 +36,7 @@ data class QuerySpec(
     val joins: List<JoinSpec> = emptyList(),
     val filters: FilterGroup,
     val limit: Int,
+    @SerialName("uncapped") val uncapped: Boolean = false,
     val distinct: Boolean = false,
     val sorts: List<SortSpec> = emptyList(),
     val groups: List<GroupSpec> = emptyList(),

@@ -558,16 +558,23 @@ private class SqlParser(
             )
         }
         advance()
-        val value = token.text.toIntOrNull()
-        if (token.text.contains('.') || value == null) {
+        if (token.text.contains('.')) {
+            fail(SqlIssueCode.InvalidLimit, SqlMessages.LIMIT_WHOLE_NUMBER, token.span)
+        }
+        val digits = token.text.trimStart('0').ifEmpty { "0" }
+        val value = digits.toLongOrNull()
+        // A digit string that does not fit in a Long is still above the 32-bit maximum.
+        if (value == null) {
+            if (digits.all(Char::isDigit)) return Int.MAX_VALUE
             fail(SqlIssueCode.InvalidLimit, SqlMessages.LIMIT_WHOLE_NUMBER, token.span)
         }
         // QuerySpec reserves 0 as the builder's "no limit chosen" sentinel, which validateQuery
         // rewrites to DEFAULT_LIMIT. Typed SQL means it literally, so reject rather than run 500.
-        if (value <= 0) {
+        if (value < 1) {
             fail(SqlIssueCode.InvalidLimit, SqlMessages.LIMIT_POSITIVE, token.span)
         }
-        return value
+        if (value > Int.MAX_VALUE.toLong()) return Int.MAX_VALUE
+        return value.toInt()
     }
 
     private fun parseColumnRef(): SqlColumnRefAst {
