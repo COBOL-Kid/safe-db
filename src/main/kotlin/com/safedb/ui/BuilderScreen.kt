@@ -290,7 +290,7 @@ internal fun BuilderScreen(
                         )
                         for (choice in limitChoices) {
                             LimitChoiceChip(
-                                label = "%,d".format(choice),
+                                label = builderLimitChoiceLabel(choice),
                                 selected = queryViewModel.limit == choice,
                                 onClick = { queryViewModel.setLimit(choice) },
                             )

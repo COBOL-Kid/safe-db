@@ -1,6 +1,7 @@
 package com.safedb.ui.util
 
 import com.safedb.model.HistoryEntry
+import com.safedb.ui.limitFieldText
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -32,7 +33,7 @@ fun summarizeSpec(entry: HistoryEntry): String {
         add(tables)
         if (cols > 0) add("$cols col${if (cols == 1) "" else "s"}")
         if (joins > 0) add("$joins join${if (joins == 1) "" else "s"}")
-        add("limit ${entry.spec.limit}")
+        add("limit ${limitFieldText(entry.spec.limit)}")
     }
     return parts.joinToString(" · ")
 }

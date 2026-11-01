@@ -75,8 +75,20 @@ import com.safedb.query.parseLimit
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 
+internal const val BUILDER_ALL_ROWS_LIMIT = Int.MAX_VALUE
+
 internal val BUILDER_LIMIT_CHOICES =
-    listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000, 10_000)
+    listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000, BUILDER_ALL_ROWS_LIMIT)
+
+internal fun builderLimitChoiceLabel(choice: Int): String =
+    if (choice == BUILDER_ALL_ROWS_LIMIT) "ALL" else "%,d".format(choice)
+
+internal fun limitFieldText(limit: Int): String =
+    if (limit == BUILDER_ALL_ROWS_LIMIT) "ALL" else limit.toString()
+
+internal fun parseBuilderLimitText(text: String): Int =
+    if (text.trim().equals("ALL", ignoreCase = true)) BUILDER_ALL_ROWS_LIMIT else parseLimit(text)
+
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
 internal val QueryControlsTableGap = 16.dp
@@ -580,7 +592,7 @@ private fun QueryOrderMoveAction(
 
 @Composable
 internal fun LimitValueField(limit: Int, onLimitChange: (Int) -> Unit) {
-    var text by remember(limit) { mutableStateOf(limit.toString()) }
+    var text by remember(limit) { mutableStateOf(limitFieldText(limit)) }
     var focused by remember { mutableStateOf(false) }
     val textStyle =
         MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
@@ -600,8 +612,8 @@ internal fun LimitValueField(limit: Int, onLimitChange: (Int) -> Unit) {
                 .height(30.dp)
                 .onFocusChanged { state ->
                     if (focused && !state.isFocused) {
-                        val parsed = parseLimit(text)
-                        text = parsed.toString()
+                        val parsed = parseBuilderLimitText(text)
+                        text = limitFieldText(parsed)
                         onLimitChange(parsed)
                     }
                     focused = state.isFocused

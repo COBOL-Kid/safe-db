@@ -250,7 +250,7 @@ private fun RunRecipeDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "${recipe.querySpec?.tables?.size ?: 0} table${if (recipe.querySpec?.tables?.size == 1) "" else "s"} · limit ${recipe.querySpec?.limit} · opens ${recipe.defaultMode.displayName()}"
+                    "${recipe.querySpec?.tables?.size ?: 0} table${if (recipe.querySpec?.tables?.size == 1) "" else "s"} · limit ${recipe.querySpec?.limit?.let(::limitFieldText)} · opens ${recipe.defaultMode.displayName()}"
                 )
                 RecipeLabel("Run on connection")
                 FlowRow(

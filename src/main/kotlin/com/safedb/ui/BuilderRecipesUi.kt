@@ -251,7 +251,7 @@ internal fun BuilderRecipeButton(
                                 Text(
                                     when {
                                         recipe.querySpec != null ->
-                                            "Query included · limit ${recipe.querySpec?.limit}"
+                                            "Query included · limit ${recipe.querySpec?.limit?.let(::limitFieldText)}"
                                         currentSample == null ->
                                             "Run a query before applying this view-only recipe"
                                         !available ->
