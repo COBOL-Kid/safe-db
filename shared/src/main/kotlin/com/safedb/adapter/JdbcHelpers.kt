@@ -1,6 +1,7 @@
 package com.safedb.adapter
 
 import com.safedb.launch.POSTGRES_LAUNCH_ROOT_CERT_PROPERTY
+import com.safedb.model.BinaryValue
 import com.safedb.model.BindValue
 import com.safedb.model.ColumnInfo
 import com.safedb.model.CompiledQuery
@@ -11,18 +12,19 @@ import com.safedb.model.MAX_CELL_BYTES
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultRowBudget
 import com.safedb.model.TableSizeEstimate
+import com.safedb.model.TextValue
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.mySqlSslMode
 import com.safedb.model.postgresSslMode
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
-import java.io.InputStream
 import java.io.Reader
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Types
+import java.util.Base64
 
 const val DEFAULT_TIMEOUT_MS = 10_000
 const val CONNECT_TIMEOUT_MS = 10_000L
@@ -448,14 +450,23 @@ private fun readTemporalOrDecimal(rs: ResultSet, index: Int): ResultCell {
 private fun readText(rs: ResultSet, index: Int): ResultCell {
     val reader = rs.getCharacterStream(index) ?: return ResultCell.Null
     reader.use {
-        return ResultCell.text(readBoundedUtf8(it, MAX_CELL_BYTES))
+        val (text, truncated) = readBoundedUtf8(it, MAX_CELL_BYTES)
+        return ResultCell.TextCell(TextValue(text = text, truncated = truncated))
     }
 }
 
 private fun readBinary(rs: ResultSet, index: Int): ResultCell {
     val stream = rs.getBinaryStream(index) ?: return ResultCell.Null
     stream.use {
-        return ResultCell.binary(readBoundedBytes(it, MAX_CELL_BYTES))
+        val bytes = it.readNBytes(MAX_CELL_BYTES + 1)
+        val truncated = bytes.size > MAX_CELL_BYTES
+        val clipped = if (truncated) bytes.copyOf(MAX_CELL_BYTES) else bytes
+        return ResultCell.BinaryCell(
+            BinaryValue(
+                base64 = Base64.getEncoder().encodeToString(clipped),
+                truncated = truncated,
+            )
+        )
     }
 }
 
@@ -467,55 +478,43 @@ private fun readFallback(rs: ResultSet, index: Int): ResultCell =
         else -> ResultCell.text(value.toString())
     }
 
-// A character is at most 4 UTF-8 bytes, so a chunk of room/4 cannot cross the cap. The last
-// read is one code point, which is the extra byte (or one extra character) that detects truncation.
-private fun readBoundedUtf8(reader: Reader, maxBytes: Int): String {
+// A character is at most 4 UTF-8 bytes, so a chunk of room/4 stays under the cap. One extra
+// code point is probed after the cap (or rejected when it would not fit) so truncated is set
+// here instead of by ResultCell.text.
+private fun readBoundedUtf8(reader: Reader, maxBytes: Int): Pair<String, Boolean> {
     val out = StringBuilder()
     var usedBytes = 0
     val buf = CharArray(4096)
-    while (usedBytes <= maxBytes) {
-        val room = maxBytes - usedBytes + 1
+    while (usedBytes < maxBytes) {
+        val room = maxBytes - usedBytes
         val want = if (room < 4) 1 else minOf(buf.size, room / 4)
         val n = reader.read(buf, 0, want)
-        if (n <= 0) break
+        if (n <= 0) return out.toString() to false
         var index = 0
         while (index < n) {
             val highSurrogateAtEnd = Character.isHighSurrogate(buf[index]) && index == n - 1
+            val piece: String
+            val count: Int
             if (highSurrogateAtEnd) {
                 val low = reader.read()
-                val piece =
+                piece =
                     if (low < 0) buf[index].toString()
                     else String(charArrayOf(buf[index], low.toChar()))
-                usedBytes += appendPiece(out, piece)
-                if (usedBytes > maxBytes) return out.toString()
-                break
+                count = n - index
+            } else {
+                count = if (Character.isHighSurrogate(buf[index]) && index + 1 < n) 2 else 1
+                piece = String(buf, index, count)
             }
-            val count = if (Character.isHighSurrogate(buf[index]) && index + 1 < n) 2 else 1
-            val piece = String(buf, index, count)
-            usedBytes += appendPiece(out, piece)
+            val pieceBytes = piece.toByteArray(Charsets.UTF_8).size
+            if (usedBytes + pieceBytes > maxBytes) return out.toString() to true
+            out.append(piece)
+            usedBytes += pieceBytes
+            if (highSurrogateAtEnd) break
             index += count
-            if (usedBytes > maxBytes) return out.toString()
         }
     }
-    return out.toString()
-}
-
-private fun appendPiece(out: StringBuilder, piece: String): Int {
-    out.append(piece)
-    return piece.toByteArray(Charsets.UTF_8).size
-}
-
-// Read one extra byte past the cap so ResultCell.binary can see that the value was longer.
-private fun readBoundedBytes(stream: InputStream, maxBytes: Int): ByteArray {
-    val limit = maxBytes + 1
-    val buffer = ByteArray(limit)
-    var read = 0
-    while (read < limit) {
-        val n = stream.read(buffer, read, limit - read)
-        if (n <= 0) break
-        read += n
-    }
-    return if (read == buffer.size) buffer else buffer.copyOf(read)
+    val extra = reader.read()
+    return out.toString() to (extra >= 0)
 }
 
 class QueryTimedOutException(val timeoutMs: Int) :

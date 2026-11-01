@@ -835,7 +835,6 @@ class QueryRiskTest {
         val volume = assessment.signals.single { it.category == RiskCategory.Volume }
         assertEquals(RiskSignalCode.MaterialProjectedPayload, volume.code)
         assertEquals(1, volume.points)
-        assertFalse(assessment.signals.any { it.code == RiskSignalCode.HighProjectedPayload })
     }
 
     @Test
@@ -844,7 +843,7 @@ class QueryRiskTest {
             assess(
                 spec(
                     columns = listOf(ColumnSel("t0", "payload"), ColumnSel("t0", "payload")),
-                    limit = 1_000,
+                    limit = 3_000,
                 ),
                 listOf(
                     table(

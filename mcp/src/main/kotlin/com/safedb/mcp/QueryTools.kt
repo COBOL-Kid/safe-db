@@ -209,15 +209,15 @@ private suspend fun handleRunQuery(
         }
 
     val prepared = prepareSql(service, connection, sql, request)
-    val (spec, parseNotes) =
+    val spec =
         when (prepared) {
-            is PreparedQuery.Ok -> prepared.spec to prepared.notes
+            is PreparedQuery.Ok -> prepared.spec
             is PreparedQuery.Err -> return prepared.result
         }
 
     return try {
         val completed = service.runQuery(QueryRunRequest(connectionId, spec, confirmation))
-        successReceipt(completed, parseNotes, resultStore, spec)
+        successReceipt(completed, resultStore, spec)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -260,7 +260,7 @@ private suspend fun prepareSql(
                     parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
                 )
             )
-        is SqlParseResult.Success -> PreparedQuery.Ok(parsed.spec, parsed.notes)
+        is SqlParseResult.Success -> PreparedQuery.Ok(parsed.spec)
     }
 }
 
@@ -310,7 +310,6 @@ private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
 
 private suspend fun successReceipt(
     completed: QueryRunResult,
-    parseNotes: List<String>,
     resultStore: ResultStore,
     spec: QuerySpec,
 ): CallToolResult {
@@ -318,7 +317,6 @@ private suspend fun successReceipt(
     val stored = resultStore.put(result)
     val preview = previewRows(result)
     val warnings = buildList {
-        addAll(parseNotes)
         addAll(result.warnings)
         if (result.truncated) add(sampleCappedWarning(spec, result.warnings))
     }
@@ -446,7 +444,7 @@ private fun QueryExecutionConfirmation.toPayload(): McpQueryConfirmation =
     )
 
 private sealed interface PreparedQuery {
-    data class Ok(val spec: QuerySpec, val notes: List<String> = emptyList()) : PreparedQuery
+    data class Ok(val spec: QuerySpec) : PreparedQuery
 
     data class Err(val result: CallToolResult) : PreparedQuery
 }

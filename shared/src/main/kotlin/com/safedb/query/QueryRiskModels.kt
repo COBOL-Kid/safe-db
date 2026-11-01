@@ -26,7 +26,6 @@ enum class RiskSignalCode {
     LimitCannotBoundWork,
     BoundedBlockingOperation,
     MaterialProjectedPayload,
-    HighProjectedPayload,
     PlanConfirmedLargeScan,
     PlanConfirmedJoinExpansion,
 }

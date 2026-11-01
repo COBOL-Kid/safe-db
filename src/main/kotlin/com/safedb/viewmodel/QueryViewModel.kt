@@ -561,19 +561,16 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
-    override fun setLimit(limit: Int) {
-        val parsed = parseLimit(limit)
-        if (queryLimit == parsed && !queryUncapped) return
+    override fun setLimit(limit: Int, uncapped: Boolean) {
+        if (queryLimit == limit && queryUncapped == uncapped) return
         invalidateSettledRunFailure()
-        queryLimit = parsed
-        queryUncapped = false
-    }
-
-    override fun setUncapped(uncapped: Boolean) {
-        if (queryUncapped == uncapped) return
-        invalidateSettledRunFailure()
+        queryLimit = limit
         queryUncapped = uncapped
     }
+
+    fun setLimit(limit: Int) = setLimit(parseLimit(limit), false)
+
+    fun setUncapped(uncapped: Boolean) = setLimit(queryLimit, uncapped)
 
     fun run(connectionId: String, onSettled: ((Boolean) -> Unit)? = null) {
         if (!canRun) return

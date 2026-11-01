@@ -109,7 +109,6 @@ internal fun SqlScreen(
     val dialect = connection?.dialect
     val parsedSpec = (parseResult as? SqlParseResult.Success)?.spec
     val parseIssues = (parseResult as? SqlParseResult.Failure)?.issues.orEmpty()
-    val parseNotes = (parseResult as? SqlParseResult.Success)?.notes.orEmpty()
 
     LaunchedEffect(parsedSpec) { sqlViewModel.onParsedSpecChanged(parsedSpec) }
 
@@ -249,7 +248,6 @@ internal fun SqlScreen(
                     dialect = dialect,
                     backslashEscapes = mySqlBackslashEscapes(connection),
                     parseIssues = parseIssues,
-                    parseNotes = parseNotes,
                     riskValidationError = riskValidationError,
                     finalRiskEvaluation = finalRiskEvaluation,
                     currentSample = currentSample,
@@ -268,7 +266,6 @@ private fun SqlWorkspace(
     dialect: Dialect?,
     backslashEscapes: Boolean?,
     parseIssues: List<com.safedb.query.sql.SqlIssue>,
-    parseNotes: List<String>,
     riskValidationError: String?,
     finalRiskEvaluation: com.safedb.query.QueryRiskEvaluation?,
     currentSample: BuilderQuerySample?,
@@ -300,7 +297,6 @@ private fun SqlWorkspace(
             parseIssues.forEach { issue ->
                 MessageBanner(text = issueBannerText(text.text, issue), kind = BannerKind.ERROR)
             }
-            parseNotes.forEach { note -> MessageBanner(text = note, kind = BannerKind.INFO) }
             riskValidationError?.let { error ->
                 MessageBanner(text = error, kind = BannerKind.ERROR)
             }

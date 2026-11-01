@@ -396,11 +396,11 @@ fun validate(
     }
 
     var limit = spec.limit
-    if (limit == 0) {
+    if (!spec.uncapped && limit == 0) {
         limit = DEFAULT_LIMIT
         warnings.add("Limit was 0; defaulted to $DEFAULT_LIMIT")
     }
-    if (limit > LARGE_LIMIT_WARNING_THRESHOLD) {
+    if (spec.uncapped || limit > LARGE_LIMIT_WARNING_THRESHOLD) {
         warnings.add(
             "Large result limits are useful for reporting, but filters, selected columns, and indexed predicates keep queries faster and easier to reuse."
         )

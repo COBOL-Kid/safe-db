@@ -587,7 +587,6 @@ internal fun signalMessage(signal: RiskSignal): String =
         RiskSignalCode.BoundedBlockingOperation ->
             "A blocking operation remains above a bounded access path."
         RiskSignalCode.MaterialProjectedPayload -> "The projected result payload is material."
-        RiskSignalCode.HighProjectedPayload -> "The projected result payload is high."
         RiskSignalCode.PlanConfirmedLargeScan ->
             "Plan evidence indicates a high-row scan of a large table."
         RiskSignalCode.PlanConfirmedJoinExpansion -> "Plan evidence indicates high join expansion."

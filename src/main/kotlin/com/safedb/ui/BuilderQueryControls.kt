@@ -71,6 +71,7 @@ import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
+import com.safedb.query.parseLimit
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.util.limitFieldText
@@ -85,9 +86,7 @@ internal fun builderLimitChoiceLabel(choice: Int): String = "%,d".format(choice)
 internal fun commitBuilderLimitDraft(text: String): Int? {
     val digits = text.filter { it.isDigit() }
     if (digits.isEmpty() || digits.all { it == '0' }) return null
-    val value = digits.toLongOrNull()
-    if (value == null || value > Int.MAX_VALUE.toLong()) return Int.MAX_VALUE
-    return value.toInt()
+    return parseLimit(digits)
 }
 
 internal val QueryControlsMaxHeight = 208.dp

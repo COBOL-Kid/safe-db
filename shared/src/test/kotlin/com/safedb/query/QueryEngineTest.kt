@@ -236,8 +236,10 @@ class QueryEngineTest {
 
         val keptUncapped =
             validate(spec.copy(uncapped = true), sampleSchema(), emptyList()).unwrap()
-        assertEquals(DEFAULT_LIMIT, keptUncapped.first.limit)
+        assertEquals(0, keptUncapped.first.limit)
         assertTrue(keptUncapped.first.uncapped)
+        assertTrue(keptUncapped.second.warnings.none { it.contains("defaulted") })
+        assertTrue(keptUncapped.second.warnings.any { it.contains("useful for reporting") })
 
         spec = sampleSpec().copy(limit = 5_000)
         var result = validate(spec, sampleSchema(), emptyList()).unwrap()
@@ -1307,7 +1309,8 @@ class QueryEngineTest {
         assertEquals(3, result.rowCount)
         assertEquals(3, result.rows.size)
         assertFalse(result.truncated)
-        assertEquals(listOf("adapter warning"), result.warnings)
+        assertTrue(result.warnings.any { it.contains("useful for reporting") })
+        assertTrue(result.warnings.contains("adapter warning"))
     }
 
     @Test
@@ -1338,7 +1341,8 @@ class QueryEngineTest {
         assertEquals(3, result.rowCount)
         assertEquals(3, result.rows.size)
         assertTrue(result.truncated)
-        assertEquals(listOf("adapter warning"), result.warnings)
+        assertTrue(result.warnings.any { it.contains("useful for reporting") })
+        assertTrue(result.warnings.contains("adapter warning"))
     }
 
     @Test

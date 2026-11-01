@@ -122,11 +122,8 @@ private class TestHydrationTarget : QueryHydrationTarget {
         _connectorOverrides = map
     }
 
-    override fun setLimit(limit: Int) {
+    override fun setLimit(limit: Int, uncapped: Boolean) {
         _limit = limit
-    }
-
-    override fun setUncapped(uncapped: Boolean) {
         _uncapped = uncapped
     }
 

@@ -25,9 +25,7 @@ interface QueryHydrationTarget {
 
     fun setConnectorOverrides(map: Map<String, GroupConnector>)
 
-    fun setLimit(limit: Int)
-
-    fun setUncapped(uncapped: Boolean) {}
+    fun setLimit(limit: Int, uncapped: Boolean)
 
     fun setDistinct(distinct: Boolean)
 
@@ -170,8 +168,7 @@ fun hydrateQueryFromSpec(
     target.setFilters(remappedFilters)
 
     target.setConnectorOverrides(spec.connectorOverrides)
-    target.setLimit(spec.limit)
-    target.setUncapped(spec.uncapped)
+    target.setLimit(spec.limit, spec.uncapped)
     target.setDistinct(spec.distinct)
 
     var droppedSorts = 0

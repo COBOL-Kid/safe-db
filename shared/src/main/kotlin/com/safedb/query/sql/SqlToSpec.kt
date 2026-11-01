@@ -117,7 +117,7 @@ private class SqlSpecBuilder(
                 sorts = sorts,
                 groups = groups,
             )
-        return SqlParseResult.Success(spec, emptyList())
+        return SqlParseResult.Success(spec)
     }
 
     // One policy, applied everywhere. A quoted identifier means exactly what it spells, so it only

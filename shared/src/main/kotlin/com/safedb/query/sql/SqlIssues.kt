@@ -20,7 +20,7 @@ enum class SqlIssueCode {
 data class SqlIssue(val code: SqlIssueCode, val message: String, val span: SqlSpan?)
 
 sealed class SqlParseResult {
-    data class Success(val spec: QuerySpec, val notes: List<String>) : SqlParseResult()
+    data class Success(val spec: QuerySpec) : SqlParseResult()
 
     data class Failure(val issues: List<SqlIssue>) : SqlParseResult()
 }
