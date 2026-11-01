@@ -49,6 +49,7 @@ import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.util.limitFieldText
 import com.safedb.viewmodel.RecipesViewModel
 import java.time.Instant
 
@@ -251,7 +252,7 @@ internal fun BuilderRecipeButton(
                                 Text(
                                     when {
                                         recipe.querySpec != null ->
-                                            "Query included · limit ${recipe.querySpec?.limit?.let(::limitFieldText)}"
+                                            "Query included · limit ${recipe.querySpec?.let { limitFieldText(it.limit, it.uncapped) }}"
                                         currentSample == null ->
                                             "Run a query before applying this view-only recipe"
                                         !available ->

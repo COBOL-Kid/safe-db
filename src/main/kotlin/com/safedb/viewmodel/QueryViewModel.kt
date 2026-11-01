@@ -103,6 +103,10 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
     val limit: Int
         get() = queryLimit
 
+    private var queryUncapped by mutableStateOf(false)
+    val uncapped: Boolean
+        get() = queryUncapped
+
     private var distinctState by mutableStateOf(false)
     val distinct: Boolean
         get() = distinctState
@@ -189,6 +193,7 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
                 joins = joins.toList(),
                 filters = filters,
                 limit = limit,
+                uncapped = uncapped,
                 distinct = distinct,
                 sorts = sorts,
                 groups = groups,
@@ -203,6 +208,7 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
         joins.clear()
         filterGroupState = FilterGroup.empty()
         queryLimit = DEFAULT_LIMIT
+        queryUncapped = false
         distinctState = false
         hydrationWarning = null
         aliasCounter = 0
@@ -557,9 +563,16 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
 
     override fun setLimit(limit: Int) {
         val parsed = parseLimit(limit)
-        if (queryLimit == parsed) return
+        if (queryLimit == parsed && !queryUncapped) return
         invalidateSettledRunFailure()
         queryLimit = parsed
+        queryUncapped = false
+    }
+
+    override fun setUncapped(uncapped: Boolean) {
+        if (queryUncapped == uncapped) return
+        invalidateSettledRunFailure()
+        queryUncapped = uncapped
     }
 
     fun run(connectionId: String, onSettled: ((Boolean) -> Unit)? = null) {

@@ -65,6 +65,7 @@ import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.util.limitFieldText
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import java.time.Instant
@@ -250,7 +251,7 @@ private fun RunRecipeDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "${recipe.querySpec?.tables?.size ?: 0} table${if (recipe.querySpec?.tables?.size == 1) "" else "s"} · limit ${recipe.querySpec?.limit?.let(::limitFieldText)} · opens ${recipe.defaultMode.displayName()}"
+                    "${recipe.querySpec?.tables?.size ?: 0} table${if (recipe.querySpec?.tables?.size == 1) "" else "s"} · limit ${recipe.querySpec?.let { limitFieldText(it.limit, it.uncapped) }} · opens ${recipe.defaultMode.displayName()}"
                 )
                 RecipeLabel("Run on connection")
                 FlowRow(

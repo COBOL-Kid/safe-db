@@ -363,18 +363,31 @@ class QueryViewModelStateTest {
     fun limitsAndClearRestoreStableDefaults() {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         assertEquals(500, viewModel.limit)
+        assertFalse(viewModel.uncapped)
 
         viewModel.addTable(table("customers", "id"))
         viewModel.setLimit(0)
         assertEquals(500, viewModel.limit)
+        assertFalse(viewModel.uncapped)
         viewModel.setLimit(Int.MAX_VALUE)
         assertEquals(Int.MAX_VALUE, viewModel.limit)
+        assertFalse(viewModel.uncapped)
+        assertFalse(viewModel.spec.uncapped)
+        viewModel.setUncapped(true)
+        assertEquals(Int.MAX_VALUE, viewModel.limit)
+        assertTrue(viewModel.uncapped)
+        assertTrue(viewModel.spec.uncapped)
         viewModel.setLimit(20_000)
         assertEquals(20_000, viewModel.limit)
+        assertFalse(viewModel.uncapped)
+        viewModel.setUncapped(true)
+        assertEquals(20_000, viewModel.limit)
+        assertTrue(viewModel.spec.uncapped)
 
         viewModel.clear()
 
         assertEquals(500, viewModel.limit)
+        assertFalse(viewModel.uncapped)
         assertEquals(0, viewModel.tableCount)
         assertTrue(viewModel.filters.id.isNotEmpty())
         assertNotEquals("", viewModel.filters.id)
@@ -389,6 +402,21 @@ class QueryViewModelStateTest {
         )
 
         assertEquals(100, viewModel.limit)
+        assertFalse(viewModel.uncapped)
+
+        viewModel.restoreFromSpec(
+            QuerySpec(
+                tables = listOf(TableRef("app", "customers", "saved_customers")),
+                filters = FilterGroup.empty(),
+                limit = 100,
+                uncapped = true,
+            ),
+            listOf(table("customers", "id")),
+        )
+
+        assertEquals(100, viewModel.limit)
+        assertTrue(viewModel.uncapped)
+        assertTrue(viewModel.spec.uncapped)
     }
 
     @Test

@@ -71,23 +71,26 @@ import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
-import com.safedb.query.parseLimit
 import com.safedb.ui.theme.ChipShape
+import com.safedb.ui.util.limitFieldText
 import com.safedb.ui.theme.SafeDbTheme
 
-internal const val BUILDER_ALL_ROWS_LIMIT = Int.MAX_VALUE
+internal const val BUILDER_ALL_LIMIT_LABEL = "ALL"
 
 internal val BUILDER_LIMIT_CHOICES =
-    listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000, BUILDER_ALL_ROWS_LIMIT)
+    listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000)
 
-internal fun builderLimitChoiceLabel(choice: Int): String =
-    if (choice == BUILDER_ALL_ROWS_LIMIT) "ALL" else "%,d".format(choice)
+internal fun builderLimitChoiceLabel(choice: Int): String = "%,d".format(choice)
 
-internal fun limitFieldText(limit: Int): String =
-    if (limit == BUILDER_ALL_ROWS_LIMIT) "ALL" else limit.toString()
-
-internal fun parseBuilderLimitText(text: String): Int =
-    if (text.trim().equals("ALL", ignoreCase = true)) BUILDER_ALL_ROWS_LIMIT else parseLimit(text)
+/** Null keeps the committed limit. Blank and zero are not a new cap. */
+internal fun commitBuilderLimitDraft(text: String): Pair<Int, Boolean>? {
+    val digits = text.filter { it.isDigit() }
+    if (digits.isEmpty() || digits.all { it == '0' }) return null
+    val value = digits.toLongOrNull()
+    if (value == null || value > Int.MAX_VALUE.toLong()) return Int.MAX_VALUE to false
+    if (value < 1L) return null
+    return value.toInt() to false
+}
 
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
@@ -591,30 +594,32 @@ private fun QueryOrderMoveAction(
 }
 
 @Composable
-internal fun LimitValueField(limit: Int, onLimitChange: (Int) -> Unit) {
-    var text by remember(limit) { mutableStateOf(limitFieldText(limit)) }
+internal fun LimitValueField(
+    limit: Int,
+    uncapped: Boolean,
+    onCommit: (limit: Int, uncapped: Boolean) -> Unit,
+) {
+    var draft by remember { mutableStateOf(limitFieldText(limit, uncapped)) }
     var focused by remember { mutableStateOf(false) }
     val textStyle =
         MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     BasicTextField(
-        value = text,
-        onValueChange = { raw ->
-            val digits = raw.filter { it.isDigit() }
-            text = digits
-            val parsed = digits.toIntOrNull()
-            if (parsed != null && parsed >= 1) onLimitChange(parsed)
-        },
+        value = if (focused) draft else limitFieldText(limit, uncapped),
+        onValueChange = { raw -> draft = raw.filter { it.isDigit() } },
         singleLine = true,
         textStyle = textStyle,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier =
-            Modifier.width(104.dp)
+            Modifier.width(120.dp)
                 .height(30.dp)
                 .onFocusChanged { state ->
+                    if (!focused && state.isFocused) {
+                        draft = limitFieldText(limit, uncapped)
+                    }
                     if (focused && !state.isFocused) {
-                        val parsed = parseBuilderLimitText(text)
-                        text = limitFieldText(parsed)
-                        onLimitChange(parsed)
+                        commitBuilderLimitDraft(draft)?.let { (parsed, parsedUncapped) ->
+                            onCommit(parsed, parsedUncapped)
+                        }
                     }
                     focused = state.isFocused
                 }
