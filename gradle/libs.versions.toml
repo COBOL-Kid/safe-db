@@ -1,0 +1,6 @@
+[versions]
+compose-multiplatform = "1.12.2"
+
+[libraries]
+compose-desktop-windows-x64 = { module = "org.jetbrains.compose.desktop:desktop-jvm-windows-x64", version.ref = "compose-multiplatform" }
+compose-desktop-macos-arm64 = { module = "org.jetbrains.compose.desktop:desktop-jvm-macos-arm64", version.ref = "compose-multiplatform" }
