@@ -42,12 +42,12 @@ kover {
 
 dependencies {
     implementation(project(":shared"))
-    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.15.0")
+    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.16.0")
     implementation("org.slf4j:slf4j-simple:2.0.20")
 
     testImplementation(kotlin("test"))
     testImplementation(testFixtures(project(":shared")))
-    testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.15.0")
+    testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.16.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
 
@@ -73,7 +73,7 @@ dependencies {
     )
     add(
         integrationTest.implementationConfigurationName,
-        "io.modelcontextprotocol:kotlin-sdk-client:0.15.0",
+        "io.modelcontextprotocol:kotlin-sdk-client:0.16.0",
     )
     add(
         integrationTest.implementationConfigurationName,
