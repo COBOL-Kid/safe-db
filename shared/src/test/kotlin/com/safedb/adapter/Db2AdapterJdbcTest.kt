@@ -550,6 +550,7 @@ private class ScriptedDb2(private val handlers: List<(String) -> JdbcReply?>) {
                     false
                 }
                 "setQueryTimeout" -> timeout(args)
+                "setFetchSize" -> null
                 "setInt",
                 "setLong",
                 "setString",
@@ -857,6 +858,7 @@ private fun zosExplain(
 
 private fun resultSet(query: JdbcReply.Rows): ResultSet {
     var index = -1
+    var sqlNull = false
     return proxy(ResultSet::class.java) { method, args ->
         when (method.name) {
             "next" -> {
@@ -866,7 +868,12 @@ private fun resultSet(query: JdbcReply.Rows): ResultSet {
             "getString" -> cell(query, index, args!!.first())?.toString()
             "getObject" -> cell(query, index, args!!.first())
             "getTimestamp" -> cell(query, index, args!!.first()) as Timestamp?
-            "getLong" -> (cell(query, index, args!!.first()) as Number).toLong()
+            "getLong" -> {
+                val value = cell(query, index, args!!.first())
+                sqlNull = value == null
+                (value as? Number)?.toLong() ?: 0L
+            }
+            "wasNull" -> sqlNull
             "getMetaData" -> metaData(query)
             "close" -> null
             "toString" -> "ScriptedRows"

@@ -19,7 +19,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.3.1"
+version = "0.3.2"
 
 kotlin { jvmToolchain(25) }
 
@@ -200,9 +200,9 @@ val verifyUnitTestDiscovery =
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(311)
-        minimumSharedTests.set(615)
-        minimumMcpTests.set(88)
+        minimumDesktopTests.set(317)
+        minimumSharedTests.set(632)
+        minimumMcpTests.set(90)
     }
 
 val verifyCoverageRatchet =
@@ -211,7 +211,9 @@ val verifyCoverageRatchet =
         description = "Enforces checked-in line coverage floors for desktop and shared logic."
         dependsOn("koverXmlReport")
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
-        coverageFloors.set(mapOf("desktop" to 90, "shared" to 85))
+        // Shared floor is unit coverage from `check`. JDBC adapter bodies are covered by
+        // integrationTest, which kover ignores.
+        coverageFloors.set(mapOf("desktop" to 90, "shared" to 87))
     }
 
 val verifyMcpCoverageRatchet =
@@ -220,7 +222,7 @@ val verifyMcpCoverageRatchet =
         description = "Enforces the checked-in MCP line coverage floor."
         dependsOn(":mcp:koverXmlReportUnit")
         reportFile.set(project(":mcp").layout.buildDirectory.file("reports/kover/reportUnit.xml"))
-        coverageFloors.set(mapOf("mcp" to 91))
+        coverageFloors.set(mapOf("mcp" to 92))
     }
 
 tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet, verifyMcpCoverageRatchet) }

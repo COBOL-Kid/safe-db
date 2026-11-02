@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -45,7 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -66,12 +71,24 @@ import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
-import com.safedb.query.MAX_LIMIT
+import com.safedb.query.parseLimit
 import com.safedb.ui.theme.ChipShape
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.ui.util.limitFieldText
 
-internal val BUILDER_LIMIT_CHOICES =
-    listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000, MAX_LIMIT)
+internal const val BUILDER_ALL_LIMIT_LABEL = "ALL"
+
+internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_THRESHOLD, 5_000)
+
+internal fun builderLimitChoiceLabel(choice: Int): String = "%,d".format(choice)
+
+/** Null keeps the committed limit. Blank and zero are not a new cap. */
+internal fun commitBuilderLimitDraft(text: String): Int? {
+    val digits = text.filter { it.isDigit() }
+    if (digits.isEmpty() || digits.all { it == '0' }) return null
+    return parseLimit(digits)
+}
+
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
 internal val QueryControlsTableGap = 16.dp
@@ -571,6 +588,40 @@ private fun QueryOrderMoveAction(
                 },
         )
     }
+}
+
+@Composable
+internal fun LimitValueField(
+    limit: Int,
+    uncapped: Boolean,
+    onCommit: (Int) -> Unit,
+) {
+    var draft by remember { mutableStateOf(limitFieldText(limit, uncapped)) }
+    var focused by remember { mutableStateOf(false) }
+    val textStyle =
+        MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
+    BasicTextField(
+        value = if (focused) draft else limitFieldText(limit, uncapped),
+        onValueChange = { raw -> draft = raw.filter { it.isDigit() } },
+        singleLine = true,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        modifier =
+            Modifier.width(120.dp)
+                .height(30.dp)
+                .onFocusChanged { state ->
+                    if (!focused && state.isFocused) {
+                        draft = limitFieldText(limit, uncapped)
+                    }
+                    if (focused && !state.isFocused) {
+                        commitBuilderLimitDraft(draft)?.let(onCommit)
+                    }
+                    focused = state.isFocused
+                }
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
+                .padding(horizontal = 8.dp, vertical = 7.dp)
+                .semantics { contentDescription = "Row limit" },
+    )
 }
 
 @Composable

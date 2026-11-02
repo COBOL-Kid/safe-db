@@ -227,26 +227,30 @@ class QueryEngineTest {
     }
 
     @Test
-    fun validateDefaultsZeroLimitAndCapsExcess() {
+    fun validateDefaultsZeroLimitAndKeepsLargeLimits() {
         var spec = sampleSpec().copy(limit = 0)
         val (normalized, outcome) = validate(spec, sampleSchema(), emptyList()).unwrap()
         assertEquals(DEFAULT_LIMIT, normalized.limit)
+        assertFalse(normalized.uncapped)
         assertTrue(outcome.warnings.any { it.contains("defaulted") })
+
+        val keptUncapped =
+            validate(spec.copy(uncapped = true), sampleSchema(), emptyList()).unwrap()
+        assertEquals(0, keptUncapped.first.limit)
+        assertTrue(keptUncapped.first.uncapped)
+        assertTrue(keptUncapped.second.warnings.none { it.contains("defaulted") })
+        assertTrue(keptUncapped.second.warnings.any { it.contains("useful for reporting") })
 
         spec = sampleSpec().copy(limit = 5_000)
         var result = validate(spec, sampleSchema(), emptyList()).unwrap()
         assertEquals(5_000, result.first.limit)
         assertTrue(result.second.warnings.any { it.contains("useful for reporting") })
 
-        spec = sampleSpec().copy(limit = MAX_LIMIT)
+        spec = sampleSpec().copy(limit = 20_000)
         result = validate(spec, sampleSchema(), emptyList()).unwrap()
-        assertEquals(MAX_LIMIT, result.first.limit)
+        assertEquals(20_000, result.first.limit)
         assertTrue(result.second.warnings.any { it.contains("useful for reporting") })
-
-        spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
-        val capped = validate(spec, sampleSchema(), emptyList()).unwrap()
-        assertEquals(MAX_LIMIT, capped.first.limit)
-        assertTrue(capped.second.warnings.any { it.contains("capped") })
+        assertFalse(result.second.warnings.any { it.contains("capped") })
     }
 
     @Test
@@ -984,13 +988,27 @@ class QueryEngineTest {
         assertTrue(decoded.groups.isEmpty())
         assertFalse(decoded.distinct)
         assertEquals(100, decoded.limit)
+        assertFalse(decoded.uncapped)
     }
 
     @Test
-    fun postgresCompilesLargeLimitPlusOneForTruncationDetection() {
-        val spec = twoTableSpec().copy(limit = MAX_LIMIT)
+    fun postgresCompilesMaxIntLimitWithoutAddingOne() {
+        val spec = twoTableSpec().copy(limit = Int.MAX_VALUE)
         val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.endsWith("LIMIT 10001"))
+        assertFalse(spec.uncapped)
+        assertTrue(compiled.sql.endsWith("LIMIT 2147483647"))
+        assertFalse(compiled.sql.contains("2147483648"))
+    }
+
+    @Test
+    fun uncappedCompilesWithoutRowLimitClause() {
+        val spec = twoTableSpec().copy(limit = 50, uncapped = true)
+        for (dialect in listOf(Dialect.Postgres, Dialect.Mssql, Dialect.Oracle)) {
+            val sql = compileValidated(validatedQuery(spec), dialect).unwrap().sql
+            assertFalse(sql.contains("LIMIT"), sql)
+            assertFalse(sql.contains("TOP "), sql)
+            assertFalse(sql.contains("FETCH FIRST"), sql)
+        }
     }
 
     @Test
@@ -1264,9 +1282,73 @@ class QueryEngineTest {
     }
 
     @Test
+    fun runQueryCoreUncappedKeepsRowsWhenAdapterDidNotTruncate() = runBlocking {
+        val def = sampleConnection("c1")
+        val spec = sampleSpec().copy(limit = 1, uncapped = true)
+        val runner =
+            MockRunner(
+                explainResult = availablePlan(0.0),
+                execute =
+                    Outcome.ok(
+                        QueryResult(
+                            columns = emptyList(),
+                            rows = listOf(emptyList(), emptyList(), emptyList()),
+                            rowCount = 3,
+                            truncated = false,
+                            warnings = listOf("adapter warning"),
+                        )
+                    ),
+            )
+
+        val result =
+            when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings())) {
+                is QueryCoreOutcome.Success -> outcome.result
+                is QueryCoreOutcome.Failure -> error(outcome.error.message)
+            }
+
+        assertEquals(3, result.rowCount)
+        assertEquals(3, result.rows.size)
+        assertFalse(result.truncated)
+        assertTrue(result.warnings.any { it.contains("useful for reporting") })
+        assertTrue(result.warnings.contains("adapter warning"))
+    }
+
+    @Test
+    fun runQueryCoreUncappedPreservesAdapterTruncation() = runBlocking {
+        val def = sampleConnection("c1")
+        val spec = sampleSpec().copy(limit = 1, uncapped = true)
+        val runner =
+            MockRunner(
+                explainResult = availablePlan(0.0),
+                execute =
+                    Outcome.ok(
+                        QueryResult(
+                            columns = emptyList(),
+                            rows = listOf(emptyList(), emptyList(), emptyList()),
+                            rowCount = 3,
+                            truncated = true,
+                            warnings = listOf("adapter warning"),
+                        )
+                    ),
+            )
+
+        val result =
+            when (val outcome = runQueryCore(runner, def, spec, sampleSchema(), sampleSettings())) {
+                is QueryCoreOutcome.Success -> outcome.result
+                is QueryCoreOutcome.Failure -> error(outcome.error.message)
+            }
+
+        assertEquals(3, result.rowCount)
+        assertEquals(3, result.rows.size)
+        assertTrue(result.truncated)
+        assertTrue(result.warnings.any { it.contains("useful for reporting") })
+        assertTrue(result.warnings.contains("adapter warning"))
+    }
+
+    @Test
     fun runQueryCoreSuccessCarriesNormalizedHistorySpec() = runBlocking {
         val def = sampleConnection("c1")
-        val spec = sampleSpec().copy(limit = MAX_LIMIT + 1)
+        val spec = sampleSpec().copy(limit = 20_000)
         val runner = MockRunner(explainResult = availablePlan(0.0))
 
         val success =
@@ -1275,8 +1357,8 @@ class QueryEngineTest {
                 is QueryCoreOutcome.Failure -> error(outcome.error.message)
             }
 
-        assertEquals(MAX_LIMIT, success.historySpec.limit)
-        assertEquals(MAX_LIMIT + 1, spec.limit)
+        assertEquals(20_000, success.historySpec.limit)
+        assertEquals(20_000, spec.limit)
     }
 
     @Test
@@ -1300,7 +1382,7 @@ class QueryEngineTest {
     @Test
     fun runQueryCoreRiskGateCarriesNormalizedHistorySpec() = runBlocking {
         val def = sampleConnection("c1")
-        val spec = textFilterSpec(FilterOp.Contains, "term").copy(limit = MAX_LIMIT + 1)
+        val spec = textFilterSpec(FilterOp.Contains, "term").copy(limit = 20_000)
         val settings =
             sampleSettings().copy(queryRiskGate = com.safedb.model.QueryRiskGate.Cautious)
         val runner = MockRunner(explainResult = availablePlan(5.0))
@@ -1312,7 +1394,7 @@ class QueryEngineTest {
             }
 
         assertTrue(failure.error is QueryError.RiskGate)
-        assertEquals(MAX_LIMIT, failure.historySpec?.limit)
+        assertEquals(20_000, failure.historySpec?.limit)
     }
 
     @Test
@@ -1342,6 +1424,72 @@ class QueryEngineTest {
             listOf(
                 "One or more cells exceeded ${com.safedb.model.MAX_CELL_BYTES} bytes and were truncated",
                 "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated",
+            ),
+            result.warnings,
+        )
+    }
+
+    @Test
+    fun queryResultKeepsNonFiniteFloatsInsideTheByteBudget() {
+        val rows =
+            listOf(
+                listOf(ResultCell.float(1.0)),
+                listOf(ResultCell.float(Double.NaN)),
+                listOf(ResultCell.float(Double.POSITIVE_INFINITY)),
+                listOf(ResultCell.float(Double.NEGATIVE_INFINITY)),
+                listOf(ResultCell.float(2.0)),
+            )
+
+        val result = QueryResult.fromRows(listOf(ResultColumn.of("value", "float8")), rows)
+
+        assertFalse(result.truncated)
+        assertEquals(rows, result.rows)
+        assertEquals(rows.size, result.rowCount)
+        assertEquals(emptyList(), result.warnings)
+    }
+
+    @Test
+    fun queryResultDropsAnOverBudgetFirstRow() {
+        val cell = ResultCell.text("x".repeat(com.safedb.model.MAX_CELL_BYTES))
+        val overflowing = List(10) { cell }
+        val later = listOf(ResultCell.text("later"))
+
+        val result =
+            QueryResult.fromRows(
+                listOf(ResultColumn.of("payload", "text")),
+                listOf(overflowing, later),
+            )
+
+        assertTrue(result.truncated)
+        assertEquals(0, result.rowCount)
+        assertEquals(emptyList(), result.rows)
+        assertEquals(
+            listOf(
+                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated"
+            ),
+            result.warnings,
+        )
+    }
+
+    @Test
+    fun queryResultIgnoresCellTruncationOnARejectedRow() {
+        val kept = listOf(ResultCell.text("ok"))
+        val filler = ResultCell.text("x".repeat(com.safedb.model.MAX_CELL_BYTES))
+        val truncated = ResultCell.text("y".repeat(com.safedb.model.MAX_CELL_BYTES + 1))
+        val rejected = List(9) { filler } + truncated
+
+        val result =
+            QueryResult.fromRows(
+                listOf(ResultColumn.of("payload", "text")),
+                listOf(kept, rejected),
+            )
+
+        assertTrue(result.truncated)
+        assertEquals(1, result.rowCount)
+        assertEquals(listOf(kept), result.rows)
+        assertEquals(
+            listOf(
+                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated"
             ),
             result.warnings,
         )

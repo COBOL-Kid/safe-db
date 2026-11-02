@@ -270,7 +270,7 @@ private suspend fun executeCompiled(
                 )
         }
 
-    val limitTruncated = result.rows.size > normalizedSpec.limit
+    val limitTruncated = !normalizedSpec.uncapped && result.rows.size > normalizedSpec.limit
     val rows =
         if (limitTruncated) {
             result.rows.take(normalizedSpec.limit)

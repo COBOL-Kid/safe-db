@@ -28,13 +28,20 @@ fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<Compi
     val orderByClause = buildOrderByClause(spec, dialect)
     val groupByClause = buildGroupByClause(spec, dialect)
 
-    val fetchLimit = spec.limit + 1
+    // Below the maximum cap, fetch one extra row so a full cap is distinguishable from a short
+    // result. The maximum itself is not incremented, and an uncapped query has no row-limit clause.
+    val fetchLimit =
+        when {
+            spec.uncapped -> null
+            spec.limit < Int.MAX_VALUE -> spec.limit.toLong() + 1
+            else -> spec.limit.toLong()
+        }
     val sql = buildString {
         append("SELECT ")
         if (spec.distinct) {
             append("DISTINCT ")
         }
-        if (dialect == Dialect.Mssql) {
+        if (dialect == Dialect.Mssql && fetchLimit != null) {
             append("TOP $fetchLimit ")
         }
         append(selectClause)
@@ -58,14 +65,16 @@ fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<Compi
             append("\nORDER BY ")
             append(orderByClause)
         }
-        when (dialect) {
-            Dialect.Mssql -> Unit
-            Dialect.Oracle,
-            Dialect.Db2 -> {
-                append("\nFETCH FIRST $fetchLimit ROWS ONLY")
-            }
-            else -> {
-                append("\nLIMIT $fetchLimit")
+        if (fetchLimit != null) {
+            when (dialect) {
+                Dialect.Mssql -> Unit
+                Dialect.Oracle,
+                Dialect.Db2 -> {
+                    append("\nFETCH FIRST $fetchLimit ROWS ONLY")
+                }
+                else -> {
+                    append("\nLIMIT $fetchLimit")
+                }
             }
         }
     }

@@ -8,16 +8,21 @@ import com.safedb.model.DriverProperty
 import com.safedb.model.ResultCell
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import java.io.InputStream
+import java.io.Reader
 import java.lang.reflect.Proxy
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.sql.ResultSetMetaData
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -77,7 +82,10 @@ class AdapterTest {
     fun mysqlVerifiedTransportDoesNotAllowPublicKeyRetrieval() {
         val url = buildJdbcUrl(mysqlConnection(TransportSecurityMode.VerifyIdentity))
 
-        assertEquals("jdbc:mysql://localhost:3306/safedb_test?sslMode=VERIFY_IDENTITY", url)
+        assertEquals(
+            "jdbc:mysql://localhost:3306/safedb_test?sslMode=VERIFY_IDENTITY",
+            url,
+        )
     }
 
     @Test
@@ -94,6 +102,103 @@ class AdapterTest {
 
         val text = assertIs<ResultCell.TextCell>(cell)
         assertEquals("1.000000000000000001", text.value.text)
+    }
+
+    @Test
+    fun jdbcDecoderKeepsNullsAndZeroSentinelsDistinct() {
+        for (type in
+            listOf("BOOL", "INTEGER", "DOUBLE PRECISION", "BYTEA", "VARCHAR", "NUMERIC", "OTHER")) {
+            assertEquals(ResultCell.Null, decodeJdbcValue(fakeResultSet(null), 1, type), type)
+        }
+        assertEquals(ResultCell.BoolCell(false), decodeJdbcValue(fakeResultSet(false), 1, "BOOL"))
+        assertEquals(ResultCell.IntegerCell(0), decodeJdbcValue(fakeResultSet(0L), 1, "INTEGER"))
+        assertEquals(ResultCell.FloatCell(0.0), decodeJdbcValue(fakeResultSet(0.0), 1, "FLOAT8"))
+    }
+
+    @Test
+    fun jdbcDecoderReadsAnIntegerWithOneTypedGetter() {
+        val calls = mutableListOf<String>()
+        val rs =
+            Proxy.newProxyInstance(
+                ResultSet::class.java.classLoader,
+                arrayOf(ResultSet::class.java),
+            ) { _, method, _ ->
+                if (method.name != "toString") calls += method.name
+                when (method.name) {
+                    "getLong" -> 4L
+                    "wasNull" -> false
+                    "toString" -> "rs"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSet
+
+        val cell = assertIs<ResultCell.IntegerCell>(decodeJdbcValue(rs, 1, "BIGINT"))
+
+        assertEquals(4L, cell.value)
+        assertEquals(listOf("getLong", "wasNull"), calls)
+    }
+
+    @Test
+    fun jdbcDecoderReadsDateAndDecimalWithGetString() {
+        for ((type, value) in listOf("DATE" to "2026-01-02", "DECIMAL" to "123.45")) {
+            val calls = mutableListOf<String>()
+            val rs =
+                Proxy.newProxyInstance(
+                    ResultSet::class.java.classLoader,
+                    arrayOf(ResultSet::class.java),
+                ) { _, method, _ ->
+                    if (method.name != "toString") calls += method.name
+                    when (method.name) {
+                        "getString" -> value
+                        "toString" -> "rs"
+                        else -> throw UnsupportedOperationException(method.name)
+                    }
+                } as ResultSet
+
+            val cell = assertIs<ResultCell.TextCell>(decodeJdbcValue(rs, 1, type))
+
+            assertEquals(value, cell.value.text)
+            assertEquals(listOf("getString"), calls)
+        }
+    }
+
+    @Test
+    fun jdbcDecoderStopsTextAndBinaryStreamsAfterOneExtraUnit() {
+        val cap = com.safedb.model.MAX_CELL_BYTES
+        val ascii = BoundedSourceReader("x".repeat(cap + 50))
+        val asciiCell =
+            assertIs<ResultCell.TextCell>(
+                decodeJdbcValue(streamResultSet(reader = ascii), 1, "VARCHAR")
+            )
+        assertTrue(asciiCell.value.truncated)
+        assertEquals(cap, asciiCell.value.text.toByteArray(Charsets.UTF_8).size)
+        assertEquals(cap + 1, ascii.supplied)
+
+        val exact = BoundedSourceReader("x".repeat(cap))
+        val exactCell =
+            assertIs<ResultCell.TextCell>(
+                decodeJdbcValue(streamResultSet(reader = exact), 1, "TEXT")
+            )
+        assertFalse(exactCell.value.truncated)
+        assertEquals(cap, exact.supplied)
+
+        val accented = BoundedSourceReader("é".repeat(cap / 2 + 5))
+        val accentedCell =
+            assertIs<ResultCell.TextCell>(
+                decodeJdbcValue(streamResultSet(reader = accented), 1, "CLOB")
+            )
+        assertTrue(accentedCell.value.truncated)
+        assertEquals(cap, accentedCell.value.text.toByteArray(Charsets.UTF_8).size)
+        assertEquals(cap / 2 + 1, accented.supplied)
+
+        val bytes = BoundedSourceStream(ByteArray(cap + 50) { 7 })
+        val binaryCell =
+            assertIs<ResultCell.BinaryCell>(
+                decodeJdbcValue(streamResultSet(stream = bytes), 1, "BLOB")
+            )
+        assertTrue(binaryCell.value.truncated)
+        assertEquals(cap, Base64.getDecoder().decode(binaryCell.value.base64).size)
+        assertEquals(cap + 1, bytes.supplied)
     }
 
     @Test
@@ -285,12 +390,19 @@ class AdapterTest {
     fun prepareStatementRewritesPlaceholdersAndBindsEveryValueKind() {
         val calls = mutableListOf<Pair<String, Any?>>()
         var preparedSql = ""
+        var fetchSize: Int? = null
         val statement =
             Proxy.newProxyInstance(
                 PreparedStatement::class.java.classLoader,
                 arrayOf(PreparedStatement::class.java),
             ) { _, method, args ->
-                if (method.name.startsWith("set")) calls += method.name to args?.getOrNull(1)
+                when (method.name) {
+                    "setFetchSize" -> fetchSize = args?.first() as Int
+                    else ->
+                        if (method.name.startsWith("set")) {
+                            calls += method.name to args?.getOrNull(1)
+                        }
+                }
                 when (method.name) {
                     "toString" -> "FakePreparedStatement"
                     else -> null
@@ -329,6 +441,7 @@ class AdapterTest {
 
         prepareStatement(connection, compiled, Dialect.Mssql)
 
+        assertEquals(128, fetchSize)
         assertEquals(8, preparedSql.count { it == '?' })
         assertEquals(
             listOf(
@@ -347,6 +460,88 @@ class AdapterTest {
         assertEquals(LocalDate.of(2026, 1, 2), calls[5].second)
         assertEquals(LocalDateTime.of(2026, 1, 2, 3, 4, 5), calls[6].second)
         assertTrue(calls.last().second is Int)
+    }
+
+    @Test
+    fun mysqlPrepareStatementStreamsOneRowAtATime() {
+        var fetchSize: Int? = null
+        val statement =
+            Proxy.newProxyInstance(
+                PreparedStatement::class.java.classLoader,
+                arrayOf(PreparedStatement::class.java),
+            ) { _, method, args ->
+                if (method.name == "setFetchSize") fetchSize = args?.first() as Int
+                when (method.name) {
+                    "toString" -> "FakePreparedStatement"
+                    else -> null
+                }
+            } as PreparedStatement
+        val connection =
+            Proxy.newProxyInstance(
+                Connection::class.java.classLoader,
+                arrayOf(Connection::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "prepareStatement" -> statement
+                    "toString" -> "FakeConnection"
+                    else -> null
+                }
+            } as Connection
+
+        prepareStatement(connection, CompiledQuery("SELECT 1", emptyList()), Dialect.MySql)
+
+        assertEquals(Int.MIN_VALUE, fetchSize)
+    }
+
+    @Test
+    fun decodeQueryResultStopsAtByteBudgetWithoutReadingLaterRows() {
+        val totalRows = 40
+        val payload = "x".repeat(512 * 1024)
+        var cursor = -1
+        var nextCalls = 0
+        var getterCalls = 0
+        val meta =
+            Proxy.newProxyInstance(
+                ResultSetMetaData::class.java.classLoader,
+                arrayOf(ResultSetMetaData::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getColumnCount" -> 1
+                    "getColumnLabel" -> "payload"
+                    "getColumnTypeName" -> "VARCHAR"
+                    "toString" -> "meta"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSetMetaData
+        val rs =
+            Proxy.newProxyInstance(
+                ResultSet::class.java.classLoader,
+                arrayOf(ResultSet::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getMetaData" -> meta
+                    "next" -> {
+                        nextCalls += 1
+                        cursor += 1
+                        cursor < totalRows
+                    }
+                    "getCharacterStream" -> {
+                        getterCalls += 1
+                        check(cursor < totalRows)
+                        payload.reader()
+                    }
+                    "toString" -> "rs"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSet
+
+        val result = decodeQueryResult(rs, "SELECT payload FROM t", Dialect.Postgres)
+
+        assertTrue(result.truncated)
+        assertTrue(result.rowCount in 1 until totalRows)
+        assertEquals(result.rowCount + 1, nextCalls)
+        assertEquals(result.rowCount + 1, getterCalls)
+        assertTrue(result.warnings.any { it.contains("encoded bytes") })
     }
 
     @Test
@@ -395,12 +590,68 @@ private fun fakeResultSet(value: Any?): ResultSet =
         _ ->
         when (method.name) {
             "getObject" -> value
-            "getBoolean" -> value as Boolean
-            "getLong" -> (value as Number).toLong()
-            "getDouble" -> (value as Number).toDouble()
-            "getBytes" -> value as ByteArray?
+            "getBoolean" -> value as? Boolean ?: false
+            "getLong" -> (value as? Number)?.toLong() ?: 0L
+            "getDouble" -> (value as? Number)?.toDouble() ?: 0.0
+            "getBytes" -> value as? ByteArray
+            "getString" -> value?.toString()
+            "getCharacterStream" -> value?.toString()?.reader()
+            "getBinaryStream" -> (value as? ByteArray)?.inputStream()
             "wasNull" -> value == null
             "toString" -> "FakeResultSet($value)"
             else -> throw UnsupportedOperationException(method.name)
         }
     } as ResultSet
+
+private fun streamResultSet(reader: Reader? = null, stream: InputStream? = null): ResultSet =
+    Proxy.newProxyInstance(ResultSet::class.java.classLoader, arrayOf(ResultSet::class.java)) {
+        _,
+        method,
+        _ ->
+        when (method.name) {
+            "getCharacterStream" -> reader
+            "getBinaryStream" -> stream
+            "toString" -> "StreamResultSet"
+            else -> throw UnsupportedOperationException(method.name)
+        }
+    } as ResultSet
+
+private class BoundedSourceReader(private val data: String) : Reader() {
+    var supplied = 0
+        private set
+
+    private var index = 0
+
+    override fun read(cbuf: CharArray, off: Int, len: Int): Int {
+        if (index >= data.length) return -1
+        val n = minOf(len, data.length - index)
+        for (i in 0 until n) cbuf[off + i] = data[index + i]
+        index += n
+        supplied += n
+        return n
+    }
+
+    override fun close() {}
+}
+
+private class BoundedSourceStream(private val data: ByteArray) : InputStream() {
+    var supplied = 0
+        private set
+
+    private var index = 0
+
+    override fun read(): Int {
+        if (index >= data.size) return -1
+        supplied += 1
+        return data[index++].toInt() and 0xff
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (index >= data.size) return -1
+        val n = minOf(len, data.size - index)
+        data.copyInto(b, off, index, index + n)
+        index += n
+        supplied += n
+        return n
+    }
+}

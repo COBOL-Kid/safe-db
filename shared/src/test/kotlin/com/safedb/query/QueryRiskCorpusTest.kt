@@ -38,7 +38,7 @@ class QueryRiskCorpusTest {
     @Test
     fun versionedCrossDialectCorpusMatchesGoldenOutcomes() {
         val resource =
-            requireNotNull(javaClass.getResource("/query-risk/v1/normalized-corpus.json"))
+            requireNotNull(javaClass.getResource("/query-risk/v3/normalized-corpus.json"))
         val corpus = SafeDbJson.lenient.decodeFromString<RiskCorpus>(resource.readText())
         assertEquals(QUERY_RISK_SCORE_VERSION, corpus.scoreVersion)
 
@@ -83,6 +83,7 @@ private data class RiskCorpusCase(
     val predicate: CorpusPredicate,
     @SerialName("blocking_operation") val blockingOperation: Boolean,
     val limit: Int,
+    val uncapped: Boolean = false,
     @SerialName("size_class") val sizeClass: TableSizeClass = TableSizeClass.Medium,
     val confidence: EvidenceConfidence = EvidenceConfidence.Medium,
     val gate: QueryRiskGate = QueryRiskGate.Standard,
@@ -204,6 +205,7 @@ private data class RiskCorpusCase(
                 joins = joins,
                 filters = filters,
                 limit = limit,
+                uncapped = uncapped,
                 groups = if (blockingOperation) listOf(GroupSpec("t0", selected)) else emptyList(),
             )
         return spec to Schema(tables)

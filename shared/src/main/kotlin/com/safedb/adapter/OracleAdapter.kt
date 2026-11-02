@@ -179,14 +179,16 @@ object OracleAdapter {
         dataSource.connection.use { conn ->
             conn.createStatement().use { it.execute("SET TRANSACTION READ ONLY") }
             try {
-                prepareStatement(conn, compiled, Dialect.Oracle).use { ps ->
-                    ps.queryTimeout = timeoutMs / 1000
-                    ps.executeQuery().use { rs ->
-                        val result = decodeQueryResult(rs, compiled.sql, Dialect.Oracle)
-                        conn.createStatement().use { it.execute("COMMIT") }
-                        result
+                val result =
+                    prepareStatement(conn, compiled, Dialect.Oracle).use { ps ->
+                        ps.queryTimeout = timeoutMs / 1000
+                        ps.executeQuery().use { rs ->
+                            decodeQueryResult(rs, compiled.sql, Dialect.Oracle)
+                        }
                     }
-                }
+                // Close the cursor before COMMIT so a budget stop does not drain unread rows.
+                conn.createStatement().use { it.execute("COMMIT") }
+                result
             } catch (e: Exception) {
                 runCatching { conn.createStatement().use { it.execute("ROLLBACK") } }
                 throw e

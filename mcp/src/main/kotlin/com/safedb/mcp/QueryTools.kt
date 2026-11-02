@@ -1,10 +1,12 @@
 package com.safedb.mcp
 
 import com.safedb.model.ConnectionDef
+import com.safedb.model.MAX_RESULT_BYTES
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultColumn
 import com.safedb.model.Settings
+import com.safedb.model.byteBudgetTruncationWarning
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryError
@@ -48,8 +50,10 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                 "Returns a receipt: columns, row_count, sample_capped (omitted when false), " +
                 "preview_truncated, warnings, a slim risk summary, a short preview " +
                 "(~10 flattened rows), and result_id. preview_truncated is true when the " +
-                "preview is shorter than row_count. sample_capped means this sample is the " +
-                "full fetch; paging does not get more table rows — raise LIMIT or add filters. " +
+                "preview is shorter than row_count. sample_capped means paging does not get " +
+                "more table rows. warnings names the cause: raise LIMIT or add filters when a " +
+                "SQL LIMIT stopped the fetch; add filters or select fewer columns when the " +
+                "encoded-byte budget stopped it. Raising LIMIT does not read past that budget. " +
                 "Page with get_result_rows or summarize_result using result_id. Results expire " +
                 "after $resultTtlMinutes minutes ($RESULT_STORE_MAX_ENTRIES entries, 32 MiB). " +
                 "On error risk_gate, rewrite the query or change the gate in settings; do not " +
@@ -204,16 +208,15 @@ private suspend fun handleRunQuery(
             is ConfirmationParse.Ready -> parsed.confirmation
         }
 
-    val prepared = prepareSql(service, connection, sql, request)
-    val (spec, parseNotes) =
-        when (prepared) {
-            is PreparedQuery.Ok -> prepared.spec to prepared.notes
+    val spec =
+        when (val prepared = prepareSql(service, connection, sql, request)) {
+            is PreparedQuery.Ok -> prepared.spec
             is PreparedQuery.Err -> return prepared.result
         }
 
     return try {
         val completed = service.runQuery(QueryRunRequest(connectionId, spec, confirmation))
-        successReceipt(completed, parseNotes, resultStore, spec.limit)
+        successReceipt(completed, resultStore, spec)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -256,7 +259,7 @@ private suspend fun prepareSql(
                     parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
                 )
             )
-        is SqlParseResult.Success -> PreparedQuery.Ok(parsed.spec, parsed.notes)
+        is SqlParseResult.Success -> PreparedQuery.Ok(parsed.spec)
     }
 }
 
@@ -306,17 +309,15 @@ private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
 
 private suspend fun successReceipt(
     completed: QueryRunResult,
-    parseNotes: List<String>,
     resultStore: ResultStore,
-    appliedLimit: Int,
+    spec: QuerySpec,
 ): CallToolResult {
     val result = completed.queryResult
     val stored = resultStore.put(result)
     val preview = previewRows(result)
     val warnings = buildList {
-        addAll(parseNotes)
         addAll(result.warnings)
-        if (result.truncated) add(sampleCappedWarning(appliedLimit))
+        if (result.truncated) add(sampleCappedWarning(spec, result.warnings))
     }
     val receipt =
         QueryReceipt(
@@ -332,9 +333,18 @@ private suspend fun successReceipt(
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
 }
 
-private fun sampleCappedWarning(limit: Int): String =
-    "This sample is the full fetch (LIMIT $limit); paging does not get more table rows. " +
+private fun sampleCappedWarning(spec: QuerySpec, resultWarnings: List<String>): String {
+    // Uncapped SQL stores DEFAULT_LIMIT and ignores it. A byte-budget stop on a real LIMIT
+    // has the same shape: raising that LIMIT does not read another row.
+    val stoppedAtByteBudget =
+        spec.uncapped || resultWarnings.any { it == byteBudgetTruncationWarning() }
+    if (stoppedAtByteBudget) {
+        return "This sample stopped at the $MAX_RESULT_BYTES encoded-byte budget; paging does not get more table rows. " +
+            "Add filters or select fewer columns. Raising LIMIT does not read past this budget."
+    }
+    return "This sample is the full fetch (LIMIT ${spec.limit}); paging does not get more table rows. " +
         "Raise LIMIT or add filters."
+}
 
 private suspend fun handleGetResultRows(
     resultStore: ResultStore,
@@ -433,7 +443,7 @@ private fun QueryExecutionConfirmation.toPayload(): McpQueryConfirmation =
     )
 
 private sealed interface PreparedQuery {
-    data class Ok(val spec: QuerySpec, val notes: List<String> = emptyList()) : PreparedQuery
+    data class Ok(val spec: QuerySpec) : PreparedQuery
 
     data class Err(val result: CallToolResult) : PreparedQuery
 }

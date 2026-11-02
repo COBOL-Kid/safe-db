@@ -12,6 +12,7 @@ import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.validateQuery
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -403,14 +404,18 @@ class SqlToSpecTest {
     }
 
     @Test
-    fun missingLimitDefaultsWithNote() {
+    fun missingLimitIsUncapped() {
         val result = success("SELECT id FROM users")
         assertEquals(DEFAULT_LIMIT, result.spec.limit)
-        assertTrue(result.notes.single().contains("defaulting to $DEFAULT_LIMIT"))
+        assertTrue(result.spec.uncapped)
 
         val explicit = success("SELECT id FROM users LIMIT 42")
         assertEquals(42, explicit.spec.limit)
-        assertTrue(explicit.notes.isEmpty())
+        assertFalse(explicit.spec.uncapped)
+
+        val clamped = success("SELECT id FROM users LIMIT 2147483648")
+        assertEquals(Int.MAX_VALUE, clamped.spec.limit)
+        assertFalse(clamped.spec.uncapped)
     }
 
     @Test

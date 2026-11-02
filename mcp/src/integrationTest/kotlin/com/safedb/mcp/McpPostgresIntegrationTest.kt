@@ -142,4 +142,42 @@ class McpPostgresIntegrationTest {
             dataDir.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun postgresRunQueryKeepsLargeLimitsAndReadsTemporalValuesAsText() = runBlocking {
+        IntegrationAssumptions.assumePostgresAvailable()
+        val dataDir = Files.createTempDirectory("safedb-mcp-postgres-limits")
+        val connection =
+            IntegrationAssumptions.postgresConnectionDef(
+                id = "mcp-integration-postgres-limits",
+                name = "MCP Integration PostgreSQL Limits",
+            )
+        val password = IntegrationAssumptions.postgresPassword
+
+        SecretsManager.lockCredentials()
+        SecretsManager.initStore("disabled")
+        try {
+            val service =
+                SafeDbServiceImpl(
+                    configStore = ConfigStore.new(dataDir),
+                    queryStore = QueryStore.new(dataDir),
+                    settingsStore = SettingsStore.new(dataDir),
+                )
+            service.createConnection(connection, password)
+            val server = createSafeDbMcpServer(service, resultsDir = dataDir.resolve("results"))
+            withIntegrationMcpClient(server) { client ->
+                assertLiveQueryLimitAndTypedReads(
+                    client,
+                    connection.id,
+                    "public",
+                    customerRows = 3,
+                )
+            }
+        } finally {
+            SecretsManager.lockCredentials()
+            SecretsManager.initStore("disabled")
+            SecretsManager.resetStoreReadCountForTest()
+            dataDir.toFile().deleteRecursively()
+        }
+    }
 }

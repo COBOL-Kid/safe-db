@@ -55,11 +55,11 @@ class QueryRiskTest {
                 RiskCategory.Access to 6,
                 RiskCategory.Joins to 4,
                 RiskCategory.Operations to 4,
-                RiskCategory.Volume to 2,
+                RiskCategory.Volume to 1,
             ),
             assessment.categoryScores,
         )
-        assertEquals(11, assessment.score)
+        assertEquals(10, assessment.score)
     }
 
     @Test
@@ -822,8 +822,19 @@ class QueryRiskTest {
                 listOf(table(columns = binaryColumns, indexes = emptyList())),
             )
 
-        assertEquals(1, assessment.signals.count { it.category == RiskCategory.Volume })
-        assertTrue(assessment.signals.any { it.code == RiskSignalCode.HighProjectedPayload })
+        val volume = assessment.signals.single { it.category == RiskCategory.Volume }
+        assertEquals(RiskSignalCode.MaterialProjectedPayload, volume.code)
+        assertEquals(1, volume.points)
+        assertEquals(1, assessment.categoryScores.getValue(RiskCategory.Volume))
+    }
+
+    @Test
+    fun uncappedProjectionScoresTheByteBudgetOnce() {
+        val assessment = assess(spec(limit = 1, uncapped = true), listOf(table()))
+
+        val volume = assessment.signals.single { it.category == RiskCategory.Volume }
+        assertEquals(RiskSignalCode.MaterialProjectedPayload, volume.code)
+        assertEquals(1, volume.points)
     }
 
     @Test
@@ -832,7 +843,7 @@ class QueryRiskTest {
             assess(
                 spec(
                     columns = listOf(ColumnSel("t0", "payload"), ColumnSel("t0", "payload")),
-                    limit = 1_000,
+                    limit = 3_000,
                 ),
                 listOf(
                     table(
@@ -968,6 +979,7 @@ private fun spec(
     joins: List<JoinSpec> = emptyList(),
     filters: FilterGroup = FilterGroup("root"),
     limit: Int = 100,
+    uncapped: Boolean = false,
     sorts: List<SortSpec> = emptyList(),
     groups: List<GroupSpec> = emptyList(),
     connectorOverrides: Map<String, GroupConnector> = emptyMap(),
@@ -978,6 +990,7 @@ private fun spec(
         joins = joins,
         filters = filters,
         limit = limit,
+        uncapped = uncapped,
         sorts = sorts,
         groups = groups,
         schemaVersion = CURRENT_SCHEMA_VERSION,

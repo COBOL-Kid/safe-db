@@ -19,5 +19,6 @@ fun createExploreSession(
         baseSpecHash = exploreSpecHash(spec),
         sample = sample,
         sampleFetchedAtEpochSec = Instant.now().epochSecond,
+        // The numeric cap stays here. uncapped is part of baseSpec and is restored with it.
         builderLimit = spec.limit,
     )

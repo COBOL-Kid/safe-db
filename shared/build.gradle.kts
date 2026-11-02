@@ -14,6 +14,13 @@ version = "0.0.1"
 
 kotlin { jvmToolchain(25) }
 
+kover {
+    currentProject {
+        instrumentation { disabledForTestTasks.add("integrationTest") }
+        sources { excludedSourceSets.add("integrationTest") }
+    }
+}
+
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")

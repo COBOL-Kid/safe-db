@@ -17,6 +17,7 @@ import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 private val products =
@@ -52,6 +53,7 @@ private class TestHydrationTarget : QueryHydrationTarget {
     private var _filters: FilterGroup = FilterGroup.empty()
     private var _connectorOverrides: Map<String, com.safedb.model.GroupConnector> = emptyMap()
     private var _limit: Int = DEFAULT_LIMIT
+    private var _uncapped: Boolean = false
     private var _distinct: Boolean = false
     private var _sorts: List<SortSpec> = emptyList()
     private var _groups: List<GroupSpec> = emptyList()
@@ -64,6 +66,9 @@ private class TestHydrationTarget : QueryHydrationTarget {
 
     val limit: Int
         get() = _limit
+
+    val uncapped: Boolean
+        get() = _uncapped
 
     val distinct: Boolean
         get() = _distinct
@@ -82,6 +87,7 @@ private class TestHydrationTarget : QueryHydrationTarget {
         _filters = FilterGroup.empty()
         _connectorOverrides = emptyMap()
         _limit = DEFAULT_LIMIT
+        _uncapped = false
         _distinct = false
         _sorts = emptyList()
         _groups = emptyList()
@@ -116,8 +122,9 @@ private class TestHydrationTarget : QueryHydrationTarget {
         _connectorOverrides = map
     }
 
-    override fun setLimit(limit: Int) {
+    override fun setLimit(limit: Int, uncapped: Boolean) {
         _limit = limit
+        _uncapped = uncapped
     }
 
     override fun setDistinct(distinct: Boolean) {
@@ -172,6 +179,7 @@ class HydrateQueryTest {
                             ),
                     ),
                 limit = 25,
+                uncapped = true,
                 distinct = true,
                 sorts = listOf(SortSpec("saved_t1", "name", SortDirection.Desc)),
                 groups = listOf(GroupSpec("saved_t0", "name"), GroupSpec("saved_t1", "name")),
@@ -191,6 +199,7 @@ class HydrateQueryTest {
         val leaf = target.filters.children[0] as FilterNode.Leaf
         assertEquals("t0", leaf.spec.tableAlias)
         assertEquals(25, target.limit)
+        assertTrue(target.uncapped)
         assertTrue(target.distinct)
         assertEquals(listOf(SortSpec("t1", "name", SortDirection.Desc)), target.sorts)
         assertEquals(listOf(GroupSpec("t0", "name"), GroupSpec("t1", "name")), target.groups)
@@ -241,6 +250,7 @@ class HydrateQueryTest {
         val warnings = hydrateQueryFromSpec(spec, listOf(products), target)
 
         assertEquals(1, target.tables.size)
+        assertFalse(target.uncapped)
         assertTrue(target.joins.isEmpty())
         assertTrue(target.filters.children.isEmpty())
         assertEquals(2, warnings.droppedTables.size)

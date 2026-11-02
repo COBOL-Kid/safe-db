@@ -19,7 +19,6 @@ import com.safedb.model.normalizeCatalogTypeName
 import java.security.MessageDigest
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
-const val MAX_LIMIT = 10_000
 const val DEFAULT_LIMIT = 500
 const val MAX_FILTER_DEPTH = 5
 const val MAX_IN_LIST_SIZE = 1000
@@ -397,15 +396,11 @@ fun validate(
     }
 
     var limit = spec.limit
-    if (limit == 0) {
+    if (!spec.uncapped && limit == 0) {
         limit = DEFAULT_LIMIT
         warnings.add("Limit was 0; defaulted to $DEFAULT_LIMIT")
     }
-    if (limit > MAX_LIMIT) {
-        warnings.add("Limit $limit exceeds maximum $MAX_LIMIT; capped to $MAX_LIMIT")
-        limit = MAX_LIMIT
-    }
-    if (limit > LARGE_LIMIT_WARNING_THRESHOLD) {
+    if (spec.uncapped || limit > LARGE_LIMIT_WARNING_THRESHOLD) {
         warnings.add(
             "Large result limits are useful for reporting, but filters, selected columns, and indexed predicates keep queries faster and easier to reuse."
         )

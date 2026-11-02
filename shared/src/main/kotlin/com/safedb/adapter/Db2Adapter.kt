@@ -275,14 +275,16 @@ object Db2Adapter {
             // other dialects and does not block an updater of a row this query is fetching.
             conn.transactionIsolation = Connection.TRANSACTION_READ_UNCOMMITTED
             try {
-                prepareStatement(conn, compiled, Dialect.Db2).use { ps ->
-                    ps.queryTimeout = timeoutMs / 1000
-                    ps.executeQuery().use { rs ->
-                        val result = decodeQueryResult(rs, compiled.sql, Dialect.Db2)
-                        conn.commit()
-                        result
+                val result =
+                    prepareStatement(conn, compiled, Dialect.Db2).use { ps ->
+                        ps.queryTimeout = timeoutMs / 1000
+                        ps.executeQuery().use { rs ->
+                            decodeQueryResult(rs, compiled.sql, Dialect.Db2)
+                        }
                     }
-                }
+                // Close the cursor before commit so a budget stop does not drain unread rows.
+                conn.commit()
+                result
             } catch (e: Exception) {
                 runCatching { conn.rollback() }
                 throw e
@@ -653,9 +655,9 @@ object Db2Adapter {
                             }
                         } else {
                             val operatorId =
-                                when {
-                                    sourceType == "D" && targetType == "O" -> target
-                                    sourceType == "O" && targetType == "D" -> source
+                                when (sourceType) {
+                                    "D" if targetType == "O" -> target
+                                    "O" if targetType == "D" -> source
                                     else -> null
                                 }
                             if (operatorId != null) {

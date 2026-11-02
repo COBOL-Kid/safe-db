@@ -144,13 +144,15 @@ object PgAdapter {
                 stmt.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
                 stmt.execute("SET LOCAL statement_timeout = $timeoutMs")
             }
-            prepareStatement(conn, compiled, Dialect.Postgres).use { ps ->
-                ps.executeQuery().use { rs ->
-                    val result = decodeQueryResult(rs, compiled.sql, Dialect.Postgres)
-                    conn.commit()
-                    result
+            val result =
+                prepareStatement(conn, compiled, Dialect.Postgres).use { ps ->
+                    ps.executeQuery().use { rs ->
+                        decodeQueryResult(rs, compiled.sql, Dialect.Postgres)
+                    }
                 }
-            }
+            // Close the cursor before commit so a budget stop does not drain unread rows.
+            conn.commit()
+            result
         }
 
     fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult {

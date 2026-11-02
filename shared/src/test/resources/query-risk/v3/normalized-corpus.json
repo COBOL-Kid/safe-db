@@ -1,5 +1,5 @@
 {
-  "score_version": 1,
+  "score_version": 3,
   "cases": [
     {
       "id": "postgres-indexed-equality",
@@ -26,6 +26,19 @@
       "expected_gate_state": "Allowed"
     },
     {
+      "id": "postgres-uncapped-projects-byte-budget",
+      "dialect": "Postgres",
+      "predicate": "None",
+      "blocking_operation": false,
+      "limit": 100,
+      "uncapped": true,
+      "expected_score": 2,
+      "expected_severity": "Minimal",
+      "expected_category_scores": {"Access":2,"Joins":0,"Operations":0,"Volume":1},
+      "expected_signal_codes": ["NoEffectiveRestriction","MaterialProjectedPayload"],
+      "expected_gate_state": "Allowed"
+    },
+    {
       "id": "sqlserver-leading-wildcard-without-index",
       "dialect": "Mssql",
       "predicate": "BroadTextWithoutIndex",
@@ -38,15 +51,15 @@
       "expected_gate_state": "Allowed"
     },
     {
-      "id": "oracle-leading-wildcard-grouped-material-payload",
+      "id": "oracle-leading-wildcard-grouped-blocking",
       "dialect": "Oracle",
       "predicate": "BroadTextWithoutIndex",
       "blocking_operation": true,
       "limit": 5000,
-      "expected_score": 7,
+      "expected_score": 6,
       "expected_severity": "High",
-      "expected_category_scores": {"Access":5,"Joins":0,"Operations":3,"Volume":1},
-      "expected_signal_codes": ["NoKnownCompatibleAccessPath","ScanProneTextPredicate","LimitCannotBoundWork","MaterialProjectedPayload"],
+      "expected_category_scores": {"Access":5,"Joins":0,"Operations":3,"Volume":0},
+      "expected_signal_codes": ["NoKnownCompatibleAccessPath","ScanProneTextPredicate","LimitCannotBoundWork"],
       "expected_gate_state": "Blocked"
     },
     {

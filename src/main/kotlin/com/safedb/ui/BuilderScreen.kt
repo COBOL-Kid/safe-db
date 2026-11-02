@@ -153,7 +153,7 @@ internal fun BuilderScreen(
     val showLargeLimitGuidance =
         connection != null &&
             queryViewModel.canvasTables.isNotEmpty() &&
-            queryViewModel.limit > LARGE_LIMIT_WARNING_THRESHOLD
+            (queryViewModel.uncapped || queryViewModel.limit > LARGE_LIMIT_WARNING_THRESHOLD)
 
     if (pendingConfirmation != null) {
         QueryConfirmationDialog(
@@ -290,11 +290,22 @@ internal fun BuilderScreen(
                         )
                         for (choice in limitChoices) {
                             LimitChoiceChip(
-                                label = "%,d".format(choice),
-                                selected = queryViewModel.limit == choice,
+                                label = builderLimitChoiceLabel(choice),
+                                selected =
+                                    !queryViewModel.uncapped && queryViewModel.limit == choice,
                                 onClick = { queryViewModel.setLimit(choice) },
                             )
                         }
+                        LimitChoiceChip(
+                            label = BUILDER_ALL_LIMIT_LABEL,
+                            selected = queryViewModel.uncapped,
+                            onClick = { queryViewModel.setUncapped(true) },
+                        )
+                        LimitValueField(
+                            limit = queryViewModel.limit,
+                            uncapped = queryViewModel.uncapped,
+                            onCommit = { parsed -> queryViewModel.setLimit(parsed) },
+                        )
                     }
                     TextButton(
                         onClick = {

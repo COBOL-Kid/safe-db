@@ -5,18 +5,17 @@ import kotlin.test.assertEquals
 
 class LimitsTest {
     @Test
-    fun builderLimitBoundsUseFiveHundredByDefaultAndTenThousandMaximum() {
+    fun defaultLimitStaysFiveHundred() {
         assertEquals(500, DEFAULT_LIMIT)
-        assertEquals(10_000, MAX_LIMIT)
     }
 
     @Test
-    fun parseLimitClampsIntRange() {
+    fun parseLimitKeepsAnyPositiveInt() {
         assertEquals(DEFAULT_LIMIT, parseLimit(0))
         assertEquals(DEFAULT_LIMIT, parseLimit(-5))
         assertEquals(100, parseLimit(100))
-        assertEquals(MAX_LIMIT, parseLimit(MAX_LIMIT))
-        assertEquals(MAX_LIMIT, parseLimit(MAX_LIMIT + 1))
+        assertEquals(20_000, parseLimit(20_000))
+        assertEquals(Int.MAX_VALUE, parseLimit(Int.MAX_VALUE))
     }
 
     @Test
@@ -26,6 +25,10 @@ class LimitsTest {
         assertEquals(DEFAULT_LIMIT, parseLimit("abc"))
         assertEquals(250, parseLimit("250"))
         assertEquals(250, parseLimit("250 rows"))
-        assertEquals(MAX_LIMIT, parseLimit("${MAX_LIMIT + 500}"))
+        assertEquals(20_000, parseLimit("20000 rows"))
+        assertEquals(Int.MAX_VALUE, parseLimit("2147483648"))
+        assertEquals(Int.MAX_VALUE, parseLimit("999999999999"))
+        assertEquals(DEFAULT_LIMIT, parseLimit("ALL"))
+        assertEquals(DEFAULT_LIMIT, parseLimit(" all "))
     }
 }

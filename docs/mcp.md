@@ -121,12 +121,12 @@ A successful call returns JSON with:
 
 - `columns` (`name`, `data_type`)
 - `row_count`, `preview_truncated`, `warnings`
-- `sample_capped` when the fetched sample hit the engine/LIMIT cap (omitted when false). When present, `warnings` also explains that this sample is the full fetch; paging does not get more table rows — raise `LIMIT` or add filters
+- `sample_capped` when the fetched sample hit a caller `LIMIT` or the encoded-byte budget (omitted when false). A row-limit stop names that `LIMIT` and says to raise it or add filters. A byte-budget stop, including a query that omitted `LIMIT`, says to add filters or select fewer columns. Raising `LIMIT` does not read past the budget
 - `risk`: `state`, `severity`, `score`, `effective_gate`, `reasons`, `plan_status`
 - `preview`: about 10 flattened rows (`null` / bool / number / string; binary as base64). Not tagged `ResultCell` objects.
 - `result_id` for later paging and summary
 
-`sample_capped` is the engine byte/limit cap from [query-engine.md](query-engine.md). `preview_truncated` is true when the preview is shorter than `row_count`. The engine can still fetch up to `DEFAULT_LIMIT` / `MAX_LIMIT`; the receipt does not include the full sample.
+`sample_capped` is the engine byte or caller `LIMIT` cap from [query-engine.md](query-engine.md). `preview_truncated` is true when the preview is shorter than `row_count`. A positive SQL limit is kept up to the maximum 32-bit integer; a larger whole number clamps. Omitting `LIMIT` is the same as the builder's ALL choice and emits no SQL row limit. The client reads with a statement fetch size and stops at `MAX_RESULT_BYTES` (10 MiB encoded). The receipt does not include the full sample.
 
 Accepted and rejected SQL are the same as the desktop app. A stray `spec` argument is ignored; agents send `sql`.
 

@@ -7,6 +7,7 @@ import com.safedb.model.FilterOp
 import com.safedb.model.FilterValue
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexKey
+import com.safedb.model.MAX_RESULT_BYTES
 import com.safedb.model.PlanOperationKind
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
@@ -173,7 +174,7 @@ internal fun buildAssessment(
             // plan-confirmed expansion evidence can still raise the category.
             RiskCategory.Joins to 4,
             RiskCategory.Operations to 4,
-            RiskCategory.Volume to 2,
+            RiskCategory.Volume to 1,
         )
     val categoryScores =
         RiskCategory.entries.associateWith { category ->
@@ -495,6 +496,8 @@ private fun SortDirection.reverse(): SortDirection =
         SortDirection.Desc -> SortDirection.Asc
     }
 
+private const val MATERIAL_PROJECTED_BYTES = 4L * 1024 * 1024
+
 private fun addVolumeSignal(
     validated: ValidatedQuery,
     tablesByAlias: Map<String, TableInfo?>,
@@ -512,22 +515,32 @@ private fun addVolumeSignal(
                         ?.category
                 widthClassBytes(category)
             }
-    val projectedBytes = width.toLong() * validated.spec().limit
-    val (code, points) =
-        when {
-            projectedBytes >= 5L * 1024 * 1024 -> RiskSignalCode.HighProjectedPayload to 2
-            projectedBytes >= 1024L * 1024 -> RiskSignalCode.MaterialProjectedPayload to 1
-            else -> return
-        }
+    val projectedBytes = projectedPayloadBytes(width, validated.spec())
+    if (projectedBytes < MATERIAL_PROJECTED_BYTES) return
     signals +=
         RiskSignal(
-            code,
+            RiskSignalCode.MaterialProjectedPayload,
             RiskCategory.Volume,
             RiskSubject(operation = "projected result payload"),
-            points,
+            1,
             SignalBasis.StaticSchema,
             EvidenceConfidence.Medium,
         )
+}
+
+private fun projectedPayloadBytes(width: Int, spec: QuerySpec): Long {
+    if (spec.uncapped) return MAX_RESULT_BYTES.toLong()
+    val widthLong = width.toLong()
+    val limitLong = spec.limit.toLong()
+    val product =
+        if (widthLong <= 0L || limitLong <= 0L) {
+            0L
+        } else if (limitLong > Long.MAX_VALUE / widthLong) {
+            Long.MAX_VALUE
+        } else {
+            widthLong * limitLong
+        }
+    return minOf(product, MAX_RESULT_BYTES.toLong())
 }
 
 private fun widthClassBytes(category: ColumnCategory?): Int =
@@ -574,7 +587,6 @@ internal fun signalMessage(signal: RiskSignal): String =
         RiskSignalCode.BoundedBlockingOperation ->
             "A blocking operation remains above a bounded access path."
         RiskSignalCode.MaterialProjectedPayload -> "The projected result payload is material."
-        RiskSignalCode.HighProjectedPayload -> "The projected result payload is high."
         RiskSignalCode.PlanConfirmedLargeScan ->
             "Plan evidence indicates a high-row scan of a large table."
         RiskSignalCode.PlanConfirmedJoinExpansion -> "Plan evidence indicates high join expansion."
