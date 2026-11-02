@@ -23,7 +23,7 @@ kover {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
     implementation("com.zaxxer:HikariCP:7.1.0")
     implementation("org.postgresql:postgresql:42.7.14")
@@ -34,11 +34,11 @@ dependencies {
     implementation("com.github.javakeyring:java-keyring:1.0.4")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.12.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
 
     testFixturesImplementation(kotlin("test"))
-    testFixturesImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.12.0")
+    testFixturesImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     testFixturesImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
 }
 
@@ -75,7 +75,7 @@ dependencies {
     add(integrationTest.implementationConfigurationName, kotlin("test"))
     add(
         integrationTest.implementationConfigurationName,
-        "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.12.0",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0",
     )
     add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:6.1.3")
     add(
