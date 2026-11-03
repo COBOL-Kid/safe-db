@@ -26,3 +26,5 @@ AGENTS.md
 CLAUDE.md
 .cursor/
 .claude/
+.agents/
+.grok/
