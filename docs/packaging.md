@@ -6,8 +6,6 @@ GitHub Actions is the release path. [`.github/workflows/conveyor.yml`](../.githu
 
 `./gradlew jar` also writes `build/skiko-natives/libskiko-macos-arm64.dylib`. `conveyor.conf` passes that file as a macOS input. Conveyor moves a shared library to the bundled JVM's `lib` directory (`Contents/runtime/Contents/Home/lib`) and signs it with the app. Skiko loads `java.home/lib/libskiko-macos-arm64.dylib` before it extracts the copy sealed inside `skiko-awt-runtime-macos-arm64-*.jar`. With extraction left off, Conveyor re-signs that JAR member in place and leaves Skiko's `.sha256` cache key on the JetBrains-signed bytes, so launch dlopens `~/.skiko`'s cached library and the hardened runtime rejects the team id. Do not set `app.mac.notarization.best-effort-stapling`; a missing notarization ticket must fail the build. The site check refuses a Mac zip that does not contain one arm64 `libskiko-macos-arm64.dylib` at that JVM path.
 
-Durability CI still produces unsigned jpackage MSI/DMG artifacts. Those jobs are not this release path.
-
 ## GitHub Actions release
 
 On GitHub, **Run workflow** on `.github/workflows/conveyor.yml`. Leave `publish` false to package and keep a 14-day artifact after Authenticode and Developer ID smoke. Set `publish` true only from `main` to upload `output/` to `gs://safedb-download`.
