@@ -57,7 +57,7 @@ PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `S
 
 The repository owner applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration. Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled.
 
-Cross-platform durability is a manual **Run workflow** in GitHub Actions (`.github/workflows/durability.yml`). That suite waits for the `durability` environment, then adds full five-engine JDBC/TLS compatibility to the cross-platform, generated-MySQL, PostgreSQL, UI, and packaging jobs. Dependency submission remains automatic for qualifying trusted `main` changes.
+Dependency submission remains automatic for qualifying trusted `main` changes.
 
 MCP npm packaging is a separate manual **Run workflow** (`.github/workflows/npm.yml`). It jlink-cross-compiles Temurin 25 runtimes for every platform, packs `@safe-db/mcp` from `mcp/build/npm-all`, smokes `--help` on macOS arm64, Windows, and Linux ARM, and publishes only from `main` after smoke when the `publish` input is true. Publish uses OIDC trusted publishing with `environment: npm` (no long-lived npm token). Required reviewers for Environment `npm` are configured in the GitHub UI (workflow reference auto-creates an unprotected environment until you add rules).
 
