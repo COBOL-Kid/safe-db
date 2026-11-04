@@ -218,7 +218,7 @@ fun tokenizeSql(
                         i,
                         end,
                         error =
-                            if (marker == '!') SqlMessages.MYSQL_EXEC_COMMENT
+                            if (marker == '!') SqlMessages.executableComment(dialect)
                             else SqlMessages.OPTIMIZER_HINT,
                     )
                     i = end

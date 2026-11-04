@@ -223,7 +223,13 @@ private class SqlSpecBuilder(
     }
 
     private fun resolveSelectItems(): List<ColumnSel> {
-        val items = ast.items ?: return emptyList()
+        val items =
+            ast.items
+                ?: return tables.flatMap { table ->
+                    table.info.columns.map { column ->
+                        ColumnSel(tableAlias = table.alias, column = column.name)
+                    }
+                }
         return items.flatMap { item ->
             when (item) {
                 is SqlSelectItem.TableStar -> {

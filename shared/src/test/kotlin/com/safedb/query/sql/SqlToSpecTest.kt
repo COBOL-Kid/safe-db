@@ -151,8 +151,21 @@ class SqlToSpecTest {
     }
 
     @Test
-    fun bareStarKeepsColumnsEmpty() {
-        assertTrue(spec("SELECT * FROM users").columns.isEmpty())
+    fun bareStarExpandsColumnsFromMetadata() {
+        val parsed = spec("SELECT * FROM users")
+        assertEquals(
+            listOf("id", "name", "email", "active", "created_at", "category_id"),
+            parsed.columns.map { it.column },
+        )
+        assertTrue(parsed.columns.all { it.tableAlias == "users" })
+        when (val validated = validateQuery(parsed, schema, emptyList())) {
+            is Outcome.Ok ->
+                assertTrue(
+                    validated.value.second.warnings.none { it.contains("No columns selected") }
+                )
+            is Outcome.Err ->
+                throw AssertionError("expected SELECT * to validate: ${validated.message}")
+        }
     }
 
     @Test

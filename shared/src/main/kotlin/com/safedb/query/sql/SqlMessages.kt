@@ -1,5 +1,8 @@
 package com.safedb.query.sql
 
+import com.safedb.model.Dialect
+import com.safedb.model.displayName
+
 internal object SqlMessages {
     fun notSelect(found: String) =
         "Only SELECT statements can run here — Safe-DB is read-only. (found ${sqlWord(found)})"
@@ -51,6 +54,12 @@ internal object SqlMessages {
 
     const val MYSQL_EXEC_COMMENT =
         "MySQL executable comments (/*! … */) aren't supported — write the statement directly."
+
+    fun executableComment(dialect: Dialect): String =
+        if (dialect == Dialect.MySql) MYSQL_EXEC_COMMENT
+        else
+            "MySQL-style executable comments (/*! … */) aren't supported on " +
+                "${dialect.displayName()} — write the statement directly."
 
     const val OPTIMIZER_HINT = "Optimizer hints (/*+ … */) aren't supported."
 
