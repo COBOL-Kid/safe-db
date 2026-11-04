@@ -207,8 +207,12 @@ private class SqlParser(
             wordAt(0) == "AS" -> fail(SqlIssueCode.Unsupported, SqlMessages.COLUMN_ALIAS, next.span)
             next.type == SqlTokenType.Operator ->
                 fail(SqlIssueCode.Unsupported, SqlMessages.EXPRESSION, next.span)
-            isIdent(next) && wordAt(0) !in NON_ALIAS_WORDS ->
+            isIdent(next) && wordAt(0) !in NON_ALIAS_WORDS -> {
+                suggestKeywordTypo(next.text, "FROM")?.let { message ->
+                    fail(SqlIssueCode.Syntax, message, next.span)
+                }
                 fail(SqlIssueCode.Unsupported, SqlMessages.COLUMN_ALIAS, next.span)
+            }
         }
     }
 
@@ -632,9 +636,10 @@ private class SqlParser(
     }
 
     private fun expectWord(word: String, message: String) {
-        if (!matchWord(word)) {
-            fail(SqlIssueCode.Syntax, message, peek()?.span ?: endSpan())
-        }
+        if (matchWord(word)) return
+        val token = peek()
+        val typo = token?.text?.let { suggestKeywordTypo(it, word) }
+        fail(SqlIssueCode.Syntax, typo ?: message, token?.span ?: endSpan())
     }
 
     private fun expectType(type: SqlTokenType, message: String) {
@@ -656,4 +661,40 @@ private class SqlParser(
 
     private fun fail(code: SqlIssueCode, message: String, span: SqlSpan?): Nothing =
         throw SqlParseException(SqlIssue(code, message, span))
+}
+
+internal fun suggestKeywordTypo(found: String, expected: String): String? {
+    val actual = sqlWord(found)
+    val target = sqlWord(expected)
+    if (actual == target) return null
+    val distance = editDistance(actual, target)
+    val nearMiss = distance == 1 || (distance == 2 && isAdjacentTransposition(actual, target))
+    return if (nearMiss) SqlMessages.unexpectedKeywordTypo(found, expected) else null
+}
+
+internal fun isAdjacentTransposition(left: String, right: String): Boolean {
+    if (left.length != right.length || left.length < 2) return false
+    var index = 0
+    while (index < left.length && left[index] == right[index]) index++
+    if (index >= left.length - 1) return false
+    return left[index] == right[index + 1] &&
+        left[index + 1] == right[index] &&
+        left.substring(index + 2) == right.substring(index + 2)
+}
+
+internal fun editDistance(left: String, right: String): Int {
+    if (left == right) return 0
+    if (left.isEmpty()) return right.length
+    if (right.isEmpty()) return left.length
+    val previous = IntArray(right.length + 1) { it }
+    val current = IntArray(right.length + 1)
+    for (i in 1..left.length) {
+        current[0] = i
+        for (j in 1..right.length) {
+            val substitution = if (left[i - 1] == right[j - 1]) 0 else 1
+            current[j] = minOf(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + substitution)
+        }
+        for (j in previous.indices) previous[j] = current[j]
+    }
+    return previous[right.length]
 }

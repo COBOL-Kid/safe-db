@@ -42,7 +42,10 @@ internal object SqlMessages {
         "This value doesn't match the type of '$column' ($dataType) — the query would compare something different than written."
 
     fun dateTimeFormat(column: String) =
-        "'$column' needs a date like '2024-01-01' or a timestamp like '2024-01-01 09:30:00'."
+        "'$column' needs a date like '2024-01-01' or a timestamp like '2024-01-01 09:30:00' or '2024-01-01T09:30:00'."
+
+    fun unexpectedKeywordTypo(found: String, expected: String): String =
+        "Unexpected '$found' — did you mean $expected?"
 
     fun dateFormat(column: String) = "'$column' needs a date like '2024-01-01'."
 
