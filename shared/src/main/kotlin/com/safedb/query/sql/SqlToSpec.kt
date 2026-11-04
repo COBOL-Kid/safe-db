@@ -453,18 +453,14 @@ private class SqlSpecBuilder(
             }
             LiteralKind.DateTime -> {
                 if (literal.form != LiteralForm.Text) mismatch()
-                when {
-                    parseDateTimeLiteral(raw).isSuccess -> FilterLiteral(kind, raw)
-                    // Postgres and MySQL both accept a bare date against a timestamp column, so
-                    // widen it to midnight rather than failing validation after the query looks
-                    // runnable.
-                    parseDateLiteral(raw).isSuccess -> FilterLiteral(kind, "${raw.trim()}T00:00:00")
-                    else ->
-                        fail(
-                            SqlIssueCode.LiteralTypeMismatch,
-                            SqlMessages.dateTimeFormat(column.name),
-                            literal.span,
-                        )
+                if (parseDateTimeLiteral(raw).isSuccess) {
+                    FilterLiteral(kind, raw)
+                } else {
+                    fail(
+                        SqlIssueCode.LiteralTypeMismatch,
+                        SqlMessages.dateTimeFormat(column.name),
+                        literal.span,
+                    )
                 }
             }
         }

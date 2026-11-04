@@ -1510,6 +1510,26 @@ class QueryEngineTest {
         )
     }
 
+    @Test
+    fun dateTimeLiteralsAcceptDateOnlyAndSpaceSeparatedLocalValues() {
+        assertEquals(
+            "2025-01-01T00:00",
+            parseDateTimeLiteral("2025-01-01").getOrThrow().toString(),
+        )
+        assertEquals(
+            "2025-01-01T09:30",
+            parseDateTimeLiteral("2025-01-01 09:30").getOrThrow().toString(),
+        )
+        assertEquals(
+            "2025-01-01T09:30:05",
+            parseDateTimeLiteral("2025-01-01 09:30:05").getOrThrow().toString(),
+        )
+        val failure = parseDateTimeLiteral("01/01/2025").exceptionOrNull()!!.message!!
+        assertTrue(failure.contains("YYYY-MM-DD"))
+        assertTrue(failure.contains("YYYY-MM-DD HH:MM"))
+        assertTrue(failure.contains("YYYY-MM-DDTHH:MM"))
+    }
+
     private fun sampleConnection(id: String) =
         ConnectionDef(
             id = id,

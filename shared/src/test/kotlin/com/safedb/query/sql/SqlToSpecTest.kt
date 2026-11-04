@@ -171,9 +171,7 @@ class SqlToSpecTest {
             )
         val leaves = spec.filters.children.map { (it as FilterNode.Leaf).spec }
         assertEquals(LiteralKind.DateTime, leaves[0].singleLiteral().kind)
-        // Postgres and MySQL accept a bare date against a timestamp column, so it is widened to
-        // midnight here rather than reaching validateQuery, which only accepts a time component.
-        assertEquals("2024-01-01T00:00:00", leaves[0].singleLiteral().text)
+        assertEquals("2024-01-01", leaves[0].singleLiteral().text)
         assertEquals(LiteralKind.Bool, leaves[1].singleLiteral().kind)
         assertEquals(LiteralKind.Int, leaves[2].listLiterals().first().kind)
         assertEquals(LiteralKind.Text, leaves[3].singleLiteral().kind)
