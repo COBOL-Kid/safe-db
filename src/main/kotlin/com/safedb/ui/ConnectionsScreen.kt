@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,8 @@ import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.StatusChip
+import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.LabelMicro
 import com.safedb.ui.theme.SafeDbTheme
@@ -57,9 +60,20 @@ fun ConnectionsScreen(
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
+    openNewConnectionForm: Boolean = false,
+    onOpenNewConnectionFormConsumed: () -> Unit = {},
+    activeConnectionId: String? = null,
+    defaultConnectionId: String? = null,
 ) {
     var showConnectionForm by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<ConnectionDef?>(null) }
+    LaunchedEffect(openNewConnectionForm) {
+        if (openNewConnectionForm) {
+            showConnectionForm = true
+            editingConnection = null
+            onOpenNewConnectionFormConsumed()
+        }
+    }
     ConnectionsScreenContent(
         viewModel = viewModel,
         showConnectionForm = showConnectionForm,
@@ -69,6 +83,8 @@ fun ConnectionsScreen(
         onDeleted = onDeleted,
         onConnectionChanged = onConnectionChanged,
         onSaved = onSaved,
+        activeConnectionId = activeConnectionId,
+        defaultConnectionId = defaultConnectionId,
     )
 }
 
@@ -82,6 +98,8 @@ internal fun ConnectionsScreenContent(
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
+    activeConnectionId: String? = null,
+    defaultConnectionId: String? = null,
 ) {
     val connections by viewModel.connections.collectAsState()
     val loading by viewModel.loading.collectAsState()
@@ -226,6 +244,12 @@ internal fun ConnectionsScreenContent(
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
                                 connection = connection,
+                                badges =
+                                    connectionCardBadges(
+                                        connection.id,
+                                        activeConnectionId,
+                                        defaultConnectionId,
+                                    ),
                                 onEdit = { onEditingConnectionChange(connection) },
                                 onDelete = { pendingDelete = connection },
                             )
@@ -237,9 +261,19 @@ internal fun ConnectionsScreenContent(
     }
 }
 
+internal fun connectionCardBadges(
+    connectionId: String,
+    activeConnectionId: String?,
+    defaultConnectionId: String?,
+): List<String> = buildList {
+    if (connectionId == activeConnectionId) add("Active")
+    if (connectionId == defaultConnectionId) add("Default")
+}
+
 @Composable
 private fun ConnectionCard(
     connection: ConnectionDef,
+    badges: List<String> = emptyList(),
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -281,6 +315,21 @@ private fun ConnectionCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (badges.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                for (badge in badges) {
+                                    StatusChip(
+                                        text = badge,
+                                        kind =
+                                            if (badge == "Active") StatusChipKind.SUCCESS
+                                            else StatusChipKind.INFO,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 Row(

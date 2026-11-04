@@ -165,6 +165,7 @@ internal fun AppShellContent(
     val settingsOpen by appState.settingsOpen.collectAsState()
     val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
+    val openNewConnectionForm by appState.openNewConnectionForm.collectAsState()
     val schemaSelection by appState.schemaSelection.collectAsState()
     val settings by viewModel.settings.settings.collectAsState()
     val schemaHistoryError by viewModel.settings.schemaHistoryError.collectAsState()
@@ -276,6 +277,7 @@ internal fun AppShellContent(
                     HomeScreen(
                         viewModel = viewModel,
                         onNavigate = appState::navigate,
+                        onNewConnection = appState::requestNewConnectionForm,
                         onOpenSavedQuery = { savedQuery ->
                             restoreQuery(savedQuery.connectionId, savedQuery.spec)
                         },
@@ -283,6 +285,10 @@ internal fun AppShellContent(
                 AppRoute.Connections ->
                     ConnectionsScreen(
                         viewModel = viewModel.connections,
+                        openNewConnectionForm = openNewConnectionForm,
+                        onOpenNewConnectionFormConsumed = appState::consumeNewConnectionFormRequest,
+                        activeConnectionId = activeConnectionId,
+                        defaultConnectionId = settings.defaultConnectionId,
                         onDeleted = { id ->
                             appState.clearActiveConnectionIf(id)
                             viewModel.settings.clearDefaultIfConnection(id)

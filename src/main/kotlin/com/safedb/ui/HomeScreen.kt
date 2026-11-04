@@ -59,6 +59,7 @@ import com.safedb.viewmodel.AppViewModel
 fun HomeScreen(
     viewModel: AppViewModel,
     onNavigate: (AppRoute) -> Unit,
+    onNewConnection: () -> Unit,
     onOpenSavedQuery: (com.safedb.model.SavedQuery) -> Unit,
 ) {
     val initialLoading by viewModel.initialLoading.collectAsState()
@@ -125,7 +126,7 @@ fun HomeScreen(
                         title = "New Connection",
                         description = "Connect to a database",
                         icon = Icons.Filled.Add,
-                        onClick = { onNavigate(AppRoute.Connections) },
+                        onClick = onNewConnection,
                         modifier = Modifier.weight(1f),
                     )
                     QuickLinkCard(

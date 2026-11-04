@@ -85,8 +85,21 @@ class AppState {
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> = _settingsOpen.asStateFlow()
 
+    private val _openNewConnectionForm = MutableStateFlow(false)
+    val openNewConnectionForm: StateFlow<Boolean> = _openNewConnectionForm.asStateFlow()
+
     fun navigate(route: AppRoute) {
         _route.value = route
+        if (route != AppRoute.Connections) _openNewConnectionForm.value = false
+    }
+
+    fun requestNewConnectionForm() {
+        _openNewConnectionForm.value = true
+        _route.value = AppRoute.Connections
+    }
+
+    fun consumeNewConnectionFormRequest() {
+        _openNewConnectionForm.value = false
     }
 
     internal fun setActiveConnection(
