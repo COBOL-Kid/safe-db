@@ -37,7 +37,6 @@ internal fun queryRiskIndicatorText(
     runAvailable: Boolean = true,
 ): String {
     val runEnabledLabel = if (runAvailable) "Run enabled" else "Run unavailable"
-    val runAvailableLabel = if (runAvailable) "Run available" else "Run unavailable"
     return when {
         validationError != null -> "Query validation: $validationError"
         running -> "Assessing query risk · Run unavailable"

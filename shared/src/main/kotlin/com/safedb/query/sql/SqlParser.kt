@@ -676,8 +676,8 @@ internal fun isAdjacentTransposition(left: String, right: String): Boolean {
     if (left.length != right.length || left.length < 2) return false
     var index = 0
     while (index < left.length && left[index] == right[index]) index++
-    if (index >= left.length - 1) return false
-    return left[index] == right[index + 1] &&
+    return index < left.length - 1 &&
+        left[index] == right[index + 1] &&
         left[index + 1] == right[index] &&
         left.substring(index + 2) == right.substring(index + 2)
 }

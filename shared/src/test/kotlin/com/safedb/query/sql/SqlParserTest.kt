@@ -6,6 +6,7 @@ import com.safedb.model.SortDirection
 import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -237,6 +238,10 @@ class SqlParserTest {
         assertEquals("Unexpected 'form' — did you mean FROM?", suggestKeywordTypo("form", "FROM"))
         assertNull(suggestKeywordTypo("customers", "FROM"))
         assertTrue(isAdjacentTransposition("FORM", "FROM"))
+        assertTrue(isAdjacentTransposition("AB", "BA"))
+        assertFalse(isAdjacentTransposition("FROM", "FROM"))
+        assertFalse(isAdjacentTransposition("AB", "AC"))
+        assertFalse(isAdjacentTransposition("A", "A"))
     }
 
     @Test
