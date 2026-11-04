@@ -1,7 +1,6 @@
 package com.safedb.query
 
 import com.safedb.model.EvidenceConfidence
-import com.safedb.model.LARGE_TABLE_ROW_ESTIMATE
 import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.PlanAccessMethod
 import com.safedb.model.PlanOperationKind
@@ -9,8 +8,6 @@ import com.safedb.model.PlanRelationAccess
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
-import com.safedb.model.TableInfo
-import com.safedb.model.TableSizeClass
 
 internal enum class EstimatedRowBand {
     Low,
@@ -105,9 +102,7 @@ fun refineRiskWithPlan(
                             continue
                         }
                     }
-                // A full index scan reads the whole index, so it bands like a table scan;
-                // only true table scans can block outright because index-scan row estimates ignore
-                // ORDER BY ... LIMIT early exits.
+                // A full index scan reads the whole index, so it bands like a table scan.
                 PlanAccessMethod.TableScan,
                 PlanAccessMethod.FullIndexScan ->
                     when (band) {
@@ -122,11 +117,6 @@ fun refineRiskWithPlan(
                                 SignalBasis.PlanEvidence,
                                 EvidenceConfidence.High,
                                 target,
-                                mandatoryBlockWhenGateEnabled =
-                                    method == PlanAccessMethod.TableScan &&
-                                        band == EstimatedRowBand.High &&
-                                        (tableInfo.isConfidentLarge() ||
-                                            estimatedRows >= LARGE_TABLE_ROW_ESTIMATE),
                             )
                         null -> {
                             uncertainties +=
@@ -233,12 +223,6 @@ fun refineRiskWithPlan(
                         SignalBasis.PlanEvidence,
                         EvidenceConfidence.High,
                         target,
-                        mandatoryBlockWhenGateEnabled =
-                            joinUniquenessProvesNeitherSideUnique(
-                                target.aliases,
-                                spec,
-                                tablesByAlias,
-                            ),
                     ),
                 )
             null ->
@@ -361,25 +345,4 @@ private fun matchingOperationTarget(
 private fun matchingJoinTarget(aliases: Set<String>, signals: List<RiskSignal>): RiskTarget.Join? {
     val candidates = signals.mapNotNull { it.target as? RiskTarget.Join }.distinct()
     return candidates.singleOrNull { it.aliases == aliases }
-}
-
-private fun TableInfo?.isConfidentLarge(): Boolean =
-    this != null &&
-        tableSize.sizeClass == TableSizeClass.Large &&
-        tableSize.coverage.isComplete &&
-        tableSize.confidence in setOf(EvidenceConfidence.Medium, EvidenceConfidence.High)
-
-private fun joinUniquenessProvesNeitherSideUnique(
-    aliases: Set<String>,
-    spec: QuerySpec,
-    tablesByAlias: Map<String, TableInfo?>,
-): Boolean {
-    if (aliases.size != 2) return false
-    val joins = spec.joins.filter { setOf(it.leftAlias, it.rightAlias) == aliases }
-    return joins.isNotEmpty() &&
-        aliases.all { alias ->
-            val table = tablesByAlias[alias] ?: return false
-            table.indexMetadata.isComplete &&
-                !provenUniqueJoinKey(table, joinedColumns(alias, joins))
-        }
 }

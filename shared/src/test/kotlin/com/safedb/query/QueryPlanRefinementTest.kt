@@ -57,11 +57,12 @@ class QueryPlanRefinementTest {
                 TableSizeClass.Large,
                 EvidenceConfidence.Medium,
             )
-        assertTrue(high.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(4, high.signals.single().points)
+        assertEquals(QueryRiskSeverity.Elevated, high.severity)
     }
 
     @Test
-    fun corroboratedHighRowPlanScanIsMandatoryAtEveryEnabledGate() {
+    fun corroboratedHighRowPlanScanFollowsSeverityBands() {
         val refined =
             refineAccess(
                 PlanAccessMethod.TableScan,
@@ -70,8 +71,10 @@ class QueryPlanRefinementTest {
                 EvidenceConfidence.High,
             )
 
-        assertTrue(refined.signals.single().mandatoryBlockWhenGateEnabled)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+        assertEquals(QueryRiskSeverity.Elevated, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Cautious).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
         assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Disabled).state)
     }
 
@@ -90,7 +93,9 @@ class QueryPlanRefinementTest {
                 TableSizeClass.Large,
                 EvidenceConfidence.High,
             )
-        assertFalse(high.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(4, high.signals.single().points)
+        assertEquals(QueryRiskSeverity.Elevated, high.severity)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -120,14 +125,16 @@ class QueryPlanRefinementTest {
     }
 
     @Test
-    fun highRowScanOnUnknownSizeTableIsMandatoryOnlyAtLargeEstimates() {
+    fun highRowScanOnUnknownSizeTableFollowsSeverityBands() {
         val million = refineAccess(PlanAccessMethod.TableScan, 2_000_000, TableSizeClass.Unknown)
-        assertTrue(million.signals.single().mandatoryBlockWhenGateEnabled)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Flexible).state)
+        assertEquals(4, million.signals.single().points)
+        assertEquals(QueryRiskSeverity.Elevated, million.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Cautious).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(million, QueryRiskGate.Flexible).state)
 
         val moderate = refineAccess(PlanAccessMethod.TableScan, 150_000, TableSizeClass.Unknown)
         assertEquals(4, moderate.signals.single().points)
-        assertFalse(moderate.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(QueryRiskSeverity.Elevated, moderate.severity)
     }
 
     @Test
@@ -153,10 +160,11 @@ class QueryPlanRefinementTest {
                 Schema(listOf(table("orders", TableSizeClass.Large, EvidenceConfidence.High))),
             )
 
-        // 80k per child is Material alone; the 160k sum bands High and blocks outright.
+        // 80k per child is Material alone; the 160k sum bands High and scores as Elevated.
         val signal = refined.signals.single()
         assertEquals(RiskSignalCode.PlanConfirmedLargeScan, signal.code)
-        assertTrue(signal.mandatoryBlockWhenGateEnabled)
+        assertEquals(QueryRiskSeverity.Elevated, refined.severity)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
         assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
     }
 
@@ -478,10 +486,14 @@ class QueryPlanRefinementTest {
                 schema,
             )
         assertEquals(3, high.signals.single { it.target == operationTarget }.points)
-        assertTrue(high.signals.single { it.target == joinTarget }.mandatoryBlockWhenGateEnabled)
+        assertEquals(
+            RiskSignalCode.PlanConfirmedJoinExpansion,
+            high.signals.single { it.target == joinTarget }.code,
+        )
         // Confirmed expansion must register in the score, not vanish under the category cap.
         assertEquals(3, high.categoryScores.getValue(RiskCategory.Joins))
         assertTrue(high.score > base.score)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
     }
 
     private fun refineAccess(

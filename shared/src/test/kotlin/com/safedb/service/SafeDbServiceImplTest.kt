@@ -32,7 +32,9 @@ import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurity
 import com.safedb.query.QUERY_RISK_SCORE_VERSION
 import com.safedb.query.QueryError
+import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.QueryRunner
+import com.safedb.query.RiskGateState
 import com.safedb.secrets.CredentialSession
 import com.safedb.secrets.CredentialStore
 import com.safedb.secrets.DisabledMemoryStore
@@ -384,7 +386,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun runQueryUsesFreshMetadataForMandatoryRiskBlocking() = runBlocking {
+    fun runQueryIntrospectsFreshSchemaAfterGetSchema() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
@@ -419,14 +421,12 @@ class SafeDbServiceImplTest {
                 )
             )
 
-        val failure =
-            assertFailsWith<QueryFailureException> {
-                service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
-            }
+        val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
 
-        assertIs<QueryError.RiskGate>(failure.queryError)
+        assertEquals(QueryRiskSeverity.Elevated, result.riskEvaluation.finalAssessment?.severity)
+        assertEquals(RiskGateState.Allowed, result.riskEvaluation.decision.state)
         assertEquals(2, adapter.introspectionCount)
-        assertEquals(0, adapter.executeCount)
+        assertEquals(1, adapter.executeCount)
     }
 
     @Test

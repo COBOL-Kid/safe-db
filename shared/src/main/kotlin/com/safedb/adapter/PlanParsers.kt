@@ -31,18 +31,42 @@ internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching 
     val joins = mutableListOf<PlanJoinEvidence>()
     val operations = mutableListOf<PlanBlockingOperation>()
 
-    fun visit(node: JsonObject): Set<String> {
+    fun visit(
+        node: JsonObject,
+        outputCap: Long? = null,
+        accessCap: Long? = null,
+    ): Set<String> {
+        val nodeType = node.string("Node Type").orEmpty()
+        val rows = node.long("Plan Rows")
+        val kind =
+            when (nodeType) {
+                "Sort",
+                "Incremental Sort" -> PlanOperationKind.Sort
+                "Aggregate",
+                "Group",
+                "GroupAggregate",
+                "HashAggregate" -> PlanOperationKind.Grouping
+                "Unique" -> PlanOperationKind.Distinct
+                else -> null
+            }
+        val childOutputCap = if (nodeType == "Limit") rows ?: outputCap else outputCap
+        val childAccessCap =
+            when {
+                nodeType == "Limit" -> rows ?: accessCap
+                postgresPassesAccessLimit(nodeType, kind) -> accessCap
+                else -> null
+            }
         val childAliases =
             node.arrayValue("Plans").orEmpty().filterIsInstance<JsonObject>().flatMapTo(
                 linkedSetOf()
             ) {
-                visit(it)
+                visit(it, childOutputCap, childAccessCap)
             }
         val alias = node.string("Alias")
         val aliases = childAliases + listOfNotNull(alias)
-        val nodeType = node.string("Node Type").orEmpty()
-        val rows = node.long("Plan Rows")
         val relation = node.string("Relation Name")
+        val accessRows = capPlanRows(rows, accessCap)
+        val outputRows = capPlanRows(rows, outputCap)
         if (relation != null) {
             val condition =
                 listOfNotNull(
@@ -68,26 +92,16 @@ internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching 
                     table = relation,
                     alias = alias,
                     method = method,
-                    estimatedRows = rows,
+                    estimatedRows = accessRows,
                     specializedTextEvidence =
                         "@@" in condition ||
                             "gin" in node.string("Index Name").orEmpty().lowercase(),
                 )
         }
         if (nodeType == "Nested Loop" || nodeType.endsWith(" Join")) {
-            joins += PlanJoinEvidence(aliases, rows)
+            joins += PlanJoinEvidence(aliases, outputRows)
         }
-        val kind =
-            when (nodeType) {
-                "Sort",
-                "Incremental Sort" -> PlanOperationKind.Sort
-                "Aggregate",
-                "Group",
-                "GroupAggregate",
-                "HashAggregate" -> PlanOperationKind.Grouping
-                "Unique" -> PlanOperationKind.Distinct
-                else -> null
-            }
+        // Blocking operators still do the uncapped work even when a Limit sits above them.
         if (kind != null) operations += PlanBlockingOperation(kind, aliases, rows)
         return aliases
     }
@@ -101,6 +115,18 @@ internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching 
     )
 }
     .getOrNull()
+
+private fun capPlanRows(rows: Long?, cap: Long?): Long? =
+    if (rows != null && cap != null) minOf(rows, cap) else rows
+
+// Limit can stop Nested Loop / Append / Gather early. Hash/merge joins, sorts, and
+// aggregates still read their inputs, so a LIMIT above them must not shrink scan rows.
+private fun postgresPassesAccessLimit(nodeType: String, kind: PlanOperationKind?): Boolean =
+    when {
+        kind != null -> false
+        nodeType.endsWith(" Join") || nodeType == "Hash" || nodeType == "Materialize" -> false
+        else -> true
+    }
 
 internal fun parseMySqlPlan(raw: String): NormalizedQueryPlan? = runCatching {
     val document = planJson.parseToJsonElement(raw)

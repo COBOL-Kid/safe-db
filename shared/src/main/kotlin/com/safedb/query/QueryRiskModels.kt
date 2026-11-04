@@ -76,7 +76,6 @@ data class RiskSignal(
     val basis: SignalBasis,
     val confidence: EvidenceConfidence,
     val target: RiskTarget? = null,
-    val mandatoryBlockWhenGateEnabled: Boolean = false,
 )
 
 data class RiskUncertainty(val code: String, val subject: RiskSubject, val reasonCode: String)
@@ -105,7 +104,7 @@ enum class RiskGateState {
     Blocked,
 }
 
-data class RiskDecisionReason(val code: String, val message: String, val mandatory: Boolean = false)
+data class RiskDecisionReason(val code: String, val message: String)
 
 data class QueryRiskDecision(
     val queryFingerprint: String,

@@ -10,6 +10,65 @@ import kotlin.test.assertTrue
 
 class PlanParsersTest {
     @Test
+    fun postgresLimitCapsScanAndJoinRowsUnlessABlockingOperatorIntervenes() {
+        val limitedScan =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":0.14,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}}]"""
+            )
+        assertNotNull(limitedScan)
+        assertEquals(1, limitedScan.relations.single().estimatedRows)
+        assertEquals(PlanAccessMethod.TableScan, limitedScan.relations.single().method)
+
+        val limitedNestedLoop =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Nested Loop","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]"""
+            )
+        assertNotNull(limitedNestedLoop)
+        assertEquals(
+            1,
+            limitedNestedLoop.relations.first { it.alias == "t0" }.estimatedRows,
+        )
+        assertEquals(1, limitedNestedLoop.joins.single().estimatedOutputRows)
+
+        val limitedSort =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":80.0,"Plans":[{"Node Type":"Sort","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}]}}]"""
+            )
+        assertNotNull(limitedSort)
+        assertEquals(1_000_000, limitedSort.relations.single().estimatedRows)
+        assertEquals(1_000_000, limitedSort.blockingOperations.single().estimatedRows)
+
+        val limitedHashJoin =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":40.0,"Plans":[{"Node Type":"Hash Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":3}]}]}}]"""
+            )
+        assertNotNull(limitedHashJoin)
+        assertEquals(
+            1_000_000,
+            limitedHashJoin.relations.first { it.alias == "t0" }.estimatedRows,
+        )
+        assertEquals(1, limitedHashJoin.joins.single().estimatedOutputRows)
+    }
+
+    @Test
+    fun mysqlLimitShapeAlreadyReportsTheBoundedScan() {
+        val limited =
+            parseMySqlPlan(
+                """{"query_block":{"query_cost":"0.35","table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":1}}}"""
+            )
+        assertNotNull(limited)
+        assertEquals(1, limited.relations.single().estimatedRows)
+        assertEquals(PlanAccessMethod.TableScan, limited.relations.single().method)
+
+        val unbounded =
+            parseMySqlPlan(
+                """{"query_block":{"query_cost":"204212.05","table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":1000000}}}"""
+            )
+        assertNotNull(unbounded)
+        assertEquals(1_000_000, unbounded.relations.single().estimatedRows)
+    }
+
+    @Test
     fun postgresJsonNormalizesRelationsJoinsAndBlockingOperations() {
         val plan =
             parsePostgresPlan(
