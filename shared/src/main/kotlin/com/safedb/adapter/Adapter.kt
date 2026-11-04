@@ -188,7 +188,10 @@ sealed class Adapter {
                 ExplainResult.Unavailable(
                     if (permissionDenied) com.safedb.model.PlanUnavailableReason.PermissionDenied
                     else com.safedb.model.PlanUnavailableReason.ExecutionFailure,
-                    error.message ?: "Query plan assessment failed",
+                    conciseErrorMessage(
+                        error.message ?: "Query plan assessment failed",
+                        "Query plan assessment failed",
+                    ),
                 )
             }
     }

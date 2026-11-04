@@ -1,11 +1,14 @@
 package com.safedb.query
 
+import com.safedb.adapter.conciseErrorMessage
+import com.safedb.adapter.isTimeoutOrConnectionFailure
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.ExplainResult
 import com.safedb.model.Outcome
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryResult
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
 import com.safedb.model.Settings
@@ -106,8 +109,20 @@ suspend fun runQueryCore(
                 )
         }
 
-    // Plan availability and a usable optimizer cost remain execution safeguards even when
-    // descriptive query-risk scoring is disabled.
+    val fingerprint = staticAssessment?.queryFingerprint ?: queryFingerprint(validated)
+    if (settings.queryRiskGate == QueryRiskGate.Disabled) {
+        val evaluation =
+            QueryRiskEvaluation(
+                staticAssessment = null,
+                finalAssessment = null,
+                planStatus = QueryPlanStatus.Disabled,
+                decision =
+                    applyRiskGate(null, QueryRiskGate.Disabled)
+                        .copy(queryFingerprint = fingerprint),
+            )
+        return executeCompiled(runner, compiled, warnings, normalizedSpec, evaluation)
+    }
+
     val explain =
         try {
             runner.explain(compiled)
@@ -116,10 +131,12 @@ suspend fun runQueryCore(
         } catch (error: Exception) {
             ExplainResult.Unavailable(
                 PlanUnavailableReason.ExecutionFailure,
-                error.message ?: "Query plan assessment failed",
+                conciseErrorMessage(
+                    error.message ?: "Query plan assessment failed",
+                    "Query plan assessment failed",
+                ),
             )
         }
-    val fingerprint = staticAssessment?.queryFingerprint ?: queryFingerprint(validated)
     val baseEvaluation =
         when (explain) {
             is ExplainResult.Available -> {
@@ -165,6 +182,18 @@ suspend fun runQueryCore(
                 riskEvaluation = baseEvaluation,
             )
         )
+    }
+
+    if (explain is ExplainResult.Unavailable) {
+        planCheckHardFailureMessage(explain)?.let { message ->
+            return QueryCoreOutcome.Failure(
+                QueryCoreError(
+                    error = QueryError.Execution(message, normalizedSpec),
+                    warnings = warnings,
+                    riskEvaluation = baseEvaluation,
+                )
+            )
+        }
     }
 
     val requirement = confirmationRequirement(def, fingerprint, explain)
@@ -216,7 +245,7 @@ private fun confirmationRequirement(
                     RiskDecisionReason(
                         code = "plan_unavailable",
                         message =
-                            "Query plan assessment is unavailable: ${explain.message}. Confirm to run with read-only, row-limit, and timeout safeguards.",
+                            "Query plan assessment is unavailable: ${conciseErrorMessage(explain.message, "plan check failed")}. Confirm to run with read-only, row-limit, and timeout safeguards.",
                     )
             is ExplainResult.Available -> {
                 val cost =
@@ -250,6 +279,21 @@ private fun confirmationRequirement(
 
 private fun Double?.isUsableOptimizerCost(): Boolean = this != null && isFinite() && this >= 0.0
 
+private fun planCheckHardFailureMessage(explain: ExplainResult.Unavailable): String? =
+    when (explain.reasonCode) {
+        PlanUnavailableReason.TimedOut -> "Query plan assessment timed out"
+        PlanUnavailableReason.ExecutionFailure ->
+            if (isTimeoutOrConnectionFailure(explain.message)) {
+                "Query plan assessment failed: ${conciseErrorMessage(explain.message, "connection error")}"
+            } else {
+                null
+            }
+        PlanUnavailableReason.PermissionDenied,
+        PlanUnavailableReason.ParseFailure,
+        PlanUnavailableReason.UnsupportedShape,
+        PlanUnavailableReason.CleanupFailure -> null
+    }
+
 private suspend fun executeCompiled(
     runner: QueryRunner,
     compiled: CompiledQuery,
@@ -263,7 +307,11 @@ private suspend fun executeCompiled(
             is Outcome.Err ->
                 return QueryCoreOutcome.Failure(
                     QueryCoreError(
-                        error = QueryError.Execution(execute.message, normalizedSpec),
+                        error =
+                            QueryError.Execution(
+                                conciseErrorMessage(execute.message, "Query failed"),
+                                normalizedSpec,
+                            ),
                         warnings = warnings,
                         riskEvaluation = evaluation,
                     )

@@ -85,3 +85,43 @@ private val UNREACHABLE_MESSAGE_FRAGMENTS =
         "connection reset",
         "timed out after",
     )
+
+private val TIMEOUT_OR_CONNECTION_FRAGMENTS =
+    UNREACHABLE_MESSAGE_FRAGMENTS +
+        listOf(
+            "timed out",
+            "timeout",
+            "i/o error",
+            "an i/o error occurred",
+            "broken pipe",
+            "connection closed",
+            "the last packet",
+            "link failure",
+            "connection aborted",
+            "could not communicate",
+        )
+
+fun isTimeoutOrConnectionFailure(message: String): Boolean {
+    val lower = message.lowercase()
+    return TIMEOUT_OR_CONNECTION_FRAGMENTS.any { it in lower }
+}
+
+fun conciseErrorMessage(message: String, fallback: String = "Query failed"): String {
+    val firstLine =
+        message.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+    if (firstLine.isEmpty()) return fallback
+    val sentenceEnd = firstLine.indexOf(". ")
+    val candidate =
+        if (sentenceEnd in 12 until CONCISE_ERROR_MAX_CHARS) {
+            firstLine.take(sentenceEnd + 1)
+        } else {
+            firstLine
+        }
+    if (candidate.length <= CONCISE_ERROR_MAX_CHARS) return candidate
+    val cut = candidate.take(CONCISE_ERROR_MAX_CHARS)
+    val space = cut.lastIndexOf(' ')
+    val prefix = if (space >= 40) cut.take(space) else cut
+    return "${prefix.trimEnd()}…"
+}
+
+private const val CONCISE_ERROR_MAX_CHARS = 220

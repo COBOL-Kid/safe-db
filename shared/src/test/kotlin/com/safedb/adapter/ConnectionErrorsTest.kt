@@ -9,6 +9,7 @@ import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ConnectionErrorsTest {
     @Test
@@ -65,6 +66,18 @@ class ConnectionErrorsTest {
             formatConnectionFailure(hikari, sampleConnection(host = "db.example", port = 1521))
         assertEquals("Could not connect to db.example:1521", message)
         assertFalse(message.contains("initialize pool"))
+    }
+
+    @Test
+    fun conciseErrorMessageKeepsTheFirstSentenceAndDropsDriverDumps() {
+        val dump =
+            "An I/O error occurred. Communications link failure\n\n" +
+                "The last packet sent successfully to the server was 0 milliseconds ago. " +
+                "Caused by: java.net.SocketException: Connection reset"
+        assertEquals("An I/O error occurred.", conciseErrorMessage(dump))
+        assertTrue(isTimeoutOrConnectionFailure(dump))
+        assertEquals("Query failed", conciseErrorMessage("   \n  "))
+        assertFalse(isTimeoutOrConnectionFailure("permission denied for table"))
     }
 
     private fun sampleConnection(
