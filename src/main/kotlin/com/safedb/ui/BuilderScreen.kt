@@ -557,9 +557,9 @@ internal fun BuilderScreen(
                                                 modifier =
                                                     Modifier.align(Alignment.TopStart)
                                                         .padding(
-                                                            start = 16.dp,
+                                                            start = QueryControlsStartPadding,
                                                             top = QueryControlsVerticalPadding,
-                                                            end = 280.dp,
+                                                            end = QueryOptionsOverlayEndPadding,
                                                         )
                                                         .fillMaxWidth()
                                                         .heightIn(max = QueryControlsMaxHeight)
@@ -575,9 +575,12 @@ internal fun BuilderScreen(
                                                 Modifier.align(Alignment.TopEnd)
                                                     .padding(
                                                         top = QueryControlsVerticalPadding,
-                                                        end = 16.dp,
+                                                        end = QueryOptionsPanelEndPadding,
                                                     )
-                                                    .widthIn(min = 208.dp, max = 256.dp)
+                                                    .widthIn(
+                                                        min = QueryOptionsPanelMinWidth,
+                                                        max = QueryOptionsPanelMaxWidth,
+                                                    )
                                                     .onSizeChanged {
                                                         optionControlsHeightPx = it.height
                                                     },
@@ -663,8 +666,12 @@ internal fun BuilderScreen(
                                 text = LARGE_LIMIT_GUIDANCE_TEXT,
                                 kind = BannerKind.INFO,
                                 modifier =
-                                    Modifier.align(Alignment.TopCenter)
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    Modifier.align(Alignment.TopStart)
+                                        .padding(
+                                            start = QueryControlsStartPadding,
+                                            top = QueryControlsVerticalPadding,
+                                            end = QueryOptionsOverlayEndPadding,
+                                        ),
                             )
                         }
                     }

@@ -92,6 +92,13 @@ internal fun commitBuilderLimitDraft(text: String): Int? {
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
 internal val QueryControlsTableGap = 16.dp
+internal val QueryControlsStartPadding = 16.dp
+internal val QueryOptionsPanelMinWidth = 208.dp
+internal val QueryOptionsPanelMaxWidth = 256.dp
+internal val QueryOptionsPanelEndPadding = 16.dp
+internal val QueryOptionsPanelGap = 8.dp
+internal val QueryOptionsOverlayEndPadding =
+    QueryOptionsPanelEndPadding + QueryOptionsPanelMaxWidth + QueryOptionsPanelGap
 internal val JoinItemsMaxHeight = 88.dp
 internal val QueryControlsCanvasInset =
     QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
@@ -135,7 +142,7 @@ internal fun resultsPaneHeightWhenResultsArrive(
 }
 
 internal const val LARGE_LIMIT_GUIDANCE_TEXT =
-    "Large result limit. Higher limits are useful for reporting, but filters, selected columns, and indexed predicates make queries faster and easier to reuse."
+    "Large limit: add filters or pick columns to keep queries fast."
 
 internal fun groupingOrderLabels(
     groups: List<GroupSpec>,

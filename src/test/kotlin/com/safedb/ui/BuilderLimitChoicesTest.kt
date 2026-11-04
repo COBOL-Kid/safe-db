@@ -10,6 +10,10 @@ class BuilderLimitChoicesTest {
     fun numericChipsStayGroupedAndAllIsASeparateLabel() {
         assertEquals(listOf(500, 1_000, 5_000), BUILDER_LIMIT_CHOICES)
         assertEquals("ALL", BUILDER_ALL_LIMIT_LABEL)
+        assertEquals(
+            "Large limit: add filters or pick columns to keep queries fast.",
+            LARGE_LIMIT_GUIDANCE_TEXT,
+        )
         assertEquals("%,d".format(500), builderLimitChoiceLabel(500))
         assertEquals("%,d".format(1_000), builderLimitChoiceLabel(1_000))
         assertEquals("%,d".format(5_000), builderLimitChoiceLabel(5_000))
