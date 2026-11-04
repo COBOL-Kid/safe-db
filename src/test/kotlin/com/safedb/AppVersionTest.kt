@@ -1,6 +1,7 @@
 package com.safedb
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -10,5 +11,6 @@ class AppVersionTest {
         val version = loadAppVersion()
         assertTrue(version.isNotBlank())
         assertFalse(version.contains("\${"))
+        assertEquals("1.0.0", version)
     }
 }

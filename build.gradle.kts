@@ -19,7 +19,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "0.3.2"
+version = "1.0.0"
 
 kotlin { jvmToolchain(25) }
 
@@ -200,8 +200,8 @@ val verifyUnitTestDiscovery =
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(317)
-        minimumSharedTests.set(632)
+        minimumDesktopTests.set(328)
+        minimumSharedTests.set(641)
         minimumMcpTests.set(90)
     }
 
