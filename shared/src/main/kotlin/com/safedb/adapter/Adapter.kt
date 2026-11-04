@@ -14,6 +14,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -146,8 +147,11 @@ sealed class Adapter {
         suspend fun connect(def: ConnectionDef, password: String): Adapter {
             def.validate().getOrElse { throw IllegalArgumentException(it.message) }
             return try {
+                // Driver connect/login/socket timeouts enforce the deadline inside JDBC.
+                // runInterruptible is a second hard stop: withTimeout alone cannot unblock
+                // a thread stuck in native poll (pgjdbc doAuthentication).
                 withTimeout(CONNECT_TIMEOUT_MS.milliseconds) {
-                    withContext(Dispatchers.IO) {
+                    runInterruptible(Dispatchers.IO) {
                         when (def.dialect) {
                             Dialect.Postgres -> Postgres(createDataSource(def, password))
                             Dialect.MySql -> MySql(createDataSource(def, password))
@@ -159,11 +163,11 @@ sealed class Adapter {
                     }
                 }
             } catch (error: TimeoutCancellationException) {
-                throw IllegalStateException(formatConnectionFailure(error, def), error)
+                throw ConnectionFailedException(formatConnectionFailure(error, def), error)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                throw IllegalStateException(formatConnectionFailure(error, def), error)
+                throw ConnectionFailedException(formatConnectionFailure(error, def), error)
             }
         }
 

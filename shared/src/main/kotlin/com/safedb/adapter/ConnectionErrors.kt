@@ -11,6 +11,9 @@ import java.sql.SQLTimeoutException
 import java.sql.SQLTransientConnectionException
 import kotlinx.coroutines.TimeoutCancellationException
 
+class ConnectionFailedException(message: String, cause: Throwable? = null) :
+    IllegalStateException(message, cause)
+
 fun formatConnectionFailure(error: Throwable, def: ConnectionDef): String {
     val chain = generateSequence(error) { it.cause }.toList()
     val texts = chain.mapNotNull { it.message }.joinToString("\n")
