@@ -122,6 +122,21 @@ internal fun toggleResultsPane(mode: ResultsPaneMode, height: Float): ResultsPan
         ResultsPaneState(ResultsPaneMode.Maximized, height)
     }
 
+internal const val RESULTS_PANE_DEFAULT_HEIGHT = 240f
+internal const val RESULTS_PANE_EXPANDED_MIN_HEIGHT = 320f
+
+internal fun resultsPaneHeightWhenResultsArrive(
+    currentHeight: Float,
+    workspaceHeight: Float,
+): Float {
+    val expanded = maxOf(RESULTS_PANE_EXPANDED_MIN_HEIGHT, workspaceHeight * 0.4f)
+    val maxHeight = minOf(ResultsPaneMaxHeight, workspaceHeight.coerceAtLeast(ResultsPaneMinHeight))
+    return maxOf(currentHeight, expanded).coerceIn(ResultsPaneMinHeight, maxHeight)
+}
+
+internal const val LARGE_LIMIT_GUIDANCE_TEXT =
+    "Large result limit. Higher limits are useful for reporting, but filters, selected columns, and indexed predicates make queries faster and easier to reuse."
+
 internal fun groupingOrderLabels(
     groups: List<GroupSpec>,
     tableNamesByAlias: Map<String, String>,

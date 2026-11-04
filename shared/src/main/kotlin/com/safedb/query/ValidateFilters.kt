@@ -324,6 +324,33 @@ internal fun checkJoinConnectivity(spec: QuerySpec): Boolean {
 fun isSchemaBlocked(schema: String, customBlocked: List<String>): Boolean =
     isBlocked(schema, customBlocked)
 
+fun hasIncompleteFilterValues(spec: QuerySpec): Boolean = hasIncompleteFilterValues(spec.filters)
+
+fun hasIncompleteFilterValues(group: FilterGroup): Boolean =
+    group.children.any { child ->
+        when (child) {
+            is FilterNode.Leaf -> isIncompleteFilter(child.spec)
+            is FilterNode.Group -> hasIncompleteFilterValues(child.group)
+        }
+    }
+
+private fun isIncompleteFilter(spec: FilterSpec): Boolean =
+    when (spec.op.valueKind()) {
+        ValueKind.None -> false
+        ValueKind.Single -> {
+            val literal = (spec.value as? FilterValue.Single)?.literal
+            literal == null || literal.text.isBlank()
+        }
+        ValueKind.List -> {
+            val literals = (spec.value as? FilterValue.ListValue)?.literals
+            literals.isNullOrEmpty() || literals.any { it.text.isBlank() }
+        }
+        ValueKind.Pair -> {
+            val pair = spec.value as? FilterValue.Pair
+            pair == null || pair.first.text.isBlank() || pair.second.text.isBlank()
+        }
+    }
+
 internal fun isBlocked(schema: String, custom: List<String>): Boolean =
     BLOCKED_SCHEMAS.any { it.equals(schema, ignoreCase = true) } ||
         custom.any { it.equals(schema, ignoreCase = true) }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -57,11 +58,9 @@ fun ResultsTable(
     result: QueryResult,
     modifier: Modifier = Modifier,
     tables: List<TableRef> = emptyList(),
+    stale: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val columns =
-        remember(result.columns, result.rows, tables) { buildResultTableColumns(result, tables) }
-
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier =
@@ -75,6 +74,9 @@ fun ResultsTable(
                 "${result.rowCount} row${if (result.rowCount != 1) "s" else ""}",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (stale) {
+                StatusChip("Stale", StatusChipKind.WARNING)
+            }
             if (result.truncated) {
                 StatusChip("Truncated", StatusChipKind.WARNING)
             }
@@ -119,114 +121,132 @@ fun ResultsTable(
                 subtitle = "The query completed without any rows.",
             )
         } else {
-            val horizontalScroll = rememberScrollState()
-            val listState = rememberLazyListState()
-            val tableWidth = columns.sumOf { it.widthDp }.dp
-            Box(modifier = Modifier.fillMaxSize()) {
-                Column(
-                    modifier =
-                        Modifier.fillMaxSize()
-                            .padding(end = 8.dp, bottom = 8.dp)
-                            .horizontalScroll(horizontalScroll)
-                ) {
-                    Row(
-                        modifier =
-                            Modifier.width(tableWidth)
-                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                                .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        for ((_, label, widthDp, alignment) in columns) {
-                            Text(
-                                label,
-                                modifier =
-                                    Modifier.width(widthDp.dp)
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = DataMono.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = alignment.textAlign,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val availableWidthDp = (maxWidth.value - 8f).toInt().coerceAtLeast(0)
+                val columns =
+                    remember(result.columns, result.rows, tables, availableWidthDp) {
+                        buildResultTableColumns(result, tables, availableWidthDp)
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    if (result.rows.isEmpty()) {
-                        Text(
-                            "No rows returned.",
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.width(tableWidth).weight(1f),
+                val horizontalScroll = rememberScrollState()
+                val listState = rememberLazyListState()
+                val tableWidth = columns.sumOf { it.widthDp }.dp
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier =
+                            Modifier.fillMaxSize()
+                                .padding(end = 8.dp, bottom = 8.dp)
+                                .horizontalScroll(horizontalScroll)
+                    ) {
+                        Row(
+                            modifier =
+                                Modifier.width(tableWidth)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                    .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            itemsIndexed(result.rows, key = { index, _ -> index }) { rowIdx, row ->
-                                val interactionSource = remember { MutableInteractionSource() }
-                                val hovered by interactionSource.collectIsHoveredAsState()
-                                val rowBg =
-                                    when {
-                                        hovered ->
-                                            SafeDbTheme.colors.accentContainer.copy(alpha = 0.55f)
-                                        rowIdx % 2 == 1 ->
-                                            MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                                                alpha = 0.6f
-                                            )
-                                        else -> MaterialTheme.colorScheme.surface
-                                    }
-                                Row(
+                            for ((_, label, widthDp, alignment) in columns) {
+                                Text(
+                                    label,
                                     modifier =
-                                        Modifier.width(tableWidth)
-                                            .background(rowBg)
-                                            .hoverable(interactionSource),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    columns.forEach { column ->
-                                        val cell = row.getOrNull(column.index)
-                                        Text(
-                                            if (cell == ResultCell.Null) "null"
-                                            else formatCell(cell),
-                                            modifier =
-                                                Modifier.width(column.widthDp.dp)
-                                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                            style = DataMono,
-                                            fontStyle =
-                                                if (cell == ResultCell.Null) FontStyle.Italic
-                                                else FontStyle.Normal,
-                                            textAlign = column.alignment.textAlign,
-                                            color =
-                                                if (cell == ResultCell.Null) {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                                        alpha = 0.6f
-                                                    )
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurface
-                                                },
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                                HorizontalDivider(
-                                    color =
-                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                                        Modifier.width(widthDp.dp)
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    style = DataMono.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = alignment.textAlign,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        if (result.rows.isEmpty()) {
+                            Text(
+                                "No rows returned.",
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.width(tableWidth).weight(1f),
+                            ) {
+                                itemsIndexed(result.rows, key = { index, _ -> index }) { rowIdx, row
+                                    ->
+                                    val interactionSource = remember { MutableInteractionSource() }
+                                    val hovered by interactionSource.collectIsHoveredAsState()
+                                    val rowBg =
+                                        when {
+                                            hovered ->
+                                                SafeDbTheme.colors.accentContainer.copy(
+                                                    alpha = 0.55f
+                                                )
+                                            rowIdx % 2 == 1 ->
+                                                MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                                                    alpha = 0.6f
+                                                )
+                                            else -> MaterialTheme.colorScheme.surface
+                                        }
+                                    Row(
+                                        modifier =
+                                            Modifier.width(tableWidth)
+                                                .background(rowBg)
+                                                .hoverable(interactionSource),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        columns.forEach { column ->
+                                            val cell = row.getOrNull(column.index)
+                                            Text(
+                                                if (cell == ResultCell.Null) "null"
+                                                else formatCell(cell),
+                                                modifier =
+                                                    Modifier.width(column.widthDp.dp)
+                                                        .padding(
+                                                            horizontal = 12.dp,
+                                                            vertical = 6.dp,
+                                                        ),
+                                                style = DataMono,
+                                                fontStyle =
+                                                    if (cell == ResultCell.Null) FontStyle.Italic
+                                                    else FontStyle.Normal,
+                                                textAlign = column.alignment.textAlign,
+                                                color =
+                                                    if (cell == ResultCell.Null) {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                            .copy(alpha = 0.6f)
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurface
+                                                    },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(
+                                        color =
+                                            MaterialTheme.colorScheme.outlineVariant.copy(
+                                                alpha = 0.65f
+                                            )
+                                    )
+                                }
+                            }
+                        }
                     }
+                    HorizontalScrollbar(
+                        adapter = rememberScrollbarAdapter(horizontalScroll),
+                        modifier =
+                            Modifier.align(Alignment.BottomStart)
+                                .fillMaxWidth()
+                                .padding(end = 8.dp),
+                    )
+                    VerticalScrollbar(
+                        adapter = rememberScrollbarAdapter(listState),
+                        modifier =
+                            Modifier.align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .padding(bottom = 8.dp),
+                    )
                 }
-                HorizontalScrollbar(
-                    adapter = rememberScrollbarAdapter(horizontalScroll),
-                    modifier =
-                        Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 8.dp),
-                )
-                VerticalScrollbar(
-                    adapter = rememberScrollbarAdapter(listState),
-                    modifier =
-                        Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(bottom = 8.dp),
-                )
             }
         }
     }
@@ -254,6 +274,7 @@ private val ResultTableCellAlignment.textAlign: TextAlign
 internal fun buildResultTableColumns(
     result: QueryResult,
     tables: List<TableRef> = emptyList(),
+    availableWidthDp: Int = 0,
 ): List<ResultTableColumnLayout> {
     // Shared with Explore so both surfaces label and qualify duplicate columns identically.
     val labelByName = displayColumnLabels(result.columns, tables)
@@ -277,14 +298,17 @@ internal fun buildResultTableColumns(
             }
         }
     }
-    return labels.mapIndexed { index, label ->
+    val columns = labels.mapIndexed { index, label ->
         ResultTableColumnLayout(
             index = index,
             label = label,
             widthDp =
                 (maxLengths[index] * RESULT_TABLE_CHAR_WIDTH_DP +
                         RESULT_TABLE_HORIZONTAL_PADDING_DP)
-                    .coerceIn(RESULT_TABLE_MIN_COLUMN_WIDTH_DP, RESULT_TABLE_MAX_COLUMN_WIDTH_DP),
+                    .coerceIn(
+                        RESULT_TABLE_MIN_COLUMN_WIDTH_DP,
+                        RESULT_TABLE_MAX_COLUMN_WIDTH_DP,
+                    ),
             alignment =
                 if (hasConcrete[index] && allNumeric[index]) {
                     ResultTableCellAlignment.End
@@ -292,6 +316,22 @@ internal fun buildResultTableColumns(
                     ResultTableCellAlignment.Start
                 },
         )
+    }
+    return expandResultTableColumnsToWidth(columns, availableWidthDp)
+}
+
+internal fun expandResultTableColumnsToWidth(
+    columns: List<ResultTableColumnLayout>,
+    availableWidthDp: Int,
+): List<ResultTableColumnLayout> {
+    if (columns.isEmpty() || availableWidthDp <= 0) return columns
+    val naturalWidth = columns.sumOf { it.widthDp }
+    val extra = availableWidthDp - naturalWidth
+    if (extra <= 0) return columns
+    val share = extra / columns.size
+    val remainder = extra % columns.size
+    return columns.mapIndexed { index, column ->
+        column.copy(widthDp = column.widthDp + share + if (index < remainder) 1 else 0)
     }
 }
 

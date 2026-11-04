@@ -10,7 +10,9 @@ import com.safedb.model.GroupConnector
 import com.safedb.model.LiteralKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class FilterTreeOpsTest {
     @Test
@@ -99,6 +101,46 @@ class FilterTreeOpsTest {
         assertNull(filterLeafIdAtPath(tree, listOf(0)))
         assertEquals("leaf", filterLeafIdAtPath(tree, listOf(0, 0)))
         assertEquals("nested", filterNodeIdAtPath(tree, listOf(0)))
+    }
+
+    @Test
+    fun blankFilterValuesCountAsIncomplete() {
+        val empty =
+            FilterGroup(
+                children =
+                    listOf(
+                        FilterNode.Leaf(
+                            FilterSpec(
+                                id = "f1",
+                                tableAlias = "t0",
+                                column = "created_at",
+                                op = FilterOp.Eq,
+                                value = FilterValue.Single(FilterLiteral(LiteralKind.DateTime, "")),
+                            )
+                        )
+                    )
+            )
+        assertTrue(hasIncompleteFilterValues(empty))
+        val filled =
+            FilterGroup(
+                children =
+                    listOf(
+                        FilterNode.Leaf(
+                            FilterSpec(
+                                id = "f1",
+                                tableAlias = "t0",
+                                column = "created_at",
+                                op = FilterOp.Eq,
+                                value =
+                                    FilterValue.Single(
+                                        FilterLiteral(LiteralKind.DateTime, "2025-01-01")
+                                    ),
+                            )
+                        )
+                    )
+            )
+        assertFalse(hasIncompleteFilterValues(filled))
+        assertFalse(hasIncompleteFilterValues(FilterGroup.empty()))
     }
 
     private fun filter(id: String = "", alias: String) =

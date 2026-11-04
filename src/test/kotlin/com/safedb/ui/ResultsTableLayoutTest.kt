@@ -123,4 +123,24 @@ class ResultsTableLayoutTest {
         assertEquals("customer__id", displayColumnName(ResultColumn("customer__id", "varchar")))
         assertTrue(displayColumnName(ResultColumn("t__id", "varchar")).startsWith("t__"))
     }
+
+    @Test
+    fun expandsColumnsToFillAvailableWidth() {
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("id", "int"), ResultColumn("name", "text")),
+                rows = listOf(listOf(ResultCell.IntegerCell(1), ResultCell.text("Ada"))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val natural = buildResultTableColumns(result)
+        val expanded = buildResultTableColumns(result, availableWidthDp = 1_000)
+        assertEquals(1_000, expanded.sumOf { it.widthDp })
+        assertTrue(expanded.all { it.widthDp > natural[it.index].widthDp })
+        assertEquals(
+            natural.map { it.widthDp },
+            buildResultTableColumns(result, availableWidthDp = 10).map { it.widthDp },
+        )
+    }
 }
