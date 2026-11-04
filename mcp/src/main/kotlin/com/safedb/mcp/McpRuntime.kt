@@ -114,6 +114,12 @@ internal sealed interface Arg<out T> {
     data class Err(val result: CallToolResult) : Arg<Nothing>
 }
 
+internal fun requireKnownArguments(request: CallToolRequest, vararg allowed: String): Arg<Unit> {
+    val extra = request.arguments?.keys.orEmpty().filter { it !in allowed }.sorted()
+    if (extra.isEmpty()) return Arg.Ok(Unit)
+    return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "unknown argument '${extra.first()}'"))
+}
+
 internal fun requiredString(request: CallToolRequest, name: String): Arg<String> {
     val element = request.arguments?.get(name)
     if (element == null || element is JsonNull) {
@@ -298,10 +304,16 @@ internal fun registerConnectionTools(
                 "or URL to any tool.",
         inputSchema = ToolSchema(properties = buildJsonObject {}),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
-    ) {
+    ) { request ->
         runMcpTool("list_connections failed") {
-            val payload = toolJson.encodeToString(service.listConnections().map { it.toSummary() })
-            CallToolResult(content = listOf(TextContent(text = payload)))
+            when (val extra = requireKnownArguments(request)) {
+                is Arg.Err -> extra.result
+                is Arg.Ok -> {
+                    val payload =
+                        toolJson.encodeToString(service.listConnections().map { it.toSummary() })
+                    CallToolResult(content = listOf(TextContent(text = payload)))
+                }
+            }
         }
     }
 
@@ -370,6 +382,10 @@ private suspend fun handleDeleteConnection(
     tokens: DeleteConfirmationTokens,
     request: CallToolRequest,
 ): CallToolResult {
+    when (val extra = requireKnownArguments(request, "connection_id", "confirmation")) {
+        is Arg.Err -> return extra.result
+        is Arg.Ok -> Unit
+    }
     val id =
         when (val parsed = requiredString(request, "connection_id")) {
             is Arg.Ok -> parsed.value

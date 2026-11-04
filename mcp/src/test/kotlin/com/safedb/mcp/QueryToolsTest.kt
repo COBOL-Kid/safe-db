@@ -1,6 +1,8 @@
 package com.safedb.mcp
 
 import com.safedb.adapter.ConnectionFailedException
+import com.safedb.model.ResultCell
+import com.safedb.model.ResultColumn
 import com.safedb.model.SafeDbJson
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
@@ -244,7 +246,7 @@ class QueryToolsTest {
     }
 
     @Test
-    fun specArgumentIsIgnoredAndSqlIsRequired() = runBlocking {
+    fun specArgumentIsRejectedAsUnknown() = runBlocking {
         val service = queryService()
         val specJson =
             SafeDbJson.lenient.encodeToJsonElement(
@@ -263,7 +265,7 @@ class QueryToolsTest {
                 specOnly.json().getValue("error").jsonPrimitive.content,
             )
             assertEquals(
-                "sql is required",
+                "unknown argument 'spec'",
                 specOnly.json().getValue("message").jsonPrimitive.content,
             )
 
@@ -276,11 +278,18 @@ class QueryToolsTest {
                         "spec" to specJson,
                     ),
                 )
-            assertFalse(withStraySpec.isError == true)
-            assertEquals("2", withStraySpec.json().getValue("row_count").jsonPrimitive.content)
+            assertEquals(true, withStraySpec.isError)
+            assertEquals(
+                "invalid_arguments",
+                withStraySpec.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "unknown argument 'spec'",
+                withStraySpec.json().getValue("message").jsonPrimitive.content,
+            )
         }
-        assertEquals(listOf("c1"), service.schemaCalls)
-        assertEquals("customers", service.runQueryRequests.single().spec.tables.single().name)
+        assertTrue(service.schemaCalls.isEmpty())
+        assertTrue(service.runQueryRequests.isEmpty())
     }
 
     @Test
@@ -384,7 +393,19 @@ class QueryToolsTest {
                         "spec" to SafeDbJson.lenient.encodeToJsonElement(sampleMcpQuerySpec()),
                     ),
                 )
-            assertFalse(both.isError == true)
+            assertEquals(true, both.isError)
+            assertEquals("invalid_arguments", both.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "unknown argument 'spec'",
+                both.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val sqlOnly =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                )
+            assertFalse(sqlOnly.isError == true)
 
             val parsed =
                 client.callTool(
@@ -798,6 +819,7 @@ class QueryToolsTest {
                 assertFalse(page.containsKey("truncated"))
                 assertEquals(GET_RESULT_ROWS_MAX, page.getValue("rows").jsonArray.size)
                 assertEquals("true", page.getValue("page_truncated").jsonPrimitive.content)
+                assertEquals("50", page.getValue("next_offset").jsonPrimitive.content)
                 assertEquals(
                     "1",
                     page
@@ -827,6 +849,7 @@ class QueryToolsTest {
                         .json()
                 assertEquals(5, tail.getValue("rows").jsonArray.size)
                 assertEquals("false", tail.getValue("page_truncated").jsonPrimitive.content)
+                assertFalse(tail.containsKey("next_offset"))
                 assertEquals(
                     "56",
                     tail
@@ -856,6 +879,57 @@ class QueryToolsTest {
             }
         } finally {
             resultsDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun getResultRowsStopsAtTheByteBudgetAndReturnsNextOffset() = runBlocking {
+        val service = queryService()
+        val payload = "x".repeat(2_048)
+        val wideColumns =
+            (1..24).map { index -> ResultColumn("c${index.toString().padStart(2, '0')}", "text") }
+        val wideRows = List(50) { wideColumns.map { ResultCell.text(payload) } }
+        service.runQueryResult =
+            QueryRunResult(
+                sampleMcpQueryResult(rowCount = 50).let { sample ->
+                    sample.copy(
+                        columns = wideColumns,
+                        rows = wideRows,
+                    )
+                },
+                allowedMcpRisk(),
+            )
+        withTempMcpClient(service) { client ->
+            val receipt =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to "SELECT id FROM public.customers LIMIT 50",
+                        ),
+                    )
+                    .json()
+            val preview = receipt.getValue("preview").jsonArray
+            assertTrue(preview.size <= PREVIEW_ROW_LIMIT)
+            assertEquals("true", receipt.getValue("preview_truncated").jsonPrimitive.content)
+            assertTrue(
+                preview
+                    .first()
+                    .jsonObject
+                    .getValue("c01")
+                    .jsonPrimitive
+                    .content
+                    .endsWith(MCP_CELL_TRUNCATION_MARKER)
+            )
+            val resultId = receipt.getValue("result_id").jsonPrimitive.content
+            val page = client.callTool("get_result_rows", mapOf("result_id" to resultId)).json()
+            assertTrue(page.getValue("rows").jsonArray.size < GET_RESULT_ROWS_MAX)
+            assertEquals("true", page.getValue("page_truncated").jsonPrimitive.content)
+            assertEquals(
+                page.getValue("rows").jsonArray.size.toString(),
+                page.getValue("next_offset").jsonPrimitive.content,
+            )
         }
     }
 

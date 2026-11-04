@@ -174,6 +174,14 @@ class SchemaToolsTest {
     fun missingArgsUnknownTablesAndConnectionsAreErrors() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
+            val extra = client.callTool("list_tables", mapOf("connection_id" to "c1", "bogus" to 1))
+            assertEquals(true, extra.isError)
+            assertEquals("invalid_arguments", extra.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "unknown argument 'bogus'",
+                extra.json().getValue("message").jsonPrimitive.content,
+            )
+
             val missingId = client.callTool("list_tables", emptyMap())
             assertEquals(true, missingId.isError)
             assertEquals(

@@ -94,7 +94,7 @@ Progressive catalog, then a gated query. Do not expect the full [`Schema`](../sh
 | `list_tables` | `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `getSchema` (5 min TTL, optional `refresh=true`). Honors `blocked_schemas` and built-in system catalogs. `readOnlyHint`. |
 | `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`), indexes, FKs. Same cache. Unknown or blocked → `not_found`. `readOnlyHint`. |
 | `run_query` | `connection_id` and `sql`. Optional `default_schema`: schema used when a table name has no prefix. Copy `list_tables.schema` for this connection (MySQL: usually the database name). Omit when every table is already `schema.table`. Not filled from `connection.database`. If the argument is omitted, [`settingsDefaultSchema`](../mcp/src/main/kotlin/com/safedb/mcp/QueryTools.kt) uses `default_schema` from `settings.json` only when `default_connection_id` is this connection; any other connection does not inherit it. An explicit `default_schema` argument always wins. Accepts filters, DISTINCT, GROUP BY of selected columns, ORDER BY, LIMIT, and INNER JOIN on indexed or FK columns. Rejects aggregates and functions, OFFSET, subqueries, CTEs, UNION, LEFT/CROSS or comma joins, AS aliases, and leading NOT. Result columns are named `table__column`. Parses SQL to `QuerySpec` internally, then `SafeDbService.runQuery` (fresh introspect on execute). Receipt, not the grid. No tool annotations. |
-| `get_result_rows` | Page the in-memory sample for a `result_id`. `offset` default 0 (negative clamps to 0). `limit` default 50, hard cap 50; 0 or negative is `invalid_arguments`. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `get_result_rows` | Page the in-memory sample for a `result_id`. `offset` default 0 (negative clamps to 0). `limit` default 50, hard cap 50; 0 or negative is `invalid_arguments`. Pages also stop around 32 KB; long cell values are truncated with `…[truncated]`. `page_truncated` plus `next_offset` when more sample rows remain. Unknown or expired → `not_found`. `readOnlyHint`. |
 | `summarize_result` | Per-column stats on that same sample. Echoes `sample_capped` when the original fetch was capped. Unknown or expired → `not_found`. `readOnlyHint`. |
 
 Initialize includes a short `instructions` string: add connections with the CLI; start with `list_connections`; pass `id` as `connection_id`; pass `default_schema` from `list_tables` for unqualified SQL; page with `result_id`; `delete_connection` requires an echoed confirmation; never send passwords. Tool list capability is `listChanged: false`.
@@ -108,6 +108,8 @@ Constants (change the constant and update this page in the same change):
 | `SCHEMA_CACHE_TTL_MS` | 5 minutes | [`SchemaCache.kt`](../mcp/src/main/kotlin/com/safedb/mcp/SchemaCache.kt) |
 | `PREVIEW_ROW_LIMIT` | 10 rows | [`ResultPreview.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultPreview.kt) |
 | `GET_RESULT_ROWS_MAX` | 50 rows | [`ResultPreview.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultPreview.kt) |
+| `MCP_PAYLOAD_MAX_BYTES` | 32 KiB | [`ResultPreview.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultPreview.kt) |
+| `MCP_CELL_MAX_BYTES` | 512 bytes, then `…[truncated]` | [`ResultPreview.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultPreview.kt) |
 | `RESULT_STORE_TTL_MS` | 30 minutes | [`ResultStore.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultStore.kt) |
 | `RESULT_STORE_MAX_ENTRIES` | 16 | [`ResultStore.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultStore.kt) |
 | `RESULT_STORE_MAX_BYTES` | 32 MiB | [`ResultStore.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultStore.kt) |
@@ -123,12 +125,12 @@ A successful call returns JSON with:
 - `row_count`, `preview_truncated`, `warnings`
 - `sample_capped` when the fetched sample hit a caller `LIMIT` or the encoded-byte budget (omitted when false). A row-limit stop names that `LIMIT` and says to raise it or add filters. A byte-budget stop, including a query that omitted `LIMIT`, says to add filters or select fewer columns. Raising `LIMIT` does not read past the budget
 - `risk`: `state`, `severity`, `score`, `effective_gate`, `reasons`, `plan_status`
-- `preview`: about 10 flattened rows (`null` / bool / number / string; binary as base64). Not tagged `ResultCell` objects.
+- `preview`: about 10 flattened rows (`null` / bool / number / string; binary as base64), also stopped at the 32 KiB payload budget. Long cells end with `…[truncated]`. Not tagged `ResultCell` objects.
 - `result_id` for later paging and summary
 
-`sample_capped` is the engine byte or caller `LIMIT` cap from [query-engine.md](query-engine.md). `preview_truncated` is true when the preview is shorter than `row_count`. A positive SQL limit is kept up to the maximum 32-bit integer; a larger whole number clamps. Omitting `LIMIT` is the same as the builder's ALL choice and emits no SQL row limit. The client reads with a statement fetch size and stops at `MAX_RESULT_BYTES` (10 MiB encoded). The receipt does not include the full sample.
+`sample_capped` is the engine byte or caller `LIMIT` cap from [query-engine.md](query-engine.md). `preview_truncated` is true when the preview is shorter than `row_count` or cells were truncated to the MCP cell budget. A positive SQL limit is kept up to the maximum 32-bit integer; a larger whole number clamps. Omitting `LIMIT` is the same as the builder's ALL choice and emits no SQL row limit. The client reads with a statement fetch size and stops at `MAX_RESULT_BYTES` (10 MiB encoded). The receipt does not include the full sample.
 
-Accepted and rejected SQL are the same as the desktop app. A stray `spec` argument is ignored; agents send `sql`.
+Accepted and rejected SQL are the same as the desktop app. Unknown extra arguments, including a stray `spec`, are `invalid_arguments`; agents send `sql`.
 
 ### Errors
 
@@ -136,12 +138,12 @@ Every tool error is JSON `{error, message, warnings}` with `isError=true`. Extra
 
 | `error` | What to do |
 | --- | --- |
-| `invalid_arguments` | Missing required fields, wrong JSON types (`sql` must be a string, `refresh` a boolean, `limit` an integer 1–50), or a malformed `confirmation` object. |
+| `invalid_arguments` | Missing required fields, unknown extra arguments (the message names the argument), wrong JSON types (`sql` must be a string, `refresh` a boolean, `limit` an integer 1–50), or a malformed `confirmation` object. |
 | `not_found` | Unknown tool, connection, table, or expired/unknown `result_id`. |
 | `parse` | Fix `sql`. Unqualified tables: pass `default_schema` from `list_tables.schema`, or qualify as `schema.table`. Aggregates: run the base query, then `summarize_result`. |
-| `validation` / `compilation` / `execution` | Same meanings as [`QueryError`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). |
+| `validation` / `compilation` / `execution` | Same meanings as [`QueryError`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Plan-check timeout or connection/I/O failure is `execution` with a short message (no driver dump), not a confirm prompt. |
 | `risk_gate` | Includes a slim `risk` summary. Rewrite the query or change `query_risk_gate` in settings. Do not retry the same query. |
-| `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query` or `delete_connection`) with that object. Do not auto-confirm. Do not invent the object. |
+| `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query` or `delete_connection`) with that object. Do not auto-confirm. Do not invent the object. Confirmations are bound to the SQL and connection; tampered objects are rejected. A plan-check timeout is not this error. |
 | `connection` | Auth failure or the host could not be reached (including connect timeout). |
 | `internal` | Unexpected store or runtime failure. |
 
@@ -151,7 +153,7 @@ Every tool error is JSON `{error, message, warnings}` with `isError=true`. Extra
 
 On put it also writes `{dataDir}/results/{result_id}.jsonl` for LRU accounting: one flattened object per row, owner-only. JSONL write failure does not fail the query: `result_id` and the in-memory sample remain. The path is not in the receipt. Evict/expire deletes the file. The results directory is wiped when the store is constructed (process start).
 
-`get_result_rows` pages the in-memory sample, not the file. `page_truncated` is true when this page is shorter than the remaining sample. It does not echo `sample_capped`. `summarize_result` reports per-column `null_count`, min/max (int/float numeric, text lexicographic, bool; omitted for binary and when there are no comparable values), and up to 8 distinct flattened values (`distinct_truncated` if more). `summarize_result` echoes `sample_capped` (omitted when false) from the original query.
+`get_result_rows` pages the in-memory sample, not the file. A page stops at 50 rows or about 32 KB, whichever comes first. Long cell values are truncated with `…[truncated]`. `page_truncated` is true when more of the in-memory sample remains; `next_offset` is then the offset to request next (omitted on the last page). It does not echo `sample_capped`. `summarize_result` reports per-column `null_count`, min/max (int/float numeric, text lexicographic, bool; omitted for binary and when there are no comparable values), and up to 8 distinct flattened values (`distinct_truncated` if more). `summarize_result` echoes `sample_capped` (omitted when false) from the original query.
 
 ## Not in this version
 

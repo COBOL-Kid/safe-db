@@ -50,6 +50,15 @@ class ConnectionToolsTest {
             assertEquals("MySql", parsed.getValue("dialect").jsonPrimitive.content)
             assertEquals("shop", parsed.getValue("database").jsonPrimitive.content)
 
+            val extra = client.callTool("list_connections", mapOf("bogus" to 1))
+            assertEquals(true, extra.isError)
+            val extraBody = extra.json()
+            assertEquals("invalid_arguments", extraBody.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "unknown argument 'bogus'",
+                extraBody.getValue("message").jsonPrimitive.content,
+            )
+
             val missing = client.callTool("delete_connection", emptyMap())
             assertEquals(true, missing.isError)
             val missingBody = missing.json()

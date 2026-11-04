@@ -52,12 +52,14 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                 "not pass a password or URL. Returns a receipt: columns, row_count, " +
                 "sample_capped (omitted when false), preview_truncated, warnings, a slim " +
                 "risk summary, a short preview (~10 flattened rows), and result_id. " +
-                "Page with get_result_rows or summarize_result using result_id. Results " +
-                "expire after $resultTtlMinutes minutes ($RESULT_STORE_MAX_ENTRIES entries, " +
+                "Page with get_result_rows or summarize_result using result_id. Preview " +
+                "and pages are capped at $MCP_PAYLOAD_MAX_BYTES bytes; long cell values " +
+                "are truncated with ${MCP_CELL_TRUNCATION_MARKER}. Results expire after " +
+                "$resultTtlMinutes minutes ($RESULT_STORE_MAX_ENTRIES entries, " +
                 "32 MiB). On error risk_gate, rewrite the query or change the gate in " +
                 "settings; do not retry the same query. On error confirmation_required, " +
                 "show the reasons to the user, then retry with the returned confirmation " +
-                "object; do not auto-confirm.",
+                "object; do not auto-confirm. Unknown extra arguments are invalid_arguments.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -119,10 +121,12 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
         description =
             "Page flattened rows from a previous run_query by result_id. offset defaults " +
                 "to 0 (negative clamps to 0). limit defaults to 50 and caps at 50; 0 or " +
-                "negative is invalid_arguments. page_truncated is true when this page is " +
-                "shorter than the remaining in-memory sample. Results expire after " +
-                "$resultTtlMinutes minutes. Use summarize_result for column stats. Unknown " +
-                "or expired result_id returns not_found.",
+                "negative is invalid_arguments. Pages also stop around " +
+                "$MCP_PAYLOAD_MAX_BYTES bytes; long cells are truncated with " +
+                "${MCP_CELL_TRUNCATION_MARKER}. page_truncated is true when more sample " +
+                "rows remain; next_offset is then the offset to request next. Results " +
+                "expire after $resultTtlMinutes minutes. Use summarize_result for column " +
+                "stats. Unknown or expired result_id returns not_found.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -151,7 +155,9 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                                 put(
                                     "description",
                                     "Max rows to return (1–50). Default 50. Values over 50 " +
-                                        "cap at 50. 0 or negative is invalid_arguments.",
+                                        "cap at 50. 0 or negative is invalid_arguments. " +
+                                        "A page may contain fewer rows when it hits the " +
+                                        "$MCP_PAYLOAD_MAX_BYTES byte budget.",
                                 )
                             },
                         )
@@ -196,6 +202,13 @@ private suspend fun handleRunQuery(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
+    when (
+        val extra =
+            requireKnownArguments(request, "connection_id", "sql", "default_schema", "confirmation")
+    ) {
+        is Arg.Err -> return extra.result
+        is Arg.Ok -> Unit
+    }
     val connectionId =
         when (val parsed = requiredString(request, "connection_id")) {
             is Arg.Ok -> parsed.value
@@ -337,8 +350,11 @@ private suspend fun successReceipt(
             sampleCapped = result.truncated,
             warnings = warnings,
             risk = riskSummary(completed.riskEvaluation),
-            preview = preview,
-            previewTruncated = preview.size < result.rowCount,
+            preview = preview.rows,
+            previewTruncated =
+                preview.moreRowsRemain ||
+                    preview.cellsTruncated ||
+                    preview.rows.size < result.rowCount,
             resultId = stored.resultId,
         )
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
@@ -361,6 +377,10 @@ private suspend fun handleGetResultRows(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
+    when (val extra = requireKnownArguments(request, "result_id", "offset", "limit")) {
+        is Arg.Err -> return extra.result
+        is Arg.Ok -> Unit
+    }
     val resultId =
         when (val parsed = requiredString(request, "result_id")) {
             is Arg.Ok -> parsed.value
@@ -382,14 +402,15 @@ private suspend fun handleGetResultRows(
     val result = resultStore.get(resultId) ?: return toolError(ERROR_NOT_FOUND, "Result not found")
     val offset = offsetRaw.coerceAtLeast(0)
     val limit = (limitRaw ?: GET_RESULT_ROWS_MAX).coerceAtMost(GET_RESULT_ROWS_MAX)
-    val pageRows = flattenRows(result, offset, limit)
+    val slice = sliceRows(result, offset, limit, MCP_PAYLOAD_MAX_BYTES)
     val page =
         ResultRowsPage(
             resultId = resultId,
             offset = offset,
             rowCount = result.rowCount,
-            pageTruncated = offset + pageRows.size < result.rowCount,
-            rows = pageRows,
+            pageTruncated = slice.moreRowsRemain,
+            nextOffset = slice.nextOffset,
+            rows = slice.rows,
         )
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(page))))
 }
@@ -398,6 +419,10 @@ private suspend fun handleSummarizeResult(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
+    when (val extra = requireKnownArguments(request, "result_id")) {
+        is Arg.Err -> return extra.result
+        is Arg.Ok -> Unit
+    }
     val resultId =
         when (val parsed = requiredString(request, "result_id")) {
             is Arg.Ok -> parsed.value
@@ -503,6 +528,7 @@ internal data class ResultRowsPage(
     val offset: Int,
     @SerialName("row_count") val rowCount: Int,
     @SerialName("page_truncated") val pageTruncated: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
     val rows: List<JsonObject>,
 )
 

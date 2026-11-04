@@ -46,11 +46,13 @@ class ResultPreviewTest {
                 warnings = emptyList(),
             )
         val preview = previewRows(result)
-        assertEquals(PREVIEW_ROW_LIMIT, preview.size)
-        assertEquals("1", preview.first().getValue("id").jsonPrimitive.content)
-        assertEquals("r1", preview.first().getValue("email").jsonPrimitive.content)
-        assertEquals("10", preview.last().getValue("id").jsonPrimitive.content)
-        assertTrue(preview.none { "kind" in it.toString() })
+        assertEquals(PREVIEW_ROW_LIMIT, preview.rows.size)
+        assertEquals("1", preview.rows.first().getValue("id").jsonPrimitive.content)
+        assertEquals("r1", preview.rows.first().getValue("email").jsonPrimitive.content)
+        assertEquals("10", preview.rows.last().getValue("id").jsonPrimitive.content)
+        assertTrue(preview.moreRowsRemain)
+        assertEquals(10, preview.nextOffset)
+        assertTrue(preview.rows.none { "kind" in it.toString() })
     }
 
     @Test
@@ -106,5 +108,42 @@ class ResultPreviewTest {
         val fromStart = flattenRows(result, offset = -4, limit = 2)
         assertEquals("1", fromStart.first().getValue("id").jsonPrimitive.content)
         assertEquals("2", fromStart.last().getValue("id").jsonPrimitive.content)
+    }
+
+    @Test
+    fun sliceRowsStopsAtTheByteBudgetAndTruncatesLongCells() {
+        val columns =
+            (1..24).map { index -> ResultColumn("c${index.toString().padStart(2, '0')}", "text") }
+        val payload = "x".repeat(2_048)
+        val result =
+            QueryResult(
+                columns = columns,
+                rows = List(50) { columns.map { ResultCell.text(payload) } },
+                rowCount = 50,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val page = sliceRows(result, offset = 0, limit = GET_RESULT_ROWS_MAX, MCP_PAYLOAD_MAX_BYTES)
+        assertTrue(page.rows.size < 50)
+        assertTrue(page.rows.isNotEmpty())
+        assertTrue(page.moreRowsRemain)
+        assertEquals(page.rows.size, page.nextOffset)
+        val encoded = page.rows.toString().toByteArray(Charsets.UTF_8).size
+        assertTrue(encoded <= MCP_PAYLOAD_MAX_BYTES + 8 * 1024)
+        val cell = page.rows.first().getValue("c01").jsonPrimitive.content
+        assertTrue(cell.endsWith(MCP_CELL_TRUNCATION_MARKER))
+        assertTrue(page.cellsTruncated)
+
+        val preview = previewRows(result)
+        assertTrue(preview.cellsTruncated)
+        assertTrue(preview.rows.size < PREVIEW_ROW_LIMIT)
+        assertTrue(
+            preview.rows
+                .first()
+                .getValue("c01")
+                .jsonPrimitive
+                .content
+                .endsWith(MCP_CELL_TRUNCATION_MARKER)
+        )
     }
 }

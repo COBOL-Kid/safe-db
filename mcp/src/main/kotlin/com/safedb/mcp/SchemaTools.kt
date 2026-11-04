@@ -112,6 +112,10 @@ private suspend fun handleListTables(
     cache: SchemaCache,
     request: CallToolRequest,
 ): CallToolResult {
+    when (val extra = requireKnownArguments(request, "connection_id", "refresh")) {
+        is Arg.Err -> return extra.result
+        is Arg.Ok -> Unit
+    }
     val connectionId =
         when (val parsed = requiredString(request, "connection_id")) {
             is Arg.Ok -> parsed.value
@@ -135,6 +139,12 @@ private suspend fun handleDescribeTable(
     cache: SchemaCache,
     request: CallToolRequest,
 ): CallToolResult {
+    when (
+        val extra = requireKnownArguments(request, "connection_id", "schema", "table", "refresh")
+    ) {
+        is Arg.Err -> return extra.result
+        is Arg.Ok -> Unit
+    }
     val connectionId =
         when (val parsed = requiredString(request, "connection_id")) {
             is Arg.Ok -> parsed.value
