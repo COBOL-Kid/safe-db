@@ -59,6 +59,7 @@ class QueryEngineTest {
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("blocked"))
+        assertTrue(err.contains("system/catalog schema"))
     }
 
     @Test
@@ -79,6 +80,7 @@ class QueryEngineTest {
                     .copy(tables = listOf(TableRef(schema = schema, name = "users", alias = "t0")))
             val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
             assertTrue(err.contains("blocked"), schema)
+            assertTrue(err.contains("system/catalog schema"), schema)
         }
     }
 
@@ -89,6 +91,7 @@ class QueryEngineTest {
                 .copy(tables = listOf(TableRef(schema = "Audit", name = "users", alias = "t0")))
         val err = validate(spec, sampleSchema(), listOf("audit")).unwrapErr()
         assertTrue(err.contains("blocked"))
+        assertFalse(err.contains("system/catalog schema"))
     }
 
     @Test

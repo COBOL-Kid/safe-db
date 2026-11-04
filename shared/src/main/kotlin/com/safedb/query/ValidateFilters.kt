@@ -351,6 +351,13 @@ private fun isIncompleteFilter(spec: FilterSpec): Boolean =
         }
     }
 
+internal fun isSystemSchema(schema: String): Boolean = BLOCKED_SCHEMAS.any {
+    it.equals(schema, ignoreCase = true)
+}
+
+internal fun isCustomBlockedSchema(schema: String, custom: List<String>): Boolean = custom.any {
+    it.equals(schema, ignoreCase = true)
+}
+
 internal fun isBlocked(schema: String, custom: List<String>): Boolean =
-    BLOCKED_SCHEMAS.any { it.equals(schema, ignoreCase = true) } ||
-        custom.any { it.equals(schema, ignoreCase = true) }
+    isSystemSchema(schema) || isCustomBlockedSchema(schema, custom)

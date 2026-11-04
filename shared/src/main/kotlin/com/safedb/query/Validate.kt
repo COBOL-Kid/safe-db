@@ -233,8 +233,11 @@ fun validate(
 
     val tableAliases = mutableSetOf<String>()
     for ((tableSchema, tableName, alias) in spec.tables) {
-        if (isBlocked(tableSchema, customBlocked)) {
+        if (isSystemSchema(tableSchema)) {
             return Outcome.err("Schema '$tableSchema' is blocked (system/catalog schema)")
+        }
+        if (isCustomBlockedSchema(tableSchema, customBlocked)) {
+            return Outcome.err("Schema '$tableSchema' is blocked")
         }
 
         if (findTable(schema, tableSchema, tableName) == null) {
