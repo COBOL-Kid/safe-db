@@ -111,6 +111,49 @@ upload text/html       "$NO_CACHE"   '*.html'
 upload image/svg+xml   "$IMMUTABLE"  '*.svg'
 upload image/png       "$IMMUTABLE"  '*.png'
 
+# Old payloads are immutable, so nothing links to them after an update. Keep a
+# small history for manual downloads and Sparkle deltas, but do not let the flat
+# bucket grow without bound. Cloud Storage update times follow release order, so
+# list newest first and drop everything past the retention count.
+all_objects=""
+load_objects() {
+	if [[ -z "$all_objects" ]]; then
+		all_objects="$(gcloud --quiet storage objects list "$BUCKET" --format='value(name)' --sort-by='~updateTime')"
+	fi
+}
+
+prune_old_objects() {
+	local keep="$1" description="$2" pattern="$3"
+	load_objects
+
+	local -a matches=()
+	local name
+	while IFS= read -r name; do
+		[[ -n "$name" ]] || continue
+		# shellcheck disable=SC2053 # $pattern is a deliberate glob.
+		[[ "$name" == $pattern ]] && matches+=("$name")
+	done <<<"$all_objects"
+
+	if ((${#matches[@]} <= keep)); then
+		return 0
+	fi
+
+	local -a doomed=()
+	local i
+	for ((i = keep; i < ${#matches[@]}; i++)); do
+		doomed+=("$BUCKET/${matches[i]}")
+	done
+
+	echo "==> Pruning ${#doomed[@]} old $description object(s)"
+	printf '    %s\n' "${doomed[@]}"
+	gcloud --quiet storage rm "${doomed[@]}"
+}
+
+prune_old_objects 2 "macOS zip"    '*-mac-*.zip'
+prune_old_objects 5 "macOS delta"  '*.delta'
+prune_old_objects 1 "Windows zip"  '*-windows-*.zip'
+prune_old_objects 1 "Windows MSIX" '*.msix'
+
 assert_no_cache() {
 	local object="$1"
 	local json

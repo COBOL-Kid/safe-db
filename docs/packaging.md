@@ -22,7 +22,7 @@ These live in GitHub and cloud consoles, not in this repository. Use the **exist
 - Secret `CONVEYOR_SIGNING_KEY`: the existing Conveyor **root key**, a single line of dictionary words immediately followed by `/` and a UTC timestamp, for example `loud apology vital … multiply/2022-08-09T12:07:08Z`. Copy the value from `app.signing-key` in the local Hydraulic `defaults.conf` (or the Keychain Access item **Hydraulic Conveyor Root Key** on macOS). Do not include quotes or the `app.signing-key =` prefix. Do not store `keyring`, a PEM, or the Azure profile alias `safe-db/safe-db` (that alias is already in `conveyor.conf`). A new root key would break auto-update for installed copies.
 - Secret `CONVEYOR_PASS`: the passphrase for that root key, same value as local `CONVEYOR_PASS`. Linux CI has no console, so the job always passes `--passphrase "env:CONVEYOR_PASS"`. If you never set a passphrase (pressed Enter on `keys generate`, or copied the 24-word key from macOS Keychain), leave this secret unset.
 - Azure OIDC secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The federated credential subject must be `repo:COBOL-Kid/safe-db:environment:conveyor`. The identity needs **Code Signing Certificate Profile Signer** for alias `safe-db/safe-db`.
-- GCP Workload Identity Federation secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`, with write access to `gs://safedb-download` (not the default Firebase bucket).
+- GCP Workload Identity Federation secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`, with read, write, and delete access to `gs://safedb-download` so publishing can prune old payloads (for example, Storage Object Admin; not the default Firebase bucket).
 - Secret `APPLE_SIGNING_P12`: base64 of the Developer ID Application `.p12` exported from Keychain Access. Secret `APPLE_SIGNING_P12_PASSWORD`: the passphrase chosen at export. From the Mac that holds the file:
 
 ```sh
@@ -51,7 +51,7 @@ Windows must also be in Developer Mode, or the account needs `SeCreateSymbolicLi
 
 The same existing root key used in CI signs update metadata. Unsigned local builds still need that key so Conveyor can derive a self-signed certificate. Non-interactive runs need `--passphrase "env:VARNAME"`.
 
-Uploading a local release needs the Google Cloud CLI (`gcloud`), signed into an account that can write `gs://safedb-download`. Azure CLI (`az login`) is only for Trusted Signing.
+Uploading a local release needs the Google Cloud CLI (`gcloud`), signed into an account that can read, write, and delete objects in `gs://safedb-download`. Azure CLI (`az login`) is only for Trusted Signing.
 
 ### Build
 
@@ -90,7 +90,9 @@ Do not use `make copied-site` against this bucket. Conveyor's S3 uploader cannot
 
 On macOS or Linux, `./scripts/publish-release.sh ./output` does the same thing. Both default to `gs://safedb-download`.
 
-The layout must stay flat: `base-url` resolves each file directly under the bucket root. The `.appinstaller`, `metadata.properties`, `safedb-windows-x64.exe`, and `appcast-aarch64.rss` files are uploaded `Cache-Control: no-cache`. Versioned `.msix`, the Apple Silicon `.zip`, and Sparkle `*.delta` patches are immutable. Conveyor writes those patches once a previous Apple Silicon zip is already on the site, and the appcast links to them. The publish scripts check `Cache-Control` on `metadata.properties`, `safedb.appinstaller`, and `appcast-aarch64.rss` after upload. You can also confirm:
+The layout must stay flat: `base-url` resolves each file directly under the bucket root. The `.appinstaller`, `metadata.properties`, `safedb-windows-x64.exe`, and `appcast-aarch64.rss` files are uploaded `Cache-Control: no-cache`. Versioned `.msix`, the Apple Silicon `.zip`, and Sparkle `*.delta` patches are immutable. Conveyor writes those patches once a previous Apple Silicon zip is already on the site, and the appcast links to them. The publish scripts check `Cache-Control` on `metadata.properties`, `safedb.appinstaller`, and `appcast-aarch64.rss` after upload.
+
+After uploading, both publish scripts prune older payloads from the bucket. macOS keeps the two newest `*-mac-*.zip` files and the five newest `.delta` patches. Windows keeps the newest `.msix` and `*-windows-*.zip`. Objects are ordered by Cloud Storage update time, so newer releases are retained and older immutable payloads are deleted. You can also confirm:
 
 ```powershell
 curl.exe -sI https://storage.googleapis.com/safedb-download/metadata.properties

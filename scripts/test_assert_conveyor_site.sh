@@ -181,3 +181,82 @@ no_mac_zip="$TEST_ROOT/publish-no-mac"
 write_site "$no_mac_zip" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.msix"
 rm -f "$no_mac_zip"/safedb-*-mac-*.zip
 reject_publish "$no_mac_zip" "accepted a site with no Mac zip"
+
+fake_bin="$TEST_ROOT/fake-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/gcloud" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--quiet" ]]; then
+	shift
+fi
+
+case "${1:-} ${2:-}" in
+"storage objects")
+	case "${3:-}" in
+	list) cat "$FAKE_OBJECTS" ;;
+	describe) printf '{"cacheControl":"no-cache, max-age=0"}\n' ;;
+	*)
+		echo "unexpected fake gcloud objects argument: ${3:-}" >&2
+		exit 1
+		;;
+	esac
+	;;
+"storage rm")
+	shift 2
+	printf '%s\n' "$@" >>"$FAKE_RM_LOG"
+	;;
+"storage cp") ;;
+*)
+	echo "unexpected fake gcloud invocation: $*" >&2
+	exit 1
+	;;
+esac
+EOF
+chmod +x "$fake_bin/gcloud"
+
+cleanup_site="$TEST_ROOT/publish-cleanup"
+write_site "$cleanup_site" 0.1.7 0.1.7.0 "https://storage.googleapis.com/safedb-download" "safedb-0.1.7.x64.msix"
+objects="$TEST_ROOT/bucket-objects.txt"
+cat >"$objects" <<'EOF'
+safedb-0.1.7.x64.msix
+safedb-0.1.7-mac-aarch64.zip
+safedb-0.1.7-windows-amd64.zip
+safedb-0.1.6-0.1.7-mac-aarch64.delta
+safedb-0.1.5-0.1.7-mac-aarch64.delta
+safedb-0.1.4-0.1.7-mac-aarch64.delta
+safedb-0.1.3-0.1.7-mac-aarch64.delta
+safedb-0.1.2-0.1.7-mac-aarch64.delta
+safedb-0.1.1-0.1.7-mac-aarch64.delta
+safedb-0.1.0-0.1.7-mac-aarch64.delta
+safedb-0.1.6.x64.msix
+safedb-0.1.6-mac-aarch64.zip
+safedb-0.1.6-windows-amd64.zip
+safedb-0.1.5.x64.msix
+safedb-0.1.5-mac-aarch64.zip
+safedb-0.1.5-windows-amd64.zip
+metadata.properties
+safedb.appinstaller
+safedb-windows-x64.exe
+EOF
+rm_log="$TEST_ROOT/pruned-objects.txt"
+expected="$TEST_ROOT/expected-pruned-objects.txt"
+cat >"$expected" <<'EOF'
+gs://safedb-download/safedb-0.1.5-mac-aarch64.zip
+gs://safedb-download/safedb-0.1.1-0.1.7-mac-aarch64.delta
+gs://safedb-download/safedb-0.1.0-0.1.7-mac-aarch64.delta
+gs://safedb-download/safedb-0.1.6-windows-amd64.zip
+gs://safedb-download/safedb-0.1.5-windows-amd64.zip
+gs://safedb-download/safedb-0.1.6.x64.msix
+gs://safedb-download/safedb-0.1.5.x64.msix
+EOF
+if ! PATH="$fake_bin:$PATH" \
+	FAKE_OBJECTS="$objects" \
+	FAKE_RM_LOG="$rm_log" \
+	"$PUBLISH" "$cleanup_site" >/dev/null; then
+	fail "publish-release.sh failed while pruning old objects"
+fi
+if ! diff -u "$expected" "$rm_log"; then
+	fail "publish-release.sh pruned the wrong objects"
+fi
