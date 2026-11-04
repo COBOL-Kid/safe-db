@@ -11,7 +11,9 @@ import java.sql.SQLException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -143,17 +145,25 @@ sealed class Adapter {
     companion object {
         suspend fun connect(def: ConnectionDef, password: String): Adapter {
             def.validate().getOrElse { throw IllegalArgumentException(it.message) }
-            return withTimeout(CONNECT_TIMEOUT_MS.milliseconds) {
-                withContext(Dispatchers.IO) {
-                    when (def.dialect) {
-                        Dialect.Postgres -> Postgres(createDataSource(def, password))
-                        Dialect.MySql -> MySql(createDataSource(def, password))
-                        Dialect.Mssql ->
-                            Mssql(MssqlState(createDataSource(def, password), def, password))
-                        Dialect.Oracle -> Oracle(createDataSource(def, password))
-                        Dialect.Db2 -> Db2(createDataSource(def, password))
+            return try {
+                withTimeout(CONNECT_TIMEOUT_MS.milliseconds) {
+                    withContext(Dispatchers.IO) {
+                        when (def.dialect) {
+                            Dialect.Postgres -> Postgres(createDataSource(def, password))
+                            Dialect.MySql -> MySql(createDataSource(def, password))
+                            Dialect.Mssql ->
+                                Mssql(MssqlState(createDataSource(def, password), def, password))
+                            Dialect.Oracle -> Oracle(createDataSource(def, password))
+                            Dialect.Db2 -> Db2(createDataSource(def, password))
+                        }
                     }
                 }
+            } catch (error: TimeoutCancellationException) {
+                throw IllegalStateException(formatConnectionFailure(error, def), error)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                throw IllegalStateException(formatConnectionFailure(error, def), error)
             }
         }
 
