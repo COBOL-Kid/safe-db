@@ -292,6 +292,16 @@ class ConnectionFormStateTest {
     }
 
     @Test
+    fun unnamedConnectionUsesTheDialectDisplayName() {
+        val state = ConnectionFormState()
+        state.selectDialect(Dialect.MySql)
+        state.updateDatabase("shop")
+        state.updateUsername("readonly")
+
+        assertEquals("MySQL localhost:3306", state.buildDef().name)
+    }
+
+    @Test
     fun manuallyEnteredPortSurvivesDialectChange() {
         val state = ConnectionFormState()
         state.handlePortInput("15432")

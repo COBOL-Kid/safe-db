@@ -1,12 +1,6 @@
 package com.safedb.ui
 
 import com.safedb.model.Dialect
+import com.safedb.model.displayName
 
-internal fun dialectLabel(dialect: Dialect): String =
-    when (dialect) {
-        Dialect.Postgres -> "PostgreSQL"
-        Dialect.MySql -> "MySQL"
-        Dialect.Mssql -> "SQL Server"
-        Dialect.Oracle -> "Oracle"
-        Dialect.Db2 -> "Db2"
-    }
+internal fun dialectLabel(dialect: Dialect): String = dialect.displayName()

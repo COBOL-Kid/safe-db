@@ -15,6 +15,7 @@ import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.model.displayName
 import com.safedb.model.validateDriverProperties
 import java.util.UUID
 
@@ -228,7 +229,7 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
             }
         return ConnectionDef(
             id = connectionId,
-            name = name.trim().ifEmpty { "$dialect ${host.trim()}:$port" },
+            name = name.trim().ifEmpty { "${dialect.displayName()} ${host.trim()}:$port" },
             dialect = dialect,
             host = host.trim(),
             port = port,

@@ -2,6 +2,7 @@ package com.safedb.query.sql
 
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.displayName
 
 data class SqlSpan(val start: Int, val end: Int)
 
@@ -389,14 +390,7 @@ fun tokenizeSql(
 internal fun quoteStyleError(dialect: Dialect): String =
     "That quoting style isn't valid here — ${dialectDisplay(dialect)} quotes identifiers with ${quoteHint(dialect)}"
 
-internal fun dialectDisplay(dialect: Dialect): String =
-    when (dialect) {
-        Dialect.Postgres -> "PostgreSQL"
-        Dialect.MySql -> "MySQL"
-        Dialect.Mssql -> "SQL Server"
-        Dialect.Oracle -> "Oracle"
-        Dialect.Db2 -> "Db2"
-    }
+internal fun dialectDisplay(dialect: Dialect): String = dialect.displayName()
 
 fun lineColOf(text: String, offset: Int): Pair<Int, Int> {
     var line = 1

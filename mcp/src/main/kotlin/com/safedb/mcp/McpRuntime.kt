@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.displayName
 import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.ENV_BACKEND
 import com.safedb.secrets.RequestedBackend
@@ -329,12 +330,12 @@ private fun deleteConfirmationRequired(
     val confirmation = tokens.issue(connection.id)
     return toolError(
         ERROR_CONFIRMATION_REQUIRED,
-        "Deleting connection '${connection.name}' (${connection.dialect}, ${connection.database}) " +
+        "Deleting connection '${connection.name}' (${connection.dialect.displayName()}, ${connection.database}) " +
             "removes it from this MCP store. Show the user, then retry with the returned " +
             "confirmation object; do not auto-confirm.",
         reasons =
             listOf(
-                "This deletes saved connection ${connection.name} (${connection.dialect} / ${connection.database})."
+                "This deletes saved connection ${connection.name} (${connection.dialect.displayName()} / ${connection.database})."
             ),
         confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
     )

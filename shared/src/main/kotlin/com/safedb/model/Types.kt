@@ -51,6 +51,15 @@ enum class Dialect {
     @SerialName("Db2") Db2,
 }
 
+fun Dialect.displayName(): String =
+    when (this) {
+        Dialect.Postgres -> "PostgreSQL"
+        Dialect.MySql -> "MySQL"
+        Dialect.Mssql -> "SQL Server"
+        Dialect.Oracle -> "Oracle"
+        Dialect.Db2 -> "Db2"
+    }
+
 @Serializable data class DriverProperty(val name: String, val value: String)
 
 private val SENSITIVE_DRIVER_PROPERTY_FRAGMENTS =

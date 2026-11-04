@@ -110,7 +110,7 @@ class ConnectionToolsTest {
             )
             assertFalse(firstBody.getValue("message").jsonPrimitive.content.contains("localhost"))
             val reasons = firstBody.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
-            assertEquals(listOf("This deletes saved connection Prod (MySql / shop)."), reasons)
+            assertEquals(listOf("This deletes saved connection Prod (MySQL / shop)."), reasons)
             val confirmation = firstBody.getValue("confirmation").jsonObject
             assertEquals("c1", confirmation.getValue("connection_id").jsonPrimitive.content)
             assertTrue(confirmation.getValue("token").jsonPrimitive.content.isNotBlank())

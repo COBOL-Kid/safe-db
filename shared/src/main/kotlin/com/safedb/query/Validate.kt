@@ -15,6 +15,7 @@ import com.safedb.model.SafeDbJson
 import com.safedb.model.Schema
 import com.safedb.model.SortSpec
 import com.safedb.model.classifyColumn
+import com.safedb.model.displayName
 import com.safedb.model.normalizeCatalogTypeName
 import java.security.MessageDigest
 
@@ -435,15 +436,6 @@ internal fun supportsGroupingAndSorting(dataType: String, dialect: Dialect): Boo
         Dialect.MySql -> true
     }
 }
-
-private fun Dialect.displayName(): String =
-    when (this) {
-        Dialect.Postgres -> "PostgreSQL"
-        Dialect.MySql -> "MySQL"
-        Dialect.Mssql -> "SQL Server"
-        Dialect.Oracle -> "Oracle"
-        Dialect.Db2 -> "Db2"
-    }
 
 private fun isPartOfCompleteForeignKey(schema: Schema, spec: QuerySpec, join: JoinSpec): Boolean {
     for ((tableSchema, tableName, alias) in spec.tables) {

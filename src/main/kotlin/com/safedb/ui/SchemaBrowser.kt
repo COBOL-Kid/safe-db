@@ -123,7 +123,8 @@ fun SchemaBrowser(
                             connections.forEach { option ->
                                 MenuActionRow(
                                     text = option.name,
-                                    supportingText = "${option.dialect} · ${option.database}",
+                                    supportingText =
+                                        "${dialectLabel(option.dialect)} · ${option.database}",
                                     selected = option.id == connection?.id,
                                     onClick = {
                                         connectionMenuOpen = false

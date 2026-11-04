@@ -52,6 +52,7 @@ import androidx.compose.ui.window.Dialog
 import com.safedb.AppRoute
 import com.safedb.AppState
 import com.safedb.model.ConnectionDef
+import com.safedb.model.displayName
 import com.safedb.ui.theme.CardShape
 import com.safedb.ui.theme.InputShape
 import com.safedb.viewmodel.AppViewModel
@@ -192,7 +193,7 @@ fun CommandPalette(
                 PaletteCommand(
                     id = "conn-${connection.id}",
                     label = "Explore: ${connection.name}",
-                    hint = "${connection.dialect} · ${connection.database}",
+                    hint = "${connection.dialect.displayName()} · ${connection.database}",
                     icon = Icons.Filled.Link,
                 ) {
                     onConnectionSelected(connection)
