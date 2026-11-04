@@ -9,12 +9,7 @@
 DROP SCHEMA IF EXISTS ops CASCADE;
 DROP SCHEMA IF EXISTS analytics CASCADE;
 DROP VIEW IF EXISTS customer_order_summary;
-DROP TABLE IF EXISTS order_items;
-DROP TABLE IF EXISTS inventory_log;
-DROP TABLE IF EXISTS orders;
-DROP TABLE IF EXISTS products;
-DROP TABLE IF EXISTS customers;
-DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS order_items, inventory_log, orders, products, customers, categories CASCADE;
 
 CREATE TABLE customers (
     id BIGINT PRIMARY KEY,

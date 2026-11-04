@@ -330,7 +330,7 @@ SELECT
     n % 1000,
     n,
     (n % 9999) / 100,
-    n % 2,
+    (n % 2 = 0),
     DATE('2024-01-01') + INTERVAL (n % 400) DAY,
     CONCAT('wide-', n),
     CASE WHEN n % 7 = 0 THEN NULL ELSE 'present' END,
