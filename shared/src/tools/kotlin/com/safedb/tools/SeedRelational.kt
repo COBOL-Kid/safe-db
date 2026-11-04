@@ -92,6 +92,11 @@ private class SeedRelational(
         val drops =
             listOf(
                 "DROP VIEW CUSTOMER_ORDER_SUMMARY",
+                "DROP TABLE ANALYTICS.EVENT_NOTES",
+                "DROP TABLE ANALYTICS.PAYLOAD_ROWS",
+                "DROP TABLE ANALYTICS.WIDE_ROWS",
+                "DROP TABLE ANALYTICS.SCAN_EVENTS",
+                "DROP SCHEMA ANALYTICS RESTRICT",
                 "DROP TABLE ORDER_ITEMS",
                 "DROP TABLE INVENTORY_LOG",
                 "DROP TABLE ORDERS",

@@ -22,7 +22,11 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew seedMssql` | Generate the default fixture in the Docker SQL Server endpoint. |
 | `./gradlew seedOracle` | Generate the default fixture in the Docker Oracle endpoint. |
 | `./gradlew seedDb2` | Generate the default fixture in the Docker Db2 endpoint. |
-| `scripts/seed_mysql.sh --static` | Load the smaller checked-in MySQL fixture. |
+| `scripts/seed_mysql.sh --static` | Load the checked-in MySQL fixture (`testdata_mysql.sql`). |
+| `scripts/seed_postgres.sh --static` | Load `testdata_postgres.sql` into the Docker PostgreSQL endpoint. |
+| `scripts/seed_mssql.sh --static` | Load `testdata_mssql.sql`. |
+| `scripts/seed_oracle.sh --static` | Load `testdata_oracle.sql`. |
+| `scripts/seed_db2.sh --static` | Load `testdata_db2.sql`. |
 | `scripts/verify_ssl_compat.sh` | Environment-gated SSL/TLS launch-profile and dialect-compatibility suite. |
 | `scripts/docker_test_databases.sh up` | Start and seed all five engines and the plain/TLS test endpoints from the root Compose stack (Db2 requires privileged mode, linux/amd64, and minutes to become healthy; no TLS by default). The Db2 database is `SAFEDB` because a LUW name is at most 8 characters and cannot contain `_`. |
 | `./gradlew :mcp:run` | Stdio MCP server. Speaks JSON-RPC on stdin/stdout; use an MCP client or Inspector. Behavior and tools: [mcp.md](mcp.md). |
@@ -50,6 +54,18 @@ SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integr
 `scripts/verify_ssl_compat.sh` expects pre-provisioned TLS endpoints and profiles under `/tmp/safedb-ssl` unless `SAFEDB_SSL_ROOT` is set; it calls `:shared:integrationTest` directly and, by default, writes its report beneath that fixture root. It is not a substitute for the normal optional JDBC suite.
 
 For a self-contained local harness, `scripts/docker_test_databases.sh up` generates disposable trusted/wrong CAs, server certificates, PKCS12 launch profiles, and the Oracle wallet-path fixture under `.docker/safedb-ssl`, then starts ordinary MySQL plus the five dialect endpoints used by the SSL suite (Db2 stays outside the TLS suite; z/OS needs a manual `db2jcc_license_cisuz.jar` step and a real subsystem, not Docker). Checked-in fixtures seed every dialect; `scripts/docker_test_databases.sh seed` reloads the SQL Server, Oracle, and Db2 sample schemas without recreating the stack. Database data directories use anonymous volumes that the helper renews on `up` and removes on `down`; generated TLS inputs remain on the host. `scripts/docker_test_databases.sh verify` requires the standard MySQL, PostgreSQL, SQL Server, Oracle, and Db2 adapter contracts before running the four-dialect SSL compatibility checks, all with fresh, uncached integration-test execution.
+
+Checked-in `testdata_*.sql` files keep the original small shop tables and add generated bulk data (recursive CTEs, `generate_series`, or digit cross-joins — not giant literal inserts):
+
+| Object | Rows | Why |
+| --- | --- | --- |
+| Existing `customers` / `orders` (and MySQL's shop tables) | unchanged | JDBC contract tests |
+| `scan_events` | 1,000,000 | Large size class, full-scan query timeout, Elevated/High/confirm/block |
+| `wide_rows` | 50,000 | Medium, 24 mixed-type columns, indexed and non-indexed |
+| `payload_rows` | 20,000 | ~2 KiB text per row so a column select approaches the 10 MiB output cap |
+| `event_notes` | 10,000 | FK without an index (InnoDB still auto-indexes MySQL FKs), NULLs, unicode |
+
+Postgres, SQL Server, and Db2 put the bulk tables in extra schemas (`analytics` / `ops`, or `ANALYTICS` on Db2). MySQL uses a second database `safedb_lab` (granted to `safedb`). Oracle keeps them in the `SAFEDB` app schema. Compose `mysql-connectivity` and `postgres` load these files on first boot; SQL Server, Oracle, and Db2 load them from `scripts/docker_test_databases.sh up` / `seed`.
 
 PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `SAFEDB_TEST_*_PASSWORD`, then the matching `SAFEDB_DOCKER_*_PASSWORD`, then the development default. `scripts/docker_test_databases.sh certs` is an offline operation and refuses to replace certificates while project services are running; use `reset` to rotate certificates and recreate an active stack safely.
 
