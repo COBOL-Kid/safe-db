@@ -93,8 +93,8 @@ Progressive catalog, then a gated query. Do not expect the full [`Schema`](../sh
 | `delete_connection` | Delete a saved connection by `connection_id`. First call returns `confirmation_required` with reasons and a confirmation object; show the user, then retry with that object. Do not auto-confirm or invent the object. Invalidates the schema cache for that id. `destructiveHint`. |
 | `list_tables` | `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `getSchema` (5 min TTL, optional `refresh=true`). Honors `blocked_schemas` and built-in system catalogs. `readOnlyHint`. |
 | `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`), indexes, FKs. Same cache. Unknown or blocked → `not_found`. `readOnlyHint`. |
-| `run_query` | `connection_id` and `sql`. Optional `default_schema` (required for unqualified names; take `schema` from `list_tables` — on MySQL often the connection database — or qualify as `schema.table`). Not filled from `connection.database`. If the argument is omitted, [`settingsDefaultSchema`](../mcp/src/main/kotlin/com/safedb/mcp/QueryTools.kt) uses `default_schema` from `settings.json` only when `default_connection_id` is this connection; any other connection does not inherit it. An explicit `default_schema` argument always wins. Parses SQL to `QuerySpec` internally, then `SafeDbService.runQuery` (fresh introspect on execute). Receipt, not the grid. No tool annotations. |
-| `get_result_rows` | Page the in-memory sample for a `result_id`. `offset` default 0 (negative clamps to 0); `limit` default 50, hard cap 50. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `run_query` | `connection_id` and `sql`. Optional `default_schema`: schema used when a table name has no prefix. Copy `list_tables.schema` for this connection (MySQL: usually the database name). Omit when every table is already `schema.table`. Not filled from `connection.database`. If the argument is omitted, [`settingsDefaultSchema`](../mcp/src/main/kotlin/com/safedb/mcp/QueryTools.kt) uses `default_schema` from `settings.json` only when `default_connection_id` is this connection; any other connection does not inherit it. An explicit `default_schema` argument always wins. Accepts filters, DISTINCT, GROUP BY of selected columns, ORDER BY, LIMIT, and INNER JOIN on indexed or FK columns. Rejects aggregates and functions, OFFSET, subqueries, CTEs, UNION, LEFT/CROSS or comma joins, AS aliases, and leading NOT. Result columns are named `table__column`. Parses SQL to `QuerySpec` internally, then `SafeDbService.runQuery` (fresh introspect on execute). Receipt, not the grid. No tool annotations. |
+| `get_result_rows` | Page the in-memory sample for a `result_id`. `offset` default 0 (negative clamps to 0). `limit` default 50, hard cap 50; 0 or negative is `invalid_arguments`. Unknown or expired → `not_found`. `readOnlyHint`. |
 | `summarize_result` | Per-column stats on that same sample. Echoes `sample_capped` when the original fetch was capped. Unknown or expired → `not_found`. `readOnlyHint`. |
 
 Initialize includes a short `instructions` string: add connections with the CLI; start with `list_connections`; pass `id` as `connection_id`; pass `default_schema` from `list_tables` for unqualified SQL; page with `result_id`; `delete_connection` requires an echoed confirmation; never send passwords. Tool list capability is `listChanged: false`.
@@ -119,7 +119,7 @@ List/describe cache a `Schema` per connection in the MCP process. `run_query` do
 
 A successful call returns JSON with:
 
-- `columns` (`name`, `data_type`)
+- `columns` (`name`, `data_type`). Names are `table__column` (the compiled result alias).
 - `row_count`, `preview_truncated`, `warnings`
 - `sample_capped` when the fetched sample hit a caller `LIMIT` or the encoded-byte budget (omitted when false). A row-limit stop names that `LIMIT` and says to raise it or add filters. A byte-budget stop, including a query that omitted `LIMIT`, says to add filters or select fewer columns. Raising `LIMIT` does not read past the budget
 - `risk`: `state`, `severity`, `score`, `effective_gate`, `reasons`, `plan_status`
@@ -136,12 +136,13 @@ Every tool error is JSON `{error, message, warnings}` with `isError=true`. Extra
 
 | `error` | What to do |
 | --- | --- |
-| `invalid_arguments` | Missing required fields (`connection_id`, `sql`, `schema`, `table`, `result_id`). |
-| `not_found` | Unknown connection, table, or expired/unknown `result_id`. |
+| `invalid_arguments` | Missing required fields, wrong JSON types (`sql` must be a string, `refresh` a boolean, `limit` an integer 1–50), or a malformed `confirmation` object. |
+| `not_found` | Unknown tool, connection, table, or expired/unknown `result_id`. |
 | `parse` | Fix `sql`. Unqualified tables: pass `default_schema` from `list_tables.schema`, or qualify as `schema.table`. Aggregates: run the base query, then `summarize_result`. |
 | `validation` / `compilation` / `execution` | Same meanings as [`QueryError`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). |
 | `risk_gate` | Includes a slim `risk` summary. Rewrite the query or change `query_risk_gate` in settings. Do not retry the same query. |
 | `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query` or `delete_connection`) with that object. Do not auto-confirm. Do not invent the object. |
+| `connection` | Auth failure or the host could not be reached (including connect timeout). |
 | `internal` | Unexpected store or runtime failure. |
 
 ## Result store

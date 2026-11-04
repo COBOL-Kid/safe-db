@@ -1,5 +1,6 @@
 package com.safedb.mcp
 
+import com.safedb.adapter.ConnectionFailedException
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.displayName
@@ -15,9 +16,12 @@ import com.safedb.store.RecipeStore
 import com.safedb.store.SettingsStore
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
+import io.modelcontextprotocol.kotlin.sdk.server.ServerSession
+import io.modelcontextprotocol.kotlin.sdk.shared.Transport
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.Method
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
@@ -34,12 +38,11 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 internal const val MCP_VERSION_RESOURCE = "mcp-version.txt"
@@ -56,12 +59,14 @@ internal const val ERROR_COMPILATION = "compilation"
 internal const val ERROR_EXECUTION = "execution"
 internal const val ERROR_RISK_GATE = "risk_gate"
 internal const val ERROR_CONFIRMATION_REQUIRED = "confirmation_required"
+internal const val ERROR_CONNECTION = "connection"
 internal const val ERROR_INTERNAL = "internal"
 
 internal const val MCP_SERVER_INSTRUCTIONS =
     "Add connections with the safe-db-mcp CLI, not tools. Start with list_connections; " +
-        "pass id as connection_id. For unqualified SQL, pass default_schema from list_tables " +
-        "(on MySQL often the connection database) or qualify as schema.table. Page results " +
+        "pass id as connection_id. For unqualified SQL, pass default_schema from " +
+        "list_tables.schema (MySQL: usually the database name) or qualify as schema.table. " +
+        "Page results " +
         "with result_id. delete_connection returns confirmation_required; show the user, then " +
         "retry with the returned confirmation object. Never send passwords."
 
@@ -103,20 +108,98 @@ internal fun toolError(
         isError = true,
     )
 
-internal fun requiredText(request: CallToolRequest, name: String): String? =
-    optionalText(request, name)
+internal sealed interface Arg<out T> {
+    data class Ok<T>(val value: T) : Arg<T>
 
-internal fun optionalText(request: CallToolRequest, name: String): String? =
-    request.arguments?.get(name)?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+    data class Err(val result: CallToolResult) : Arg<Nothing>
+}
 
-internal fun optionalInt(request: CallToolRequest, name: String): Int? {
-    val element = request.arguments?.get(name) ?: return null
-    if (element is JsonNull) return null
-    val primitive = element as? JsonPrimitive ?: return null
-    primitive.intOrNull?.let {
-        return it
+internal fun requiredString(request: CallToolRequest, name: String): Arg<String> {
+    val element = request.arguments?.get(name)
+    if (element == null || element is JsonNull) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name is required"))
     }
-    return primitive.content.trim().toIntOrNull()
+    val primitive = element as? JsonPrimitive
+    if (primitive == null || !primitive.isString) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be a string"))
+    }
+    val text = primitive.content.trim()
+    if (text.isEmpty()) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name is required"))
+    }
+    return Arg.Ok(text)
+}
+
+internal fun optionalString(request: CallToolRequest, name: String): Arg<String?> {
+    val element = request.arguments?.get(name) ?: return Arg.Ok(null)
+    if (element is JsonNull) return Arg.Ok(null)
+    val primitive = element as? JsonPrimitive
+    if (primitive == null || !primitive.isString) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be a string"))
+    }
+    return Arg.Ok(primitive.content.trim().takeIf { it.isNotEmpty() })
+}
+
+internal fun optionalBoolean(request: CallToolRequest, name: String): Arg<Boolean?> {
+    val element = request.arguments?.get(name) ?: return Arg.Ok(null)
+    if (element is JsonNull) return Arg.Ok(null)
+    val primitive = element as? JsonPrimitive
+    val value = primitive?.takeIf { !it.isString }?.booleanOrNull
+    if (value == null) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be a boolean"))
+    }
+    return Arg.Ok(value)
+}
+
+internal fun optionalInt(request: CallToolRequest, name: String): Arg<Int?> {
+    val element = request.arguments?.get(name) ?: return Arg.Ok(null)
+    if (element is JsonNull) return Arg.Ok(null)
+    val primitive = element as? JsonPrimitive
+    val value = primitive?.takeIf { !it.isString }?.intOrNull
+    if (value == null) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be an integer"))
+    }
+    return Arg.Ok(value)
+}
+
+internal fun optionalObject(request: CallToolRequest, name: String): Arg<JsonObject?> {
+    val element = request.arguments?.get(name) ?: return Arg.Ok(null)
+    if (element is JsonNull) return Arg.Ok(null)
+    val obj =
+        element as? JsonObject
+            ?: return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be an object"))
+    return Arg.Ok(obj)
+}
+
+internal suspend fun runMcpTool(
+    fallback: String,
+    block: suspend () -> CallToolResult,
+): CallToolResult =
+    try {
+        block()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: ConnectionFailedException) {
+        toolError(ERROR_CONNECTION, error.message ?: fallback)
+    } catch (error: Exception) {
+        toolError(ERROR_INTERNAL, error.message ?: fallback)
+    }
+
+internal suspend fun Server.createSafeDbSession(transport: Transport): ServerSession {
+    val session = createSession(transport)
+    installSafeDbToolDispatch(session)
+    return session
+}
+
+internal fun Server.installSafeDbToolDispatch(session: ServerSession) {
+    session.setRequestHandler<CallToolRequest>(Method.Defined.ToolsCall) { request, _ ->
+        val registered = tools[request.name]
+        if (registered == null) {
+            toolError(ERROR_NOT_FOUND, "Unknown tool '${request.name}'")
+        } else {
+            registered.handler(clientConnection(session.sessionId), request)
+        }
+    }
 }
 
 internal fun mcpVersion(): String {
@@ -216,13 +299,9 @@ internal fun registerConnectionTools(
         inputSchema = ToolSchema(properties = buildJsonObject {}),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) {
-        try {
+        runMcpTool("list_connections failed") {
             val payload = toolJson.encodeToString(service.listConnections().map { it.toSummary() })
             CallToolResult(content = listOf(TextContent(text = payload)))
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            toolError(ERROR_INTERNAL, error.message ?: "list_connections failed")
         }
     }
 
@@ -292,8 +371,10 @@ private suspend fun handleDeleteConnection(
     request: CallToolRequest,
 ): CallToolResult {
     val id =
-        requiredText(request, "connection_id")
-            ?: return toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
+        when (val parsed = requiredString(request, "connection_id")) {
+            is Arg.Ok -> parsed.value
+            is Arg.Err -> return parsed.result
+        }
     val connection =
         service.listConnections().find { it.id == id }
             ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
@@ -309,17 +390,13 @@ private suspend fun handleDeleteConnection(
             }
         }
     }
-    return try {
+    return runMcpTool("delete failed") {
         service.deleteConnection(id)
         tokens.consume(id)
         schemaCache.invalidate(id)
         CallToolResult(
             content = listOf(TextContent(text = toolJson.encodeToString(DeletedConnection(id))))
         )
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Exception) {
-        toolError(ERROR_INTERNAL, error.message ?: "delete failed")
     }
 }
 
@@ -342,20 +419,19 @@ private fun deleteConfirmationRequired(
 }
 
 private fun parseDeleteConfirmation(request: CallToolRequest): DeleteConfirmationParse {
-    val raw =
-        request.arguments?.get("confirmation").takeUnless { it == null || it is JsonNull }
-            ?: return DeleteConfirmationParse.Missing
     val obj =
-        raw as? JsonObject
-            ?: return DeleteConfirmationParse.Invalid(
-                toolError(ERROR_PARSE, "confirmation is invalid")
-            )
+        when (val parsed = optionalObject(request, "confirmation")) {
+            is Arg.Err -> return DeleteConfirmationParse.Invalid(parsed.result)
+            is Arg.Ok -> parsed.value ?: return DeleteConfirmationParse.Missing
+        }
     return try {
         DeleteConfirmationParse.Ready(
             toolJson.decodeFromJsonElement(McpDeleteConfirmation.serializer(), obj)
         )
     } catch (_: SerializationException) {
-        DeleteConfirmationParse.Invalid(toolError(ERROR_PARSE, "confirmation is invalid"))
+        DeleteConfirmationParse.Invalid(
+            toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid")
+        )
     }
 }
 

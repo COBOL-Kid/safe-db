@@ -185,6 +185,32 @@ class SchemaToolsTest {
                 missingId.json().getValue("message").jsonPrimitive.content,
             )
 
+            val connectionIdNumber = client.callTool("list_tables", mapOf("connection_id" to 5))
+            assertEquals(true, connectionIdNumber.isError)
+            assertEquals(
+                "invalid_arguments",
+                connectionIdNumber.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "connection_id must be a string",
+                connectionIdNumber.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val refreshString =
+                client.callTool(
+                    "list_tables",
+                    mapOf("connection_id" to "c1", "refresh" to "yes"),
+                )
+            assertEquals(true, refreshString.isError)
+            assertEquals(
+                "invalid_arguments",
+                refreshString.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "refresh must be a boolean",
+                refreshString.json().getValue("message").jsonPrimitive.content,
+            )
+
             val unknownConnection = client.callTool("list_tables", mapOf("connection_id" to "nope"))
             assertEquals(true, unknownConnection.isError)
             assertEquals(

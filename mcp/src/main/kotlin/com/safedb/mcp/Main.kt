@@ -76,7 +76,7 @@ internal fun runMcpStdio(server: Server, stdout: PrintStream) {
             output = stdout.asSink().buffered(),
         )
     runBlocking {
-        val session = server.createSession(transport)
+        val session = server.createSafeDbSession(transport)
         val done = Job()
         session.onClose { done.complete() }
         done.join()

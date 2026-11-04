@@ -143,7 +143,10 @@ class ConnectionToolsTest {
                     mapOf("connection_id" to "c1", "confirmation" to "not-an-object"),
                 )
             assertEquals(true, asString.isError)
-            assertEquals("parse", asString.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "invalid_arguments",
+                asString.json().getValue("error").jsonPrimitive.content,
+            )
             assertEquals(listOf("c1"), service.connections.map { it.id })
 
             val stale =
