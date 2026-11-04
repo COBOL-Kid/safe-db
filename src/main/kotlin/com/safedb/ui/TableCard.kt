@@ -315,13 +315,18 @@ fun TableCard(
 
                             ExactDesktopTargetArea {
                                 Row(
+                                    modifier =
+                                        Modifier.width(
+                                            (TABLE_CARD_COLUMN_ACTION_SLOT_DP *
+                                                    TABLE_CARD_COLUMN_ACTION_COUNT)
+                                                .dp
+                                        ),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.Start,
                                 ) {
-                                    if (
-                                        columnHovered ||
-                                            filterActive ||
-                                            filterMenuColumn == columnName
+                                    Box(
+                                        modifier =
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
                                     ) {
                                         Box {
                                             ColumnActionButton(
@@ -357,40 +362,50 @@ fun TableCard(
                                             }
                                         }
                                     }
-                                    if (columnHovered || group != null) {
-                                        ColumnActionButton(
-                                            icon = Icons.Default.GridView,
-                                            contentDescription =
-                                                groupDescription(
-                                                    columnName,
-                                                    groupIndex,
-                                                    group != null,
-                                                ),
-                                            active = group != null,
-                                            onClick = {
-                                                queryViewModel.toggleGroup(alias, columnName)
-                                            },
-                                        )
-                                    }
-                                    if (columnHovered || sort != null) {
-                                        ColumnActionButton(
-                                            icon =
-                                                if (sort?.direction == SortDirection.Desc) {
-                                                    Icons.Default.ArrowDownward
-                                                } else {
-                                                    Icons.Default.ArrowUpward
+                                    Box(
+                                        modifier =
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
+                                    ) {
+                                        if (columnHovered || group != null) {
+                                            ColumnActionButton(
+                                                icon = Icons.Default.GridView,
+                                                contentDescription =
+                                                    groupDescription(
+                                                        columnName,
+                                                        groupIndex,
+                                                        group != null,
+                                                    ),
+                                                active = group != null,
+                                                onClick = {
+                                                    queryViewModel.toggleGroup(alias, columnName)
                                                 },
-                                            contentDescription =
-                                                sortDescription(
-                                                    columnName,
-                                                    sort?.direction,
-                                                    sortIndex,
-                                                ),
-                                            active = sort != null,
-                                            onClick = {
-                                                queryViewModel.cycleSort(alias, columnName)
-                                            },
-                                        )
+                                            )
+                                        }
+                                    }
+                                    Box(
+                                        modifier =
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
+                                    ) {
+                                        if (columnHovered || sort != null) {
+                                            ColumnActionButton(
+                                                icon =
+                                                    if (sort?.direction == SortDirection.Desc) {
+                                                        Icons.Default.ArrowDownward
+                                                    } else {
+                                                        Icons.Default.ArrowUpward
+                                                    },
+                                                contentDescription =
+                                                    sortDescription(
+                                                        columnName,
+                                                        sort?.direction,
+                                                        sortIndex,
+                                                    ),
+                                                active = sort != null,
+                                                onClick = {
+                                                    queryViewModel.cycleSort(alias, columnName)
+                                                },
+                                            )
+                                        }
                                     }
                                 }
 
@@ -411,7 +426,10 @@ fun TableCard(
                                         onEndGesture = onEndGesture,
                                     )
                                 } else {
-                                    Box(modifier = Modifier.size(28.dp))
+                                    Box(
+                                        modifier =
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
+                                    )
                                 }
                             }
                         }
@@ -474,6 +492,13 @@ fun TableCard(
         }
     }
 }
+
+internal const val TABLE_CARD_COLUMN_ACTION_SLOT_DP = 28
+internal const val TABLE_CARD_COLUMN_ACTION_COUNT = 3
+
+internal fun tableColumnActionClusterWidthDp(includeJoinSlot: Boolean = true): Int =
+    TABLE_CARD_COLUMN_ACTION_SLOT_DP *
+        (TABLE_CARD_COLUMN_ACTION_COUNT + if (includeJoinSlot) 1 else 0)
 
 internal fun tableColumnToggleState(selectedCount: Int, totalCount: Int): ToggleableState =
     when {
@@ -563,7 +588,7 @@ private fun JoinActionButton(
     ) {
         Box(
             modifier =
-                Modifier.size(28.dp)
+                Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
                     .pointerHoverIcon(PointerIcon.Hand)
                     .semantics { contentDescription = description }
                     .clickable(role = Role.Button, onClick = onClick)
@@ -606,7 +631,7 @@ private fun ColumnActionButton(
     ) {
         Box(
             modifier =
-                Modifier.size(28.dp)
+                Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
                     .pointerHoverIcon(PointerIcon.Hand)
                     .semantics { this.contentDescription = contentDescription }
                     .clickable(role = Role.Button, onClick = onClick),

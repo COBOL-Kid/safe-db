@@ -24,4 +24,12 @@ class TableCardStateTest {
         assertEquals(ToggleableState.On, tableColumnToggleState(3, 3))
         assertEquals(ToggleableState.Off, tableColumnToggleState(0, 0))
     }
+
+    @Test
+    fun columnActionClusterReservesStableSlotsForFilterGroupSortAndJoin() {
+        assertEquals(28, TABLE_CARD_COLUMN_ACTION_SLOT_DP)
+        assertEquals(3, TABLE_CARD_COLUMN_ACTION_COUNT)
+        assertEquals(84, tableColumnActionClusterWidthDp(includeJoinSlot = false))
+        assertEquals(112, tableColumnActionClusterWidthDp())
+    }
 }
