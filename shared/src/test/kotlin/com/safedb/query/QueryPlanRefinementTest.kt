@@ -496,6 +496,58 @@ class QueryPlanRefinementTest {
         assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
     }
 
+    @Test
+    fun largeDrivingTableScanRaisesJoinRiskEvenWhenTheInnerLookupReportsOneRow() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        )
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1_000_000,
+                            ),
+                            PlanRelationAccess(
+                                table = "items",
+                                alias = "t1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 1)),
+                ),
+                twoTableSpec(),
+                Schema(listOf(table("orders"), table("items"))),
+            )
+
+        val join = refined.signals.single { it.target == joinTarget }
+        assertEquals(RiskSignalCode.PlanConfirmedJoinExpansion, join.code)
+        assertEquals(
+            RiskSignalCode.PlanConfirmedLargeScan,
+            refined.signals.single { it.target == RiskTarget.Access("t0") }.code,
+        )
+        assertEquals(QueryRiskSeverity.High, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+    }
+
     private fun refineAccess(
         method: PlanAccessMethod,
         rows: Long,

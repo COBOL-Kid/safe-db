@@ -42,8 +42,9 @@ fun refineRiskWithPlan(
         }
     }
 
+    val mergedRelations = mergePartitionedRelations(plan.relations, spec)
     for ((planSchema, table, planAlias, method, estimatedRows, specializedTextEvidence) in
-        mergePartitionedRelations(plan.relations, spec)) {
+        mergedRelations) {
         val alias = resolvePlanAlias(planAlias, planSchema, table, spec)
         if (alias == null) {
             uncertainties +=
@@ -199,17 +200,36 @@ fun refineRiskWithPlan(
                 )
             continue
         }
-        val target = matchingJoinTarget(aliases, staticAssessment.signals)
-        if (target == null) {
-            uncertainties +=
-                RiskUncertainty(
-                    "plan_join_unmapped",
-                    RiskSubject(operation = "join"),
-                    "ambiguous_or_unmapped_join",
-                )
-            continue
-        }
-        when (estimatedOutputRows?.let(::estimatedRowBand)) {
+        // Unique FK joins have no static JoinExpansionPossible target. Still score the join from
+        // plan rows, including a large outer scan that the inner lookup index does not hide.
+        val target =
+            matchingJoinTarget(aliases, staticAssessment.signals) ?: RiskTarget.Join(aliases)
+        val drivingScanRows =
+            mergedRelations
+                .mapNotNull { relation ->
+                    val alias =
+                        resolvePlanAlias(relation.alias, relation.schema, relation.table, spec)
+                    if (alias == null || alias !in aliases) {
+                        null
+                    } else {
+                        when (relation.method) {
+                            PlanAccessMethod.TableScan,
+                            PlanAccessMethod.FullIndexScan -> relation.estimatedRows
+                            PlanAccessMethod.BoundedLookup,
+                            PlanAccessMethod.BoundedRange,
+                            PlanAccessMethod.Unknown,
+                            PlanAccessMethod.Other -> null
+                        }
+                    }
+                }
+                .maxOrNull()
+        val joinRows =
+            if (estimatedOutputRows != null && drivingScanRows != null) {
+                maxOf(estimatedOutputRows, drivingScanRows)
+            } else {
+                estimatedOutputRows ?: drivingScanRows
+            }
+        when (joinRows?.let(::estimatedRowBand)) {
             EstimatedRowBand.Low -> replace(target, null)
             EstimatedRowBand.Material -> Unit
             EstimatedRowBand.High ->
