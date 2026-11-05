@@ -411,7 +411,7 @@ private fun printRelationalUsage(dialect: GeneratedSqlDialect) {
         ./gradlew seed$task - generate and load a safe-db ${dialect.displayName()} fixture.
 
         Options (pass with -Pseed${task}Args="..."):
-          --static          Load the checked-in minimal fixture
+          --static          Load testdata_*.sql (shop tables plus bulk risk-gate fixtures)
           --orders <n>      Generated order count (default: 50000)
           --customers <n>   Generated customer count (default: 10000)
           --products <n>    Generated product count (default: 500)

@@ -1,7 +1,7 @@
 -- SQL Server fixture for local JDBC, schema-discovery, query, and risk-gate tests.
 -- Load: scripts/docker_test_databases.sh up/seed, or scripts/seed_mssql.sh --static
 -- Shop tables stay small. Bulk tables are generated (digit cross-joins):
---   analytics.scan_events  1,000,000  Large, full-scan timeout
+--   analytics.scan_events  1,000,000  Large size class, full-scan timeout, High on uncapped scan
 --   analytics.wide_rows       50,000  Medium, 24 mixed-type columns
 --   analytics.payload_rows    20,000  ~2 KiB text so a column select approaches 10 MiB
 --   ops.event_notes           10,000  FK without index, NULLs, unicode

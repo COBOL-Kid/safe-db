@@ -6,7 +6,7 @@ Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, va
 
 ## Before you open a pull request
 
-Run `./gradlew check`. That is the fast gate: unit tests, test discovery, Docker harness orchestration, and Kover coverage ratchets.
+Run `./gradlew check`. That is the fast gate: unit tests, test discovery, Docker harness orchestration, and Kover coverage ratchets. `./gradlew qodanaScan` is the local static-analysis pass; it is not part of labeled CI.
 
 Need a real database? [docs/testing.md](docs/testing.md) covers optional JDBC suites and the Docker stack. Database cases skip when a fixture isn't around, so you can ship a unit-test change without standing up five engines (PostgreSQL, MySQL, SQL Server, Oracle, and Db2). The packaged MCP stdio smoke still runs as part of `integrationTest`.
 

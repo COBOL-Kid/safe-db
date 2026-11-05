@@ -1,7 +1,7 @@
 -- safe-db MySQL Test Schema & Seed Data
 -- Usage: mysql -h 127.0.0.1 -P 3306 -u root -p < testdata_mysql.sql
 -- Shop tables stay small. Bulk tables are generated (digit cross-joins) in safedb_lab:
---   scan_events  1,000,000  Large, full-scan timeout
+--   scan_events  1,000,000  Large size class, full-scan timeout, High on uncapped scan
 --   wide_rows       50,000  Medium, 24 mixed-type columns
 --   payload_rows    20,000  ~2 KiB text so a column select approaches 10 MiB
 --   event_notes     10,000  unicode/nulls (InnoDB auto-indexes FKs)

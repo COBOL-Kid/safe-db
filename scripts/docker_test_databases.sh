@@ -33,6 +33,12 @@ to rotate certificates and recreate the ephemeral stack safely.
 Db2 runs from icr.io/db2_community/db2 behind the same Compose network. It needs
 privileged mode, is linux/amd64-only, and serves plain TCP on 50000 with no TLS
 by default, so it joins the JDBC stack but stays out of the TLS suite.
+
+testdata_*.sql (shop tables plus bulk scan_events / wide_rows / payload_rows /
+event_notes) load on first boot for MySQL connectivity and Postgres. seed reloads
+SQL Server, Oracle, and Db2 only. Reload MySQL/Postgres with
+scripts/seed_mysql.sh --static and scripts/seed_postgres.sh --static.
+See docs/testing.md.
 EOF
 }
 

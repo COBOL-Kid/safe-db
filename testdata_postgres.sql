@@ -1,7 +1,7 @@
 -- PostgreSQL fixture for JDBC contract tests and MCP/manual risk-gate testing.
 -- Load: compose postgres init, or scripts/seed_postgres.sh --static
 -- Shop tables stay small. Bulk tables are generated (generate_series), not literal inserts.
---   analytics.scan_events  1,000,000  Large, full-scan timeout, Elevated/High/confirm/block
+--   analytics.scan_events  1,000,000  Large size class, full-scan timeout, High on uncapped scan
 --   analytics.wide_rows       50,000  Medium, 24 mixed-type columns
 --   analytics.payload_rows    20,000  ~2 KiB text so a column select approaches 10 MiB
 --   ops.event_notes           10,000  FK without index, NULLs, unicode

@@ -1,6 +1,6 @@
 # safe-db
 
-Source for the [safe-db](https://www.safe-db.dev) desktop app and MCP server: a Compose Desktop UI, a stdio MCP CLI, and a `:shared` query engine that introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
+Source for the [safe-db](https://www.safe-db.dev) 1.0.0 desktop app and MCP server: a Compose Desktop UI, a stdio MCP CLI, and a `:shared` query engine that introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
 
 Packaged desktop releases and the user guide live at [https://www.safe-db.dev](https://www.safe-db.dev). This repository is for building from source and changing the code.
 
@@ -19,8 +19,8 @@ The desktop app runs on macOS and Windows; [`Main.kt`](src/main/kotlin/com/safed
 Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, validator, compiler, risk gate, or an adapter. The short version:
 
 - Builder, SQL screen, and MCP `run_query` all produce a `QuerySpec`. Compilation binds parameters; typed SQL never reaches the database ([`SqlToSpec.kt`](shared/src/main/kotlin/com/safedb/query/sql/SqlToSpec.kt), [`Compile.kt`](shared/src/main/kotlin/com/safedb/query/Compile.kt)).
-- Hikari pools are size 1 and `isReadOnly = true` ([`JdbcHelpers.kt`](shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt)).
-- Row, `IN`-list, and timeout caps live in [`Validate.kt`](shared/src/main/kotlin/com/safedb/query/Validate.kt) and [`QueryCore.kt`](shared/src/main/kotlin/com/safedb/query/QueryCore.kt).
+- Hikari pools are size 1 and `isReadOnly = true` ([`JdbcHelpers.kt`](shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt)). Connect timeout is ~10s (driver connect/login/socket properties plus an interruptible deadline).
+- Row, `IN`-list, and query-timeout caps live in [`Validate.kt`](shared/src/main/kotlin/com/safedb/query/Validate.kt) and [`QueryCore.kt`](shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Risk-gate severity decides allow vs block; see [docs/query-engine.md](docs/query-engine.md).
 
 ## Working in this repo
 
@@ -36,7 +36,7 @@ For local development or CI, `SAFEDB_KEYCHAIN_BACKEND=disabled` keeps connection
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Run `./gradlew check` before opening a pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Run `./gradlew check` before opening a pull request. Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

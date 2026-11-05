@@ -5,7 +5,7 @@
 -- (ignoring SQL0204N for objects that do not exist yet) before loading this file.
 -- Unquoted names fold to uppercase, so introspection sees CUSTOMERS/ORDERS.
 -- Shop tables stay small. Bulk tables are generated (digit cross-joins):
---   ANALYTICS.SCAN_EVENTS  1,000,000  Large, full-scan timeout
+--   ANALYTICS.SCAN_EVENTS  1,000,000  Large size class, full-scan timeout, High on uncapped scan
 --   ANALYTICS.WIDE_ROWS       50,000  Medium, 24 mixed-type columns
 --   ANALYTICS.PAYLOAD_ROWS    20,000  ~2 KiB text so a column select approaches 10 MiB
 --   ANALYTICS.EVENT_NOTES     10,000  FK without index, NULLs, unicode
