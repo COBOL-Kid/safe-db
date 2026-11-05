@@ -56,8 +56,8 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                 "and pages are capped at $MCP_PAYLOAD_MAX_BYTES bytes; long cell values " +
                 "are truncated with ${MCP_CELL_TRUNCATION_MARKER}. Results expire after " +
                 "$resultTtlMinutes minutes ($RESULT_STORE_MAX_ENTRIES entries, " +
-                "32 MiB). On error risk_gate, rewrite the query or change the gate in " +
-                "settings; do not retry the same query. On error confirmation_required, " +
+                "32 MiB). On error risk_gate, rewrite the query; do not retry the same " +
+                "query. On error confirmation_required, " +
                 "show the reasons to the user, then retry with the returned confirmation " +
                 "object; do not auto-confirm. Unknown extra arguments are invalid_arguments.",
         inputSchema =

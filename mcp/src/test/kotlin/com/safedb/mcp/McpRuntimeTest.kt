@@ -96,6 +96,9 @@ class McpRuntimeTest {
                     ?.containsKey("confirmation") == true
             )
             assertEquals(null, tools.getValue("run_query").annotations)
+            val runQueryDescription = tools.getValue("run_query").description.orEmpty()
+            assertTrue(runQueryDescription.contains("On error risk_gate"))
+            assertFalse(runQueryDescription.contains("change the gate"))
             assertEquals(
                 listOf("connection_id", "sql"),
                 tools.getValue("run_query").inputSchema.required,

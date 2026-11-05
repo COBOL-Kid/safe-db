@@ -142,7 +142,7 @@ Every tool error is JSON `{error, message, warnings}` with `isError=true`. Extra
 | `not_found` | Unknown tool, connection, table, or expired/unknown `result_id`. |
 | `parse` | Fix `sql`. Unqualified tables: pass `default_schema` from `list_tables.schema`, or qualify as `schema.table`. Aggregates: run the base query, then `summarize_result`. |
 | `validation` / `compilation` / `execution` | Same meanings as [`QueryError`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Plan-check timeout or connection/I/O failure is `execution` with a short message (no driver dump), not a confirm prompt. |
-| `risk_gate` | Includes a slim `risk` summary. Rewrite the query or change `query_risk_gate` in settings. Do not retry the same query. |
+| `risk_gate` | Includes a slim `risk` summary. Rewrite the query. Do not retry the same query. |
 | `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query` or `delete_connection`) with that object. Do not auto-confirm. Do not invent the object. Confirmations are bound to the SQL and connection; tampered objects are rejected. A plan-check timeout is not this error. |
 | `connection` | Auth failure or the host could not be reached (including connect timeout). |
 | `internal` | Unexpected store or runtime failure. |
