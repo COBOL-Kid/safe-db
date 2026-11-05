@@ -145,7 +145,8 @@ object MySqlAdapter {
                 ps.executeQuery().use { rs ->
                     rs.next()
                     val planJson = rs.getString(1)
-                    parseMySqlPlan(planJson)?.let(ExplainResult::Available)
+                    parseMySqlPlan(planJson, mysqlLimitFromSql(compiled.sql))
+                        ?.let(ExplainResult::Available)
                         ?: ExplainResult.Unavailable(
                             com.safedb.model.PlanUnavailableReason.ParseFailure,
                             "Could not normalize MySQL JSON plan",

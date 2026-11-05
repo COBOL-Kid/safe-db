@@ -51,14 +51,61 @@ class PlanParsersTest {
     }
 
     @Test
-    fun mysqlLimitShapeAlreadyReportsTheBoundedScan() {
-        val limited =
+    fun mysqlLimitCapsScanAndJoinRowsUnlessABlockingOperatorIntervenes() {
+        val limitedScan =
             parseMySqlPlan(
-                """{"query_block":{"query_cost":"0.35","table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":1}}}"""
+                """{"query_block":{"query_cost":"204212.05","table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows":906091}}}""",
+                queryLimit = 1,
             )
-        assertNotNull(limited)
-        assertEquals(1, limited.relations.single().estimatedRows)
-        assertEquals(PlanAccessMethod.TableScan, limited.relations.single().method)
+        assertNotNull(limitedScan)
+        assertEquals(1, limitedScan.relations.single().estimatedRows)
+        assertEquals(PlanAccessMethod.TableScan, limitedScan.relations.single().method)
+
+        val jsonLimit =
+            parseMySqlPlan(
+                """{"query_block":{"limit":1,"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091}}}"""
+            )
+        assertNotNull(jsonLimit)
+        assertEquals(1, jsonLimit.relations.single().estimatedRows)
+
+        val limitedLookup =
+            parseMySqlPlan(
+                """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows_produced_per_join":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"eq_ref","rows_examined_per_scan":1,"rows_produced_per_join":1}}]}}""",
+                queryLimit = 1,
+            )
+        assertNotNull(limitedLookup)
+        assertEquals(
+            1,
+            limitedLookup.relations.first { it.alias == "t0" }.estimatedRows,
+        )
+        assertEquals(1, limitedLookup.joins.single().estimatedOutputRows)
+
+        val filesort =
+            parseMySqlPlan(
+                """{"query_block":{"ordering_operation":{"using_filesort":true,"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091}}}}""",
+                queryLimit = 1,
+            )
+        assertNotNull(filesort)
+        assertEquals(906_091, filesort.relations.single().estimatedRows)
+
+        val grouping =
+            parseMySqlPlan(
+                """{"query_block":{"grouping_operation":{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091}}}}""",
+                queryLimit = 1,
+            )
+        assertNotNull(grouping)
+        assertEquals(906_091, grouping.relations.single().estimatedRows)
+
+        val hashJoin =
+            parseMySqlPlan(
+                """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":15,"using_join_buffer":"hash join"}}]}}""",
+                queryLimit = 1,
+            )
+        assertNotNull(hashJoin)
+        assertEquals(
+            906_091,
+            hashJoin.relations.first { it.alias == "t0" }.estimatedRows,
+        )
 
         val unbounded =
             parseMySqlPlan(
@@ -66,6 +113,12 @@ class PlanParsersTest {
             )
         assertNotNull(unbounded)
         assertEquals(1_000_000, unbounded.relations.single().estimatedRows)
+        assertEquals(1, mysqlLimitFromSql("SELECT id FROM t\nLIMIT 1"))
+        assertEquals(
+            2,
+            mysqlLimitFromSql("SELECT `t0`.`id` AS `t0__id`\nFROM `lab`.`t` AS `t0`\nLIMIT 2"),
+        )
+        assertNull(mysqlLimitFromSql("SELECT id FROM t"))
     }
 
     @Test
@@ -118,6 +171,26 @@ class PlanParsersTest {
             plan.joins.single { it.aliases == setOf("t0", "t1") }.estimatedOutputRows,
         )
         assertEquals(200, plan.relations.first { it.alias == "t1" }.estimatedRows)
+    }
+
+    @Test
+    fun mysqlJoinOutputAccountsForTheDrivingTableWhenTheInnerLookupReportsOneRow() {
+        val plan =
+            parseMySqlPlan(
+                """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows_produced_per_join":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"eq_ref","rows_examined_per_scan":1,"rows_produced_per_join":1}}]}}"""
+            )
+
+        assertNotNull(plan)
+        assertEquals(906_091, plan.relations.first { it.alias == "t0" }.estimatedRows)
+        assertEquals(PlanAccessMethod.TableScan, plan.relations.first { it.alias == "t0" }.method)
+        assertEquals(
+            PlanAccessMethod.BoundedLookup,
+            plan.relations.first { it.alias == "t1" }.method,
+        )
+        assertEquals(
+            906_091,
+            plan.joins.single { it.aliases == setOf("t0", "t1") }.estimatedOutputRows,
+        )
     }
 
     @Test
