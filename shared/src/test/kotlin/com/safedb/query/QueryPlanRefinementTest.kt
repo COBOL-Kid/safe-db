@@ -548,6 +548,177 @@ class QueryPlanRefinementTest {
         assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
+    @Test
+    fun largeRefInnerRaisesJoinRiskEvenWhenTheDrivingTableIsSmall() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        )
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "customers",
+                                alias = "t1",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 15,
+                            ),
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 313_725,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 941_176)),
+                ),
+                twoTableSpec(left = "scan_events", right = "customers"),
+                Schema(listOf(table("scan_events"), table("customers"))),
+            )
+
+        assertEquals(
+            RiskSignalCode.PlanConfirmedLargeScan,
+            refined.signals.single { it.target == RiskTarget.Access("t0") }.code,
+        )
+        assertEquals(
+            RiskSignalCode.PlanConfirmedJoinExpansion,
+            refined.signals.single { it.target == joinTarget }.code,
+        )
+        assertEquals(QueryRiskSeverity.High, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+    }
+
+    @Test
+    fun highJoinOutputRaisesALargeScanWhenNeitherSideReportsALargePerAccessEstimate() {
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        )
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "customers",
+                                alias = "t1",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 15,
+                            ),
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 941_176)),
+                ),
+                twoTableSpec(left = "scan_events", right = "customers"),
+                Schema(listOf(table("scan_events"), table("customers"))),
+            )
+
+        assertEquals(
+            1,
+            refined.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
+        )
+        assertEquals(QueryRiskSeverity.High, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
+    }
+
+    @Test
+    fun smallLimitClearsStaticFkWithoutIndexAndJoinExpansion() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        ),
+                        RiskSignal(
+                            RiskSignalCode.ForeignKeyWithoutSupportingIndex,
+                            RiskCategory.Joins,
+                            RiskSubject(tableAlias = "t0", table = "scan_events"),
+                            2,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                            joinTarget,
+                        ),
+                        RiskSignal(
+                            RiskSignalCode.JoinExpansionPossible,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                            joinTarget,
+                        ),
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1,
+                            ),
+                            PlanRelationAccess(
+                                table = "customers",
+                                alias = "t1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 1)),
+                ),
+                twoTableSpec(left = "scan_events", right = "customers"),
+                Schema(listOf(table("scan_events"), table("customers"))),
+            )
+
+        assertFalse(
+            refined.signals.any {
+                it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex ||
+                    it.code == RiskSignalCode.JoinExpansionPossible
+            }
+        )
+        assertEquals(QueryRiskSeverity.Minimal, refined.severity)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Cautious).state)
+    }
+
     private fun refineAccess(
         method: PlanAccessMethod,
         rows: Long,
@@ -592,9 +763,9 @@ private fun oneTableSpec() =
         limit = 100,
     )
 
-private fun twoTableSpec() =
+private fun twoTableSpec(left: String = "orders", right: String = "items") =
     QuerySpec(
-        tables = listOf(TableRef("public", "orders", "t0"), TableRef("public", "items", "t1")),
+        tables = listOf(TableRef("public", left, "t0"), TableRef("public", right, "t1")),
         columns = listOf(ColumnSel("t0", "id")),
         joins = listOf(JoinSpec("t0", "id", "t1", "id")),
         filters = FilterGroup.empty(),

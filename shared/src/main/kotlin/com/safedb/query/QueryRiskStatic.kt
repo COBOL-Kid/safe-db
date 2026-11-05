@@ -270,6 +270,7 @@ private fun addJoinSignals(
                             2,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
+                            target,
                         )
                 }
             }

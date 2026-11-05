@@ -3,11 +3,13 @@ package com.safedb.query
 import com.safedb.model.EvidenceConfidence
 import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.PlanAccessMethod
+import com.safedb.model.PlanJoinEvidence
 import com.safedb.model.PlanOperationKind
 import com.safedb.model.PlanRelationAccess
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
+import com.safedb.model.TableInfo
 
 internal enum class EstimatedRowBand {
     Low,
@@ -109,16 +111,8 @@ fun refineRiskWithPlan(
                     when (band) {
                         EstimatedRowBand.Low -> null
                         EstimatedRowBand.Material,
-                        EstimatedRowBand.High ->
-                            RiskSignal(
-                                RiskSignalCode.PlanConfirmedLargeScan,
-                                RiskCategory.Access,
-                                subject,
-                                4,
-                                SignalBasis.PlanEvidence,
-                                EvidenceConfidence.High,
-                                target,
-                            )
+                        EstimatedRowBand.High -> planConfirmedLargeScan(alias, subject)
+
                         null -> {
                             uncertainties +=
                                 RiskUncertainty(
@@ -201,38 +195,46 @@ fun refineRiskWithPlan(
             continue
         }
         // Unique FK joins have no static JoinExpansionPossible target. Still score the join from
-        // plan rows, including a large outer scan that the inner lookup index does not hide.
+        // plan rows, including a large nested-loop / ref / eq_ref inner that an indexed FK
+        // drive order can hide from the outer-scan path.
         val target =
             matchingJoinTarget(aliases, staticAssessment.signals) ?: RiskTarget.Join(aliases)
-        val drivingScanRows =
-            mergedRelations
-                .mapNotNull { relation ->
-                    val alias =
-                        resolvePlanAlias(relation.alias, relation.schema, relation.table, spec)
-                    if (alias == null || alias !in aliases) {
-                        null
-                    } else {
-                        when (relation.method) {
-                            PlanAccessMethod.TableScan,
-                            PlanAccessMethod.FullIndexScan -> relation.estimatedRows
-                            PlanAccessMethod.BoundedLookup,
-                            PlanAccessMethod.BoundedRange,
-                            PlanAccessMethod.Unknown,
-                            PlanAccessMethod.Other -> null
-                        }
-                    }
-                }
-                .maxOrNull()
+        val joinSides = mergedRelations.mapNotNull { relation ->
+            val alias =
+                resolvePlanAlias(relation.alias, relation.schema, relation.table, spec)
+                    ?: return@mapNotNull null
+            if (alias !in aliases) {
+                null
+            } else {
+                JoinSide(alias, relation, joinAccessRows(relation))
+            }
+        }
+        val drivingScanRows = joinSides.mapNotNull(JoinSide::examinedRows).maxOrNull()
         val joinRows =
             if (estimatedOutputRows != null && drivingScanRows != null) {
                 maxOf(estimatedOutputRows, drivingScanRows)
             } else {
                 estimatedOutputRows ?: drivingScanRows
             }
+        var confirmedLargeJoinScan = false
+        for (side in joinSides) {
+            when (side.examinedRows?.let(::estimatedRowBand)) {
+                EstimatedRowBand.Low,
+                null -> Unit
+                EstimatedRowBand.Material,
+                EstimatedRowBand.High -> {
+                    replace(
+                        RiskTarget.Access(side.alias),
+                        planConfirmedLargeScan(side.alias, joinSideSubject(side, tablesByAlias)),
+                    )
+                    confirmedLargeJoinScan = true
+                }
+            }
+        }
         when (joinRows?.let(::estimatedRowBand)) {
             EstimatedRowBand.Low -> replace(target, null)
             EstimatedRowBand.Material -> Unit
-            EstimatedRowBand.High ->
+            EstimatedRowBand.High -> {
                 replace(
                     target,
                     RiskSignal(
@@ -245,6 +247,21 @@ fun refineRiskWithPlan(
                         target,
                     ),
                 )
+                // eq_ref inners often report 1 row per lookup. High join output still means a
+                // large examined set, so confirm a large scan on the hottest join side.
+                if (!confirmedLargeJoinScan) {
+                    val hottest = joinSides.maxByOrNull { it.examinedRows ?: Long.MIN_VALUE }
+                    if (hottest != null) {
+                        replace(
+                            RiskTarget.Access(hottest.alias),
+                            planConfirmedLargeScan(
+                                hottest.alias,
+                                joinSideSubject(hottest, tablesByAlias),
+                            ),
+                        )
+                    }
+                }
+            }
             null ->
                 uncertainties +=
                     RiskUncertainty(
@@ -258,7 +275,12 @@ fun refineRiskWithPlan(
     // Every static signal sharing a refined target drops out together, so several static signals
     // collapse into the single strongest plan-based replacement for that target.
     val retained = staticAssessment.signals.filterNot { it.target in replacements }
-    val active = retained + replacements.values.filterNotNull()
+    val active =
+        if (planRowsAreSmall(mergedRelations, plan.joins)) {
+            retained.filterNot(::staticJoinRiskClearedBySmallPlan)
+        } else {
+            retained
+        } + replacements.values.filterNotNull()
     return buildAssessment(staticAssessment.queryFingerprint, active, uncertainties)
 }
 
@@ -366,3 +388,72 @@ private fun matchingJoinTarget(aliases: Set<String>, signals: List<RiskSignal>):
     val candidates = signals.mapNotNull { it.target as? RiskTarget.Join }.distinct()
     return candidates.singleOrNull { it.aliases == aliases }
 }
+
+private data class JoinSide(
+    val alias: String,
+    val relation: PlanRelationAccess,
+    val examinedRows: Long?,
+)
+
+// Nested-loop / ref / eq_ref inners examine their estimated row set even when the access
+// path is an indexed lookup, so join scoring must not ignore those methods.
+private fun joinAccessRows(relation: PlanRelationAccess): Long? =
+    when (relation.method) {
+        PlanAccessMethod.TableScan,
+        PlanAccessMethod.FullIndexScan,
+        PlanAccessMethod.BoundedLookup,
+        PlanAccessMethod.BoundedRange -> relation.estimatedRows
+        PlanAccessMethod.Unknown,
+        PlanAccessMethod.Other -> null
+    }
+
+private fun planConfirmedLargeScan(alias: String, subject: RiskSubject): RiskSignal =
+    RiskSignal(
+        RiskSignalCode.PlanConfirmedLargeScan,
+        RiskCategory.Access,
+        subject,
+        4,
+        SignalBasis.PlanEvidence,
+        EvidenceConfidence.High,
+        RiskTarget.Access(alias),
+    )
+
+private fun joinSideSubject(
+    side: JoinSide,
+    tablesByAlias: Map<String, TableInfo?>,
+): RiskSubject =
+    tablesByAlias[side.alias]?.subject(side.alias)
+        ?: RiskSubject(
+            tableAlias = side.alias,
+            schema = side.relation.schema,
+            table = side.relation.table,
+        )
+
+private fun planRowsAreSmall(
+    relations: List<PlanRelationAccess>,
+    joins: List<PlanJoinEvidence>,
+): Boolean =
+    relations.isNotEmpty() &&
+        relations.all { relation ->
+            relation.estimatedRows?.let { estimatedRowBand(it) == EstimatedRowBand.Low } == true
+        } &&
+        joins.all { join ->
+            join.estimatedOutputRows?.let { estimatedRowBand(it) == EstimatedRowBand.Low } == true
+        }
+
+private fun staticJoinRiskClearedBySmallPlan(signal: RiskSignal): Boolean =
+    when (signal.code) {
+        RiskSignalCode.ForeignKeyWithoutSupportingIndex,
+        RiskSignalCode.JoinExpansionPossible -> true
+        RiskSignalCode.NoEffectiveRestriction,
+        RiskSignalCode.NoKnownCompatibleAccessPath,
+        RiskSignalCode.ScanProneTextPredicate,
+        RiskSignalCode.ScanProneNegativePredicate,
+        RiskSignalCode.OrBranchWithoutCompatiblePath,
+        RiskSignalCode.AdditionalJoinedRelation,
+        RiskSignalCode.LimitCannotBoundWork,
+        RiskSignalCode.BoundedBlockingOperation,
+        RiskSignalCode.MaterialProjectedPayload,
+        RiskSignalCode.PlanConfirmedLargeScan,
+        RiskSignalCode.PlanConfirmedJoinExpansion -> false
+    }

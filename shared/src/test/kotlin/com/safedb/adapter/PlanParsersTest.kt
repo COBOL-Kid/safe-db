@@ -194,6 +194,27 @@ class PlanParsersTest {
     }
 
     @Test
+    fun mysqlCustomersDriveRefJoinKeepsTheInnerExaminedRowsAndJoinOutput() {
+        val plan =
+            parseMySqlPlan(
+                """{"query_block":{"nested_loop":[{"table":{"table_name":"customers","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":15,"rows_produced_per_join":15}},{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ref","possible_keys":["fk_scan_events_customer"],"key":"fk_scan_events_customer","used_key_parts":["customer_id"],"ref":["t1.id"],"rows_examined_per_scan":313725,"rows_produced_per_join":941176}}]}}"""
+            )
+
+        assertNotNull(plan)
+        assertEquals(15, plan.relations.first { it.alias == "t1" }.estimatedRows)
+        assertEquals(PlanAccessMethod.TableScan, plan.relations.first { it.alias == "t1" }.method)
+        assertEquals(313_725, plan.relations.first { it.alias == "t0" }.estimatedRows)
+        assertEquals(
+            PlanAccessMethod.BoundedLookup,
+            plan.relations.first { it.alias == "t0" }.method,
+        )
+        assertEquals(
+            941_176,
+            plan.joins.single { it.aliases == setOf("t0", "t1") }.estimatedOutputRows,
+        )
+    }
+
+    @Test
     fun mysql9JsonSchemaNormalizesInputsAndIndexAccessType() {
         val plan =
             parseMySqlPlan(

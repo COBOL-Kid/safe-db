@@ -95,35 +95,53 @@ class QueryRiskGatePlanShapeTest {
     @Test
     fun unboundedFkJoinIsHighAtEveryGateForBothEngines() {
         val spec = scanEventsJoinSpec()
-        val schema = scanEventsJoinSchema()
-        val static = staticRisk(spec, schema)
-        val mysqlExplain =
-            parseMySqlPlan(
-                """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows_produced_per_join":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"eq_ref","rows_examined_per_scan":1,"rows_produced_per_join":1}}]}}"""
-            )
-        val postgresExplain =
-            parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Nested Loop","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}}]"""
-            )
-        assertNotNull(mysqlExplain)
+        val postgresSchema = scanEventsJoinSchema(supportingFkIndex = false)
+        val mysqlSchema = scanEventsJoinSchema(supportingFkIndex = true)
+        val postgresStatic = staticRisk(spec, postgresSchema)
+        val mysqlStatic = staticRisk(spec, mysqlSchema)
+        val mysqlScanEventsOuter = parseMySqlPlan(MYSQL_SCAN_EVENTS_OUTER_EQ_REF_JOIN)
+        val mysqlCustomersDrive = parseMySqlPlan(MYSQL_CUSTOMERS_DRIVE_REF_JOIN)
+        val postgresExplain = parsePostgresPlan(POSTGRES_UNBOUNDED_NESTED_LOOP)
+        assertNotNull(mysqlScanEventsOuter)
+        assertNotNull(mysqlCustomersDrive)
         assertNotNull(postgresExplain)
         val shapes =
             listOf(
-                "postgres-nested-loop" to
+                Triple(
+                    "postgres-nested-loop",
+                    postgresStatic,
                     fkJoinPlan(
                         scanRows = 1_000_000,
                         joinRows = 1_000_000,
                         postgres = true,
                     ),
-                "mysql-nested-loop" to
+                ),
+                Triple(
+                    "mysql-nested-loop",
+                    mysqlStatic,
                     fkJoinPlan(scanRows = 1_000_000, joinRows = 1_000_000, postgres = false),
-                "mysql-eq-ref-inner-reports-one-row" to
+                ),
+                Triple(
+                    "mysql-eq-ref-inner-reports-one-row",
+                    mysqlStatic,
                     fkJoinPlan(scanRows = 1_000_000, joinRows = 1, postgres = false),
-                "postgres-explain-nested-loop" to postgresExplain,
-                "mysql-explain-nested-loop" to mysqlExplain,
+                ),
+                Triple(
+                    "mysql-customers-drive-ref-inner",
+                    mysqlStatic,
+                    mysqlCustomersDriveJoinPlan(),
+                ),
+                Triple("postgres-explain-nested-loop", postgresStatic, postgresExplain),
+                Triple("mysql-explain-nested-loop", mysqlStatic, mysqlScanEventsOuter),
+                Triple(
+                    "mysql-explain-customers-drive-ref",
+                    mysqlStatic,
+                    mysqlCustomersDrive,
+                ),
             )
 
-        for ((name, plan) in shapes) {
+        for ((name, static, plan) in shapes) {
+            val schema = if (name.startsWith("postgres")) postgresSchema else mysqlSchema
             val refined = refineRiskWithPlan(static, plan, spec, schema)
             assertEquals(
                 RiskSignalCode.PlanConfirmedLargeScan,
@@ -166,32 +184,61 @@ class QueryRiskGatePlanShapeTest {
     @Test
     fun limitedJoinIsAllowedAtEveryGateForBothEngines() {
         val spec = scanEventsJoinSpec(limit = 1, uncapped = false)
-        val schema = scanEventsJoinSchema()
-        val static = staticRisk(spec, schema)
-        val mysqlExplain =
-            parseMySqlPlan(
-                """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows_produced_per_join":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"eq_ref","rows_examined_per_scan":1,"rows_produced_per_join":1}}]}}""",
-                queryLimit = 1,
-            )
-        val postgresExplain =
-            parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Plans":[{"Node Type":"Nested Loop","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]"""
-            )
+        val postgresSchema = scanEventsJoinSchema(supportingFkIndex = false)
+        val mysqlSchema = scanEventsJoinSchema(supportingFkIndex = true)
+        val postgresStatic = staticRisk(spec, postgresSchema)
+        val mysqlStatic = staticRisk(spec, mysqlSchema)
+        val mysqlExplain = parseMySqlPlan(MYSQL_SCAN_EVENTS_OUTER_EQ_REF_JOIN, queryLimit = 1)
+        val mysqlCustomersDrive = parseMySqlPlan(MYSQL_CUSTOMERS_DRIVE_REF_JOIN, queryLimit = 1)
+        val postgresExplain = parsePostgresPlan(POSTGRES_LIMITED_NESTED_LOOP)
         assertNotNull(mysqlExplain)
+        assertNotNull(mysqlCustomersDrive)
         assertNotNull(postgresExplain)
+        assertEquals(
+            QueryRiskSeverity.Elevated,
+            postgresStatic.severity,
+            "postgres static FK-without-index must not decide the LIMITed gate",
+        )
         val shapes =
             listOf(
-                "postgres-limited-nested-loop" to
+                Triple(
+                    "postgres-limited-nested-loop",
+                    postgresStatic,
                     fkJoinPlan(scanRows = 1, joinRows = 1, postgres = true),
-                "mysql-limited-nested-loop" to
+                ),
+                Triple(
+                    "mysql-limited-nested-loop",
+                    mysqlStatic,
                     fkJoinPlan(scanRows = 1, joinRows = 1, postgres = false),
-                "postgres-explain-limited-join" to postgresExplain,
-                "mysql-explain-limited-join" to mysqlExplain,
+                ),
+                Triple(
+                    "mysql-limited-customers-drive-ref",
+                    mysqlStatic,
+                    mysqlCustomersDriveJoinPlan(scanRows = 1, joinRows = 1, customerRows = 1),
+                ),
+                Triple("postgres-explain-limited-join", postgresStatic, postgresExplain),
+                Triple("mysql-explain-limited-join", mysqlStatic, mysqlExplain),
+                Triple(
+                    "mysql-explain-limited-customers-drive",
+                    mysqlStatic,
+                    mysqlCustomersDrive,
+                ),
             )
 
-        for ((name, plan) in shapes) {
+        for ((name, static, plan) in shapes) {
+            val schema = if (name.startsWith("postgres")) postgresSchema else mysqlSchema
             val refined = refineRiskWithPlan(static, plan, spec, schema)
             assertEquals(QueryRiskSeverity.Minimal, refined.severity, name)
+            assertEquals(
+                false,
+                refined.signals.any {
+                    it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex ||
+                        it.code == RiskSignalCode.JoinExpansionPossible ||
+                        it.code == RiskSignalCode.PlanConfirmedJoinExpansion ||
+                        it.code == RiskSignalCode.PlanConfirmedLargeScan
+                },
+                name,
+            )
             assertGate(
                 refined,
                 name,
@@ -224,16 +271,18 @@ class QueryRiskGatePlanShapeTest {
     }
 }
 
-private fun gatesAtOrBelow(severity: QueryRiskSeverity): Set<QueryRiskGate> =
-    QueryRiskGate.entries
-        .filter { gate ->
-            val band = blockingBand(gate) ?: return@filter false
-            severity.ordinal >= band.ordinal
-        }
-        .toSet()
+private const val MYSQL_SCAN_EVENTS_OUTER_EQ_REF_JOIN =
+    """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows_produced_per_join":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"eq_ref","rows_examined_per_scan":1,"rows_produced_per_join":1}}]}}"""
 
-private fun gatesAbove(severity: QueryRiskSeverity): Set<QueryRiskGate> =
-    QueryRiskGate.entries.toSet() - gatesAtOrBelow(severity)
+// Live MySQL 8.4 drives the small customers table and looks up scan_events by the FK ref.
+private const val MYSQL_CUSTOMERS_DRIVE_REF_JOIN =
+    """{"query_block":{"nested_loop":[{"table":{"table_name":"customers","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":15,"rows_produced_per_join":15}},{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ref","possible_keys":["fk_scan_events_customer"],"key":"fk_scan_events_customer","used_key_parts":["customer_id"],"ref":["t1.id"],"rows_examined_per_scan":313725,"rows_produced_per_join":941176}}]}}"""
+
+private const val POSTGRES_UNBOUNDED_NESTED_LOOP =
+    """[{"Plan":{"Node Type":"Nested Loop","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}}]"""
+
+private const val POSTGRES_LIMITED_NESTED_LOOP =
+    """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Plans":[{"Node Type":"Nested Loop","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]"""
 
 private fun staticRisk(spec: QuerySpec, schema: Schema): QueryRiskAssessment {
     val validated =
@@ -271,7 +320,14 @@ private fun mysqlTableScan(rows: Long) =
             )
     )
 
-private fun fkJoinPlan(scanRows: Long, joinRows: Long, postgres: Boolean) =
+private fun fkJoinPlan(
+    scanRows: Long,
+    joinRows: Long,
+    postgres: Boolean,
+    scanMethod: PlanAccessMethod = PlanAccessMethod.TableScan,
+    customerRows: Long = 1,
+    customerMethod: PlanAccessMethod = PlanAccessMethod.BoundedLookup,
+) =
     NormalizedQueryPlan(
         relations =
             listOf(
@@ -279,18 +335,32 @@ private fun fkJoinPlan(scanRows: Long, joinRows: Long, postgres: Boolean) =
                     schema = if (postgres) "analytics" else null,
                     table = "scan_events",
                     alias = "t0",
-                    method = PlanAccessMethod.TableScan,
+                    method = scanMethod,
                     estimatedRows = scanRows,
                 ),
                 PlanRelationAccess(
                     schema = if (postgres) "public" else null,
                     table = "customers",
                     alias = "t1",
-                    method = PlanAccessMethod.BoundedLookup,
-                    estimatedRows = 1,
+                    method = customerMethod,
+                    estimatedRows = customerRows,
                 ),
             ),
         joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), joinRows)),
+    )
+
+private fun mysqlCustomersDriveJoinPlan(
+    scanRows: Long = 313_725,
+    joinRows: Long = 941_176,
+    customerRows: Long = 15,
+) =
+    fkJoinPlan(
+        scanRows = scanRows,
+        joinRows = joinRows,
+        postgres = false,
+        scanMethod = PlanAccessMethod.BoundedLookup,
+        customerRows = customerRows,
+        customerMethod = PlanAccessMethod.TableScan,
     )
 
 private fun smallIndexedJoinPlan(postgres: Boolean) =
@@ -359,7 +429,7 @@ private fun scanEventsSchema() =
         listOf(largeTable("analytics", "scan_events", listOf(column("id"), column("customer_id"))))
     )
 
-private fun scanEventsJoinSchema() =
+private fun scanEventsJoinSchema(supportingFkIndex: Boolean = true) =
     Schema(
         listOf(
             largeTable(
@@ -367,10 +437,12 @@ private fun scanEventsJoinSchema() =
                 "scan_events",
                 listOf(column("id"), column("customer_id")),
                 indexes =
-                    listOf(
-                        primaryKey("scan_events"),
-                        index("idx_scan_events_customer", "customer_id"),
-                    ),
+                    buildList {
+                        add(primaryKey("scan_events"))
+                        if (supportingFkIndex) {
+                            add(index("idx_scan_events_customer", "customer_id"))
+                        }
+                    },
                 foreignKeys =
                     listOf(
                         ForeignKeyInfo(
