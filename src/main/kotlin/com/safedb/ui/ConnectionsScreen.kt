@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
+import com.safedb.model.displayName
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.DeleteIconButton
@@ -244,12 +245,8 @@ internal fun ConnectionsScreenContent(
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
                                 connection = connection,
-                                badges =
-                                    connectionCardBadges(
-                                        connection.id,
-                                        activeConnectionId,
-                                        defaultConnectionId,
-                                    ),
+                                isActive = connection.id == activeConnectionId,
+                                isDefault = connection.id == defaultConnectionId,
                                 onEdit = { onEditingConnectionChange(connection) },
                                 onDelete = { pendingDelete = connection },
                             )
@@ -261,19 +258,11 @@ internal fun ConnectionsScreenContent(
     }
 }
 
-internal fun connectionCardBadges(
-    connectionId: String,
-    activeConnectionId: String?,
-    defaultConnectionId: String?,
-): List<String> = buildList {
-    if (connectionId == activeConnectionId) add("Active")
-    if (connectionId == defaultConnectionId) add("Default")
-}
-
 @Composable
 private fun ConnectionCard(
     connection: ConnectionDef,
-    badges: List<String> = emptyList(),
+    isActive: Boolean = false,
+    isDefault: Boolean = false,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -295,7 +284,7 @@ private fun ConnectionCard(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                dialectLabel(connection.dialect).take(2),
+                                connection.dialect.displayName().take(2),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = SafeDbTheme.colors.onAccentContainer,
@@ -311,22 +300,20 @@ private fun ConnectionCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            dialectLabel(connection.dialect),
+                            connection.dialect.displayName(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (badges.isNotEmpty()) {
+                        if (isActive || isDefault) {
                             Row(
                                 modifier = Modifier.padding(top = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                for (badge in badges) {
-                                    StatusChip(
-                                        text = badge,
-                                        kind =
-                                            if (badge == "Active") StatusChipKind.SUCCESS
-                                            else StatusChipKind.INFO,
-                                    )
+                                if (isActive) {
+                                    StatusChip("Active", StatusChipKind.SUCCESS)
+                                }
+                                if (isDefault) {
+                                    StatusChip("Default", StatusChipKind.INFO)
                                 }
                             }
                         }

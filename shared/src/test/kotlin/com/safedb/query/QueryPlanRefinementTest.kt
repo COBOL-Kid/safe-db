@@ -491,7 +491,7 @@ class QueryPlanRefinementTest {
             high.signals.single { it.target == joinTarget }.code,
         )
         // Confirmed expansion must register in the score, not vanish under the category cap.
-        assertEquals(3, high.categoryScores.getValue(RiskCategory.Joins))
+        assertEquals(6, high.categoryScores.getValue(RiskCategory.Joins))
         assertTrue(high.score > base.score)
         assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
     }
@@ -603,7 +603,8 @@ class QueryPlanRefinementTest {
     }
 
     @Test
-    fun highJoinOutputRaisesALargeScanWhenNeitherSideReportsALargePerAccessEstimate() {
+    fun highJoinOutputRaisesJoinRiskWhenNeitherSideReportsALargePerAccessEstimate() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
         val refined =
             refineRiskWithPlan(
                 buildAssessment(
@@ -642,12 +643,17 @@ class QueryPlanRefinementTest {
                 Schema(listOf(table("scan_events"), table("customers"))),
             )
 
+        val join = refined.signals.single { it.target == joinTarget }
+        assertEquals(RiskSignalCode.PlanConfirmedJoinExpansion, join.code)
+        assertEquals(6, join.points)
+        assertEquals(6, refined.categoryScores.getValue(RiskCategory.Joins))
         assertEquals(
-            1,
+            0,
             refined.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
         )
         assertEquals(QueryRiskSeverity.High, refined.severity)
         assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
     @Test

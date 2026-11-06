@@ -89,24 +89,26 @@ WITH digits AS (
 )
 INSERT INTO analytics.scan_events (id, customer_id, created_at, amount, is_active, label, note)
 SELECT
-    a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1,
-    CASE WHEN (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 17 = 0
-        THEN NULL ELSE 1 + ((a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 3) END,
-    DATEADD(day, (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 365, '20240101'),
-    ((a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 10000) / 100.0,
-    CASE WHEN (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 2 = 0 THEN 1 ELSE 0 END,
-    CONCAT(N'label-', (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 50),
+    n,
+    CASE WHEN n % 17 = 0 THEN NULL ELSE 1 + (n % 3) END,
+    DATEADD(day, n % 365, '20240101'),
+    (n % 10000) / 100.0,
+    CASE WHEN n % 2 = 0 THEN 1 ELSE 0 END,
+    CONCAT(N'label-', n % 50),
     CASE
-        WHEN (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 11 = 0 THEN NULL
-        WHEN (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 13 = 0 THEN N'你好 café naïve'
-        ELSE CONCAT(N'note-', a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1)
+        WHEN n % 11 = 0 THEN NULL
+        WHEN n % 13 = 0 THEN N'你好 café naïve'
+        ELSE CONCAT(N'note-', n)
     END
-FROM digits a
-CROSS JOIN digits b
-CROSS JOIN digits c
-CROSS JOIN digits d
-CROSS JOIN digits e
-CROSS JOIN digits f;
+FROM (
+    SELECT a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1 AS n
+    FROM digits a
+    CROSS JOIN digits b
+    CROSS JOIN digits c
+    CROSS JOIN digits d
+    CROSS JOIN digits e
+    CROSS JOIN digits f
+) seq;
 
 CREATE TABLE analytics.wide_rows (
     id BIGINT NOT NULL CONSTRAINT pk_wide_rows PRIMARY KEY,

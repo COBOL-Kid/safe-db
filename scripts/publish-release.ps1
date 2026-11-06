@@ -173,10 +173,24 @@ function Remove-OldReleaseObjects {
     }
 }
 
-Remove-OldReleaseObjects 2 "macOS zip" '*-mac-*.zip'
-Remove-OldReleaseObjects 5 "macOS delta" '*.delta'
-Remove-OldReleaseObjects 1 "Windows zip" '*-windows-*.zip'
-Remove-OldReleaseObjects 1 "Windows MSIX" '*.msix'
+# Keep/glob table is scripts/publish-release-prune-policy.txt (shared with
+# publish-release.sh). scripts/test_assert_conveyor_site.sh is the policy lock;
+# this script must match that table.
+$prunePolicy = Join-Path $PSScriptRoot "publish-release-prune-policy.txt"
+if (-not (Test-Path -LiteralPath $prunePolicy -PathType Leaf)) {
+    throw "publish aborted: missing prune policy $prunePolicy"
+}
+Get-Content -LiteralPath $prunePolicy | ForEach-Object {
+    $line = $_.TrimEnd("`r").Trim()
+    if (-not $line -or $line.StartsWith("#")) {
+        return
+    }
+    $parts = $line -split '\s+', 3
+    if ($parts.Count -ne 3) {
+        throw "publish aborted: invalid prune policy line: $line"
+    }
+    Remove-OldReleaseObjects ([int]$parts[0]) $parts[2] $parts[1]
+}
 
 function Assert-NoCacheControl {
     param(

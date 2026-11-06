@@ -338,15 +338,15 @@ private fun isIncompleteFilter(spec: FilterSpec): Boolean =
     when (spec.op.valueKind()) {
         ValueKind.None -> false
         ValueKind.Single -> {
-            val literal = (spec.value as? FilterValue.Single)?.literal
+            val literal = spec.value?.let(::expectSingle)
             literal == null || literal.text.isBlank()
         }
         ValueKind.List -> {
-            val literals = (spec.value as? FilterValue.ListValue)?.literals
+            val literals = spec.value?.let(::expectList)
             literals.isNullOrEmpty() || literals.any { it.text.isBlank() }
         }
         ValueKind.Pair -> {
-            val pair = spec.value as? FilterValue.Pair
+            val pair = spec.value?.let(::expectPair)
             pair == null || pair.first.text.isBlank() || pair.second.text.isBlank()
         }
     }

@@ -29,6 +29,8 @@ class ResultPreviewTest {
         assertEquals(JsonPrimitive("pending"), flattenCell(ResultCell.text("pending")))
         val binary = ResultCell.binary("hi".toByteArray()) as ResultCell.BinaryCell
         assertEquals(JsonPrimitive(binary.value.base64), flattenCell(binary))
+        val longText = "x".repeat(2_048)
+        assertEquals(JsonPrimitive(longText), flattenCell(ResultCell.text(longText)))
     }
 
     @Test

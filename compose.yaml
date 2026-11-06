@@ -164,6 +164,7 @@ services:
     volumes:
       - /database
       - ./docker/test-databases/db2-init.sh:/usr/local/bin/safedb-db2-init.sh:ro
+      - ./docker/test-databases/db2-drop-statements.sql:/fixtures/db2-drop-statements.sql:ro
       - ./testdata_db2.sql:/fixtures/testdata_db2.sql:ro
     healthcheck:
       # The image PATH is system-only. A login shell loads db2inst1's db2profile.

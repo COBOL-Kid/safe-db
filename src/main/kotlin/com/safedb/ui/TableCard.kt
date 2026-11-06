@@ -315,12 +315,7 @@ fun TableCard(
 
                             ExactDesktopTargetArea {
                                 Row(
-                                    modifier =
-                                        Modifier.width(
-                                            (TABLE_CARD_COLUMN_ACTION_SLOT_DP *
-                                                    TABLE_CARD_COLUMN_ACTION_COUNT)
-                                                .dp
-                                        ),
+                                    modifier = Modifier.width(tableColumnActionClusterWidthDp().dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.Start,
                                 ) {
@@ -496,9 +491,8 @@ fun TableCard(
 internal const val TABLE_CARD_COLUMN_ACTION_SLOT_DP = 28
 internal const val TABLE_CARD_COLUMN_ACTION_COUNT = 3
 
-internal fun tableColumnActionClusterWidthDp(includeJoinSlot: Boolean = true): Int =
-    TABLE_CARD_COLUMN_ACTION_SLOT_DP *
-        (TABLE_CARD_COLUMN_ACTION_COUNT + if (includeJoinSlot) 1 else 0)
+internal fun tableColumnActionClusterWidthDp(): Int =
+    TABLE_CARD_COLUMN_ACTION_SLOT_DP * TABLE_CARD_COLUMN_ACTION_COUNT
 
 internal fun tableColumnToggleState(selectedCount: Int, totalCount: Int): ToggleableState =
     when {

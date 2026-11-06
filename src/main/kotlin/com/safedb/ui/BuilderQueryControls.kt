@@ -92,6 +92,7 @@ internal fun commitBuilderLimitDraft(text: String): Int? {
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
 internal val QueryControlsTableGap = 16.dp
+internal val QueryStartOverlayGap = 6.dp
 internal val QueryControlsStartPadding = 16.dp
 internal val QueryOptionsPanelMinWidth = 208.dp
 internal val QueryOptionsPanelMaxWidth = 256.dp
@@ -110,10 +111,10 @@ internal fun queryControlsCanvasInset(measuredContentHeight: Dp) =
     )
 
 internal fun queryControlsHeightPx(
-    filterCount: Int,
-    filterHeightPx: Int,
+    startOverlayVisible: Boolean,
+    startOverlayHeightPx: Int,
     optionHeightPx: Int,
-): Int = if (filterCount > 0) maxOf(filterHeightPx, optionHeightPx) else optionHeightPx
+): Int = if (startOverlayVisible) maxOf(startOverlayHeightPx, optionHeightPx) else optionHeightPx
 
 internal enum class ResultsPaneMode {
     Normal,

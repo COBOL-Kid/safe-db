@@ -120,13 +120,16 @@ internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching 
 private fun capPlanRows(rows: Long?, cap: Long?): Long? =
     if (rows != null && cap != null) minOf(rows, cap) else rows
 
-// Limit can stop Nested Loop / Append / Gather early. Hash/merge joins, sorts, and
-// aggregates still read their inputs, so a LIMIT above them must not shrink scan rows.
+// Limit can stop Nested Loop / Append / Gather / scans early. Hash/merge joins, sorts,
+// aggregates, and unknown nodes still read their inputs, so a LIMIT above them must not
+// shrink scan rows.
 private fun postgresPassesAccessLimit(nodeType: String, kind: PlanOperationKind?): Boolean =
     when {
         kind != null -> false
-        nodeType.endsWith(" Join") || nodeType == "Hash" || nodeType == "Materialize" -> false
-        else -> true
+        nodeType.startsWith("Nested Loop") -> true
+        nodeType == "Append" || nodeType == "Gather" || nodeType == "Gather Merge" -> true
+        nodeType.contains("Scan") -> true
+        else -> false
     }
 
 internal fun parseMySqlPlan(raw: String, queryLimit: Long? = null): NormalizedQueryPlan? =

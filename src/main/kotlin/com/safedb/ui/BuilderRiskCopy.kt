@@ -11,6 +11,11 @@ import com.safedb.query.RiskGateState
 import com.safedb.query.blockingBand
 import com.safedb.ui.components.ConfirmDialog
 
+internal fun assessmentBlocksOnRun(assessment: QueryRiskAssessment, gate: QueryRiskGate): Boolean {
+    val band = blockingBand(gate) ?: return false
+    return assessment.severity.ordinal >= band.ordinal
+}
+
 internal fun displayedPreliminaryAssessment(
     assessment: QueryRiskAssessment?,
     incompleteFilters: Boolean,
@@ -18,8 +23,7 @@ internal fun displayedPreliminaryAssessment(
 ): QueryRiskAssessment? {
     assessment ?: return null
     if (!incompleteFilters) return assessment
-    val band = blockingBand(gate) ?: return assessment
-    return assessment.takeUnless { it.severity.ordinal >= band.ordinal }
+    return assessment.takeUnless { assessmentBlocksOnRun(it, gate) }
 }
 
 internal fun riskGateIndicatorText(gate: QueryRiskGate): String =
@@ -60,9 +64,7 @@ internal fun queryRiskIndicatorText(
             "Query risk: ${finalAssessment.severity.label}$refinement · $runEnabledLabel"
         }
         preliminary != null -> {
-            val wouldBlock =
-                blockingBand(gate)?.let { band -> preliminary.severity.ordinal >= band.ordinal } ==
-                    true
+            val wouldBlock = assessmentBlocksOnRun(preliminary, gate)
             val status =
                 when {
                     !runAvailable -> "Run unavailable"

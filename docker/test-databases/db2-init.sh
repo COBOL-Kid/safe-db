@@ -24,21 +24,17 @@ db2 CONNECT TO "$DBNAME"
 
 # Db2 LUW has no DROP ... IF EXISTS: best-effort drops, ignoring SQL0204N for
 # objects that do not exist yet so both fresh and repeat seeds work.
-for object in \
-  "DROP VIEW CUSTOMER_ORDER_SUMMARY" \
-  "DROP TABLE ANALYTICS.EVENT_NOTES" \
-  "DROP TABLE ANALYTICS.PAYLOAD_ROWS" \
-  "DROP TABLE ANALYTICS.WIDE_ROWS" \
-  "DROP TABLE ANALYTICS.SCAN_EVENTS" \
-  "DROP SCHEMA ANALYTICS RESTRICT" \
-  "DROP TABLE ORDER_ITEMS" \
-  "DROP TABLE INVENTORY_LOG" \
-  "DROP TABLE ORDERS" \
-  "DROP TABLE PRODUCTS" \
-  "DROP TABLE CUSTOMERS" \
-  "DROP TABLE CATEGORIES"; do
+# Same list as SeedRelational.dropDb2ObjectsIfPresent.
+DROP_LIST="/fixtures/db2-drop-statements.sql"
+[[ -f "$DROP_LIST" ]] || {
+  echo "Db2 drop list not found: $DROP_LIST" >&2
+  exit 1
+}
+while IFS= read -r object || [[ -n "$object" ]]; do
+  object="${object%$'\r'}"
+  [[ -z "$object" || "$object" == --* ]] && continue
   db2 "$object" >/dev/null 2>&1 || true
-done
+done <"$DROP_LIST"
 
 db2 -s -t -f /fixtures/testdata_db2.sql
 # sqllib ships the LUW EXPLAIN DDL; without these tables EXPLAIN reports

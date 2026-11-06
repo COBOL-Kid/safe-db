@@ -4,10 +4,17 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.ExplainResult
+import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryResult
 import com.safedb.model.Schema
 import com.zaxxer.hikari.HikariDataSource
-import java.sql.SQLException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.PortUnreachableException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.sql.SQLTimeoutException
+import java.sql.SQLTransientConnectionException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration.Companion.milliseconds
@@ -147,7 +154,7 @@ sealed class Adapter {
         suspend fun connect(def: ConnectionDef, password: String): Adapter {
             def.validate().getOrElse { throw IllegalArgumentException(it.message) }
             return try {
-                // Driver connect/login/socket timeouts enforce the deadline inside JDBC.
+                // Driver connect/login timeouts enforce the handshake deadline inside JDBC.
                 // runInterruptible is a second hard stop: withTimeout alone cannot unblock
                 // a thread stuck in native poll (pgjdbc doAuthentication).
                 withTimeout(CONNECT_TIMEOUT_MS.milliseconds) {
@@ -178,21 +185,13 @@ sealed class Adapter {
             try {
                 withTimeoutOrNull(DEFAULT_TIMEOUT_MS.milliseconds) { adapter.explain(compiled) }
                     ?: ExplainResult.Unavailable(
-                        com.safedb.model.PlanUnavailableReason.TimedOut,
+                        PlanUnavailableReason.TimedOut,
                         "Query plan assessment timed out",
                     )
-            } catch (error: SQLException) {
-                val permissionDenied =
-                    error.message?.contains("permission", ignoreCase = true) == true ||
-                        error.message?.contains("denied", ignoreCase = true) == true
-                ExplainResult.Unavailable(
-                    if (permissionDenied) com.safedb.model.PlanUnavailableReason.PermissionDenied
-                    else com.safedb.model.PlanUnavailableReason.ExecutionFailure,
-                    conciseErrorMessage(
-                        error.message ?: "Query plan assessment failed",
-                        "Query plan assessment failed",
-                    ),
-                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                unavailablePlanFromError(error)
             }
     }
 
@@ -205,6 +204,48 @@ sealed class Adapter {
             is Db2 -> closeDataSource(dataSource)
         }
     }
+}
+
+fun unavailablePlanFromError(error: Throwable): ExplainResult.Unavailable {
+    val chain = generateSequence(error) { it.cause }.toList()
+    val texts = chain.mapNotNull { it.message }.joinToString("\n")
+    val reason =
+        when {
+            isPlanPermissionDenied(texts) -> PlanUnavailableReason.PermissionDenied
+            isPlanConnectivityFailure(chain, texts) -> PlanUnavailableReason.ConnectionFailure
+            else -> PlanUnavailableReason.ExecutionFailure
+        }
+    return ExplainResult.Unavailable(
+        reason,
+        conciseErrorMessage(
+            error.message?.takeIf { it.isNotBlank() }
+                ?: texts.ifBlank { "Query plan assessment failed" },
+            "Query plan assessment failed",
+        ),
+    )
+}
+
+private fun isPlanPermissionDenied(texts: String): Boolean {
+    val lower = texts.lowercase()
+    return "permission" in lower || "denied" in lower
+}
+
+private fun isPlanConnectivityFailure(chain: List<Throwable>, texts: String): Boolean {
+    if (
+        chain.any { error ->
+            error is QueryTimedOutException ||
+                error is SQLTimeoutException ||
+                error is SQLTransientConnectionException ||
+                error is SocketTimeoutException ||
+                error is ConnectException ||
+                error is UnknownHostException ||
+                error is NoRouteToHostException ||
+                error is PortUnreachableException
+        }
+    ) {
+        return true
+    }
+    return isTimeoutOrConnectionFailure(texts)
 }
 
 fun columnsFromCompiledSql(sql: String, dialect: Dialect): List<String> {

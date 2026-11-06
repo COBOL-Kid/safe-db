@@ -222,22 +222,16 @@ private class SqlSpecBuilder(
         )
     }
 
+    private fun allColumns(table: ResolvedTable): List<ColumnSel> =
+        table.info.columns.map { column ->
+            ColumnSel(tableAlias = table.alias, column = column.name)
+        }
+
     private fun resolveSelectItems(): List<ColumnSel> {
-        val items =
-            ast.items
-                ?: return tables.flatMap { table ->
-                    table.info.columns.map { column ->
-                        ColumnSel(tableAlias = table.alias, column = column.name)
-                    }
-                }
+        val items = ast.items ?: return tables.flatMap(::allColumns)
         return items.flatMap { item ->
             when (item) {
-                is SqlSelectItem.TableStar -> {
-                    val table = resolveQualifier(item.qualifier)
-                    table.info.columns.map { column ->
-                        ColumnSel(tableAlias = table.alias, column = column.name)
-                    }
-                }
+                is SqlSelectItem.TableStar -> allColumns(resolveQualifier(item.qualifier))
                 is SqlSelectItem.Column -> {
                     val (alias, column) = resolveColumn(item.ref)
                     listOf(ColumnSel(tableAlias = alias, column = column.name))

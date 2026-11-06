@@ -27,6 +27,7 @@ import com.safedb.model.Dialect
 import com.safedb.model.Outcome
 import com.safedb.model.Schema
 import com.safedb.model.Settings
+import com.safedb.model.displayName
 import com.safedb.query.evaluateQueryRisk
 import com.safedb.query.sql.SqlParseResult
 import com.safedb.query.sql.lineColOf
@@ -184,7 +185,7 @@ internal fun SqlScreen(
                     buildString {
                         append(connection.database)
                         if (selectedSchema != null) append(" · $selectedSchema")
-                        append(" · ${dialectLabel(connection.dialect)}")
+                        append(" · ${connection.dialect.displayName()}")
                     }
                 },
             connection = connection,

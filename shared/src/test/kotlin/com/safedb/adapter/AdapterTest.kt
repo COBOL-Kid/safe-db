@@ -385,13 +385,15 @@ class AdapterTest {
         )
         assertEquals("true", config.dataSourceProperties.getProperty("encrypt"))
         assertEquals("10", config.dataSourceProperties.getProperty("loginTimeout"))
-        assertEquals("10000", config.dataSourceProperties.getProperty("socketTimeout"))
+        assertEquals("30000", config.dataSourceProperties.getProperty("socketTimeout"))
     }
 
     @Test
     fun datasourcePinsConnectTimeoutsForEveryDialect() {
-        val seconds = (CONNECT_TIMEOUT_MS / 1000L).toString()
-        val millis = CONNECT_TIMEOUT_MS.toString()
+        val connectSeconds = (CONNECT_TIMEOUT_MS / 1000L).toString()
+        val connectMillis = CONNECT_TIMEOUT_MS.toString()
+        val readSeconds = (INTROSPECTION_TIMEOUT_MS / 1000L).toString()
+        val readMillis = INTROSPECTION_TIMEOUT_MS.toString()
 
         val postgres =
             createDataSourceConfig(
@@ -406,9 +408,9 @@ class AdapterTest {
                     "pw",
                 )
                 .dataSourceProperties
-        assertEquals(seconds, postgres.getProperty("connectTimeout"))
-        assertEquals(seconds, postgres.getProperty("loginTimeout"))
-        assertEquals(seconds, postgres.getProperty("socketTimeout"))
+        assertEquals(connectSeconds, postgres.getProperty("connectTimeout"))
+        assertEquals(connectSeconds, postgres.getProperty("loginTimeout"))
+        assertEquals(readSeconds, postgres.getProperty("socketTimeout"))
 
         val mysql =
             createDataSourceConfig(
@@ -417,8 +419,8 @@ class AdapterTest {
                     "pw",
                 )
                 .dataSourceProperties
-        assertEquals(millis, mysql.getProperty("connectTimeout"))
-        assertEquals(millis, mysql.getProperty("socketTimeout"))
+        assertEquals(connectMillis, mysql.getProperty("connectTimeout"))
+        assertEquals(readMillis, mysql.getProperty("socketTimeout"))
 
         val mssql =
             createDataSourceConfig(
@@ -426,8 +428,8 @@ class AdapterTest {
                     "pw",
                 )
                 .dataSourceProperties
-        assertEquals(seconds, mssql.getProperty("loginTimeout"))
-        assertEquals(millis, mssql.getProperty("socketTimeout"))
+        assertEquals(connectSeconds, mssql.getProperty("loginTimeout"))
+        assertEquals(readMillis, mssql.getProperty("socketTimeout"))
 
         val oracle =
             createDataSourceConfig(
@@ -442,9 +444,9 @@ class AdapterTest {
                     "pw",
                 )
                 .dataSourceProperties
-        assertEquals(millis, oracle.getProperty("oracle.net.CONNECT_TIMEOUT"))
-        assertEquals(millis, oracle.getProperty("oracle.jdbc.ReadTimeout"))
-        assertEquals(millis, oracle.getProperty("oracle.net.READ_TIMEOUT"))
+        assertEquals(connectMillis, oracle.getProperty("oracle.net.CONNECT_TIMEOUT"))
+        assertEquals(readMillis, oracle.getProperty("oracle.jdbc.ReadTimeout"))
+        assertEquals(readMillis, oracle.getProperty("oracle.net.READ_TIMEOUT"))
 
         val db2 =
             createDataSourceConfig(
@@ -452,8 +454,8 @@ class AdapterTest {
                     "pw",
                 )
                 .dataSourceProperties
-        assertEquals(seconds, db2.getProperty("loginTimeout"))
-        assertEquals(seconds, db2.getProperty("blockingReadConnectionTimeout"))
+        assertEquals(connectSeconds, db2.getProperty("loginTimeout"))
+        assertEquals(readSeconds, db2.getProperty("blockingReadConnectionTimeout"))
     }
 
     @Test

@@ -21,16 +21,20 @@ internal data class ResultSlice(
     val nextOffset: Int?,
 )
 
-internal fun flattenCell(cell: ResultCell): JsonElement = flattenCellBounded(cell) {}
+internal fun flattenCell(cell: ResultCell): JsonElement = flattenCellInternal(cell, clip = false)
 
 internal fun flattenRow(columnNames: List<String>, row: List<ResultCell>): JsonObject =
-    flattenRowBounded(columnNames, row).row
+    flattenRowInternal(columnNames, row, clip = false).row
 
 internal fun flattenRows(
     result: QueryResult,
     offset: Int = 0,
     limit: Int = Int.MAX_VALUE,
-): List<JsonObject> = sliceRows(result, offset, limit, maxBytes = Int.MAX_VALUE).rows
+): List<JsonObject> {
+    val names = result.columns.map { it.name }
+    val start = offset.coerceAtLeast(0)
+    return result.rows.drop(start).take(limit.coerceAtLeast(0)).map { flattenRow(names, it) }
+}
 
 internal fun previewRows(
     result: QueryResult,
@@ -51,7 +55,7 @@ internal fun sliceRows(
     val remaining = result.rows.drop(start)
     for (row in remaining) {
         if (rows.size >= limit.coerceAtLeast(0)) break
-        val flattened = flattenRowBounded(names, row)
+        val flattened = flattenRowInternal(names, row, clip = true)
         val encoded = flattened.row.toString().toByteArray(Charsets.UTF_8)
         val extra = encoded.size + if (rows.isEmpty()) 0 else 1
         if (rows.isNotEmpty() && used + extra > maxBytes) break
@@ -72,7 +76,11 @@ internal fun sliceRows(
 
 private data class FlattenedRow(val row: JsonObject, val truncated: Boolean)
 
-private fun flattenRowBounded(columnNames: List<String>, row: List<ResultCell>): FlattenedRow {
+private fun flattenRowInternal(
+    columnNames: List<String>,
+    row: List<ResultCell>,
+    clip: Boolean,
+): FlattenedRow {
     var truncated = false
     val json = buildJsonObject {
         val used = mutableSetOf<String>()
@@ -85,22 +93,31 @@ private fun flattenRowBounded(columnNames: List<String>, row: List<ResultCell>):
             }
             put(
                 key,
-                flattenCellBounded(row.getOrElse(index) { ResultCell.Null }) { truncated = true },
+                flattenCellInternal(row.getOrElse(index) { ResultCell.Null }, clip) {
+                    truncated = true
+                },
             )
         }
     }
     return FlattenedRow(json, truncated)
 }
 
-private fun flattenCellBounded(cell: ResultCell, onTruncate: () -> Unit): JsonElement =
+private fun flattenCellInternal(
+    cell: ResultCell,
+    clip: Boolean,
+    onTruncate: () -> Unit = {},
+): JsonElement =
     when (cell) {
         ResultCell.Null -> JsonNull
         is ResultCell.BoolCell -> JsonPrimitive(cell.value)
         is ResultCell.IntegerCell -> JsonPrimitive(cell.value)
         is ResultCell.FloatCell -> flattenFloat(cell.value)
-        is ResultCell.TextCell -> JsonPrimitive(clipForMcp(cell.value.text, onTruncate))
-        is ResultCell.BinaryCell -> JsonPrimitive(clipForMcp(cell.value.base64, onTruncate))
+        is ResultCell.TextCell -> JsonPrimitive(maybeClip(cell.value.text, clip, onTruncate))
+        is ResultCell.BinaryCell -> JsonPrimitive(maybeClip(cell.value.base64, clip, onTruncate))
     }
+
+private fun maybeClip(value: String, clip: Boolean, onTruncate: () -> Unit): String =
+    if (clip) clipForMcp(value, onTruncate) else value
 
 private fun clipForMcp(value: String, onTruncate: () -> Unit): String {
     val bytes = value.toByteArray(Charsets.UTF_8)

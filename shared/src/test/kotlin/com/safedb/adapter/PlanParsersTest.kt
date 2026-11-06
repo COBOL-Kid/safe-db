@@ -51,6 +51,37 @@ class PlanParsersTest {
     }
 
     @Test
+    fun postgresLimitAllowlistsNestedLoopJoinsAndFailsClosedForUnknownNodes() {
+        val limitedNestedLoopLeftJoin =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Nested Loop Left Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]"""
+            )
+        assertNotNull(limitedNestedLoopLeftJoin)
+        assertEquals(
+            1,
+            limitedNestedLoopLeftJoin.relations.first { it.alias == "t0" }.estimatedRows,
+        )
+        assertEquals(1, limitedNestedLoopLeftJoin.joins.single().estimatedOutputRows)
+
+        val limitedHashJoin =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":40.0,"Plans":[{"Node Type":"Hash Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":3}]}]}}]"""
+            )
+        assertNotNull(limitedHashJoin)
+        assertEquals(
+            1_000_000,
+            limitedHashJoin.relations.first { it.alias == "t0" }.estimatedRows,
+        )
+
+        val limitedUnknown =
+            parsePostgresPlan(
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Unknown Operator","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}]}}]"""
+            )
+        assertNotNull(limitedUnknown)
+        assertEquals(1_000_000, limitedUnknown.relations.single().estimatedRows)
+    }
+
+    @Test
     fun mysqlLimitCapsScanAndJoinRowsUnlessABlockingOperatorIntervenes() {
         val limitedScan =
             parseMySqlPlan(

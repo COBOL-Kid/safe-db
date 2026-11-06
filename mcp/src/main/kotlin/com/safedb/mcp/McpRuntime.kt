@@ -114,6 +114,12 @@ internal sealed interface Arg<out T> {
     data class Err(val result: CallToolResult) : Arg<Nothing>
 }
 
+internal inline fun <T> Arg<T>.getOrElse(onErr: (CallToolResult) -> Nothing): T =
+    when (this) {
+        is Arg.Ok -> value
+        is Arg.Err -> onErr(result)
+    }
+
 internal fun requireKnownArguments(request: CallToolRequest, vararg allowed: String): Arg<Unit> {
     val extra = request.arguments?.keys.orEmpty().filter { it !in allowed }.sorted()
     if (extra.isEmpty()) return Arg.Ok(Unit)
@@ -306,14 +312,11 @@ internal fun registerConnectionTools(
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_connections failed") {
-            when (val extra = requireKnownArguments(request)) {
-                is Arg.Err -> extra.result
-                is Arg.Ok -> {
-                    val payload =
-                        toolJson.encodeToString(service.listConnections().map { it.toSummary() })
-                    CallToolResult(content = listOf(TextContent(text = payload)))
-                }
+            requireKnownArguments(request).getOrElse {
+                return@runMcpTool it
             }
+            val payload = toolJson.encodeToString(service.listConnections().map { it.toSummary() })
+            CallToolResult(content = listOf(TextContent(text = payload)))
         }
     }
 
@@ -382,14 +385,12 @@ private suspend fun handleDeleteConnection(
     tokens: DeleteConfirmationTokens,
     request: CallToolRequest,
 ): CallToolResult {
-    when (val extra = requireKnownArguments(request, "connection_id", "confirmation")) {
-        is Arg.Err -> return extra.result
-        is Arg.Ok -> Unit
+    requireKnownArguments(request, "connection_id", "confirmation").getOrElse {
+        return it
     }
     val id =
-        when (val parsed = requiredString(request, "connection_id")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "connection_id").getOrElse {
+            return it
         }
     val connection =
         service.listConnections().find { it.id == id }

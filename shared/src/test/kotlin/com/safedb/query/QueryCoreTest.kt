@@ -35,6 +35,7 @@ import com.safedb.model.TableSizeClass
 import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -143,6 +144,76 @@ class QueryCoreTest {
                 "Driver dump: " +
                 "x".repeat(800)
         val runner =
+            object : QueryRunner {
+                var executeCalls = 0
+
+                override suspend fun explain(compiled: CompiledQuery): ExplainResult {
+                    throw SQLException(dump)
+                }
+
+                override suspend fun executeQuery(
+                    compiled: CompiledQuery,
+                    timeoutMs: Int,
+                ): Outcome<QueryResult> {
+                    executeCalls++
+                    return Outcome.ok(sampleResult())
+                }
+            }
+
+        val outcome =
+            runQueryCore(
+                runner,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default(),
+            )
+
+        val failure = assertIs<QueryCoreOutcome.Failure>(outcome)
+        val error = assertIs<QueryError.Execution>(failure.error.error)
+        assertEquals(
+            PlanUnavailableReason.ConnectionFailure,
+            failure.error.riskEvaluation?.planUnavailableReason,
+        )
+        assertTrue(error.message.startsWith("Query plan assessment failed: An I/O error occurred."))
+        assertFalse(error.message.contains("Driver dump"))
+        assertTrue(error.message.length < 300)
+        assertEquals(0, runner.executeCalls)
+    }
+
+    @Test
+    fun classifiedConnectionFailureHardFailsWithoutConfirmation() = runBlocking {
+        val runner =
+            StubRunner(
+                explainResult =
+                    ExplainResult.Unavailable(
+                        PlanUnavailableReason.ConnectionFailure,
+                        "An I/O error occurred.",
+                    )
+            )
+
+        val outcome =
+            runQueryCore(
+                runner,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default(),
+            )
+
+        val error =
+            assertIs<QueryError.Execution>(assertIs<QueryCoreOutcome.Failure>(outcome).error.error)
+        assertEquals("Query plan assessment failed: An I/O error occurred.", error.message)
+        assertEquals(0, runner.executeCalls)
+    }
+
+    @Test
+    fun executionFailureDoesNotHardFailBySniffingDisplayText() = runBlocking {
+        val dump =
+            "An I/O error occurred. Communications link failure\n\n" +
+                "Driver dump: " +
+                "x".repeat(800)
+        val runner =
             StubRunner(
                 explainResult =
                     ExplainResult.Unavailable(PlanUnavailableReason.ExecutionFailure, dump)
@@ -157,11 +228,14 @@ class QueryCoreTest {
                 Settings.default(),
             )
 
-        val error =
-            assertIs<QueryError.Execution>(assertIs<QueryCoreOutcome.Failure>(outcome).error.error)
-        assertTrue(error.message.startsWith("Query plan assessment failed: An I/O error occurred."))
-        assertFalse(error.message.contains("Driver dump"))
-        assertTrue(error.message.length < 300)
+        val confirmationError =
+            assertIs<QueryError.ConfirmationRequired>(
+                assertIs<QueryCoreOutcome.Failure>(outcome).error.error
+            )
+        assertEquals(
+            PlanUnavailableReason.ExecutionFailure,
+            confirmationError.evaluation.planUnavailableReason,
+        )
         assertEquals(0, runner.executeCalls)
     }
 

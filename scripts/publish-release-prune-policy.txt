@@ -1,0 +1,7 @@
+# keep glob description
+# Copied by publish-release.sh and publish-release.ps1. Do not merge those scripts.
+# scripts/test_assert_conveyor_site.sh is the behavioral lock; publish-release.ps1 must match.
+2 *-mac-*.zip macOS zip
+5 *.delta macOS delta
+1 *-windows-*.zip Windows zip
+1 *.msix Windows MSIX

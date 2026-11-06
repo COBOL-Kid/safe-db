@@ -3,6 +3,7 @@ package com.safedb.query.sql
 import com.safedb.model.Dialect
 import com.safedb.model.FilterOp
 import com.safedb.model.SortDirection
+import com.safedb.model.displayName
 import java.util.Locale
 
 internal sealed class SqlStatementResult {
@@ -111,7 +112,7 @@ private class SqlParser(
             if (dialect != Dialect.Mssql) {
                 fail(
                     SqlIssueCode.Unsupported,
-                    SqlMessages.topElsewhere(dialectDisplay(dialect)),
+                    SqlMessages.topElsewhere(dialect.displayName()),
                     topToken.span,
                 )
             }
@@ -364,7 +365,7 @@ private class SqlParser(
                 if (dialect != Dialect.Postgres) {
                     fail(
                         SqlIssueCode.Unsupported,
-                        SqlMessages.ilikeElsewhere(dialectDisplay(dialect)),
+                        SqlMessages.ilikeElsewhere(dialect.displayName()),
                         ilikeToken.span,
                     )
                 }

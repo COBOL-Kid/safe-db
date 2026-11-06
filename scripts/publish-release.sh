@@ -20,8 +20,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUCKET="${BUCKET:-gs://safedb-download}"
 OUTPUT_DIR="${1:-}"
+PRUNE_POLICY="$SCRIPT_DIR/publish-release-prune-policy.txt"
 
 if [[ -z "$OUTPUT_DIR" || ! -d "$OUTPUT_DIR" ]]; then
 	echo "usage: $0 <conveyor-output-dir>" >&2
@@ -149,10 +151,18 @@ prune_old_objects() {
 	gcloud --quiet storage rm "${doomed[@]}"
 }
 
-prune_old_objects 2 "macOS zip"    '*-mac-*.zip'
-prune_old_objects 5 "macOS delta"  '*.delta'
-prune_old_objects 1 "Windows zip"  '*-windows-*.zip'
-prune_old_objects 1 "Windows MSIX" '*.msix'
+# Keep/glob table is scripts/publish-release-prune-policy.txt (shared with
+# publish-release.ps1). scripts/test_assert_conveyor_site.sh is the policy lock.
+[[ -f "$PRUNE_POLICY" ]] || {
+	echo "publish aborted: missing prune policy $PRUNE_POLICY" >&2
+	exit 1
+}
+while IFS= read -r line || [[ -n "$line" ]]; do
+	line="${line%$'\r'}"
+	[[ -z "$line" || "$line" == \#* ]] && continue
+	read -r keep pattern description <<<"$line"
+	prune_old_objects "$keep" "$description" "$pattern"
+done <"$PRUNE_POLICY"
 
 assert_no_cache() {
 	local object="$1"

@@ -26,10 +26,9 @@ class TableCardStateTest {
     }
 
     @Test
-    fun columnActionClusterReservesStableSlotsForFilterGroupSortAndJoin() {
+    fun columnActionClusterReservesStableSlotsForFilterGroupAndSort() {
         assertEquals(28, TABLE_CARD_COLUMN_ACTION_SLOT_DP)
         assertEquals(3, TABLE_CARD_COLUMN_ACTION_COUNT)
-        assertEquals(84, tableColumnActionClusterWidthDp(includeJoinSlot = false))
-        assertEquals(112, tableColumnActionClusterWidthDp())
+        assertEquals(84, tableColumnActionClusterWidthDp())
     }
 }

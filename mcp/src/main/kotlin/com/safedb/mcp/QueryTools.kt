@@ -1,6 +1,5 @@
 package com.safedb.mcp
 
-import com.safedb.adapter.ConnectionFailedException
 import com.safedb.model.ConnectionDef
 import com.safedb.model.MAX_RESULT_BYTES
 import com.safedb.model.QueryRiskGate
@@ -202,22 +201,17 @@ private suspend fun handleRunQuery(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
-    when (
-        val extra =
-            requireKnownArguments(request, "connection_id", "sql", "default_schema", "confirmation")
-    ) {
-        is Arg.Err -> return extra.result
-        is Arg.Ok -> Unit
-    }
+    requireKnownArguments(request, "connection_id", "sql", "default_schema", "confirmation")
+        .getOrElse {
+            return it
+        }
     val connectionId =
-        when (val parsed = requiredString(request, "connection_id")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "connection_id").getOrElse {
+            return it
         }
     val sql =
-        when (val parsed = requiredString(request, "sql")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "sql").getOrElse {
+            return it
         }
     val connection =
         service.listConnections().find { it.id == connectionId }
@@ -252,21 +246,11 @@ private suspend fun prepareSql(
     sql: String,
     request: CallToolRequest,
 ): PreparedQuery {
-    val (schema, settings) =
-        try {
-            service.getSchema(connection.id) to service.getSettings()
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: ConnectionFailedException) {
-            throw error
-        } catch (error: Exception) {
-            return PreparedQuery.Err(toolError(ERROR_INTERNAL, error.message ?: "run_query failed"))
-        }
+    val (schema, settings) = service.getSchema(connection.id) to service.getSettings()
     val defaultSchema =
-        when (val parsed = optionalString(request, "default_schema")) {
-            is Arg.Ok -> parsed.value ?: settingsDefaultSchema(settings, connection.id)
-            is Arg.Err -> return PreparedQuery.Err(parsed.result)
-        }
+        optionalString(request, "default_schema").getOrElse {
+            return PreparedQuery.Err(it)
+        } ?: settingsDefaultSchema(settings, connection.id)
     return when (
         val parsed =
             parseSqlToSpec(
@@ -351,10 +335,7 @@ private suspend fun successReceipt(
             warnings = warnings,
             risk = riskSummary(completed.riskEvaluation),
             preview = preview.rows,
-            previewTruncated =
-                preview.moreRowsRemain ||
-                    preview.cellsTruncated ||
-                    preview.rows.size < result.rowCount,
+            previewTruncated = preview.moreRowsRemain || preview.cellsTruncated,
             resultId = stored.resultId,
         )
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
@@ -377,24 +358,20 @@ private suspend fun handleGetResultRows(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
-    when (val extra = requireKnownArguments(request, "result_id", "offset", "limit")) {
-        is Arg.Err -> return extra.result
-        is Arg.Ok -> Unit
+    requireKnownArguments(request, "result_id", "offset", "limit").getOrElse {
+        return it
     }
     val resultId =
-        when (val parsed = requiredString(request, "result_id")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "result_id").getOrElse {
+            return it
         }
     val offsetRaw =
-        when (val parsed = optionalInt(request, "offset")) {
-            is Arg.Ok -> parsed.value ?: 0
-            is Arg.Err -> return parsed.result
-        }
+        optionalInt(request, "offset").getOrElse {
+            return it
+        } ?: 0
     val limitRaw =
-        when (val parsed = optionalInt(request, "limit")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        optionalInt(request, "limit").getOrElse {
+            return it
         }
     if (limitRaw != null && limitRaw <= 0) {
         return toolError(ERROR_INVALID_ARGUMENTS, "limit must be 1 or more")
@@ -419,14 +396,12 @@ private suspend fun handleSummarizeResult(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
-    when (val extra = requireKnownArguments(request, "result_id")) {
-        is Arg.Err -> return extra.result
-        is Arg.Ok -> Unit
+    requireKnownArguments(request, "result_id").getOrElse {
+        return it
     }
     val resultId =
-        when (val parsed = requiredString(request, "result_id")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "result_id").getOrElse {
+            return it
         }
     val result = resultStore.get(resultId) ?: return toolError(ERROR_NOT_FOUND, "Result not found")
     val summary =

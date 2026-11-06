@@ -1,8 +1,9 @@
 -- Db2 fixture for local JDBC, schema-discovery, query, and risk-gate tests.
 -- Db2 LUW syntax: VARCHAR/INTEGER/TIMESTAMP with FETCH FIRST pagination.
 -- Db2 LUW has no DROP ... IF EXISTS, so this file intentionally contains no drops:
--- docker/test-databases/db2-init.sh and the Db2 seed path issue best-effort drops
--- (ignoring SQL0204N for objects that do not exist yet) before loading this file.
+-- docker/test-databases/db2-drop-statements.sql is the shared list used by
+-- docker/test-databases/db2-init.sh and SeedRelational before loading this file
+-- (best-effort, ignoring SQL0204N for objects that do not exist yet).
 -- Unquoted names fold to uppercase, so introspection sees CUSTOMERS/ORDERS.
 -- Shop tables stay small. Bulk tables are generated (digit cross-joins):
 --   ANALYTICS.SCAN_EVENTS  1,000,000  Large size class, full-scan timeout, High on uncapped scan
@@ -78,19 +79,21 @@ WITH digits(n) AS (
     UNION ALL SELECT 8 FROM SYSIBM.SYSDUMMY1 UNION ALL SELECT 9 FROM SYSIBM.SYSDUMMY1
 )
 SELECT
-    a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1,
-    CASE WHEN MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1, 17) = 0
-        THEN NULL ELSE 1 + MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000, 3) END,
-    TIMESTAMP('2024-01-01-00.00.00') + (MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000, 365)) DAYS,
-    DECIMAL(MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1, 10000), 12, 2) / 100,
-    CASE WHEN MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000, 2) = 0 THEN 1 ELSE 0 END,
-    'label-' || CHAR(MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000, 50)),
+    n,
+    CASE WHEN MOD(n, 17) = 0 THEN NULL ELSE 1 + MOD(n, 3) END,
+    TIMESTAMP('2024-01-01-00.00.00') + (MOD(n, 365)) DAYS,
+    DECIMAL(MOD(n, 10000), 12, 2) / 100,
+    CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END,
+    'label-' || CHAR(MOD(n, 50)),
     CASE
-        WHEN MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1, 11) = 0 THEN NULL
-        WHEN MOD(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1, 13) = 0 THEN 'cafe naive'
-        ELSE 'note-' || CHAR(a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1)
+        WHEN MOD(n, 11) = 0 THEN NULL
+        WHEN MOD(n, 13) = 0 THEN 'cafe naive'
+        ELSE 'note-' || CHAR(n)
     END
-FROM digits a, digits b, digits c, digits d, digits e, digits f;
+FROM (
+    SELECT a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1 AS n
+    FROM digits a, digits b, digits c, digits d, digits e, digits f
+) seq;
 
 CREATE TABLE analytics.wide_rows (
     id INTEGER NOT NULL PRIMARY KEY,

@@ -86,24 +86,10 @@ private class SeedRelational(
 
     // Db2 LUW has no DROP ... IF EXISTS, so neither the static fixture nor the generated
     // DDL can drop objects itself. Issue best-effort drops up front (ignoring SQL0204N)
-    // so both fresh and repeat seeds load cleanly.
+    // so both fresh and repeat seeds load cleanly. Same list as docker/test-databases/db2-init.sh.
     private fun dropDb2ObjectsIfPresent() {
         if (dialect != GeneratedSqlDialect.Db2) return
-        val drops =
-            listOf(
-                "DROP VIEW CUSTOMER_ORDER_SUMMARY",
-                "DROP TABLE ANALYTICS.EVENT_NOTES",
-                "DROP TABLE ANALYTICS.PAYLOAD_ROWS",
-                "DROP TABLE ANALYTICS.WIDE_ROWS",
-                "DROP TABLE ANALYTICS.SCAN_EVENTS",
-                "DROP SCHEMA ANALYTICS RESTRICT",
-                "DROP TABLE ORDER_ITEMS",
-                "DROP TABLE INVENTORY_LOG",
-                "DROP TABLE ORDERS",
-                "DROP TABLE PRODUCTS",
-                "DROP TABLE CUSTOMERS",
-                "DROP TABLE CATEGORIES",
-            )
+        val drops = db2DropStatements(repoRoot)
         val loop = drops.joinToString(" ") { "\"$it\"" }
         // settings.user/database are validated SQL identifiers above, so interpolation is safe.
         val script =
@@ -383,6 +369,23 @@ private fun validateContainerName(value: String, label: String) {
     if (!Regex("""^[A-Za-z0-9][A-Za-z0-9_.-]*$""").matches(value)) {
         throw RuntimeException("invalid $label")
     }
+}
+
+internal const val DB2_DROP_STATEMENTS_RELATIVE = "docker/test-databases/db2-drop-statements.sql"
+
+internal fun db2DropStatements(repoRoot: Path): List<String> {
+    val path = repoRoot.resolve(DB2_DROP_STATEMENTS_RELATIVE)
+    if (!path.exists()) {
+        throw RuntimeException("Db2 drop list not found: $path")
+    }
+    val drops =
+        path.toFile().readLines().map(String::trim).filter { line ->
+            line.isNotEmpty() && !line.startsWith("--")
+        }
+    if (drops.isEmpty()) {
+        throw RuntimeException("Db2 drop list is empty: $path")
+    }
+    return drops
 }
 
 // Db2 rejects a top-level SELECT that has no FROM clause. The other clients accept it.

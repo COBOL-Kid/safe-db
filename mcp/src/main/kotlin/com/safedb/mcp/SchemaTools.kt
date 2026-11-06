@@ -112,20 +112,17 @@ private suspend fun handleListTables(
     cache: SchemaCache,
     request: CallToolRequest,
 ): CallToolResult {
-    when (val extra = requireKnownArguments(request, "connection_id", "refresh")) {
-        is Arg.Err -> return extra.result
-        is Arg.Ok -> Unit
+    requireKnownArguments(request, "connection_id", "refresh").getOrElse {
+        return it
     }
     val connectionId =
-        when (val parsed = requiredString(request, "connection_id")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "connection_id").getOrElse {
+            return it
         }
     val refresh =
-        when (val parsed = optionalBoolean(request, "refresh")) {
-            is Arg.Ok -> parsed.value == true
-            is Arg.Err -> return parsed.result
-        }
+        optionalBoolean(request, "refresh").getOrElse {
+            return it
+        } == true
     if (service.listConnections().none { it.id == connectionId }) {
         return toolError(ERROR_NOT_FOUND, "Connection not found")
     }
@@ -139,32 +136,25 @@ private suspend fun handleDescribeTable(
     cache: SchemaCache,
     request: CallToolRequest,
 ): CallToolResult {
-    when (
-        val extra = requireKnownArguments(request, "connection_id", "schema", "table", "refresh")
-    ) {
-        is Arg.Err -> return extra.result
-        is Arg.Ok -> Unit
+    requireKnownArguments(request, "connection_id", "schema", "table", "refresh").getOrElse {
+        return it
     }
     val connectionId =
-        when (val parsed = requiredString(request, "connection_id")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "connection_id").getOrElse {
+            return it
         }
     val schemaName =
-        when (val parsed = requiredString(request, "schema")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "schema").getOrElse {
+            return it
         }
     val tableName =
-        when (val parsed = requiredString(request, "table")) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        requiredString(request, "table").getOrElse {
+            return it
         }
     val refresh =
-        when (val parsed = optionalBoolean(request, "refresh")) {
-            is Arg.Ok -> parsed.value == true
-            is Arg.Err -> return parsed.result
-        }
+        optionalBoolean(request, "refresh").getOrElse {
+            return it
+        } == true
     if (service.listConnections().none { it.id == connectionId }) {
         return toolError(ERROR_NOT_FOUND, "Connection not found")
     }

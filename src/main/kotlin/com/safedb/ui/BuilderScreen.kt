@@ -62,6 +62,7 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Outcome
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
+import com.safedb.model.displayName
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.RiskGateState
 import com.safedb.query.hasIncompleteFilterValues
@@ -108,7 +109,7 @@ internal fun BuilderScreen(
     var resultsHeight by remember { mutableFloatStateOf(RESULTS_PANE_DEFAULT_HEIGHT) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
-    var filterControlsHeightPx by remember { mutableIntStateOf(0) }
+    var startControlsHeightPx by remember { mutableIntStateOf(0) }
     var optionControlsHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val limitChoices = BUILDER_LIMIT_CHOICES
@@ -236,7 +237,7 @@ internal fun BuilderScreen(
                 Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
                     Text(connection.name, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "${dialectLabel(connection.dialect)} · ${connection.database}",
+                        "${connection.dialect.displayName()} · ${connection.database}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -333,7 +334,7 @@ internal fun BuilderScreen(
                             queryViewModel.clear()
                             resultsPaneMode = ResultsPaneMode.Normal
                             resultsHeight = RESULTS_PANE_DEFAULT_HEIGHT
-                            filterControlsHeightPx = 0
+                            startControlsHeightPx = 0
                             optionControlsHeightPx = 0
                         }
                     ) {
@@ -491,188 +492,200 @@ internal fun BuilderScreen(
                             resultsPaneHeightWhenResultsArrive(resultsHeight, maxWorkspaceHeight)
                     }
 
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            if (!resultsMaximized) {
-                                queryViewModel.hydrationWarning?.let { warning ->
-                                    MessageBanner(text = warning, kind = BannerKind.WARNING) {
-                                        TextButton(
-                                            onClick = { queryViewModel.dismissHydrationWarning() }
-                                        ) {
-                                            Text("Dismiss")
-                                        }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (!resultsMaximized) {
+                            queryViewModel.hydrationWarning?.let { warning ->
+                                MessageBanner(text = warning, kind = BannerKind.WARNING) {
+                                    TextButton(
+                                        onClick = { queryViewModel.dismissHydrationWarning() }
+                                    ) {
+                                        Text("Dismiss")
                                     }
                                 }
-                                recipeApplyNotice?.let { notice ->
-                                    MessageBanner(text = notice, kind = BannerKind.WARNING) {
-                                        TextButton(onClick = onDismissRecipeApplyNotice) {
-                                            Text("Dismiss")
-                                        }
+                            }
+                            recipeApplyNotice?.let { notice ->
+                                MessageBanner(text = notice, kind = BannerKind.WARNING) {
+                                    TextButton(onClick = onDismissRecipeApplyNotice) {
+                                        Text("Dismiss")
                                     }
                                 }
+                            }
 
-                                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                    if (queryViewModel.canvasTables.isEmpty()) {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                "Click + next to a table in the sidebar to add it.",
-                                                style = MaterialTheme.typography.bodySmall,
-                                            )
-                                        }
-                                    } else {
-                                        Canvas(
-                                            queryViewModel = queryViewModel,
-                                            contentTopInset =
-                                                queryControlsCanvasInset(
-                                                    with(density) {
-                                                        queryControlsHeightPx(
-                                                                filterCount =
-                                                                    queryViewModel.filterCount,
-                                                                filterHeightPx =
-                                                                    filterControlsHeightPx,
-                                                                optionHeightPx =
-                                                                    optionControlsHeightPx,
-                                                            )
-                                                            .toDp()
-                                                    }
-                                                ),
-                                            modifier = Modifier.fillMaxSize(),
+                            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                if (queryViewModel.canvasTables.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "Click + next to a table in the sidebar to add it.",
+                                            style = MaterialTheme.typography.bodySmall,
                                         )
-                                        val tableNamesByAlias =
-                                            queryViewModel.canvasTables.associate {
-                                                it.alias to it.tableInfo.name
-                                            }
-                                        // Keep controls as separate aligned siblings (no full-width
-                                        // empty parent) so dashed join-line clicks reach the
-                                        // canvas.
-                                        if (queryViewModel.filterCount > 0) {
-                                            FilterGroupCard(
-                                                queryViewModel = queryViewModel,
-                                                group = queryViewModel.filters,
-                                                path = emptyList(),
-                                                depth = 0,
-                                                modifier =
-                                                    Modifier.align(Alignment.TopStart)
-                                                        .padding(
-                                                            start = QueryControlsStartPadding,
-                                                            top = QueryControlsVerticalPadding,
-                                                            end = QueryOptionsOverlayEndPadding,
+                                    }
+                                } else {
+                                    Canvas(
+                                        queryViewModel = queryViewModel,
+                                        contentTopInset =
+                                            queryControlsCanvasInset(
+                                                with(density) {
+                                                    queryControlsHeightPx(
+                                                            startOverlayVisible =
+                                                                showLargeLimitGuidance ||
+                                                                    queryViewModel.filterCount > 0,
+                                                            startOverlayHeightPx =
+                                                                startControlsHeightPx,
+                                                            optionHeightPx = optionControlsHeightPx,
                                                         )
-                                                        .fillMaxWidth()
-                                                        .heightIn(max = QueryControlsMaxHeight)
-                                                        .onSizeChanged {
-                                                            filterControlsHeightPx = it.height
-                                                        }
-                                                        .verticalScroll(rememberScrollState())
-                                                        .horizontalScroll(rememberScrollState()),
-                                            )
+                                                        .toDp()
+                                                }
+                                            ),
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    val tableNamesByAlias =
+                                        queryViewModel.canvasTables.associate {
+                                            it.alias to it.tableInfo.name
                                         }
+                                    // Keep controls as separate aligned siblings (no full-width
+                                    // empty parent) so dashed join-line clicks reach the
+                                    // canvas. Banner and filters share TopStart padding in one
+                                    // column so the strip cannot paint over hydration, recipe,
+                                    // or maximized results.
+                                    if (showLargeLimitGuidance || queryViewModel.filterCount > 0) {
                                         Column(
                                             modifier =
-                                                Modifier.align(Alignment.TopEnd)
+                                                Modifier.align(Alignment.TopStart)
                                                     .padding(
+                                                        start = QueryControlsStartPadding,
                                                         top = QueryControlsVerticalPadding,
-                                                        end = QueryOptionsPanelEndPadding,
+                                                        end = QueryOptionsOverlayEndPadding,
                                                     )
-                                                    .widthIn(
-                                                        min = QueryOptionsPanelMinWidth,
-                                                        max = QueryOptionsPanelMaxWidth,
-                                                    )
+                                                    .fillMaxWidth()
                                                     .onSizeChanged {
-                                                        optionControlsHeightPx = it.height
+                                                        startControlsHeightPx = it.height
                                                     },
-                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement =
+                                                Arrangement.spacedBy(QueryStartOverlayGap),
                                         ) {
-                                            QueryOptionsCard(
-                                                distinct = queryViewModel.distinct,
-                                                onDistinctChange = queryViewModel::setDistinct,
-                                                groups = queryViewModel.groups,
-                                                sorts = queryViewModel.sorts,
-                                                distinctSortConflicts =
-                                                    queryViewModel.distinctSortConflicts,
-                                                onSelectDistinctSortColumns =
-                                                    queryViewModel::selectDistinctSortColumns,
-                                                onRemoveDistinctSortConflicts =
-                                                    queryViewModel::removeDistinctSortConflicts,
-                                                onMoveGroup = queryViewModel::moveGroup,
-                                                onMoveSort = queryViewModel::moveSort,
-                                                tableNamesByAlias = tableNamesByAlias,
-                                                modifier = Modifier.fillMaxWidth(),
-                                            )
-                                            if (queryViewModel.joins.isNotEmpty()) {
-                                                JoinItems(
-                                                    joins = queryViewModel.joins,
-                                                    tableNamesByAlias = tableNamesByAlias,
-                                                    onRemove = queryViewModel::removeJoin,
-                                                    modifier = Modifier.fillMaxWidth(),
+                                            if (showLargeLimitGuidance) {
+                                                MessageBanner(
+                                                    text = LARGE_LIMIT_GUIDANCE_TEXT,
+                                                    kind = BannerKind.INFO,
+                                                    modifier =
+                                                        Modifier.semantics {
+                                                            contentDescription =
+                                                                LARGE_LIMIT_GUIDANCE_TEXT
+                                                        },
+                                                )
+                                            }
+                                            if (queryViewModel.filterCount > 0) {
+                                                FilterGroupCard(
+                                                    queryViewModel = queryViewModel,
+                                                    group = queryViewModel.filters,
+                                                    path = emptyList(),
+                                                    depth = 0,
+                                                    modifier =
+                                                        Modifier.fillMaxWidth()
+                                                            .heightIn(max = QueryControlsMaxHeight)
+                                                            .semantics {
+                                                                contentDescription = "Query filters"
+                                                            }
+                                                            .verticalScroll(rememberScrollState())
+                                                            .horizontalScroll(
+                                                                rememberScrollState()
+                                                            ),
                                                 )
                                             }
                                         }
                                     }
-                                }
-
-                                visibleQueryError?.let { error ->
-                                    MessageBanner(text = error, kind = BannerKind.ERROR)
-                                }
-                            }
-
-                            currentSample?.let { sample ->
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().height(resultsPaneHeight.dp)
-                                ) {
-                                    ResultsPaneResizeBar(
-                                        mode = resultsPaneMode,
-                                        resizing = resizing,
-                                        onToggleMode = {
-                                            val nextState =
-                                                toggleResultsPane(resultsPaneMode, resultsHeight)
-                                            resultsPaneMode = nextState.mode
-                                            resultsHeight = nextState.height
-                                        },
-                                        onDragStart = {
-                                            resizing = true
-                                            resultsHeight =
-                                                when (resultsPaneMode) {
-                                                    ResultsPaneMode.Normal -> resultsHeight
-                                                    ResultsPaneMode.Maximized -> maxNormalHeight
-                                                }.coerceIn(ResultsPaneMinHeight, maxNormalHeight)
-                                            resultsPaneMode = ResultsPaneMode.Normal
-                                        },
-                                        onDragEnd = { resizing = false },
-                                        onDrag = { dragY ->
-                                            resultsHeight =
-                                                (resultsHeight - dragY).coerceIn(
-                                                    ResultsPaneMinHeight,
-                                                    maxNormalHeight,
+                                    Column(
+                                        modifier =
+                                            Modifier.align(Alignment.TopEnd)
+                                                .padding(
+                                                    top = QueryControlsVerticalPadding,
+                                                    end = QueryOptionsPanelEndPadding,
                                                 )
-                                        },
-                                    )
-                                    ResultsTable(
-                                        result = sample.result,
-                                        tables = sample.spec.tables,
-                                        stale = sample.stale,
-                                        modifier = Modifier.fillMaxSize(),
+                                                .widthIn(
+                                                    min = QueryOptionsPanelMinWidth,
+                                                    max = QueryOptionsPanelMaxWidth,
+                                                )
+                                                .onSizeChanged {
+                                                    optionControlsHeightPx = it.height
+                                                },
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
-                                        PrimaryButton(onClick = onOpenExplore) { Text("Explore") }
+                                        QueryOptionsCard(
+                                            distinct = queryViewModel.distinct,
+                                            onDistinctChange = queryViewModel::setDistinct,
+                                            groups = queryViewModel.groups,
+                                            sorts = queryViewModel.sorts,
+                                            distinctSortConflicts =
+                                                queryViewModel.distinctSortConflicts,
+                                            onSelectDistinctSortColumns =
+                                                queryViewModel::selectDistinctSortColumns,
+                                            onRemoveDistinctSortConflicts =
+                                                queryViewModel::removeDistinctSortConflicts,
+                                            onMoveGroup = queryViewModel::moveGroup,
+                                            onMoveSort = queryViewModel::moveSort,
+                                            tableNamesByAlias = tableNamesByAlias,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        if (queryViewModel.joins.isNotEmpty()) {
+                                            JoinItems(
+                                                joins = queryViewModel.joins,
+                                                tableNamesByAlias = tableNamesByAlias,
+                                                onRemove = queryViewModel::removeJoin,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        }
                                     }
                                 }
                             }
+
+                            visibleQueryError?.let { error ->
+                                MessageBanner(text = error, kind = BannerKind.ERROR)
+                            }
                         }
-                        if (showLargeLimitGuidance) {
-                            MessageBanner(
-                                text = LARGE_LIMIT_GUIDANCE_TEXT,
-                                kind = BannerKind.INFO,
-                                modifier =
-                                    Modifier.align(Alignment.TopStart)
-                                        .padding(
-                                            start = QueryControlsStartPadding,
-                                            top = QueryControlsVerticalPadding,
-                                            end = QueryOptionsOverlayEndPadding,
-                                        ),
-                            )
+
+                        currentSample?.let { sample ->
+                            Column(
+                                modifier = Modifier.fillMaxWidth().height(resultsPaneHeight.dp)
+                            ) {
+                                ResultsPaneResizeBar(
+                                    mode = resultsPaneMode,
+                                    resizing = resizing,
+                                    onToggleMode = {
+                                        val nextState =
+                                            toggleResultsPane(resultsPaneMode, resultsHeight)
+                                        resultsPaneMode = nextState.mode
+                                        resultsHeight = nextState.height
+                                    },
+                                    onDragStart = {
+                                        resizing = true
+                                        resultsHeight =
+                                            when (resultsPaneMode) {
+                                                ResultsPaneMode.Normal -> resultsHeight
+                                                ResultsPaneMode.Maximized -> maxNormalHeight
+                                            }.coerceIn(ResultsPaneMinHeight, maxNormalHeight)
+                                        resultsPaneMode = ResultsPaneMode.Normal
+                                    },
+                                    onDragEnd = { resizing = false },
+                                    onDrag = { dragY ->
+                                        resultsHeight =
+                                            (resultsHeight - dragY).coerceIn(
+                                                ResultsPaneMinHeight,
+                                                maxNormalHeight,
+                                            )
+                                    },
+                                )
+                                ResultsTable(
+                                    result = sample.result,
+                                    tables = sample.spec.tables,
+                                    stale = sample.stale,
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
+                                    PrimaryButton(onClick = onOpenExplore) { Text("Explore") }
+                                }
+                            }
                         }
                     }
                 }

@@ -270,15 +270,14 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
         val grouped = groups.any { it.tableAlias == alias && it.column == column }
         if (grouped && key in selectedColumns) {
             clearGroup(alias, column)
-            selectedColumns = selectedColumns.filterNot { it == key }
+            removeSelectedColumn(key)
             return
         }
-        selectedColumns =
-            if (key in selectedColumns) {
-                selectedColumns.filterNot { it == key }
-            } else {
-                selectedColumns + key
-            }
+        if (key in selectedColumns) {
+            removeSelectedColumn(key)
+        } else {
+            addSelectedColumn(key)
+        }
         if (groups.isNotEmpty() && key in selectedColumns) {
             addGroup(alias, column)
         }
@@ -424,8 +423,7 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
                 groupState =
                     listOf(GroupSpec(tableAlias, columnName)) +
                         existingSelections.map { (alias, column) -> GroupSpec(alias, column) }
-                val key = columnKey(tableAlias, columnName)
-                if (key !in selectedColumns) selectedColumns = selectedColumns + key
+                addSelectedColumn(columnKey(tableAlias, columnName))
             } else {
                 addGroup(tableAlias, columnName)
             }
@@ -447,7 +445,7 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
         }
         groupState = remainingGroups
         if (!clearsLastGroup) {
-            selectedColumns = selectedColumns.filterNot { it == columnKey(tableAlias, columnName) }
+            removeSelectedColumn(columnKey(tableAlias, columnName))
             sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
             if (selectedColumns.isEmpty()) {
                 val fallback = remainingGroups.first()
@@ -466,8 +464,15 @@ class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydra
     private fun addGroup(tableAlias: String, columnName: String) {
         if (groupForColumn(tableAlias, columnName) != null) return
         groupState = groups + GroupSpec(tableAlias, columnName)
-        val key = columnKey(tableAlias, columnName)
+        addSelectedColumn(columnKey(tableAlias, columnName))
+    }
+
+    private fun addSelectedColumn(key: String) {
         if (key !in selectedColumns) selectedColumns = selectedColumns + key
+    }
+
+    private fun removeSelectedColumn(key: String) {
+        if (key in selectedColumns) selectedColumns = selectedColumns.filterNot { it == key }
     }
 
     override fun setFilters(group: FilterGroup) {

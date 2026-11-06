@@ -288,15 +288,45 @@ class BuilderScreenStateTest {
     fun queryControlsHeightUsesTheTallestVisibleOverlay() {
         assertEquals(
             310,
-            queryControlsHeightPx(filterCount = 1, filterHeightPx = 208, optionHeightPx = 310),
+            queryControlsHeightPx(
+                startOverlayVisible = true,
+                startOverlayHeightPx = 208,
+                optionHeightPx = 310,
+            ),
         )
         assertEquals(
             260,
-            queryControlsHeightPx(filterCount = 1, filterHeightPx = 260, optionHeightPx = 208),
+            queryControlsHeightPx(
+                startOverlayVisible = true,
+                startOverlayHeightPx = 260,
+                optionHeightPx = 208,
+            ),
         )
         assertEquals(
             208,
-            queryControlsHeightPx(filterCount = 0, filterHeightPx = 310, optionHeightPx = 208),
+            queryControlsHeightPx(
+                startOverlayVisible = false,
+                startOverlayHeightPx = 310,
+                optionHeightPx = 208,
+            ),
+        )
+    }
+
+    @Test
+    fun queryControlsHeightIncludesStackedBannerAndFilters() {
+        val stackedHeight = 40.dp + QueryStartOverlayGap + QueryControlsMaxHeight
+        val stackedPx = with(Density(1f)) { stackedHeight.roundToPx() }
+        assertEquals(
+            stackedPx,
+            queryControlsHeightPx(
+                startOverlayVisible = true,
+                startOverlayHeightPx = stackedPx,
+                optionHeightPx = 208,
+            ),
+        )
+        assertEquals(
+            QueryControlsVerticalPadding + stackedHeight + QueryControlsTableGap,
+            queryControlsCanvasInset(stackedHeight),
         )
     }
 

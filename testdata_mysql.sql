@@ -273,24 +273,26 @@ WITH digits AS (
     UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9
 )
 SELECT
-    a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1 AS id,
-    CASE WHEN (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 17 = 0
-        THEN NULL ELSE 1 + ((a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 3) END,
-    TIMESTAMP('2024-01-01') + INTERVAL (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 365 DAY,
-    ((a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 10000) / 100,
-    (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 2,
-    CONCAT('label-', (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000) % 50),
+    n,
+    CASE WHEN n % 17 = 0 THEN NULL ELSE 1 + (n % 3) END,
+    TIMESTAMP('2024-01-01') + INTERVAL (n % 365) DAY,
+    (n % 10000) / 100,
+    (n % 2 = 0),
+    CONCAT('label-', n % 50),
     CASE
-        WHEN (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 11 = 0 THEN NULL
-        WHEN (a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1) % 13 = 0 THEN '你好 café naïve'
-        ELSE CONCAT('note-', a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1)
+        WHEN n % 11 = 0 THEN NULL
+        WHEN n % 13 = 0 THEN '你好 café naïve'
+        ELSE CONCAT('note-', n)
     END
-FROM digits a
-CROSS JOIN digits b
-CROSS JOIN digits c
-CROSS JOIN digits d
-CROSS JOIN digits e
-CROSS JOIN digits f;
+FROM (
+    SELECT a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1 AS n
+    FROM digits a
+    CROSS JOIN digits b
+    CROSS JOIN digits c
+    CROSS JOIN digits d
+    CROSS JOIN digits e
+    CROSS JOIN digits f
+) seq;
 
 CREATE TABLE wide_rows (
     id BIGINT PRIMARY KEY,

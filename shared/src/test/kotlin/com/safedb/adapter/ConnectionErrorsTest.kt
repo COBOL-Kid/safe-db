@@ -40,7 +40,7 @@ class ConnectionErrorsTest {
             HikariPool.PoolInitializationException(UnknownHostException("db.internal.example"))
 
         assertEquals(
-            "Could not reach db.internal.example:3306",
+            "Could not connect to db.internal.example:3306",
             formatConnectionFailure(
                 hikari,
                 sampleConnection(host = "db.internal.example", port = 3306),
@@ -53,7 +53,7 @@ class ConnectionErrorsTest {
         val hikari = HikariPool.PoolInitializationException(ConnectException("Connection refused"))
 
         assertEquals(
-            "Could not reach 10.0.0.8:5432",
+            "Could not connect to 10.0.0.8:5432",
             formatConnectionFailure(hikari, sampleConnection(host = "10.0.0.8", port = 5432)),
         )
     }

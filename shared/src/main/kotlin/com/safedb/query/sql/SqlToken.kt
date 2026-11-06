@@ -388,9 +388,7 @@ fun tokenizeSql(
 }
 
 internal fun quoteStyleError(dialect: Dialect): String =
-    "That quoting style isn't valid here — ${dialectDisplay(dialect)} quotes identifiers with ${quoteHint(dialect)}"
-
-internal fun dialectDisplay(dialect: Dialect): String = dialect.displayName()
+    "That quoting style isn't valid here — ${dialect.displayName()} quotes identifiers with ${quoteHint(dialect)}"
 
 fun lineColOf(text: String, offset: Int): Pair<Int, Int> {
     var line = 1

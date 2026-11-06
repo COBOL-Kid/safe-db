@@ -154,7 +154,17 @@ if run_assert "$missing_mac" >/dev/null 2>&1; then
 	fail "accepted a site missing the Apple Silicon zip"
 fi
 
+# Policy lock for scripts/publish-release-prune-policy.txt (keep/glob table).
+# Both publish-release.sh and publish-release.ps1 copy that table; this fixture
+# is the behavioral lock. Update expected-pruned-objects when the policy changes.
+# Do not merge .sh/.ps1; publish-release.ps1 must match the same table.
 PUBLISH="$ROOT/scripts/publish-release.sh"
+PRUNE_POLICY="$ROOT/scripts/publish-release-prune-policy.txt"
+[[ -f "$PRUNE_POLICY" ]] || fail "missing prune policy $PRUNE_POLICY"
+grep -q 'publish-release-prune-policy.txt' "$PUBLISH" ||
+	fail "publish-release.sh does not read the prune policy table"
+grep -q 'publish-release-prune-policy.txt' "$ROOT/scripts/publish-release.ps1" ||
+	fail "publish-release.ps1 does not read the prune policy table"
 reject_publish() {
 	local dir="$1" reason="$2" out
 	if out="$("$PUBLISH" "$dir" 2>&1)"; then

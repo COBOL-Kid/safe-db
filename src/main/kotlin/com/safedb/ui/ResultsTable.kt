@@ -122,10 +122,15 @@ fun ResultsTable(
             )
         } else {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val availableWidthDp = (maxWidth.value - 8f).toInt().coerceAtLeast(0)
+                val availableWidthDp =
+                    (maxWidth.value - RESULT_TABLE_SCROLLBAR_GUTTER_DP).toInt().coerceAtLeast(0)
+                val naturalColumns =
+                    remember(result.columns, result.rows, tables) {
+                        buildResultTableColumns(result, tables)
+                    }
                 val columns =
-                    remember(result.columns, result.rows, tables, availableWidthDp) {
-                        buildResultTableColumns(result, tables, availableWidthDp)
+                    remember(naturalColumns, availableWidthDp) {
+                        expandResultTableColumnsToWidth(naturalColumns, availableWidthDp)
                     }
                 val horizontalScroll = rememberScrollState()
                 val listState = rememberLazyListState()
@@ -134,7 +139,10 @@ fun ResultsTable(
                     Column(
                         modifier =
                             Modifier.fillMaxSize()
-                                .padding(end = 8.dp, bottom = 8.dp)
+                                .padding(
+                                    end = RESULT_TABLE_SCROLLBAR_GUTTER_DP.dp,
+                                    bottom = RESULT_TABLE_SCROLLBAR_GUTTER_DP.dp,
+                                )
                                 .horizontalScroll(horizontalScroll)
                     ) {
                         Row(
@@ -237,14 +245,14 @@ fun ResultsTable(
                         modifier =
                             Modifier.align(Alignment.BottomStart)
                                 .fillMaxWidth()
-                                .padding(end = 8.dp),
+                                .padding(end = RESULT_TABLE_SCROLLBAR_GUTTER_DP.dp),
                     )
                     VerticalScrollbar(
                         adapter = rememberScrollbarAdapter(listState),
                         modifier =
                             Modifier.align(Alignment.CenterEnd)
                                 .fillMaxHeight()
-                                .padding(bottom = 8.dp),
+                                .padding(bottom = RESULT_TABLE_SCROLLBAR_GUTTER_DP.dp),
                     )
                 }
             }
@@ -374,6 +382,7 @@ internal fun resultColumnWidthDp(label: String, cells: List<ResultCell?>): Int {
     )
 }
 
+private const val RESULT_TABLE_SCROLLBAR_GUTTER_DP = 8
 private const val RESULT_TABLE_CHAR_WIDTH_DP = 9
 private const val RESULT_TABLE_HORIZONTAL_PADDING_DP = 32
 private const val RESULT_TABLE_MIN_COLUMN_WIDTH_DP = 72

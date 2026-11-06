@@ -46,6 +46,7 @@ data class PlanBlockingOperation(
 enum class PlanUnavailableReason {
     PermissionDenied,
     TimedOut,
+    ConnectionFailure,
     ParseFailure,
     UnsupportedShape,
     CleanupFailure,
