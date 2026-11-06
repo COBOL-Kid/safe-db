@@ -32,7 +32,6 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -44,21 +43,22 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
     server.addTool(
         name = "run_query",
         description =
-            "Run a single SELECT on a saved connection through the same parser, validator, " +
-                "compiler, row/time caps, and query_risk_gate as the desktop app. Pass " +
-                "connection_id from list_connections and sql. Do not pass a password or URL. " +
-                "Returns a receipt: columns, row_count, sample_capped (omitted when false), " +
-                "preview_truncated, warnings, a slim risk summary, a short preview " +
-                "(~10 flattened rows), and result_id. preview_truncated is true when the " +
-                "preview is shorter than row_count. sample_capped means paging does not get " +
-                "more table rows. warnings names the cause: raise LIMIT or add filters when a " +
-                "SQL LIMIT stopped the fetch; add filters or select fewer columns when the " +
-                "encoded-byte budget stopped it. Raising LIMIT does not read past that budget. " +
-                "Page with get_result_rows or summarize_result using result_id. Results expire " +
-                "after $resultTtlMinutes minutes ($RESULT_STORE_MAX_ENTRIES entries, 32 MiB). " +
-                "On error risk_gate, rewrite the query or change the gate in settings; do not " +
-                "retry the same query. On error confirmation_required, show the reasons to " +
-                "the user, then retry with the returned confirmation object; do not auto-confirm.",
+            "Run one SELECT on a saved connection. Accepts filters, DISTINCT, GROUP BY of " +
+                "selected columns, ORDER BY, LIMIT, and INNER JOIN on indexed or FK columns. " +
+                "Rejects aggregates and functions, OFFSET, subqueries, CTEs, UNION, " +
+                "LEFT/CROSS or comma joins, AS aliases, and leading NOT. Result columns are " +
+                "named table__column. Pass connection_id from list_connections and sql. Do " +
+                "not pass a password or URL. Returns a receipt: columns, row_count, " +
+                "sample_capped (omitted when false), preview_truncated, warnings, a slim " +
+                "risk summary, a short preview (~10 flattened rows), and result_id. " +
+                "Page with get_result_rows or summarize_result using result_id. Preview " +
+                "and pages are capped at $MCP_PAYLOAD_MAX_BYTES bytes; long cell values " +
+                "are truncated with ${MCP_CELL_TRUNCATION_MARKER}. Results expire after " +
+                "$resultTtlMinutes minutes ($RESULT_STORE_MAX_ENTRIES entries, " +
+                "32 MiB). On error risk_gate, rewrite the query; do not retry the same " +
+                "query. On error confirmation_required, " +
+                "show the reasons to the user, then retry with the returned confirmation " +
+                "object; do not auto-confirm. Unknown extra arguments are invalid_arguments.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -76,7 +76,10 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "A single SELECT. Writes and unsupported SQL are rejected.",
+                                    "A single SELECT. Result columns are named table__column. " +
+                                        "No aggregates or functions, OFFSET, subqueries, CTEs, " +
+                                        "UNION, LEFT/CROSS or comma joins, AS aliases, or " +
+                                        "leading NOT. Joins need indexed or FK columns.",
                                 )
                             },
                         )
@@ -86,9 +89,10 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Required for unqualified table names. Take schema from " +
-                                        "list_tables (on MySQL often the connection database), " +
-                                        "or qualify as schema.table.",
+                                    "Schema used when a table name has no schema prefix. Copy " +
+                                        "list_tables.schema for this connection (MySQL: usually " +
+                                        "the database name). Omit when every table is already " +
+                                        "schema.table.",
                                 )
                             },
                         )
@@ -108,17 +112,20 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                 required = listOf("connection_id", "sql"),
             ),
     ) { request ->
-        handleRunQuery(service, resultStore, request)
+        runMcpTool("run_query failed") { handleRunQuery(service, resultStore, request) }
     }
 
     server.addTool(
         name = "get_result_rows",
         description =
             "Page flattened rows from a previous run_query by result_id. offset defaults " +
-                "to 0 (negative clamps to 0); limit defaults to 50 with a hard cap of 50. " +
-                "page_truncated is true when this page is shorter than the remaining in-memory " +
-                "sample. Results expire after $resultTtlMinutes minutes. Use summarize_result " +
-                "for column stats. Unknown or expired result_id returns not_found.",
+                "to 0 (negative clamps to 0). limit defaults to 50 and caps at 50; 0 or " +
+                "negative is invalid_arguments. Pages also stop around " +
+                "$MCP_PAYLOAD_MAX_BYTES bytes; long cells are truncated with " +
+                "${MCP_CELL_TRUNCATION_MARKER}. page_truncated is true when more sample " +
+                "rows remain; next_offset is then the offset to request next. Results " +
+                "expire after $resultTtlMinutes minutes. Use summarize_result for column " +
+                "stats. Unknown or expired result_id returns not_found.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -146,7 +153,10 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                                 put("type", "integer")
                                 put(
                                     "description",
-                                    "Max rows to return. Default 50, hard cap 50.",
+                                    "Max rows to return (1–50). Default 50. Values over 50 " +
+                                        "cap at 50. 0 or negative is invalid_arguments. " +
+                                        "A page may contain fewer rows when it hits the " +
+                                        "$MCP_PAYLOAD_MAX_BYTES byte budget.",
                                 )
                             },
                         )
@@ -155,7 +165,7 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
-        handleGetResultRows(resultStore, request)
+        runMcpTool("get_result_rows failed") { handleGetResultRows(resultStore, request) }
     }
 
     server.addTool(
@@ -182,7 +192,7 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
-        handleSummarizeResult(resultStore, request)
+        runMcpTool("summarize_result failed") { handleSummarizeResult(resultStore, request) }
     }
 }
 
@@ -191,15 +201,21 @@ private suspend fun handleRunQuery(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
+    requireKnownArguments(request, "connection_id", "sql", "default_schema", "confirmation")
+        .getOrElse {
+            return it
+        }
     val connectionId =
-        requiredText(request, "connection_id")
-            ?: return toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
+        requiredString(request, "connection_id").getOrElse {
+            return it
+        }
+    val sql =
+        requiredString(request, "sql").getOrElse {
+            return it
+        }
     val connection =
         service.listConnections().find { it.id == connectionId }
             ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
-
-    val sql =
-        requiredText(request, "sql") ?: return toolError(ERROR_INVALID_ARGUMENTS, "sql is required")
 
     val confirmation =
         when (val parsed = parseConfirmation(request)) {
@@ -221,8 +237,6 @@ private suspend fun handleRunQuery(
         throw error
     } catch (error: QueryFailureException) {
         mapQueryFailure(error)
-    } catch (error: Exception) {
-        toolError(ERROR_INTERNAL, error.message ?: "run_query failed")
     }
 }
 
@@ -232,16 +246,11 @@ private suspend fun prepareSql(
     sql: String,
     request: CallToolRequest,
 ): PreparedQuery {
-    val (schema, settings) =
-        try {
-            service.getSchema(connection.id) to service.getSettings()
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            return PreparedQuery.Err(toolError(ERROR_INTERNAL, error.message ?: "run_query failed"))
-        }
+    val (schema, settings) = service.getSchema(connection.id) to service.getSettings()
     val defaultSchema =
-        optionalText(request, "default_schema") ?: settingsDefaultSchema(settings, connection.id)
+        optionalString(request, "default_schema").getOrElse {
+            return PreparedQuery.Err(it)
+        } ?: settingsDefaultSchema(settings, connection.id)
     return when (
         val parsed =
             parseSqlToSpec(
@@ -275,12 +284,11 @@ private fun settingsDefaultSchema(settings: Settings, connectionId: String): Str
     settings.defaultSchema.takeIf { settings.defaultConnectionId == connectionId }
 
 private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
-    val raw =
-        request.arguments?.get("confirmation").takeUnless { it == null || it is JsonNull }
-            ?: return ConfirmationParse.Missing
     val obj =
-        raw as? JsonObject
-            ?: return ConfirmationParse.Invalid(toolError(ERROR_PARSE, "confirmation is invalid"))
+        when (val parsed = optionalObject(request, "confirmation")) {
+            is Arg.Err -> return ConfirmationParse.Invalid(parsed.result)
+            is Arg.Ok -> parsed.value ?: return ConfirmationParse.Missing
+        }
     return try {
         val payload = toolJson.decodeFromJsonElement(McpQueryConfirmation.serializer(), obj)
         val conditions =
@@ -301,9 +309,9 @@ private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
             )
         )
     } catch (_: SerializationException) {
-        ConfirmationParse.Invalid(toolError(ERROR_PARSE, "confirmation is invalid"))
+        ConfirmationParse.Invalid(toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid"))
     } catch (_: IllegalArgumentException) {
-        ConfirmationParse.Invalid(toolError(ERROR_PARSE, "confirmation is invalid"))
+        ConfirmationParse.Invalid(toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid"))
     }
 }
 
@@ -326,8 +334,8 @@ private suspend fun successReceipt(
             sampleCapped = result.truncated,
             warnings = warnings,
             risk = riskSummary(completed.riskEvaluation),
-            preview = preview,
-            previewTruncated = preview.size < result.rowCount,
+            preview = preview.rows,
+            previewTruncated = preview.moreRowsRemain || preview.cellsTruncated,
             resultId = stored.resultId,
         )
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
@@ -350,21 +358,36 @@ private suspend fun handleGetResultRows(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
+    requireKnownArguments(request, "result_id", "offset", "limit").getOrElse {
+        return it
+    }
     val resultId =
-        requiredText(request, "result_id")
-            ?: return toolError(ERROR_INVALID_ARGUMENTS, "result_id is required")
+        requiredString(request, "result_id").getOrElse {
+            return it
+        }
+    val offsetRaw =
+        optionalInt(request, "offset").getOrElse {
+            return it
+        } ?: 0
+    val limitRaw =
+        optionalInt(request, "limit").getOrElse {
+            return it
+        }
+    if (limitRaw != null && limitRaw <= 0) {
+        return toolError(ERROR_INVALID_ARGUMENTS, "limit must be 1 or more")
+    }
     val result = resultStore.get(resultId) ?: return toolError(ERROR_NOT_FOUND, "Result not found")
-    val offset = (optionalInt(request, "offset") ?: 0).coerceAtLeast(0)
-    val limit =
-        (optionalInt(request, "limit") ?: GET_RESULT_ROWS_MAX).coerceIn(1, GET_RESULT_ROWS_MAX)
-    val pageRows = flattenRows(result, offset, limit)
+    val offset = offsetRaw.coerceAtLeast(0)
+    val limit = (limitRaw ?: GET_RESULT_ROWS_MAX).coerceAtMost(GET_RESULT_ROWS_MAX)
+    val slice = sliceRows(result, offset, limit, MCP_PAYLOAD_MAX_BYTES)
     val page =
         ResultRowsPage(
             resultId = resultId,
             offset = offset,
             rowCount = result.rowCount,
-            pageTruncated = offset + pageRows.size < result.rowCount,
-            rows = pageRows,
+            pageTruncated = slice.moreRowsRemain,
+            nextOffset = slice.nextOffset,
+            rows = slice.rows,
         )
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(page))))
 }
@@ -373,9 +396,13 @@ private suspend fun handleSummarizeResult(
     resultStore: ResultStore,
     request: CallToolRequest,
 ): CallToolResult {
+    requireKnownArguments(request, "result_id").getOrElse {
+        return it
+    }
     val resultId =
-        requiredText(request, "result_id")
-            ?: return toolError(ERROR_INVALID_ARGUMENTS, "result_id is required")
+        requiredString(request, "result_id").getOrElse {
+            return it
+        }
     val result = resultStore.get(resultId) ?: return toolError(ERROR_NOT_FOUND, "Result not found")
     val summary =
         ResultSummary(
@@ -476,6 +503,7 @@ internal data class ResultRowsPage(
     val offset: Int,
     @SerialName("row_count") val rowCount: Int,
     @SerialName("page_truncated") val pageTruncated: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
     val rows: List<JsonObject>,
 )
 

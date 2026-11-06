@@ -6,6 +6,7 @@ import com.safedb.model.SortDirection
 import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -196,6 +197,18 @@ class SqlParserTest {
         assertEquals(SqlMessages.EXPRESSION, failParse("SELECT a + b FROM t").message)
         assertEquals(SqlMessages.COLUMN_ALIAS, failParse("SELECT id AS x FROM t").message)
         assertEquals(SqlMessages.COLUMN_ALIAS, failParse("SELECT id x FROM t").message)
+        assertEquals(
+            "Unexpected 'FORM' — did you mean FROM?",
+            failParse("SELECT email FORM customers WHERE id = 1").message,
+        )
+        assertEquals(
+            "Unexpected 'FORM' — did you mean FROM?",
+            failParse("SELECT * FORM customers").message,
+        )
+        assertEquals(
+            SqlMessages.COLUMN_ALIAS,
+            failParse("SELECT email customers WHERE id = 1").message,
+        )
         assertEquals(SqlMessages.OFFSET, failParse("SELECT id FROM t LIMIT 5 OFFSET 5").message)
         assertEquals(
             SqlMessages.HAVING,
@@ -216,6 +229,19 @@ class SqlParserTest {
             failParse("SELECT id FROM a JOIN b ON a.x = 1").message,
         )
         assertEquals(SqlMessages.STAR_MIX, failParse("SELECT *, id FROM t").message)
+    }
+
+    @Test
+    fun fromNearMissesSuggestTheKeywordInsteadOfAColumnAlias() {
+        assertEquals("Unexpected 'FORM' — did you mean FROM?", suggestKeywordTypo("FORM", "FROM"))
+        assertEquals("Unexpected 'FRM' — did you mean FROM?", suggestKeywordTypo("FRM", "FROM"))
+        assertEquals("Unexpected 'form' — did you mean FROM?", suggestKeywordTypo("form", "FROM"))
+        assertNull(suggestKeywordTypo("customers", "FROM"))
+        assertTrue(isAdjacentTransposition("FORM", "FROM"))
+        assertTrue(isAdjacentTransposition("AB", "BA"))
+        assertFalse(isAdjacentTransposition("FROM", "FROM"))
+        assertFalse(isAdjacentTransposition("AB", "AC"))
+        assertFalse(isAdjacentTransposition("A", "A"))
     }
 
     @Test

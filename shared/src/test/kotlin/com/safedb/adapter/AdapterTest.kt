@@ -384,6 +384,78 @@ class AdapterTest {
             config.dataSourceProperties.getProperty("applicationName"),
         )
         assertEquals("true", config.dataSourceProperties.getProperty("encrypt"))
+        assertEquals("10", config.dataSourceProperties.getProperty("loginTimeout"))
+        assertEquals("30000", config.dataSourceProperties.getProperty("socketTimeout"))
+    }
+
+    @Test
+    fun datasourcePinsConnectTimeoutsForEveryDialect() {
+        val connectSeconds = (CONNECT_TIMEOUT_MS / 1000L).toString()
+        val connectMillis = CONNECT_TIMEOUT_MS.toString()
+        val readSeconds = (INTROSPECTION_TIMEOUT_MS / 1000L).toString()
+        val readMillis = INTROSPECTION_TIMEOUT_MS.toString()
+
+        val postgres =
+            createDataSourceConfig(
+                    connection(Dialect.Postgres, 5432, TransportSecurityMode.Disabled)
+                        .copy(
+                            driverProperties =
+                                listOf(
+                                    DriverProperty("connectTimeout", "0"),
+                                    DriverProperty("socketTimeout", "0"),
+                                )
+                        ),
+                    "pw",
+                )
+                .dataSourceProperties
+        assertEquals(connectSeconds, postgres.getProperty("connectTimeout"))
+        assertEquals(connectSeconds, postgres.getProperty("loginTimeout"))
+        assertEquals(readSeconds, postgres.getProperty("socketTimeout"))
+
+        val mysql =
+            createDataSourceConfig(
+                    mysqlConnection(TransportSecurityMode.Disabled)
+                        .copy(driverProperties = listOf(DriverProperty("connectTimeout", "0"))),
+                    "pw",
+                )
+                .dataSourceProperties
+        assertEquals(connectMillis, mysql.getProperty("connectTimeout"))
+        assertEquals(readMillis, mysql.getProperty("socketTimeout"))
+
+        val mssql =
+            createDataSourceConfig(
+                    connection(Dialect.Mssql, 1433, TransportSecurityMode.Disabled),
+                    "pw",
+                )
+                .dataSourceProperties
+        assertEquals(connectSeconds, mssql.getProperty("loginTimeout"))
+        assertEquals(readMillis, mssql.getProperty("socketTimeout"))
+
+        val oracle =
+            createDataSourceConfig(
+                    connection(Dialect.Oracle, 1521, TransportSecurityMode.Disabled)
+                        .copy(
+                            transportSecurity =
+                                TransportSecurity(
+                                    mode = TransportSecurityMode.Disabled,
+                                    oracleWalletLocation = null,
+                                )
+                        ),
+                    "pw",
+                )
+                .dataSourceProperties
+        assertEquals(connectMillis, oracle.getProperty("oracle.net.CONNECT_TIMEOUT"))
+        assertEquals(readMillis, oracle.getProperty("oracle.jdbc.ReadTimeout"))
+        assertEquals(readMillis, oracle.getProperty("oracle.net.READ_TIMEOUT"))
+
+        val db2 =
+            createDataSourceConfig(
+                    connection(Dialect.Db2, 50000, TransportSecurityMode.Disabled),
+                    "pw",
+                )
+                .dataSourceProperties
+        assertEquals(connectSeconds, db2.getProperty("loginTimeout"))
+        assertEquals(readSeconds, db2.getProperty("blockingReadConnectionTimeout"))
     }
 
     @Test

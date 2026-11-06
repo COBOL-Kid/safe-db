@@ -145,13 +145,28 @@ internal class QueryRunController(
         run(request.copy(confirmation = requirement.confirmation), onSettled)
     }
 
-    // The sample is only valid while the editor still produces the spec that ran.
-    fun currentSample(connectionId: String?, currentSpec: QuerySpec?): BuilderQuerySample? {
+    // The sample is only valid while the editor still produces the spec that ran. Limit-only
+    // edits keep the last result visible so changing ALL/row cap does not collapse the pane.
+    fun currentSample(
+        connectionId: String?,
+        currentSpec: QuerySpec?,
+        allowStaleLimit: Boolean = false,
+    ): BuilderQuerySample? {
         if (connectionId == null || resultConnectionId != connectionId) return null
         val result = results ?: return null
         val executedSpec = resultSpec ?: return null
-        if (currentSpec != executedSpec) return null
-        return BuilderQuerySample(connectionId, executedSpec, result)
+        if (currentSpec == executedSpec) {
+            return BuilderQuerySample(connectionId, executedSpec, result, stale = false)
+        }
+        if (
+            allowStaleLimit &&
+                currentSpec != null &&
+                currentSpec.copy(limit = executedSpec.limit, uncapped = executedSpec.uncapped) ==
+                    executedSpec
+        ) {
+            return BuilderQuerySample(connectionId, executedSpec, result, stale = true)
+        }
+        return null
     }
 
     // Do not clear running here; the prior JDBC call still owns the single-operation slot.

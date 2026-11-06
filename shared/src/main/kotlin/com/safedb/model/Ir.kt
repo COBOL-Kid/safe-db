@@ -270,6 +270,9 @@ fun parseDateLiteral(text: String): Result<LocalDate> = runCatching {
     }
 }
 
+internal const val DATETIME_ACCEPTED_FORMATS =
+    "YYYY-MM-DD, YYYY-MM-DD HH:MM[:SS], or YYYY-MM-DDTHH:MM[:SS]"
+
 fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
     val trimmed = text.trim()
     val parsers =
@@ -281,23 +284,27 @@ fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
             DateTimeFormatter.ofPattern(
                 "yyyy-MM-dd HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]"
             ),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
         )
     for (formatter in parsers) {
         try {
             return@runCatching LocalDateTime.parse(trimmed, formatter)
         } catch (_: DateTimeParseException) {}
     }
+    try {
+        return@runCatching LocalDate.parse(trimmed, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay()
+    } catch (_: DateTimeParseException) {}
     // The IR only carries local timestamps. Normalizing an offset-bearing value to UTC would bind
     // a different instant than the database compares against a local timestamp column, so reject
     // rather than silently shift the comparison.
     val hasOffset = runCatching { java.time.OffsetDateTime.parse(trimmed) }.isSuccess
     if (hasOffset) {
         throw IllegalArgumentException(
-            "'$text' has a UTC offset, which isn't supported; write the timestamp as the column's local time (YYYY-MM-DDTHH:MM:SS)"
+            "'$text' has a UTC offset, which isn't supported; write the timestamp as the column's local time ($DATETIME_ACCEPTED_FORMATS)"
         )
     }
     throw IllegalArgumentException(
-        "'$text' is not a valid datetime; expected YYYY-MM-DDTHH:MM[:SS]"
+        "'$text' is not a valid datetime; expected $DATETIME_ACCEPTED_FORMATS"
     )
 }
 

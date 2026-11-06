@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
+import com.safedb.model.displayName
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.components.DeleteIconButton
@@ -44,6 +46,8 @@ import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
+import com.safedb.ui.components.StatusChip
+import com.safedb.ui.components.StatusChipKind
 import com.safedb.ui.theme.DataMono
 import com.safedb.ui.theme.LabelMicro
 import com.safedb.ui.theme.SafeDbTheme
@@ -57,9 +61,20 @@ fun ConnectionsScreen(
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
+    openNewConnectionForm: Boolean = false,
+    onOpenNewConnectionFormConsumed: () -> Unit = {},
+    activeConnectionId: String? = null,
+    defaultConnectionId: String? = null,
 ) {
     var showConnectionForm by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<ConnectionDef?>(null) }
+    LaunchedEffect(openNewConnectionForm) {
+        if (openNewConnectionForm) {
+            showConnectionForm = true
+            editingConnection = null
+            onOpenNewConnectionFormConsumed()
+        }
+    }
     ConnectionsScreenContent(
         viewModel = viewModel,
         showConnectionForm = showConnectionForm,
@@ -69,6 +84,8 @@ fun ConnectionsScreen(
         onDeleted = onDeleted,
         onConnectionChanged = onConnectionChanged,
         onSaved = onSaved,
+        activeConnectionId = activeConnectionId,
+        defaultConnectionId = defaultConnectionId,
     )
 }
 
@@ -82,6 +99,8 @@ internal fun ConnectionsScreenContent(
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
     onSaved: () -> Unit,
+    activeConnectionId: String? = null,
+    defaultConnectionId: String? = null,
 ) {
     val connections by viewModel.connections.collectAsState()
     val loading by viewModel.loading.collectAsState()
@@ -226,6 +245,8 @@ internal fun ConnectionsScreenContent(
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
                                 connection = connection,
+                                isActive = connection.id == activeConnectionId,
+                                isDefault = connection.id == defaultConnectionId,
                                 onEdit = { onEditingConnectionChange(connection) },
                                 onDelete = { pendingDelete = connection },
                             )
@@ -240,6 +261,8 @@ internal fun ConnectionsScreenContent(
 @Composable
 private fun ConnectionCard(
     connection: ConnectionDef,
+    isActive: Boolean = false,
+    isDefault: Boolean = false,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -261,7 +284,7 @@ private fun ConnectionCard(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                dialectLabel(connection.dialect).take(2),
+                                connection.dialect.displayName().take(2),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = SafeDbTheme.colors.onAccentContainer,
@@ -277,10 +300,23 @@ private fun ConnectionCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            dialectLabel(connection.dialect),
+                            connection.dialect.displayName(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (isActive || isDefault) {
+                            Row(
+                                modifier = Modifier.padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                if (isActive) {
+                                    StatusChip("Active", StatusChipKind.SUCCESS)
+                                }
+                                if (isDefault) {
+                                    StatusChip("Default", StatusChipKind.INFO)
+                                }
+                            }
+                        }
                     }
                 }
                 Row(

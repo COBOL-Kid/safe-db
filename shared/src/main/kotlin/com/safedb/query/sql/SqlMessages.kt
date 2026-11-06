@@ -1,5 +1,8 @@
 package com.safedb.query.sql
 
+import com.safedb.model.Dialect
+import com.safedb.model.displayName
+
 internal object SqlMessages {
     fun notSelect(found: String) =
         "Only SELECT statements can run here — Safe-DB is read-only. (found ${sqlWord(found)})"
@@ -42,12 +45,21 @@ internal object SqlMessages {
         "This value doesn't match the type of '$column' ($dataType) — the query would compare something different than written."
 
     fun dateTimeFormat(column: String) =
-        "'$column' needs a date like '2024-01-01' or a timestamp like '2024-01-01 09:30:00'."
+        "'$column' needs a date like '2024-01-01' or a timestamp like '2024-01-01 09:30:00' or '2024-01-01T09:30:00'."
+
+    fun unexpectedKeywordTypo(found: String, expected: String): String =
+        "Unexpected '$found' — did you mean $expected?"
 
     fun dateFormat(column: String) = "'$column' needs a date like '2024-01-01'."
 
     const val MYSQL_EXEC_COMMENT =
         "MySQL executable comments (/*! … */) aren't supported — write the statement directly."
+
+    fun executableComment(dialect: Dialect): String =
+        if (dialect == Dialect.MySql) MYSQL_EXEC_COMMENT
+        else
+            "MySQL-style executable comments (/*! … */) aren't supported on " +
+                "${dialect.displayName()} — write the statement directly."
 
     const val OPTIMIZER_HINT = "Optimizer hints (/*+ … */) aren't supported."
 

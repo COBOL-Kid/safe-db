@@ -77,7 +77,7 @@ internal suspend fun withIntegrationMcpClient(server: Server, block: suspend (Cl
 
     coroutineScope {
         val sessionJob = launch {
-            val session = server.createSession(serverTransport)
+            val session = server.createSafeDbSession(serverTransport)
             val closed = Job()
             session.onClose { closed.complete() }
             closed.join()

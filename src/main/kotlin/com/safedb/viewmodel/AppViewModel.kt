@@ -165,15 +165,18 @@ class AppViewModel(
             _pendingRecipeRun.value = null
             return
         }
+        if (exploreSpecHash(query.spec) != pending.specHash) {
+            _pendingRecipeRun.value = null
+            return
+        }
         val activeConnection = connections.firstOrNull { it.id == pending.connectionId }
         val sample = query.currentSample(pending.connectionId)
         when {
-            activeConnection != null && sample != null -> {
+            activeConnection != null && sample != null && !sample.stale -> {
                 if (pending.specHash != exploreSpecHash(sample.spec)) return
                 _pendingRecipeRun.value = null
                 openExploreRecipe(activeConnection, sample.spec, sample.result, pending.recipe)
             }
-            exploreSpecHash(query.spec) != pending.specHash -> _pendingRecipeRun.value = null
             !query.running && query.error != null -> _pendingRecipeRun.value = null
         }
     }

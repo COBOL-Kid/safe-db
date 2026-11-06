@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
+import com.safedb.model.displayName
 import kotlin.math.roundToInt
 
 @Composable
@@ -66,7 +67,7 @@ internal fun ConnectionPicker(
                 connections.forEach { option ->
                     MenuActionRow(
                         text = option.name,
-                        supportingText = "${option.dialect} · ${option.database}",
+                        supportingText = "${option.dialect.displayName()} · ${option.database}",
                         selected = option.id == connection?.id,
                         onClick = {
                             menuOpen = false

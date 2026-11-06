@@ -133,7 +133,7 @@ fun Canvas(
     var verticalScrollbarBounds by remember { mutableStateOf<Rect?>(null) }
     val fieldScrollStates = remember { mutableStateMapOf<String, ScrollState>() }
     val density = LocalDensity.current
-    val contentTopInsetPx = with(density) { contentTopInset.toPx() }
+    val requestedContentTopInsetPx = with(density) { contentTopInset.toPx() }
 
     val aliases = queryViewModel.canvasTables.map { it.alias }.toSet()
     fieldScrollStates.keys
@@ -308,6 +308,8 @@ fun Canvas(
     val renderOrigin = workspaceBounds.topLeft
     val canvasWidthPx = workspaceBounds.width
     val canvasHeightPx = workspaceBounds.height
+    val contentTopInsetPx =
+        cappedCanvasContentTopInset(requestedContentTopInsetPx, viewport.height.toFloat())
     val viewportSize =
         Size(
             viewport.width.toFloat(),
@@ -796,6 +798,14 @@ fun Canvas(
             }
         }
     }
+}
+
+internal const val CANVAS_MIN_VISIBLE_CONTENT_PX = 160f
+
+internal fun cappedCanvasContentTopInset(requestedPx: Float, viewportHeightPx: Float): Float {
+    if (viewportHeightPx <= 0f) return requestedPx
+    val maxInset = (viewportHeightPx - CANVAS_MIN_VISIBLE_CONTENT_PX).coerceAtLeast(0f)
+    return requestedPx.coerceIn(0f, maxInset)
 }
 
 internal fun canvasDisplayY(tableY: Float, contentTopInsetPx: Float): Float =

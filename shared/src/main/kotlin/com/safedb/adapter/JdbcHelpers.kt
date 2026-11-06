@@ -71,7 +71,40 @@ internal fun createDataSourceConfig(
         Dialect.Oracle -> applyOracleSsl(config, def)
         Dialect.Db2 -> applyDb2Ssl(config, def)
     }
+    // Applied last so a pasted driver property cannot disable the connect deadline.
+    applyConnectTimeouts(config, def.dialect)
     return config
+}
+
+internal fun applyConnectTimeouts(config: HikariConfig, dialect: Dialect) {
+    val connectSeconds = (CONNECT_TIMEOUT_MS / 1000L).toString()
+    val connectMillis = CONNECT_TIMEOUT_MS.toString()
+    val readSeconds = (INTROSPECTION_TIMEOUT_MS / 1000L).toString()
+    val readMillis = INTROSPECTION_TIMEOUT_MS.toString()
+    when (dialect) {
+        Dialect.Postgres -> {
+            config.addDataSourceProperty("connectTimeout", connectSeconds)
+            config.addDataSourceProperty("loginTimeout", connectSeconds)
+            config.addDataSourceProperty("socketTimeout", readSeconds)
+        }
+        Dialect.MySql -> {
+            config.addDataSourceProperty("connectTimeout", connectMillis)
+            config.addDataSourceProperty("socketTimeout", readMillis)
+        }
+        Dialect.Mssql -> {
+            config.addDataSourceProperty("loginTimeout", connectSeconds)
+            config.addDataSourceProperty("socketTimeout", readMillis)
+        }
+        Dialect.Oracle -> {
+            config.addDataSourceProperty("oracle.net.CONNECT_TIMEOUT", connectMillis)
+            config.addDataSourceProperty("oracle.jdbc.ReadTimeout", readMillis)
+            config.addDataSourceProperty("oracle.net.READ_TIMEOUT", readMillis)
+        }
+        Dialect.Db2 -> {
+            config.addDataSourceProperty("loginTimeout", connectSeconds)
+            config.addDataSourceProperty("blockingReadConnectionTimeout", readSeconds)
+        }
+    }
 }
 
 private fun buildPostgresUrl(def: ConnectionDef): String {

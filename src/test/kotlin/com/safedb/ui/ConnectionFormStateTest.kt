@@ -5,6 +5,7 @@ import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.model.displayName
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -265,7 +266,7 @@ class ConnectionFormStateTest {
             options.map { it.value },
         )
         assertTrue(options.first().description.contains("BASIC"))
-        assertEquals("Db2", dialectLabel(Dialect.Db2))
+        assertEquals("Db2", Dialect.Db2.displayName())
     }
 
     @Test
@@ -289,6 +290,16 @@ class ConnectionFormStateTest {
         state.selectDialect(Dialect.MySql)
 
         assertEquals(3306, state.port)
+    }
+
+    @Test
+    fun unnamedConnectionUsesTheDialectDisplayName() {
+        val state = ConnectionFormState()
+        state.selectDialect(Dialect.MySql)
+        state.updateDatabase("shop")
+        state.updateUsername("readonly")
+
+        assertEquals("MySQL localhost:3306", state.buildDef().name)
     }
 
     @Test

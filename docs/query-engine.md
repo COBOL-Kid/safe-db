@@ -28,7 +28,7 @@ flowchart TD
 
 ## Accepted SQL
 
-A single `SELECT`. Columns are real schema columns (or `table.*`), not expressions.
+A single `SELECT`. Columns are real schema columns (or `table.*` / `SELECT *`), not expressions. `SELECT *` expands to the table's columns and does not warn "No columns selected". Compiled result columns are named `table__column`.
 
 - `INNER JOIN` on column equality only (`a.x = b.y`). Each join column must be the leading key of an equality-capable index, or the join must be a complete foreign key ([`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt)).
 - Filters, including nested groups, up to `MAX_FILTER_DEPTH`.
@@ -50,7 +50,7 @@ User-facing reasons live in [`SqlMessages.kt`](../shared/src/main/kotlin/com/saf
 - Functions and SQL-level aggregates (`COUNT`, `SUM`, …)
 - Expressions and calculations in the select list
 - Optimizer hints (`/*+ … */`)
-- MySQL executable comments (`/*! … */`)
+- MySQL executable comments (`/*! … */`); other dialects reject them as MySQL-style executable comments rather than treating them as ordinary comments
 - National string literals (`N'…'`)
 - Comparing two columns in a predicate
 
@@ -68,7 +68,7 @@ Numbers are the constants, not copy. Change the constant and update this page in
 | `MAX_IN_LIST_SIZE` | 1,000 values | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
 | `MAX_FILTER_DEPTH` | 5 | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
 | `DEFAULT_TIMEOUT_MS` | 10s query timeout | [`QueryCore.kt`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) |
-| `CONNECT_TIMEOUT_MS` | 10s connect timeout | [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) |
+| `CONNECT_TIMEOUT_MS` | 10s connect timeout (driver connect/login/socket properties plus an interruptible deadline) | [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) |
 
 A positive SQL limit is kept as given, up to the maximum value of a 32-bit integer. A larger whole number clamps to that maximum and remains a numeric cap. A capped spec limit of `0` becomes `DEFAULT_LIMIT`. An uncapped spec leaves the stored number as-is, including `0`; that number is ignored at compile time. Typed `LIMIT 0` is rejected. Omitting `LIMIT`, `TOP`, or `FETCH FIRST` is the same as the builder's ALL choice: `uncapped` is true, the stored numeric limit stays `DEFAULT_LIMIT`, and compiled SQL has no row-limit clause. The client reads with a statement fetch size (MySQL streams one row at a time; the other dialects use fetch size 128) and stops at `MAX_RESULT_BYTES`, then marks the sample truncated. The query timeout still applies. Large-limit guidance fires when the spec is uncapped or the numeric cap is above `LARGE_LIMIT_WARNING_THRESHOLD`.
 
@@ -76,9 +76,11 @@ Hikari `maximumPoolSize` is 1 and `isReadOnly` is true ([`JdbcHelpers.kt`](../sh
 
 ## Risk gate
 
-Settings are `Cautious`, `Standard`, `Flexible`, and `Disabled` ([`Settings.kt`](../shared/src/main/kotlin/com/safedb/model/Settings.kt)). [`applyRiskGate`](../shared/src/main/kotlin/com/safedb/query/QueryRiskGate.kt) blocks from `Elevated` for `Cautious`, `High` for `Standard`, and `VeryHigh` for `Flexible`; `Disabled` has no blocking threshold.
+Settings are `Cautious`, `Standard`, `Flexible`, and `Disabled` ([`Settings.kt`](../shared/src/main/kotlin/com/safedb/model/Settings.kt)). [`applyRiskGate`](../shared/src/main/kotlin/com/safedb/query/QueryRiskGate.kt) blocks from `Elevated` for `Cautious`, `High` for `Standard`, and `VeryHigh` for `Flexible`; `Disabled` has no blocking threshold. Severity alone decides: a plan-confirmed large scan is not an extra hard block beyond that band.
 
-[`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) returns [`QueryError.RiskGate`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) first when `baseEvaluation.decision` violates the configured risk gate, including a missing plan or invalid optimizer cost that still fails that gate. Only when no earlier risk-gate block applies does a missing plan or a missing/invalid optimizer cost return [`QueryError.ConfirmationRequired`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) rather than running. A high but finite cost does not. `Disabled` turns off descriptive scoring; `EXPLAIN` still runs as an execution safeguard.
+Postgres `EXPLAIN` row estimates account for a `Limit` node that can stop early (a nested loop or a direct scan). A `LIMIT 1` seq scan is therefore Low-band, not a million-row scan. Hash/merge joins, sorts, and aggregates still report uncapped input rows because `LIMIT` does not bound that work. MySQL `EXPLAIN FORMAT=JSON` often leaves `rows` / `rows_examined_per_scan` at the table cardinality; when the access path can stop early (a plain scan or a ref/eq_ref lookup with no filesort, temporary table, or grouping), those estimates are capped by a JSON Limit or the query's `LIMIT`. Join risk uses the larger of join output rows and either side's examined rows, including a nested-loop / `ref` / `eq_ref` inner. A large estimated row set on either side is also plan-confirmed large-scan evidence, so an indexed FK nested loop is High regardless of drive order. When a Limit node (or MySQL `LIMIT` cap) keeps examined and output rows in the Low band, static FK-without-index and join-expansion signals are ignored so a LIMITed join stays Minimal.
+
+[`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) returns [`QueryError.RiskGate`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) first when `baseEvaluation.decision` violates the configured risk gate, including a missing plan or invalid optimizer cost that still fails that gate. A plan-check timeout or connection/I/O failure is [`QueryError.Execution`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) with a short message, not a confirm prompt. Only when no earlier risk-gate or transport failure applies does a missing plan or a missing/invalid optimizer cost return [`QueryError.ConfirmationRequired`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) rather than running. A high but finite cost does not. `Disabled` turns off descriptive scoring and skips `EXPLAIN`, so a plan-check failure cannot block or prompt.
 
 ## Adapters
 

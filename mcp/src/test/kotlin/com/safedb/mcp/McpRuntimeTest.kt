@@ -2,6 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.SecretsManager
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -11,6 +12,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class McpRuntimeTest {
     @AfterTest
@@ -92,12 +96,24 @@ class McpRuntimeTest {
                     ?.containsKey("confirmation") == true
             )
             assertEquals(null, tools.getValue("run_query").annotations)
+            val runQueryDescription = tools.getValue("run_query").description.orEmpty()
+            assertTrue(runQueryDescription.contains("On error risk_gate"))
+            assertFalse(runQueryDescription.contains("change the gate"))
             assertEquals(
                 listOf("connection_id", "sql"),
                 tools.getValue("run_query").inputSchema.required,
             )
             assertFalse(
                 tools.getValue("run_query").inputSchema.properties?.containsKey("spec") == true
+            )
+            val unknown = client.callTool("nope_tool", emptyMap())
+            assertEquals(true, unknown.isError)
+            val unknownBody =
+                Json.parseToJsonElement((unknown.content.single() as TextContent).text).jsonObject
+            assertEquals("not_found", unknownBody.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Unknown tool 'nope_tool'",
+                unknownBody.getValue("message").jsonPrimitive.content,
             )
         }
     }

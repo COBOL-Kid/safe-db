@@ -92,6 +92,14 @@ internal fun commitBuilderLimitDraft(text: String): Int? {
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
 internal val QueryControlsTableGap = 16.dp
+internal val QueryStartOverlayGap = 6.dp
+internal val QueryControlsStartPadding = 16.dp
+internal val QueryOptionsPanelMinWidth = 208.dp
+internal val QueryOptionsPanelMaxWidth = 256.dp
+internal val QueryOptionsPanelEndPadding = 16.dp
+internal val QueryOptionsPanelGap = 8.dp
+internal val QueryOptionsOverlayEndPadding =
+    QueryOptionsPanelEndPadding + QueryOptionsPanelMaxWidth + QueryOptionsPanelGap
 internal val JoinItemsMaxHeight = 88.dp
 internal val QueryControlsCanvasInset =
     QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
@@ -103,10 +111,10 @@ internal fun queryControlsCanvasInset(measuredContentHeight: Dp) =
     )
 
 internal fun queryControlsHeightPx(
-    filterCount: Int,
-    filterHeightPx: Int,
+    startOverlayVisible: Boolean,
+    startOverlayHeightPx: Int,
     optionHeightPx: Int,
-): Int = if (filterCount > 0) maxOf(filterHeightPx, optionHeightPx) else optionHeightPx
+): Int = if (startOverlayVisible) maxOf(startOverlayHeightPx, optionHeightPx) else optionHeightPx
 
 internal enum class ResultsPaneMode {
     Normal,
@@ -121,6 +129,21 @@ internal fun toggleResultsPane(mode: ResultsPaneMode, height: Float): ResultsPan
     } else {
         ResultsPaneState(ResultsPaneMode.Maximized, height)
     }
+
+internal const val RESULTS_PANE_DEFAULT_HEIGHT = 240f
+internal const val RESULTS_PANE_EXPANDED_MIN_HEIGHT = 320f
+
+internal fun resultsPaneHeightWhenResultsArrive(
+    currentHeight: Float,
+    workspaceHeight: Float,
+): Float {
+    val expanded = maxOf(RESULTS_PANE_EXPANDED_MIN_HEIGHT, workspaceHeight * 0.4f)
+    val maxHeight = minOf(ResultsPaneMaxHeight, workspaceHeight.coerceAtLeast(ResultsPaneMinHeight))
+    return maxOf(currentHeight, expanded).coerceIn(ResultsPaneMinHeight, maxHeight)
+}
+
+internal const val LARGE_LIMIT_GUIDANCE_TEXT =
+    "Large limit: add filters or pick columns to keep queries fast."
 
 internal fun groupingOrderLabels(
     groups: List<GroupSpec>,

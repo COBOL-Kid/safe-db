@@ -340,7 +340,7 @@ internal suspend fun withMcpClient(server: Server, block: suspend (Client) -> Un
     val client = Client(clientInfo = Implementation(name = "test", version = "0"))
     coroutineScope {
         val sessionJob = launch {
-            val session = server.createSession(serverTransport)
+            val session = server.createSafeDbSession(serverTransport)
             val done = Job()
             session.onClose { done.complete() }
             done.join()

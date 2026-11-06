@@ -170,9 +170,9 @@ internal fun buildAssessment(
     val caps =
         mapOf(
             RiskCategory.Access to 6,
-            // Must exceed the typical static join total (relation + expansion points) so
-            // plan-confirmed expansion evidence can still raise the category.
-            RiskCategory.Joins to 4,
+            // Must reach High (6) from plan-confirmed expansion alone, above the typical
+            // static join total (relation + FK + expansion points).
+            RiskCategory.Joins to 6,
             RiskCategory.Operations to 4,
             RiskCategory.Volume to 1,
         )
@@ -270,6 +270,7 @@ private fun addJoinSignals(
                             2,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
+                            target,
                         )
                 }
             }

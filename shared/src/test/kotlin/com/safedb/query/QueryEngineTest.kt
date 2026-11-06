@@ -59,6 +59,7 @@ class QueryEngineTest {
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("blocked"))
+        assertTrue(err.contains("system/catalog schema"))
     }
 
     @Test
@@ -79,6 +80,7 @@ class QueryEngineTest {
                     .copy(tables = listOf(TableRef(schema = schema, name = "users", alias = "t0")))
             val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
             assertTrue(err.contains("blocked"), schema)
+            assertTrue(err.contains("system/catalog schema"), schema)
         }
     }
 
@@ -89,6 +91,7 @@ class QueryEngineTest {
                 .copy(tables = listOf(TableRef(schema = "Audit", name = "users", alias = "t0")))
         val err = validate(spec, sampleSchema(), listOf("audit")).unwrapErr()
         assertTrue(err.contains("blocked"))
+        assertFalse(err.contains("system/catalog schema"))
     }
 
     @Test
@@ -1508,6 +1511,26 @@ class QueryEngineTest {
             "2026-07-01T12:30",
             parseDateTimeLiteral("2026-07-01T12:30:00").getOrThrow().toString(),
         )
+    }
+
+    @Test
+    fun dateTimeLiteralsAcceptDateOnlyAndSpaceSeparatedLocalValues() {
+        assertEquals(
+            "2025-01-01T00:00",
+            parseDateTimeLiteral("2025-01-01").getOrThrow().toString(),
+        )
+        assertEquals(
+            "2025-01-01T09:30",
+            parseDateTimeLiteral("2025-01-01 09:30").getOrThrow().toString(),
+        )
+        assertEquals(
+            "2025-01-01T09:30:05",
+            parseDateTimeLiteral("2025-01-01 09:30:05").getOrThrow().toString(),
+        )
+        val failure = parseDateTimeLiteral("01/01/2025").exceptionOrNull()!!.message!!
+        assertTrue(failure.contains("YYYY-MM-DD"))
+        assertTrue(failure.contains("YYYY-MM-DD HH:MM"))
+        assertTrue(failure.contains("YYYY-MM-DDTHH:MM"))
     }
 
     private fun sampleConnection(id: String) =

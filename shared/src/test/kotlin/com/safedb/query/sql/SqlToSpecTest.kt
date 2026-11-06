@@ -151,8 +151,21 @@ class SqlToSpecTest {
     }
 
     @Test
-    fun bareStarKeepsColumnsEmpty() {
-        assertTrue(spec("SELECT * FROM users").columns.isEmpty())
+    fun bareStarExpandsColumnsFromMetadata() {
+        val parsed = spec("SELECT * FROM users")
+        assertEquals(
+            listOf("id", "name", "email", "active", "created_at", "category_id"),
+            parsed.columns.map { it.column },
+        )
+        assertTrue(parsed.columns.all { it.tableAlias == "users" })
+        when (val validated = validateQuery(parsed, schema, emptyList())) {
+            is Outcome.Ok ->
+                assertTrue(
+                    validated.value.second.warnings.none { it.contains("No columns selected") }
+                )
+            is Outcome.Err ->
+                throw AssertionError("expected SELECT * to validate: ${validated.message}")
+        }
     }
 
     @Test
@@ -171,9 +184,7 @@ class SqlToSpecTest {
             )
         val leaves = spec.filters.children.map { (it as FilterNode.Leaf).spec }
         assertEquals(LiteralKind.DateTime, leaves[0].singleLiteral().kind)
-        // Postgres and MySQL accept a bare date against a timestamp column, so it is widened to
-        // midnight here rather than reaching validateQuery, which only accepts a time component.
-        assertEquals("2024-01-01T00:00:00", leaves[0].singleLiteral().text)
+        assertEquals("2024-01-01", leaves[0].singleLiteral().text)
         assertEquals(LiteralKind.Bool, leaves[1].singleLiteral().kind)
         assertEquals(LiteralKind.Int, leaves[2].listLiterals().first().kind)
         assertEquals(LiteralKind.Text, leaves[3].singleLiteral().kind)

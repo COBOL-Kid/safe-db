@@ -1,16 +1,15 @@
 package com.safedb.query
 
 import com.safedb.model.EvidenceConfidence
-import com.safedb.model.LARGE_TABLE_ROW_ESTIMATE
 import com.safedb.model.NormalizedQueryPlan
 import com.safedb.model.PlanAccessMethod
+import com.safedb.model.PlanJoinEvidence
 import com.safedb.model.PlanOperationKind
 import com.safedb.model.PlanRelationAccess
 import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
-import com.safedb.model.TableSizeClass
 
 internal enum class EstimatedRowBand {
     Low,
@@ -45,23 +44,33 @@ fun refineRiskWithPlan(
         }
     }
 
-    for ((planSchema, table, planAlias, method, estimatedRows, specializedTextEvidence) in
-        mergePartitionedRelations(plan.relations, spec)) {
-        val alias = resolvePlanAlias(planAlias, planSchema, table, spec)
+    val mergedRelations = mergePartitionedRelations(plan.relations, spec)
+    val resolvedRelations = ArrayList<ResolvedPlanRelation>(mergedRelations.size)
+    for (relation in mergedRelations) {
+        val alias = resolvePlanAlias(relation.alias, relation.schema, relation.table, spec)
         if (alias == null) {
             uncertainties +=
                 RiskUncertainty(
                     "plan_relation_unmapped",
-                    RiskSubject(schema = planSchema, table = table, tableAlias = planAlias),
+                    RiskSubject(
+                        schema = relation.schema,
+                        table = relation.table,
+                        tableAlias = relation.alias,
+                    ),
                     "ambiguous_or_unmapped_relation",
                 )
             continue
         }
+        resolvedRelations += ResolvedPlanRelation(alias, relation)
         val tableInfo = tablesByAlias[alias]
         val subject =
             tableInfo?.subject(alias)
-                ?: RiskSubject(tableAlias = alias, schema = planSchema, table = table)
-        if (specializedTextEvidence) {
+                ?: RiskSubject(
+                    tableAlias = alias,
+                    schema = relation.schema,
+                    table = relation.table,
+                )
+        if (relation.specializedTextEvidence) {
             val textTarget = RiskTarget.Access(alias, AccessRiskKind.Text)
             replace(
                 textTarget,
@@ -77,9 +86,9 @@ fun refineRiskWithPlan(
             )
         }
         val target = RiskTarget.Access(alias)
-        val band = estimatedRows?.let(::estimatedRowBand)
+        val band = relation.estimatedRows?.let(::estimatedRowBand)
         val replacement =
-            when (method) {
+            when (relation.method) {
                 PlanAccessMethod.BoundedLookup -> null
                 PlanAccessMethod.BoundedRange ->
                     when (band) {
@@ -105,29 +114,14 @@ fun refineRiskWithPlan(
                             continue
                         }
                     }
-                // A full index scan reads the whole index, so it bands like a table scan;
-                // only true table scans can block outright because index-scan row estimates ignore
-                // ORDER BY ... LIMIT early exits.
+                // A full index scan reads the whole index, so it bands like a table scan.
                 PlanAccessMethod.TableScan,
                 PlanAccessMethod.FullIndexScan ->
                     when (band) {
                         EstimatedRowBand.Low -> null
                         EstimatedRowBand.Material,
-                        EstimatedRowBand.High ->
-                            RiskSignal(
-                                RiskSignalCode.PlanConfirmedLargeScan,
-                                RiskCategory.Access,
-                                subject,
-                                4,
-                                SignalBasis.PlanEvidence,
-                                EvidenceConfidence.High,
-                                target,
-                                mandatoryBlockWhenGateEnabled =
-                                    method == PlanAccessMethod.TableScan &&
-                                        band == EstimatedRowBand.High &&
-                                        (tableInfo.isConfidentLarge() ||
-                                            estimatedRows >= LARGE_TABLE_ROW_ESTIMATE),
-                            )
+                        EstimatedRowBand.High -> planConfirmedLargeScan(alias, subject)
+
                         null -> {
                             uncertainties +=
                                 RiskUncertainty(
@@ -144,7 +138,7 @@ fun refineRiskWithPlan(
                         RiskUncertainty(
                             "plan_access_method_unknown",
                             subject,
-                            method.name.lowercase(),
+                            relation.method.name.lowercase(),
                         )
                     continue
                 }
@@ -198,63 +192,25 @@ fun refineRiskWithPlan(
         )
     }
 
-    for ((planAliases, estimatedOutputRows) in plan.joins) {
-        val aliases = resolvePlanAliases(planAliases, spec)
-        if (planAliases.isEmpty() || aliases == null) {
-            uncertainties +=
-                RiskUncertainty(
-                    "plan_join_unmapped",
-                    RiskSubject(operation = "join"),
-                    "ambiguous_or_unmapped_join_alias",
-                )
-            continue
-        }
-        val target = matchingJoinTarget(aliases, staticAssessment.signals)
-        if (target == null) {
-            uncertainties +=
-                RiskUncertainty(
-                    "plan_join_unmapped",
-                    RiskSubject(operation = "join"),
-                    "ambiguous_or_unmapped_join",
-                )
-            continue
-        }
-        when (estimatedOutputRows?.let(::estimatedRowBand)) {
-            EstimatedRowBand.Low -> replace(target, null)
-            EstimatedRowBand.Material -> Unit
-            EstimatedRowBand.High ->
-                replace(
-                    target,
-                    RiskSignal(
-                        RiskSignalCode.PlanConfirmedJoinExpansion,
-                        RiskCategory.Joins,
-                        RiskSubject(operation = target.displayName()),
-                        3,
-                        SignalBasis.PlanEvidence,
-                        EvidenceConfidence.High,
-                        target,
-                        mandatoryBlockWhenGateEnabled =
-                            joinUniquenessProvesNeitherSideUnique(
-                                target.aliases,
-                                spec,
-                                tablesByAlias,
-                            ),
-                    ),
-                )
-            null ->
-                uncertainties +=
-                    RiskUncertainty(
-                        "plan_join_rows_unknown",
-                        RiskSubject(operation = "join"),
-                        "missing_estimated_rows",
-                    )
-        }
-    }
+    refineJoins(
+        plan.joins,
+        resolvedRelations,
+        spec,
+        tablesByAlias,
+        staticAssessment.signals,
+        ::replace,
+        uncertainties,
+    )
 
     // Every static signal sharing a refined target drops out together, so several static signals
     // collapse into the single strongest plan-based replacement for that target.
     val retained = staticAssessment.signals.filterNot { it.target in replacements }
-    val active = retained + replacements.values.filterNotNull()
+    val active =
+        if (planRowsAreSmall(mergedRelations, plan.joins)) {
+            retained.filterNot(::staticJoinRiskClearedBySmallPlan)
+        } else {
+            retained
+        } + replacements.values.filterNotNull()
     return buildAssessment(staticAssessment.queryFingerprint, active, uncertainties)
 }
 
@@ -274,6 +230,12 @@ fun preserveStaticRiskForUnavailablePlan(
 
 // Postgres appends a per-partition suffix to the query alias (t0_1, t0_2).
 private val partitionAliasSuffix = Regex("_\\d+$")
+
+// High by itself (6) so a large join does not need a synthesized Access scan. When a join
+// side already confirmed a large scan, keep 3 so Access 4 + Joins 3 (typically plus a
+// 1-point static join signal) scores High rather than VeryHigh.
+private const val JOIN_EXPANSION_POINTS = 6
+private const val JOIN_EXPANSION_POINTS_WITH_SIDE_SCAN = 3
 
 // Partitioned scans arrive as one relation per child; collapse them onto the resolved alias so
 // summed rows band by the total scanned work instead of per-partition slices.
@@ -363,23 +325,173 @@ private fun matchingJoinTarget(aliases: Set<String>, signals: List<RiskSignal>):
     return candidates.singleOrNull { it.aliases == aliases }
 }
 
-private fun TableInfo?.isConfidentLarge(): Boolean =
-    this != null &&
-        tableSize.sizeClass == TableSizeClass.Large &&
-        tableSize.coverage.isComplete &&
-        tableSize.confidence in setOf(EvidenceConfidence.Medium, EvidenceConfidence.High)
+private data class ResolvedPlanRelation(val alias: String, val relation: PlanRelationAccess)
 
-private fun joinUniquenessProvesNeitherSideUnique(
-    aliases: Set<String>,
+// Unique FK joins have no static JoinExpansionPossible target. Still score the join from
+// plan rows, including a large nested-loop / ref / eq_ref inner that an indexed FK drive
+// order can hide from the outer-scan path.
+private fun refineJoins(
+    joins: List<PlanJoinEvidence>,
+    resolvedRelations: List<ResolvedPlanRelation>,
     spec: QuerySpec,
     tablesByAlias: Map<String, TableInfo?>,
-): Boolean {
-    if (aliases.size != 2) return false
-    val joins = spec.joins.filter { setOf(it.leftAlias, it.rightAlias) == aliases }
-    return joins.isNotEmpty() &&
-        aliases.all { alias ->
-            val table = tablesByAlias[alias] ?: return false
-            table.indexMetadata.isComplete &&
-                !provenUniqueJoinKey(table, joinedColumns(alias, joins))
+    staticSignals: List<RiskSignal>,
+    replace: (RiskTarget, RiskSignal?) -> Unit,
+    uncertainties: MutableList<RiskUncertainty>,
+) {
+    for ((planAliases, estimatedOutputRows) in joins) {
+        val aliases = resolvePlanAliases(planAliases, spec)
+        if (planAliases.isEmpty() || aliases == null) {
+            uncertainties +=
+                RiskUncertainty(
+                    "plan_join_unmapped",
+                    RiskSubject(operation = "join"),
+                    "ambiguous_or_unmapped_join_alias",
+                )
+            continue
         }
+        val target = matchingJoinTarget(aliases, staticSignals) ?: RiskTarget.Join(aliases)
+        val joinSides = resolvedRelations.mapNotNull { resolved ->
+            if (resolved.alias !in aliases) {
+                null
+            } else {
+                JoinSide(resolved.alias, resolved.relation, joinAccessRows(resolved.relation))
+            }
+        }
+        val drivingScanRows = joinSides.mapNotNull(JoinSide::examinedRows).maxOrNull()
+        val joinRows =
+            if (estimatedOutputRows != null && drivingScanRows != null) {
+                maxOf(estimatedOutputRows, drivingScanRows)
+            } else {
+                estimatedOutputRows ?: drivingScanRows
+            }
+        var largePerSideScan = false
+        for (side in joinSides) {
+            when (side.examinedRows?.let(::estimatedRowBand)) {
+                EstimatedRowBand.Low,
+                null -> Unit
+                EstimatedRowBand.Material,
+                EstimatedRowBand.High -> {
+                    largePerSideScan = true
+                    // Table/index scans already confirmed a large scan in the relation pass.
+                    // Lookups and ranges do not, so join examined-rows still need to.
+                    if (joinSideNeedsAccessScanSignal(side.relation.method)) {
+                        replace(
+                            RiskTarget.Access(side.alias),
+                            planConfirmedLargeScan(
+                                side.alias,
+                                joinSideSubject(side, tablesByAlias),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        when (joinRows?.let(::estimatedRowBand)) {
+            EstimatedRowBand.Low -> replace(target, null)
+            EstimatedRowBand.Material -> Unit
+            EstimatedRowBand.High ->
+                replace(target, planConfirmedJoinExpansion(target, largePerSideScan))
+            null ->
+                uncertainties +=
+                    RiskUncertainty(
+                        "plan_join_rows_unknown",
+                        RiskSubject(operation = "join"),
+                        "missing_estimated_rows",
+                    )
+        }
+    }
 }
+
+private fun joinSideNeedsAccessScanSignal(method: PlanAccessMethod): Boolean =
+    when (method) {
+        PlanAccessMethod.BoundedLookup,
+        PlanAccessMethod.BoundedRange -> true
+        PlanAccessMethod.TableScan,
+        PlanAccessMethod.FullIndexScan,
+        PlanAccessMethod.Unknown,
+        PlanAccessMethod.Other -> false
+    }
+
+private data class JoinSide(
+    val alias: String,
+    val relation: PlanRelationAccess,
+    val examinedRows: Long?,
+)
+
+// Nested-loop / ref / eq_ref inners examine their estimated row set even when the access
+// path is an indexed lookup, so join scoring must not ignore those methods.
+private fun joinAccessRows(relation: PlanRelationAccess): Long? =
+    when (relation.method) {
+        PlanAccessMethod.TableScan,
+        PlanAccessMethod.FullIndexScan,
+        PlanAccessMethod.BoundedLookup,
+        PlanAccessMethod.BoundedRange -> relation.estimatedRows
+        PlanAccessMethod.Unknown,
+        PlanAccessMethod.Other -> null
+    }
+
+private fun planConfirmedLargeScan(alias: String, subject: RiskSubject): RiskSignal =
+    RiskSignal(
+        RiskSignalCode.PlanConfirmedLargeScan,
+        RiskCategory.Access,
+        subject,
+        4,
+        SignalBasis.PlanEvidence,
+        EvidenceConfidence.High,
+        RiskTarget.Access(alias),
+    )
+
+private fun planConfirmedJoinExpansion(
+    target: RiskTarget.Join,
+    largePerSideScan: Boolean,
+): RiskSignal =
+    RiskSignal(
+        RiskSignalCode.PlanConfirmedJoinExpansion,
+        RiskCategory.Joins,
+        RiskSubject(operation = target.displayName()),
+        if (largePerSideScan) JOIN_EXPANSION_POINTS_WITH_SIDE_SCAN else JOIN_EXPANSION_POINTS,
+        SignalBasis.PlanEvidence,
+        EvidenceConfidence.High,
+        target,
+    )
+
+private fun joinSideSubject(
+    side: JoinSide,
+    tablesByAlias: Map<String, TableInfo?>,
+): RiskSubject =
+    tablesByAlias[side.alias]?.subject(side.alias)
+        ?: RiskSubject(
+            tableAlias = side.alias,
+            schema = side.relation.schema,
+            table = side.relation.table,
+        )
+
+private fun planRowsAreSmall(
+    relations: List<PlanRelationAccess>,
+    joins: List<PlanJoinEvidence>,
+): Boolean =
+    relations.isNotEmpty() &&
+        relations.all { relation ->
+            relation.estimatedRows?.let { estimatedRowBand(it) == EstimatedRowBand.Low } == true
+        } &&
+        joins.all { join ->
+            join.estimatedOutputRows?.let { estimatedRowBand(it) == EstimatedRowBand.Low } == true
+        }
+
+private fun staticJoinRiskClearedBySmallPlan(signal: RiskSignal): Boolean =
+    when (signal.code) {
+        RiskSignalCode.ForeignKeyWithoutSupportingIndex,
+        RiskSignalCode.JoinExpansionPossible -> true
+        RiskSignalCode.NoEffectiveRestriction,
+        RiskSignalCode.NoKnownCompatibleAccessPath,
+        RiskSignalCode.ScanProneTextPredicate,
+        RiskSignalCode.ScanProneNegativePredicate,
+        RiskSignalCode.OrBranchWithoutCompatiblePath,
+        RiskSignalCode.AdditionalJoinedRelation,
+        RiskSignalCode.LimitCannotBoundWork,
+        RiskSignalCode.BoundedBlockingOperation,
+        RiskSignalCode.MaterialProjectedPayload,
+        RiskSignalCode.PlanConfirmedLargeScan,
+        RiskSignalCode.PlanConfirmedJoinExpansion -> false
+    }

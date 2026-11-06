@@ -97,6 +97,23 @@ class AppStateTest {
     }
 
     @Test
+    fun newConnectionCardOpensTheAddConnectionForm() {
+        val state = AppState()
+        state.requestNewConnectionForm()
+        assertEquals(AppRoute.Connections, state.route.value)
+        assertEquals(true, state.openNewConnectionForm.value)
+
+        state.consumeNewConnectionFormRequest()
+        assertEquals(false, state.openNewConnectionForm.value)
+        assertEquals(AppRoute.Connections, state.route.value)
+
+        state.requestNewConnectionForm()
+        state.navigate(AppRoute.Home)
+        assertEquals(false, state.openNewConnectionForm.value)
+        assertEquals(AppRoute.Home, state.route.value)
+    }
+
+    @Test
     fun restoredQueryUsesFirstTableSchemaWithoutHistorySource() {
         val spec =
             QuerySpec(

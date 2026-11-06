@@ -57,11 +57,12 @@ class QueryPlanRefinementTest {
                 TableSizeClass.Large,
                 EvidenceConfidence.Medium,
             )
-        assertTrue(high.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(4, high.signals.single().points)
+        assertEquals(QueryRiskSeverity.Elevated, high.severity)
     }
 
     @Test
-    fun corroboratedHighRowPlanScanIsMandatoryAtEveryEnabledGate() {
+    fun corroboratedHighRowPlanScanFollowsSeverityBands() {
         val refined =
             refineAccess(
                 PlanAccessMethod.TableScan,
@@ -70,8 +71,10 @@ class QueryPlanRefinementTest {
                 EvidenceConfidence.High,
             )
 
-        assertTrue(refined.signals.single().mandatoryBlockWhenGateEnabled)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+        assertEquals(QueryRiskSeverity.Elevated, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Cautious).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
         assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Disabled).state)
     }
 
@@ -90,7 +93,9 @@ class QueryPlanRefinementTest {
                 TableSizeClass.Large,
                 EvidenceConfidence.High,
             )
-        assertFalse(high.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(4, high.signals.single().points)
+        assertEquals(QueryRiskSeverity.Elevated, high.severity)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -120,14 +125,16 @@ class QueryPlanRefinementTest {
     }
 
     @Test
-    fun highRowScanOnUnknownSizeTableIsMandatoryOnlyAtLargeEstimates() {
+    fun highRowScanOnUnknownSizeTableFollowsSeverityBands() {
         val million = refineAccess(PlanAccessMethod.TableScan, 2_000_000, TableSizeClass.Unknown)
-        assertTrue(million.signals.single().mandatoryBlockWhenGateEnabled)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Flexible).state)
+        assertEquals(4, million.signals.single().points)
+        assertEquals(QueryRiskSeverity.Elevated, million.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Cautious).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(million, QueryRiskGate.Flexible).state)
 
         val moderate = refineAccess(PlanAccessMethod.TableScan, 150_000, TableSizeClass.Unknown)
         assertEquals(4, moderate.signals.single().points)
-        assertFalse(moderate.signals.single().mandatoryBlockWhenGateEnabled)
+        assertEquals(QueryRiskSeverity.Elevated, moderate.severity)
     }
 
     @Test
@@ -153,10 +160,11 @@ class QueryPlanRefinementTest {
                 Schema(listOf(table("orders", TableSizeClass.Large, EvidenceConfidence.High))),
             )
 
-        // 80k per child is Material alone; the 160k sum bands High and blocks outright.
+        // 80k per child is Material alone; the 160k sum bands High and scores as Elevated.
         val signal = refined.signals.single()
         assertEquals(RiskSignalCode.PlanConfirmedLargeScan, signal.code)
-        assertTrue(signal.mandatoryBlockWhenGateEnabled)
+        assertEquals(QueryRiskSeverity.Elevated, refined.severity)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
         assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
     }
 
@@ -478,10 +486,243 @@ class QueryPlanRefinementTest {
                 schema,
             )
         assertEquals(3, high.signals.single { it.target == operationTarget }.points)
-        assertTrue(high.signals.single { it.target == joinTarget }.mandatoryBlockWhenGateEnabled)
+        assertEquals(
+            RiskSignalCode.PlanConfirmedJoinExpansion,
+            high.signals.single { it.target == joinTarget }.code,
+        )
         // Confirmed expansion must register in the score, not vanish under the category cap.
-        assertEquals(3, high.categoryScores.getValue(RiskCategory.Joins))
+        assertEquals(6, high.categoryScores.getValue(RiskCategory.Joins))
         assertTrue(high.score > base.score)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
+    }
+
+    @Test
+    fun largeDrivingTableScanRaisesJoinRiskEvenWhenTheInnerLookupReportsOneRow() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        )
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "orders",
+                                alias = "t0",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1_000_000,
+                            ),
+                            PlanRelationAccess(
+                                table = "items",
+                                alias = "t1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 1)),
+                ),
+                twoTableSpec(),
+                Schema(listOf(table("orders"), table("items"))),
+            )
+
+        val join = refined.signals.single { it.target == joinTarget }
+        assertEquals(RiskSignalCode.PlanConfirmedJoinExpansion, join.code)
+        assertEquals(
+            RiskSignalCode.PlanConfirmedLargeScan,
+            refined.signals.single { it.target == RiskTarget.Access("t0") }.code,
+        )
+        assertEquals(QueryRiskSeverity.High, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+    }
+
+    @Test
+    fun largeRefInnerRaisesJoinRiskEvenWhenTheDrivingTableIsSmall() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        )
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "customers",
+                                alias = "t1",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 15,
+                            ),
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 313_725,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 941_176)),
+                ),
+                twoTableSpec(left = "scan_events", right = "customers"),
+                Schema(listOf(table("scan_events"), table("customers"))),
+            )
+
+        assertEquals(
+            RiskSignalCode.PlanConfirmedLargeScan,
+            refined.signals.single { it.target == RiskTarget.Access("t0") }.code,
+        )
+        assertEquals(
+            RiskSignalCode.PlanConfirmedJoinExpansion,
+            refined.signals.single { it.target == joinTarget }.code,
+        )
+        assertEquals(QueryRiskSeverity.High, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+    }
+
+    @Test
+    fun highJoinOutputRaisesJoinRiskWhenNeitherSideReportsALargePerAccessEstimate() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        )
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "customers",
+                                alias = "t1",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 15,
+                            ),
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 941_176)),
+                ),
+                twoTableSpec(left = "scan_events", right = "customers"),
+                Schema(listOf(table("scan_events"), table("customers"))),
+            )
+
+        val join = refined.signals.single { it.target == joinTarget }
+        assertEquals(RiskSignalCode.PlanConfirmedJoinExpansion, join.code)
+        assertEquals(6, join.points)
+        assertEquals(6, refined.categoryScores.getValue(RiskCategory.Joins))
+        assertEquals(
+            0,
+            refined.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
+        )
+        assertEquals(QueryRiskSeverity.High, refined.severity)
+        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
+    }
+
+    @Test
+    fun smallLimitClearsStaticFkWithoutIndexAndJoinExpansion() {
+        val joinTarget = RiskTarget.Join(setOf("t0", "t1"))
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join 1"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        ),
+                        RiskSignal(
+                            RiskSignalCode.ForeignKeyWithoutSupportingIndex,
+                            RiskCategory.Joins,
+                            RiskSubject(tableAlias = "t0", table = "scan_events"),
+                            2,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                            joinTarget,
+                        ),
+                        RiskSignal(
+                            RiskSignalCode.JoinExpansionPossible,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                            joinTarget,
+                        ),
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1,
+                            ),
+                            PlanRelationAccess(
+                                table = "customers",
+                                alias = "t1",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 1)),
+                ),
+                twoTableSpec(left = "scan_events", right = "customers"),
+                Schema(listOf(table("scan_events"), table("customers"))),
+            )
+
+        assertFalse(
+            refined.signals.any {
+                it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex ||
+                    it.code == RiskSignalCode.JoinExpansionPossible
+            }
+        )
+        assertEquals(QueryRiskSeverity.Minimal, refined.severity)
+        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Cautious).state)
     }
 
     private fun refineAccess(
@@ -528,9 +769,9 @@ private fun oneTableSpec() =
         limit = 100,
     )
 
-private fun twoTableSpec() =
+private fun twoTableSpec(left: String = "orders", right: String = "items") =
     QuerySpec(
-        tables = listOf(TableRef("public", "orders", "t0"), TableRef("public", "items", "t1")),
+        tables = listOf(TableRef("public", left, "t0"), TableRef("public", right, "t1")),
         columns = listOf(ColumnSel("t0", "id")),
         joins = listOf(JoinSpec("t0", "id", "t1", "id")),
         filters = FilterGroup.empty(),

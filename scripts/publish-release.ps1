@@ -34,6 +34,8 @@ if (-not $OutputDir -or -not (Test-Path -LiteralPath $OutputDir -PathType Contai
 $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
 $Immutable = "public, max-age=31536000, immutable"
 $NoCache = "no-cache, max-age=0"
+$script:releaseObjectNames = @()
+$script:releaseObjectsLoaded = $false
 
 function Assert-RequiredReleaseFile {
     param(
@@ -126,6 +128,69 @@ Upload-ReleaseFiles text/plain $NoCache @("metadata.properties")
 Upload-ReleaseFiles text/html $NoCache @("*.html")
 Upload-ReleaseFiles image/svg+xml $Immutable @("*.svg")
 Upload-ReleaseFiles image/png $Immutable @("*.png")
+
+# Old payloads are immutable, so nothing links to them after an update. Keep a
+# small history for manual downloads and Sparkle deltas, but do not let the flat
+# bucket grow without bound. Cloud Storage update times follow release order, so
+# list newest first and drop everything past the retention count.
+function Get-ReleaseObjectNames {
+    if (-not $script:releaseObjectsLoaded) {
+        $script:releaseObjectNames = @(
+            & gcloud --quiet storage objects list $Bucket --format="value(name)" --sort-by="~updateTime"
+        )
+        if ($LASTEXITCODE -ne 0) {
+            throw "gcloud storage objects list failed with exit code $LASTEXITCODE"
+        }
+        $script:releaseObjectsLoaded = $true
+    }
+    return $script:releaseObjectNames
+}
+
+function Remove-OldReleaseObjects {
+    param(
+        [int]$Keep,
+        [string]$Description,
+        [string]$Pattern
+    )
+
+    $objects = Get-ReleaseObjectNames
+    $candidates = @($objects | Where-Object { $_ -and ($_ -like $Pattern) })
+    if ($candidates.Count -le $Keep) {
+        return
+    }
+
+    $doomed = @($candidates | Select-Object -Skip $Keep)
+    Write-Host "==> Pruning $($doomed.Count) old $Description object(s)"
+    $uris = @()
+    foreach ($name in $doomed) {
+        Write-Host "    $Bucket/$name"
+        $uris += "$Bucket/$name"
+    }
+
+    & gcloud --quiet storage rm @uris
+    if ($LASTEXITCODE -ne 0) {
+        throw "gcloud storage rm failed with exit code $LASTEXITCODE"
+    }
+}
+
+# Keep/glob table is scripts/publish-release-prune-policy.txt (shared with
+# publish-release.sh). scripts/test_assert_conveyor_site.sh is the policy lock;
+# this script must match that table.
+$prunePolicy = Join-Path $PSScriptRoot "publish-release-prune-policy.txt"
+if (-not (Test-Path -LiteralPath $prunePolicy -PathType Leaf)) {
+    throw "publish aborted: missing prune policy $prunePolicy"
+}
+Get-Content -LiteralPath $prunePolicy | ForEach-Object {
+    $line = $_.TrimEnd("`r").Trim()
+    if (-not $line -or $line.StartsWith("#")) {
+        return
+    }
+    $parts = $line -split '\s+', 3
+    if ($parts.Count -ne 3) {
+        throw "publish aborted: invalid prune policy line: $line"
+    }
+    Remove-OldReleaseObjects ([int]$parts[0]) $parts[2] $parts[1]
+}
 
 function Assert-NoCacheControl {
     param(

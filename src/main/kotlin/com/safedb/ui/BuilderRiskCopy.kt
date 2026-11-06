@@ -11,6 +11,21 @@ import com.safedb.query.RiskGateState
 import com.safedb.query.blockingBand
 import com.safedb.ui.components.ConfirmDialog
 
+internal fun assessmentBlocksOnRun(assessment: QueryRiskAssessment, gate: QueryRiskGate): Boolean {
+    val band = blockingBand(gate) ?: return false
+    return assessment.severity.ordinal >= band.ordinal
+}
+
+internal fun displayedPreliminaryAssessment(
+    assessment: QueryRiskAssessment?,
+    incompleteFilters: Boolean,
+    gate: QueryRiskGate,
+): QueryRiskAssessment? {
+    assessment ?: return null
+    if (!incompleteFilters) return assessment
+    return assessment.takeUnless { assessmentBlocksOnRun(it, gate) }
+}
+
 internal fun riskGateIndicatorText(gate: QueryRiskGate): String =
     when (gate) {
         QueryRiskGate.Disabled -> "Risk gate: Off"
@@ -26,7 +41,6 @@ internal fun queryRiskIndicatorText(
     runAvailable: Boolean = true,
 ): String {
     val runEnabledLabel = if (runAvailable) "Run enabled" else "Run unavailable"
-    val runAvailableLabel = if (runAvailable) "Run available" else "Run unavailable"
     return when {
         validationError != null -> "Query validation: $validationError"
         running -> "Assessing query risk · Run unavailable"
@@ -49,8 +63,16 @@ internal fun queryRiskIndicatorText(
                 if (evaluation.planStatus == QueryPlanStatus.Available) " · plan refined" else ""
             "Query risk: ${finalAssessment.severity.label}$refinement · $runEnabledLabel"
         }
-        preliminary != null ->
-            "Preliminary query risk: ${preliminary.severity.label} · $runAvailableLabel"
+        preliminary != null -> {
+            val wouldBlock = assessmentBlocksOnRun(preliminary, gate)
+            val status =
+                when {
+                    !runAvailable -> "Run unavailable"
+                    wouldBlock -> "gate applies on run"
+                    else -> "Run available"
+                }
+            "Preliminary query risk: ${preliminary.severity.label} · $status"
+        }
         else -> "Query risk: Ready to assess · $runEnabledLabel"
     }
 }

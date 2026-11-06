@@ -2,13 +2,15 @@
 
 `./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 317 desktop, 632 shared, and 90 MCP tests, with 90% desktop, 87% shared, and 92% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 332 desktop, 673 shared, and 95 MCP tests, with 90% desktop, 87% shared, and 92% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report.
 
 | Command | Use |
 | --- | --- |
 | `./gradlew help` | Validate root Gradle configuration after build logic changes. |
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
 | `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, discovery, Docker harness orchestration, and Kover ratchets. |
+| `./gradlew ktfmtCheck` | Kotlin format check (`ktfmtFormat` to rewrite). Included in `check`. |
+| `./gradlew qodanaScan` | JVM Community Qodana pass (`qodana.yaml`). Local static analysis; not labeled CI. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh unit-coverage proof for broad Kotlin/build changes. Shared and MCP kover both ignore `integrationTest`. |
 | `./gradlew :mcp:koverXmlReportUnit verifyMcpCoverageRatchet` | Generate the unit-only MCP XML report and enforce its independent coverage floor. |
 | `./gradlew integrationTest` | Run the optional `:shared` JDBC and `:mcp` integration suites, including the packaged MCP stdio smoke. |
@@ -22,14 +24,18 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew seedMssql` | Generate the default fixture in the Docker SQL Server endpoint. |
 | `./gradlew seedOracle` | Generate the default fixture in the Docker Oracle endpoint. |
 | `./gradlew seedDb2` | Generate the default fixture in the Docker Db2 endpoint. |
-| `scripts/seed_mysql.sh --static` | Load the smaller checked-in MySQL fixture. |
+| `scripts/seed_mysql.sh --static` | Load or reload `testdata_mysql.sql` (shop + bulk tables) into the MySQL connectivity endpoint. |
+| `scripts/seed_postgres.sh --static` | Load or reload `testdata_postgres.sql` into the Docker PostgreSQL endpoint. |
+| `scripts/seed_mssql.sh --static` | Load or reload `testdata_mssql.sql`. |
+| `scripts/seed_oracle.sh --static` | Load or reload `testdata_oracle.sql`. |
+| `scripts/seed_db2.sh --static` | Load or reload `testdata_db2.sql`. |
 | `scripts/verify_ssl_compat.sh` | Environment-gated SSL/TLS launch-profile and dialect-compatibility suite. |
 | `scripts/docker_test_databases.sh up` | Start and seed all five engines and the plain/TLS test endpoints from the root Compose stack (Db2 requires privileged mode, linux/amd64, and minutes to become healthy; no TLS by default). The Db2 database is `SAFEDB` because a LUW name is at most 8 characters and cannot contain `_`. |
 | `./gradlew :mcp:run` | Stdio MCP server. Speaks JSON-RPC on stdin/stdout; use an MCP client or Inspector. Behavior and tools: [mcp.md](mcp.md). |
 | `./gradlew :mcp:run --args='connections list'` | List saved MCP connections (human CLI; not JSON-RPC). |
 | `./gradlew :mcp:run --args='setup --dialect postgres --database app --username readonly --password-file /absolute/path'` | Non-interactive connection add. Gradle typically has a null `System.console()`, so this is not a password prompt. |
-| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-*-all.jar`. |
-| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package. Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
+| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-1.0.0-all.jar`. |
+| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package, stamped 1.0.0 from Gradle (`mcp/npm/package.json` stays `0.0.0-dev` until assemble). Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
 | `./gradlew :mcp:assembleNpmAllPlatforms` | jlink every platform into `mcp/build/npm-all/@safe-db/mcp` plus platform packages. Linux x64 only (cross-links with Temurin JMODs). |
 | `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Part of `check` when `node` is on `PATH`; skips otherwise. |
 | `./gradlew :mcp:npmPackagedTest` | Packaged MCP stdio/MySQL smoke against the current-OS jlink image. Not part of `check`. |
@@ -50,6 +56,20 @@ SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integr
 `scripts/verify_ssl_compat.sh` expects pre-provisioned TLS endpoints and profiles under `/tmp/safedb-ssl` unless `SAFEDB_SSL_ROOT` is set; it calls `:shared:integrationTest` directly and, by default, writes its report beneath that fixture root. It is not a substitute for the normal optional JDBC suite.
 
 For a self-contained local harness, `scripts/docker_test_databases.sh up` generates disposable trusted/wrong CAs, server certificates, PKCS12 launch profiles, and the Oracle wallet-path fixture under `.docker/safedb-ssl`, then starts ordinary MySQL plus the five dialect endpoints used by the SSL suite (Db2 stays outside the TLS suite; z/OS needs a manual `db2jcc_license_cisuz.jar` step and a real subsystem, not Docker). Checked-in fixtures seed every dialect; `scripts/docker_test_databases.sh seed` reloads the SQL Server, Oracle, and Db2 sample schemas without recreating the stack. Database data directories use anonymous volumes that the helper renews on `up` and removes on `down`; generated TLS inputs remain on the host. `scripts/docker_test_databases.sh verify` requires the standard MySQL, PostgreSQL, SQL Server, Oracle, and Db2 adapter contracts before running the four-dialect SSL compatibility checks, all with fresh, uncached integration-test execution.
+
+Checked-in `testdata_*.sql` files keep the original small shop tables and add generated bulk data (recursive CTEs, `generate_series`, or digit cross-joins — not giant literal inserts):
+
+| Object | Rows | Why |
+| --- | --- | --- |
+| Existing `customers` / `orders` (and MySQL's shop tables) | unchanged | JDBC contract tests |
+| `scan_events` | 1,000,000 | Large size class, full-scan query timeout, High on an uncapped scan |
+| `wide_rows` | 50,000 | Medium, 24 mixed-type columns, indexed and non-indexed |
+| `payload_rows` | 20,000 | ~2 KiB text per row so a column select approaches the 10 MiB output cap |
+| `event_notes` | 10,000 | FK without an index (InnoDB still auto-indexes MySQL FKs), NULLs, unicode. FK-without-index is ignored under a small LIMIT. |
+
+Postgres, SQL Server, and Db2 put the bulk tables in extra schemas (`analytics` / `ops`, or `ANALYTICS` on Db2). MySQL uses a second database `safedb_lab` (granted to `safedb`). Oracle keeps them in the `SAFEDB` app schema.
+
+Load on first boot: Compose `mysql-connectivity` (port 3306) and `postgres` (port 5433) run the SQL files. `scripts/docker_test_databases.sh up` also seeds SQL Server, Oracle, and Db2. Reload MySQL or Postgres without recreating the stack with `scripts/seed_mysql.sh --static` and `scripts/seed_postgres.sh --static`. Reload SQL Server, Oracle, and Db2 with `scripts/docker_test_databases.sh seed` (same as `scripts/seed_{mssql,oracle,db2}.sh --static`). `seed` does not reload MySQL or Postgres.
 
 PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `SAFEDB_TEST_*_PASSWORD`, then the matching `SAFEDB_DOCKER_*_PASSWORD`, then the development default. `scripts/docker_test_databases.sh certs` is an offline operation and refuses to replace certificates while project services are running; use `reset` to rotate certificates and recreate an active stack safely.
 

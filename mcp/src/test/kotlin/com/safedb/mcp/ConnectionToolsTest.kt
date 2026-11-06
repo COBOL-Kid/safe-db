@@ -50,6 +50,15 @@ class ConnectionToolsTest {
             assertEquals("MySql", parsed.getValue("dialect").jsonPrimitive.content)
             assertEquals("shop", parsed.getValue("database").jsonPrimitive.content)
 
+            val extra = client.callTool("list_connections", mapOf("bogus" to 1))
+            assertEquals(true, extra.isError)
+            val extraBody = extra.json()
+            assertEquals("invalid_arguments", extraBody.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "unknown argument 'bogus'",
+                extraBody.getValue("message").jsonPrimitive.content,
+            )
+
             val missing = client.callTool("delete_connection", emptyMap())
             assertEquals(true, missing.isError)
             val missingBody = missing.json()
@@ -110,7 +119,7 @@ class ConnectionToolsTest {
             )
             assertFalse(firstBody.getValue("message").jsonPrimitive.content.contains("localhost"))
             val reasons = firstBody.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
-            assertEquals(listOf("This deletes saved connection Prod (MySql / shop)."), reasons)
+            assertEquals(listOf("This deletes saved connection Prod (MySQL / shop)."), reasons)
             val confirmation = firstBody.getValue("confirmation").jsonObject
             assertEquals("c1", confirmation.getValue("connection_id").jsonPrimitive.content)
             assertTrue(confirmation.getValue("token").jsonPrimitive.content.isNotBlank())
@@ -143,7 +152,10 @@ class ConnectionToolsTest {
                     mapOf("connection_id" to "c1", "confirmation" to "not-an-object"),
                 )
             assertEquals(true, asString.isError)
-            assertEquals("parse", asString.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "invalid_arguments",
+                asString.json().getValue("error").jsonPrimitive.content,
+            )
             assertEquals(listOf("c1"), service.connections.map { it.id })
 
             val stale =

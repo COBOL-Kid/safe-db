@@ -222,16 +222,16 @@ private class SqlSpecBuilder(
         )
     }
 
+    private fun allColumns(table: ResolvedTable): List<ColumnSel> =
+        table.info.columns.map { column ->
+            ColumnSel(tableAlias = table.alias, column = column.name)
+        }
+
     private fun resolveSelectItems(): List<ColumnSel> {
-        val items = ast.items ?: return emptyList()
+        val items = ast.items ?: return tables.flatMap(::allColumns)
         return items.flatMap { item ->
             when (item) {
-                is SqlSelectItem.TableStar -> {
-                    val table = resolveQualifier(item.qualifier)
-                    table.info.columns.map { column ->
-                        ColumnSel(tableAlias = table.alias, column = column.name)
-                    }
-                }
+                is SqlSelectItem.TableStar -> allColumns(resolveQualifier(item.qualifier))
                 is SqlSelectItem.Column -> {
                     val (alias, column) = resolveColumn(item.ref)
                     listOf(ColumnSel(tableAlias = alias, column = column.name))
@@ -453,18 +453,14 @@ private class SqlSpecBuilder(
             }
             LiteralKind.DateTime -> {
                 if (literal.form != LiteralForm.Text) mismatch()
-                when {
-                    parseDateTimeLiteral(raw).isSuccess -> FilterLiteral(kind, raw)
-                    // Postgres and MySQL both accept a bare date against a timestamp column, so
-                    // widen it to midnight rather than failing validation after the query looks
-                    // runnable.
-                    parseDateLiteral(raw).isSuccess -> FilterLiteral(kind, "${raw.trim()}T00:00:00")
-                    else ->
-                        fail(
-                            SqlIssueCode.LiteralTypeMismatch,
-                            SqlMessages.dateTimeFormat(column.name),
-                            literal.span,
-                        )
+                if (parseDateTimeLiteral(raw).isSuccess) {
+                    FilterLiteral(kind, raw)
+                } else {
+                    fail(
+                        SqlIssueCode.LiteralTypeMismatch,
+                        SqlMessages.dateTimeFormat(column.name),
+                        literal.span,
+                    )
                 }
             }
         }

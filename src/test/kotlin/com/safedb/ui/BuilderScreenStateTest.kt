@@ -288,15 +288,45 @@ class BuilderScreenStateTest {
     fun queryControlsHeightUsesTheTallestVisibleOverlay() {
         assertEquals(
             310,
-            queryControlsHeightPx(filterCount = 1, filterHeightPx = 208, optionHeightPx = 310),
+            queryControlsHeightPx(
+                startOverlayVisible = true,
+                startOverlayHeightPx = 208,
+                optionHeightPx = 310,
+            ),
         )
         assertEquals(
             260,
-            queryControlsHeightPx(filterCount = 1, filterHeightPx = 260, optionHeightPx = 208),
+            queryControlsHeightPx(
+                startOverlayVisible = true,
+                startOverlayHeightPx = 260,
+                optionHeightPx = 208,
+            ),
         )
         assertEquals(
             208,
-            queryControlsHeightPx(filterCount = 0, filterHeightPx = 310, optionHeightPx = 208),
+            queryControlsHeightPx(
+                startOverlayVisible = false,
+                startOverlayHeightPx = 310,
+                optionHeightPx = 208,
+            ),
+        )
+    }
+
+    @Test
+    fun queryControlsHeightIncludesStackedBannerAndFilters() {
+        val stackedHeight = 40.dp + QueryStartOverlayGap + QueryControlsMaxHeight
+        val stackedPx = with(Density(1f)) { stackedHeight.roundToPx() }
+        assertEquals(
+            stackedPx,
+            queryControlsHeightPx(
+                startOverlayVisible = true,
+                startOverlayHeightPx = stackedPx,
+                optionHeightPx = 208,
+            ),
+        )
+        assertEquals(
+            QueryControlsVerticalPadding + stackedHeight + QueryControlsTableGap,
+            queryControlsCanvasInset(stackedHeight),
         )
     }
 
@@ -374,7 +404,7 @@ class BuilderScreenStateTest {
             queryRiskIndicatorText(assessment, null, true, QueryRiskGate.Standard),
         )
         assertEquals(
-            "Preliminary query risk: High concern · Run available",
+            "Preliminary query risk: High concern · gate applies on run",
             queryRiskIndicatorText(assessment, null, false, QueryRiskGate.Standard),
         )
         assertEquals(
@@ -549,7 +579,7 @@ class BuilderScreenStateTest {
             )
 
         assertEquals(
-            "Preliminary query risk: Very high concern · Run available",
+            "Preliminary query risk: Very high concern · gate applies on run",
             queryRiskIndicatorText(assessment, null, false, QueryRiskGate.Cautious),
         )
     }
@@ -581,5 +611,39 @@ class BuilderScreenStateTest {
             "Query risk: Ready to assess · Run unavailable",
             queryRiskIndicatorText(null, null, false, QueryRiskGate.Standard, runAvailable = false),
         )
+    }
+
+    @Test
+    fun canvasContentTopInsetLeavesRoomForTablesWhenTheToolbarGrows() {
+        assertEquals(232f, cappedCanvasContentTopInset(232f, 400f))
+        assertEquals(240f, cappedCanvasContentTopInset(300f, 400f))
+        assertEquals(232f, cappedCanvasContentTopInset(232f, 0f))
+        assertEquals(100f, cappedCanvasContentTopInset(100f, 800f))
+        assertEquals(0f, cappedCanvasContentTopInset(500f, 100f))
+    }
+
+    @Test
+    fun arrivingResultsExpandACollapsedPaneWithoutShrinkingATallerOne() {
+        assertEquals(320f, resultsPaneHeightWhenResultsArrive(240f, 600f))
+        assertEquals(400f, resultsPaneHeightWhenResultsArrive(400f, 600f))
+        assertEquals(128f, resultsPaneHeightWhenResultsArrive(240f, 128f))
+    }
+
+    @Test
+    fun incompleteFiltersHideABlockingPreliminaryRisk() {
+        val high =
+            QueryRiskAssessment(
+                2,
+                "f",
+                6,
+                QueryRiskSeverity.High,
+                emptyMap(),
+                emptyList(),
+                emptyList(),
+            )
+        val low = high.copy(severity = QueryRiskSeverity.Minimal)
+        assertNull(displayedPreliminaryAssessment(high, true, QueryRiskGate.Standard))
+        assertEquals(high, displayedPreliminaryAssessment(high, false, QueryRiskGate.Standard))
+        assertEquals(low, displayedPreliminaryAssessment(low, true, QueryRiskGate.Standard))
     }
 }

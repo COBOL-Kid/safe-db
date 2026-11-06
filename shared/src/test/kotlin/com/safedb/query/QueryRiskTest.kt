@@ -53,13 +53,13 @@ class QueryRiskTest {
         assertEquals(
             mapOf(
                 RiskCategory.Access to 6,
-                RiskCategory.Joins to 4,
+                RiskCategory.Joins to 6,
                 RiskCategory.Operations to 4,
                 RiskCategory.Volume to 1,
             ),
             assessment.categoryScores,
         )
-        assertEquals(10, assessment.score)
+        assertEquals(11, assessment.score)
     }
 
     @Test

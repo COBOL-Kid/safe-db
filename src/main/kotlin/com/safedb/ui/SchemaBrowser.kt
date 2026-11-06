@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.safedb.model.ConnectionDef
 import com.safedb.model.TableInfo
+import com.safedb.model.displayName
 import com.safedb.model.qualifiedName
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.SafeDropdownMenu
@@ -123,7 +124,8 @@ fun SchemaBrowser(
                             connections.forEach { option ->
                                 MenuActionRow(
                                     text = option.name,
-                                    supportingText = "${option.dialect} · ${option.database}",
+                                    supportingText =
+                                        "${option.dialect.displayName()} · ${option.database}",
                                     selected = option.id == connection?.id,
                                     onClick = {
                                         connectionMenuOpen = false

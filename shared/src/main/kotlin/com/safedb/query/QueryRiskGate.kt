@@ -81,27 +81,19 @@ fun applyRiskGate(
             listOf(RiskDecisionReason("assessment_pending", "Query risk assessment is pending.")),
         )
     }
-    val mandatory = assessment.signals.filter(RiskSignal::mandatoryBlockWhenGateEnabled)
     val band = blockingBand(userSetting)!!
-    val blocked = mandatory.isNotEmpty() || assessment.severity.ordinal >= band.ordinal
+    val blocked = assessment.severity.ordinal >= band.ordinal
     val reasons =
         if (blocked) {
             assessment.signals
                 .sortedWith(
-                    compareByDescending<RiskSignal> { it.mandatoryBlockWhenGateEnabled }
-                        // EvidenceConfidence declares High first, so ascending ordinal
-                        // is descending confidence.
-                        .thenBy { it.confidence.ordinal }
+                    // EvidenceConfidence declares High first, so ascending ordinal
+                    // is descending confidence.
+                    compareBy<RiskSignal> { it.confidence.ordinal }
                         .thenByDescending(RiskSignal::points)
                 )
                 .take(3)
-                .map { signal ->
-                    RiskDecisionReason(
-                        signal.code.name,
-                        signalMessage(signal),
-                        signal.mandatoryBlockWhenGateEnabled,
-                    )
-                }
+                .map { signal -> RiskDecisionReason(signal.code.name, signalMessage(signal)) }
                 .ifEmpty {
                     listOf(
                         RiskDecisionReason(

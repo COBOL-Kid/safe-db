@@ -22,6 +22,15 @@ class TypesTest {
     }
 
     @Test
+    fun dialectDisplayNamesMatchProductSpelling() {
+        assertEquals("PostgreSQL", Dialect.Postgres.displayName())
+        assertEquals("MySQL", Dialect.MySql.displayName())
+        assertEquals("SQL Server", Dialect.Mssql.displayName())
+        assertEquals("Oracle", Dialect.Oracle.displayName())
+        assertEquals("Db2", Dialect.Db2.displayName())
+    }
+
+    @Test
     fun validateRejectsBlankFields() {
         val base = sampleConnection()
         assertFailsWith<IllegalArgumentException> { base.copy(id = " ").validate().getOrThrow() }

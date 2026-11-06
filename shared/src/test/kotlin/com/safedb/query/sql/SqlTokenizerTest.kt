@@ -275,6 +275,16 @@ class SqlTokenizerTest {
     }
 
     @Test
+    fun mysqlExecutableCommentOnPostgresNamesTheDialect() {
+        val token =
+            tokenizeSql("SELECT id FROM users /*! WHERE id = 1 */", Dialect.Postgres).single {
+                it.type == SqlTokenType.Error
+            }
+        assertEquals(SqlMessages.executableComment(Dialect.Postgres), token.error)
+        assertTrue(token.error.orEmpty().contains("PostgreSQL"))
+    }
+
+    @Test
     fun nationalStringLiteralIsRejected() {
         for (dialect in listOf(Dialect.Mssql, Dialect.Db2)) {
             val token =

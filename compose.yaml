@@ -1,3 +1,6 @@
+# Local JDBC/TLS stack. mysql-connectivity and postgres load testdata_*.sql on first boot
+# (1M scan_events plus wide/payload/notes tables; see docs/testing.md). SQL Server, Oracle,
+# and Db2 load the same fixtures via scripts/docker_test_databases.sh up/seed.
 name: safedb-test-databases
 
 services:
@@ -20,7 +23,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-      start_period: 20s
+      start_period: 120s
 
   mysql:
     image: mysql:8.4
@@ -83,7 +86,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-      start_period: 10s
+      start_period: 90s
 
   mssql:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -142,7 +145,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 60
-      start_period: 60s
+      start_period: 180s
 
   db2:
     image: icr.io/db2_community/db2:11.5.9.0
@@ -161,6 +164,7 @@ services:
     volumes:
       - /database
       - ./docker/test-databases/db2-init.sh:/usr/local/bin/safedb-db2-init.sh:ro
+      - ./docker/test-databases/db2-drop-statements.sql:/fixtures/db2-drop-statements.sql:ro
       - ./testdata_db2.sql:/fixtures/testdata_db2.sql:ro
     healthcheck:
       # The image PATH is system-only. A login shell loads db2inst1's db2profile.
@@ -168,4 +172,4 @@ services:
       interval: 15s
       timeout: 10s
       retries: 60
-      start_period: 180s
+      start_period: 300s

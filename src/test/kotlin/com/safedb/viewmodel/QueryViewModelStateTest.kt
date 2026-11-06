@@ -29,10 +29,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class QueryViewModelStateTest {
     private val dispatcher = StandardTestDispatcher()
 
@@ -79,7 +84,7 @@ class QueryViewModelStateTest {
         viewModel.removeTable("t0")
 
         assertEquals(listOf("t1"), viewModel.canvasTables.map { it.alias })
-        assertEquals(setOf("t1\u0000customer_id"), viewModel.selectedColumns)
+        assertEquals(listOf("t1\u0000customer_id"), viewModel.selectedColumns)
         assertTrue(viewModel.joins.isEmpty())
         assertEquals(
             listOf("first"),
@@ -130,13 +135,13 @@ class QueryViewModelStateTest {
         viewModel.toggleAllColumns("t0")
 
         assertEquals(
-            setOf("t0\u0000id", "t0\u0000name", "t1\u0000customer_id"),
+            listOf("t0\u0000id", "t1\u0000customer_id", "t0\u0000name"),
             viewModel.selectedColumns,
         )
 
         viewModel.toggleAllColumns("t0")
 
-        assertEquals(setOf("t1\u0000customer_id"), viewModel.selectedColumns)
+        assertEquals(listOf("t1\u0000customer_id"), viewModel.selectedColumns)
     }
 
     @Test
@@ -148,7 +153,7 @@ class QueryViewModelStateTest {
 
         viewModel.toggleAllColumns("t0")
 
-        assertEquals(setOf("t0\u0000id", "t0\u0000status"), viewModel.selectedColumns)
+        assertEquals(listOf("t0\u0000id", "t0\u0000status"), viewModel.selectedColumns)
         assertEquals(listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status")), viewModel.groups)
 
         viewModel.toggleAllColumns("t0")
@@ -288,7 +293,7 @@ class QueryViewModelStateTest {
 
         assertTrue(viewModel.groups.isEmpty())
         assertEquals(
-            setOf("t0\u0000id", "t0\u0000status", "t0\u0000created_at"),
+            listOf("t0\u0000id", "t0\u0000status", "t0\u0000created_at"),
             viewModel.selectedColumns,
         )
         assertEquals(SortDirection.Asc, viewModel.sortForColumn("t0", "id")?.direction)
@@ -464,6 +469,58 @@ class QueryViewModelStateTest {
         assertEquals(0f, viewModel.canvasTables.single().y)
         assertEquals(1f, viewModel.canvasViewport.zoom)
         assertEquals(Offset.Zero, viewModel.canvasViewport.pan)
+    }
+
+    @Test
+    fun clearReusesTheFirstTableAliasSoReaddingDoesNotLeaveAHiddenDuplicate() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("big_events", "id"))
+        viewModel.toggleColumn("t0", "id")
+        assertEquals(listOf("t0"), viewModel.canvasTables.map { it.alias })
+
+        viewModel.clear()
+        viewModel.addTable(table("big_events", "id"))
+
+        assertEquals(listOf("t0"), viewModel.canvasTables.map { it.alias })
+        assertTrue(viewModel.selectedColumns.isEmpty())
+        assertEquals(listOf("big_events"), viewModel.spec.tables.map { it.name })
+    }
+
+    @Test
+    fun selectedColumnsKeepClickOrderInTheQuerySpec() {
+        val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
+        viewModel.addTable(table("customers", "id", "email", "name"))
+        viewModel.toggleColumn("t0", "email")
+        viewModel.toggleColumn("t0", "name")
+        viewModel.toggleColumn("t0", "id")
+
+        assertEquals(listOf("email", "name", "id"), viewModel.spec.columns.map { it.column })
+    }
+
+    @Test
+    fun changingOnlyTheRowLimitKeepsResultsMarkedStale() {
+        val scope = TestScope(dispatcher)
+        val viewModel = QueryViewModel(NoOpService(), scope)
+        viewModel.addTable(table("customers", "id"))
+        viewModel.run("c1")
+        scope.advanceUntilIdle()
+
+        val fresh = viewModel.currentSample("c1")
+        assertNotNull(fresh)
+        assertFalse(fresh.stale)
+
+        viewModel.setLimit(1_000)
+        val staleLimit = viewModel.currentSample("c1")
+        assertNotNull(staleLimit)
+        assertTrue(staleLimit.stale)
+
+        viewModel.setUncapped(true)
+        val staleAll = viewModel.currentSample("c1")
+        assertNotNull(staleAll)
+        assertTrue(staleAll.stale)
+
+        viewModel.toggleColumn("t0", "id")
+        assertNull(viewModel.currentSample("c1"))
     }
 
     private fun filter(id: String, alias: String, column: String) =

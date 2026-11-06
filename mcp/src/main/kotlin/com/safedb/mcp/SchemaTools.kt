@@ -12,12 +12,9 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: SchemaCache) {
@@ -56,23 +53,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
-        val connectionId = requiredText(request, "connection_id")
-        if (connectionId == null) {
-            toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
-        } else if (service.listConnections().none { it.id == connectionId }) {
-            toolError(ERROR_NOT_FOUND, "Connection not found")
-        } else {
-            try {
-                val schema = cache.get(connectionId, refresh = optionalRefresh(request))
-                val payload =
-                    toolJson.encodeToString(visibleTables(service, schema).map { it.toSummary() })
-                CallToolResult(content = listOf(TextContent(text = payload)))
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                toolError(ERROR_INTERNAL, error.message ?: "list_tables failed")
-            }
-        }
+        runMcpTool("list_tables failed") { handleListTables(service, cache, request) }
     }
 
     server.addTool(
@@ -122,39 +103,68 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
-        val connectionId = requiredText(request, "connection_id")
-        val schemaName = requiredText(request, "schema")
-        val tableName = requiredText(request, "table")
-        if (connectionId == null) {
-            toolError(ERROR_INVALID_ARGUMENTS, "connection_id is required")
-        } else if (schemaName == null) {
-            toolError(ERROR_INVALID_ARGUMENTS, "schema is required")
-        } else if (tableName == null) {
-            toolError(ERROR_INVALID_ARGUMENTS, "table is required")
-        } else if (service.listConnections().none { it.id == connectionId }) {
-            toolError(ERROR_NOT_FOUND, "Connection not found")
-        } else {
-            try {
-                val schema = cache.get(connectionId, refresh = optionalRefresh(request))
-                val table =
-                    visibleTables(service, schema).find {
-                        it.schema == schemaName && it.name == tableName
-                    }
-                if (table == null) {
-                    toolError(ERROR_NOT_FOUND, "Table not found")
-                } else {
-                    CallToolResult(
-                        content =
-                            listOf(TextContent(text = toolJson.encodeToString(table.toDetail())))
-                    )
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                toolError(ERROR_INTERNAL, error.message ?: "describe_table failed")
-            }
-        }
+        runMcpTool("describe_table failed") { handleDescribeTable(service, cache, request) }
     }
+}
+
+private suspend fun handleListTables(
+    service: SafeDbService,
+    cache: SchemaCache,
+    request: CallToolRequest,
+): CallToolResult {
+    requireKnownArguments(request, "connection_id", "refresh").getOrElse {
+        return it
+    }
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return it
+        }
+    val refresh =
+        optionalBoolean(request, "refresh").getOrElse {
+            return it
+        } == true
+    if (service.listConnections().none { it.id == connectionId }) {
+        return toolError(ERROR_NOT_FOUND, "Connection not found")
+    }
+    val schema = cache.get(connectionId, refresh = refresh)
+    val payload = toolJson.encodeToString(visibleTables(service, schema).map { it.toSummary() })
+    return CallToolResult(content = listOf(TextContent(text = payload)))
+}
+
+private suspend fun handleDescribeTable(
+    service: SafeDbService,
+    cache: SchemaCache,
+    request: CallToolRequest,
+): CallToolResult {
+    requireKnownArguments(request, "connection_id", "schema", "table", "refresh").getOrElse {
+        return it
+    }
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return it
+        }
+    val schemaName =
+        requiredString(request, "schema").getOrElse {
+            return it
+        }
+    val tableName =
+        requiredString(request, "table").getOrElse {
+            return it
+        }
+    val refresh =
+        optionalBoolean(request, "refresh").getOrElse {
+            return it
+        } == true
+    if (service.listConnections().none { it.id == connectionId }) {
+        return toolError(ERROR_NOT_FOUND, "Connection not found")
+    }
+    val schema = cache.get(connectionId, refresh = refresh)
+    val table =
+        visibleTables(service, schema).find { it.schema == schemaName && it.name == tableName }
+            ?: return toolError(ERROR_NOT_FOUND, "Table not found")
+    return CallToolResult(
+        content = listOf(TextContent(text = toolJson.encodeToString(table.toDetail())))
+    )
 }
 
 @Serializable
@@ -249,6 +259,3 @@ private fun TableInfo.toDetail(): TableDetail =
                 )
             },
     )
-
-private fun optionalRefresh(request: CallToolRequest): Boolean =
-    request.arguments?.get("refresh")?.jsonPrimitive?.booleanOrNull == true
