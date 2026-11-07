@@ -230,23 +230,17 @@ private fun isPlanPermissionDenied(texts: String): Boolean {
     return "permission" in lower || "denied" in lower
 }
 
-private fun isPlanConnectivityFailure(chain: List<Throwable>, texts: String): Boolean {
-    if (
-        chain.any { error ->
-            error is QueryTimedOutException ||
-                error is SQLTimeoutException ||
-                error is SQLTransientConnectionException ||
-                error is SocketTimeoutException ||
-                error is ConnectException ||
-                error is UnknownHostException ||
-                error is NoRouteToHostException ||
-                error is PortUnreachableException
-        }
-    ) {
-        return true
-    }
-    return isTimeoutOrConnectionFailure(texts)
-}
+private fun isPlanConnectivityFailure(chain: List<Throwable>, texts: String): Boolean =
+    chain.any { error ->
+        error is QueryTimedOutException ||
+            error is SQLTimeoutException ||
+            error is SQLTransientConnectionException ||
+            error is SocketTimeoutException ||
+            error is ConnectException ||
+            error is UnknownHostException ||
+            error is NoRouteToHostException ||
+            error is PortUnreachableException
+    } || isTimeoutOrConnectionFailure(texts)
 
 fun columnsFromCompiledSql(sql: String, dialect: Dialect): List<String> {
     val upper = sql.uppercase()

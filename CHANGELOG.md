@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.1
+
+Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.0.1` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.0.1-all.jar`; npm packages are stamped 1.0.1 at assemble time.
 
 - History lists queries as they complete in this session, without restarting the app.
 - Query Builder timestamp filter values stay readable, and table-card column names are no longer squeezed by type labels at the default canvas width.
