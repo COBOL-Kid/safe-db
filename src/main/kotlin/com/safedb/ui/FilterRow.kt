@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -89,13 +90,14 @@ fun FilterRow(
     }
 
     Column(modifier = modifier) {
-        Row(
+        FlowRow(
             modifier =
                 Modifier.fillMaxWidth()
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             FilterDropdown(
                 label = "Table",
@@ -117,7 +119,7 @@ fun FilterRow(
                         )
                     )
                 },
-                modifier = Modifier.width(110.dp),
+                modifier = Modifier.width(FILTER_TABLE_DROPDOWN_WIDTH_DP.dp),
             )
 
             FilterDropdown(
@@ -136,7 +138,7 @@ fun FilterRow(
                         )
                     )
                 },
-                modifier = Modifier.width(110.dp),
+                modifier = Modifier.width(FILTER_COLUMN_DROPDOWN_WIDTH_DP.dp),
             )
 
             FilterDropdown(
@@ -147,7 +149,7 @@ fun FilterRow(
                     val dataType = columnInfo?.dataType ?: return@FilterDropdown
                     update(filter.copy(op = op, value = rebuildValue(op, dataType, filter.value)))
                 },
-                modifier = Modifier.width(100.dp),
+                modifier = Modifier.width(FILTER_OP_DROPDOWN_WIDTH_DP.dp),
             )
 
             when (valueKind) {
@@ -183,7 +185,7 @@ fun FilterRow(
                                     )
                                 )
                             },
-                            modifier = Modifier.width(100.dp),
+                            modifier = Modifier.width(FILTER_SINGLE_VALUE_MIN_WIDTH_DP.dp),
                             placeholder = "value",
                             focusRequester = if (shouldFocusValue) valueFocusRequester else null,
                         )
@@ -202,7 +204,7 @@ fun FilterRow(
                                 )
                             )
                         },
-                        modifier = Modifier.width(80.dp),
+                        modifier = Modifier.width(FILTER_PAIR_VALUE_MIN_WIDTH_DP.dp),
                         placeholder = "from",
                         focusRequester = if (shouldFocusValue) valueFocusRequester else null,
                     )
@@ -218,7 +220,7 @@ fun FilterRow(
                                 )
                             )
                         },
-                        modifier = Modifier.width(80.dp),
+                        modifier = Modifier.width(FILTER_PAIR_VALUE_MIN_WIDTH_DP.dp),
                         placeholder = "to",
                     )
                 }
@@ -235,7 +237,7 @@ fun FilterRow(
                                         }
                                     update(filter.copy(value = FilterValue.ListValue(items)))
                                 },
-                                modifier = Modifier.width(72.dp),
+                                modifier = Modifier.width(FILTER_LIST_VALUE_MIN_WIDTH_DP.dp),
                                 placeholder = "value",
                                 focusRequester =
                                     if (shouldFocusValue && index == 0) valueFocusRequester
@@ -390,7 +392,8 @@ private fun CompactTextInput(
                 )
                 .height(30.dp)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
-                .padding(horizontal = 8.dp, vertical = 7.dp),
+                .padding(horizontal = 8.dp, vertical = 7.dp)
+                .semantics { contentDescription = "Filter value" },
         decorationBox = { innerTextField ->
             Box(contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) {
@@ -453,3 +456,11 @@ private fun extractPair(value: FilterValue?): Pair<String, String> {
     val pair = value as? FilterValue.Pair
     return pair?.first?.text.orEmpty() to pair?.second?.text.orEmpty()
 }
+
+// Space-separated timestamps such as "2025-07-03 09:12:00" are 19 characters.
+internal const val FILTER_TABLE_DROPDOWN_WIDTH_DP = 128
+internal const val FILTER_COLUMN_DROPDOWN_WIDTH_DP = 140
+internal const val FILTER_OP_DROPDOWN_WIDTH_DP = 100
+internal const val FILTER_SINGLE_VALUE_MIN_WIDTH_DP = 176
+internal const val FILTER_PAIR_VALUE_MIN_WIDTH_DP = 112
+internal const val FILTER_LIST_VALUE_MIN_WIDTH_DP = 96

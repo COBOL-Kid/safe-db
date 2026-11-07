@@ -85,7 +85,7 @@ import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 
 @Composable
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalMaterial3Api::class)
 fun TableCard(
     canvasTable: CanvasTable,
     queryViewModel: QueryViewModel,
@@ -218,6 +218,8 @@ fun TableCard(
                         val sort = queryViewModel.sortForColumn(alias, columnName)
                         val sortIndex = queryViewModel.sorts.indexOf(sort)
                         val columnHovered = hoveredColumn == columnName
+                        val showColumnType = tableCardShowsColumnType(canvasTable.width)
+                        val columnTooltip = "$columnName ($columnDataType)"
                         val columnSelectionInteractionSource =
                             remember(alias, columnName) { MutableInteractionSource() }
                         val joinTargetInteractionSource =
@@ -288,28 +290,39 @@ fun TableCard(
                                     modifier = Modifier.padding(start = 6.dp).weight(1f),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(
-                                        columnName,
-                                        style = DataMono.copy(fontWeight = FontWeight.Medium),
-                                        modifier = Modifier.weight(1f, fill = false),
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        columnDataType,
-                                        style =
-                                            DataMono.copy(
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                fontWeight = FontWeight.Medium,
+                                    TooltipBox(
+                                        positionProvider =
+                                            TooltipDefaults.rememberTooltipPositionProvider(
+                                                TooltipAnchorPosition.Above
                                             ),
-                                        modifier =
-                                            Modifier.padding(start = 6.dp)
-                                                .weight(0.45f, fill = false),
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                                        tooltip = { PlainTooltip { Text(columnTooltip) } },
+                                        state = rememberTooltipState(),
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Text(
+                                            columnName,
+                                            style = DataMono.copy(fontWeight = FontWeight.Medium),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    if (showColumnType) {
+                                        Text(
+                                            columnDataType,
+                                            style =
+                                                DataMono.copy(
+                                                    color =
+                                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontWeight = FontWeight.Medium,
+                                                ),
+                                            modifier = Modifier.padding(start = 6.dp),
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                             }
 
@@ -490,9 +503,13 @@ fun TableCard(
 
 internal const val TABLE_CARD_COLUMN_ACTION_SLOT_DP = 28
 internal const val TABLE_CARD_COLUMN_ACTION_COUNT = 3
+internal const val TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH = 300f
 
 internal fun tableColumnActionClusterWidthDp(): Int =
     TABLE_CARD_COLUMN_ACTION_SLOT_DP * TABLE_CARD_COLUMN_ACTION_COUNT
+
+internal fun tableCardShowsColumnType(cardWidth: Float): Boolean =
+    cardWidth >= TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH
 
 internal fun tableColumnToggleState(selectedCount: Int, totalCount: Int): ToggleableState =
     when {
