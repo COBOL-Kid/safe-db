@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New installs and missing `theme` settings default to light mode. Saved dark mode is unchanged.
+
 ## 1.0.0
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.0.0` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.0.0-all.jar`; npm packages are stamped 1.0.0 at assemble time.

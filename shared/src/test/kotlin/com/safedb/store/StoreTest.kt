@@ -356,7 +356,7 @@ class StoreTest {
         val dir = tempDir()
         val store = SettingsStore.new(dir)
         val defaults = store.load()
-        assertEquals("dark", defaults.theme)
+        assertEquals("light", defaults.theme)
         assertEquals(ThemePalette.DEFAULT.id, defaults.colorScheme)
         assertEquals(QueryRiskGate.Standard, defaults.queryRiskGate)
         assertTrue(defaults.blockedSchemas.isEmpty())
@@ -364,18 +364,18 @@ class StoreTest {
         Files.writeString(dir.resolve("settings.json"), """{"blocked_schemas":["audit"]}""")
         val loaded = store.load()
         assertEquals(listOf("audit"), loaded.blockedSchemas)
-        assertEquals("dark", loaded.theme)
+        assertEquals("light", loaded.theme)
         assertEquals(ThemePalette.DEFAULT.id, loaded.colorScheme)
     }
 
     @Test
-    fun settingsStoreNormalizesLegacyThemeValuesToDark() {
+    fun settingsStoreNormalizesLegacyThemeValuesToLight() {
         val dir = tempDir()
         Files.writeString(dir.resolve("settings.json"), """{"theme":"system"}""")
 
         val settings = SettingsStore.new(dir).load()
 
-        assertEquals("dark", settings.theme)
+        assertEquals("light", settings.theme)
     }
 
     @Test

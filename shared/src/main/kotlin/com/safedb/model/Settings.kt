@@ -16,7 +16,7 @@ data class Settings(
     fun palette(): ThemePalette = ThemePalette.fromId(colorScheme)
 
     companion object {
-        const val DEFAULT_THEME: String = "dark"
+        const val DEFAULT_THEME: String = "light"
 
         fun default(): Settings = Settings()
     }
