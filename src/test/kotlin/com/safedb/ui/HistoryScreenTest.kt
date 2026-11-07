@@ -2,11 +2,6 @@ package com.safedb.ui
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerButton
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.semantics.SemanticsNode
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
@@ -23,7 +18,6 @@ import com.safedb.service.QueryRunRequest
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.queryRunResult
-import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -62,7 +56,8 @@ class HistoryScreenTest {
                 assertNotNull(scene.findExact("failed"))
                 assertNotNull(scene.findContaining("orders · limit 100"))
                 assertNotNull(scene.findContaining("Join on non-indexed column rejected"))
-                assertEquals(2, scene.nodesLabeled("Delete history entry").size)
+                assertEquals(2, scene.nodesContaining("Delete history entry").size)
+                assertNotNull(scene.findExact("Delete history entry for Production Replica"))
                 assertEquals(1, scene.nodesLabeled("Save as query").size)
                 assertEquals(2, scene.nodesLabeled("Rerun").size)
             }
@@ -80,9 +75,9 @@ class HistoryScreenTest {
                 assertNotNull(scene.findExact("No query history yet"))
                 assertNotNull(scene.findExact("Run your first query to see it here."))
                 assertNull(scene.findExact("Clear History"))
-                assertNull(scene.findExact("Delete history entry"))
+                assertNull(scene.findContaining("Delete history entry"))
                 scene.click(scene.requireExact("Build a Query").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
                 assertEquals(AppRoute.Builder, navigated)
             }
         } finally {
@@ -95,8 +90,12 @@ class HistoryScreenTest {
         val harness = HistoryScreenHarness()
         try {
             withHistoryScreen(harness.viewModel) { scene ->
-                scene.clickActionNear("Production Replica", "Delete history entry")
-                scene.render(50_000_000L)
+                assertNotNull(scene.findExact("Production Replica"))
+                scene.clickActionInTag(
+                    "history-entry-h1",
+                    "Delete history entry for Production Replica",
+                )
+                scene.settle()
                 assertNotNull(scene.findExact("Delete history entry?"))
                 assertNotNull(
                     scene.findExact(
@@ -104,7 +103,7 @@ class HistoryScreenTest {
                     )
                 )
                 scene.click(scene.requireExact("Delete").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
 
                 assertNull(scene.findExact("Production Replica"))
                 assertNotNull(scene.findExact("Local MySQL"))
@@ -121,10 +120,13 @@ class HistoryScreenTest {
         val harness = HistoryScreenHarness()
         try {
             withHistoryScreen(harness.viewModel) { scene ->
-                scene.clickActionNear("Production Replica", "Delete history entry")
-                scene.render(50_000_000L)
+                scene.clickActionInTag(
+                    "history-entry-h1",
+                    "Delete history entry for Production Replica",
+                )
+                scene.settle()
                 scene.click(scene.requireExact("Cancel").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
 
                 assertNull(scene.findExact("Delete history entry?"))
                 assertNotNull(scene.findExact("Production Replica"))
@@ -142,10 +144,14 @@ class HistoryScreenTest {
         try {
             withHistoryScreen(harness.viewModel) { scene ->
                 assertEquals(1, scene.nodesLabeled("Save as query").size)
-                scene.clickActionNear("Local MySQL", "Delete history entry")
-                scene.render(50_000_000L)
+                assertNotNull(scene.findExact("Local MySQL"))
+                scene.clickActionInTag(
+                    "history-entry-h2",
+                    "Delete history entry for Local MySQL",
+                )
+                scene.settle()
                 scene.click(scene.requireExact("Delete").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
 
                 assertNull(scene.findExact("Local MySQL"))
                 assertNotNull(scene.findExact("Production Replica"))
@@ -164,7 +170,7 @@ class HistoryScreenTest {
         try {
             withHistoryScreen(harness.viewModel, onRerun = { rerun = it }) { scene ->
                 scene.clickActionNear("Production Replica", "Rerun")
-                scene.render(50_000_000L)
+                scene.settle()
                 assertEquals("h1", rerun?.id)
             }
         } finally {
@@ -178,11 +184,11 @@ class HistoryScreenTest {
         try {
             withHistoryScreen(harness.viewModel) { scene ->
                 scene.click(scene.requireExact("Save as query").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
                 assertNotNull(scene.findExact("Save query"))
                 assertNotNull(scene.findExact("Choose a name for this query."))
                 scene.click(scene.requireExact("Save").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
 
                 assertNull(scene.findExact("Save query"))
                 assertEquals(
@@ -231,10 +237,10 @@ class HistoryScreenTest {
         try {
             withHistoryScreen(harness.viewModel) { scene ->
                 scene.click(scene.requireExact("Clear History").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
                 assertNotNull(scene.findExact("Clear history?"))
                 scene.click(scene.requireExact("Clear").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
 
                 assertNotNull(scene.findExact("No query history yet"))
                 assertNull(scene.findExact("Clear History"))
@@ -321,74 +327,6 @@ private fun withHistoryScreen(
             scene.render(0L)
             body(scene)
         }
-}
-
-private fun ImageComposeScene.clickActionNear(anchorText: String, actionLabel: String) {
-    val anchor = requireContaining(anchorText)
-    val action =
-        nodesLabeled(actionLabel).minBy {
-            abs(it.boundsInRoot.center.y - anchor.boundsInRoot.center.y)
-        }
-    click(action.boundsInRoot.center)
-}
-
-private fun ImageComposeScene.findContaining(text: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label().contains(text) }
-
-private fun ImageComposeScene.requireContaining(text: String): SemanticsNode =
-    findContaining(text)
-        ?: error(
-            "No node containing '$text' in ${
-                allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
-        )
-
-private fun ImageComposeScene.findExact(label: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label() == label }
-
-private fun ImageComposeScene.requireExact(label: String): SemanticsNode =
-    findExact(label)
-        ?: error(
-            "No node labeled '$label' in ${
-                allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
-        )
-
-private fun ImageComposeScene.nodesLabeled(label: String): List<SemanticsNode> =
-    allSemanticsNodes().filter { it.label() == label }
-
-private fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> {
-    val nodes = mutableListOf<SemanticsNode>()
-    for (owner in semanticsOwners) {
-        fun walk(node: SemanticsNode) {
-            nodes += node
-            node.children.forEach(::walk)
-        }
-        walk(owner.rootSemanticsNode)
-    }
-    return nodes
-}
-
-private fun SemanticsNode.label(): String {
-    val texts =
-        if (config.contains(SemanticsProperties.Text)) {
-            config[SemanticsProperties.Text].joinToString { it.text }
-        } else {
-            ""
-        }
-    val descriptions =
-        if (config.contains(SemanticsProperties.ContentDescription)) {
-            config[SemanticsProperties.ContentDescription].joinToString()
-        } else {
-            ""
-        }
-    return listOf(texts, descriptions).filter { it.isNotEmpty() }.joinToString(" | ")
-}
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.click(position: Offset) {
-    sendPointerEvent(PointerEventType.Press, position, button = PointerButton.Primary)
-    sendPointerEvent(PointerEventType.Release, position, button = PointerButton.Primary)
 }
 
 private fun defaultHistoryEntries() =

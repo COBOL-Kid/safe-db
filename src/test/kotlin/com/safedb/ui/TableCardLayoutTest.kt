@@ -2,8 +2,6 @@ package com.safedb.ui
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
-import androidx.compose.ui.semantics.SemanticsNode
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.canvas.CANVAS_CARD_WIDTH
@@ -31,12 +29,13 @@ class TableCardLayoutTest {
             assertNotNull(scene.findExact("signed_up_at"))
             assertNull(scene.findExact("bigint"))
             assertNull(scene.findExact("timestamp"))
-            val filter = scene.requireLabeled("Filter customer_id")
+            assertNotNull(scene.findExact("customer_id, bigint"))
+            val filter = scene.requireExact("Filter customer_id")
             assertTrue(filter.boundsInRoot.width >= TABLE_CARD_COLUMN_ACTION_SLOT_DP)
             assertTrue(filter.boundsInRoot.height >= TABLE_CARD_COLUMN_ACTION_SLOT_DP)
             val name = scene.requireExact("customer_id")
             assertTrue(
-                name.boundsInRoot.width >= 72f,
+                name.boundsInRoot.width >= TABLE_CARD_COLUMN_NAME_MIN_WIDTH_DP,
                 "column name was only ${name.boundsInRoot.width}px at default card width",
             )
         }
@@ -47,7 +46,7 @@ class TableCardLayoutTest {
         val viewModel = ordersViewModel()
         viewModel.resizeTable("t0", width = MIN_TABLE_WIDTH, height = 280f)
         withTableCard(viewModel, sceneWidth = 220) { scene ->
-            val filter = scene.requireLabeled("Filter customer_id")
+            val filter = scene.requireExact("Filter customer_id")
             assertTrue(filter.boundsInRoot.width >= TABLE_CARD_COLUMN_ACTION_SLOT_DP)
             assertTrue(filter.boundsInRoot.height >= TABLE_CARD_COLUMN_ACTION_SLOT_DP)
             assertNotNull(scene.findContaining("Join from customer_id"))
@@ -62,6 +61,7 @@ class TableCardLayoutTest {
             assertNotNull(scene.findExact("customer_id"))
             assertNotNull(scene.findExact("bigint"))
             assertNotNull(scene.findExact("timestamp"))
+            assertNull(scene.findExact("customer_id, bigint"))
         }
     }
 }
@@ -118,51 +118,4 @@ private fun withTableCard(
             scene.render(0L)
             body(scene)
         }
-}
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.findContaining(text: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label().contains(text) }
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.findExact(label: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label() == label }
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.requireExact(label: String): SemanticsNode =
-    findExact(label)
-        ?: error("No node labeled '$label' in ${allSemanticsNodes().map { it.label() }}")
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.requireLabeled(label: String): SemanticsNode =
-    allSemanticsNodes().firstOrNull { it.label() == label }
-        ?: error("No node labeled '$label' in ${allSemanticsNodes().map { it.label() }}")
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> {
-    val nodes = mutableListOf<SemanticsNode>()
-    for (owner in semanticsOwners) {
-        fun walk(node: SemanticsNode) {
-            nodes += node
-            node.children.forEach(::walk)
-        }
-        walk(owner.rootSemanticsNode)
-    }
-    return nodes
-}
-
-private fun SemanticsNode.label(): String {
-    val texts =
-        if (config.contains(SemanticsProperties.Text)) {
-            config[SemanticsProperties.Text].joinToString { it.text }
-        } else {
-            ""
-        }
-    val descriptions =
-        if (config.contains(SemanticsProperties.ContentDescription)) {
-            config[SemanticsProperties.ContentDescription].joinToString()
-        } else {
-            ""
-        }
-    return listOf(texts, descriptions).filter { it.isNotEmpty() }.joinToString(" | ")
 }

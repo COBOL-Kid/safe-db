@@ -85,7 +85,7 @@ import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 
 @Composable
-@OptIn(ExperimentalComposeUiApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalComposeUiApi::class)
 fun TableCard(
     canvasTable: CanvasTable,
     queryViewModel: QueryViewModel,
@@ -210,6 +210,7 @@ fun TableCard(
                             .padding(horizontal = 4.dp, vertical = 3.dp)
                             .verticalScroll(fieldScrollState)
                 ) {
+                    val showColumnType = tableCardShowsColumnType(canvasTable.width)
                     for ((columnName, columnDataType, _, isIndexed, _, _) in table.columns) {
                         val selected = queryViewModel.isColumnSelected(alias, columnName)
                         val filterActive = queryViewModel.hasFilterForColumn(alias, columnName)
@@ -218,8 +219,6 @@ fun TableCard(
                         val sort = queryViewModel.sortForColumn(alias, columnName)
                         val sortIndex = queryViewModel.sorts.indexOf(sort)
                         val columnHovered = hoveredColumn == columnName
-                        val showColumnType = tableCardShowsColumnType(canvasTable.width)
-                        val columnTooltip = "$columnName ($columnDataType)"
                         val columnSelectionInteractionSource =
                             remember(alias, columnName) { MutableInteractionSource() }
                         val joinTargetInteractionSource =
@@ -286,44 +285,12 @@ fun TableCard(
                                 CompactSelectionIndicator(
                                     if (selected) ToggleableState.On else ToggleableState.Off
                                 )
-                                Row(
+                                ColumnNameCell(
+                                    columnName = columnName,
+                                    columnDataType = columnDataType,
+                                    showColumnType = showColumnType,
                                     modifier = Modifier.padding(start = 6.dp).weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    TooltipBox(
-                                        positionProvider =
-                                            TooltipDefaults.rememberTooltipPositionProvider(
-                                                TooltipAnchorPosition.Above
-                                            ),
-                                        tooltip = { PlainTooltip { Text(columnTooltip) } },
-                                        state = rememberTooltipState(),
-                                        modifier = Modifier.weight(1f),
-                                    ) {
-                                        Text(
-                                            columnName,
-                                            style = DataMono.copy(fontWeight = FontWeight.Medium),
-                                            modifier = Modifier.fillMaxWidth(),
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    if (showColumnType) {
-                                        Text(
-                                            columnDataType,
-                                            style =
-                                                DataMono.copy(
-                                                    color =
-                                                        MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontWeight = FontWeight.Medium,
-                                                ),
-                                            modifier = Modifier.padding(start = 6.dp),
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
+                                )
                             }
 
                             ExactDesktopTargetArea {
@@ -501,15 +468,83 @@ fun TableCard(
     }
 }
 
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ColumnNameCell(
+    columnName: String,
+    columnDataType: String,
+    showColumnType: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (showColumnType) {
+            Text(
+                columnName,
+                style = DataMono.copy(fontWeight = FontWeight.Medium),
+                // Keep the name and type as separate semantics nodes instead of merging them
+                // into the clickable row, so each remains independently addressable.
+                modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {},
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                columnDataType,
+                style =
+                    DataMono.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                modifier =
+                    Modifier.padding(start = 6.dp).weight(0.45f, fill = false).semantics(
+                        mergeDescendants = true
+                    ) {},
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Box(
+                modifier =
+                    Modifier.weight(1f).semantics {
+                        contentDescription = "$columnName, $columnDataType"
+                    }
+            ) {
+                TooltipBox(
+                    positionProvider =
+                        TooltipDefaults.rememberTooltipPositionProvider(
+                            TooltipAnchorPosition.Above
+                        ),
+                    tooltip = { PlainTooltip { Text("$columnName ($columnDataType)") } },
+                    state = rememberTooltipState(),
+                ) {
+                    Text(
+                        columnName,
+                        style = DataMono.copy(fontWeight = FontWeight.Medium),
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
 internal const val TABLE_CARD_COLUMN_ACTION_SLOT_DP = 28
 internal const val TABLE_CARD_COLUMN_ACTION_COUNT = 3
-internal const val TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH = 300f
+
+// CANVAS_CARD_WIDTH (248dp) leaves room for a readable column name without showing the type,
+// so types only appear once the card is wide enough for both.
+internal const val TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP = 300f
+internal const val TABLE_CARD_COLUMN_NAME_MIN_WIDTH_DP = 72
 
 internal fun tableColumnActionClusterWidthDp(): Int =
     TABLE_CARD_COLUMN_ACTION_SLOT_DP * TABLE_CARD_COLUMN_ACTION_COUNT
 
 internal fun tableCardShowsColumnType(cardWidth: Float): Boolean =
-    cardWidth >= TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH
+    cardWidth >= TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP
 
 internal fun tableColumnToggleState(selectedCount: Int, totalCount: Int): ToggleableState =
     when {

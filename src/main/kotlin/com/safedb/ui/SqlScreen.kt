@@ -225,7 +225,7 @@ internal fun SqlScreen(
                 EmptyState(
                     icon = Icons.Outlined.Code,
                     title = "Could not load this schema",
-                    subtitle = schemaViewModel.error.orEmpty(),
+                    subtitle = schemaViewModel.error,
                 )
             schemaViewModel.loading || schema == null ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

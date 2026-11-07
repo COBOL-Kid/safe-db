@@ -33,11 +33,8 @@ fun normalizeSettings(settings: Settings): Settings {
             .toList()
 
     val theme =
-        when (settings.theme) {
-            "dark",
-            "light" -> settings.theme
-            else -> Settings.DEFAULT_THEME
-        }
+        settings.theme.trim().lowercase().takeIf { it == "dark" || it == "light" }
+            ?: Settings.DEFAULT_THEME
     val colorScheme = settings.palette().id
     val defaultConnectionId = settings.defaultConnectionId?.trim()?.takeIf { it.isNotEmpty() }
     val defaultSchema =

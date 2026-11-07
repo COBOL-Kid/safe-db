@@ -581,6 +581,45 @@ class ViewModelsTest {
         }
 
     @Test
+    fun historyDeleteCompletesAfterSuccess() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val scope = TestScope(dispatcher)
+            val viewModel = HistoryViewModel(service, scope)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            var completed = false
+            viewModel.delete("h1") { completed = true }
+            advanceUntilIdle()
+
+            assertTrue(completed)
+            assertEquals(listOf("h2"), viewModel.entries.value.map { it.id })
+            assertNull(viewModel.error.value)
+        }
+
+    @Test
+    fun historyDeleteCompletesAfterFailureAndPreservesEntries() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService().apply { failHistoryDelete = true }
+            val scope = TestScope(dispatcher)
+            val viewModel = HistoryViewModel(service, scope)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            var completed = false
+            viewModel.delete("h1") { completed = true }
+            advanceUntilIdle()
+
+            assertTrue(completed)
+            assertEquals(listOf("h1", "h2"), viewModel.entries.value.map { it.id })
+            assertEquals("history delete failed", viewModel.error.value)
+            assertTrue(service.deletedHistoryIds.isEmpty())
+        }
+
+    @Test
     fun savedQueryFailurePreservesLastGoodListAndSuppressesCallback() =
         runTest(dispatcher) {
             val service = RecordingSafeDbService()

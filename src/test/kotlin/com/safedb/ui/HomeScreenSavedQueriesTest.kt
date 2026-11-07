@@ -2,11 +2,6 @@ package com.safedb.ui
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerButton
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.semantics.SemanticsNode
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
@@ -19,7 +14,6 @@ import com.safedb.model.TableRef
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
-import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -79,12 +73,12 @@ class HomeScreenSavedQueriesTest {
         val harness = HomeScreenHarness()
         try {
             withHomeScreen(harness.viewModel) { scene ->
-                scene.clickDeleteFor("Pending orders")
-                scene.render(50_000_000L)
+                scene.clickActionInTag("saved-query-q1", "Delete saved query")
+                scene.settle()
                 assertNotNull(scene.findExact("Delete saved query?"))
                 assertNotNull(scene.findExact("This saved query will be permanently removed."))
                 scene.click(scene.requireExact("Delete").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
 
                 assertNull(scene.findContaining("Pending orders"))
                 assertNotNull(scene.findContaining("Revenue last 30 days"))
@@ -104,10 +98,10 @@ class HomeScreenSavedQueriesTest {
         val harness = HomeScreenHarness()
         try {
             withHomeScreen(harness.viewModel) { scene ->
-                scene.clickDeleteFor("Pending orders")
-                scene.render(50_000_000L)
+                scene.clickActionInTag("saved-query-q1", "Delete saved query")
+                scene.settle()
                 scene.click(scene.requireExact("Cancel").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
 
                 assertNull(scene.findExact("Delete saved query?"))
                 assertNotNull(scene.findContaining("Pending orders"))
@@ -126,7 +120,7 @@ class HomeScreenSavedQueriesTest {
         try {
             withHomeScreen(harness.viewModel, onOpenSavedQuery = { opened = it }) { scene ->
                 scene.click(scene.requireContaining("Pending orders").boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
                 assertEquals("q1", opened?.id)
                 assertTrue(harness.service.deletedIds.isEmpty())
             }
@@ -181,74 +175,6 @@ private fun withHomeScreen(
             scene.render(0L)
             body(scene)
         }
-}
-
-private fun ImageComposeScene.clickDeleteFor(queryName: String) {
-    val name = requireContaining(queryName)
-    val delete =
-        nodesLabeled("Delete saved query").minBy {
-            abs(it.boundsInRoot.center.y - name.boundsInRoot.center.y)
-        }
-    click(delete.boundsInRoot.center)
-}
-
-private fun ImageComposeScene.findContaining(text: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label().contains(text) }
-
-private fun ImageComposeScene.requireContaining(text: String): SemanticsNode =
-    findContaining(text)
-        ?: error(
-            "No node containing '$text' in ${
-                allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
-        )
-
-private fun ImageComposeScene.findExact(label: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label() == label }
-
-private fun ImageComposeScene.requireExact(label: String): SemanticsNode =
-    findExact(label)
-        ?: error(
-            "No node labeled '$label' in ${
-                allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
-        )
-
-private fun ImageComposeScene.nodesLabeled(label: String): List<SemanticsNode> =
-    allSemanticsNodes().filter { it.label() == label }
-
-private fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> {
-    val nodes = mutableListOf<SemanticsNode>()
-    for (owner in semanticsOwners) {
-        fun walk(node: SemanticsNode) {
-            nodes += node
-            node.children.forEach(::walk)
-        }
-        walk(owner.rootSemanticsNode)
-    }
-    return nodes
-}
-
-private fun SemanticsNode.label(): String {
-    val texts =
-        if (config.contains(SemanticsProperties.Text)) {
-            config[SemanticsProperties.Text].joinToString { it.text }
-        } else {
-            ""
-        }
-    val descriptions =
-        if (config.contains(SemanticsProperties.ContentDescription)) {
-            config[SemanticsProperties.ContentDescription].joinToString()
-        } else {
-            ""
-        }
-    return listOf(texts, descriptions).filter { it.isNotEmpty() }.joinToString(" | ")
-}
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.click(position: Offset) {
-    sendPointerEvent(PointerEventType.Press, position, button = PointerButton.Primary)
-    sendPointerEvent(PointerEventType.Release, position, button = PointerButton.Primary)
 }
 
 private fun sampleSavedSpec() =

@@ -32,8 +32,8 @@ class AppViewModel(
     val savedQueries = SavedQueriesViewModel(service, scope)
     val history = HistoryViewModel(service, scope)
     val recipes = RecipesViewModel(service, scope, ioDispatcher)
-    val query = QueryViewModel(service, scope, onRunRecorded = history::refresh)
-    val sqlEditor = SqlEditorViewModel(service, scope, onRunRecorded = history::refresh)
+    val query = QueryViewModel(service, scope, onRunFinished = history::refresh)
+    val sqlEditor = SqlEditorViewModel(service, scope, onRunFinished = history::refresh)
     val schema = SchemaViewModel(service, scope)
     internal val schemaMap = SchemaMapViewModel()
 

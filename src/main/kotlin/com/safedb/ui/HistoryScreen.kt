@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
@@ -87,8 +88,8 @@ fun HistoryScreen(
         message = "This query will be removed from history. This cannot be undone.",
         destructive = true,
         onConfirm = {
-            deleteTargetId?.let(viewModel.history::delete)
-            deleteTargetId = null
+            val id = deleteTargetId
+            if (id != null) viewModel.history.delete(id) { deleteTargetId = null }
         },
         onCancel = { deleteTargetId = null },
     )
@@ -207,7 +208,7 @@ private fun HistoryEntryCard(
     onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    AppCard {
+    AppCard(modifier = Modifier.testTag("history-entry-${entry.id}")) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -262,7 +263,7 @@ private fun HistoryEntryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DeleteIconButton(
                     onClick = onDelete,
-                    contentDescription = "Delete history entry",
+                    contentDescription = "Delete history entry for ${entry.connectionName}",
                 )
                 if (entry.error == null) {
                     IconButton(onClick = onSave) {

@@ -10,6 +10,10 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.use
+import com.safedb.canvas.CANVAS_FIELD_BODY_PADDING_Y
+import com.safedb.canvas.CANVAS_HEADER_HEIGHT
+import com.safedb.canvas.CANVAS_RESIZE_FOOTER_HEIGHT
+import com.safedb.canvas.CANVAS_ROW_HEIGHT
 import com.safedb.canvas.CanvasPoint
 import com.safedb.canvas.CanvasTableLike
 import com.safedb.canvas.routeJoinEdge
@@ -20,6 +24,7 @@ import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,9 +87,9 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(270f, 71f)
+                scene.click(joinTargetCenter(viewModel.canvasTables[0], rowIndex = 0))
                 scene.render(100_000_000L)
-                scene.click(450f, 71f)
+                scene.click(joinTargetCenter(viewModel.canvasTables[1], rowIndex = 0))
                 scene.render(200_000_000L)
             }
 
@@ -124,7 +129,8 @@ class CanvasInteractionTest {
                 scene.render(0L)
                 assertTrue(fieldScrollState.maxValue > 0)
                 assertEquals(0, fieldScrollState.value)
-                scene.drag(Offset(244f, 80f), Offset(244f, 160f))
+                val scrollbar = scrollbarCenter(canvasTable)
+                scene.drag(scrollbar, scrollbar + Offset(0f, 40f))
                 scene.render(100_000_000L)
             }
 
@@ -145,9 +151,9 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(135f, 35.5f)
+                scene.click(joinTargetCenter(viewModel.canvasTables[0], rowIndex = 0, zoom = 0.5f))
                 scene.render(100_000_000L)
-                scene.click(283f, 35.5f)
+                scene.click(joinTargetCenter(viewModel.canvasTables[1], rowIndex = 0, zoom = 0.5f))
                 scene.render(200_000_000L)
             }
 
@@ -509,6 +515,57 @@ private fun ImageComposeScene.drag(from: Offset, to: Offset) {
     )
     render(30_000_000L)
     sendPointerEvent(PointerEventType.Release, to, button = PointerButton.Primary)
+}
+
+// TableCard right-aligns a fixed action area in every column row: the filter/group/sort cluster
+// followed by the join slot. The row also reserves 4.dp of end padding (see TableCard's
+// `padding(start = 6.dp, top = 2.dp, end = 4.dp, bottom = 2.dp)`).
+private const val TABLE_CARD_ROW_END_PADDING_DP = 4f
+private const val TABLE_CARD_HEADER_DIVIDER_DP = 1f
+
+private fun CanvasTable.asCanvasTableLike(): CanvasTableLike =
+    CanvasTableLike(
+        alias = alias,
+        x = x,
+        y = y,
+        width = width,
+        height = height,
+        tableInfo = tableInfo,
+    )
+
+// Column rows are (CANVAS_ROW_HEIGHT - 1.dp) tall and followed by a 1.dp divider, so their pitch
+// is exactly CANVAS_ROW_HEIGHT. Row content starts CANVAS_FIELD_BODY_PADDING_Y below the header.
+private fun columnRowCenterY(table: CanvasTable, rowIndex: Int): Float {
+    val bounds = tableBounds(table.asCanvasTableLike())
+    return bounds.top +
+        CANVAS_HEADER_HEIGHT +
+        TABLE_CARD_HEADER_DIVIDER_DP +
+        CANVAS_FIELD_BODY_PADDING_Y +
+        rowIndex * CANVAS_ROW_HEIGHT +
+        (CANVAS_ROW_HEIGHT - 1f) / 2f
+}
+
+private fun joinActionCenterX(table: CanvasTable): Float {
+    val bounds = tableBounds(table.asCanvasTableLike())
+    val clusterWidth = tableColumnActionClusterWidthDp()
+    val actionAreaWidth = clusterWidth + TABLE_CARD_COLUMN_ACTION_SLOT_DP
+    val actionAreaLeft = bounds.right - TABLE_CARD_ROW_END_PADDING_DP - actionAreaWidth
+    // The join button is the slot immediately after the three-slot action cluster.
+    return actionAreaLeft + clusterWidth + TABLE_CARD_COLUMN_ACTION_SLOT_DP / 2f
+}
+
+private fun joinTargetCenter(table: CanvasTable, rowIndex: Int, zoom: Float = 1f): Offset =
+    Offset(
+        x = joinActionCenterX(table) * zoom,
+        y = columnRowCenterY(table, rowIndex) * zoom,
+    )
+
+// The scrollbar test composes TableCard directly, so the card's screen origin is (0, 0) instead
+// of its canvas position. Its vertical scrollbar sits just inside the body's right edge.
+private fun scrollbarCenter(table: CanvasTable): Offset {
+    val bodyHeight =
+        (table.height - CANVAS_HEADER_HEIGHT - CANVAS_RESIZE_FOOTER_HEIGHT).coerceAtLeast(64f)
+    return Offset(x = table.width - 4f, y = CANVAS_HEADER_HEIGHT + bodyHeight / 2f)
 }
 
 private fun wideTable(name: String, columnCount: Int): TableInfo =

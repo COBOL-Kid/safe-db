@@ -1,8 +1,10 @@
 package com.safedb.ui
 
 import androidx.compose.ui.state.ToggleableState
+import com.safedb.canvas.CANVAS_CARD_WIDTH
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class TableCardStateTest {
     @Test
@@ -34,9 +36,10 @@ class TableCardStateTest {
 
     @Test
     fun defaultCanvasWidthHidesColumnTypesSoNamesStayReadable() {
-        assertEquals(false, tableCardShowsColumnType(247f))
-        assertEquals(false, tableCardShowsColumnType(299f))
-        assertEquals(true, tableCardShowsColumnType(TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH))
+        assertTrue(CANVAS_CARD_WIDTH < TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP)
+        assertEquals(false, tableCardShowsColumnType(CANVAS_CARD_WIDTH))
+        assertEquals(false, tableCardShowsColumnType(TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP - 1))
+        assertEquals(true, tableCardShowsColumnType(TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP))
         assertEquals(true, tableCardShowsColumnType(320f))
     }
 }

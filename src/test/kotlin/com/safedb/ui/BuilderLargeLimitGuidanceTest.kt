@@ -13,13 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerButton
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.semantics.SemanticsNode
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.use
@@ -156,8 +151,8 @@ class BuilderLargeLimitGuidanceTest {
             }
             .use { scene ->
                 scene.render(0L)
-                val banner = scene.requireNode(LARGE_LIMIT_GUIDANCE_TEXT)
-                val filters = scene.requireNode("Query filters")
+                val banner = scene.requireContaining(LARGE_LIMIT_GUIDANCE_TEXT)
+                val filters = scene.requireContaining("Query filters")
                 assertEquals(
                     banner.boundsInRoot.left,
                     filters.boundsInRoot.left,
@@ -183,15 +178,15 @@ class BuilderLargeLimitGuidanceTest {
             }
             .use { scene ->
                 scene.render(0L)
-                assertNotNull(scene.findNode(LARGE_LIMIT_GUIDANCE_TEXT))
-                val maximize = scene.requireNode("Maximize results")
+                assertNotNull(scene.findContaining(LARGE_LIMIT_GUIDANCE_TEXT))
+                val maximize = scene.requireContaining("Maximize results")
                 scene.click(maximize.boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
                 assertNull(
-                    scene.findNode(LARGE_LIMIT_GUIDANCE_TEXT),
+                    scene.findContaining(LARGE_LIMIT_GUIDANCE_TEXT),
                     "Guidance banner should not remain as a sibling of maximized results",
                 )
-                assertNotNull(scene.findNode("Minimize results"))
+                assertNotNull(scene.findContaining("Minimize results"))
             }
     }
 }
@@ -228,51 +223,6 @@ private class GuidanceHarness {
             onApplyRecipe = { _, _ -> },
         )
     }
-}
-
-private fun ImageComposeScene.findNode(matching: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label().contains(matching) }
-
-private fun ImageComposeScene.requireNode(matching: String): SemanticsNode =
-    findNode(matching)
-        ?: error(
-            "No node containing '$matching' in ${
-                allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
-        )
-
-private fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> {
-    val nodes = mutableListOf<SemanticsNode>()
-    for (owner in semanticsOwners) {
-        fun walk(node: SemanticsNode) {
-            nodes += node
-            node.children.forEach(::walk)
-        }
-        walk(owner.rootSemanticsNode)
-    }
-    return nodes
-}
-
-private fun SemanticsNode.label(): String {
-    val texts =
-        if (config.contains(SemanticsProperties.Text)) {
-            config[SemanticsProperties.Text].joinToString { it.text }
-        } else {
-            ""
-        }
-    val descriptions =
-        if (config.contains(SemanticsProperties.ContentDescription)) {
-            config[SemanticsProperties.ContentDescription].joinToString()
-        } else {
-            ""
-        }
-    return listOf(texts, descriptions).filter { it.isNotEmpty() }.joinToString(" | ")
-}
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.click(position: Offset) {
-    sendPointerEvent(PointerEventType.Press, position, button = PointerButton.Primary)
-    sendPointerEvent(PointerEventType.Release, position, button = PointerButton.Primary)
 }
 
 private val ordersTable =

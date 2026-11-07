@@ -35,11 +35,12 @@ import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
 import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.SchemaViewModel
 
+/** @param subtitle Optional subtitle text; null or blank renders no subtitle line. */
 @Composable
 internal fun WorkspaceScreenHeader(
     icon: ImageVector,
     title: String,
-    subtitle: String?,
+    subtitle: String? = null,
     connection: ConnectionDef?,
     connections: List<ConnectionDef>,
     selectedSchema: String?,

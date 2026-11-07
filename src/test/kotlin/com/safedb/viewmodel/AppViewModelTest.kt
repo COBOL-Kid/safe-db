@@ -641,6 +641,11 @@ class AppViewModelTest {
             assertNull(viewModel.pendingRecipeRun.value)
             assertNotNull(viewModel.query.error)
             assertNull(viewModel.explore.value)
+            assertEquals(listOf("h1"), viewModel.history.entries.value.map { it.id })
+            assertEquals(
+                "The query risk gate blocks this query.",
+                viewModel.history.entries.value.single().error,
+            )
 
             viewModel.query.onActiveConnectionChanged("c2")
 
@@ -1066,6 +1071,7 @@ class AppViewModelTest {
                 assertTrue(viewModel.query.occupiesQuerySlot)
                 assertFalse(viewModel.query.running)
                 assertNotNull(viewModel.query.pendingConfirmation)
+                assertEquals(listOf("h1"), viewModel.history.entries.value.map { it.id })
 
                 if (!viewModel.query.occupiesQuerySlot) {
                     viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)

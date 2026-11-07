@@ -18,12 +18,11 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    suspend fun load() {
-        capturingFailure(_error, _loading) { _entries.value = service.listHistory() }
-    }
+    suspend fun load() = reload(showLoading = true)
 
     fun refresh() {
-        scope.launch { capturingFailure(_error) { _entries.value = service.listHistory() } }
+        // No spinner: a post-run refresh must keep the visible history list in place.
+        scope.launch { reload(showLoading = false) }
     }
 
     fun clear(onComplete: () -> Unit = {}) {
@@ -36,12 +35,22 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
         }
     }
 
-    fun delete(id: String) {
+    fun delete(id: String, onComplete: () -> Unit = {}) {
         scope.launch {
             capturingFailure(_error) {
                 service.deleteHistoryEntry(id)
-                _entries.value = service.listHistory()
+                reloadEntries()
             }
+            // Close the confirmation after the attempt settles so a failure surface is visible.
+            onComplete()
         }
+    }
+
+    private suspend fun reload(showLoading: Boolean) {
+        capturingFailure(_error, if (showLoading) _loading else null) { reloadEntries() }
+    }
+
+    private suspend fun reloadEntries() {
+        _entries.value = service.listHistory()
     }
 }
