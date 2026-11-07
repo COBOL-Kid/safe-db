@@ -3,6 +3,7 @@
 ## Unreleased
 
 - New installs and missing `theme` settings default to light mode. Saved dark mode is unchanged.
+- The SQL tab no longer shows instructional copy when no connection is selected.
 - Individual History entries can be deleted without clearing the rest of the list.
 
 ## 1.0.0
