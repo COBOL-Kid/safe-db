@@ -72,7 +72,7 @@ internal fun BuilderRecipeButton(
 
     TextButton(onClick = { open = true }) {
         Icon(Icons.Default.Bookmarks, contentDescription = null, modifier = Modifier.size(17.dp))
-        Text("Recipes", modifier = Modifier.padding(start = 5.dp))
+        Text("Recipes", modifier = Modifier.padding(start = 5.dp), softWrap = false)
     }
     RecipeMaintenanceDialogs(
         deleting = deleting,

@@ -2,7 +2,7 @@
 
 `./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 358 desktop, 675 shared, and 95 MCP tests, with 90% desktop, 87% shared, and 92% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 364 desktop, 675 shared, and 95 MCP tests, with 90% desktop, 87% shared, and 92% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report.
 
 | Command | Use |
 | --- | --- |
@@ -15,7 +15,7 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:koverXmlReportUnit verifyMcpCoverageRatchet` | Generate the unit-only MCP XML report and enforce its independent coverage floor. |
 | `./gradlew integrationTest` | Run the optional `:shared` JDBC and `:mcp` integration suites, including the packaged MCP stdio smoke. |
 | `./gradlew :mcp:integrationTest` | Run the packaged MCP stdio smoke and the environment-gated MCP MySQL case. |
-| `./gradlew renderPreview --rerun-tasks` | Render 44 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
+| `./gradlew renderPreview --rerun-tasks` | Render 48 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
 | `./gradlew renderHeroFrames` | Render the query-builder build-up sequence to `/tmp/safedb-preview/hero/`. |
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
 | `./gradlew renderReportExport` | Export a genuine Explore HTML report to `/tmp/safedb-preview/report`. |

@@ -954,7 +954,7 @@ fun main() {
             dark,
             sidebarCollapsed = true,
             width = 960,
-            height = 700,
+            height = 600,
         ) { state, vm ->
             val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
             state.setActiveConnection("c1", selection)
@@ -964,6 +964,70 @@ fun main() {
                     vm.query.addTable(vm.schema.tables[1])
                     vm.query.addTable(vm.schema.tables[0])
                     vm.query.moveTable("t1", 360f, 28f)
+                }
+            }
+            Thread.sleep(900)
+        }
+
+        render(
+            "builder-min-expanded-$suffix",
+            dark,
+            sidebarCollapsed = false,
+            width = 960,
+            height = 600,
+        ) { state, vm ->
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c2", selection)
+            state.navigate(AppRoute.Builder)
+            vm.schema.load("c2", selection = selection) { loaded ->
+                if (loaded) {
+                    vm.query.addTable(vm.schema.tables[0])
+                    vm.query.addTable(vm.schema.tables[1])
+                    vm.query.moveTable("t1", 360f, 28f)
+                }
+            }
+            Thread.sleep(900)
+        }
+
+        render(
+            "builder-filters-$suffix",
+            dark,
+            sidebarCollapsed = false,
+            width = 1280,
+            height = 832,
+        ) { state, vm ->
+            val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
+            state.setActiveConnection("c2", selection)
+            state.navigate(AppRoute.Builder)
+            vm.schema.load("c2", selection = selection) { loaded ->
+                if (loaded) {
+                    vm.query.addTable(vm.schema.tables[0])
+                    vm.query.addFilter(
+                        FilterSpec(
+                            tableAlias = "t0",
+                            column = "full_name",
+                            op = FilterOp.In,
+                            value =
+                                FilterValue.ListValue(
+                                    listOf(
+                                        FilterLiteral(LiteralKind.Text, "alice"),
+                                        FilterLiteral(LiteralKind.Text, "bob"),
+                                        FilterLiteral(LiteralKind.Text, "carol"),
+                                    )
+                                ),
+                        )
+                    )
+                    vm.query.addFilter(
+                        FilterSpec(
+                            tableAlias = "t0",
+                            column = "created_at",
+                            op = FilterOp.Gte,
+                            value =
+                                FilterValue.Single(
+                                    FilterLiteral(LiteralKind.DateTime, "2025-07-03 09:12:00")
+                                ),
+                        )
+                    )
                 }
             }
             Thread.sleep(900)

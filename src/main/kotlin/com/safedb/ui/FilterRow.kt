@@ -35,6 +35,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.FilterLiteral
@@ -349,6 +350,7 @@ private fun CompactSelectSurface(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
                 maxLines = 1,
+                softWrap = false,
             )
             Text(
                 value,
@@ -356,7 +358,9 @@ private fun CompactSelectSurface(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                softWrap = false,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.weight(1f, fill = true),
             )
             Icon(
                 Icons.Default.ArrowDropDown,
@@ -465,8 +469,8 @@ private fun extractPair(value: FilterValue?): Pair<String, String> {
 
 // Space-separated timestamps such as "2025-07-03 09:12:00" are 19 characters.
 internal const val FILTER_SINGLE_VALUE_WIDTH_DP = 176
-private const val FILTER_TABLE_DROPDOWN_WIDTH_DP = 128
-private const val FILTER_COLUMN_DROPDOWN_WIDTH_DP = 140
+internal const val FILTER_TABLE_DROPDOWN_WIDTH_DP = 152
+internal const val FILTER_COLUMN_DROPDOWN_WIDTH_DP = 140
 private const val FILTER_OP_DROPDOWN_WIDTH_DP = 100
 private const val FILTER_PAIR_VALUE_WIDTH_DP = 112
 private const val FILTER_LIST_VALUE_WIDTH_DP = 96

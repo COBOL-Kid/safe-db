@@ -216,7 +216,11 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
 }
 
 fun runApp(appState: AppState, service: SafeDbService) = application {
-    val windowState = rememberWindowState(width = 1280.dp, height = 832.dp)
+    val windowState =
+        rememberWindowState(
+            width = APP_DEFAULT_WINDOW_WIDTH_PX.dp,
+            height = APP_DEFAULT_WINDOW_HEIGHT_PX.dp,
+        )
 
     Window(
         onCloseRequest = {
@@ -227,7 +231,14 @@ fun runApp(appState: AppState, service: SafeDbService) = application {
         icon = rememberAppWindowIcon(),
         state = windowState,
     ) {
-        LaunchedEffect(window) { window.minimumSize = Dimension(960, 600) }
+        LaunchedEffect(window) {
+            window.minimumSize = Dimension(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX)
+        }
         App(appState, service, window)
     }
 }
+
+internal const val APP_MIN_WINDOW_WIDTH_PX = 960
+internal const val APP_MIN_WINDOW_HEIGHT_PX = 600
+internal const val APP_DEFAULT_WINDOW_WIDTH_PX = 1280
+internal const val APP_DEFAULT_WINDOW_HEIGHT_PX = 832

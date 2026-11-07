@@ -34,6 +34,70 @@ class FilterRowLayoutTest {
     }
 
     @Test
+    fun customersTableAndInListStayReadableAtOverlayWidths() {
+        listOf(407, 463, 720).forEach { sceneWidth ->
+            val viewModel = customersInListFilterViewModel()
+            val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
+            ImageComposeScene(width = sceneWidth, height = 220, density = Density(1f)) {
+                    SafeDbTheme(isDark = false) {
+                        Box(Modifier.fillMaxWidth()) {
+                            FilterRow(
+                                queryViewModel = viewModel,
+                                filter = filter,
+                                path = listOf(0),
+                            )
+                        }
+                    }
+                }
+                .use { scene ->
+                    scene.render(0L)
+                    val customers = scene.requireContaining("customers")
+                    val alice = scene.requireContaining("alice")
+                    val bob = scene.requireContaining("bob")
+                    val carol = scene.requireContaining("carol")
+                    assertTrue(
+                        customers.boundsInRoot.left >= -0.5f,
+                        "table chip clipped on the left at ${sceneWidth}px: ${customers.boundsInRoot}",
+                    )
+                    assertTrue(
+                        customers.boundsInRoot.width >= 56f,
+                        "table name was only ${customers.boundsInRoot.width}px at ${sceneWidth}px",
+                    )
+                    for (value in listOf(alice, bob, carol)) {
+                        assertTrue(
+                            value.boundsInRoot.left >= -0.5f,
+                            "list value clipped on the left at ${sceneWidth}px: ${value.boundsInRoot}",
+                        )
+                        assertTrue(
+                            value.boundsInRoot.right <= sceneWidth + 0.5f,
+                            "list value overflowed ${sceneWidth}px: ${value.boundsInRoot}",
+                        )
+                    }
+                    if (sceneWidth <= 463) {
+                        val tops = listOf(alice, bob, carol).map { it.boundsInRoot.top }.distinct()
+                        assertTrue(
+                            tops.size > 1 || alice.boundsInRoot.top > customers.boundsInRoot.top,
+                            "IN-list did not wrap at ${sceneWidth}px: " +
+                                "customers=${customers.boundsInRoot}, " +
+                                "values=${listOf(alice, bob, carol).map { it.boundsInRoot }}",
+                        )
+                    }
+                    val overflows =
+                        scene.allSemanticsNodes().filter {
+                            it.boundsInRoot.right > sceneWidth + 0.5f ||
+                                it.boundsInRoot.left < -0.5f
+                        }
+                    assertTrue(
+                        overflows.isEmpty(),
+                        "nodes overflowed ${sceneWidth}px: ${
+                            overflows.map { "${it.label()} ${it.boundsInRoot}" }
+                        }",
+                    )
+                }
+        }
+    }
+
+    @Test
     fun inListFilterWrapsAtNarrowWidth() {
         val viewModel = inListFilterViewModel()
         val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
@@ -141,6 +205,44 @@ private fun timestampFilterViewModel(): QueryViewModel {
             column = "order_date",
             op = FilterOp.Gte,
             value = FilterValue.Single(FilterLiteral(LiteralKind.DateTime, "2025-07-03 09:12:00")),
+        )
+    )
+    return viewModel
+}
+
+private fun customersInListFilterViewModel(): QueryViewModel {
+    val viewModel =
+        QueryViewModel(
+            object : FakeSafeDbServiceSupport() {},
+            CoroutineScope(Dispatchers.Unconfined),
+        )
+    viewModel.addTable(
+        TableInfo(
+            schema = "public",
+            name = "customers",
+            columns =
+                listOf(
+                    ColumnInfo("id", "bigint", nullable = false, isIndexed = true),
+                    ColumnInfo("full_name", "varchar", nullable = true),
+                    ColumnInfo("created_at", "timestamp", nullable = false),
+                ),
+            indexes = emptyList(),
+        )
+    )
+    viewModel.addFilter(
+        FilterSpec(
+            id = "f-in-names",
+            tableAlias = "t0",
+            column = "full_name",
+            op = FilterOp.In,
+            value =
+                FilterValue.ListValue(
+                    listOf(
+                        FilterLiteral(LiteralKind.Text, "alice"),
+                        FilterLiteral(LiteralKind.Text, "bob"),
+                        FilterLiteral(LiteralKind.Text, "carol"),
+                    )
+                ),
         )
     )
     return viewModel

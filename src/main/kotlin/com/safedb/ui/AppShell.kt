@@ -941,8 +941,8 @@ internal fun sidebarRevealSteps(from: Int, to: Int): List<Int> =
 
 private data class NavItem(val route: AppRoute, val label: String, val icon: ImageVector)
 
-private val ExpandedSidebarWidth = 232.dp
-private val CollapsedSidebarWidth = 72.dp
+internal val ExpandedSidebarWidth = 232.dp
+internal val CollapsedSidebarWidth = 72.dp
 private val SidebarHeaderHeight = 78.dp
 private val SidebarHeaderInset = 16.dp
 private val NavRailIndicatorWidth = 3.dp

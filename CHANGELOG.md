@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Query Builder toolbar stays readable at the 960×600 minimum with the sidebar expanded: connection name and Run wrap as groups instead of stacking character-by-character.
+- Filter chips stay fully visible at the default window width with the sidebar expanded, including IN-list wrapping and timestamp values.
+
 ## 1.0.1
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.0.1` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.0.1-all.jar`; npm packages are stamped 1.0.1 at assemble time.

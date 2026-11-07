@@ -101,6 +101,23 @@ internal val QueryOptionsPanelGap = 8.dp
 internal val QueryOptionsOverlayEndPadding =
     QueryOptionsPanelEndPadding + QueryOptionsPanelMaxWidth + QueryOptionsPanelGap
 internal val JoinItemsMaxHeight = 88.dp
+internal val BuilderSchemaBrowserWidth = 288.dp
+internal val BuilderSchemaBrowserDividerWidth = 1.dp
+internal val BuilderFilterOverlayMinWidth = (FILTER_SINGLE_VALUE_WIDTH_DP + 16).dp
+internal val BUILDER_TOOLBAR_CONNECTION_MIN_WIDTH = 160.dp
+
+internal fun builderCanvasWidth(windowWidth: Dp, sidebarExpanded: Boolean): Dp {
+    val sidebar = if (sidebarExpanded) ExpandedSidebarWidth else CollapsedSidebarWidth
+    return windowWidth - sidebar - BuilderSchemaBrowserWidth - BuilderSchemaBrowserDividerWidth
+}
+
+internal fun builderStackQueryOverlays(canvasWidth: Dp): Boolean =
+    canvasWidth - QueryControlsStartPadding - QueryOptionsOverlayEndPadding <
+        BuilderFilterOverlayMinWidth
+
+internal fun builderFilterOverlayEndPadding(stackOverlays: Boolean): Dp =
+    if (stackOverlays) QueryOptionsPanelEndPadding else QueryOptionsOverlayEndPadding
+
 internal val QueryControlsCanvasInset =
     QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
 

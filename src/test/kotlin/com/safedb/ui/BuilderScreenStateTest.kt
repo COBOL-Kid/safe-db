@@ -5,6 +5,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.safedb.APP_DEFAULT_WINDOW_WIDTH_PX
+import com.safedb.APP_MIN_WINDOW_WIDTH_PX
 import com.safedb.AppRoute
 import com.safedb.canvas.CanvasPoint
 import com.safedb.canvas.CanvasTableLike
@@ -34,6 +36,7 @@ import com.safedb.viewmodel.canvasAxisScrollState
 import com.safedb.viewmodel.canvasConstrainedPan
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -620,6 +623,23 @@ class BuilderScreenStateTest {
         assertEquals(232f, cappedCanvasContentTopInset(232f, 0f))
         assertEquals(100f, cappedCanvasContentTopInset(100f, 800f))
         assertEquals(0f, cappedCanvasContentTopInset(500f, 100f))
+    }
+
+    @Test
+    fun queryOverlaysStackWhenTheMinimumWindowKeepsTheSidebarExpanded() {
+        val minExpanded = builderCanvasWidth(APP_MIN_WINDOW_WIDTH_PX.dp, sidebarExpanded = true)
+        val minCollapsed = builderCanvasWidth(APP_MIN_WINDOW_WIDTH_PX.dp, sidebarExpanded = false)
+        val defaultExpanded =
+            builderCanvasWidth(APP_DEFAULT_WINDOW_WIDTH_PX.dp, sidebarExpanded = true)
+
+        assertEquals(439.dp, minExpanded)
+        assertEquals(599.dp, minCollapsed)
+        assertEquals(759.dp, defaultExpanded)
+        assertTrue(builderStackQueryOverlays(minExpanded))
+        assertFalse(builderStackQueryOverlays(minCollapsed))
+        assertFalse(builderStackQueryOverlays(defaultExpanded))
+        assertEquals(QueryOptionsPanelEndPadding, builderFilterOverlayEndPadding(true))
+        assertEquals(QueryOptionsOverlayEndPadding, builderFilterOverlayEndPadding(false))
     }
 
     @Test
