@@ -1118,6 +1118,49 @@ class AppViewModelTest {
         }
 
     @Test
+    fun completedBuilderAndSqlQueriesAppearInHistoryWithoutReload() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                assertTrue(viewModel.history.entries.value.isEmpty())
+
+                viewModel.query.addTable(sampleTable())
+                viewModel.query.run("c1")
+                advanceUntilIdle()
+
+                assertEquals(listOf("h1"), viewModel.history.entries.value.map { it.id })
+                assertEquals("c1", viewModel.history.entries.value.single().connectionId)
+                assertNull(viewModel.history.entries.value.single().error)
+
+                viewModel.sqlEditor.run("c1", sampleSpec(), viewModel.sqlEditor.text.text)
+                advanceUntilIdle()
+
+                assertEquals(listOf("h2", "h1"), viewModel.history.entries.value.map { it.id })
+
+                viewModel.history.delete("h1")
+                advanceUntilIdle()
+                assertEquals(listOf("h2"), viewModel.history.entries.value.map { it.id })
+
+                val saved =
+                    SavedQuery(
+                        id = "q-saved",
+                        name = "Users sample",
+                        connectionId = "c1",
+                        spec = sampleSpec(),
+                        createdAt = "1",
+                    )
+                viewModel.savedQueries.save(saved)
+                advanceUntilIdle()
+                assertEquals(listOf("q-saved"), viewModel.savedQueries.queries.value.map { it.id })
+                assertEquals(listOf("h2"), viewModel.history.entries.value.map { it.id })
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
     fun settledBuilderRiskRejectionDoesNotBlockTheSqlEditor() =
         runTest(dispatcher) {
             val service = FakeSafeDbService(riskGateFirstRun = true)
@@ -1179,6 +1222,9 @@ private class FakeSafeDbService(
         private set
 
     val queryRequests = mutableListOf<QueryRunRequest>()
+    val recordedHistory = mutableListOf<HistoryEntry>()
+    val recordedSavedQueries = mutableListOf<SavedQuery>()
+    private var historySeq = 0
     val requiredConfirmation =
         QueryExecutionConfirmation(
             connectionId = "c1",
@@ -1245,6 +1291,7 @@ private class FakeSafeDbService(
                             )
                         ),
                 )
+            rememberHistory(request, error = "The query risk gate blocks this query.")
             throw QueryFailureException(
                 QueryError.RiskGate(
                     evaluation =
@@ -1283,6 +1330,7 @@ private class FakeSafeDbService(
                     blockingBand = QueryRiskSeverity.High,
                     reasons = listOf(reason),
                 )
+            rememberHistory(request, error = "Query plan assessment is unavailable.")
             throw QueryFailureException(
                 QueryError.ConfirmationRequired(
                     evaluation =
@@ -1316,6 +1364,7 @@ private class FakeSafeDbService(
                 emptyList(),
                 emptyList(),
             )
+        rememberHistory(request, rowCount = result.rowCount)
         return com.safedb.service.QueryRunResult(
             result,
             com.safedb.query.QueryRiskEvaluation(
@@ -1334,15 +1383,47 @@ private class FakeSafeDbService(
         )
     }
 
-    override suspend fun listSavedQueries(): List<SavedQuery> = emptyList()
+    override suspend fun listSavedQueries(): List<SavedQuery> = recordedSavedQueries.toList()
 
-    override suspend fun saveSavedQuery(query: SavedQuery) = Unit
+    override suspend fun saveSavedQuery(query: SavedQuery) {
+        recordedSavedQueries.removeAll { it.id == query.id }
+        recordedSavedQueries += query
+    }
 
-    override suspend fun deleteSavedQuery(id: String) = Unit
+    override suspend fun deleteSavedQuery(id: String) {
+        recordedSavedQueries.removeAll { it.id == id }
+    }
 
-    override suspend fun listHistory(): List<HistoryEntry> = emptyList()
+    override suspend fun listHistory(): List<HistoryEntry> = recordedHistory.toList()
 
-    override suspend fun clearHistory() = Unit
+    override suspend fun clearHistory() {
+        recordedHistory.clear()
+    }
+
+    override suspend fun deleteHistoryEntry(id: String) {
+        recordedHistory.removeAll { it.id == id }
+    }
+
+    private fun rememberHistory(
+        request: QueryRunRequest,
+        error: String? = null,
+        rowCount: Int = 0,
+    ) {
+        historySeq += 1
+        recordedHistory.add(
+            0,
+            HistoryEntry(
+                id = "h$historySeq",
+                connectionId = request.connectionId,
+                connectionName = "Local",
+                spec = request.spec,
+                rowCount = rowCount,
+                warnings = emptyList(),
+                error = error,
+                timestamp = historySeq.toString(),
+            ),
+        )
+    }
 
     override suspend fun getSettings(): Settings {
         settingsLoadGate?.await()

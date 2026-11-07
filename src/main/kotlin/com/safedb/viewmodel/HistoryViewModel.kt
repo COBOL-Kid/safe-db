@@ -23,7 +23,7 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
     }
 
     fun refresh() {
-        scope.launch { load() }
+        scope.launch { capturingFailure(_error) { _entries.value = service.listHistory() } }
     }
 
     fun clear(onComplete: () -> Unit = {}) {
