@@ -39,7 +39,7 @@ import com.safedb.viewmodel.SchemaViewModel
 internal fun WorkspaceScreenHeader(
     icon: ImageVector,
     title: String,
-    subtitle: String,
+    subtitle: String?,
     connection: ConnectionDef?,
     connections: List<ConnectionDef>,
     selectedSchema: String?,
@@ -79,11 +79,13 @@ internal fun WorkspaceScreenHeader(
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 }
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

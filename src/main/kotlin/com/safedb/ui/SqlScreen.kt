@@ -179,13 +179,11 @@ internal fun SqlScreen(
             icon = Icons.Outlined.Code,
             title = "SQL",
             subtitle =
-                if (connection == null) {
-                    "Write a SELECT; it runs through the same limits and risk checks"
-                } else {
+                connection?.let {
                     buildString {
-                        append(connection.database)
+                        append(it.database)
                         if (selectedSchema != null) append(" · $selectedSchema")
-                        append(" · ${connection.dialect.displayName()}")
+                        append(" · ${it.dialect.displayName()}")
                     }
                 },
             connection = connection,
@@ -219,7 +217,6 @@ internal fun SqlScreen(
                 EmptyState(
                     icon = Icons.Outlined.Code,
                     title = "Choose a database to query",
-                    subtitle = "Select a saved connection to write a SELECT against it.",
                     action = {
                         SecondaryButton(onClick = onOpenConnections) { Text("Open Connections") }
                     },
