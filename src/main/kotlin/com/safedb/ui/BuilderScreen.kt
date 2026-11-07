@@ -54,6 +54,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -148,6 +149,9 @@ internal fun BuilderScreen(
             !queryViewModel.running &&
             !sqlBusy
 
+    val toolbarIdentityModifier =
+        Modifier.widthIn(min = BuilderToolbarConnectionMinWidth, max = 320.dp).padding(end = 12.dp)
+
     val fallbackWarning =
         rememberSchemaLoad(
             connection = connection,
@@ -236,11 +240,7 @@ internal fun BuilderScreen(
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             if (connection != null) {
-                Column(
-                    modifier =
-                        Modifier.widthIn(min = BUILDER_TOOLBAR_CONNECTION_MIN_WIDTH, max = 320.dp)
-                            .padding(end = 12.dp)
-                ) {
+                Column(modifier = toolbarIdentityModifier) {
                     Text(
                         connection.name,
                         style = MaterialTheme.typography.titleMedium,
@@ -294,9 +294,7 @@ internal fun BuilderScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     softWrap = false,
-                    modifier =
-                        Modifier.widthIn(min = BUILDER_TOOLBAR_CONNECTION_MIN_WIDTH, max = 320.dp)
-                            .padding(end = 12.dp),
+                    modifier = toolbarIdentityModifier,
                 )
             }
 
@@ -496,6 +494,11 @@ internal fun BuilderScreen(
                     modifier = Modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas)
                 ) {
                     val canvasWidth = maxWidth
+                    val stackedChromeMaxHeight =
+                        minOf(
+                            QueryControlsMaxHeight * 2f + QueryStartOverlayGap,
+                            maxHeight * 0.6f,
+                        )
                     val maxWorkspaceHeight = maxHeight.value.coerceAtLeast(ResultsPaneMinHeight)
                     val maxNormalHeight =
                         maxWorkspaceHeight
@@ -598,6 +601,19 @@ internal fun BuilderScreen(
                                                             ),
                                                     )
                                                     .fillMaxWidth()
+                                                    .then(
+                                                        if (stackOverlays) {
+                                                            Modifier.heightIn(
+                                                                    max = stackedChromeMaxHeight
+                                                                )
+                                                                .verticalScroll(
+                                                                    rememberScrollState()
+                                                                )
+                                                                .testTag("builder-start-overlay")
+                                                        } else {
+                                                            Modifier
+                                                        }
+                                                    )
                                                     .onSizeChanged {
                                                         startControlsHeightPx = it.height
                                                     },
@@ -623,11 +639,22 @@ internal fun BuilderScreen(
                                                     depth = 0,
                                                     modifier =
                                                         Modifier.fillMaxWidth()
-                                                            .heightIn(max = QueryControlsMaxHeight)
+                                                            .then(
+                                                                if (stackOverlays) {
+                                                                    Modifier
+                                                                } else {
+                                                                    Modifier.heightIn(
+                                                                            max =
+                                                                                QueryControlsMaxHeight
+                                                                        )
+                                                                        .verticalScroll(
+                                                                            rememberScrollState()
+                                                                        )
+                                                                }
+                                                            )
                                                             .semantics {
                                                                 contentDescription = "Query filters"
-                                                            }
-                                                            .verticalScroll(rememberScrollState()),
+                                                            },
                                                 )
                                             }
                                             if (stackOverlays) {
@@ -645,7 +672,9 @@ internal fun BuilderScreen(
                                         }
                                     }
                                     if (!stackOverlays) {
-                                        Column(
+                                        BuilderQueryOptionsAndJoins(
+                                            queryViewModel = queryViewModel,
+                                            tableNamesByAlias = tableNamesByAlias,
                                             modifier =
                                                 Modifier.align(Alignment.TopEnd)
                                                     .padding(
@@ -659,14 +688,7 @@ internal fun BuilderScreen(
                                                     .onSizeChanged {
                                                         optionControlsHeightPx = it.height
                                                     },
-                                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                                        ) {
-                                            BuilderQueryOptionsAndJoins(
-                                                queryViewModel = queryViewModel,
-                                                tableNamesByAlias = tableNamesByAlias,
-                                                modifier = Modifier.fillMaxWidth(),
-                                            )
-                                        }
+                                        )
                                     }
                                 }
                             }
@@ -825,26 +847,28 @@ private fun BuilderQueryOptionsAndJoins(
     tableNamesByAlias: Map<String, String>,
     modifier: Modifier = Modifier,
 ) {
-    QueryOptionsCard(
-        distinct = queryViewModel.distinct,
-        onDistinctChange = queryViewModel::setDistinct,
-        groups = queryViewModel.groups,
-        sorts = queryViewModel.sorts,
-        distinctSortConflicts = queryViewModel.distinctSortConflicts,
-        onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
-        onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
-        onMoveGroup = queryViewModel::moveGroup,
-        onMoveSort = queryViewModel::moveSort,
-        tableNamesByAlias = tableNamesByAlias,
-        modifier = modifier,
-    )
-    if (queryViewModel.joins.isNotEmpty()) {
-        JoinItems(
-            joins = queryViewModel.joins,
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        QueryOptionsCard(
+            distinct = queryViewModel.distinct,
+            onDistinctChange = queryViewModel::setDistinct,
+            groups = queryViewModel.groups,
+            sorts = queryViewModel.sorts,
+            distinctSortConflicts = queryViewModel.distinctSortConflicts,
+            onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
+            onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
+            onMoveGroup = queryViewModel::moveGroup,
+            onMoveSort = queryViewModel::moveSort,
             tableNamesByAlias = tableNamesByAlias,
-            onRemove = queryViewModel::removeJoin,
-            modifier = modifier,
+            modifier = Modifier.fillMaxWidth(),
         )
+        if (queryViewModel.joins.isNotEmpty()) {
+            JoinItems(
+                joins = queryViewModel.joins,
+                tableNamesByAlias = tableNamesByAlias,
+                onRemove = queryViewModel::removeJoin,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

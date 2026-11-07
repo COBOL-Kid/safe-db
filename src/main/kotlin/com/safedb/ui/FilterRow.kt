@@ -95,7 +95,7 @@ fun FilterRow(
             modifier =
                 Modifier.fillMaxWidth()
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = FilterRowHorizontalPadding, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             itemVerticalAlignment = Alignment.CenterVertically,
@@ -195,68 +195,80 @@ fun FilterRow(
                 }
                 ValueKind.Pair -> {
                     val pair = filter.value as? FilterValue.Pair
-                    CompactTextInput(
-                        value = pair?.first?.text.orEmpty(),
-                        onValueChange = { text ->
-                            val first = pair?.first ?: FilterLiteral(LiteralKind.Text, "")
-                            val second = pair?.second ?: FilterLiteral(LiteralKind.Text, "")
-                            update(
-                                filter.copy(
-                                    value = FilterValue.Pair(first.copy(text = text), second)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CompactTextInput(
+                            value = pair?.first?.text.orEmpty(),
+                            onValueChange = { text ->
+                                val first = pair?.first ?: FilterLiteral(LiteralKind.Text, "")
+                                val second = pair?.second ?: FilterLiteral(LiteralKind.Text, "")
+                                update(
+                                    filter.copy(
+                                        value = FilterValue.Pair(first.copy(text = text), second)
+                                    )
                                 )
-                            )
-                        },
-                        modifier = Modifier.width(FILTER_PAIR_VALUE_WIDTH_DP.dp),
-                        placeholder = "from",
-                        contentDescription = "Filter value from ${filter.column}",
-                        focusRequester = if (shouldFocusValue) valueFocusRequester else null,
-                    )
-                    Text("and", style = MaterialTheme.typography.labelSmall)
-                    CompactTextInput(
-                        value = pair?.second?.text.orEmpty(),
-                        onValueChange = { text ->
-                            val first = pair?.first ?: FilterLiteral(LiteralKind.Text, "")
-                            val second = pair?.second ?: FilterLiteral(LiteralKind.Text, "")
-                            update(
-                                filter.copy(
-                                    value = FilterValue.Pair(first, second.copy(text = text))
+                            },
+                            modifier = Modifier.width(FILTER_PAIR_VALUE_WIDTH_DP.dp),
+                            placeholder = "from",
+                            contentDescription = "Filter value from ${filter.column}",
+                            focusRequester = if (shouldFocusValue) valueFocusRequester else null,
+                        )
+                        Text("and", style = MaterialTheme.typography.labelSmall)
+                        CompactTextInput(
+                            value = pair?.second?.text.orEmpty(),
+                            onValueChange = { text ->
+                                val first = pair?.first ?: FilterLiteral(LiteralKind.Text, "")
+                                val second = pair?.second ?: FilterLiteral(LiteralKind.Text, "")
+                                update(
+                                    filter.copy(
+                                        value = FilterValue.Pair(first, second.copy(text = text))
+                                    )
                                 )
-                            )
-                        },
-                        modifier = Modifier.width(FILTER_PAIR_VALUE_WIDTH_DP.dp),
-                        placeholder = "to",
-                        contentDescription = "Filter value to ${filter.column}",
-                    )
+                            },
+                            modifier = Modifier.width(FILTER_PAIR_VALUE_WIDTH_DP.dp),
+                            placeholder = "to",
+                            contentDescription = "Filter value to ${filter.column}",
+                        )
+                    }
                 }
                 ValueKind.List -> {
                     val listValue = filter.value as? FilterValue.ListValue
-                    // Emit list inputs directly so the parent FlowRow controls wrapping.
+                    // Each input and its remove action form one FlowRow item, so wrapping never
+                    // splits a value from the button that deletes it.
                     listValue?.literals?.forEachIndexed { index, literal ->
-                        CompactTextInput(
-                            value = literal.text,
-                            onValueChange = { text ->
-                                val items =
-                                    listValue.literals.mapIndexed { i, lit ->
-                                        if (i == index) lit.copy(text = text) else lit
-                                    }
-                                update(filter.copy(value = FilterValue.ListValue(items)))
-                            },
-                            modifier = Modifier.width(FILTER_LIST_VALUE_WIDTH_DP.dp),
-                            placeholder = "value",
-                            contentDescription = "Filter value ${index + 1} for ${filter.column}",
-                            focusRequester =
-                                if (shouldFocusValue && index == 0) valueFocusRequester else null,
-                        )
-                        if ((listValue.literals.size) > 1) {
-                            CompactIconButton(
-                                contentDescription = "Remove value",
-                                onClick = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CompactTextInput(
+                                value = literal.text,
+                                onValueChange = { text ->
                                     val items =
-                                        listValue.literals.filterIndexed { i, _ -> i != index }
+                                        listValue.literals.mapIndexed { i, lit ->
+                                            if (i == index) lit.copy(text = text) else lit
+                                        }
                                     update(filter.copy(value = FilterValue.ListValue(items)))
                                 },
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Remove value")
+                                modifier = Modifier.width(FILTER_LIST_VALUE_WIDTH_DP.dp),
+                                placeholder = "value",
+                                contentDescription =
+                                    "Filter value ${index + 1} for ${filter.column}",
+                                focusRequester =
+                                    if (shouldFocusValue && index == 0) valueFocusRequester
+                                    else null,
+                            )
+                            if ((listValue.literals.size) > 1) {
+                                val removeDescription =
+                                    "Remove value ${index + 1} for ${filter.column}"
+                                CompactIconButton(
+                                    contentDescription = removeDescription,
+                                    onClick = {
+                                        val items =
+                                            listValue.literals.filterIndexed { i, _ -> i != index }
+                                        update(filter.copy(value = FilterValue.ListValue(items)))
+                                    },
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = null)
+                                }
                             }
                         }
                     }
@@ -469,6 +481,9 @@ private fun extractPair(value: FilterValue?): Pair<String, String> {
 
 // Space-separated timestamps such as "2025-07-03 09:12:00" are 19 characters.
 internal const val FILTER_SINGLE_VALUE_WIDTH_DP = 176
+internal val FilterRowHorizontalPadding = 8.dp
+internal val FilterRowMinValueWidth =
+    (FILTER_SINGLE_VALUE_WIDTH_DP + 2 * FilterRowHorizontalPadding.value).dp
 internal const val FILTER_TABLE_DROPDOWN_WIDTH_DP = 152
 internal const val FILTER_COLUMN_DROPDOWN_WIDTH_DP = 140
 private const val FILTER_OP_DROPDOWN_WIDTH_DP = 100

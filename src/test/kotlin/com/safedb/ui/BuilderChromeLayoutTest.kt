@@ -4,10 +4,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.use
-import com.safedb.APP_DEFAULT_WINDOW_HEIGHT_PX
-import com.safedb.APP_DEFAULT_WINDOW_WIDTH_PX
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
+import com.safedb.APP_DEFAULT_WINDOW_HEIGHT_DP
+import com.safedb.APP_DEFAULT_WINDOW_WIDTH_DP
 import com.safedb.APP_MIN_WINDOW_HEIGHT_PX
 import com.safedb.APP_MIN_WINDOW_WIDTH_PX
 import com.safedb.AppRoute
@@ -21,11 +21,14 @@ import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterOp
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
+import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
+import com.safedb.model.SortDirection
+import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.service.QueryRunRequest
@@ -104,12 +107,12 @@ class BuilderChromeLayoutTest {
     @Test
     fun filterChipsStayCompleteAtDefaultWidthWithSidebarExpanded() {
         withBuilderChrome(
-            width = APP_DEFAULT_WINDOW_WIDTH_PX,
-            height = APP_DEFAULT_WINDOW_HEIGHT_PX,
+            width = APP_DEFAULT_WINDOW_WIDTH_DP,
+            height = APP_DEFAULT_WINDOW_HEIGHT_DP,
             sidebarExpanded = true,
             prepare = { _, viewModel -> addCustomerFilters(viewModel) },
         ) { scene ->
-            assertFilterChromeReadable(scene, APP_DEFAULT_WINDOW_WIDTH_PX)
+            assertFilterChromeReadable(scene, APP_DEFAULT_WINDOW_WIDTH_DP)
         }
     }
 
@@ -140,6 +143,68 @@ class BuilderChromeLayoutTest {
             assertTrue(ran, "Run did not execute the builder query")
             assertNotNull(scene.findContaining("15 rows"))
         }
+    }
+
+    @Test
+    fun queryOptionsAndJoinsStayReachableAtTheMinimumWindow() {
+        withBuilderChrome(
+            width = APP_MIN_WINDOW_WIDTH_PX,
+            height = APP_MIN_WINDOW_HEIGHT_PX,
+            sidebarExpanded = true,
+            prepare = { _, viewModel ->
+                viewModel.query.addTable(customersTable)
+                viewModel.query.addTable(ordersTable)
+                viewModel.query.addJoin(JoinSpec("t0", "id", "t1", "customer_id"))
+                viewModel.query.addFilter(
+                    FilterSpec(
+                        id = "f-name",
+                        tableAlias = "t0",
+                        column = "full_name",
+                        op = FilterOp.Eq,
+                        value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "alice")),
+                    )
+                )
+                viewModel.query.setSorts(listOf(SortSpec("t0", "full_name", SortDirection.Asc)))
+            },
+        ) { scene ->
+            val options = scene.requireExact("Query options")
+            assertTrue(
+                options.boundsInRoot.height >= 100f,
+                "Query options card was not laid out: ${options.boundsInRoot}",
+            )
+            val filters = scene.requireContaining("Query filters")
+            assertTrue(
+                filters.boundsInRoot.height > 0f,
+                "Query filters were clipped away: ${filters.boundsInRoot}",
+            )
+
+            val overlay = scene.requireByTag("builder-start-overlay")
+            scene.scrollOverlayDown()
+            assertTrue(
+                options.boundsInRoot.bottom <= overlay.boundsInRoot.bottom + 1f,
+                "Query options ${options.boundsInRoot} stayed below the overlay ${overlay.boundsInRoot}",
+            )
+
+            val canvasTable = scene.requireExact("Move customers table")
+            assertTrue(
+                canvasTable.boundsInRoot.bottom > 0f &&
+                    canvasTable.boundsInRoot.top < APP_MIN_WINDOW_HEIGHT_PX,
+                "canvas table was pushed off-screen: ${canvasTable.boundsInRoot}",
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun ImageComposeScene.scrollOverlayDown() {
+    val overlay = requireByTag("builder-start-overlay")
+    repeat(6) {
+        sendPointerEvent(
+            PointerEventType.Scroll,
+            overlay.boundsInRoot.center,
+            scrollDelta = Offset(0f, 20f),
+        )
+        render(100_000_000L)
     }
 }
 
@@ -204,18 +269,12 @@ private fun assertFilterChromeReadable(scene: ImageComposeScene, sceneWidth: Int
     assertNotNull(scene.findContaining("carol"))
     val timestamp = scene.requireContaining("Filter value for created_at")
     assertNotNull(scene.findContaining("2025-07-03 09:12:00"))
+    // "2025-07-03 09:12:00" at 12sp monospace needs ~168px after the field's inner padding.
     assertTrue(
-        timestamp.boundsInRoot.width >= FILTER_SINGLE_VALUE_WIDTH_DP - 8,
+        timestamp.boundsInRoot.width >= 168f,
         "timestamp field was ${timestamp.boundsInRoot.width}px",
     )
-    val overflows =
-        scene.allSemanticsNodes().filter {
-            it.boundsInRoot.left < -0.5f || it.boundsInRoot.right > sceneWidth + 0.5f
-        }
-    assertTrue(
-        overflows.isEmpty(),
-        "nodes overflowed ${sceneWidth}px: ${overflows.map { "${it.label()} ${it.boundsInRoot}" }}",
-    )
+    scene.assertNoHorizontalOverflow(sceneWidth)
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -236,7 +295,10 @@ private fun withBuilderChrome(
         viewModel.schema.load("c2", selection = selection) { loaded ->
             if (loaded) prepare(appState, viewModel)
         }
-        ImageComposeScene(width = width, height = height, density = Density(1f)) {
+        withComposeScene(
+            width = width,
+            height = height,
+            content = {
                 SafeDbTheme(isDark = false) {
                     val activeConnectionId by appState.activeConnectionId.collectAsState()
                     val connections by viewModel.connections.connections.collectAsState()
@@ -256,11 +318,9 @@ private fun withBuilderChrome(
                         onSidebarCollapsedChange = {},
                     )
                 }
-            }
-            .use { scene ->
-                scene.render(0L)
-                body(scene)
-            }
+            },
+            body = body,
+        )
     } finally {
         viewModel.close()
     }

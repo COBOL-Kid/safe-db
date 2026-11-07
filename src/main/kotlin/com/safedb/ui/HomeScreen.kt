@@ -186,8 +186,7 @@ fun HomeScreen(
                 ) {
                     items(savedQueries, key = { it.id }) { query ->
                         SavedQueryCard(
-                            id = query.id,
-                            name = query.name,
+                            query = query,
                             subtitle =
                                 "${viewModel.connections.connectionName(query.connectionId)} · " +
                                     "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
@@ -282,20 +281,19 @@ private fun QuickLinkCard(
 
 @Composable
 private fun SavedQueryCard(
-    id: String,
-    name: String,
+    query: com.safedb.model.SavedQuery,
     subtitle: String,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    AppCard(modifier = Modifier.testTag("saved-query-$id")) {
+    AppCard(modifier = Modifier.testTag("saved-query-${query.id}")) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f).clickable(onClick = onOpen)) {
                 Text(
-                    name,
+                    query.name,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )

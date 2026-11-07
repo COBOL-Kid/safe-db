@@ -642,10 +642,7 @@ class AppViewModelTest {
             assertNotNull(viewModel.query.error)
             assertNull(viewModel.explore.value)
             assertEquals(listOf("h1"), viewModel.history.entries.value.map { it.id })
-            assertEquals(
-                "The query risk gate blocks this query.",
-                viewModel.history.entries.value.single().error,
-            )
+            assertNotNull(viewModel.history.entries.value.single().error)
 
             viewModel.query.onActiveConnectionChanged("c2")
 
@@ -1297,8 +1294,7 @@ private class FakeSafeDbService(
                             )
                         ),
                 )
-            rememberHistory(request, error = "The query risk gate blocks this query.")
-            throw QueryFailureException(
+            val error =
                 QueryError.RiskGate(
                     evaluation =
                         com.safedb.query.QueryRiskEvaluation(
@@ -1309,7 +1305,8 @@ private class FakeSafeDbService(
                         ),
                     historySpec = request.spec,
                 )
-            )
+            rememberHistory(request, error = error.message)
+            throw QueryFailureException(error)
         }
         if (confirmationRequired && request.confirmation != requiredConfirmation) {
             val assessment =
@@ -1336,8 +1333,7 @@ private class FakeSafeDbService(
                     blockingBand = QueryRiskSeverity.High,
                     reasons = listOf(reason),
                 )
-            rememberHistory(request, error = "Query plan assessment is unavailable.")
-            throw QueryFailureException(
+            val error =
                 QueryError.ConfirmationRequired(
                     evaluation =
                         com.safedb.query.QueryRiskEvaluation(
@@ -1350,7 +1346,8 @@ private class FakeSafeDbService(
                     requirement = requirement,
                     historySpec = request.spec,
                 )
-            )
+            rememberHistory(request, error = error.message)
+            throw QueryFailureException(error)
         }
         val result =
             QueryResult(

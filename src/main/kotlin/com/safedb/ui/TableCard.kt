@@ -62,9 +62,12 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -279,7 +282,10 @@ fun TableCard(
                                                     queryViewModel.toggleColumn(alias, columnName)
                                                 }
                                             },
-                                        ),
+                                        )
+                                        .semantics {
+                                            contentDescription = "$columnName, $columnDataType"
+                                        },
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 CompactSelectionIndicator(
@@ -481,9 +487,12 @@ private fun ColumnNameCell(
             Text(
                 columnName,
                 style = DataMono.copy(fontWeight = FontWeight.Medium),
-                // Keep the name and type as separate semantics nodes instead of merging them
-                // into the clickable row, so each remains independently addressable.
-                modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {},
+                // The clickable row owns the single accessible label; tags keep the visual texts
+                // addressable in tests without announcing them separately.
+                modifier =
+                    Modifier.weight(1f).clearAndSetSemantics {
+                        testTag = "column-name-$columnName"
+                    },
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
@@ -496,9 +505,9 @@ private fun ColumnNameCell(
                         fontWeight = FontWeight.Medium,
                     ),
                 modifier =
-                    Modifier.padding(start = 6.dp).weight(0.45f, fill = false).semantics(
-                        mergeDescendants = true
-                    ) {},
+                    Modifier.padding(start = 6.dp).clearAndSetSemantics {
+                        testTag = "column-type-$columnName"
+                    },
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
@@ -506,9 +515,7 @@ private fun ColumnNameCell(
         } else {
             Box(
                 modifier =
-                    Modifier.weight(1f).semantics {
-                        contentDescription = "$columnName, $columnDataType"
-                    }
+                    Modifier.weight(1f).clearAndSetSemantics { testTag = "column-name-$columnName" }
             ) {
                 TooltipBox(
                     positionProvider =
@@ -537,7 +544,9 @@ internal const val TABLE_CARD_COLUMN_ACTION_COUNT = 3
 
 // CANVAS_CARD_WIDTH (248dp) leaves room for a readable column name without showing the type,
 // so types only appear once the card is wide enough for both.
-internal const val TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP = 300f
+// Budget at the reveal threshold: 141dp chrome (row padding 10 + action cluster 84 + join slot 28
+// + indicator 13 + cell padding 6) + ~65dp type + 72dp name.
+internal const val TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP = 350f
 internal const val TABLE_CARD_COLUMN_NAME_MIN_WIDTH_DP = 72
 
 internal fun tableColumnActionClusterWidthDp(): Int =

@@ -302,7 +302,7 @@ fun SettingsPanel(
                             modifier = Modifier.padding(bottom = 8.dp),
                         )
                         ModeToggle(
-                            isDark = settings.theme == "dark",
+                            isDark = settings.isDark(),
                             onSelect = viewModel::setDarkMode,
                         )
                         Text(
@@ -313,7 +313,7 @@ fun SettingsPanel(
                         )
                         ColorSchemePicker(
                             selected = settings.palette(),
-                            isDark = settings.theme == "dark",
+                            isDark = settings.isDark(),
                             onSelect = viewModel::setColorScheme,
                         )
                     }

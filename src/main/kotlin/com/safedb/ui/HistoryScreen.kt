@@ -67,7 +67,7 @@ fun HistoryScreen(
     val historyError by viewModel.history.error.collectAsState()
     val savedQueryError by viewModel.savedQueries.error.collectAsState()
     var showClearConfirm by remember { mutableStateOf(false) }
-    var deleteTargetId by remember { mutableStateOf<String?>(null) }
+    var pendingDelete by remember { mutableStateOf<HistoryEntry?>(null) }
     var showSavePrompt by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
     var saveEntry by remember { mutableStateOf<HistoryEntry?>(null) }
@@ -83,15 +83,16 @@ fun HistoryScreen(
     )
 
     ConfirmDialog(
-        open = deleteTargetId != null,
+        open = pendingDelete != null,
         title = "Delete history entry?",
         message = "This query will be removed from history. This cannot be undone.",
         destructive = true,
         onConfirm = {
-            val id = deleteTargetId
-            if (id != null) viewModel.history.delete(id) { deleteTargetId = null }
+            pendingDelete?.let { entry ->
+                viewModel.history.delete(entry.id) { pendingDelete = null }
+            }
         },
-        onCancel = { deleteTargetId = null },
+        onCancel = { pendingDelete = null },
     )
 
     PromptDialog(
@@ -193,7 +194,7 @@ fun HistoryScreen(
                                 saveQueryName = "${entry.connectionName} query"
                                 showSavePrompt = true
                             },
-                            onDelete = { deleteTargetId = entry.id },
+                            onDelete = { pendingDelete = entry },
                         )
                     }
                 }
@@ -263,7 +264,8 @@ private fun HistoryEntryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DeleteIconButton(
                     onClick = onDelete,
-                    contentDescription = "Delete history entry for ${entry.connectionName}",
+                    contentDescription =
+                        "Delete ${entry.connectionName} query from ${formatTime(entry.timestamp)}",
                 )
                 if (entry.error == null) {
                     IconButton(onClick = onSave) {

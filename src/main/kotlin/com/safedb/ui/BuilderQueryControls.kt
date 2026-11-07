@@ -103,13 +103,8 @@ internal val QueryOptionsOverlayEndPadding =
 internal val JoinItemsMaxHeight = 88.dp
 internal val BuilderSchemaBrowserWidth = 288.dp
 internal val BuilderSchemaBrowserDividerWidth = 1.dp
-internal val BuilderFilterOverlayMinWidth = (FILTER_SINGLE_VALUE_WIDTH_DP + 16).dp
-internal val BUILDER_TOOLBAR_CONNECTION_MIN_WIDTH = 160.dp
-
-internal fun builderCanvasWidth(windowWidth: Dp, sidebarExpanded: Boolean): Dp {
-    val sidebar = if (sidebarExpanded) ExpandedSidebarWidth else CollapsedSidebarWidth
-    return windowWidth - sidebar - BuilderSchemaBrowserWidth - BuilderSchemaBrowserDividerWidth
-}
+internal val BuilderFilterOverlayMinWidth = FilterRowMinValueWidth
+internal val BuilderToolbarConnectionMinWidth = 160.dp
 
 internal fun builderStackQueryOverlays(canvasWidth: Dp): Boolean =
     canvasWidth - QueryControlsStartPadding - QueryOptionsOverlayEndPadding <
@@ -265,35 +260,7 @@ internal fun QueryOptionsCard(
     }
 
     Surface(
-        modifier =
-            modifier.semantics {
-                val groupingDescription =
-                    groupLabels
-                        .mapIndexed { index, label -> "${index + 1} $label" }
-                        .joinToString(prefix = "Grouping order: ")
-                val sortingDescription =
-                    sortOrderLabels(sorts, tableNamesByAlias)
-                        .mapIndexed { index, label -> "${index + 1} $label" }
-                        .joinToString(prefix = "Sorting order: ")
-                contentDescription =
-                    buildList {
-                            add("Distinct rows: ${if (distinct) "on" else "off"}")
-                            add(
-                                groupingDescription.takeIf { groups.isNotEmpty() }
-                                    ?: "Grouping order: none"
-                            )
-                            add(
-                                sortingDescription.takeIf { sorts.isNotEmpty() }
-                                    ?: "Sorting order: none"
-                            )
-                            if (distinctSortConflicts.isNotEmpty()) {
-                                add(
-                                    "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}"
-                                )
-                            }
-                        }
-                        .joinToString(". ")
-            },
+        modifier = modifier.semantics { contentDescription = "Query options" },
         shape = RoundedCornerShape(4.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -301,7 +268,35 @@ internal fun QueryOptionsCard(
     ) {
         Column(
             modifier =
-                Modifier.heightIn(max = QueryControlsMaxHeight)
+                Modifier.semantics {
+                        val groupingDescription =
+                            groupLabels
+                                .mapIndexed { index, label -> "${index + 1} $label" }
+                                .joinToString(prefix = "Grouping order: ")
+                        val sortingDescription =
+                            sortOrderLabels(sorts, tableNamesByAlias)
+                                .mapIndexed { index, label -> "${index + 1} $label" }
+                                .joinToString(prefix = "Sorting order: ")
+                        contentDescription =
+                            buildList {
+                                    add("Distinct rows: ${if (distinct) "on" else "off"}")
+                                    add(
+                                        groupingDescription.takeIf { groups.isNotEmpty() }
+                                            ?: "Grouping order: none"
+                                    )
+                                    add(
+                                        sortingDescription.takeIf { sorts.isNotEmpty() }
+                                            ?: "Sorting order: none"
+                                    )
+                                    if (distinctSortConflicts.isNotEmpty()) {
+                                        add(
+                                            "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}"
+                                        )
+                                    }
+                                }
+                                .joinToString(". ")
+                    }
+                    .heightIn(max = QueryControlsMaxHeight)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 10.dp, vertical = 8.dp)
         ) {

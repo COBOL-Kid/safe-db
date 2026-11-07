@@ -546,7 +546,7 @@ class ViewModelsTest {
         }
 
     @Test
-    fun historyViewModelDeletesOneEntry() =
+    fun historyDeleteRemovesEntryAndSettlesAfterSuccess() =
         runTest(dispatcher) {
             val service = RecordingSafeDbService()
             val scope = TestScope(dispatcher)
@@ -554,53 +554,19 @@ class ViewModelsTest {
 
             viewModel.refresh()
             advanceUntilIdle()
-            assertEquals(listOf("h1", "h2"), viewModel.entries.value.map { it.id })
 
-            viewModel.delete("h1")
+            var settled = false
+            viewModel.delete("h1") { settled = true }
             advanceUntilIdle()
+
+            assertTrue(settled)
             assertEquals(listOf("h2"), viewModel.entries.value.map { it.id })
             assertEquals(listOf("h1"), service.deletedHistoryIds)
-        }
-
-    @Test
-    fun historyDeleteFailurePreservesEntries() =
-        runTest(dispatcher) {
-            val service = RecordingSafeDbService().apply { failHistoryDelete = true }
-            val scope = TestScope(dispatcher)
-            val viewModel = HistoryViewModel(service, scope)
-
-            viewModel.refresh()
-            advanceUntilIdle()
-
-            viewModel.delete("h1")
-            advanceUntilIdle()
-
-            assertEquals(listOf("h1", "h2"), viewModel.entries.value.map { it.id })
-            assertEquals("history delete failed", viewModel.error.value)
-            assertTrue(service.deletedHistoryIds.isEmpty())
-        }
-
-    @Test
-    fun historyDeleteCompletesAfterSuccess() =
-        runTest(dispatcher) {
-            val service = RecordingSafeDbService()
-            val scope = TestScope(dispatcher)
-            val viewModel = HistoryViewModel(service, scope)
-
-            viewModel.refresh()
-            advanceUntilIdle()
-
-            var completed = false
-            viewModel.delete("h1") { completed = true }
-            advanceUntilIdle()
-
-            assertTrue(completed)
-            assertEquals(listOf("h2"), viewModel.entries.value.map { it.id })
             assertNull(viewModel.error.value)
         }
 
     @Test
-    fun historyDeleteCompletesAfterFailureAndPreservesEntries() =
+    fun historyDeleteSettlesAfterFailureAndPreservesEntries() =
         runTest(dispatcher) {
             val service = RecordingSafeDbService().apply { failHistoryDelete = true }
             val scope = TestScope(dispatcher)
@@ -609,11 +575,11 @@ class ViewModelsTest {
             viewModel.refresh()
             advanceUntilIdle()
 
-            var completed = false
-            viewModel.delete("h1") { completed = true }
+            var settled = false
+            viewModel.delete("h1") { settled = true }
             advanceUntilIdle()
 
-            assertTrue(completed)
+            assertTrue(settled)
             assertEquals(listOf("h1", "h2"), viewModel.entries.value.map { it.id })
             assertEquals("history delete failed", viewModel.error.value)
             assertTrue(service.deletedHistoryIds.isEmpty())

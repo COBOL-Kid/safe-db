@@ -10,10 +10,8 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.use
-import com.safedb.canvas.CANVAS_FIELD_BODY_PADDING_Y
 import com.safedb.canvas.CANVAS_HEADER_HEIGHT
 import com.safedb.canvas.CANVAS_RESIZE_FOOTER_HEIGHT
-import com.safedb.canvas.CANVAS_ROW_HEIGHT
 import com.safedb.canvas.CanvasPoint
 import com.safedb.canvas.CanvasTableLike
 import com.safedb.canvas.routeJoinEdge
@@ -87,9 +85,19 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(joinTargetCenter(viewModel.canvasTables[0], rowIndex = 0))
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("customer_id", selectingTarget = false))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(100_000_000L)
-                scene.click(joinTargetCenter(viewModel.canvasTables[1], rowIndex = 0))
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("id", selectingTarget = true))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(200_000_000L)
             }
 
@@ -151,9 +159,19 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(joinTargetCenter(viewModel.canvasTables[0], rowIndex = 0, zoom = 0.5f))
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("customer_id", selectingTarget = false))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(100_000_000L)
-                scene.click(joinTargetCenter(viewModel.canvasTables[1], rowIndex = 0, zoom = 0.5f))
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("id", selectingTarget = true))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(200_000_000L)
             }
 
@@ -516,49 +534,6 @@ private fun ImageComposeScene.drag(from: Offset, to: Offset) {
     render(30_000_000L)
     sendPointerEvent(PointerEventType.Release, to, button = PointerButton.Primary)
 }
-
-// TableCard right-aligns a fixed action area in every column row: the filter/group/sort cluster
-// followed by the join slot. The row also reserves 4.dp of end padding (see TableCard's
-// `padding(start = 6.dp, top = 2.dp, end = 4.dp, bottom = 2.dp)`).
-private const val TABLE_CARD_ROW_END_PADDING_DP = 4f
-private const val TABLE_CARD_HEADER_DIVIDER_DP = 1f
-
-private fun CanvasTable.asCanvasTableLike(): CanvasTableLike =
-    CanvasTableLike(
-        alias = alias,
-        x = x,
-        y = y,
-        width = width,
-        height = height,
-        tableInfo = tableInfo,
-    )
-
-// Column rows are (CANVAS_ROW_HEIGHT - 1.dp) tall and followed by a 1.dp divider, so their pitch
-// is exactly CANVAS_ROW_HEIGHT. Row content starts CANVAS_FIELD_BODY_PADDING_Y below the header.
-private fun columnRowCenterY(table: CanvasTable, rowIndex: Int): Float {
-    val bounds = tableBounds(table.asCanvasTableLike())
-    return bounds.top +
-        CANVAS_HEADER_HEIGHT +
-        TABLE_CARD_HEADER_DIVIDER_DP +
-        CANVAS_FIELD_BODY_PADDING_Y +
-        rowIndex * CANVAS_ROW_HEIGHT +
-        (CANVAS_ROW_HEIGHT - 1f) / 2f
-}
-
-private fun joinActionCenterX(table: CanvasTable): Float {
-    val bounds = tableBounds(table.asCanvasTableLike())
-    val clusterWidth = tableColumnActionClusterWidthDp()
-    val actionAreaWidth = clusterWidth + TABLE_CARD_COLUMN_ACTION_SLOT_DP
-    val actionAreaLeft = bounds.right - TABLE_CARD_ROW_END_PADDING_DP - actionAreaWidth
-    // The join button is the slot immediately after the three-slot action cluster.
-    return actionAreaLeft + clusterWidth + TABLE_CARD_COLUMN_ACTION_SLOT_DP / 2f
-}
-
-private fun joinTargetCenter(table: CanvasTable, rowIndex: Int, zoom: Float = 1f): Offset =
-    Offset(
-        x = joinActionCenterX(table) * zoom,
-        y = columnRowCenterY(table, rowIndex) * zoom,
-    )
 
 // The scrollbar test composes TableCard directly, so the card's screen origin is (0, 0) instead
 // of its canvas position. Its vertical scrollbar sits just inside the body's right edge.

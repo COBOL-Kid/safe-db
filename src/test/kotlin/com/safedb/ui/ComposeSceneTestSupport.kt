@@ -1,5 +1,6 @@
 package com.safedb.ui
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.geometry.Offset
@@ -7,20 +8,40 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
-import kotlin.math.abs
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.use
+import com.safedb.model.FilterGroup
+import com.safedb.model.QuerySpec
+import com.safedb.model.TableRef
+import kotlin.test.assertTrue
 
 private const val SETTLE_FRAME_NANOS = 50_000_000L
 
-internal fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> {
-    val nodes = mutableListOf<SemanticsNode>()
-    for (owner in semanticsOwners) {
-        fun walk(node: SemanticsNode) {
-            nodes += node
-            node.children.forEach(::walk)
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun withComposeScene(
+    width: Int,
+    height: Int,
+    content: @Composable () -> Unit,
+    body: (ImageComposeScene) -> Unit,
+) {
+    ImageComposeScene(width = width, height = height, density = Density(1f), content = content)
+        .use { scene ->
+            scene.render(0L)
+            body(scene)
         }
-        walk(owner.rootSemanticsNode)
-    }
-    return nodes
+}
+
+internal fun sampleQuerySpec() =
+    QuerySpec(
+        tables = listOf(TableRef("public", "orders", "t0")),
+        columns = emptyList(),
+        joins = emptyList(),
+        filters = FilterGroup.empty(),
+        limit = 100,
+    )
+
+internal fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> = semanticsOwners.flatMap {
+    it.rootSemanticsNode.descendants()
 }
 
 internal fun SemanticsNode.label(): String {
@@ -97,13 +118,15 @@ internal fun ImageComposeScene.settle() {
     render(SETTLE_FRAME_NANOS)
 }
 
-internal fun ImageComposeScene.clickActionNear(anchorText: String, actionLabel: String) {
-    val anchor = requireContaining(anchorText)
-    val action =
-        nodesLabeled(actionLabel).minBy {
-            abs(it.boundsInRoot.center.y - anchor.boundsInRoot.center.y)
+internal fun ImageComposeScene.assertNoHorizontalOverflow(sceneWidth: Int) {
+    val overflows =
+        allSemanticsNodes().filter {
+            it.boundsInRoot.left < -0.5f || it.boundsInRoot.right > sceneWidth + 0.5f
         }
-    click(action.boundsInRoot.center)
+    assertTrue(
+        overflows.isEmpty(),
+        "nodes overflowed ${sceneWidth}px: ${overflows.map { "${it.label()} ${it.boundsInRoot}" }}",
+    )
 }
 
 // Scope the lookup to one card so a layout change cannot silently click a neighbouring row.

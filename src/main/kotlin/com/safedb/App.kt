@@ -47,7 +47,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
     val connections by viewModel.connections.connections.collectAsState()
     val initialLoading by viewModel.initialLoading.collectAsState()
     val activeConnectionId by appState.activeConnectionId.collectAsState()
-    val useDarkTheme = settings.theme == "dark"
+    val useDarkTheme = settings.isDark()
     val themePalette = settings.palette()
     var paletteOpen by remember { mutableStateOf(false) }
     // Parsed here rather than in SqlScreen so an open Explore window keeps seeing the current
@@ -218,8 +218,8 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
 fun runApp(appState: AppState, service: SafeDbService) = application {
     val windowState =
         rememberWindowState(
-            width = APP_DEFAULT_WINDOW_WIDTH_PX.dp,
-            height = APP_DEFAULT_WINDOW_HEIGHT_PX.dp,
+            width = APP_DEFAULT_WINDOW_WIDTH_DP.dp,
+            height = APP_DEFAULT_WINDOW_HEIGHT_DP.dp,
         )
 
     Window(
@@ -238,7 +238,9 @@ fun runApp(appState: AppState, service: SafeDbService) = application {
     }
 }
 
+// Minimum window size is physical pixels passed to Dimension(...); tests render at density 1, so
+// these values match the scene width/height they exercise.
 internal const val APP_MIN_WINDOW_WIDTH_PX = 960
 internal const val APP_MIN_WINDOW_HEIGHT_PX = 600
-internal const val APP_DEFAULT_WINDOW_WIDTH_PX = 1280
-internal const val APP_DEFAULT_WINDOW_HEIGHT_PX = 832
+internal const val APP_DEFAULT_WINDOW_WIDTH_DP = 1280
+internal const val APP_DEFAULT_WINDOW_HEIGHT_DP = 832

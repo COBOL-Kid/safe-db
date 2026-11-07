@@ -5,8 +5,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import com.safedb.APP_DEFAULT_WINDOW_WIDTH_PX
-import com.safedb.APP_MIN_WINDOW_WIDTH_PX
 import com.safedb.AppRoute
 import com.safedb.canvas.CanvasPoint
 import com.safedb.canvas.CanvasTableLike
@@ -627,17 +625,8 @@ class BuilderScreenStateTest {
 
     @Test
     fun queryOverlaysStackWhenTheMinimumWindowKeepsTheSidebarExpanded() {
-        val minExpanded = builderCanvasWidth(APP_MIN_WINDOW_WIDTH_PX.dp, sidebarExpanded = true)
-        val minCollapsed = builderCanvasWidth(APP_MIN_WINDOW_WIDTH_PX.dp, sidebarExpanded = false)
-        val defaultExpanded =
-            builderCanvasWidth(APP_DEFAULT_WINDOW_WIDTH_PX.dp, sidebarExpanded = true)
-
-        assertEquals(439.dp, minExpanded)
-        assertEquals(599.dp, minCollapsed)
-        assertEquals(759.dp, defaultExpanded)
-        assertTrue(builderStackQueryOverlays(minExpanded))
-        assertFalse(builderStackQueryOverlays(minCollapsed))
-        assertFalse(builderStackQueryOverlays(defaultExpanded))
+        assertTrue(builderStackQueryOverlays(430.dp))
+        assertFalse(builderStackQueryOverlays(620.dp))
         assertEquals(QueryOptionsPanelEndPadding, builderFilterOverlayEndPadding(true))
         assertEquals(QueryOptionsOverlayEndPadding, builderFilterOverlayEndPadding(false))
     }

@@ -171,7 +171,7 @@ internal fun AppShellContent(
     val schemaHistoryError by viewModel.settings.schemaHistoryError.collectAsState()
     val connections by viewModel.connections.connections.collectAsState()
     val recipeApplyNotice by viewModel.recipeApplyNotice.collectAsState()
-    val isDark = settings.theme == "dark"
+    val isDark = settings.isDark()
     val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
     val rawSchemaHandlers =
         remember(settings, activeConnectionId) {

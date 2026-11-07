@@ -36,10 +36,9 @@ class TableCardStateTest {
 
     @Test
     fun defaultCanvasWidthHidesColumnTypesSoNamesStayReadable() {
-        assertTrue(CANVAS_CARD_WIDTH < TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP)
-        assertEquals(false, tableCardShowsColumnType(CANVAS_CARD_WIDTH))
-        assertEquals(false, tableCardShowsColumnType(TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP - 1))
-        assertEquals(true, tableCardShowsColumnType(TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP))
-        assertEquals(true, tableCardShowsColumnType(320f))
+        assertTrue(CANVAS_CARD_WIDTH < 350f)
+        assertEquals(false, tableCardShowsColumnType(349f))
+        assertEquals(true, tableCardShowsColumnType(350f))
+        assertEquals(true, tableCardShowsColumnType(351f))
     }
 }

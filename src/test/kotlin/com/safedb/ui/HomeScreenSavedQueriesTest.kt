@@ -2,15 +2,9 @@ package com.safedb.ui
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.use
-import com.safedb.AppRoute
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
-import com.safedb.model.FilterGroup
-import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
-import com.safedb.model.TableRef
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
@@ -133,8 +127,8 @@ class HomeScreenSavedQueriesTest {
 private class HomeScreenHarness(
     queries: MutableList<SavedQuery> =
         mutableListOf(
-            SavedQuery("q1", "Pending orders", "c1", sampleSavedSpec(), "1"),
-            SavedQuery("q2", "Revenue last 30 days", "c1", sampleSavedSpec(), "2"),
+            SavedQuery("q1", "Pending orders", "c1", sampleQuerySpec(), "1"),
+            SavedQuery("q2", "Revenue last 30 days", "c1", sampleQuerySpec(), "2"),
         )
 ) {
     val service = HomeScreenService(queries)
@@ -158,33 +152,24 @@ private class HomeScreenService(private val queries: MutableList<SavedQuery>) :
 private fun withHomeScreen(
     viewModel: AppViewModel,
     onOpenSavedQuery: (SavedQuery) -> Unit = {},
-    onNavigate: (AppRoute) -> Unit = {},
     body: (ImageComposeScene) -> Unit,
 ) {
-    ImageComposeScene(width = 1000, height = 900, density = Density(1f)) {
+    withComposeScene(
+        width = 1000,
+        height = 900,
+        content = {
             SafeDbTheme(isDark = false) {
                 HomeScreen(
                     viewModel = viewModel,
-                    onNavigate = onNavigate,
+                    onNavigate = {},
                     onNewConnection = {},
                     onOpenSavedQuery = onOpenSavedQuery,
                 )
             }
-        }
-        .use { scene ->
-            scene.render(0L)
-            body(scene)
-        }
-}
-
-private fun sampleSavedSpec() =
-    QuerySpec(
-        tables = listOf(TableRef("public", "orders", "t0")),
-        columns = emptyList(),
-        joins = emptyList(),
-        filters = FilterGroup.empty(),
-        limit = 100,
+        },
+        body = body,
     )
+}
 
 private val homeConnection =
     ConnectionDef(
