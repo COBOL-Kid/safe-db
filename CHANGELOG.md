@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- History lists queries as they complete in this session, without restarting the app.
+- Query Builder timestamp filter values stay readable, and table-card column names are no longer squeezed by type labels at the default canvas width.
 - New installs and missing `theme` settings default to light mode. Saved dark mode is unchanged.
 - The SQL tab no longer shows instructional copy when no connection is selected.
 - Individual History entries can be deleted without clearing the rest of the list.

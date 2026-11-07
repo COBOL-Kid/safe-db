@@ -10,14 +10,19 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
+import com.safedb.model.ColumnInfo
 import com.safedb.model.FilterGroup
 import com.safedb.model.HistoryEntry
+import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
+import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.service.FakeSafeDbServiceSupport
+import com.safedb.service.QueryRunRequest
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.queryRunResult
 import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -192,6 +197,35 @@ class HistoryScreenTest {
     }
 
     @Test
+    fun historyScreenShowsQueryCompletedDuringThisSession() {
+        val harness = HistoryScreenHarness(entries = mutableListOf())
+        try {
+            assertTrue(harness.viewModel.history.entries.value.isEmpty())
+            harness.viewModel.query.addTable(
+                TableInfo(
+                    schema = "public",
+                    name = "customers",
+                    columns =
+                        listOf(
+                            ColumnInfo("id", "bigint", nullable = false, isIndexed = true),
+                            ColumnInfo("email", "text", nullable = true),
+                        ),
+                    indexes = emptyList(),
+                )
+            )
+            harness.viewModel.query.run("c1")
+            withHistoryScreen(harness.viewModel) { scene ->
+                assertNotNull(scene.findExact("Local MySQL"))
+                assertNotNull(scene.findContaining("3 rows"))
+                assertNull(scene.findExact("No query history yet"))
+                assertEquals(1, harness.viewModel.history.entries.value.size)
+            }
+        } finally {
+            harness.viewModel.close()
+        }
+    }
+
+    @Test
     fun confirmingClearHistoryRemovesAllEntries() {
         val harness = HistoryScreenHarness()
         try {
@@ -241,6 +275,31 @@ private class HistoryScreenService(private val entries: MutableList<HistoryEntry
     }
 
     override suspend fun listSavedQueries() = saved.toList()
+
+    override suspend fun runQuery(request: QueryRunRequest) =
+        queryRunResult(
+                QueryResult(
+                    columns = emptyList(),
+                    rows = emptyList(),
+                    rowCount = 3,
+                    truncated = false,
+                    warnings = emptyList(),
+                )
+            )
+            .also {
+                entries.add(
+                    0,
+                    HistoryEntry(
+                        id = "run-${entries.size + 1}",
+                        connectionId = request.connectionId,
+                        connectionName = "Local MySQL",
+                        spec = request.spec,
+                        rowCount = 3,
+                        warnings = emptyList(),
+                        timestamp = "1",
+                    ),
+                )
+            }
 }
 
 private fun withHistoryScreen(

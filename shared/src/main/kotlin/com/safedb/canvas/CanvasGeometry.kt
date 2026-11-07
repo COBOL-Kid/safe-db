@@ -15,7 +15,7 @@ data class CanvasTableLike(
     val tableInfo: TableInfo,
 )
 
-const val CANVAS_CARD_WIDTH = 224f
+const val CANVAS_CARD_WIDTH = 248f
 const val CANVAS_CARD_HEIGHT = 224f
 const val CANVAS_HEADER_HEIGHT = 50f
 const val CANVAS_ROW_HEIGHT = 34f

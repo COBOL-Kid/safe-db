@@ -82,7 +82,7 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(246f, 71f)
+                scene.click(270f, 71f)
                 scene.render(100_000_000L)
                 scene.click(450f, 71f)
                 scene.render(200_000_000L)
@@ -102,7 +102,7 @@ class CanvasInteractionTest {
         val canvasTable = viewModel.canvasTables.single()
         val fieldScrollState = ScrollState(0)
 
-        ImageComposeScene(width = 280, height = 280, density = Density(1f)) {
+        ImageComposeScene(width = 300, height = 280, density = Density(1f)) {
                 SafeDbTheme(isDark = false) {
                     TableCard(
                         canvasTable = canvasTable,
@@ -124,7 +124,7 @@ class CanvasInteractionTest {
                 scene.render(0L)
                 assertTrue(fieldScrollState.maxValue > 0)
                 assertEquals(0, fieldScrollState.value)
-                scene.drag(Offset(220f, 80f), Offset(220f, 160f))
+                scene.drag(Offset(244f, 80f), Offset(244f, 160f))
                 scene.render(100_000_000L)
             }
 
@@ -145,7 +145,7 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(123f, 35.5f)
+                scene.click(135f, 35.5f)
                 scene.render(100_000_000L)
                 scene.click(283f, 35.5f)
                 scene.render(200_000_000L)

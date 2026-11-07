@@ -31,4 +31,12 @@ class TableCardStateTest {
         assertEquals(3, TABLE_CARD_COLUMN_ACTION_COUNT)
         assertEquals(84, tableColumnActionClusterWidthDp())
     }
+
+    @Test
+    fun defaultCanvasWidthHidesColumnTypesSoNamesStayReadable() {
+        assertEquals(false, tableCardShowsColumnType(247f))
+        assertEquals(false, tableCardShowsColumnType(299f))
+        assertEquals(true, tableCardShowsColumnType(TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH))
+        assertEquals(true, tableCardShowsColumnType(320f))
+    }
 }
