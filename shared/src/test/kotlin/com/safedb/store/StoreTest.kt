@@ -352,6 +352,19 @@ class StoreTest {
     }
 
     @Test
+    fun queryStoreDeletesOneHistoryEntryAndIgnoresUnknownId() {
+        val dir = tempDir()
+        val store = QueryStore.new(dir)
+        store.addHistory(sampleHistory("h1"))
+        store.addHistory(sampleHistory("h2"))
+        store.deleteHistory("h1")
+        assertEquals(listOf("h2"), store.listHistory().map { it.id })
+        store.deleteHistory("missing")
+        assertEquals(listOf("h2"), store.listHistory().map { it.id })
+        assertTrue(Files.readString(dir.resolve("query_history.json")).contains("h2"))
+    }
+
+    @Test
     fun settingsStoreDefaultsAndRoundTrip() {
         val dir = tempDir()
         val store = SettingsStore.new(dir)

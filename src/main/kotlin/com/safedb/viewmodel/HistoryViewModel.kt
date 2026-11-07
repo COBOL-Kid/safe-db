@@ -35,4 +35,13 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
             }
         }
     }
+
+    fun delete(id: String) {
+        scope.launch {
+            capturingFailure(_error) {
+                service.deleteHistoryEntry(id)
+                _entries.value = service.listHistory()
+            }
+        }
+    }
 }

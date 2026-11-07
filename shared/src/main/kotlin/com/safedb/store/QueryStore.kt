@@ -79,6 +79,15 @@ private constructor(
         lock.withLock { writeJsonList(historyPath, emptyList(), HistoryEntry.serializer()) }
     }
 
+    fun deleteHistory(id: String) {
+        lock.withLock {
+            val history =
+                readValid(historyPath, HistoryEntry.serializer()) { it.spec.schemaVersion }
+                    .filterNot { it.id == id }
+            writeJsonList(historyPath, history, HistoryEntry.serializer())
+        }
+    }
+
     private fun requireCurrentSchema(schemaVersion: Int) {
         require(schemaVersion == CURRENT_SCHEMA_VERSION) {
             "Unsupported query schema version $schemaVersion; expected $CURRENT_SCHEMA_VERSION"

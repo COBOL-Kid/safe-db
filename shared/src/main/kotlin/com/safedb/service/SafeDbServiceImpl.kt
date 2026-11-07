@@ -247,6 +247,8 @@ internal constructor(
 
     override suspend fun clearHistory() = queryStore.clearHistory()
 
+    override suspend fun deleteHistoryEntry(id: String) = queryStore.deleteHistory(id)
+
     override suspend fun getSettings(): Settings = settingsStore.load()
 
     override suspend fun saveSettings(settings: Settings) = settingsStore.save(settings)

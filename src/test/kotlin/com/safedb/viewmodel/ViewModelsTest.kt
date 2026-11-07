@@ -246,7 +246,7 @@ class ViewModelsTest {
 
             viewModel.refresh()
             advanceUntilIdle()
-            assertEquals(1, viewModel.entries.value.size)
+            assertEquals(2, viewModel.entries.value.size)
 
             viewModel.clear()
             advanceUntilIdle()
@@ -534,7 +534,7 @@ class ViewModelsTest {
             advanceUntilIdle()
 
             assertFalse(completed)
-            assertEquals(1, viewModel.entries.value.size)
+            assertEquals(2, viewModel.entries.value.size)
             assertEquals("history clear failed", viewModel.error.value)
 
             service.failHistoryClear = false
@@ -543,6 +543,41 @@ class ViewModelsTest {
             assertTrue(completed)
             assertTrue(viewModel.entries.value.isEmpty())
             assertNull(viewModel.error.value)
+        }
+
+    @Test
+    fun historyViewModelDeletesOneEntry() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val scope = TestScope(dispatcher)
+            val viewModel = HistoryViewModel(service, scope)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+            assertEquals(listOf("h1", "h2"), viewModel.entries.value.map { it.id })
+
+            viewModel.delete("h1")
+            advanceUntilIdle()
+            assertEquals(listOf("h2"), viewModel.entries.value.map { it.id })
+            assertEquals(listOf("h1"), service.deletedHistoryIds)
+        }
+
+    @Test
+    fun historyDeleteFailurePreservesEntries() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService().apply { failHistoryDelete = true }
+            val scope = TestScope(dispatcher)
+            val viewModel = HistoryViewModel(service, scope)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            viewModel.delete("h1")
+            advanceUntilIdle()
+
+            assertEquals(listOf("h1", "h2"), viewModel.entries.value.map { it.id })
+            assertEquals("history delete failed", viewModel.error.value)
+            assertTrue(service.deletedHistoryIds.isEmpty())
         }
 
     @Test
@@ -588,6 +623,8 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     val deletedIds = mutableListOf<String>()
     val deletedSavedIds = mutableListOf<String>()
     var historyCleared = false
+    val deletedHistoryIds = mutableListOf<String>()
+    var failHistoryDelete = false
     var savedSettings: Settings? = null
     var failHistoryClear = false
     var failSavedMutation = false
@@ -677,16 +714,31 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         if (historyCleared) emptyList()
         else
             listOf(
-                HistoryEntry(
-                    "h1",
-                    "c1",
-                    "Local MySQL",
-                    emptyQuerySpec(),
-                    3,
-                    emptyList(),
-                    timestamp = "1",
+                    HistoryEntry(
+                        "h1",
+                        "c1",
+                        "Local MySQL",
+                        emptyQuerySpec(),
+                        3,
+                        emptyList(),
+                        timestamp = "1",
+                    ),
+                    HistoryEntry(
+                        "h2",
+                        "c1",
+                        "Local MySQL",
+                        emptyQuerySpec(),
+                        3,
+                        emptyList(),
+                        timestamp = "2",
+                    ),
                 )
-            )
+                .filter { it.id !in deletedHistoryIds }
+
+    override suspend fun deleteHistoryEntry(id: String) {
+        if (failHistoryDelete) error("history delete failed")
+        deletedHistoryIds.add(id)
+    }
 
     override suspend fun clearHistory() {
         if (failHistoryClear) error("history clear failed")

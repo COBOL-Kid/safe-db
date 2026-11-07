@@ -37,6 +37,7 @@ import com.safedb.model.SavedQuery
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
+import com.safedb.ui.components.DeleteIconButton
 import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
@@ -65,6 +66,7 @@ fun HistoryScreen(
     val historyError by viewModel.history.error.collectAsState()
     val savedQueryError by viewModel.savedQueries.error.collectAsState()
     var showClearConfirm by remember { mutableStateOf(false) }
+    var deleteTargetId by remember { mutableStateOf<String?>(null) }
     var showSavePrompt by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
     var saveEntry by remember { mutableStateOf<HistoryEntry?>(null) }
@@ -77,6 +79,18 @@ fun HistoryScreen(
         confirmLabel = "Clear",
         onConfirm = { viewModel.history.clear { showClearConfirm = false } },
         onCancel = { showClearConfirm = false },
+    )
+
+    ConfirmDialog(
+        open = deleteTargetId != null,
+        title = "Delete history entry?",
+        message = "This query will be removed from history. This cannot be undone.",
+        destructive = true,
+        onConfirm = {
+            deleteTargetId?.let(viewModel.history::delete)
+            deleteTargetId = null
+        },
+        onCancel = { deleteTargetId = null },
     )
 
     PromptDialog(
@@ -178,6 +192,7 @@ fun HistoryScreen(
                                 saveQueryName = "${entry.connectionName} query"
                                 showSavePrompt = true
                             },
+                            onDelete = { deleteTargetId = entry.id },
                         )
                     }
                 }
@@ -186,7 +201,12 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun HistoryEntryCard(entry: HistoryEntry, onRerun: () -> Unit, onSave: () -> Unit) {
+private fun HistoryEntryCard(
+    entry: HistoryEntry,
+    onRerun: () -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit,
+) {
     AppCard {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -240,6 +260,10 @@ private fun HistoryEntryCard(entry: HistoryEntry, onRerun: () -> Unit, onSave: (
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DeleteIconButton(
+                    onClick = onDelete,
+                    contentDescription = "Delete history entry",
+                )
                 if (entry.error == null) {
                     IconButton(onClick = onSave) {
                         Icon(

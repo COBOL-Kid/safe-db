@@ -66,6 +66,8 @@ internal class DispatchingSafeDbService(
 
     override suspend fun clearHistory() = onIo(delegate::clearHistory)
 
+    override suspend fun deleteHistoryEntry(id: String) = onIo { delegate.deleteHistoryEntry(id) }
+
     override suspend fun getSettings(): Settings = onIo(delegate::getSettings)
 
     override suspend fun saveSettings(settings: Settings) = onIo { delegate.saveSettings(settings) }
