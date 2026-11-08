@@ -488,6 +488,7 @@ internal val FilterRowMinValueWidth =
     (FILTER_SINGLE_VALUE_WIDTH_DP + 2 * FilterRowHorizontalPadding.value).dp
 internal const val FILTER_TABLE_DROPDOWN_WIDTH_DP = 152
 internal const val FILTER_COLUMN_DROPDOWN_WIDTH_DP = 140
-private const val FILTER_OP_DROPDOWN_WIDTH_DP = 100
+// "Op:" + BETWEEN + the dropdown arrow need this width; shorter labels still ellipsize.
+internal const val FILTER_OP_DROPDOWN_WIDTH_DP = 128
 private const val FILTER_LIST_VALUE_WIDTH_DP = 96
 private const val FILTER_BOOL_VALUE_WIDTH_DP = 80

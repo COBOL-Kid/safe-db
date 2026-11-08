@@ -17,13 +17,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -41,7 +38,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,9 +48,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -112,9 +105,6 @@ internal fun BuilderScreen(
     var resultsHeight by remember { mutableFloatStateOf(RESULTS_PANE_DEFAULT_HEIGHT) }
     var resultsPaneMode by remember { mutableStateOf(ResultsPaneMode.Normal) }
     var resizing by remember { mutableStateOf(false) }
-    var startControlsHeightPx by remember { mutableIntStateOf(0) }
-    var optionControlsHeightPx by remember { mutableIntStateOf(0) }
-    val density = LocalDensity.current
     val limitChoices = BUILDER_LIMIT_CHOICES
     val schema = schemaViewModel.schema
     val preliminaryRisk =
@@ -353,8 +343,6 @@ internal fun BuilderScreen(
                             queryViewModel.clear()
                             resultsPaneMode = ResultsPaneMode.Normal
                             resultsHeight = RESULTS_PANE_DEFAULT_HEIGHT
-                            startControlsHeightPx = 0
-                            optionControlsHeightPx = 0
                         },
                         modifier = Modifier.wrapContentWidth(),
                     ) {
@@ -493,12 +481,6 @@ internal fun BuilderScreen(
                 BoxWithConstraints(
                     modifier = Modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas)
                 ) {
-                    val canvasWidth = maxWidth
-                    val stackedChromeMaxHeight =
-                        minOf(
-                            QueryControlsMaxHeight * 2f + QueryStartOverlayGap,
-                            maxHeight * 0.6f,
-                        )
                     val maxWorkspaceHeight = maxHeight.value.coerceAtLeast(ResultsPaneMinHeight)
                     val maxNormalHeight =
                         maxWorkspaceHeight
@@ -538,7 +520,9 @@ internal fun BuilderScreen(
                                 }
                             }
 
-                            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            BoxWithConstraints(
+                                modifier = Modifier.weight(1f).fillMaxWidth()
+                            ) canvasWorkspace@{
                                 if (queryViewModel.canvasTables.isEmpty()) {
                                     Box(
                                         modifier = Modifier.fillMaxSize(),
@@ -550,144 +534,19 @@ internal fun BuilderScreen(
                                         )
                                     }
                                 } else {
-                                    val startOverlayVisible =
-                                        showLargeLimitGuidance || queryViewModel.filterCount > 0
-                                    val stackOverlays =
-                                        startOverlayVisible &&
-                                            builderStackQueryOverlays(canvasWidth)
-                                    Canvas(
-                                        queryViewModel = queryViewModel,
-                                        contentTopInset =
-                                            queryControlsCanvasInset(
-                                                with(density) {
-                                                    queryControlsHeightPx(
-                                                            startOverlayVisible =
-                                                                startOverlayVisible,
-                                                            startOverlayHeightPx =
-                                                                startControlsHeightPx,
-                                                            optionHeightPx =
-                                                                if (stackOverlays) {
-                                                                    0
-                                                                } else {
-                                                                    optionControlsHeightPx
-                                                                },
-                                                        )
-                                                        .toDp()
-                                                }
-                                            ),
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                    val tableNamesByAlias =
-                                        queryViewModel.canvasTables.associate {
-                                            it.alias to it.tableInfo.name
-                                        }
-                                    // Keep controls as separate aligned siblings (no full-width
-                                    // empty parent) so dashed join-line clicks reach the
-                                    // canvas. Banner and filters share TopStart padding in one
-                                    // column so the strip cannot paint over hydration, recipe,
-                                    // or maximized results. At the 960×600 minimum the reserved
-                                    // options column would starve filters, so that chrome stacks
-                                    // in the start overlay instead of clipping chips.
-                                    if (startOverlayVisible) {
-                                        Column(
-                                            modifier =
-                                                Modifier.align(Alignment.TopStart)
-                                                    .padding(
-                                                        start = QueryControlsStartPadding,
-                                                        top = QueryControlsVerticalPadding,
-                                                        end =
-                                                            builderFilterOverlayEndPadding(
-                                                                stackOverlays
-                                                            ),
-                                                    )
-                                                    .fillMaxWidth()
-                                                    .then(
-                                                        if (stackOverlays) {
-                                                            Modifier.heightIn(
-                                                                    max = stackedChromeMaxHeight
-                                                                )
-                                                                .verticalScroll(
-                                                                    rememberScrollState()
-                                                                )
-                                                                .testTag("builder-start-overlay")
-                                                        } else {
-                                                            Modifier
-                                                        }
-                                                    )
-                                                    .onSizeChanged {
-                                                        startControlsHeightPx = it.height
-                                                    },
-                                            verticalArrangement =
-                                                Arrangement.spacedBy(QueryStartOverlayGap),
-                                        ) {
-                                            if (showLargeLimitGuidance) {
-                                                MessageBanner(
-                                                    text = LARGE_LIMIT_GUIDANCE_TEXT,
-                                                    kind = BannerKind.INFO,
-                                                    modifier =
-                                                        Modifier.semantics {
-                                                            contentDescription =
-                                                                LARGE_LIMIT_GUIDANCE_TEXT
-                                                        },
-                                                )
-                                            }
-                                            if (queryViewModel.filterCount > 0) {
-                                                FilterGroupCard(
-                                                    queryViewModel = queryViewModel,
-                                                    group = queryViewModel.filters,
-                                                    path = emptyList(),
-                                                    depth = 0,
-                                                    modifier =
-                                                        Modifier.fillMaxWidth()
-                                                            .then(
-                                                                if (stackOverlays) {
-                                                                    Modifier
-                                                                } else {
-                                                                    Modifier.heightIn(
-                                                                            max =
-                                                                                QueryControlsMaxHeight
-                                                                        )
-                                                                        .verticalScroll(
-                                                                            rememberScrollState()
-                                                                        )
-                                                                }
-                                                            )
-                                                            .semantics {
-                                                                contentDescription = "Query filters"
-                                                            },
-                                                )
-                                            }
-                                            if (stackOverlays) {
-                                                BuilderQueryOptionsAndJoins(
-                                                    queryViewModel = queryViewModel,
-                                                    tableNamesByAlias = tableNamesByAlias,
-                                                    modifier =
-                                                        Modifier.widthIn(
-                                                                min = QueryOptionsPanelMinWidth,
-                                                                max = QueryOptionsPanelMaxWidth,
-                                                            )
-                                                            .align(Alignment.End),
-                                                )
-                                            }
-                                        }
-                                    }
-                                    if (!stackOverlays) {
-                                        BuilderQueryOptionsAndJoins(
+                                    // Filters occupy reserved space above the canvas so chips
+                                    // cannot paint over table cards. Query options stay on a
+                                    // non-scrolling row and open a dialog.
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        BuilderQueryChrome(
                                             queryViewModel = queryViewModel,
-                                            tableNamesByAlias = tableNamesByAlias,
-                                            modifier =
-                                                Modifier.align(Alignment.TopEnd)
-                                                    .padding(
-                                                        top = QueryControlsVerticalPadding,
-                                                        end = QueryOptionsPanelEndPadding,
-                                                    )
-                                                    .widthIn(
-                                                        min = QueryOptionsPanelMinWidth,
-                                                        max = QueryOptionsPanelMaxWidth,
-                                                    )
-                                                    .onSizeChanged {
-                                                        optionControlsHeightPx = it.height
-                                                    },
+                                            showLargeLimitGuidance = showLargeLimitGuidance,
+                                            workspaceHeight = this@canvasWorkspace.maxHeight,
+                                        )
+                                        Canvas(
+                                            queryViewModel = queryViewModel,
+                                            contentTopInset = 0.dp,
+                                            modifier = Modifier.weight(1f).fillMaxWidth(),
                                         )
                                     }
                                 }
@@ -836,37 +695,6 @@ private fun ResultsPaneResizeBar(
                 contentDescription = label,
                 tint = pillContent,
                 modifier = Modifier.width(18.dp).height(18.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun BuilderQueryOptionsAndJoins(
-    queryViewModel: QueryViewModel,
-    tableNamesByAlias: Map<String, String>,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        QueryOptionsCard(
-            distinct = queryViewModel.distinct,
-            onDistinctChange = queryViewModel::setDistinct,
-            groups = queryViewModel.groups,
-            sorts = queryViewModel.sorts,
-            distinctSortConflicts = queryViewModel.distinctSortConflicts,
-            onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
-            onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
-            onMoveGroup = queryViewModel::moveGroup,
-            onMoveSort = queryViewModel::moveSort,
-            tableNamesByAlias = tableNamesByAlias,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (queryViewModel.joins.isNotEmpty()) {
-            JoinItems(
-                joins = queryViewModel.joins,
-                tableNamesByAlias = tableNamesByAlias,
-                onRemove = queryViewModel::removeJoin,
-                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

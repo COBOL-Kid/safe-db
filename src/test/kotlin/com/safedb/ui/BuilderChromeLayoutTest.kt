@@ -4,8 +4,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerEventType
 import com.safedb.APP_DEFAULT_WINDOW_HEIGHT_DP
 import com.safedb.APP_DEFAULT_WINDOW_WIDTH_DP
 import com.safedb.APP_MIN_WINDOW_HEIGHT_PX
@@ -38,6 +36,7 @@ import com.safedb.viewmodel.queryRunResult
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
@@ -208,7 +207,7 @@ class BuilderChromeLayoutTest {
     }
 
     @Test
-    fun queryOptionsAndJoinsStayReachableAtTheMinimumWindow() {
+    fun queryOptionsStayReachableAtTheMinimumWindow() {
         withBuilderChrome(
             width = APP_MIN_WINDOW_WIDTH_PX,
             height = APP_MIN_WINDOW_HEIGHT_PX,
@@ -229,23 +228,29 @@ class BuilderChromeLayoutTest {
                 viewModel.query.setSorts(listOf(SortSpec("t0", "full_name", SortDirection.Asc)))
             },
         ) { scene ->
-            val options = scene.requireExact("Query options")
+            val options = scene.requireByTag("builder-query-options")
             assertTrue(
-                options.boundsInRoot.height >= 100f,
-                "Query options card was not laid out: ${options.boundsInRoot}",
+                options.isInsideWindow(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX),
+                "Query options button was not reachable: ${options.boundsInRoot}",
             )
             val filters = scene.requireContaining("Query filters")
             assertTrue(
                 filters.boundsInRoot.height > 0f,
                 "Query filters were clipped away: ${filters.boundsInRoot}",
             )
-
-            val overlay = scene.requireByTag("builder-start-overlay")
-            scene.scrollOverlayDown()
             assertTrue(
-                options.boundsInRoot.bottom <= overlay.boundsInRoot.bottom + 1f,
-                "Query options ${options.boundsInRoot} stayed below the overlay ${overlay.boundsInRoot}",
+                filters.boundsInRoot.bottom <= options.boundsInRoot.top + 0.5f,
+                "Query options ${options.boundsInRoot} was inside the scrolling filters ${filters.boundsInRoot}",
             )
+
+            scene.click(options.boundsInRoot.center)
+            scene.settle()
+            val distinct = scene.requireContaining("Distinct rows")
+            assertTrue(
+                distinct.isInsideWindow(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX),
+                "Query options dialog was not reachable: ${distinct.boundsInRoot}",
+            )
+            assertNotNull(scene.findContaining("join: customers.id = orders.customer_id"))
 
             val canvasTable = scene.requireExact("Move customers table")
             assertTrue(
@@ -255,18 +260,148 @@ class BuilderChromeLayoutTest {
             )
         }
     }
-}
 
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.scrollOverlayDown() {
-    val overlay = requireByTag("builder-start-overlay")
-    repeat(6) {
-        sendPointerEvent(
-            PointerEventType.Scroll,
-            overlay.boundsInRoot.center,
-            scrollDelta = Offset(0f, 20f),
-        )
-        render(100_000_000L)
+    @Test
+    fun stackedBetweenAndInFiltersDoNotOverlapCanvasTables() {
+        listOf(
+                APP_MIN_WINDOW_WIDTH_PX to APP_MIN_WINDOW_HEIGHT_PX,
+                APP_DEFAULT_WINDOW_WIDTH_DP to APP_DEFAULT_WINDOW_HEIGHT_DP,
+            )
+            .forEach { (width, height) ->
+                listOf(true, false).forEach { sidebarExpanded ->
+                    withBuilderChrome(
+                        width = width,
+                        height = height,
+                        sidebarExpanded = sidebarExpanded,
+                        prepare = { _, viewModel -> addBetweenAndInFilters(viewModel) },
+                    ) { scene ->
+                        assertStackedFiltersUsable(
+                            scene,
+                            width = width,
+                            height = height,
+                            sidebarExpanded = sidebarExpanded,
+                        )
+                    }
+                }
+            }
+    }
+
+    @Test
+    fun betweenOperatorLabelFitsAtDefaultAndMinimumWidth() {
+        listOf(
+                APP_MIN_WINDOW_WIDTH_PX to APP_MIN_WINDOW_HEIGHT_PX,
+                APP_DEFAULT_WINDOW_WIDTH_DP to APP_DEFAULT_WINDOW_HEIGHT_DP,
+            )
+            .forEach { (width, height) ->
+                listOf(true, false).forEach { sidebarExpanded ->
+                    withBuilderChrome(
+                        width = width,
+                        height = height,
+                        sidebarExpanded = sidebarExpanded,
+                        prepare = { _, viewModel -> addBetweenAndInFilters(viewModel) },
+                    ) { scene ->
+                        val between = scene.requireContaining("BETWEEN")
+                        assertTrue(
+                            between.boundsInRoot.width >= BETWEEN_OP_LABEL_MIN_WIDTH_PX,
+                            "BETWEEN was truncated to ${between.boundsInRoot.width}px at ${width}x${height} " +
+                                "sidebarExpanded=$sidebarExpanded",
+                        )
+                    }
+                }
+            }
+    }
+
+    @Test
+    fun stackedFiltersStayReachableAfterResultsOpen() {
+        listOf(true, false).forEach { sidebarExpanded ->
+            withBuilderChrome(
+                width = APP_MIN_WINDOW_WIDTH_PX,
+                height = APP_MIN_WINDOW_HEIGHT_PX,
+                sidebarExpanded = sidebarExpanded,
+                prepare = { _, viewModel ->
+                    addBetweenAndInFilters(viewModel)
+                    viewModel.query.run("c2")
+                },
+            ) { scene ->
+                scene.settle()
+                assertNotNull(scene.findContaining("15 rows"))
+                val detail = "after results at 960x600 sidebarExpanded=$sidebarExpanded"
+                val filters = scene.requireByTag("builder-filter-panel")
+                val options = scene.requireByTag("builder-query-options")
+                val orders = scene.requireExact("Move orders table")
+                assertTrue(
+                    filters.boundsInRoot.height >= BuilderFilterPanelMinHeight.value,
+                    "filters collapsed $detail: ${filters.boundsInRoot}",
+                )
+                assertTrue(
+                    options.isInsideWindow(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX),
+                    "Query options was not reachable $detail: ${options.boundsInRoot}",
+                )
+                assertTrue(
+                    filters.boundsInRoot.bottom <= options.boundsInRoot.top + 0.5f,
+                    "Query options was inside the scrolling filters $detail: " +
+                        "options=${options.boundsInRoot} filters=${filters.boundsInRoot}",
+                )
+                assertFalse(
+                    rectsOverlap(filters.boundsInRoot, orders.boundsInRoot),
+                    "filters overlapped orders $detail: filters=${filters.boundsInRoot} " +
+                        "orders=${orders.boundsInRoot}",
+                )
+                scene.click(options.boundsInRoot.center)
+                scene.settle()
+                val distinct = scene.requireExact("Distinct rows")
+                assertTrue(
+                    distinct.isInsideWindow(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX),
+                    "Query options dialog was not reachable $detail: ${distinct.boundsInRoot}",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun queryOptionsDialogAndInRemoveStayOperableAtTheMinimumWindow() {
+        withBuilderChrome(
+            width = APP_MIN_WINDOW_WIDTH_PX,
+            height = APP_MIN_WINDOW_HEIGHT_PX,
+            sidebarExpanded = true,
+            prepare = { _, viewModel -> addBetweenAndInFilters(viewModel) },
+        ) { scene ->
+            val options = scene.requireByTag("builder-query-options")
+            assertTrue(
+                options.isInsideWindow(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX),
+                "Query options button was not reachable: ${options.boundsInRoot}",
+            )
+            scene.click(options.boundsInRoot.center)
+            scene.settle()
+            val distinct = scene.requireExact("Distinct rows")
+            assertTrue(
+                distinct.isInsideWindow(APP_MIN_WINDOW_WIDTH_PX, APP_MIN_WINDOW_HEIGHT_PX),
+                "Distinct rows was not reachable: ${distinct.boundsInRoot}",
+            )
+            scene.click(distinct.boundsInRoot.center)
+            scene.settle()
+            assertNotNull(scene.findContaining("Distinct rows: on"))
+            scene.click(scene.requireExact("Close").boundsInRoot.center)
+            scene.settle()
+
+            val panel = scene.requireByTag("builder-filter-panel")
+            val lastRemove = scene.requireContaining("Remove value 6 for status")
+            var attempts = 0
+            while (!lastRemove.isVisibleInside(panel) && attempts < 24) {
+                scene.scrollTagged("builder-filter-panel", 40f, times = 1)
+                attempts++
+            }
+            assertTrue(
+                lastRemove.isVisibleInside(panel),
+                "IN remove was not reachable after scrolling: ${lastRemove.boundsInRoot} panel=${panel.boundsInRoot}",
+            )
+            scene.click(lastRemove.visibleBoundsIn(panel).center)
+            scene.settle()
+            assertTrue(
+                scene.findContaining("delivered") == null,
+                "removing the last IN value did not take effect",
+            )
+        }
     }
 }
 
@@ -337,6 +472,101 @@ private fun assertFilterChromeReadable(scene: ImageComposeScene, sceneWidth: Int
         "timestamp field was ${timestamp.boundsInRoot.width}px",
     )
     scene.assertNoHorizontalOverflow(sceneWidth)
+}
+
+private fun addBetweenAndInFilters(viewModel: AppViewModel) {
+    viewModel.query.addTable(customersTable)
+    viewModel.query.addTable(ordersTable)
+    viewModel.query.addFilter(
+        FilterSpec(
+            id = "f-between",
+            tableAlias = "t1",
+            column = "order_date",
+            op = FilterOp.Between,
+            value =
+                FilterValue.Pair(
+                    FilterLiteral(LiteralKind.DateTime, "2025-07-01 00:00:00"),
+                    FilterLiteral(LiteralKind.DateTime, "2025-07-31 23:59:59"),
+                ),
+        )
+    )
+    viewModel.query.addFilter(
+        FilterSpec(
+            id = "f-in-status",
+            tableAlias = "t1",
+            column = "status",
+            op = FilterOp.In,
+            value =
+                FilterValue.ListValue(
+                    listOf(
+                        FilterLiteral(LiteralKind.Text, "pending"),
+                        FilterLiteral(LiteralKind.Text, "shipped"),
+                        FilterLiteral(LiteralKind.Text, "returned"),
+                        FilterLiteral(LiteralKind.Text, "cancelled"),
+                        FilterLiteral(LiteralKind.Text, "held"),
+                        FilterLiteral(LiteralKind.Text, "delivered"),
+                    )
+                ),
+        )
+    )
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun assertStackedFiltersUsable(
+    scene: ImageComposeScene,
+    width: Int,
+    height: Int,
+    sidebarExpanded: Boolean,
+) {
+    val detail = "at ${width}x${height} sidebarExpanded=$sidebarExpanded"
+    val filters = scene.requireContaining("Query filters")
+    val options = scene.requireByTag("builder-query-options")
+    val orders = scene.requireExact("Move orders table")
+    val customers = scene.requireExact("Move customers table")
+    val chrome = scene.requireByTag("builder-query-chrome")
+
+    assertFalse(
+        rectsOverlap(filters.boundsInRoot, orders.boundsInRoot),
+        "filters overlapped orders $detail: filters=${filters.boundsInRoot} orders=${orders.boundsInRoot}",
+    )
+    assertFalse(
+        rectsOverlap(filters.boundsInRoot, customers.boundsInRoot),
+        "filters overlapped customers $detail: filters=${filters.boundsInRoot} customers=${customers.boundsInRoot}",
+    )
+    assertFalse(
+        rectsOverlap(chrome.boundsInRoot, orders.boundsInRoot),
+        "query chrome overlapped orders $detail: chrome=${chrome.boundsInRoot} orders=${orders.boundsInRoot}",
+    )
+    assertTrue(
+        options.isInsideWindow(width, height),
+        "Query options was not reachable $detail: ${options.boundsInRoot}",
+    )
+    assertTrue(
+        filters.boundsInRoot.bottom <= options.boundsInRoot.top + 0.5f,
+        "Query options was inside the scrolling filters $detail: options=${options.boundsInRoot} filters=${filters.boundsInRoot}",
+    )
+    assertTrue(
+        orders.boundsInRoot.bottom > 0f && orders.boundsInRoot.top < height - 40f,
+        "orders table was not usable $detail: ${orders.boundsInRoot}",
+    )
+    assertNotNull(scene.findContaining("2025-07-01 00:00:00"))
+    assertNotNull(scene.findContaining("2025-07-31 23:59:59"))
+    val from = scene.requireContaining("Filter value from order_date")
+    val to = scene.requireContaining("Filter value to order_date")
+    assertTrue(
+        from.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
+        "from field was ${from.boundsInRoot.width}px $detail",
+    )
+    assertTrue(
+        to.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
+        "to field was ${to.boundsInRoot.width}px $detail",
+    )
+    val between = scene.requireContaining("BETWEEN")
+    assertTrue(
+        between.boundsInRoot.width >= BETWEEN_OP_LABEL_MIN_WIDTH_PX,
+        "BETWEEN was truncated to ${between.boundsInRoot.width}px $detail",
+    )
+    scene.assertNoHorizontalOverflow(width)
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -445,6 +675,8 @@ private val ordersTable =
             listOf(
                 ColumnInfo("id", "bigint", nullable = false, isIndexed = true),
                 ColumnInfo("customer_id", "bigint", nullable = false, isIndexed = true),
+                ColumnInfo("order_date", "timestamp", nullable = true),
+                ColumnInfo("status", "text", nullable = true),
             ),
         indexes = emptyList(),
     )

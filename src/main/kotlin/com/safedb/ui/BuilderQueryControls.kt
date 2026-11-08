@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +29,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
@@ -48,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -57,6 +62,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -72,9 +78,14 @@ import com.safedb.model.SortSpec
 import com.safedb.query.DEFAULT_LIMIT
 import com.safedb.query.LARGE_LIMIT_WARNING_THRESHOLD
 import com.safedb.query.parseLimit
+import com.safedb.ui.components.BannerKind
+import com.safedb.ui.components.MessageBanner
+import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.theme.ChipShape
+import com.safedb.ui.theme.DialogShape
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.util.limitFieldText
+import com.safedb.viewmodel.QueryViewModel
 
 internal const val BUILDER_ALL_LIMIT_LABEL = "ALL"
 
@@ -91,42 +102,165 @@ internal fun commitBuilderLimitDraft(text: String): Int? {
 
 internal val QueryControlsMaxHeight = 208.dp
 internal val QueryControlsVerticalPadding = 8.dp
-internal val QueryControlsTableGap = 16.dp
 internal val QueryStartOverlayGap = 6.dp
 internal val QueryControlsStartPadding = 16.dp
 internal val QueryOptionsPanelMinWidth = 208.dp
 internal val QueryOptionsPanelMaxWidth = 256.dp
 internal val QueryOptionsPanelEndPadding = 16.dp
-internal val QueryOptionsPanelGap = 8.dp
-internal val QueryOptionsOverlayEndPadding =
-    QueryOptionsPanelEndPadding + QueryOptionsPanelMaxWidth + QueryOptionsPanelGap
 internal val JoinItemsMaxHeight = 88.dp
 internal val BuilderSchemaBrowserWidth = 288.dp
 internal val BuilderSchemaBrowserDividerWidth = 1.dp
-internal val BuilderFilterOverlayMinWidth = FilterRowMinValueWidth
 internal val BuilderToolbarConnectionMinWidth = 160.dp
+internal val BuilderQueryOptionsButtonReserve = 48.dp
+internal val BuilderFilterPanelMinHeight = 96.dp
 
-internal fun builderStackQueryOverlays(canvasWidth: Dp): Boolean =
-    canvasWidth - QueryControlsStartPadding - QueryOptionsOverlayEndPadding <
-        BuilderFilterOverlayMinWidth
+internal fun builderFilterPanelMaxHeight(workspaceHeight: Dp): Dp {
+    val budget =
+        (workspaceHeight - BuilderQueryOptionsButtonReserve - CANVAS_MIN_VISIBLE_CONTENT_PX.dp)
+            .coerceAtLeast(BuilderFilterPanelMinHeight)
+    return minOf(QueryControlsMaxHeight, budget)
+}
 
-internal fun builderFilterOverlayEndPadding(stackOverlays: Boolean): Dp =
-    if (stackOverlays) QueryOptionsPanelEndPadding else QueryOptionsOverlayEndPadding
+@Composable
+internal fun BuilderQueryChrome(
+    queryViewModel: QueryViewModel,
+    showLargeLimitGuidance: Boolean,
+    workspaceHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    var showQueryOptions by remember { mutableStateOf(false) }
+    val tableNamesByAlias = queryViewModel.canvasTables.associate { it.alias to it.tableInfo.name }
 
-internal val QueryControlsCanvasInset =
-    QueryControlsVerticalPadding + QueryControlsMaxHeight + QueryControlsTableGap
+    Column(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(SafeDbTheme.colors.workspacePanel)
+                    .padding(
+                        start = QueryControlsStartPadding,
+                        end = QueryOptionsPanelEndPadding,
+                        top = QueryControlsVerticalPadding,
+                        bottom = QueryControlsVerticalPadding,
+                    )
+                    .testTag("builder-query-chrome"),
+            verticalArrangement = Arrangement.spacedBy(QueryStartOverlayGap),
+        ) {
+            if (showLargeLimitGuidance) {
+                MessageBanner(
+                    text = LARGE_LIMIT_GUIDANCE_TEXT,
+                    kind = BannerKind.INFO,
+                    modifier =
+                        Modifier.semantics { contentDescription = LARGE_LIMIT_GUIDANCE_TEXT },
+                )
+            }
+            if (queryViewModel.filterCount > 0) {
+                val filterPanelHeight = builderFilterPanelMaxHeight(workspaceHeight)
+                Box(
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .requiredHeightIn(
+                                min = BuilderFilterPanelMinHeight,
+                                max = filterPanelHeight,
+                            )
+                            .clipToBounds()
+                            .testTag("builder-filter-panel")
+                            .semantics { contentDescription = "Query filters" }
+                ) {
+                    FilterGroupCard(
+                        queryViewModel = queryViewModel,
+                        group = queryViewModel.filters,
+                        path = emptyList(),
+                        depth = 0,
+                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = { showQueryOptions = true },
+                    modifier = Modifier.testTag("builder-query-options"),
+                ) {
+                    Text("Query options", softWrap = false)
+                }
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
 
-internal fun queryControlsCanvasInset(measuredContentHeight: Dp) =
-    maxOf(
-        QueryControlsCanvasInset,
-        QueryControlsVerticalPadding + measuredContentHeight + QueryControlsTableGap,
+    BuilderQueryOptionsDialog(
+        open = showQueryOptions,
+        onDismiss = { showQueryOptions = false },
+        queryViewModel = queryViewModel,
+        tableNamesByAlias = tableNamesByAlias,
     )
+}
 
-internal fun queryControlsHeightPx(
-    startOverlayVisible: Boolean,
-    startOverlayHeightPx: Int,
-    optionHeightPx: Int,
-): Int = if (startOverlayVisible) maxOf(startOverlayHeightPx, optionHeightPx) else optionHeightPx
+@Composable
+internal fun BuilderQueryOptionsDialog(
+    open: Boolean,
+    onDismiss: () -> Unit,
+    queryViewModel: QueryViewModel,
+    tableNamesByAlias: Map<String, String>,
+) {
+    if (!open) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = DialogShape,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Query options", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            BuilderQueryOptionsAndJoins(
+                queryViewModel = queryViewModel,
+                tableNamesByAlias = tableNamesByAlias,
+                showHeading = false,
+                modifier =
+                    Modifier.widthIn(
+                            min = QueryOptionsPanelMinWidth,
+                            max = QueryOptionsPanelMaxWidth,
+                        )
+                        .testTag("builder-query-options-dialog"),
+            )
+        },
+        confirmButton = { SecondaryButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+internal fun BuilderQueryOptionsAndJoins(
+    queryViewModel: QueryViewModel,
+    tableNamesByAlias: Map<String, String>,
+    modifier: Modifier = Modifier,
+    showHeading: Boolean = true,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        QueryOptionsCard(
+            distinct = queryViewModel.distinct,
+            onDistinctChange = queryViewModel::setDistinct,
+            groups = queryViewModel.groups,
+            sorts = queryViewModel.sorts,
+            distinctSortConflicts = queryViewModel.distinctSortConflicts,
+            onSelectDistinctSortColumns = queryViewModel::selectDistinctSortColumns,
+            onRemoveDistinctSortConflicts = queryViewModel::removeDistinctSortConflicts,
+            onMoveGroup = queryViewModel::moveGroup,
+            onMoveSort = queryViewModel::moveSort,
+            tableNamesByAlias = tableNamesByAlias,
+            showHeading = showHeading,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (queryViewModel.joins.isNotEmpty()) {
+            JoinItems(
+                joins = queryViewModel.joins,
+                tableNamesByAlias = tableNamesByAlias,
+                onRemove = queryViewModel::removeJoin,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
 
 internal enum class ResultsPaneMode {
     Normal,
@@ -145,13 +279,24 @@ internal fun toggleResultsPane(mode: ResultsPaneMode, height: Float): ResultsPan
 internal const val RESULTS_PANE_DEFAULT_HEIGHT = 240f
 internal const val RESULTS_PANE_EXPANDED_MIN_HEIGHT = 320f
 
+internal val BuilderResultsArriveReservePx =
+    BuilderFilterPanelMinHeight.value +
+        BuilderQueryOptionsButtonReserve.value +
+        CANVAS_MIN_VISIBLE_CONTENT_PX +
+        QueryControlsVerticalPadding.value * 2 +
+        QueryStartOverlayGap.value
+
 internal fun resultsPaneHeightWhenResultsArrive(
     currentHeight: Float,
     workspaceHeight: Float,
 ): Float {
     val expanded = maxOf(RESULTS_PANE_EXPANDED_MIN_HEIGHT, workspaceHeight * 0.4f)
     val maxHeight = minOf(ResultsPaneMaxHeight, workspaceHeight.coerceAtLeast(ResultsPaneMinHeight))
-    return maxOf(currentHeight, expanded).coerceIn(ResultsPaneMinHeight, maxHeight)
+    val target = maxOf(currentHeight, expanded).coerceIn(ResultsPaneMinHeight, maxHeight)
+    if (currentHeight >= target) return target
+    val reservedMax =
+        (workspaceHeight - BuilderResultsArriveReservePx).coerceAtLeast(ResultsPaneMinHeight)
+    return minOf(target, reservedMax)
 }
 
 internal const val LARGE_LIMIT_GUIDANCE_TEXT =
@@ -242,6 +387,7 @@ internal fun QueryOptionsCard(
     onMoveSort: (Int, Int) -> Unit,
     tableNamesByAlias: Map<String, String>,
     modifier: Modifier = Modifier,
+    showHeading: Boolean = true,
 ) {
     val distinctInteractionSource = remember { MutableInteractionSource() }
     val groupLabels = groupingOrderLabels(groups, tableNamesByAlias)
@@ -300,11 +446,13 @@ internal fun QueryOptionsCard(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 10.dp, vertical = 8.dp)
         ) {
-            Text(
-                "Query options",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            if (showHeading) {
+                Text(
+                    "Query options",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
             Row(
                 modifier =
                     Modifier.fillMaxWidth()

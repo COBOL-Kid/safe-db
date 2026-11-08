@@ -3,7 +3,6 @@ package com.safedb.ui
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
 import com.safedb.canvas.CanvasPoint
@@ -34,7 +33,6 @@ import com.safedb.viewmodel.canvasAxisScrollState
 import com.safedb.viewmodel.canvasConstrainedPan
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -257,12 +255,10 @@ class BuilderScreenStateTest {
     }
 
     @Test
-    fun queryControlsCanvasInsetScalesWithDisplayDensity() {
-        val insetPx = with(Density(2f)) { QueryControlsCanvasInset.toPx() }
-
-        assertEquals(464f, insetPx)
-        assertEquals(464f, canvasDisplayY(tableY = 0f, contentTopInsetPx = insetPx))
-        assertEquals(494f, canvasDisplayY(tableY = 30f, contentTopInsetPx = insetPx))
+    fun canvasDisplayYAddsTheContentTopInset() {
+        assertEquals(0f, canvasDisplayY(tableY = 0f, contentTopInsetPx = 0f))
+        assertEquals(464f, canvasDisplayY(tableY = 0f, contentTopInsetPx = 464f))
+        assertEquals(494f, canvasDisplayY(tableY = 30f, contentTopInsetPx = 464f))
     }
 
     @Test
@@ -280,55 +276,12 @@ class BuilderScreenStateTest {
     }
 
     @Test
-    fun queryControlsCanvasInsetKeepsBaselineAndExpandsForTallerOverlays() {
-        assertEquals(QueryControlsCanvasInset, queryControlsCanvasInset(120.dp))
-        assertEquals(324.dp, queryControlsCanvasInset(300.dp))
-    }
-
-    @Test
-    fun queryControlsHeightUsesTheTallestVisibleOverlay() {
-        assertEquals(
-            310,
-            queryControlsHeightPx(
-                startOverlayVisible = true,
-                startOverlayHeightPx = 208,
-                optionHeightPx = 310,
-            ),
-        )
-        assertEquals(
-            260,
-            queryControlsHeightPx(
-                startOverlayVisible = true,
-                startOverlayHeightPx = 260,
-                optionHeightPx = 208,
-            ),
-        )
-        assertEquals(
-            208,
-            queryControlsHeightPx(
-                startOverlayVisible = false,
-                startOverlayHeightPx = 310,
-                optionHeightPx = 208,
-            ),
-        )
-    }
-
-    @Test
-    fun queryControlsHeightIncludesStackedBannerAndFilters() {
-        val stackedHeight = 40.dp + QueryStartOverlayGap + QueryControlsMaxHeight
-        val stackedPx = with(Density(1f)) { stackedHeight.roundToPx() }
-        assertEquals(
-            stackedPx,
-            queryControlsHeightPx(
-                startOverlayVisible = true,
-                startOverlayHeightPx = stackedPx,
-                optionHeightPx = 208,
-            ),
-        )
-        assertEquals(
-            QueryControlsVerticalPadding + stackedHeight + QueryControlsTableGap,
-            queryControlsCanvasInset(stackedHeight),
-        )
+    fun filterPanelMaxHeightLeavesCanvasRoomThenCaps() {
+        assertEquals(QueryControlsMaxHeight, builderFilterPanelMaxHeight(1000.dp))
+        assertEquals(QueryControlsMaxHeight, builderFilterPanelMaxHeight(520.dp))
+        assertEquals(192.dp, builderFilterPanelMaxHeight(400.dp))
+        assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMaxHeight(200.dp))
+        assertEquals(BuilderFilterPanelMinHeight, builderFilterPanelMaxHeight(0.dp))
     }
 
     @Test
@@ -624,16 +577,11 @@ class BuilderScreenStateTest {
     }
 
     @Test
-    fun queryOverlaysStackWhenTheMinimumWindowKeepsTheSidebarExpanded() {
-        assertTrue(builderStackQueryOverlays(430.dp))
-        assertFalse(builderStackQueryOverlays(620.dp))
-        assertEquals(QueryOptionsPanelEndPadding, builderFilterOverlayEndPadding(true))
-        assertEquals(QueryOptionsOverlayEndPadding, builderFilterOverlayEndPadding(false))
-    }
-
-    @Test
     fun arrivingResultsExpandACollapsedPaneWithoutShrinkingATallerOne() {
-        assertEquals(320f, resultsPaneHeightWhenResultsArrive(240f, 600f))
+        assertEquals(
+            minOf(320f, (600f - BuilderResultsArriveReservePx).coerceAtLeast(ResultsPaneMinHeight)),
+            resultsPaneHeightWhenResultsArrive(240f, 600f),
+        )
         assertEquals(400f, resultsPaneHeightWhenResultsArrive(400f, 600f))
         assertEquals(128f, resultsPaneHeightWhenResultsArrive(240f, 128f))
     }

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.semantics.SemanticsNode
@@ -131,6 +132,46 @@ internal fun ImageComposeScene.assertNoHorizontalOverflow(sceneWidth: Int) {
 }
 
 internal const val TIMESTAMP_FIELD_MIN_WIDTH_PX = 168f
+
+// "BETWEEN" at 12sp needs about 52px; a 100dp Op dropdown left only ~40px and showed "BETW...".
+internal const val BETWEEN_OP_LABEL_MIN_WIDTH_PX = 52f
+
+internal fun rectsOverlap(a: Rect, b: Rect): Boolean =
+    a.left < b.right - 0.5f &&
+        a.right > b.left + 0.5f &&
+        a.top < b.bottom - 0.5f &&
+        a.bottom > b.top + 0.5f
+
+internal fun SemanticsNode.isInsideWindow(width: Int, height: Int, minSize: Float = 8f): Boolean {
+    val bounds = boundsInRoot
+    return bounds.width >= minSize &&
+        bounds.height >= minSize &&
+        bounds.left >= -0.5f &&
+        bounds.top >= -0.5f &&
+        bounds.right <= width + 0.5f &&
+        bounds.bottom <= height + 0.5f
+}
+
+internal fun SemanticsNode.visibleBoundsIn(clip: SemanticsNode): Rect =
+    boundsInRoot.intersect(clip.boundsInRoot)
+
+internal fun SemanticsNode.isVisibleInside(clip: SemanticsNode, minSize: Float = 8f): Boolean {
+    val visible = visibleBoundsIn(clip)
+    return visible.width >= minSize && visible.height >= minSize
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun ImageComposeScene.scrollTagged(tag: String, deltaY: Float, times: Int = 8) {
+    val node = requireByTag(tag)
+    repeat(times) {
+        sendPointerEvent(
+            PointerEventType.Scroll,
+            node.boundsInRoot.center,
+            scrollDelta = Offset(0f, deltaY),
+        )
+        render(100_000_000L)
+    }
+}
 
 internal fun assertBetweenRelationship(
     from: SemanticsNode,

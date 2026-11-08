@@ -7,6 +7,8 @@
 - Filter chips stay fully visible at the default window width with the sidebar expanded, including IN-list wrapping and timestamp values.
 - BETWEEN timestamp fields use the same readable width as single timestamps and keep from/and/to grouped when they wrap.
 - Query Builder Query Options and Joins stay reachable at the 960×600 minimum with the sidebar expanded instead of being squeezed out of the canvas.
+- Query Builder filters occupy a height-bounded scrolling strip above the canvas so IN chips cannot paint over table cards; Query Options stays on a non-scrolling button that opens a dialog.
+- Filter operator dropdowns keep BETWEEN and the arrow readable instead of truncating to "BETW...".
 - Table cards reveal column types once the card is wide enough, and the type label is no longer truncated at the reveal width.
 - Wrapped filter values keep their remove buttons on the same line, and BETWEEN inputs stay together.
 - Table-card column rows expose one accessible label per column toggle.

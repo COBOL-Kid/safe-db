@@ -103,6 +103,19 @@ class FilterRowLayoutTest {
     }
 
     @Test
+    fun betweenOperatorLabelFitsBesideTheDropdownArrow() {
+        listOf(360, 720).forEach { sceneWidth ->
+            withFilterRow(ordersTable, betweenFilter, sceneWidth) { scene ->
+                val between = scene.requireContaining("BETWEEN")
+                assertTrue(
+                    between.boundsInRoot.width >= BETWEEN_OP_LABEL_MIN_WIDTH_PX,
+                    "BETWEEN was truncated to ${between.boundsInRoot.width}px at ${sceneWidth}px",
+                )
+            }
+        }
+    }
+
+    @Test
     fun betweenTimestampValuesStayReadableAndGrouped() {
         listOf(360, 407, 720).forEach { sceneWidth ->
             withFilterRow(ordersTable, betweenFilter, sceneWidth) { scene ->
