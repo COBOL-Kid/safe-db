@@ -22,6 +22,11 @@ for _ in $(seq 1 60); do
 done
 db2 CONNECT TO "$DBNAME"
 
+# The 1M-row bulk fixture needs more transaction log than the image default
+# (LOGFILSIZ 1024 x LOGPRIMARY 16 + LOGSECOND 22, ~152 MiB). Secondary logs
+# grow on demand, so raise their ceiling before loading the fixture.
+db2 "UPDATE DB CFG USING LOGSECOND 200" >/dev/null
+
 # Db2 LUW has no DROP ... IF EXISTS: best-effort drops, ignoring SQL0204N for
 # objects that do not exist yet so both fresh and repeat seeds work.
 # Same list as SeedRelational.dropDb2ObjectsIfPresent.
