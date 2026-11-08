@@ -13,6 +13,7 @@ import androidx.compose.ui.use
 import com.safedb.model.FilterGroup
 import com.safedb.model.QuerySpec
 import com.safedb.model.TableRef
+import kotlin.math.abs
 import kotlin.test.assertTrue
 
 private const val SETTLE_FRAME_NANOS = 50_000_000L
@@ -126,6 +127,31 @@ internal fun ImageComposeScene.assertNoHorizontalOverflow(sceneWidth: Int) {
     assertTrue(
         overflows.isEmpty(),
         "nodes overflowed ${sceneWidth}px: ${overflows.map { "${it.label()} ${it.boundsInRoot}" }}",
+    )
+}
+
+internal const val TIMESTAMP_FIELD_MIN_WIDTH_PX = 168f
+
+internal fun assertBetweenRelationship(
+    from: SemanticsNode,
+    and: SemanticsNode,
+    to: SemanticsNode,
+    detail: String = "",
+) {
+    val sameRow =
+        abs(from.boundsInRoot.center.y - to.boundsInRoot.center.y) <= 1f &&
+            abs(and.boundsInRoot.center.y - from.boundsInRoot.center.y) <= 1f &&
+            from.boundsInRoot.right <= and.boundsInRoot.left + 0.5f &&
+            and.boundsInRoot.right <= to.boundsInRoot.left + 0.5f
+    val stacked =
+        from.boundsInRoot.bottom <= to.boundsInRoot.top + 1f &&
+            and.boundsInRoot.center.y >= from.boundsInRoot.top - 0.5f &&
+            and.boundsInRoot.center.y <= to.boundsInRoot.bottom + 0.5f
+    val suffix = if (detail.isEmpty()) "" else " $detail"
+    assertTrue(
+        sameRow || stacked,
+        "and lost the from/to relationship$suffix: from=${from.boundsInRoot} " +
+            "and=${and.boundsInRoot} to=${to.boundsInRoot}",
     )
 }
 

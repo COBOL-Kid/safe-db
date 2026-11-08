@@ -32,6 +32,7 @@ class TableCardStateTest {
         assertEquals(28, TABLE_CARD_COLUMN_ACTION_SLOT_DP)
         assertEquals(3, TABLE_CARD_COLUMN_ACTION_COUNT)
         assertEquals(84, tableColumnActionClusterWidthDp())
+        assertEquals(72, TABLE_CARD_COLUMN_NAME_MIN_WIDTH_DP)
     }
 
     @Test

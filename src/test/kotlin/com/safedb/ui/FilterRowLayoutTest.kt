@@ -2,8 +2,9 @@ package com.safedb.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.SemanticsNode
 import com.safedb.model.ColumnInfo
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
@@ -33,23 +34,7 @@ class FilterRowLayoutTest {
     @Test
     fun customersTableAndInListStayReadableAtOverlayWidths() {
         listOf(407, 463, 720).forEach { sceneWidth ->
-            val viewModel = filterRowViewModel(customersTable, customersInListFilter)
-            val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
-            withComposeScene(
-                width = sceneWidth,
-                height = 220,
-                content = {
-                    SafeDbTheme(isDark = false) {
-                        Box(Modifier.fillMaxWidth()) {
-                            FilterRow(
-                                queryViewModel = viewModel,
-                                filter = filter,
-                                path = listOf(0),
-                            )
-                        }
-                    }
-                },
-            ) { scene ->
+            withFilterRow(customersTable, customersInListFilter, sceneWidth) { scene ->
                 val customers = scene.requireContaining("customers")
                 val alice = scene.requireContaining("alice")
                 val bob = scene.requireContaining("bob")
@@ -88,23 +73,7 @@ class FilterRowLayoutTest {
 
     @Test
     fun inListFilterWrapsAtNarrowWidth() {
-        val viewModel = filterRowViewModel(ordersTable, customerIdInListFilter)
-        val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
-        withComposeScene(
-            width = 360,
-            height = 220,
-            content = {
-                SafeDbTheme(isDark = false) {
-                    Box(Modifier.fillMaxWidth()) {
-                        FilterRow(
-                            queryViewModel = viewModel,
-                            filter = filter,
-                            path = listOf(0),
-                        )
-                    }
-                }
-            },
-        ) { scene ->
+        withFilterRow(ordersTable, customerIdInListFilter, 360) { scene ->
             val values =
                 (1..4).map { index ->
                     scene.requireContaining("Filter value $index for customer_id")
@@ -136,34 +105,18 @@ class FilterRowLayoutTest {
     @Test
     fun betweenTimestampValuesStayReadableAndGrouped() {
         listOf(360, 407, 720).forEach { sceneWidth ->
-            val viewModel = filterRowViewModel(ordersTable, betweenFilter)
-            val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
-            withComposeScene(
-                width = sceneWidth,
-                height = 220,
-                content = {
-                    SafeDbTheme(isDark = false) {
-                        Box(Modifier.fillMaxWidth()) {
-                            FilterRow(
-                                queryViewModel = viewModel,
-                                filter = filter,
-                                path = listOf(0),
-                            )
-                        }
-                    }
-                },
-            ) { scene ->
+            withFilterRow(ordersTable, betweenFilter, sceneWidth) { scene ->
                 val from = scene.requireContaining("Filter value from order_date")
                 val to = scene.requireContaining("Filter value to order_date")
                 val and = scene.requireExact("and")
                 assertNotNull(scene.findContaining("2025-07-01 00:00:00"))
                 assertNotNull(scene.findContaining("2025-07-31 23:59:59"))
                 assertTrue(
-                    from.boundsInRoot.width >= 168f,
+                    from.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
                     "from field was ${from.boundsInRoot.width}px at ${sceneWidth}px",
                 )
                 assertTrue(
-                    to.boundsInRoot.width >= 168f,
+                    to.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
                     "to field was ${to.boundsInRoot.width}px at ${sceneWidth}px",
                 )
                 assertBetweenRelationship(from, and, to)
@@ -182,23 +135,7 @@ class FilterRowLayoutTest {
     }
 
     private fun assertTimestampValueReadable(sceneWidth: Int) {
-        val viewModel = filterRowViewModel(ordersTable, timestampFilter)
-        val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
-        withComposeScene(
-            width = sceneWidth,
-            height = 120,
-            content = {
-                SafeDbTheme(isDark = false) {
-                    Box(Modifier.fillMaxWidth()) {
-                        FilterRow(
-                            queryViewModel = viewModel,
-                            filter = filter,
-                            path = listOf(0),
-                        )
-                    }
-                }
-            },
-        ) { scene ->
+        withFilterRow(ordersTable, timestampFilter, sceneWidth, height = 120) { scene ->
             val value = scene.requireContaining("Filter value for order_date")
             val table = scene.requireContaining("Table:")
             if (sceneWidth == 720) {
@@ -216,7 +153,7 @@ class FilterRowLayoutTest {
             assertNotNull(scene.findContaining("2025-07-03 09:12:00"))
             // "2025-07-03 09:12:00" at 12sp monospace needs ~168px after the inner padding.
             assertTrue(
-                value.boundsInRoot.width >= 168f,
+                value.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
                 "timestamp field was ${value.boundsInRoot.width}px at ${sceneWidth}px",
             )
             scene.assertNoHorizontalOverflow(sceneWidth)
@@ -304,24 +241,31 @@ private val betweenFilter =
             ),
     )
 
-private fun assertBetweenRelationship(
-    from: SemanticsNode,
-    and: SemanticsNode,
-    to: SemanticsNode,
+@OptIn(ExperimentalComposeUiApi::class)
+private fun withFilterRow(
+    table: TableInfo,
+    filter: FilterSpec,
+    sceneWidth: Int,
+    height: Int = 220,
+    body: (ImageComposeScene) -> Unit,
 ) {
-    val sameRow =
-        abs(from.boundsInRoot.center.y - to.boundsInRoot.center.y) <= 1f &&
-            abs(and.boundsInRoot.center.y - from.boundsInRoot.center.y) <= 1f &&
-            from.boundsInRoot.right <= and.boundsInRoot.left + 0.5f &&
-            and.boundsInRoot.right <= to.boundsInRoot.left + 0.5f
-    val stacked =
-        from.boundsInRoot.bottom <= to.boundsInRoot.top + 1f &&
-            and.boundsInRoot.center.y >= from.boundsInRoot.top - 0.5f &&
-            and.boundsInRoot.center.y <= to.boundsInRoot.bottom + 0.5f
-    assertTrue(
-        sameRow || stacked,
-        "and lost the from/to relationship: from=${from.boundsInRoot} " +
-            "and=${and.boundsInRoot} to=${to.boundsInRoot}",
+    val queryViewModel = filterRowViewModel(table, filter)
+    val leaf = (queryViewModel.filters.children.single() as FilterNode.Leaf).spec
+    withComposeScene(
+        width = sceneWidth,
+        height = height,
+        content = {
+            SafeDbTheme(isDark = false) {
+                Box(Modifier.fillMaxWidth()) {
+                    FilterRow(
+                        queryViewModel = queryViewModel,
+                        filter = leaf,
+                        path = listOf(0),
+                    )
+                }
+            }
+        },
+        body = body,
     )
 }
 

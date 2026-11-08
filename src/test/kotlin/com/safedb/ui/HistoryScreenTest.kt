@@ -14,10 +14,12 @@ import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.ui.util.formatTime
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.queryRunResult
+import java.time.Instant
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -164,17 +166,22 @@ class HistoryScreenTest {
 
     @Test
     fun deleteLabelsDistinguishRepeatedRunsOnOneConnection() {
+        val earlier = Instant.parse("2020-06-15T12:00:00Z").epochSecond.toString()
+        val later = Instant.parse("2022-06-15T12:00:00Z").epochSecond.toString()
         val entries =
             mutableListOf(
-                historyEntry(id = "a", connectionName = "Local MySQL", timestamp = "1"),
-                historyEntry(id = "b", connectionName = "Local MySQL", timestamp = "2"),
+                historyEntry(id = "a", connectionName = "Local MySQL", timestamp = earlier),
+                historyEntry(id = "b", connectionName = "Local MySQL", timestamp = later),
             )
         val harness = HistoryScreenHarness(entries = entries)
         try {
             withHistoryScreen(harness.viewModel) { scene ->
+                val earlierLabel = deleteLabel("Local MySQL", earlier)
+                val laterLabel = deleteLabel("Local MySQL", later)
+                assertNotEquals(earlierLabel, laterLabel)
                 assertEquals(2, scene.nodesContaining("Delete Local MySQL query from").size)
-                assertNotNull(scene.findExact(deleteLabel("Local MySQL", "1")))
-                assertNotNull(scene.findExact(deleteLabel("Local MySQL", "2")))
+                assertEquals(1, scene.nodesLabeled(earlierLabel).size)
+                assertEquals(1, scene.nodesLabeled(laterLabel).size)
             }
         } finally {
             harness.viewModel.close()

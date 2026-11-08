@@ -29,8 +29,10 @@ class TableCardLayoutTest {
             assertNotNull(scene.findVisualByTag("column-name-customer_id"))
             assertNotNull(scene.findVisualByTag("column-name-order_date"))
             assertNotNull(scene.findVisualByTag("column-name-signed_up_at"))
+            assertNotNull(scene.findVisualByTag("column-name-occurred_at"))
             assertNull(scene.findVisualByTag("column-type-customer_id"))
             assertNull(scene.findVisualByTag("column-type-order_date"))
+            assertNull(scene.findVisualByTag("column-type-occurred_at"))
             assertEquals(1, scene.nodesLabeled("customer_id, bigint").size)
             val filter = scene.requireExact("Filter customer_id")
             assertTrue(filter.boundsInRoot.width >= TABLE_CARD_COLUMN_ACTION_SLOT_DP)
@@ -82,6 +84,12 @@ class TableCardLayoutTest {
                 name.boundsInRoot.width >= MIN_READABLE_NAME_WIDTH,
                 "name was only ${name.boundsInRoot.width}px at the reveal threshold",
             )
+            val occurredAtName = scene.requireVisualByTag("column-name-occurred_at")
+            assertNotNull(scene.findVisualByTag("column-type-occurred_at"))
+            assertTrue(
+                occurredAtName.boundsInRoot.width >= MIN_READABLE_NAME_WIDTH,
+                "long-type column name was only ${occurredAtName.boundsInRoot.width}px at the reveal threshold",
+            )
             assertEquals(1, scene.nodesLabeled("customer_id, bigint").size)
         }
     }
@@ -126,6 +134,7 @@ private fun ordersViewModel(): QueryViewModel {
                     ColumnInfo("order_date", "timestamp", nullable = true),
                     ColumnInfo("status", "text", nullable = true),
                     ColumnInfo("signed_up_at", "timestamp", nullable = true),
+                    ColumnInfo("occurred_at", "timestamp with time zone", nullable = true),
                 ),
             indexes = emptyList(),
         )

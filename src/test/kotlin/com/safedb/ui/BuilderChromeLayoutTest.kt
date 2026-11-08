@@ -165,34 +165,24 @@ class BuilderChromeLayoutTest {
                     ) { scene ->
                         val from = scene.requireContaining("Filter value from created_at")
                         val to = scene.requireContaining("Filter value to created_at")
+                        val and = scene.requireExact("and")
                         assertNotNull(scene.findContaining("2025-07-01 00:00:00"))
                         assertNotNull(scene.findContaining("2025-07-31 23:59:59"))
                         assertTrue(
-                            from.boundsInRoot.width >= 168f,
+                            from.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
                             "from field was ${from.boundsInRoot.width}px at ${width}x${height} " +
                                 "sidebarExpanded=$sidebarExpanded",
                         )
                         assertTrue(
-                            to.boundsInRoot.width >= 168f,
+                            to.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
                             "to field was ${to.boundsInRoot.width}px at ${width}x${height} " +
                                 "sidebarExpanded=$sidebarExpanded",
                         )
-                        val and = scene.requireExact("and")
-                        val sameRow =
-                            kotlin.math.abs(
-                                from.boundsInRoot.center.y - to.boundsInRoot.center.y
-                            ) <= 1f &&
-                                from.boundsInRoot.right <= and.boundsInRoot.left + 0.5f &&
-                                and.boundsInRoot.right <= to.boundsInRoot.left + 0.5f
-                        val stacked =
-                            from.boundsInRoot.bottom <= to.boundsInRoot.top + 1f &&
-                                and.boundsInRoot.center.y >= from.boundsInRoot.top - 0.5f &&
-                                and.boundsInRoot.center.y <= to.boundsInRoot.bottom + 0.5f
-                        assertTrue(
-                            sameRow || stacked,
-                            "and lost the from/to relationship at ${width}x${height} " +
-                                "sidebarExpanded=$sidebarExpanded: from=${from.boundsInRoot} " +
-                                "and=${and.boundsInRoot} to=${to.boundsInRoot}",
+                        assertBetweenRelationship(
+                            from,
+                            and,
+                            to,
+                            detail = "at ${width}x${height} sidebarExpanded=$sidebarExpanded",
                         )
                         scene.assertNoHorizontalOverflow(width)
                     }
@@ -343,7 +333,7 @@ private fun assertFilterChromeReadable(scene: ImageComposeScene, sceneWidth: Int
     assertNotNull(scene.findContaining("2025-07-03 09:12:00"))
     // "2025-07-03 09:12:00" at 12sp monospace needs ~168px after the field's inner padding.
     assertTrue(
-        timestamp.boundsInRoot.width >= 168f,
+        timestamp.boundsInRoot.width >= TIMESTAMP_FIELD_MIN_WIDTH_PX,
         "timestamp field was ${timestamp.boundsInRoot.width}px",
     )
     scene.assertNoHorizontalOverflow(sceneWidth)

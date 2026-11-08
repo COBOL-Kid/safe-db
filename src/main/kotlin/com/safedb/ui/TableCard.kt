@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -483,20 +484,21 @@ private fun ColumnNameCell(
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        if (showColumnType) {
+        val nameText: @Composable (Modifier) -> Unit = { extraModifier ->
             Text(
                 columnName,
                 style = DataMono.copy(fontWeight = FontWeight.Medium),
                 // The clickable row owns the single accessible label; tags keep the visual texts
                 // addressable in tests without announcing them separately.
                 modifier =
-                    Modifier.weight(1f).clearAndSetSemantics {
-                        testTag = "column-name-$columnName"
-                    },
+                    extraModifier.clearAndSetSemantics { testTag = "column-name-$columnName" },
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (showColumnType) {
+            nameText(Modifier.weight(1f).widthIn(min = TABLE_CARD_COLUMN_NAME_MIN_WIDTH_DP.dp))
             Text(
                 columnDataType,
                 style =
@@ -505,7 +507,7 @@ private fun ColumnNameCell(
                         fontWeight = FontWeight.Medium,
                     ),
                 modifier =
-                    Modifier.padding(start = 6.dp).clearAndSetSemantics {
+                    Modifier.padding(start = 6.dp).weight(0.6f, fill = false).clearAndSetSemantics {
                         testTag = "column-type-$columnName"
                     },
                 maxLines = 1,
@@ -513,10 +515,7 @@ private fun ColumnNameCell(
                 overflow = TextOverflow.Ellipsis,
             )
         } else {
-            Box(
-                modifier =
-                    Modifier.weight(1f).clearAndSetSemantics { testTag = "column-name-$columnName" }
-            ) {
+            Box(modifier = Modifier.weight(1f)) {
                 TooltipBox(
                     positionProvider =
                         TooltipDefaults.rememberTooltipPositionProvider(
@@ -525,14 +524,7 @@ private fun ColumnNameCell(
                     tooltip = { PlainTooltip { Text("$columnName ($columnDataType)") } },
                     state = rememberTooltipState(),
                 ) {
-                    Text(
-                        columnName,
-                        style = DataMono.copy(fontWeight = FontWeight.Medium),
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    nameText(Modifier.fillMaxWidth())
                 }
             }
         }
