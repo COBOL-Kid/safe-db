@@ -1,27 +1,9 @@
 package com.safedb.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerButton
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.semantics.SemanticsNode
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.use
 import com.safedb.SchemaSelectionIntent
 import com.safedb.SchemaSelectionSource
@@ -68,77 +50,32 @@ class BuilderLargeLimitGuidanceTest {
     }
 
     @Test
-    fun composedGuidanceStripDoesNotOverlapQueryOptions() {
-        listOf(500, 800, 1100, 1400).forEach { width ->
-            var bannerLeft = 0f
-            var bannerRight = 0f
-            var bannerBottom = 0f
-            var filterLeft = 0f
-            var filterTop = 0f
-            var optionsLeft = 0f
-            ImageComposeScene(width = width, height = 240, density = Density(1f)) {
-                    Box(Modifier.fillMaxSize()) {
-                        Box(
-                            modifier =
-                                Modifier.align(Alignment.TopEnd)
-                                    .padding(
-                                        top = QueryControlsVerticalPadding,
-                                        end = QueryOptionsPanelEndPadding,
-                                    )
-                                    .width(QueryOptionsPanelMaxWidth)
-                                    .height(80.dp)
-                                    .onGloballyPositioned { coords ->
-                                        optionsLeft = coords.positionInRoot().x
-                                    }
-                        )
-                        Column(
-                            modifier =
-                                Modifier.align(Alignment.TopStart)
-                                    .padding(
-                                        start = QueryControlsStartPadding,
-                                        top = QueryControlsVerticalPadding,
-                                        end = QueryOptionsOverlayEndPadding,
-                                    )
-                                    .fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(QueryStartOverlayGap),
-                        ) {
-                            Box(
-                                modifier =
-                                    Modifier.fillMaxWidth().height(36.dp).onGloballyPositioned {
-                                        coords ->
-                                        bannerLeft = coords.positionInRoot().x
-                                        bannerRight =
-                                            coords.positionInRoot().x + coords.size.width.toFloat()
-                                        bannerBottom =
-                                            coords.positionInRoot().y + coords.size.height.toFloat()
-                                    }
-                            )
-                            Box(
-                                modifier =
-                                    Modifier.fillMaxWidth().height(80.dp).onGloballyPositioned {
-                                        coords ->
-                                        filterLeft = coords.positionInRoot().x
-                                        filterTop = coords.positionInRoot().y
-                                    }
-                            )
-                        }
-                    }
+    fun queryOptionsButtonStaysOutsideTheFilterPanel() {
+        listOf(960, 1400).forEach { width ->
+            val harness = GuidanceHarness()
+            harness.queryViewModel.addTable(ordersTable)
+            harness.queryViewModel.setUncapped(true)
+            harness.queryViewModel.addFilterForColumn("t0", "customer_id", "bigint")
+
+            ImageComposeScene(width = width, height = 600, density = Density(1f)) {
+                    SafeDbTheme(isDark = false) { harness.Content() }
                 }
                 .use { scene ->
                     scene.render(0L)
-                    assertEquals(
-                        bannerLeft,
-                        filterLeft,
-                        0.01f,
-                        "At ${width}px, banner and filters should share TopStart padding",
+                    val banner = scene.requireContaining(LARGE_LIMIT_GUIDANCE_TEXT)
+                    val filters = scene.requireContaining("Query filters")
+                    val options = scene.requireByTag("builder-query-options")
+                    assertTrue(
+                        banner.boundsInRoot.bottom <= filters.boundsInRoot.top + 0.5f,
+                        "At ${width}px, banner ${banner.boundsInRoot} overlaps filters ${filters.boundsInRoot}",
                     )
                     assertTrue(
-                        bannerBottom <= filterTop,
-                        "At ${width}px, banner bottom $bannerBottom overlaps filters at $filterTop",
+                        filters.boundsInRoot.bottom <= options.boundsInRoot.top + 0.5f,
+                        "At ${width}px, Query options ${options.boundsInRoot} was inside the filter panel ${filters.boundsInRoot}",
                     )
                     assertTrue(
-                        bannerRight <= optionsLeft,
-                        "At ${width}px, banner [$bannerLeft, $bannerRight] overlaps options at $optionsLeft",
+                        options.isInsideWindow(width, 600),
+                        "At ${width}px, Query options was not reachable: ${options.boundsInRoot}",
                     )
                 }
         }
@@ -156,13 +93,13 @@ class BuilderLargeLimitGuidanceTest {
             }
             .use { scene ->
                 scene.render(0L)
-                val banner = scene.requireNode(LARGE_LIMIT_GUIDANCE_TEXT)
-                val filters = scene.requireNode("Query filters")
+                val banner = scene.requireContaining(LARGE_LIMIT_GUIDANCE_TEXT)
+                val filters = scene.requireContaining("Query filters")
                 assertEquals(
                     banner.boundsInRoot.left,
                     filters.boundsInRoot.left,
                     0.5f,
-                    "Banner and filters should share the TopStart overlay column",
+                    "Banner and filters should share the reserved chrome column",
                 )
                 assertTrue(
                     banner.boundsInRoot.bottom <= filters.boundsInRoot.top + 0.5f,
@@ -183,15 +120,15 @@ class BuilderLargeLimitGuidanceTest {
             }
             .use { scene ->
                 scene.render(0L)
-                assertNotNull(scene.findNode(LARGE_LIMIT_GUIDANCE_TEXT))
-                val maximize = scene.requireNode("Maximize results")
+                assertNotNull(scene.findContaining(LARGE_LIMIT_GUIDANCE_TEXT))
+                val maximize = scene.requireContaining("Maximize results")
                 scene.click(maximize.boundsInRoot.center)
-                scene.render(50_000_000L)
+                scene.settle()
                 assertNull(
-                    scene.findNode(LARGE_LIMIT_GUIDANCE_TEXT),
+                    scene.findContaining(LARGE_LIMIT_GUIDANCE_TEXT),
                     "Guidance banner should not remain as a sibling of maximized results",
                 )
-                assertNotNull(scene.findNode("Minimize results"))
+                assertNotNull(scene.findContaining("Minimize results"))
             }
     }
 }
@@ -228,51 +165,6 @@ private class GuidanceHarness {
             onApplyRecipe = { _, _ -> },
         )
     }
-}
-
-private fun ImageComposeScene.findNode(matching: String): SemanticsNode? =
-    allSemanticsNodes().firstOrNull { it.label().contains(matching) }
-
-private fun ImageComposeScene.requireNode(matching: String): SemanticsNode =
-    findNode(matching)
-        ?: error(
-            "No node containing '$matching' in ${
-                allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
-        )
-
-private fun ImageComposeScene.allSemanticsNodes(): List<SemanticsNode> {
-    val nodes = mutableListOf<SemanticsNode>()
-    for (owner in semanticsOwners) {
-        fun walk(node: SemanticsNode) {
-            nodes += node
-            node.children.forEach(::walk)
-        }
-        walk(owner.rootSemanticsNode)
-    }
-    return nodes
-}
-
-private fun SemanticsNode.label(): String {
-    val texts =
-        if (config.contains(SemanticsProperties.Text)) {
-            config[SemanticsProperties.Text].joinToString { it.text }
-        } else {
-            ""
-        }
-    val descriptions =
-        if (config.contains(SemanticsProperties.ContentDescription)) {
-            config[SemanticsProperties.ContentDescription].joinToString()
-        } else {
-            ""
-        }
-    return listOf(texts, descriptions).filter { it.isNotEmpty() }.joinToString(" | ")
-}
-
-@OptIn(ExperimentalComposeUiApi::class)
-private fun ImageComposeScene.click(position: Offset) {
-    sendPointerEvent(PointerEventType.Press, position, button = PointerButton.Primary)
-    sendPointerEvent(PointerEventType.Release, position, button = PointerButton.Primary)
 }
 
 private val ordersTable =

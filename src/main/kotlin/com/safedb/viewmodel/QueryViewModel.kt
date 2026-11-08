@@ -85,8 +85,12 @@ data class BuilderQuerySample(
 
 typealias NewFilterSpec = FilterSpec
 
-class QueryViewModel(service: SafeDbService, scope: CoroutineScope) : QueryHydrationTarget {
-    private val runController = QueryRunController(service, scope)
+class QueryViewModel(
+    service: SafeDbService,
+    scope: CoroutineScope,
+    onRunFinished: () -> Unit = {},
+) : QueryHydrationTarget {
+    private val runController = QueryRunController(service, scope, onRunFinished)
     private var aliasCounter = 0
 
     internal val canvasViewport = CanvasViewportState()

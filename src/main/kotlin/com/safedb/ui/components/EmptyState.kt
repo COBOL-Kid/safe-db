@@ -15,11 +15,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+/** @param subtitle Optional subtitle text; null or blank renders no subtitle line. */
 @Composable
 fun EmptyState(
     icon: ImageVector,
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null,
 ) {
@@ -37,11 +38,13 @@ fun EmptyState(
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(top = 12.dp),
             )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (action != null) {
                 Box(modifier = Modifier.padding(top = 20.dp)) { action() }
             }

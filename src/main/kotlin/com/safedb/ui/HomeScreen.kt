@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
@@ -185,7 +186,7 @@ fun HomeScreen(
                 ) {
                     items(savedQueries, key = { it.id }) { query ->
                         SavedQueryCard(
-                            name = query.name,
+                            query = query,
                             subtitle =
                                 "${viewModel.connections.connectionName(query.connectionId)} · " +
                                     "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
@@ -280,19 +281,19 @@ private fun QuickLinkCard(
 
 @Composable
 private fun SavedQueryCard(
-    name: String,
+    query: com.safedb.model.SavedQuery,
     subtitle: String,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    AppCard {
+    AppCard(modifier = Modifier.testTag("saved-query-${query.id}")) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f).clickable(onClick = onOpen)) {
                 Text(
-                    name,
+                    query.name,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )

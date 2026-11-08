@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.TableRows
@@ -179,13 +180,11 @@ internal fun SqlScreen(
             icon = Icons.Outlined.Code,
             title = "SQL",
             subtitle =
-                if (connection == null) {
-                    "Write a SELECT; it runs through the same limits and risk checks"
-                } else {
+                connection?.let {
                     buildString {
-                        append(connection.database)
+                        append(it.database)
                         if (selectedSchema != null) append(" · $selectedSchema")
-                        append(" · ${connection.dialect.displayName()}")
+                        append(" · ${it.dialect.displayName()}")
                     }
                 },
             connection = connection,
@@ -200,7 +199,13 @@ internal fun SqlScreen(
                 onSchemaSelected(selected)
             },
             trailingActions = {
-                PrimaryButton(onClick = ::runQuery, enabled = canRun) { Text("Run") }
+                PrimaryButton(
+                    onClick = ::runQuery,
+                    enabled = canRun,
+                    modifier = Modifier.wrapContentWidth(),
+                ) {
+                    Text("Run", softWrap = false)
+                }
             },
             bottomContent = {
                 Text(
@@ -219,7 +224,6 @@ internal fun SqlScreen(
                 EmptyState(
                     icon = Icons.Outlined.Code,
                     title = "Choose a database to query",
-                    subtitle = "Select a saved connection to write a SELECT against it.",
                     action = {
                         SecondaryButton(onClick = onOpenConnections) { Text("Open Connections") }
                     },
@@ -228,7 +232,7 @@ internal fun SqlScreen(
                 EmptyState(
                     icon = Icons.Outlined.Code,
                     title = "Could not load this schema",
-                    subtitle = schemaViewModel.error.orEmpty(),
+                    subtitle = schemaViewModel.error,
                 )
             schemaViewModel.loading || schema == null ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

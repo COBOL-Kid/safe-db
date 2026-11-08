@@ -35,8 +35,9 @@ import kotlinx.coroutines.Dispatchers
 @OptIn(ExperimentalComposeUiApi::class)
 class BuilderScreenJoinClickTest {
 
-    // BuilderScreen lays out a 288.dp sidebar plus a 1.dp divider left of the canvas viewport.
-    private val canvasViewportLeftPx = 289f
+    // BuilderScreen lays out the schema browser plus a 1.dp divider left of the canvas viewport.
+    private val canvasViewportLeftPx =
+        BuilderSchemaBrowserWidth.value + BuilderSchemaBrowserDividerWidth.value
 
     @Test
     fun clickingDashedJoinLineThroughFullBuilderChromeCreatesJoin() {

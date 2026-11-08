@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,8 +64,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -210,6 +213,7 @@ fun TableCard(
                             .padding(horizontal = 4.dp, vertical = 3.dp)
                             .verticalScroll(fieldScrollState)
                 ) {
+                    val showColumnType = tableCardShowsColumnType(canvasTable.width)
                     for ((columnName, columnDataType, _, isIndexed, _, _) in table.columns) {
                         val selected = queryViewModel.isColumnSelected(alias, columnName)
                         val filterActive = queryViewModel.hasFilterForColumn(alias, columnName)
@@ -278,39 +282,21 @@ fun TableCard(
                                                     queryViewModel.toggleColumn(alias, columnName)
                                                 }
                                             },
-                                        ),
+                                        )
+                                        .semantics {
+                                            contentDescription = "$columnName, $columnDataType"
+                                        },
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 CompactSelectionIndicator(
                                     if (selected) ToggleableState.On else ToggleableState.Off
                                 )
-                                Row(
+                                ColumnNameCell(
+                                    columnName = columnName,
+                                    columnDataType = columnDataType,
+                                    showColumnType = showColumnType,
                                     modifier = Modifier.padding(start = 6.dp).weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        columnName,
-                                        style = DataMono.copy(fontWeight = FontWeight.Medium),
-                                        modifier = Modifier.weight(1f, fill = false),
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        columnDataType,
-                                        style =
-                                            DataMono.copy(
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                fontWeight = FontWeight.Medium,
-                                            ),
-                                        modifier =
-                                            Modifier.padding(start = 6.dp)
-                                                .weight(0.45f, fill = false),
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
+                                )
                             }
 
                             ExactDesktopTargetArea {
@@ -488,11 +474,77 @@ fun TableCard(
     }
 }
 
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ColumnNameCell(
+    columnName: String,
+    columnDataType: String,
+    showColumnType: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        val nameText: @Composable (Modifier) -> Unit = { extraModifier ->
+            Text(
+                columnName,
+                style = DataMono.copy(fontWeight = FontWeight.Medium),
+                // The clickable row owns the single accessible label; tags keep the visual texts
+                // addressable in tests without announcing them separately.
+                modifier =
+                    extraModifier.clearAndSetSemantics { testTag = "column-name-$columnName" },
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (showColumnType) {
+            nameText(Modifier.weight(1f).widthIn(min = TABLE_CARD_COLUMN_NAME_MIN_WIDTH_DP.dp))
+            Text(
+                columnDataType,
+                style =
+                    DataMono.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                modifier =
+                    Modifier.padding(start = 6.dp).weight(0.6f, fill = false).clearAndSetSemantics {
+                        testTag = "column-type-$columnName"
+                    },
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Box(modifier = Modifier.weight(1f)) {
+                TooltipBox(
+                    positionProvider =
+                        TooltipDefaults.rememberTooltipPositionProvider(
+                            TooltipAnchorPosition.Above
+                        ),
+                    tooltip = { PlainTooltip { Text("$columnName ($columnDataType)") } },
+                    state = rememberTooltipState(),
+                ) {
+                    nameText(Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
+
 internal const val TABLE_CARD_COLUMN_ACTION_SLOT_DP = 28
 internal const val TABLE_CARD_COLUMN_ACTION_COUNT = 3
 
+// CANVAS_CARD_WIDTH (248dp) leaves room for a readable column name without showing the type,
+// so types only appear once the card is wide enough for both.
+// Budget at the reveal threshold: 141dp chrome (row padding 10 + action cluster 84 + join slot 28
+// + indicator 13 + cell padding 6) + ~65dp type + 72dp name.
+internal const val TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP = 350f
+internal const val TABLE_CARD_COLUMN_NAME_MIN_WIDTH_DP = 72
+
 internal fun tableColumnActionClusterWidthDp(): Int =
     TABLE_CARD_COLUMN_ACTION_SLOT_DP * TABLE_CARD_COLUMN_ACTION_COUNT
+
+internal fun tableCardShowsColumnType(cardWidth: Float): Boolean =
+    cardWidth >= TABLE_CARD_TYPE_VISIBLE_MIN_WIDTH_DP
 
 internal fun tableColumnToggleState(selectedCount: Int, totalCount: Int): ToggleableState =
     when {

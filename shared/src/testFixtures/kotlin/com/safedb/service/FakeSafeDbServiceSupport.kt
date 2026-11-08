@@ -60,6 +60,8 @@ open class FakeSafeDbServiceSupport : SafeDbService {
 
     override suspend fun clearHistory() = Unit
 
+    override suspend fun deleteHistoryEntry(id: String) = Unit
+
     override suspend fun getSettings(): Settings = Settings()
 
     override suspend fun saveSettings(settings: Settings) = Unit

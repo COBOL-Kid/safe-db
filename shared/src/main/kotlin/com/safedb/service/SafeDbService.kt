@@ -64,6 +64,8 @@ interface SafeDbService {
 
     suspend fun clearHistory()
 
+    suspend fun deleteHistoryEntry(id: String)
+
     suspend fun getSettings(): Settings
 
     suspend fun saveSettings(settings: Settings)

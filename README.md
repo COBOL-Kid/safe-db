@@ -1,6 +1,6 @@
 # safe-db
 
-Source for the [safe-db](https://www.safe-db.dev) 1.0.0 desktop app and MCP server: a Compose Desktop UI, a stdio MCP CLI, and a `:shared` query engine that introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
+Source for the [safe-db](https://www.safe-db.dev) 1.0.1 desktop app and MCP server: a Compose Desktop UI, a stdio MCP CLI, and a `:shared` query engine that introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
 
 Packaged desktop releases and the user guide live at [https://www.safe-db.dev](https://www.safe-db.dev). This repository is for building from source and changing the code.
 

@@ -246,7 +246,7 @@ class ViewModelsTest {
 
             viewModel.refresh()
             advanceUntilIdle()
-            assertEquals(1, viewModel.entries.value.size)
+            assertEquals(2, viewModel.entries.value.size)
 
             viewModel.clear()
             advanceUntilIdle()
@@ -280,12 +280,12 @@ class ViewModelsTest {
 
             viewModel.load()
             advanceUntilIdle()
-            assertEquals("dark", viewModel.settings.value.theme)
+            assertEquals("light", viewModel.settings.value.theme)
 
             viewModel.toggleTheme()
             advanceUntilIdle()
-            assertEquals("light", viewModel.settings.value.theme)
-            assertEquals("light", service.savedSettings?.theme)
+            assertEquals("dark", viewModel.settings.value.theme)
+            assertEquals("dark", service.savedSettings?.theme)
         }
 
     @Test
@@ -297,7 +297,7 @@ class ViewModelsTest {
             viewModel.load()
             advanceUntilIdle()
 
-            viewModel.setDarkMode(true)
+            viewModel.setDarkMode(false)
             viewModel.setColorScheme(ThemePalette.ControlBlue)
             advanceUntilIdle()
             assertEquals(0, service.settingsSaveCount)
@@ -308,9 +308,9 @@ class ViewModelsTest {
             assertEquals(ThemePalette.Oxide.id, service.savedSettings?.colorScheme)
             assertEquals(1, service.settingsSaveCount)
 
-            viewModel.setDarkMode(false)
+            viewModel.setDarkMode(true)
             advanceUntilIdle()
-            assertEquals("light", viewModel.settings.value.theme)
+            assertEquals("dark", viewModel.settings.value.theme)
             assertEquals(2, service.settingsSaveCount)
 
             viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
@@ -331,7 +331,7 @@ class ViewModelsTest {
             val viewModel = SettingsViewModel(service, TestScope(dispatcher))
             viewModel.load()
 
-            viewModel.setDarkMode(false)
+            viewModel.setDarkMode(true)
             viewModel.setColorScheme(ThemePalette.Oxide)
             viewModel.setQueryRiskGate(QueryRiskGate.Flexible)
             runCurrent()
@@ -342,7 +342,7 @@ class ViewModelsTest {
             saveGate.complete(Unit)
             advanceUntilIdle()
 
-            assertEquals("light", viewModel.settings.value.theme)
+            assertEquals("dark", viewModel.settings.value.theme)
             assertEquals(ThemePalette.Oxide.id, viewModel.settings.value.colorScheme)
             assertEquals(QueryRiskGate.Flexible, viewModel.settings.value.queryRiskGate)
             assertEquals(viewModel.settings.value, service.savedSettings)
@@ -534,7 +534,7 @@ class ViewModelsTest {
             advanceUntilIdle()
 
             assertFalse(completed)
-            assertEquals(1, viewModel.entries.value.size)
+            assertEquals(2, viewModel.entries.value.size)
             assertEquals("history clear failed", viewModel.error.value)
 
             service.failHistoryClear = false
@@ -543,6 +543,46 @@ class ViewModelsTest {
             assertTrue(completed)
             assertTrue(viewModel.entries.value.isEmpty())
             assertNull(viewModel.error.value)
+        }
+
+    @Test
+    fun historyDeleteRemovesEntryAndSettlesAfterSuccess() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val scope = TestScope(dispatcher)
+            val viewModel = HistoryViewModel(service, scope)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            var settled = false
+            viewModel.delete("h1") { settled = true }
+            advanceUntilIdle()
+
+            assertTrue(settled)
+            assertEquals(listOf("h2"), viewModel.entries.value.map { it.id })
+            assertEquals(listOf("h1"), service.deletedHistoryIds)
+            assertNull(viewModel.error.value)
+        }
+
+    @Test
+    fun historyDeleteSettlesAfterFailureAndPreservesEntries() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService().apply { failHistoryDelete = true }
+            val scope = TestScope(dispatcher)
+            val viewModel = HistoryViewModel(service, scope)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            var settled = false
+            viewModel.delete("h1") { settled = true }
+            advanceUntilIdle()
+
+            assertTrue(settled)
+            assertEquals(listOf("h1", "h2"), viewModel.entries.value.map { it.id })
+            assertEquals("history delete failed", viewModel.error.value)
+            assertTrue(service.deletedHistoryIds.isEmpty())
         }
 
     @Test
@@ -579,7 +619,7 @@ class ViewModelsTest {
             viewModel.toggleTheme()
             advanceUntilIdle()
 
-            assertEquals("dark", viewModel.settings.value.theme)
+            assertEquals("light", viewModel.settings.value.theme)
             assertEquals("settings save failed", viewModel.saveError.value)
         }
 }
@@ -588,6 +628,8 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     val deletedIds = mutableListOf<String>()
     val deletedSavedIds = mutableListOf<String>()
     var historyCleared = false
+    val deletedHistoryIds = mutableListOf<String>()
+    var failHistoryDelete = false
     var savedSettings: Settings? = null
     var failHistoryClear = false
     var failSavedMutation = false
@@ -677,16 +719,31 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         if (historyCleared) emptyList()
         else
             listOf(
-                HistoryEntry(
-                    "h1",
-                    "c1",
-                    "Local MySQL",
-                    emptyQuerySpec(),
-                    3,
-                    emptyList(),
-                    timestamp = "1",
+                    HistoryEntry(
+                        "h1",
+                        "c1",
+                        "Local MySQL",
+                        emptyQuerySpec(),
+                        3,
+                        emptyList(),
+                        timestamp = "1",
+                    ),
+                    HistoryEntry(
+                        "h2",
+                        "c1",
+                        "Local MySQL",
+                        emptyQuerySpec(),
+                        3,
+                        emptyList(),
+                        timestamp = "2",
+                    ),
                 )
-            )
+                .filter { it.id !in deletedHistoryIds }
+
+    override suspend fun deleteHistoryEntry(id: String) {
+        if (failHistoryDelete) error("history delete failed")
+        deletedHistoryIds.add(id)
+    }
 
     override suspend fun clearHistory() {
         if (failHistoryClear) error("history clear failed")

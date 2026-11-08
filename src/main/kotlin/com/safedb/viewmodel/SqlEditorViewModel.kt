@@ -13,8 +13,12 @@ import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.CoroutineScope
 
-class SqlEditorViewModel(service: SafeDbService, scope: CoroutineScope) {
-    private val runController = QueryRunController(service, scope)
+class SqlEditorViewModel(
+    service: SafeDbService,
+    scope: CoroutineScope,
+    onRunFinished: () -> Unit = {},
+) {
+    private val runController = QueryRunController(service, scope, onRunFinished)
     private var observedParsedSpec = false
     private var lastParsedSpec: QuerySpec? = null
 

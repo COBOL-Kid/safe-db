@@ -352,11 +352,24 @@ class StoreTest {
     }
 
     @Test
+    fun queryStoreDeletesOneHistoryEntryAndIgnoresUnknownId() {
+        val dir = tempDir()
+        val store = QueryStore.new(dir)
+        store.addHistory(sampleHistory("h1"))
+        store.addHistory(sampleHistory("h2"))
+        store.deleteHistory("h1")
+        assertEquals(listOf("h2"), store.listHistory().map { it.id })
+        store.deleteHistory("missing")
+        assertEquals(listOf("h2"), store.listHistory().map { it.id })
+        assertTrue(Files.readString(dir.resolve("query_history.json")).contains("h2"))
+    }
+
+    @Test
     fun settingsStoreDefaultsAndRoundTrip() {
         val dir = tempDir()
         val store = SettingsStore.new(dir)
         val defaults = store.load()
-        assertEquals("dark", defaults.theme)
+        assertEquals("light", defaults.theme)
         assertEquals(ThemePalette.DEFAULT.id, defaults.colorScheme)
         assertEquals(QueryRiskGate.Standard, defaults.queryRiskGate)
         assertTrue(defaults.blockedSchemas.isEmpty())
@@ -364,28 +377,43 @@ class StoreTest {
         Files.writeString(dir.resolve("settings.json"), """{"blocked_schemas":["audit"]}""")
         val loaded = store.load()
         assertEquals(listOf("audit"), loaded.blockedSchemas)
-        assertEquals("dark", loaded.theme)
+        assertEquals("light", loaded.theme)
         assertEquals(ThemePalette.DEFAULT.id, loaded.colorScheme)
     }
 
     @Test
-    fun settingsStoreNormalizesLegacyThemeValuesToDark() {
+    fun settingsStoreNormalizesLegacyThemeValuesToLight() {
+        for (legacy in listOf("system", "auto", "")) {
+            val dir = tempDir()
+            Files.writeString(dir.resolve("settings.json"), """{"theme":"$legacy"}""")
+
+            val settings = SettingsStore.new(dir).load()
+
+            assertEquals("light", settings.theme, "legacy theme '$legacy'")
+        }
+    }
+
+    @Test
+    fun settingsStoreNormalizesThemeCaseAndWhitespace() {
+        val cases = mapOf("Dark" to "dark", " dark " to "dark", "LIGHT" to "light")
+        for ((written, expected) in cases) {
+            val dir = tempDir()
+            Files.writeString(dir.resolve("settings.json"), """{"theme":"$written"}""")
+
+            val settings = SettingsStore.new(dir).load()
+
+            assertEquals(expected, settings.theme, "theme '$written'")
+        }
+    }
+
+    @Test
+    fun settingsStorePreservesExplicitDarkTheme() {
         val dir = tempDir()
-        Files.writeString(dir.resolve("settings.json"), """{"theme":"system"}""")
+        Files.writeString(dir.resolve("settings.json"), """{"theme":"dark"}""")
 
         val settings = SettingsStore.new(dir).load()
 
         assertEquals("dark", settings.theme)
-    }
-
-    @Test
-    fun settingsStorePreservesExplicitLightTheme() {
-        val dir = tempDir()
-        Files.writeString(dir.resolve("settings.json"), """{"theme":"light"}""")
-
-        val settings = SettingsStore.new(dir).load()
-
-        assertEquals("light", settings.theme)
     }
 
     @Test

@@ -10,6 +10,8 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.use
+import com.safedb.canvas.CANVAS_HEADER_HEIGHT
+import com.safedb.canvas.CANVAS_RESIZE_FOOTER_HEIGHT
 import com.safedb.canvas.CanvasPoint
 import com.safedb.canvas.CanvasTableLike
 import com.safedb.canvas.routeJoinEdge
@@ -20,6 +22,7 @@ import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.CanvasTable
 import com.safedb.viewmodel.QueryViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,9 +85,19 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(246f, 71f)
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("customer_id", selectingTarget = false))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(100_000_000L)
-                scene.click(450f, 71f)
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("id", selectingTarget = true))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(200_000_000L)
             }
 
@@ -102,7 +115,7 @@ class CanvasInteractionTest {
         val canvasTable = viewModel.canvasTables.single()
         val fieldScrollState = ScrollState(0)
 
-        ImageComposeScene(width = 280, height = 280, density = Density(1f)) {
+        ImageComposeScene(width = 300, height = 280, density = Density(1f)) {
                 SafeDbTheme(isDark = false) {
                     TableCard(
                         canvasTable = canvasTable,
@@ -124,7 +137,8 @@ class CanvasInteractionTest {
                 scene.render(0L)
                 assertTrue(fieldScrollState.maxValue > 0)
                 assertEquals(0, fieldScrollState.value)
-                scene.drag(Offset(220f, 80f), Offset(220f, 160f))
+                val scrollbar = scrollbarCenter(canvasTable)
+                scene.drag(scrollbar, scrollbar + Offset(0f, 40f))
                 scene.render(100_000_000L)
             }
 
@@ -145,9 +159,19 @@ class CanvasInteractionTest {
             }
             .use { scene ->
                 scene.render(0L)
-                scene.click(123f, 35.5f)
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("customer_id", selectingTarget = false))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(100_000_000L)
-                scene.click(283f, 35.5f)
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("id", selectingTarget = true))
+                        .boundsInRoot
+                        .center
+                )
                 scene.render(200_000_000L)
             }
 
@@ -509,6 +533,14 @@ private fun ImageComposeScene.drag(from: Offset, to: Offset) {
     )
     render(30_000_000L)
     sendPointerEvent(PointerEventType.Release, to, button = PointerButton.Primary)
+}
+
+// The scrollbar test composes TableCard directly, so the card's screen origin is (0, 0) instead
+// of its canvas position. Its vertical scrollbar sits just inside the body's right edge.
+private fun scrollbarCenter(table: CanvasTable): Offset {
+    val bodyHeight =
+        (table.height - CANVAS_HEADER_HEIGHT - CANVAS_RESIZE_FOOTER_HEIGHT).coerceAtLeast(64f)
+    return Offset(x = table.width - 4f, y = CANVAS_HEADER_HEIGHT + bodyHeight / 2f)
 }
 
 private fun wideTable(name: String, columnCount: Int): TableInfo =

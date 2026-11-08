@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,11 +36,12 @@ import com.safedb.ui.theme.ScreenHeaderHorizontalPadding
 import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.SchemaViewModel
 
+/** @param subtitle Optional subtitle text; null or blank renders no subtitle line. */
 @Composable
 internal fun WorkspaceScreenHeader(
     icon: ImageVector,
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     connection: ConnectionDef?,
     connections: List<ConnectionDef>,
     selectedSchema: String?,
@@ -60,10 +62,11 @@ internal fun WorkspaceScreenHeader(
                 ),
         verticalArrangement = Arrangement.spacedBy(contentSpacing),
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -77,17 +80,22 @@ internal fun WorkspaceScreenHeader(
                         title,
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.padding(start = 8.dp),
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            Row(
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
                 ConnectionPicker(
                     connection = connection,

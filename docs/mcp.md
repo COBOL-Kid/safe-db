@@ -155,7 +155,7 @@ On put it also writes `{dataDir}/results/{result_id}.jsonl` for LRU accounting: 
 
 `get_result_rows` pages the in-memory sample, not the file. A page stops at 50 rows or about 32 KiB, whichever comes first. Long cell values are truncated with `…[truncated]`. `page_truncated` is true when more of the in-memory sample remains; `next_offset` is then the offset to request next (omitted on the last page). It does not echo `sample_capped`. `summarize_result` reports per-column `null_count`, min/max (int/float numeric, text lexicographic, bool; omitted for binary and when there are no comparable values), and up to 8 distinct flattened values (`distinct_truncated` if more). `summarize_result` echoes `sample_capped` (omitted when false) from the original query.
 
-## Not in 1.0.0
+## Not in 1.0.1
 
 - Sharing macOS Keychain items with the signed desktop app
 - MCP tools that add or update a connection

@@ -23,6 +23,7 @@ private class ActiveRun
 internal class QueryRunController(
     private val service: SafeDbService,
     private val scope: CoroutineScope,
+    private val onRunFinished: () -> Unit = {},
 ) {
     private var runGeneration = 0
     private var activeRun: ActiveRun? = null
@@ -125,6 +126,10 @@ internal class QueryRunController(
                     activeRun = null
                     running = false
                     if (!awaitingConfirmation) onSettled?.invoke(succeeded)
+                    // Refresh is best-effort: success and QueryCore failures record history, while
+                    // early setup failures (connection/password/connect) may not. A single call
+                    // point in finally is intentional.
+                    onRunFinished()
                 }
             }
         }

@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
@@ -37,6 +38,7 @@ import com.safedb.model.SavedQuery
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
+import com.safedb.ui.components.DeleteIconButton
 import com.safedb.ui.components.EmptyState
 import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
@@ -65,6 +67,7 @@ fun HistoryScreen(
     val historyError by viewModel.history.error.collectAsState()
     val savedQueryError by viewModel.savedQueries.error.collectAsState()
     var showClearConfirm by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<HistoryEntry?>(null) }
     var showSavePrompt by remember { mutableStateOf(false) }
     var saveQueryName by remember { mutableStateOf("") }
     var saveEntry by remember { mutableStateOf<HistoryEntry?>(null) }
@@ -77,6 +80,19 @@ fun HistoryScreen(
         confirmLabel = "Clear",
         onConfirm = { viewModel.history.clear { showClearConfirm = false } },
         onCancel = { showClearConfirm = false },
+    )
+
+    ConfirmDialog(
+        open = pendingDelete != null,
+        title = "Delete history entry?",
+        message = "This query will be removed from history. This cannot be undone.",
+        destructive = true,
+        onConfirm = {
+            pendingDelete?.let { entry ->
+                viewModel.history.delete(entry.id) { pendingDelete = null }
+            }
+        },
+        onCancel = { pendingDelete = null },
     )
 
     PromptDialog(
@@ -178,6 +194,7 @@ fun HistoryScreen(
                                 saveQueryName = "${entry.connectionName} query"
                                 showSavePrompt = true
                             },
+                            onDelete = { pendingDelete = entry },
                         )
                     }
                 }
@@ -186,8 +203,13 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun HistoryEntryCard(entry: HistoryEntry, onRerun: () -> Unit, onSave: () -> Unit) {
-    AppCard {
+private fun HistoryEntryCard(
+    entry: HistoryEntry,
+    onRerun: () -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AppCard(modifier = Modifier.testTag("history-entry-${entry.id}")) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -240,6 +262,11 @@ private fun HistoryEntryCard(entry: HistoryEntry, onRerun: () -> Unit, onSave: (
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DeleteIconButton(
+                    onClick = onDelete,
+                    contentDescription =
+                        "Delete ${entry.connectionName} query from ${formatTime(entry.timestamp)}",
+                )
                 if (entry.error == null) {
                     IconButton(onClick = onSave) {
                         Icon(
