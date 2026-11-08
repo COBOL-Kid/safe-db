@@ -484,8 +484,6 @@ private fun extractPair(value: FilterValue?): Pair<String, String> {
 // BETWEEN reuses this width so from/and/to stay fully readable when the pair wraps.
 internal const val FILTER_SINGLE_VALUE_WIDTH_DP = 176
 internal val FilterRowHorizontalPadding = 8.dp
-internal val FilterRowMinValueWidth =
-    (FILTER_SINGLE_VALUE_WIDTH_DP + 2 * FilterRowHorizontalPadding.value).dp
 internal const val FILTER_TABLE_DROPDOWN_WIDTH_DP = 152
 internal const val FILTER_COLUMN_DROPDOWN_WIDTH_DP = 140
 // "Op:" + BETWEEN + the dropdown arrow need this width; shorter labels still ellipsize.
