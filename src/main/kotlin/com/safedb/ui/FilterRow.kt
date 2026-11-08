@@ -195,9 +195,10 @@ fun FilterRow(
                 }
                 ValueKind.Pair -> {
                     val pair = filter.value as? FilterValue.Pair
-                    Row(
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        itemVerticalAlignment = Alignment.CenterVertically,
                     ) {
                         CompactTextInput(
                             value = pair?.first?.text.orEmpty(),
@@ -210,7 +211,7 @@ fun FilterRow(
                                     )
                                 )
                             },
-                            modifier = Modifier.width(FILTER_PAIR_VALUE_WIDTH_DP.dp),
+                            modifier = Modifier.width(FILTER_SINGLE_VALUE_WIDTH_DP.dp),
                             placeholder = "from",
                             contentDescription = "Filter value from ${filter.column}",
                             focusRequester = if (shouldFocusValue) valueFocusRequester else null,
@@ -227,7 +228,7 @@ fun FilterRow(
                                     )
                                 )
                             },
-                            modifier = Modifier.width(FILTER_PAIR_VALUE_WIDTH_DP.dp),
+                            modifier = Modifier.width(FILTER_SINGLE_VALUE_WIDTH_DP.dp),
                             placeholder = "to",
                             contentDescription = "Filter value to ${filter.column}",
                         )
@@ -480,6 +481,7 @@ private fun extractPair(value: FilterValue?): Pair<String, String> {
 }
 
 // Space-separated timestamps such as "2025-07-03 09:12:00" are 19 characters.
+// BETWEEN reuses this width so from/and/to stay fully readable when the pair wraps.
 internal const val FILTER_SINGLE_VALUE_WIDTH_DP = 176
 internal val FilterRowHorizontalPadding = 8.dp
 internal val FilterRowMinValueWidth =
@@ -487,6 +489,5 @@ internal val FilterRowMinValueWidth =
 internal const val FILTER_TABLE_DROPDOWN_WIDTH_DP = 152
 internal const val FILTER_COLUMN_DROPDOWN_WIDTH_DP = 140
 private const val FILTER_OP_DROPDOWN_WIDTH_DP = 100
-private const val FILTER_PAIR_VALUE_WIDTH_DP = 112
 private const val FILTER_LIST_VALUE_WIDTH_DP = 96
 private const val FILTER_BOOL_VALUE_WIDTH_DP = 80

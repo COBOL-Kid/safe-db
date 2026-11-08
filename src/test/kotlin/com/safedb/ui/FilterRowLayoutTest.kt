@@ -3,6 +3,7 @@ package com.safedb.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsNode
 import com.safedb.model.ColumnInfo
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
@@ -133,40 +134,50 @@ class FilterRowLayoutTest {
     }
 
     @Test
-    fun betweenFilterKeepsFromAndToTogetherAtNarrowWidth() {
-        val viewModel = filterRowViewModel(ordersTable, betweenFilter)
-        val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
-        withComposeScene(
-            width = 360,
-            height = 140,
-            content = {
-                SafeDbTheme(isDark = false) {
-                    Box(Modifier.fillMaxWidth()) {
-                        FilterRow(
-                            queryViewModel = viewModel,
-                            filter = filter,
-                            path = listOf(0),
-                        )
+    fun betweenTimestampValuesStayReadableAndGrouped() {
+        listOf(360, 407, 720).forEach { sceneWidth ->
+            val viewModel = filterRowViewModel(ordersTable, betweenFilter)
+            val filter = (viewModel.filters.children.single() as FilterNode.Leaf).spec
+            withComposeScene(
+                width = sceneWidth,
+                height = 220,
+                content = {
+                    SafeDbTheme(isDark = false) {
+                        Box(Modifier.fillMaxWidth()) {
+                            FilterRow(
+                                queryViewModel = viewModel,
+                                filter = filter,
+                                path = listOf(0),
+                            )
+                        }
                     }
+                },
+            ) { scene ->
+                val from = scene.requireContaining("Filter value from order_date")
+                val to = scene.requireContaining("Filter value to order_date")
+                val and = scene.requireExact("and")
+                assertNotNull(scene.findContaining("2025-07-01 00:00:00"))
+                assertNotNull(scene.findContaining("2025-07-31 23:59:59"))
+                assertTrue(
+                    from.boundsInRoot.width >= 168f,
+                    "from field was ${from.boundsInRoot.width}px at ${sceneWidth}px",
+                )
+                assertTrue(
+                    to.boundsInRoot.width >= 168f,
+                    "to field was ${to.boundsInRoot.width}px at ${sceneWidth}px",
+                )
+                assertBetweenRelationship(from, and, to)
+                if (sceneWidth >= 407) {
+                    assertEquals(
+                        from.boundsInRoot.top,
+                        to.boundsInRoot.top,
+                        0.5f,
+                        "pair inputs split at ${sceneWidth}px: from=${from.boundsInRoot} " +
+                            "to=${to.boundsInRoot}",
+                    )
                 }
-            },
-        ) { scene ->
-            val from = scene.requireContaining("Filter value from order_date")
-            val to = scene.requireContaining("Filter value to order_date")
-            val and = scene.requireExact("and")
-            assertEquals(
-                from.boundsInRoot.top,
-                to.boundsInRoot.top,
-                0.5f,
-                "pair inputs split across rows: from=${from.boundsInRoot} to=${to.boundsInRoot}",
-            )
-            assertTrue(
-                and.boundsInRoot.top >= from.boundsInRoot.top - 0.5f &&
-                    and.boundsInRoot.bottom <= from.boundsInRoot.bottom + 0.5f,
-                "and split from the pair inputs: and=${and.boundsInRoot} " +
-                    "from=${from.boundsInRoot} to=${to.boundsInRoot}",
-            )
-            scene.assertNoHorizontalOverflow(360)
+                scene.assertNoHorizontalOverflow(sceneWidth)
+            }
         }
     }
 
@@ -292,6 +303,27 @@ private val betweenFilter =
                 FilterLiteral(LiteralKind.DateTime, "2025-07-31 23:59:59"),
             ),
     )
+
+private fun assertBetweenRelationship(
+    from: SemanticsNode,
+    and: SemanticsNode,
+    to: SemanticsNode,
+) {
+    val sameRow =
+        abs(from.boundsInRoot.center.y - to.boundsInRoot.center.y) <= 1f &&
+            abs(and.boundsInRoot.center.y - from.boundsInRoot.center.y) <= 1f &&
+            from.boundsInRoot.right <= and.boundsInRoot.left + 0.5f &&
+            and.boundsInRoot.right <= to.boundsInRoot.left + 0.5f
+    val stacked =
+        from.boundsInRoot.bottom <= to.boundsInRoot.top + 1f &&
+            and.boundsInRoot.center.y >= from.boundsInRoot.top - 0.5f &&
+            and.boundsInRoot.center.y <= to.boundsInRoot.bottom + 0.5f
+    assertTrue(
+        sameRow || stacked,
+        "and lost the from/to relationship: from=${from.boundsInRoot} " +
+            "and=${and.boundsInRoot} to=${to.boundsInRoot}",
+    )
+}
 
 private fun filterRowViewModel(table: TableInfo, filter: FilterSpec): QueryViewModel {
     val viewModel =

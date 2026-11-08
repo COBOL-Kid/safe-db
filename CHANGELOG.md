@@ -3,7 +3,9 @@
 ## Unreleased
 
 - Query Builder toolbar stays readable at the 960×600 minimum with the sidebar expanded: connection name and Run wrap as groups instead of stacking character-by-character.
+- SQL workspace header Run stays readable at the 960×600 minimum: title, connection/schema pickers, and Run wrap as groups instead of stacking the Run label character-by-character.
 - Filter chips stay fully visible at the default window width with the sidebar expanded, including IN-list wrapping and timestamp values.
+- BETWEEN timestamp fields use the same readable width as single timestamps and keep from/and/to grouped when they wrap.
 - Query Builder Query Options and Joins stay reachable at the 960×600 minimum with the sidebar expanded instead of being squeezed out of the canvas.
 - Table cards reveal column types once the card is wide enough, and the type label is no longer truncated at the reveal width.
 - Wrapped filter values keep their remove buttons on the same line, and BETWEEN inputs stay together.

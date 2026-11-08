@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -61,10 +62,11 @@ internal fun WorkspaceScreenHeader(
                 ),
         verticalArrangement = Arrangement.spacedBy(contentSpacing),
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -78,6 +80,8 @@ internal fun WorkspaceScreenHeader(
                         title,
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.padding(start = 8.dp),
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
                 if (!subtitle.isNullOrBlank()) {
@@ -88,9 +92,10 @@ internal fun WorkspaceScreenHeader(
                     )
                 }
             }
-            Row(
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
                 ConnectionPicker(
                     connection = connection,
