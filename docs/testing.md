@@ -14,7 +14,7 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh unit-coverage proof for broad Kotlin/build changes. Shared and MCP kover both ignore `integrationTest`. |
 | `./gradlew :mcp:koverXmlReportUnit verifyMcpCoverageRatchet` | Generate the unit-only MCP XML report and enforce its independent coverage floor. |
 | `./gradlew integrationTest` | Run the optional `:shared` JDBC and `:mcp` integration suites, including the packaged MCP stdio smoke. |
-| `./gradlew :mcp:integrationTest` | Run the packaged MCP stdio smoke and the environment-gated MCP MySQL case. |
+| `./gradlew :mcp:integrationTest` | Run the packaged MCP stdio smoke and the environment-gated per-dialect MCP cases. |
 | `./gradlew renderPreview --rerun-tasks` | Render 48 UI PNGs to `/tmp/safedb-preview/` after Compose changes. |
 | `./gradlew renderHeroFrames` | Render the query-builder build-up sequence to `/tmp/safedb-preview/hero/`. |
 | `./gradlew renderThemeGallery` | Render Connections/settings across palettes. |
@@ -44,7 +44,7 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 
 ## Integration tests
 
-The root `integrationTest` task runs both the shared JDBC suite and the MCP integration suite. The MCP suite always exercises the packaged shadow JAR over stdio; its MySQL tool test skips when MySQL is unavailable. Required MySQL verification checks the shared and MCP JUnit reports separately, so shared MySQL cases cannot hide a missing or skipped MCP case. PostgreSQL-only runs require shared PostgreSQL coverage but do not require the MCP MySQL case.
+The root `integrationTest` task runs both the shared JDBC suite and the MCP integration suite. The MCP suite always exercises the packaged shadow JAR over stdio; its per-dialect packaged cases (MySQL, PostgreSQL, SQL Server, Oracle, and Db2) skip when their engine is unavailable. Required MySQL verification checks the shared and MCP JUnit reports separately, so shared MySQL cases cannot hide a missing or skipped MCP case. PostgreSQL-only runs require shared PostgreSQL coverage but do not require the MCP MySQL case.
 
 Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true`, `SAFEDB_TEST_REQUIRE_POSTGRES=true`, `SAFEDB_TEST_REQUIRE_MSSQL=true`, `SAFEDB_TEST_REQUIRE_ORACLE=true`, and `SAFEDB_TEST_REQUIRE_DB2=true` to require configured engines. Each engine has matching `SAFEDB_TEST_{MYSQL,POSTGRES,MSSQL,ORACLE,DB2}_{HOST,PORT,USER,PASSWORD,DATABASE}` variables; MySQL also accepts optional `SAFEDB_TEST_MYSQL_DOCKER`. Reproduce the required MySQL job with:
 
