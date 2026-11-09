@@ -5,8 +5,10 @@ import com.safedb.connection.inferLocation
 import com.safedb.connection.transportPresetForLocation
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.model.normalizeSettings
 import com.safedb.secrets.PasswordFile
 import com.safedb.secrets.PasswordFileException
 import com.safedb.service.SafeDbService
@@ -19,6 +21,13 @@ internal const val MCP_USAGE =
        safe-db-mcp connections add [options]
        safe-db-mcp connections list
        safe-db-mcp connections delete <id>
+       safe-db-mcp connections test [<id>]
+       safe-db-mcp settings [show]
+       safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>
+       safe-db-mcp settings default-connection <id> [--default-schema <schema>]
+       safe-db-mcp settings clear-default-connection
+       safe-db-mcp settings block-schema <schema>
+       safe-db-mcp settings unblock-schema <schema>
 
 Add a connection interactively or with flags. Passwords are never flags; use a prompt
 or --password-file /absolute/path.
@@ -49,6 +58,23 @@ internal sealed interface McpCommand {
     data class ConnectionsDelete(val id: String) : McpCommand
 
     data class ConnectionsAdd(val flags: ConnectionAddFlags) : McpCommand
+
+    data class ConnectionsTest(val id: String? = null) : McpCommand
+
+    data object SettingsShow : McpCommand
+
+    data class SettingsRiskGate(val gate: QueryRiskGate) : McpCommand
+
+    data class SettingsDefaultConnection(
+        val connectionId: String,
+        val defaultSchema: String? = null,
+    ) : McpCommand
+
+    data object SettingsClearDefaultConnection : McpCommand
+
+    data class SettingsBlockSchema(val schema: String) : McpCommand
+
+    data class SettingsUnblockSchema(val schema: String) : McpCommand
 }
 
 internal data class ConnectionAddFlags(
@@ -112,12 +138,78 @@ internal fun parseMcpArgs(args: Array<String>): McpCommand {
                     if (args.size != 3 || args[2].startsWith("-")) throw McpCliUsageException()
                     McpCommand.ConnectionsDelete(args[2])
                 }
+                "test" -> parseConnectionsTest(args)
                 else -> throw McpCliUsageException()
             }
+        }
+        "settings" -> parseSettingsCommand(args)
+        else -> throw McpCliUsageException()
+    }
+}
+
+private fun parseConnectionsTest(args: Array<String>): McpCommand =
+    when {
+        args.size == 2 -> McpCommand.ConnectionsTest(null)
+        args.size == 3 && !args[2].startsWith("-") -> McpCommand.ConnectionsTest(args[2])
+        else -> throw McpCliUsageException()
+    }
+
+private fun parseSettingsCommand(args: Array<String>): McpCommand {
+    if (args.size == 1 || (args.size == 2 && args[1] == "show")) return McpCommand.SettingsShow
+    return when (args[1]) {
+        "risk-gate" -> {
+            if (args.size != 3) throw McpCliUsageException()
+            McpCommand.SettingsRiskGate(parseRiskGate(args[2]))
+        }
+        "default-connection" -> parseDefaultConnection(args)
+        "clear-default-connection" -> {
+            if (args.size != 2) throw McpCliUsageException()
+            McpCommand.SettingsClearDefaultConnection
+        }
+        "block-schema" -> {
+            if (args.size != 3 || args[2].isBlank() || args[2].startsWith("-")) {
+                throw McpCliUsageException()
+            }
+            McpCommand.SettingsBlockSchema(args[2])
+        }
+        "unblock-schema" -> {
+            if (args.size != 3 || args[2].isBlank() || args[2].startsWith("-")) {
+                throw McpCliUsageException()
+            }
+            McpCommand.SettingsUnblockSchema(args[2])
         }
         else -> throw McpCliUsageException()
     }
 }
+
+private fun parseDefaultConnection(args: Array<String>): McpCommand.SettingsDefaultConnection {
+    if (args.size < 3 || args[2].startsWith("-")) throw McpCliUsageException()
+    var defaultSchema: String? = null
+    var index = 3
+    val flags = args.toList()
+    while (index < args.size) {
+        val (nameAndValue, consumed) = splitFlag(flags, index)
+        val (flag, value) = nameAndValue
+        when (flag) {
+            "--default-schema" -> defaultSchema = value
+            else -> throw McpCliUsageException()
+        }
+        index += consumed
+    }
+    return McpCommand.SettingsDefaultConnection(args[2], defaultSchema)
+}
+
+private fun parseRiskGate(raw: String): QueryRiskGate =
+    when (raw.trim().lowercase()) {
+        "cautious" -> QueryRiskGate.Cautious
+        "standard" -> QueryRiskGate.Standard
+        "flexible" -> QueryRiskGate.Flexible
+        "disabled" -> QueryRiskGate.Disabled
+        else ->
+            throw McpCliUsageException(
+                "Unknown risk gate '$raw'; expected cautious, standard, flexible, or disabled"
+            )
+    }
 
 internal suspend fun executeMcpCommand(
     command: McpCommand,
@@ -151,6 +243,74 @@ internal suspend fun executeMcpCommand(
                 }
             }
             is McpCommand.ConnectionsAdd -> addConnection(command.flags, service, io, tty)
+            is McpCommand.ConnectionsTest -> testConnections(command.id, service, io)
+            McpCommand.SettingsShow -> {
+                val settings = normalizeSettings(service.getSettings())
+                io.print("query_risk_gate: ${settings.queryRiskGate}")
+                io.print("default_connection_id: ${settings.defaultConnectionId ?: "(none)"}")
+                io.print("default_schema: ${settings.defaultSchema ?: "(none)"}")
+                io.print("blocked_schemas: ${blockedSchemasText(settings.blockedSchemas)}")
+                0
+            }
+            is McpCommand.SettingsRiskGate -> {
+                val current = service.getSettings()
+                val updated = normalizeSettings(current.copy(queryRiskGate = command.gate))
+                service.saveSettings(updated)
+                io.print("query_risk_gate: ${updated.queryRiskGate}")
+                0
+            }
+            is McpCommand.SettingsDefaultConnection -> {
+                if (service.listConnections().none { it.id == command.connectionId }) {
+                    io.printErr("safe-db-mcp: connection not found: ${command.connectionId}")
+                    1
+                } else {
+                    val updated =
+                        normalizeSettings(
+                            service
+                                .getSettings()
+                                .copy(
+                                    defaultConnectionId = command.connectionId,
+                                    defaultSchema = command.defaultSchema,
+                                )
+                        )
+                    service.saveSettings(updated)
+                    io.print("default_connection_id: ${updated.defaultConnectionId}")
+                    io.print("default_schema: ${updated.defaultSchema ?: "(none)"}")
+                    0
+                }
+            }
+            McpCommand.SettingsClearDefaultConnection -> {
+                val updated =
+                    normalizeSettings(
+                        service.getSettings().copy(defaultConnectionId = null, defaultSchema = null)
+                    )
+                service.saveSettings(updated)
+                io.print("Cleared default connection")
+                0
+            }
+            is McpCommand.SettingsBlockSchema -> {
+                val current = service.getSettings()
+                val updated =
+                    normalizeSettings(
+                        current.copy(blockedSchemas = current.blockedSchemas + command.schema)
+                    )
+                service.saveSettings(updated)
+                io.print("blocked_schemas: ${updated.blockedSchemas.joinToString(", ")}")
+                0
+            }
+            is McpCommand.SettingsUnblockSchema -> {
+                val current = service.getSettings()
+                val updated =
+                    normalizeSettings(
+                        current.copy(
+                            blockedSchemas =
+                                current.blockedSchemas - command.schema.trim().lowercase()
+                        )
+                    )
+                service.saveSettings(updated)
+                io.print("blocked_schemas: ${blockedSchemasText(updated.blockedSchemas)}")
+                0
+            }
         }
     } catch (error: CancellationException) {
         throw error
@@ -164,6 +324,47 @@ internal suspend fun executeMcpCommand(
         io.printErr("safe-db-mcp: ${error.message}")
         1
     }
+
+private suspend fun testConnections(id: String?, service: SafeDbService, io: CliIo): Int {
+    val connections = service.listConnections()
+    if (id != null) {
+        val def = connections.firstOrNull { it.id == id }
+        if (def == null) {
+            io.printErr("safe-db-mcp: connection not found: $id")
+            return 1
+        }
+        return try {
+            service.testConnection(def, null)
+            io.print("OK ${def.id}  ${def.name}  ${def.dialect}  ${def.database}")
+            0
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            io.printErr("FAIL ${def.id}  ${def.name}: ${error.message}")
+            1
+        }
+    }
+    if (connections.isEmpty()) {
+        io.print("No connections.")
+        return 0
+    }
+    var failed = false
+    connections.forEach { def ->
+        try {
+            service.testConnection(def, null)
+            io.print("OK ${def.id}  ${def.name}  ${def.dialect}  ${def.database}")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            failed = true
+            io.printErr("FAIL ${def.id}  ${def.name}: ${error.message}")
+        }
+    }
+    return if (failed) 1 else 0
+}
+
+private fun blockedSchemasText(schemas: List<String>): String =
+    if (schemas.isEmpty()) "(none)" else schemas.joinToString(", ")
 
 private fun parseAddFlags(args: List<String>): ConnectionAddFlags {
     var name: String? = null

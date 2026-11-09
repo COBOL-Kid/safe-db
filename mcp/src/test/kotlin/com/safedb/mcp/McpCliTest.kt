@@ -1,6 +1,9 @@
 package com.safedb.mcp
 
+import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.QueryRiskGate
+import com.safedb.model.Settings
 import com.safedb.model.TransportSecurityMode
 import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbServiceImpl
@@ -567,6 +570,410 @@ class McpCliTest {
             )
         } finally {
             SecretsManager.initStore("disabled")
+        }
+    }
+
+    @Test
+    fun connectionsTestParsesOptionalId() {
+        assertEquals(McpCommand.ConnectionsTest(null), parseMcpArgs(arrayOf("connections", "test")))
+        assertEquals(
+            McpCommand.ConnectionsTest("c1"),
+            parseMcpArgs(arrayOf("connections", "test", "c1")),
+        )
+        assertTrue(MCP_USAGE.contains("safe-db-mcp connections test [<id>]"))
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings [show]"))
+        assertTrue(
+            MCP_USAGE.contains(
+                "safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>"
+            )
+        )
+        assertTrue(
+            MCP_USAGE.contains(
+                "safe-db-mcp settings default-connection <id> [--default-schema <schema>]"
+            )
+        )
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings clear-default-connection"))
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings block-schema <schema>"))
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings unblock-schema <schema>"))
+    }
+
+    @Test
+    fun connectionsTestSingleConnectionPassesWithoutPassword() = runBlocking {
+        val service = RecordingSafeDbService()
+        service.connections += sampleMcpConnection()
+        val io = BufferCliIo()
+
+        assertEquals(
+            0,
+            executeMcpCommand(McpCommand.ConnectionsTest("c1"), service, io, tty = false),
+        )
+        assertEquals("c1", service.tested?.first?.id)
+        assertEquals(null, service.tested?.second)
+        assertEquals("OK c1  Demo  Postgres  app\n", io.stdout.toString())
+        assertEquals("", io.stderr.toString())
+    }
+
+    @Test
+    fun connectionsTestSingleConnectionFailureExits1() = runBlocking {
+        val service = RecordingSafeDbService().apply { testError = "connection refused" }
+        service.connections += sampleMcpConnection()
+        val io = BufferCliIo()
+
+        assertEquals(
+            1,
+            executeMcpCommand(McpCommand.ConnectionsTest("c1"), service, io, tty = false),
+        )
+        assertEquals("FAIL c1  Demo: connection refused\n", io.stderr.toString())
+        assertEquals("", io.stdout.toString())
+    }
+
+    @Test
+    fun connectionsTestUnknownIdExits1() = runBlocking {
+        val service = RecordingSafeDbService()
+        service.connections += sampleMcpConnection()
+        val io = BufferCliIo()
+
+        assertEquals(
+            1,
+            executeMcpCommand(McpCommand.ConnectionsTest("missing"), service, io, tty = false),
+        )
+        assertEquals("safe-db-mcp: connection not found: missing\n", io.stderr.toString())
+        assertEquals(null, service.tested)
+    }
+
+    @Test
+    fun connectionsTestWithoutIdCoversAllConnections() = runBlocking {
+        val emptyIo = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.ConnectionsTest(null),
+                RecordingSafeDbService(),
+                emptyIo,
+                tty = false,
+            ),
+        )
+        assertEquals("No connections.\n", emptyIo.stdout.toString())
+
+        val service = RecordingSafeDbService()
+        service.connections += sampleMcpConnection()
+        service.connections += sampleMcpConnection(id = "c2", name = "Reporting", database = "dw")
+        val okIo = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(McpCommand.ConnectionsTest(null), service, okIo, tty = false),
+        )
+        assertEquals(
+            "OK c1  Demo  Postgres  app\nOK c2  Reporting  Postgres  dw\n",
+            okIo.stdout.toString(),
+        )
+        assertEquals("", okIo.stderr.toString())
+    }
+
+    @Test
+    fun connectionsTestWithoutIdReportsPartialFailure() = runBlocking {
+        val service =
+            object : RecordingSafeDbService() {
+                override suspend fun testConnection(def: ConnectionDef, password: String?): String {
+                    if (def.id == "c2") error("timed out")
+                    return "ok"
+                }
+            }
+        service.connections += sampleMcpConnection()
+        service.connections += sampleMcpConnection(id = "c2", name = "Reporting")
+        val io = BufferCliIo()
+
+        assertEquals(
+            1,
+            executeMcpCommand(McpCommand.ConnectionsTest(null), service, io, tty = false),
+        )
+        assertEquals("OK c1  Demo  Postgres  app\n", io.stdout.toString())
+        assertEquals("FAIL c2  Reporting: timed out\n", io.stderr.toString())
+    }
+
+    @Test
+    fun settingsShowPrintsDefaultsAndSavedValues() = runBlocking {
+        assertEquals(McpCommand.SettingsShow, parseMcpArgs(arrayOf("settings")))
+        assertEquals(McpCommand.SettingsShow, parseMcpArgs(arrayOf("settings", "show")))
+
+        val defaultIo = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.SettingsShow,
+                RecordingSafeDbService(),
+                defaultIo,
+                tty = false,
+            ),
+        )
+        assertEquals(
+            "query_risk_gate: Standard\n" +
+                "default_connection_id: (none)\n" +
+                "default_schema: (none)\n" +
+                "blocked_schemas: (none)\n",
+            defaultIo.stdout.toString(),
+        )
+
+        val service = RecordingSafeDbService()
+        service.settings =
+            Settings(
+                blockedSchemas = listOf("pg_catalog", "audit"),
+                queryRiskGate = QueryRiskGate.Flexible,
+                defaultConnectionId = "c1",
+                defaultSchema = "public",
+            )
+        val io = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(McpCommand.SettingsShow, service, io, tty = false),
+        )
+        assertEquals(
+            "query_risk_gate: Flexible\n" +
+                "default_connection_id: c1\n" +
+                "default_schema: public\n" +
+                "blocked_schemas: pg_catalog, audit\n",
+            io.stdout.toString(),
+        )
+    }
+
+    @Test
+    fun settingsRiskGateParsesEveryGateAndSaves() = runBlocking {
+        assertEquals(
+            McpCommand.SettingsRiskGate(QueryRiskGate.Cautious),
+            parseMcpArgs(arrayOf("settings", "risk-gate", "cautious")),
+        )
+        assertEquals(
+            McpCommand.SettingsRiskGate(QueryRiskGate.Standard),
+            parseMcpArgs(arrayOf("settings", "risk-gate", "STANDARD")),
+        )
+        assertEquals(
+            McpCommand.SettingsRiskGate(QueryRiskGate.Flexible),
+            parseMcpArgs(arrayOf("settings", "risk-gate", "Flexible")),
+        )
+        assertEquals(
+            McpCommand.SettingsRiskGate(QueryRiskGate.Disabled),
+            parseMcpArgs(arrayOf("settings", "risk-gate", "disabled")),
+        )
+
+        val service = RecordingSafeDbService()
+        val io = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.SettingsRiskGate(QueryRiskGate.Flexible),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals(QueryRiskGate.Flexible, service.settings.queryRiskGate)
+        assertEquals("query_risk_gate: Flexible\n", io.stdout.toString())
+    }
+
+    @Test
+    fun settingsRiskGateRejectsUnknownGate() {
+        val error =
+            assertFailsWith<McpCliUsageException> {
+                parseMcpArgs(arrayOf("settings", "risk-gate", "reckless"))
+            }
+        assertEquals(
+            "Unknown risk gate 'reckless'; expected cautious, standard, flexible, or disabled",
+            error.message,
+        )
+    }
+
+    @Test
+    fun settingsDefaultConnectionParsesAndSaves() = runBlocking {
+        assertEquals(
+            McpCommand.SettingsDefaultConnection("c1"),
+            parseMcpArgs(arrayOf("settings", "default-connection", "c1")),
+        )
+        assertEquals(
+            McpCommand.SettingsDefaultConnection("c1", "reporting"),
+            parseMcpArgs(
+                arrayOf("settings", "default-connection", "c1", "--default-schema", "reporting")
+            ),
+        )
+        assertEquals(
+            McpCommand.SettingsDefaultConnection("c1", "reporting"),
+            parseMcpArgs(
+                arrayOf("settings", "default-connection", "c1", "--default-schema=reporting")
+            ),
+        )
+
+        val service = RecordingSafeDbService()
+        service.connections += sampleMcpConnection()
+        val io = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                parseMcpArgs(
+                    arrayOf(
+                        "settings",
+                        "default-connection",
+                        "c1",
+                        "--default-schema",
+                        "reporting",
+                    )
+                ),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals("c1", service.settings.defaultConnectionId)
+        assertEquals("reporting", service.settings.defaultSchema)
+        assertEquals(
+            "default_connection_id: c1\ndefault_schema: reporting\n",
+            io.stdout.toString(),
+        )
+
+        val plainIo = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.SettingsDefaultConnection("c1"),
+                service,
+                plainIo,
+                tty = false,
+            ),
+        )
+        assertEquals(null, service.settings.defaultSchema)
+        assertEquals(
+            "default_connection_id: c1\ndefault_schema: (none)\n",
+            plainIo.stdout.toString(),
+        )
+    }
+
+    @Test
+    fun settingsDefaultConnectionRejectsUnknownConnection() = runBlocking {
+        val service = RecordingSafeDbService()
+        service.connections += sampleMcpConnection()
+        val io = BufferCliIo()
+
+        assertEquals(
+            1,
+            executeMcpCommand(
+                McpCommand.SettingsDefaultConnection("missing", "reporting"),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals("safe-db-mcp: connection not found: missing\n", io.stderr.toString())
+        assertEquals(null, service.settings.defaultConnectionId)
+        assertEquals(null, service.settings.defaultSchema)
+    }
+
+    @Test
+    fun settingsClearDefaultConnectionClearsBothFields() = runBlocking {
+        val service = RecordingSafeDbService()
+        service.settings = Settings(defaultConnectionId = "c1", defaultSchema = "public")
+        val io = BufferCliIo()
+
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.SettingsClearDefaultConnection,
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals(null, service.settings.defaultConnectionId)
+        assertEquals(null, service.settings.defaultSchema)
+        assertEquals("Cleared default connection\n", io.stdout.toString())
+    }
+
+    @Test
+    fun settingsBlockAndUnblockSchemaNormalizeAndSave() = runBlocking {
+        assertEquals(
+            McpCommand.SettingsBlockSchema("pg_catalog"),
+            parseMcpArgs(arrayOf("settings", "block-schema", "pg_catalog")),
+        )
+        assertEquals(
+            McpCommand.SettingsUnblockSchema("pg_catalog"),
+            parseMcpArgs(arrayOf("settings", "unblock-schema", "pg_catalog")),
+        )
+
+        val service = RecordingSafeDbService()
+        val io = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                parseMcpArgs(arrayOf("settings", "block-schema", " PG_Catalog ")),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals(listOf("pg_catalog"), service.settings.blockedSchemas)
+        assertEquals("blocked_schemas: pg_catalog\n", io.stdout.toString())
+
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.SettingsBlockSchema("audit"),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals(listOf("pg_catalog", "audit"), service.settings.blockedSchemas)
+
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.SettingsUnblockSchema("Audit"),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals(listOf("pg_catalog"), service.settings.blockedSchemas)
+        assertTrue(io.stdout.toString().contains("blocked_schemas: pg_catalog\n"))
+
+        assertEquals(
+            0,
+            executeMcpCommand(
+                McpCommand.SettingsUnblockSchema("pg_catalog"),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertTrue(service.settings.blockedSchemas.isEmpty())
+        assertTrue(io.stdout.toString().endsWith("blocked_schemas: (none)\n"))
+    }
+
+    @Test
+    fun malformedConnectionsTestAndSettingsCommandsAreRejected() {
+        val invalid =
+            listOf(
+                arrayOf("connections", "test", "--force"),
+                arrayOf("connections", "test", "c1", "extra"),
+                arrayOf("settings", "show", "extra"),
+                arrayOf("settings", "risk-gate"),
+                arrayOf("settings", "risk-gate", "standard", "extra"),
+                arrayOf("settings", "default-connection"),
+                arrayOf("settings", "default-connection", "--flag"),
+                arrayOf("settings", "default-connection", "c1", "--unknown", "value"),
+                arrayOf("settings", "default-connection", "c1", "--default-schema"),
+                arrayOf("settings", "default-connection", "c1", "--default-schema="),
+                arrayOf("settings", "clear-default-connection", "extra"),
+                arrayOf("settings", "block-schema"),
+                arrayOf("settings", "block-schema", "--flag"),
+                arrayOf("settings", "block-schema", " "),
+                arrayOf("settings", "unblock-schema"),
+                arrayOf("settings", "unblock-schema", "--flag"),
+                arrayOf("settings", "unblock-schema", " "),
+                arrayOf("settings", "unknown"),
+            )
+
+        invalid.forEach { args ->
+            assertFailsWith<McpCliUsageException>("Expected rejection for ${args.toList()}") {
+                parseMcpArgs(args)
+            }
         }
     }
 }
