@@ -10,6 +10,7 @@ import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.QueryResult
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
+import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import kotlinx.coroutines.CancellationException
@@ -80,19 +81,32 @@ sealed class QueryCoreOutcome {
     data class Failure(val error: QueryCoreError) : QueryCoreOutcome()
 }
 
-suspend fun runQueryCore(
+data class QueryAssessment(
+    val normalizedSpec: QuerySpec,
+    val columns: List<ResultColumn>,
+    val compiled: CompiledQuery,
+    val warnings: List<String>,
+    val riskEvaluation: QueryRiskEvaluation,
+)
+
+sealed class QueryAssessmentOutcome {
+    data class Success(val assessment: QueryAssessment) : QueryAssessmentOutcome()
+
+    data class Failure(val error: QueryCoreError) : QueryAssessmentOutcome()
+}
+
+suspend fun assessQueryCore(
     runner: QueryRunner,
     def: ConnectionDef,
     spec: QuerySpec,
     schema: Schema,
     settings: Settings,
-    confirmation: QueryExecutionConfirmation? = null,
-): QueryCoreOutcome {
+): QueryAssessmentOutcome {
     val (validated, normalizedSpec, warnings, staticAssessment) =
         when (val assessed = assessValidatedQueryRisk(spec, schema, settings, def.dialect)) {
             is Outcome.Ok -> assessed.value
             is Outcome.Err ->
-                return QueryCoreOutcome.Failure(
+                return QueryAssessmentOutcome.Failure(
                     QueryCoreError(QueryError.Validation(assessed.message))
                 )
         }
@@ -101,12 +115,22 @@ suspend fun runQueryCore(
         when (val result = compileValidated(validated, def.dialect)) {
             is Outcome.Ok -> result.value
             is Outcome.Err ->
-                return QueryCoreOutcome.Failure(
+                return QueryAssessmentOutcome.Failure(
                     QueryCoreError(
                         error = QueryError.Compilation(result.message, normalizedSpec),
                         warnings = warnings,
                     )
                 )
+        }
+
+    val columns =
+        validated.columns().map { column ->
+            val dataType =
+                findTableByAlias(schema, normalizedSpec, column.tableAlias)
+                    ?.columns
+                    ?.find { it.name == column.column }
+                    ?.dataType ?: "unknown"
+            ResultColumn(name = column.resultAlias, dataType = dataType)
         }
 
     val fingerprint = staticAssessment?.queryFingerprint ?: queryFingerprint(validated)
@@ -120,7 +144,9 @@ suspend fun runQueryCore(
                     applyRiskGate(null, QueryRiskGate.Disabled)
                         .copy(queryFingerprint = fingerprint),
             )
-        return executeCompiled(runner, compiled, warnings, normalizedSpec, evaluation)
+        return QueryAssessmentOutcome.Success(
+            QueryAssessment(normalizedSpec, columns, compiled, warnings, evaluation)
+        )
     }
 
     val explain =
@@ -169,12 +195,8 @@ suspend fun runQueryCore(
             }
         }
     if (baseEvaluation.decision.state != RiskGateState.Allowed) {
-        return QueryCoreOutcome.Failure(
-            QueryCoreError(
-                error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
-                warnings = warnings,
-                riskEvaluation = baseEvaluation,
-            )
+        return QueryAssessmentOutcome.Success(
+            QueryAssessment(normalizedSpec, columns, compiled, warnings, baseEvaluation)
         )
     }
 
@@ -183,7 +205,7 @@ suspend fun runQueryCore(
             is ExplainResult.Unavailable ->
                 when (val disposition = unavailablePlanDisposition(def, fingerprint, explain)) {
                     is UnavailablePlanDisposition.HardFail ->
-                        return QueryCoreOutcome.Failure(
+                        return QueryAssessmentOutcome.Failure(
                             QueryCoreError(
                                 error = QueryError.Execution(disposition.message, normalizedSpec),
                                 warnings = warnings,
@@ -194,37 +216,96 @@ suspend fun runQueryCore(
                 }
             is ExplainResult.Available -> optimizerCostConfirmation(def, fingerprint, explain)
         }
-    // Accept only an exact match across connection, credentials, query, and plan condition.
-    val confirmationAccepted = requirement != null && confirmation == requirement.confirmation
     val evaluation =
-        when {
-            requirement == null -> baseEvaluation
-            confirmationAccepted ->
-                baseEvaluation.copy(
-                    confirmationRequirement = requirement,
-                    confirmationAccepted = true,
-                )
-            else ->
-                baseEvaluation.copy(
-                    decision =
-                        baseEvaluation.decision.copy(
-                            state = RiskGateState.ConfirmationRequired,
-                            reasons = requirement.reasons,
-                        ),
-                    confirmationRequirement = requirement,
-                )
-        }
-    if (requirement != null && !confirmationAccepted) {
-        return QueryCoreOutcome.Failure(
-            QueryCoreError(
-                error = QueryError.ConfirmationRequired(evaluation, requirement, normalizedSpec),
-                warnings = warnings,
-                riskEvaluation = evaluation,
+        if (requirement != null) {
+            baseEvaluation.copy(
+                decision =
+                    baseEvaluation.decision.copy(
+                        state = RiskGateState.ConfirmationRequired,
+                        reasons = requirement.reasons,
+                    ),
+                confirmationRequirement = requirement,
             )
-        )
-    }
+        } else {
+            baseEvaluation
+        }
 
-    return executeCompiled(runner, compiled, warnings, normalizedSpec, evaluation)
+    return QueryAssessmentOutcome.Success(
+        QueryAssessment(normalizedSpec, columns, compiled, warnings, evaluation)
+    )
+}
+
+suspend fun runQueryCore(
+    runner: QueryRunner,
+    def: ConnectionDef,
+    spec: QuerySpec,
+    schema: Schema,
+    settings: Settings,
+    confirmation: QueryExecutionConfirmation? = null,
+): QueryCoreOutcome {
+    val assessment =
+        when (val outcome = assessQueryCore(runner, def, spec, schema, settings)) {
+            is QueryAssessmentOutcome.Success -> outcome.assessment
+            is QueryAssessmentOutcome.Failure -> return QueryCoreOutcome.Failure(outcome.error)
+        }
+    val baseEvaluation = assessment.riskEvaluation
+    val normalizedSpec = assessment.normalizedSpec
+    val warnings = assessment.warnings
+    val evaluation =
+        when (baseEvaluation.decision.state) {
+            RiskGateState.Blocked ->
+                return QueryCoreOutcome.Failure(
+                    QueryCoreError(
+                        error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
+                        warnings = warnings,
+                        riskEvaluation = baseEvaluation,
+                    )
+                )
+            RiskGateState.ConfirmationRequired -> {
+                val requirement =
+                    baseEvaluation.confirmationRequirement
+                        ?: return QueryCoreOutcome.Failure(
+                            QueryCoreError(
+                                error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
+                                warnings = warnings,
+                                riskEvaluation = baseEvaluation,
+                            )
+                        )
+                if (confirmation == requirement.confirmation) {
+                    baseEvaluation.copy(
+                        decision =
+                            baseEvaluation.decision.copy(
+                                state = RiskGateState.Allowed,
+                                reasons = emptyList(),
+                            ),
+                        confirmationAccepted = true,
+                    )
+                } else {
+                    return QueryCoreOutcome.Failure(
+                        QueryCoreError(
+                            error =
+                                QueryError.ConfirmationRequired(
+                                    baseEvaluation,
+                                    requirement,
+                                    normalizedSpec,
+                                ),
+                            warnings = warnings,
+                            riskEvaluation = baseEvaluation,
+                        )
+                    )
+                }
+            }
+            RiskGateState.Allowed,
+            RiskGateState.AssessmentPending -> baseEvaluation
+        }
+
+    return executeCompiled(
+        runner,
+        assessment.compiled,
+        warnings,
+        normalizedSpec,
+        evaluation,
+    )
 }
 
 private sealed class UnavailablePlanDisposition {

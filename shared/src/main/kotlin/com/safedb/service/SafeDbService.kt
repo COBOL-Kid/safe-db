@@ -5,6 +5,7 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.HistoryEntry
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.model.ResultColumn
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
@@ -20,6 +21,15 @@ data class QueryRunRequest(
 )
 
 data class QueryRunResult(val queryResult: QueryResult, val riskEvaluation: QueryRiskEvaluation)
+
+data class QueryAssessmentResult(
+    val normalizedSpec: QuerySpec,
+    val columns: List<ResultColumn>,
+    val compiledSql: String,
+    val parameterCount: Int,
+    val warnings: List<String>,
+    val riskEvaluation: QueryRiskEvaluation,
+)
 
 class QueryFailureException(val queryError: QueryError, val warnings: List<String> = emptyList()) :
     IllegalArgumentException(queryError.message)
@@ -43,6 +53,9 @@ interface SafeDbService {
     suspend fun getSchema(connectionId: String): Schema
 
     suspend fun runQuery(request: QueryRunRequest): QueryRunResult
+
+    suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult =
+        throw UnsupportedOperationException("assessQuery")
 
     suspend fun listSavedQueries(): List<SavedQuery>
 
