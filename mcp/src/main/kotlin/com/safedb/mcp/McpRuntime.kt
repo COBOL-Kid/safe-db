@@ -295,7 +295,15 @@ internal fun createSafeDbMcpServer(
             options =
                 ServerOptions(
                     capabilities =
-                        ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false))
+                        ServerCapabilities(
+                            tools = ServerCapabilities.Tools(listChanged = false),
+                            resources =
+                                ServerCapabilities.Resources(
+                                    subscribe = false,
+                                    listChanged = false,
+                                ),
+                            prompts = ServerCapabilities.Prompts(listChanged = false),
+                        )
                 ),
             instructions = MCP_SERVER_INSTRUCTIONS,
         )
@@ -303,6 +311,9 @@ internal fun createSafeDbMcpServer(
     registerSchemaTools(server, service, schemaCache)
     registerQueryTools(server, service, store)
     registerExploreTools(server, store)
+    registerWorkspaceTools(server, service, store, nowMs)
+    registerExportTools(server, store, resultsDir)
+    registerMcpResourcesAndPrompts(server, service, schemaCache, store)
     return server
 }
 

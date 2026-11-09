@@ -16,16 +16,32 @@ class McpPackagedStdioIntegrationTest {
             assertTrue(client.serverVersion?.version.orEmpty().isNotBlank())
             assertEquals(
                 listOf(
+                    "apply_recipe",
+                    "assess_query",
                     "delete_connection",
+                    "delete_saved_query",
                     "describe_table",
+                    "export_result",
+                    "filter_result_rows",
+                    "find_join_paths",
                     "get_result_rows",
                     "list_connections",
+                    "list_query_history",
+                    "list_recipes",
+                    "list_saved_queries",
                     "list_tables",
+                    "pivot_result",
                     "run_query",
+                    "run_saved_query",
+                    "save_query",
+                    "search_catalog",
                     "summarize_result",
                 ),
                 client.listTools().tools.map { it.name }.sorted(),
             )
+            assertEquals(false, client.serverCapabilities?.resources?.listChanged)
+            assertEquals(false, client.serverCapabilities?.resources?.subscribe)
+            assertEquals(false, client.serverCapabilities?.prompts?.listChanged)
         }
     }
 
