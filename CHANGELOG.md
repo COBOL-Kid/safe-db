@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.0` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.0-all.jar`; npm packages are stamped 1.1.0 at assemble time.
+
+- Schema discovery and join guidance: `describe_table` includes `join_eligible` on columns and `incoming_foreign_keys`. Added `search_catalog` for case-insensitive matching across tables, columns, indexes, and foreign keys, and `find_join_paths` for direct neighbors or multi-hop foreign-key and indexed-column paths.
+- Dry-run query assessment: added `assess_query` (`SafeDbService.assessQuery` / `assessQueryCore`) to parse, validate, compile, run `EXPLAIN`, and evaluate the risk gate and confirmation requirements without executing the `SELECT` or writing query history.
+- In-memory sample analysis: added `pivot_result` and `filter_result_rows` on `result_id`, backed by the `:shared` Explore pivot and worksheet engines, plus `export_result` to write owner-only CSV exports under `{dataDir}/results/exports/`.
+- Workspace tools: added `list_saved_queries`, `run_saved_query`, `save_query`, `delete_saved_query` (two-step confirmation), `list_recipes`, `apply_recipe`, and `list_query_history`, all backed by the shared `specToSql` compiler.
+- MCP resources and prompts: added `safedb://connections`, `safedb://connections/{connection_id}/tables`, and `safedb://results/{result_id}/summary` resources plus `explore-database` and `analyze-result` prompts.
+- CLI enhancements: added `safe-db-mcp connections test [<id>]` and `safe-db-mcp settings` (`show`, `risk-gate`, `default-connection`, `clear-default-connection`, `block-schema`, `unblock-schema`).
+
 ## 1.0.1
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.0.1` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.0.1-all.jar`; npm packages are stamped 1.0.1 at assemble time.

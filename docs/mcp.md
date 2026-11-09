@@ -45,7 +45,7 @@ On Windows, `list_connections` is the same list the UI uses. On macOS, MCP conne
 
 `SAFEDB_KEYCHAIN_BACKEND` remains a store-selection switch (including `disabled` for tests). It is not how users pass connection details.
 
-`query_risk_gate` and `blocked_schemas` come from `settings.json` in that same data directory (default gate `Standard`). There is no MCP tool to change them. On Windows, the desktop Settings screen writes that file; on macOS and Linux, MCP has its own `settings.json`.
+`query_risk_gate` and `blocked_schemas` come from `settings.json` in that same data directory (default gate `Standard`). They are configurable via `safe-db-mcp settings` or, on Windows, the desktop Settings screen; there is still no MCP tool to change them. On macOS and Linux, MCP has its own `settings.json`.
 
 ## CLI
 
@@ -59,6 +59,13 @@ safe-db-mcp setup
 safe-db-mcp connections add [options]
 safe-db-mcp connections list
 safe-db-mcp connections delete <id>
+safe-db-mcp connections test [<id>]
+safe-db-mcp settings
+safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>
+safe-db-mcp settings default-connection <id> [--default-schema <schema>]
+safe-db-mcp settings clear-default-connection
+safe-db-mcp settings block-schema <schema>
+safe-db-mcp settings unblock-schema <schema>
 ```
 
 Example:
@@ -83,6 +90,10 @@ safe-db-mcp setup --dialect mysql --database app --username readonly --password-
 
 `--password` and `-p` are rejected. Do not put host, user, database, or password in environment variables.
 
+`connections test [<id>]` tests one saved connection, or every saved connection when `<id>` is omitted, with the same ~10s driver connect timeout as `setup`. It prints `OK` or `FAIL` per connection and never prints a password.
+
+`safe-db-mcp settings` with no subcommand is `settings show`. It prints `query_risk_gate`, `default_connection_id`, `default_schema`, and `blocked_schemas`. `risk-gate` writes the stored gate. `default-connection` also stores the optional `--default-schema`; `clear-default-connection` clears both. `block-schema` appends a schema and `unblock-schema` removes it.
+
 ## Tools
 
 Progressive catalog, then a gated query. Do not expect the full [`Schema`](../shared/src/main/kotlin/com/safedb/model/Schema.kt) or full [`QueryResult`](../shared/src/main/kotlin/com/safedb/model/Ir.kt) as a tool payload. No tool accepts a password or a URL with embedded credentials.
@@ -92,14 +103,27 @@ Progressive catalog, then a gated query. Do not expect the full [`Schema`](../sh
 | `list_connections` | `id`, `name`, `dialect`, `database`. No secrets. `readOnlyHint`. |
 | `delete_connection` | Delete a saved connection by `connection_id`. First call returns `confirmation_required` with reasons and a confirmation object; show the user, then retry with that object. Do not auto-confirm or invent the object. Invalidates the schema cache for that id. `destructiveHint`. |
 | `list_tables` | `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `getSchema` (5 min TTL, optional `refresh=true`). Honors `blocked_schemas` and built-in system catalogs. `readOnlyHint`. |
-| `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`), indexes, FKs. Same cache. Unknown or blocked → `not_found`. `readOnlyHint`. |
+| `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`, `join_eligible`), indexes, `foreign_keys`, and `incoming_foreign_keys` (source table and columns, cardinality, optionality). Same cache. Unknown or blocked → `not_found`. `readOnlyHint`. |
+| `search_catalog` | Case-insensitive substring search of the cached catalog across table and schema names, column names and types, index names and key columns, and foreign-key names, columns, and referenced tables. `limit` defaults to `SEARCH_CATALOG_DEFAULT_LIMIT` (25) and caps at `SEARCH_CATALOG_MAX_LIMIT` (50). Returns `match_count` (before the limit), `truncated`, and per-table `matched_columns`, `matched_indexes`, `matched_foreign_keys`. Honors `blocked_schemas`; same cache and `refresh`. `readOnlyHint`. |
+| `find_join_paths` | Without `to_table`, direct neighbors of `from_table` with `foreign_key` or `indexed_columns` edges, column pairs, an `on_clause`, and FK cardinality and optionality. With `to_table`, up to 10 paths of at most `max_hops` (default `FIND_JOIN_PATHS_DEFAULT_HOPS` (2), max `FIND_JOIN_PATHS_MAX_HOPS` (3)). Tables accept `schema.table` or `table`; unqualified names use `default_schema`, the saved default schema for this connection, or a unique visible table. Honors `blocked_schemas`; same cache and `refresh`. `readOnlyHint`. |
+| `assess_query` | Dry-run one `SELECT` on a saved connection: parse, validate, compile, run `EXPLAIN`, and evaluate the risk gate and confirmation requirements without executing the `SELECT` or writing query history. Returns `columns`, `compiled_sql`, `parameter_count`, `warnings`, a slim `risk` summary, and `confirmation_required` with reasons when confirmation would be required. `readOnlyHint`. |
 | `run_query` | `connection_id` and `sql`. Optional `default_schema`: schema used when a table name has no prefix. Copy `list_tables.schema` for this connection (MySQL: usually the database name). Omit when every table is already `schema.table`. Not filled from `connection.database`. If the argument is omitted, [`settingsDefaultSchema`](../mcp/src/main/kotlin/com/safedb/mcp/QueryTools.kt) uses `default_schema` from `settings.json` only when `default_connection_id` is this connection; any other connection does not inherit it. An explicit `default_schema` argument always wins. Accepted SQL matches the desktop app ([query-engine.md](query-engine.md)); compiled columns are `table__column`. Parses SQL to `QuerySpec`, then `SafeDbService.runQuery` (fresh introspect on execute). Receipt, not the grid. No tool annotations. |
 | `get_result_rows` | Page the in-memory sample for a `result_id`. `offset` default 0 (negative clamps to 0). `limit` default 50, hard cap 50; 0 or negative is `invalid_arguments`. Pages also stop around 32 KiB; long cell values are truncated with `…[truncated]`. `page_truncated` plus `next_offset` when more sample rows remain. Unknown or expired → `not_found`. `readOnlyHint`. |
 | `summarize_result` | Per-column stats on that same sample. Echoes `sample_capped` when the original fetch was capped. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `pivot_result` | Pivot the in-memory sample by `result_id` with `row_dimensions`, `column_dimensions`, `measures`, `filters`, and `sort`; the same `:shared` Explore pivot engine as the desktop app. With no dimensions or measures it uses a default row count pivot. Returns pivoted columns, `row_count`, `pivot_truncated`, warnings, and at most 50 rows / 32 KiB. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `filter_result_rows` | Filter, sort, project, and page the in-memory sample by `result_id` using the `:shared` worksheet engine. `filters` support comparison ops incl. `between`, `is_null`, and `members`; `sorts` accept `column` and `asc`/`desc`; `columns` limits the projection. `offset` defaults to 0 and `limit` defaults to and caps at 50. `matched_row_count` is after filtering; `sample_row_count` is the stored sample size. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `export_result` | Write the in-memory sample for a `result_id` to an owner-only CSV under `{dataDir}/results/exports/`. Optional simple `filename` (letters, digits, dot, underscore, dash; `.csv` appended when missing). Returns `result_id`, `file_path`, `row_count`, `bytes`, and `sample_capped`. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `list_saved_queries` | Saved queries from the MCP store as `id`, `name`, `connection_id`, `sql`, `tables`, and `created_at`. Optional `connection_id` filter. `readOnlyHint`. |
+| `run_saved_query` | Run a saved query by `query_id` on its saved connection. Accepts the same confirmation object as `run_query` and returns a `run_query`-style receipt with `result_id`. Unknown `query_id` → `not_found`. |
+| `save_query` | Validate and save a `SELECT` for a connection with `name`, `sql`, and optional `default_schema`. Rejects the same SQL as `run_query`. Returns the saved query summary. |
+| `delete_saved_query` | Delete a saved query by `query_id`. First call returns `confirmation_required`; show the reasons, then retry with the returned confirmation object. Do not auto-confirm or invent the object. `destructiveHint`. |
+| `list_recipes` | List Explore recipes from the MCP store as `id`, `name`, `description`, `default_mode`, `required_fields`, and `updated_at`. `readOnlyHint`. |
+| `apply_recipe` | Apply a saved Explore recipe (`recipe_id` from `list_recipes`) to the in-memory sample for a `result_id`. `mode` is `pivot` or `worksheet` (defaults to the recipe); `field_mapping` maps required recipe columns to result columns. Returns the pivoted or worksheet columns, `row_count`, truncation flag, warnings, and rows. Unknown `result_id` or `recipe_id` → `not_found`. `readOnlyHint`. |
+| `list_query_history` | Recent query history from the MCP store as `id`, `connection_id`, `connection_name`, `sql`, `row_count`, `warnings`, optional `error`, `timestamp`, and optional risk fields. Optional `connection_id` filter. `limit` defaults to `HISTORY_DEFAULT_LIMIT` (20) and caps at `HISTORY_MAX_LIMIT` (50); 0 or negative is `invalid_arguments`. `readOnlyHint`. |
 
 Initialize includes a short `instructions` string: add connections with the CLI; start with `list_connections`; pass `id` as `connection_id`; pass `default_schema` from `list_tables` for unqualified SQL; page with `result_id`; `delete_connection` requires an echoed confirmation; never send passwords. Tool list capability is `listChanged: false`.
 
-Page with `get_result_rows` or summarize with `summarize_result`. Results expire after 30 minutes (16 entries, 32 MiB).
+Page with `get_result_rows`, summarize with `summarize_result`, pivot with `pivot_result`, filter with `filter_result_rows`, or export with `export_result`. Results expire after 30 minutes (16 entries, 32 MiB).
 
 Constants (change the constant and update this page in the same change):
 
@@ -114,8 +138,33 @@ Constants (change the constant and update this page in the same change):
 | `RESULT_STORE_MAX_ENTRIES` | 16 | [`ResultStore.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultStore.kt) |
 | `RESULT_STORE_MAX_BYTES` | 32 MiB | [`ResultStore.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultStore.kt) |
 | `DISTINCT_VALUE_LIMIT` | 8 values | [`ResultSummary.kt`](../mcp/src/main/kotlin/com/safedb/mcp/ResultSummary.kt) |
+| `SEARCH_CATALOG_DEFAULT_LIMIT` | 25 | [`SchemaTools.kt`](../mcp/src/main/kotlin/com/safedb/mcp/SchemaTools.kt) |
+| `SEARCH_CATALOG_MAX_LIMIT` | 50 | [`SchemaTools.kt`](../mcp/src/main/kotlin/com/safedb/mcp/SchemaTools.kt) |
+| `FIND_JOIN_PATHS_DEFAULT_HOPS` | 2 | [`SchemaTools.kt`](../mcp/src/main/kotlin/com/safedb/mcp/SchemaTools.kt) |
+| `FIND_JOIN_PATHS_MAX_HOPS` | 3 | [`SchemaTools.kt`](../mcp/src/main/kotlin/com/safedb/mcp/SchemaTools.kt) |
+| `HISTORY_DEFAULT_LIMIT` | 20 | [`WorkspaceTools.kt`](../mcp/src/main/kotlin/com/safedb/mcp/WorkspaceTools.kt) |
+| `HISTORY_MAX_LIMIT` | 50 | [`WorkspaceTools.kt`](../mcp/src/main/kotlin/com/safedb/mcp/WorkspaceTools.kt) |
 
 List/describe cache a `Schema` per connection in the MCP process. `run_query` does not use that cache for the risk gate: `runQuery` introspects fresh schema before `runQueryCore`.
+
+## Resources and prompts
+
+Resources return the same JSON shapes as the tools and share the schema cache and `blocked_schemas`:
+
+| Resource | Contents |
+| --- | --- |
+| `safedb://connections` | Saved connections (`id`, `name`, `dialect`, `database`). No secrets. |
+| `safedb://connections/{connection_id}/tables` | Visible tables for one connection (`schema`, `name`, `qualified_name`, `column_count`). Honors `blocked_schemas`. Unknown connection → MCP resource-not-found (`-32002`). |
+| `safedb://results/{result_id}/summary` | Column summary of the in-memory sample: `row_count`, `sample_capped`, and per-column `null_count`, min/max, and distinct values. Unknown or expired `result_id` → MCP resource-not-found (`-32002`). |
+
+Prompts provide a short guided workflow:
+
+| Prompt | Arguments | Behavior |
+| --- | --- | --- |
+| `explore-database` | Optional `connection_id` | List connections and tables, describe tables, search the catalog, find join paths, assess a `SELECT`, then run it and page or summarize the sample. |
+| `analyze-result` | Required `result_id` | Summarize, pivot, filter, or apply a saved recipe to a fetched sample, then export it to CSV. |
+
+Resource and prompt list capability is `listChanged: false`; resource subscriptions are not supported.
 
 ## `run_query` receipt
 
@@ -139,11 +188,11 @@ Every tool error is JSON `{error, message, warnings}` with `isError=true`. Extra
 | `error` | What to do |
 | --- | --- |
 | `invalid_arguments` | Missing required fields, unknown extra arguments (the message names the argument), wrong JSON types (`sql` must be a string, `refresh` a boolean, `limit` an integer 1–50), or a malformed `confirmation` object. |
-| `not_found` | Unknown tool, connection, table, or expired/unknown `result_id`. |
+| `not_found` | Unknown tool, connection, table, saved query, recipe, or expired/unknown `result_id`. |
 | `parse` | Fix `sql`. Unqualified tables: pass `default_schema` from `list_tables.schema`, or qualify as `schema.table`. Aggregates: run the base query, then `summarize_result`. |
 | `validation` / `compilation` / `execution` | Same meanings as [`QueryError`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Plan-check timeout or connection/I/O failure is `execution` with a short message (no driver dump), not a confirm prompt. |
 | `risk_gate` | Includes a slim `risk` summary. Rewrite the query. Do not retry the same query. |
-| `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query` or `delete_connection`) with that object. Do not auto-confirm. Do not invent the object. Confirmations are bound to the SQL and connection; tampered objects are rejected. A plan-check timeout is not this error. |
+| `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query`, `run_saved_query`, `delete_connection`, or `delete_saved_query`) with that object. Do not auto-confirm. Do not invent the object. Confirmations are bound to the SQL and connection; tampered objects are rejected. A plan-check timeout is not this error. |
 | `connection` | Auth failure or the host could not be reached (including connect timeout). |
 | `internal` | Unexpected store or runtime failure. |
 
@@ -155,12 +204,12 @@ On put it also writes `{dataDir}/results/{result_id}.jsonl` for LRU accounting: 
 
 `get_result_rows` pages the in-memory sample, not the file. A page stops at 50 rows or about 32 KiB, whichever comes first. Long cell values are truncated with `…[truncated]`. `page_truncated` is true when more of the in-memory sample remains; `next_offset` is then the offset to request next (omitted on the last page). It does not echo `sample_capped`. `summarize_result` reports per-column `null_count`, min/max (int/float numeric, text lexicographic, bool; omitted for binary and when there are no comparable values), and up to 8 distinct flattened values (`distinct_truncated` if more). `summarize_result` echoes `sample_capped` (omitted when false) from the original query.
 
-## Not in 1.0.1
+## Not in 1.1.0
 
 - Sharing macOS Keychain items with the signed desktop app
 - MCP tools that add or update a connection
 - MCP tools that change settings
 - Environment variables for host, user, database, or password
 - Dumping full `Schema` or full `QueryResult` into tool JSON
-- MCP resources, elicitation, catalog search, and CSV export
+- MCP elicitation
 - Desktop Conveyor / MSI / DMG as the MCP install path
