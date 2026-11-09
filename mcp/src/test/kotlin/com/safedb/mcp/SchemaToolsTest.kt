@@ -1,6 +1,12 @@
 package com.safedb.mcp
 
+import com.safedb.model.ColumnInfo
+import com.safedb.model.ForeignKeyInfo
+import com.safedb.model.IndexInfo
 import com.safedb.model.Settings
+import com.safedb.model.TableInfo
+import com.safedb.model.TableSizeClass
+import com.safedb.model.TableSizeEstimate
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
@@ -67,7 +73,8 @@ class SchemaToolsTest {
                 )
             val text = described.text()
             assertFalse(described.isError == true)
-            assertFalse(text.contains("join_eligible"))
+            assertTrue(text.contains("join_eligible"))
+            assertTrue(text.contains("incoming_foreign_keys"))
             assertFalse(text.contains("capabilities"))
             val parsed = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
             assertEquals("public", parsed.getValue("schema").jsonPrimitive.content)
@@ -79,6 +86,15 @@ class SchemaToolsTest {
                 "false",
                 columns[0].jsonObject.getValue("nullable").jsonPrimitive.content,
             )
+            assertEquals(
+                "true",
+                columns[0].jsonObject.getValue("join_eligible").jsonPrimitive.content,
+            )
+            assertEquals(
+                "false",
+                columns[1].jsonObject.getValue("join_eligible").jsonPrimitive.content,
+            )
+            assertTrue(parsed.getValue("incoming_foreign_keys").jsonArray.isEmpty())
             val index = parsed.getValue("indexes").jsonArray.single().jsonObject
             assertEquals("orders_pkey", index.getValue("name").jsonPrimitive.content)
             assertEquals("id", index.getValue("columns").jsonArray.single().jsonPrimitive.content)
@@ -314,6 +330,356 @@ class SchemaToolsTest {
     }
 
     @Test
+    fun describeCustomersReportsIncomingForeignKeys() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "describe_table",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "schema" to "public",
+                            "table" to "customers",
+                        ),
+                    )
+                    .json()
+            val incoming = parsed.getValue("incoming_foreign_keys").jsonArray
+            assertEquals(1, incoming.size)
+            val fk = incoming.single().jsonObject
+            assertEquals("orders_customer_fk", fk.getValue("name").jsonPrimitive.content)
+            assertEquals("public", fk.getValue("source_schema").jsonPrimitive.content)
+            assertEquals("orders", fk.getValue("source_table").jsonPrimitive.content)
+            assertEquals(
+                listOf("customer_id"),
+                fk.getValue("source_columns").jsonArray.map { it.jsonPrimitive.content },
+            )
+            assertEquals(
+                listOf("id"),
+                fk.getValue("referenced_columns").jsonArray.map { it.jsonPrimitive.content },
+            )
+            assertEquals("Unknown", fk.getValue("cardinality").jsonPrimitive.content)
+            assertEquals("Required", fk.getValue("optionality").jsonPrimitive.content)
+        }
+    }
+
+    @Test
+    fun searchCatalogReportsMatchesTotalsAndMatchedMetadata() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "search_catalog",
+                        mapOf("connection_id" to "c1", "query" to "customer"),
+                    )
+                    .json()
+            assertEquals("customer", parsed.getValue("query").jsonPrimitive.content)
+            assertEquals("2", parsed.getValue("match_count").jsonPrimitive.content)
+            assertEquals("false", parsed.getValue("truncated").jsonPrimitive.content)
+            val matches = parsed.getValue("matches").jsonArray
+            assertEquals(2, matches.size)
+            val customers = matches[0].jsonObject
+            assertEquals("public", customers.getValue("schema").jsonPrimitive.content)
+            assertEquals("customers", customers.getValue("name").jsonPrimitive.content)
+            assertEquals(
+                "public.customers",
+                customers.getValue("qualified_name").jsonPrimitive.content,
+            )
+            assertEquals("Small", customers.getValue("size_class").jsonPrimitive.content)
+            assertTrue(customers.getValue("matched_columns").jsonArray.isEmpty())
+            val orders = matches[1].jsonObject
+            assertEquals("orders", orders.getValue("name").jsonPrimitive.content)
+            assertEquals(
+                listOf("customer_id"),
+                orders.getValue("matched_columns").jsonArray.map { it.jsonPrimitive.content },
+            )
+            assertEquals(
+                listOf("orders_customer_fk"),
+                orders.getValue("matched_foreign_keys").jsonArray.map { it.jsonPrimitive.content },
+            )
+        }
+    }
+
+    @Test
+    fun searchCatalogLimitCapsTruncatesAndRejectsNonPositive() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val limited =
+                client
+                    .callTool(
+                        "search_catalog",
+                        mapOf("connection_id" to "c1", "query" to "public", "limit" to 1),
+                    )
+                    .json()
+            assertEquals("2", limited.getValue("match_count").jsonPrimitive.content)
+            assertEquals("true", limited.getValue("truncated").jsonPrimitive.content)
+            assertEquals(1, limited.getValue("matches").jsonArray.size)
+
+            val capped =
+                client.callTool(
+                    "search_catalog",
+                    mapOf("connection_id" to "c1", "query" to "public", "limit" to 500),
+                )
+            assertFalse(capped.isError == true)
+
+            val zero =
+                client.callTool(
+                    "search_catalog",
+                    mapOf("connection_id" to "c1", "query" to "public", "limit" to 0),
+                )
+            assertEquals(true, zero.isError)
+            assertEquals("invalid_arguments", zero.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "limit must be 1 or more",
+                zero.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val negative =
+                client.callTool(
+                    "search_catalog",
+                    mapOf("connection_id" to "c1", "query" to "public", "limit" to -2),
+                )
+            assertEquals(true, negative.isError)
+            assertEquals(
+                "limit must be 1 or more",
+                negative.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val unknownArg =
+                client.callTool(
+                    "search_catalog",
+                    mapOf("connection_id" to "c1", "query" to "public", "bogus" to true),
+                )
+            assertEquals(true, unknownArg.isError)
+            assertEquals(
+                "unknown argument 'bogus'",
+                unknownArg.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val unknownConnection =
+                client.callTool("search_catalog", mapOf("connection_id" to "nope", "query" to "x"))
+            assertEquals(true, unknownConnection.isError)
+            assertEquals(
+                "Connection not found",
+                unknownConnection.json().getValue("message").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
+    fun searchCatalogHonorsTheSchemaFilter() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val filtered =
+                client
+                    .callTool(
+                        "search_catalog",
+                        mapOf("connection_id" to "c1", "query" to "customer", "schema" to "audit"),
+                    )
+                    .json()
+            assertEquals("0", filtered.getValue("match_count").jsonPrimitive.content)
+            assertTrue(filtered.getValue("matches").jsonArray.isEmpty())
+        }
+    }
+
+    @Test
+    fun findJoinPathsReturnsDirectNeighborsWithOnClause() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf("connection_id" to "c1", "from_table" to "orders"),
+                    )
+                    .json()
+            assertEquals("public.orders", parsed.getValue("from_table").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("to_table"))
+            assertFalse(parsed.containsKey("paths"))
+            val neighbors = parsed.getValue("neighbors").jsonArray
+            assertEquals(1, neighbors.size)
+            val step = neighbors.single().jsonObject
+            assertEquals("public", step.getValue("from_schema").jsonPrimitive.content)
+            assertEquals("orders", step.getValue("from_table").jsonPrimitive.content)
+            assertEquals("public", step.getValue("to_schema").jsonPrimitive.content)
+            assertEquals("customers", step.getValue("to_table").jsonPrimitive.content)
+            assertEquals("foreign_key", step.getValue("kind").jsonPrimitive.content)
+            assertEquals(
+                "public.orders.customer_id = public.customers.id",
+                step.getValue("on_clause").jsonPrimitive.content,
+            )
+            val columns = step.getValue("columns").jsonArray.single().jsonObject
+            assertEquals("customer_id", columns.getValue("left_column").jsonPrimitive.content)
+            assertEquals("id", columns.getValue("right_column").jsonPrimitive.content)
+            assertEquals(
+                "orders_customer_fk",
+                step.getValue("foreign_key_name").jsonPrimitive.content,
+            )
+            assertEquals("Unknown", step.getValue("cardinality").jsonPrimitive.content)
+            assertEquals("Required", step.getValue("optionality").jsonPrimitive.content)
+        }
+    }
+
+    @Test
+    fun findJoinPathsReturnsMultiHopPaths() = runBlocking {
+        val service = joinService()
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "public.customers",
+                            "to_table" to "public.items",
+                            "max_hops" to 2,
+                        ),
+                    )
+                    .json()
+            assertEquals("public.customers", parsed.getValue("from_table").jsonPrimitive.content)
+            assertEquals("public.items", parsed.getValue("to_table").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("neighbors"))
+            val paths = parsed.getValue("paths").jsonArray
+            assertTrue(paths.isNotEmpty())
+            val path = paths.first().jsonObject
+            assertEquals("2", path.getValue("hops").jsonPrimitive.content)
+            val steps = path.getValue("steps").jsonArray
+            assertEquals(2, steps.size)
+            assertEquals(
+                listOf("orders", "items"),
+                steps.map { it.jsonObject.getValue("to_table").jsonPrimitive.content },
+            )
+
+            val tooShort =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "public.customers",
+                            "to_table" to "public.items",
+                            "max_hops" to 1,
+                        ),
+                    )
+                    .json()
+            assertTrue(tooShort.getValue("paths").jsonArray.isEmpty())
+        }
+    }
+
+    @Test
+    fun findJoinPathsResolvesDefaultSchemaAndRejectsBadReferences() = runBlocking {
+        val service = joinService()
+        withTempMcpClient(service) { client ->
+            val ambiguous =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf("connection_id" to "c1", "from_table" to "orders"),
+                )
+            assertEquals(true, ambiguous.isError)
+            assertEquals(
+                "invalid_arguments",
+                ambiguous.json().getValue("error").jsonPrimitive.content,
+            )
+            assertTrue(
+                ambiguous
+                    .json()
+                    .getValue("message")
+                    .jsonPrimitive
+                    .content
+                    .contains("default_schema")
+            )
+
+            val explicitSchema =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "orders",
+                            "default_schema" to "public",
+                        ),
+                    )
+                    .json()
+            assertEquals(
+                "public.orders",
+                explicitSchema.getValue("from_table").jsonPrimitive.content,
+            )
+
+            service.settings = Settings(defaultConnectionId = "c1", defaultSchema = "public")
+            val fromSettings =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf("connection_id" to "c1", "from_table" to "orders"),
+                    )
+                    .json()
+            assertEquals("public.orders", fromSettings.getValue("from_table").jsonPrimitive.content)
+
+            val missingTable =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf("connection_id" to "c1", "from_table" to "public.missing"),
+                )
+            assertEquals(true, missingTable.isError)
+            assertEquals("not_found", missingTable.json().getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Table not found",
+                missingTable.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val missingSchema =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf("connection_id" to "c1", "from_table" to ".orders"),
+                )
+            assertEquals(true, missingSchema.isError)
+            assertEquals(
+                "invalid_arguments",
+                missingSchema.json().getValue("error").jsonPrimitive.content,
+            )
+
+            val unknownConnection =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf("connection_id" to "nope", "from_table" to "orders"),
+                )
+            assertEquals(true, unknownConnection.isError)
+            assertEquals(
+                "Connection not found",
+                unknownConnection.json().getValue("message").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
+    fun findJoinPathsRejectsMaxHopsOutsideTheRange() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            for (hops in listOf(0, 4, -1)) {
+                val result =
+                    client.callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "orders",
+                            "max_hops" to hops,
+                        ),
+                    )
+                assertEquals(true, result.isError)
+                assertEquals(
+                    "invalid_arguments",
+                    result.json().getValue("error").jsonPrimitive.content,
+                )
+                assertEquals(
+                    "max_hops must be between 1 and 3",
+                    result.json().getValue("message").jsonPrimitive.content,
+                )
+            }
+        }
+    }
+
+    @Test
     fun deleteConnectionDropsTheCachedCatalog() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
@@ -340,6 +706,56 @@ private fun catalogService(): RecordingSafeDbService {
     service.passwords["c1"] = "should-not-leak"
     service.schemas["c1"] = sampleMcpSchema()
     service.settings = Settings(blockedSchemas = listOf("audit"))
+    return service
+}
+
+private fun joinService(): RecordingSafeDbService {
+    val service = catalogService()
+    val base = service.schemas.getValue("c1")
+    val items =
+        TableInfo(
+            schema = "public",
+            name = "items",
+            columns =
+                listOf(
+                    ColumnInfo(
+                        name = "id",
+                        dataType = "int",
+                        nullable = false,
+                        joinEligible = true,
+                    ),
+                    ColumnInfo(name = "order_id", dataType = "int", nullable = false),
+                ),
+            indexes =
+                listOf(
+                    IndexInfo(
+                        name = "items_pkey",
+                        columns = listOf("id"),
+                        kind = "btree",
+                        isUnique = true,
+                        isPrimary = true,
+                    )
+                ),
+            foreignKeys =
+                listOf(
+                    ForeignKeyInfo(
+                        name = "items_order_fk",
+                        columns = listOf("order_id"),
+                        referencedSchema = "public",
+                        referencedTable = "orders",
+                        referencedColumns = listOf("id"),
+                    )
+                ),
+            tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Medium),
+        )
+    val archivedOrders =
+        TableInfo(
+            schema = "archive_orders",
+            name = "orders",
+            columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false)),
+            indexes = emptyList(),
+        )
+    service.schemas["c1"] = base.copy(tables = base.tables + items + archivedOrders)
     return service
 }
 

@@ -65,12 +65,17 @@ class McpRuntimeTest {
             assertEquals(mcpVersion(), client.serverVersion?.version)
             assertEquals(
                 listOf(
+                    "assess_query",
                     "delete_connection",
                     "describe_table",
+                    "filter_result_rows",
+                    "find_join_paths",
                     "get_result_rows",
                     "list_connections",
                     "list_tables",
+                    "pivot_result",
                     "run_query",
+                    "search_catalog",
                     "summarize_result",
                 ),
                 client.listTools().tools.map { it.name }.sorted(),
@@ -83,6 +88,11 @@ class McpRuntimeTest {
             assertEquals(true, tools.getValue("describe_table").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("get_result_rows").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("summarize_result").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("assess_query").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("search_catalog").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("find_join_paths").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("pivot_result").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("filter_result_rows").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("delete_connection").annotations?.destructiveHint)
             assertEquals(
                 listOf("connection_id"),

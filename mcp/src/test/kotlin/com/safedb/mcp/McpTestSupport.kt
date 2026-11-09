@@ -1,17 +1,20 @@
 package com.safedb.mcp
 
+import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ColumnSel
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
 import com.safedb.model.ForeignKeyInfo
+import com.safedb.model.HistoryEntry
 import com.safedb.model.IndexInfo
 import com.safedb.model.QueryResult
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
@@ -30,6 +33,7 @@ import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
 import com.safedb.service.FakeSafeDbServiceSupport
+import com.safedb.service.QueryAssessmentResult
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.QueryRunResult
 import com.safedb.service.SafeDbService
@@ -86,6 +90,13 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     var runQueryResult: QueryRunResult? = null
     var runQueryError: Exception? = null
     var runQueryHandler: ((QueryRunRequest) -> QueryRunResult)? = null
+    val assessQueryRequests = mutableListOf<QueryRunRequest>()
+    var assessQueryResult: QueryAssessmentResult? = null
+    var assessQueryError: Exception? = null
+    var assessQueryHandler: ((QueryRunRequest) -> QueryAssessmentResult)? = null
+    val savedQueries = mutableListOf<SavedQuery>()
+    val exploreRecipes = mutableListOf<ExploreRecipe>()
+    val historyEntries = mutableListOf<HistoryEntry>()
 
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         tested = def to password
@@ -118,6 +129,10 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
 
     override suspend fun getSettings(): Settings = settings
 
+    override suspend fun saveSettings(settings: Settings) {
+        this.settings = settings
+    }
+
     override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
         runQueryRequests += request
         runQueryHandler?.let {
@@ -126,6 +141,30 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         runQueryError?.let { throw it }
         return runQueryResult ?: throw UnsupportedOperationException("runQuery")
     }
+
+    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult {
+        assessQueryRequests += request
+        assessQueryHandler?.let {
+            return it(request)
+        }
+        assessQueryError?.let { throw it }
+        return assessQueryResult ?: throw UnsupportedOperationException("assessQuery")
+    }
+
+    override suspend fun listSavedQueries(): List<SavedQuery> = savedQueries.toList()
+
+    override suspend fun saveSavedQuery(query: SavedQuery) {
+        savedQueries.removeAll { it.id == query.id }
+        savedQueries += query
+    }
+
+    override suspend fun deleteSavedQuery(id: String) {
+        savedQueries.removeAll { it.id == id }
+    }
+
+    override suspend fun listExploreRecipes(): List<ExploreRecipe> = exploreRecipes.toList()
+
+    override suspend fun listHistory(): List<HistoryEntry> = historyEntries.toList()
 }
 
 internal fun sampleMcpQuerySpec(): QuerySpec =
@@ -197,6 +236,22 @@ internal fun sampleMcpRunResult(
     warnings: List<String> = emptyList(),
 ): QueryRunResult =
     QueryRunResult(sampleMcpQueryResult(rowCount, truncated, warnings), allowedMcpRisk())
+
+internal fun sampleMcpAssessment(
+    columns: List<ResultColumn> = sampleMcpQueryResult().columns,
+    compiledSql: String = "SELECT customers.id, customers.email FROM public.customers",
+    parameterCount: Int = 0,
+    warnings: List<String> = emptyList(),
+    risk: QueryRiskEvaluation = allowedMcpRisk(),
+): QueryAssessmentResult =
+    QueryAssessmentResult(
+        normalizedSpec = sampleMcpQuerySpec(),
+        columns = columns,
+        compiledSql = compiledSql,
+        parameterCount = parameterCount,
+        warnings = warnings,
+        riskEvaluation = risk,
+    )
 
 internal fun sampleMcpSchema(): Schema =
     Schema(

@@ -12,6 +12,7 @@ import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryError
 import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.QueryRiskEvaluation
+import com.safedb.query.RiskGateState
 import com.safedb.query.sql.SqlIssue
 import com.safedb.query.sql.SqlIssueCode
 import com.safedb.query.sql.SqlParseResult
@@ -113,6 +114,52 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
             ),
     ) { request ->
         runMcpTool("run_query failed") { handleRunQuery(service, resultStore, request) }
+    }
+
+    server.addTool(
+        name = "assess_query",
+        description =
+            "Assess one SELECT on a saved connection without running it. Parses the SQL exactly " +
+                "like run_query, resolves result columns, compiles the statement, and returns " +
+                "columns, compiled_sql, parameter_count, warnings, a slim risk summary, and " +
+                "confirmation_required with reasons when the risk gate would require " +
+                "confirmation. Unknown extra arguments are invalid_arguments.",
+        inputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put(
+                            "connection_id",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "Connection id from list_connections")
+                            },
+                        )
+                        put(
+                            "sql",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "A single SELECT to assess without executing.")
+                            },
+                        )
+                        put(
+                            "default_schema",
+                            buildJsonObject {
+                                put("type", "string")
+                                put(
+                                    "description",
+                                    "Schema used when a table name has no schema prefix. Copy " +
+                                        "list_tables.schema for this connection (MySQL: usually " +
+                                        "the database name).",
+                                )
+                            },
+                        )
+                    },
+                required = listOf("connection_id", "sql"),
+            ),
+        toolAnnotations = ToolAnnotations(readOnlyHint = true),
+    ) { request ->
+        runMcpTool("assess_query failed") { handleAssessQuery(service, request) }
     }
 
     server.addTool(
@@ -232,7 +279,7 @@ private suspend fun handleRunQuery(
 
     return try {
         val completed = service.runQuery(QueryRunRequest(connectionId, spec, confirmation))
-        successReceipt(completed, resultStore, spec)
+        successReceipt(completed, resultStore, spec, connectionId)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -240,7 +287,57 @@ private suspend fun handleRunQuery(
     }
 }
 
-private suspend fun prepareSql(
+private suspend fun handleAssessQuery(
+    service: SafeDbService,
+    request: CallToolRequest,
+): CallToolResult {
+    requireKnownArguments(request, "connection_id", "sql", "default_schema").getOrElse {
+        return it
+    }
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return it
+        }
+    val sql =
+        requiredString(request, "sql").getOrElse {
+            return it
+        }
+    val connection =
+        service.listConnections().find { it.id == connectionId }
+            ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
+
+    val spec =
+        when (val prepared = prepareSql(service, connection, sql, request)) {
+            is PreparedQuery.Ok -> prepared.spec
+            is PreparedQuery.Err -> return prepared.result
+        }
+
+    return try {
+        val assessment = service.assessQuery(QueryRunRequest(connectionId, spec))
+        val risk = assessment.riskEvaluation
+        val receipt =
+            QueryAssessmentReceipt(
+                columns = assessment.columns,
+                compiledSql = assessment.compiledSql,
+                parameterCount = assessment.parameterCount,
+                warnings = assessment.warnings,
+                risk = riskSummary(risk),
+                confirmationRequired = risk.decision.state == RiskGateState.ConfirmationRequired,
+                reasons =
+                    risk.confirmationRequirement
+                        ?.reasons
+                        ?.map { it.message }
+                        ?.takeIf { it.isNotEmpty() },
+            )
+        CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: QueryFailureException) {
+        mapQueryFailure(error)
+    }
+}
+
+internal suspend fun prepareSql(
     service: SafeDbService,
     connection: ConnectionDef,
     sql: String,
@@ -272,18 +369,19 @@ private suspend fun prepareSql(
     }
 }
 
-private fun mcpParseMessage(issue: SqlIssue): String =
+internal fun mcpParseMessage(issue: SqlIssue): String =
     when {
         issue.code == SqlIssueCode.SchemaRequired ->
             "Pass default_schema from list_tables.schema, or qualify the table as schema.table."
-        "Explore" in issue.message -> issue.message.replace("Explore", "summarize_result")
+        "Explore" in issue.message ->
+            issue.message.replace("Explore", "pivot_result or summarize_result")
         else -> issue.message
     }
 
-private fun settingsDefaultSchema(settings: Settings, connectionId: String): String? =
+internal fun settingsDefaultSchema(settings: Settings, connectionId: String): String? =
     settings.defaultSchema.takeIf { settings.defaultConnectionId == connectionId }
 
-private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
+internal fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
     val obj =
         when (val parsed = optionalObject(request, "confirmation")) {
             is Arg.Err -> return ConfirmationParse.Invalid(parsed.result)
@@ -315,13 +413,14 @@ private fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
     }
 }
 
-private suspend fun successReceipt(
+internal suspend fun successReceipt(
     completed: QueryRunResult,
     resultStore: ResultStore,
     spec: QuerySpec,
+    connectionId: String,
 ): CallToolResult {
     val result = completed.queryResult
-    val stored = resultStore.put(result)
+    val stored = resultStore.put(result, tables = spec.tables, connectionId = connectionId)
     val preview = previewRows(result)
     val warnings = buildList {
         addAll(result.warnings)
@@ -414,7 +513,7 @@ private suspend fun handleSummarizeResult(
     return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(summary))))
 }
 
-private fun mapQueryFailure(failure: QueryFailureException): CallToolResult {
+internal fun mapQueryFailure(failure: QueryFailureException): CallToolResult {
     val warnings = failure.warnings
     return when (val error = failure.queryError) {
         is QueryError.Validation -> toolError(ERROR_VALIDATION, error.message, warnings)
@@ -469,13 +568,13 @@ private fun QueryExecutionConfirmation.toPayload(): McpQueryConfirmation =
                 .sortedWith(compareBy({ it.reasonCode }, { it.conditionKey })),
     )
 
-private sealed interface PreparedQuery {
+internal sealed interface PreparedQuery {
     data class Ok(val spec: QuerySpec) : PreparedQuery
 
     data class Err(val result: CallToolResult) : PreparedQuery
 }
 
-private sealed interface ConfirmationParse {
+internal sealed interface ConfirmationParse {
     data object Missing : ConfirmationParse
 
     data class Ready(val confirmation: QueryExecutionConfirmation) : ConfirmationParse
@@ -505,6 +604,17 @@ internal data class ResultRowsPage(
     @SerialName("page_truncated") val pageTruncated: Boolean,
     @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
     val rows: List<JsonObject>,
+)
+
+@Serializable
+internal data class QueryAssessmentReceipt(
+    val columns: List<ResultColumn>,
+    @SerialName("compiled_sql") val compiledSql: String,
+    @SerialName("parameter_count") val parameterCount: Int,
+    val warnings: List<String>,
+    val risk: QueryRiskSummary,
+    @SerialName("confirmation_required") val confirmationRequired: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val reasons: List<String>? = null,
 )
 
 @Serializable

@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.model.QueryResult
+import com.safedb.model.TableRef
 import com.safedb.persist.ensurePrivateDir
 import com.safedb.persist.restrictToOwnerReadWrite
 import java.nio.file.Files
@@ -25,6 +26,12 @@ internal data class StoredResult(
     val artifactBytes: Long?,
 )
 
+internal data class StoredResultEntry(
+    val result: QueryResult,
+    val tables: List<TableRef> = emptyList(),
+    val connectionId: String? = null,
+)
+
 internal class ResultStore(
     private val resultsDir: Path,
     private val nowMs: () -> Long = { System.currentTimeMillis() },
@@ -35,6 +42,8 @@ internal class ResultStore(
 ) {
     private data class Entry(
         val result: QueryResult,
+        val tables: List<TableRef>,
+        val connectionId: String?,
         val artifactFile: Path,
         val artifactBytes: Long,
         val expiresAtMs: Long,
@@ -49,7 +58,11 @@ internal class ResultStore(
         wipeExistingFiles()
     }
 
-    suspend fun put(result: QueryResult): StoredResult {
+    suspend fun put(
+        result: QueryResult,
+        tables: List<TableRef> = emptyList(),
+        connectionId: String? = null,
+    ): StoredResult {
         val resultId = UUID.randomUUID().toString()
         val path = resultsDir.resolve("$resultId.jsonl")
         var artifactPath: String? = null
@@ -78,6 +91,8 @@ internal class ResultStore(
                 entries[resultId] =
                     Entry(
                         result = result,
+                        tables = tables,
+                        connectionId = connectionId,
                         artifactFile = path,
                         artifactBytes = artifactBytes ?: 0L,
                         expiresAtMs = nowMs() + ttlMs,
@@ -94,10 +109,18 @@ internal class ResultStore(
         }
     }
 
-    suspend fun get(resultId: String): QueryResult? = mutex.withLock {
+    suspend fun getEntry(resultId: String): StoredResultEntry? = mutex.withLock {
         expireLocked()
-        entries[resultId]?.result
+        entries[resultId]?.let {
+            StoredResultEntry(
+                result = it.result,
+                tables = it.tables,
+                connectionId = it.connectionId,
+            )
+        }
     }
+
+    suspend fun get(resultId: String): QueryResult? = getEntry(resultId)?.result
 
     private fun writeJsonl(path: Path, result: QueryResult) {
         val names = result.columns.map { it.name }

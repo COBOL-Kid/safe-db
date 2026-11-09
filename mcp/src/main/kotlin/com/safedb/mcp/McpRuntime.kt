@@ -35,6 +35,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -183,6 +184,15 @@ internal fun optionalObject(request: CallToolRequest, name: String): Arg<JsonObj
     return Arg.Ok(obj)
 }
 
+internal fun optionalArray(request: CallToolRequest, name: String): Arg<JsonArray?> {
+    val element = request.arguments?.get(name) ?: return Arg.Ok(null)
+    if (element is JsonNull) return Arg.Ok(null)
+    val array =
+        element as? JsonArray
+            ?: return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be an array"))
+    return Arg.Ok(array)
+}
+
 internal suspend fun runMcpTool(
     fallback: String,
     block: suspend () -> CallToolResult,
@@ -292,6 +302,7 @@ internal fun createSafeDbMcpServer(
     registerConnectionTools(server, service, schemaCache)
     registerSchemaTools(server, service, schemaCache)
     registerQueryTools(server, service, store)
+    registerExploreTools(server, store)
     return server
 }
 
@@ -376,7 +387,7 @@ internal data class McpDeleteConfirmation(
 
 @Serializable private data class DeletedConnection(val deleted: String)
 
-private fun ConnectionDef.toSummary(): ConnectionSummary =
+internal fun ConnectionDef.toSummary(): ConnectionSummary =
     ConnectionSummary(id = id, name = name, dialect = dialect, database = database)
 
 private suspend fun handleDeleteConnection(

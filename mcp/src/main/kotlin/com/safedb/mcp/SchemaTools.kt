@@ -1,10 +1,16 @@
 package com.safedb.mcp
 
 import com.safedb.model.Schema
+import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableSizeClass
 import com.safedb.model.qualifiedName
 import com.safedb.query.isSchemaBlocked
+import com.safedb.schema.JoinEdge
+import com.safedb.schema.findDirectJoinEdges
+import com.safedb.schema.findJoinPaths
+import com.safedb.schema.incomingForeignKeysFor
+import com.safedb.schema.searchCatalogTables
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
@@ -12,10 +18,16 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+
+internal const val SEARCH_CATALOG_DEFAULT_LIMIT = 25
+internal const val SEARCH_CATALOG_MAX_LIMIT = 50
+internal const val FIND_JOIN_PATHS_DEFAULT_HOPS = 2
+internal const val FIND_JOIN_PATHS_MAX_HOPS = 3
 
 internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: SchemaCache) {
     server.addTool(
@@ -105,6 +117,157 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
     ) { request ->
         runMcpTool("describe_table failed") { handleDescribeTable(service, cache, request) }
     }
+
+    server.addTool(
+        name = "search_catalog",
+        description =
+            "Search the cached catalog for tables by name, schema, column name or type, index " +
+                "name or key column, or foreign key name, column, or referenced table. " +
+                "Case-insensitive substring match. Returns match_count (all matches before " +
+                "limit), truncated, and per-table matched_columns, matched_indexes, and " +
+                "matched_foreign_keys. limit defaults to $SEARCH_CATALOG_DEFAULT_LIMIT and caps " +
+                "at $SEARCH_CATALOG_MAX_LIMIT; 0 or negative is invalid_arguments. Honors " +
+                "blocked_schemas and uses the same cached catalog as list_tables (5 minute " +
+                "TTL); pass refresh=true to introspect again.",
+        inputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put(
+                            "connection_id",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "Connection id from list_connections")
+                            },
+                        )
+                        put(
+                            "query",
+                            buildJsonObject {
+                                put("type", "string")
+                                put(
+                                    "description",
+                                    "Case-insensitive substring to match against table metadata. " +
+                                        "An empty or whitespace query lists tables.",
+                                )
+                            },
+                        )
+                        put(
+                            "schema",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "Optional schema filter")
+                            },
+                        )
+                        put(
+                            "limit",
+                            buildJsonObject {
+                                put("type", "integer")
+                                put(
+                                    "description",
+                                    "Max matches to return (1–$SEARCH_CATALOG_MAX_LIMIT). " +
+                                        "Default $SEARCH_CATALOG_DEFAULT_LIMIT. Values over " +
+                                        "$SEARCH_CATALOG_MAX_LIMIT cap at $SEARCH_CATALOG_MAX_LIMIT. " +
+                                        "0 or negative is invalid_arguments.",
+                                )
+                            },
+                        )
+                        put(
+                            "refresh",
+                            buildJsonObject {
+                                put("type", "boolean")
+                                put(
+                                    "description",
+                                    "If true, ignore the cached catalog and introspect again",
+                                )
+                            },
+                        )
+                    },
+                required = listOf("connection_id", "query"),
+            ),
+        toolAnnotations = ToolAnnotations(readOnlyHint = true),
+    ) { request ->
+        runMcpTool("search_catalog failed") { handleSearchCatalog(service, cache, request) }
+    }
+
+    server.addTool(
+        name = "find_join_paths",
+        description =
+            "Find join relationships for a visible table from the cached catalog. Without " +
+                "to_table, returns direct neighbors with foreign_key or indexed_columns edges, " +
+                "column pairs, an on_clause, and FK cardinality and optionality. With to_table, " +
+                "returns up to 10 paths of at most max_hops (default " +
+                "$FIND_JOIN_PATHS_DEFAULT_HOPS, max $FIND_JOIN_PATHS_MAX_HOPS). from_table and " +
+                "to_table accept schema.table or table; unqualified names use default_schema, " +
+                "the saved default schema for this connection, or a unique visible table. " +
+                "Honors blocked_schemas and uses the same cached catalog (5 minute TTL); pass " +
+                "refresh=true to introspect again.",
+        inputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put(
+                            "connection_id",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "Connection id from list_connections")
+                            },
+                        )
+                        put(
+                            "from_table",
+                            buildJsonObject {
+                                put("type", "string")
+                                put("description", "schema.table or table from list_tables")
+                            },
+                        )
+                        put(
+                            "to_table",
+                            buildJsonObject {
+                                put("type", "string")
+                                put(
+                                    "description",
+                                    "Optional schema.table or table. Omit for direct neighbors.",
+                                )
+                            },
+                        )
+                        put(
+                            "default_schema",
+                            buildJsonObject {
+                                put("type", "string")
+                                put(
+                                    "description",
+                                    "Schema used when a table name has no schema prefix. Copy " +
+                                        "list_tables.schema for this connection.",
+                                )
+                            },
+                        )
+                        put(
+                            "max_hops",
+                            buildJsonObject {
+                                put("type", "integer")
+                                put(
+                                    "description",
+                                    "Maximum path length (1–$FIND_JOIN_PATHS_MAX_HOPS). " +
+                                        "Default $FIND_JOIN_PATHS_DEFAULT_HOPS.",
+                                )
+                            },
+                        )
+                        put(
+                            "refresh",
+                            buildJsonObject {
+                                put("type", "boolean")
+                                put(
+                                    "description",
+                                    "If true, ignore the cached catalog and introspect again",
+                                )
+                            },
+                        )
+                    },
+                required = listOf("connection_id", "from_table"),
+            ),
+        toolAnnotations = ToolAnnotations(readOnlyHint = true),
+    ) { request ->
+        runMcpTool("find_join_paths failed") { handleFindJoinPaths(service, cache, request) }
+    }
 }
 
 private suspend fun handleListTables(
@@ -159,12 +322,214 @@ private suspend fun handleDescribeTable(
         return toolError(ERROR_NOT_FOUND, "Connection not found")
     }
     val schema = cache.get(connectionId, refresh = refresh)
+    val tables = visibleTables(service, schema)
     val table =
-        visibleTables(service, schema).find { it.schema == schemaName && it.name == tableName }
+        tables.find { it.schema == schemaName && it.name == tableName }
             ?: return toolError(ERROR_NOT_FOUND, "Table not found")
     return CallToolResult(
-        content = listOf(TextContent(text = toolJson.encodeToString(table.toDetail())))
+        content = listOf(TextContent(text = toolJson.encodeToString(table.toDetail(tables))))
     )
+}
+
+private suspend fun handleSearchCatalog(
+    service: SafeDbService,
+    cache: SchemaCache,
+    request: CallToolRequest,
+): CallToolResult {
+    requireKnownArguments(request, "connection_id", "query", "schema", "limit", "refresh")
+        .getOrElse {
+            return it
+        }
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return it
+        }
+    val query =
+        requiredString(request, "query").getOrElse {
+            return it
+        }
+    val schemaFilter =
+        optionalString(request, "schema").getOrElse {
+            return it
+        }
+    val limitArg =
+        optionalInt(request, "limit").getOrElse {
+            return it
+        }
+    val refresh =
+        optionalBoolean(request, "refresh").getOrElse {
+            return it
+        } == true
+    if (limitArg != null && limitArg <= 0) {
+        return toolError(ERROR_INVALID_ARGUMENTS, "limit must be 1 or more")
+    }
+    val limit = (limitArg ?: SEARCH_CATALOG_DEFAULT_LIMIT).coerceAtMost(SEARCH_CATALOG_MAX_LIMIT)
+    if (service.listConnections().none { it.id == connectionId }) {
+        return toolError(ERROR_NOT_FOUND, "Connection not found")
+    }
+    val schema = cache.get(connectionId, refresh = refresh)
+    val matches = searchCatalogTables(visibleTables(service, schema), query, schemaFilter)
+    val capped = matches.take(limit)
+    val result =
+        CatalogSearchResult(
+            query = query,
+            matchCount = matches.size,
+            truncated = matches.size > capped.size,
+            matches = capped.map { it.toSummary() },
+        )
+    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(result))))
+}
+
+private suspend fun handleFindJoinPaths(
+    service: SafeDbService,
+    cache: SchemaCache,
+    request: CallToolRequest,
+): CallToolResult {
+    requireKnownArguments(
+            request,
+            "connection_id",
+            "from_table",
+            "to_table",
+            "default_schema",
+            "max_hops",
+            "refresh",
+        )
+        .getOrElse {
+            return it
+        }
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return it
+        }
+    val fromReference =
+        requiredString(request, "from_table").getOrElse {
+            return it
+        }
+    val toReference =
+        optionalString(request, "to_table").getOrElse {
+            return it
+        }
+    val defaultSchema =
+        optionalString(request, "default_schema").getOrElse {
+            return it
+        }
+    val maxHopsArg =
+        optionalInt(request, "max_hops").getOrElse {
+            return it
+        }
+    val refresh =
+        optionalBoolean(request, "refresh").getOrElse {
+            return it
+        } == true
+    if (maxHopsArg != null && (maxHopsArg < 1 || maxHopsArg > FIND_JOIN_PATHS_MAX_HOPS)) {
+        return toolError(
+            ERROR_INVALID_ARGUMENTS,
+            "max_hops must be between 1 and $FIND_JOIN_PATHS_MAX_HOPS",
+        )
+    }
+    if (service.listConnections().none { it.id == connectionId }) {
+        return toolError(ERROR_NOT_FOUND, "Connection not found")
+    }
+    val schema = cache.get(connectionId, refresh = refresh)
+    val tables = visibleTables(service, schema)
+    val settings = service.getSettings()
+    val fromTable =
+        when (
+            val resolved =
+                resolveTableReference(
+                    fromReference,
+                    defaultSchema,
+                    settings,
+                    connectionId,
+                    tables,
+                )
+        ) {
+            is Arg.Ok -> resolved.value
+            is Arg.Err -> return resolved.result
+        }
+    val maxHops = (maxHopsArg ?: FIND_JOIN_PATHS_DEFAULT_HOPS)
+
+    if (toReference == null) {
+        val edges = findDirectJoinEdges(tables, fromTable.schema, fromTable.name)
+        val result =
+            JoinPathsResult(
+                fromTable = fromTable.qualifiedName(),
+                neighbors = edges.map { it.toStepSummary() },
+            )
+        return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(result))))
+    }
+
+    val toTable =
+        when (
+            val resolved =
+                resolveTableReference(toReference, defaultSchema, settings, connectionId, tables)
+        ) {
+            is Arg.Ok -> resolved.value
+            is Arg.Err -> return resolved.result
+        }
+    val paths =
+        findJoinPaths(
+            tables,
+            fromTable.schema,
+            fromTable.name,
+            toTable.schema,
+            toTable.name,
+            maxHops = maxHops,
+        )
+    val result =
+        JoinPathsResult(
+            fromTable = fromTable.qualifiedName(),
+            toTable = toTable.qualifiedName(),
+            paths =
+                paths.map { path ->
+                    JoinPathSummary(
+                        hops = path.steps.size,
+                        steps = path.steps.map { it.toStepSummary() },
+                    )
+                },
+        )
+    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(result))))
+}
+
+private fun resolveTableReference(
+    reference: String,
+    defaultSchema: String?,
+    settings: Settings,
+    connectionId: String,
+    tables: List<TableInfo>,
+): Arg<TableInfo> {
+    val dot = reference.indexOf('.')
+    if (dot >= 0) {
+        val schema = reference.substring(0, dot).trim()
+        val name = reference.substring(dot + 1).trim()
+        if (schema.isEmpty() || name.isEmpty()) {
+            return Arg.Err(
+                toolError(ERROR_INVALID_ARGUMENTS, "table names must be schema.table or table")
+            )
+        }
+        return tables.find { it.schema == schema && it.name == name }?.let { Arg.Ok(it) }
+            ?: Arg.Err(toolError(ERROR_NOT_FOUND, "Table not found"))
+    }
+    val explicitSchema =
+        defaultSchema
+            ?: settings.defaultSchema.takeIf { settings.defaultConnectionId == connectionId }
+    if (explicitSchema != null) {
+        return tables
+            .find { it.schema == explicitSchema && it.name == reference }
+            ?.let { Arg.Ok(it) } ?: Arg.Err(toolError(ERROR_NOT_FOUND, "Table not found"))
+    }
+    val candidates = tables.filter { it.name == reference }
+    return when (candidates.size) {
+        0 -> Arg.Err(toolError(ERROR_NOT_FOUND, "Table not found"))
+        1 -> Arg.Ok(candidates.single())
+        else ->
+            Arg.Err(
+                toolError(
+                    ERROR_INVALID_ARGUMENTS,
+                    "default_schema is required to disambiguate '$reference'",
+                )
+            )
+    }
 }
 
 @Serializable
@@ -184,6 +549,8 @@ internal data class TableDetail(
     val columns: List<TableColumn>,
     val indexes: List<TableIndex>,
     @SerialName("foreign_keys") val foreignKeys: List<TableForeignKey>,
+    @SerialName("incoming_foreign_keys")
+    val incomingForeignKeys: List<TableIncomingForeignKey> = emptyList(),
 )
 
 @Serializable
@@ -191,6 +558,73 @@ internal data class TableColumn(
     val name: String,
     @SerialName("data_type") val dataType: String,
     val nullable: Boolean,
+    @SerialName("join_eligible") val joinEligible: Boolean = false,
+)
+
+@Serializable
+internal data class TableIncomingForeignKey(
+    val name: String,
+    @SerialName("source_schema") val sourceSchema: String,
+    @SerialName("source_table") val sourceTable: String,
+    @SerialName("source_columns") val sourceColumns: List<String>,
+    @SerialName("referenced_columns") val referencedColumns: List<String>,
+    val cardinality: String,
+    val optionality: String,
+)
+
+@Serializable
+internal data class CatalogSearchResult(
+    val query: String,
+    @SerialName("match_count") val matchCount: Int,
+    val truncated: Boolean,
+    val matches: List<CatalogMatchSummary>,
+)
+
+@Serializable
+internal data class CatalogMatchSummary(
+    val schema: String,
+    val name: String,
+    @SerialName("qualified_name") val qualifiedName: String,
+    @SerialName("size_class") val sizeClass: TableSizeClass,
+    @SerialName("matched_columns") val matchedColumns: List<String>,
+    @SerialName("matched_indexes") val matchedIndexes: List<String>,
+    @SerialName("matched_foreign_keys") val matchedForeignKeys: List<String>,
+)
+
+@Serializable
+internal data class JoinPathsResult(
+    @SerialName("from_table") val fromTable: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("to_table") val toTable: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val neighbors: List<JoinStepSummary>? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val paths: List<JoinPathSummary>? = null,
+)
+
+@Serializable
+internal data class JoinPathSummary(
+    val hops: Int,
+    val steps: List<JoinStepSummary>,
+)
+
+@Serializable
+internal data class JoinStepSummary(
+    @SerialName("from_schema") val fromSchema: String,
+    @SerialName("from_table") val fromTable: String,
+    @SerialName("to_schema") val toSchema: String,
+    @SerialName("to_table") val toTable: String,
+    val kind: String,
+    val columns: List<JoinColumnPairSummary>,
+    @SerialName("on_clause") val onClause: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("foreign_key_name")
+    val foreignKeyName: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val cardinality: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val optionality: String? = null,
+)
+
+@Serializable
+internal data class JoinColumnPairSummary(
+    @SerialName("left_column") val leftColumn: String,
+    @SerialName("right_column") val rightColumn: String,
 )
 
 @Serializable
@@ -231,12 +665,20 @@ private fun TableInfo.toSummary(): TableSummary =
         columnCount = columns.size,
     )
 
-private fun TableInfo.toDetail(): TableDetail =
+private fun TableInfo.toDetail(tables: List<TableInfo>): TableDetail =
     TableDetail(
         schema = schema,
         name = name,
         qualifiedName = qualifiedName(),
-        columns = columns.map { TableColumn(it.name, it.dataType, it.nullable) },
+        columns =
+            columns.map {
+                TableColumn(
+                    name = it.name,
+                    dataType = it.dataType,
+                    nullable = it.nullable,
+                    joinEligible = it.joinEligible,
+                )
+            },
         indexes =
             indexes.map {
                 TableIndex(
@@ -258,4 +700,52 @@ private fun TableInfo.toDetail(): TableDetail =
                     referencedColumns = it.referencedColumns,
                 )
             },
+        incomingForeignKeys =
+            incomingForeignKeysFor(tables, schema, name).map {
+                TableIncomingForeignKey(
+                    name = it.name,
+                    sourceSchema = it.sourceSchema,
+                    sourceTable = it.sourceTable,
+                    sourceColumns = it.sourceColumns,
+                    referencedColumns = it.referencedColumns,
+                    cardinality = it.cardinality.name,
+                    optionality = it.optionality.name,
+                )
+            },
+    )
+
+private fun com.safedb.schema.CatalogTableMatch.toSummary(): CatalogMatchSummary =
+    CatalogMatchSummary(
+        schema = schema,
+        name = name,
+        qualifiedName = qualifiedName,
+        sizeClass = sizeClass,
+        matchedColumns = matchedColumns,
+        matchedIndexes = matchedIndexes,
+        matchedForeignKeys = matchedForeignKeys,
+    )
+
+private fun JoinEdge.toStepSummary(): JoinStepSummary =
+    JoinStepSummary(
+        fromSchema = fromSchema,
+        fromTable = fromTable,
+        toSchema = toSchema,
+        toTable = toTable,
+        kind =
+            when (kind) {
+                com.safedb.schema.JoinCandidateKind.ForeignKey -> "foreign_key"
+                com.safedb.schema.JoinCandidateKind.IndexedColumns -> "indexed_columns"
+            },
+        columns =
+            columns.map {
+                JoinColumnPairSummary(leftColumn = it.leftColumn, rightColumn = it.rightColumn)
+            },
+        onClause =
+            columns.joinToString(separator = " AND ") {
+                "$fromSchema.$fromTable.${it.leftColumn} = " +
+                    "$toSchema.$toTable.${it.rightColumn}"
+            },
+        foreignKeyName = foreignKeyName,
+        cardinality = cardinality?.name,
+        optionality = optionality?.name,
     )
