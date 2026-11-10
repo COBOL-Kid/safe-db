@@ -253,7 +253,8 @@ suspend fun runQueryCore(
     val warnings = assessment.warnings
     val evaluation =
         when (baseEvaluation.decision.state) {
-            RiskGateState.Blocked ->
+            RiskGateState.Blocked,
+            RiskGateState.AssessmentPending ->
                 return QueryCoreOutcome.Failure(
                     QueryCoreError(
                         error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
@@ -295,8 +296,7 @@ suspend fun runQueryCore(
                     )
                 }
             }
-            RiskGateState.Allowed,
-            RiskGateState.AssessmentPending -> baseEvaluation
+            RiskGateState.Allowed -> baseEvaluation
         }
 
     return executeCompiled(
