@@ -108,7 +108,7 @@ class McpRuntimeTest {
             assertEquals(true, tools.getValue("list_recipes").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("apply_recipe").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("list_query_history").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("export_result").annotations?.readOnlyHint)
+            assertEquals(null, tools.getValue("export_result").annotations)
             assertEquals(true, tools.getValue("delete_connection").annotations?.destructiveHint)
             assertEquals(true, tools.getValue("delete_saved_query").annotations?.destructiveHint)
             assertEquals(null, tools.getValue("save_query").annotations)

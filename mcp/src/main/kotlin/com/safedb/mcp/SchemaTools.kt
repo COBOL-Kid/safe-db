@@ -1,7 +1,6 @@
 package com.safedb.mcp
 
 import com.safedb.model.Schema
-import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableSizeClass
 import com.safedb.model.qualifiedName
@@ -36,8 +35,9 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             "List visible tables for a saved connection as schema, name, qualified_name, " +
                 "size_class, and column_count. Uses a cached catalog (5 minute TTL); pass " +
                 "refresh=true to introspect again. Honor blocked_schemas: blocked and system " +
-                "catalogs are omitted. Use describe_table for columns, indexes, and foreign " +
-                "keys of one table. Do not expect the full catalog in one payload. " +
+                "catalogs are omitted. Use describe_table for columns (including " +
+                "join_eligible), indexes, foreign keys, and incoming_foreign_keys of one " +
+                "table. Do not expect the full catalog in one payload. " +
                 "Add connections with `safe-db-mcp setup` or `safe-db-mcp connections add`.",
         inputSchema =
             ToolSchema(
@@ -71,10 +71,12 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
     server.addTool(
         name = "describe_table",
         description =
-            "Describe one visible table: columns (name, data_type, nullable), indexes, and " +
-                "foreign keys. Pass schema and table from list_tables. Uses the same cached " +
-                "catalog as list_tables (5 minute TTL); pass refresh=true to introspect again. " +
-                "Unknown or blocked tables return an error. Do not dump the full catalog.",
+            "Describe one visible table: columns (name, data_type, nullable, join_eligible), " +
+                "indexes, foreign keys, and incoming_foreign_keys (source table and columns, " +
+                "cardinality, optionality). Pass schema and table from list_tables. Uses the " +
+                "same cached catalog as list_tables (5 minute TTL); pass refresh=true to " +
+                "introspect again. Unknown or blocked tables return an error. Do not dump the " +
+                "full catalog.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -146,8 +148,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Case-insensitive substring to match against table metadata. " +
-                                        "An empty or whitespace query lists tables.",
+                                    "Case-insensitive substring to match against table metadata.",
                                 )
                             },
                         )
@@ -286,11 +287,14 @@ private suspend fun handleListTables(
         optionalBoolean(request, "refresh").getOrElse {
             return it
         } == true
-    if (service.listConnections().none { it.id == connectionId }) {
-        return toolError(ERROR_NOT_FOUND, "Connection not found")
-    }
-    val schema = cache.get(connectionId, refresh = refresh)
-    val payload = toolJson.encodeToString(visibleTables(service, schema).map { it.toSummary() })
+    val payload =
+        toolJson.encodeToString(
+            visibleCatalog(service, cache, connectionId, refresh)
+                .getOrElse {
+                    return it
+                }
+                .map { it.toSummary() }
+        )
     return CallToolResult(content = listOf(TextContent(text = payload)))
 }
 
@@ -318,11 +322,10 @@ private suspend fun handleDescribeTable(
         optionalBoolean(request, "refresh").getOrElse {
             return it
         } == true
-    if (service.listConnections().none { it.id == connectionId }) {
-        return toolError(ERROR_NOT_FOUND, "Connection not found")
-    }
-    val schema = cache.get(connectionId, refresh = refresh)
-    val tables = visibleTables(service, schema)
+    val tables =
+        visibleCatalog(service, cache, connectionId, refresh).getOrElse {
+            return it
+        }
     val table =
         tables.find { it.schema == schemaName && it.name == tableName }
             ?: return toolError(ERROR_NOT_FOUND, "Table not found")
@@ -364,11 +367,14 @@ private suspend fun handleSearchCatalog(
         return toolError(ERROR_INVALID_ARGUMENTS, "limit must be 1 or more")
     }
     val limit = (limitArg ?: SEARCH_CATALOG_DEFAULT_LIMIT).coerceAtMost(SEARCH_CATALOG_MAX_LIMIT)
-    if (service.listConnections().none { it.id == connectionId }) {
-        return toolError(ERROR_NOT_FOUND, "Connection not found")
-    }
-    val schema = cache.get(connectionId, refresh = refresh)
-    val matches = searchCatalogTables(visibleTables(service, schema), query, schemaFilter)
+    val matches =
+        searchCatalogTables(
+            visibleCatalog(service, cache, connectionId, refresh).getOrElse {
+                return it
+            },
+            query,
+            schemaFilter,
+        )
     val capped = matches.take(limit)
     val result =
         CatalogSearchResult(
@@ -409,10 +415,6 @@ private suspend fun handleFindJoinPaths(
         optionalString(request, "to_table").getOrElse {
             return it
         }
-    val defaultSchema =
-        optionalString(request, "default_schema").getOrElse {
-            return it
-        }
     val maxHopsArg =
         optionalInt(request, "max_hops").getOrElse {
             return it
@@ -427,25 +429,18 @@ private suspend fun handleFindJoinPaths(
             "max_hops must be between 1 and $FIND_JOIN_PATHS_MAX_HOPS",
         )
     }
-    if (service.listConnections().none { it.id == connectionId }) {
-        return toolError(ERROR_NOT_FOUND, "Connection not found")
-    }
-    val schema = cache.get(connectionId, refresh = refresh)
-    val tables = visibleTables(service, schema)
+    val tables =
+        visibleCatalog(service, cache, connectionId, refresh).getOrElse {
+            return it
+        }
     val settings = service.getSettings()
+    val defaultSchema =
+        optionalString(request, "default_schema").getOrElse {
+            return it
+        } ?: settingsDefaultSchema(settings, connectionId)
     val fromTable =
-        when (
-            val resolved =
-                resolveTableReference(
-                    fromReference,
-                    defaultSchema,
-                    settings,
-                    connectionId,
-                    tables,
-                )
-        ) {
-            is Arg.Ok -> resolved.value
-            is Arg.Err -> return resolved.result
+        resolveTableReference(fromReference, defaultSchema, tables).getOrElse {
+            return it
         }
     val maxHops = (maxHopsArg ?: FIND_JOIN_PATHS_DEFAULT_HOPS)
 
@@ -460,12 +455,8 @@ private suspend fun handleFindJoinPaths(
     }
 
     val toTable =
-        when (
-            val resolved =
-                resolveTableReference(toReference, defaultSchema, settings, connectionId, tables)
-        ) {
-            is Arg.Ok -> resolved.value
-            is Arg.Err -> return resolved.result
+        resolveTableReference(toReference, defaultSchema, tables).getOrElse {
+            return it
         }
     val paths =
         findJoinPaths(
@@ -494,8 +485,6 @@ private suspend fun handleFindJoinPaths(
 private fun resolveTableReference(
     reference: String,
     defaultSchema: String?,
-    settings: Settings,
-    connectionId: String,
     tables: List<TableInfo>,
 ): Arg<TableInfo> {
     val dot = reference.indexOf('.')
@@ -510,9 +499,7 @@ private fun resolveTableReference(
         return tables.find { it.schema == schema && it.name == name }?.let { Arg.Ok(it) }
             ?: Arg.Err(toolError(ERROR_NOT_FOUND, "Table not found"))
     }
-    val explicitSchema =
-        defaultSchema
-            ?: settings.defaultSchema.takeIf { settings.defaultConnectionId == connectionId }
+    val explicitSchema = defaultSchema
     if (explicitSchema != null) {
         return tables
             .find { it.schema == explicitSchema && it.name == reference }
@@ -645,6 +632,18 @@ internal data class TableForeignKey(
     @SerialName("referenced_table") val referencedTable: String,
     @SerialName("referenced_columns") val referencedColumns: List<String>,
 )
+
+private suspend fun visibleCatalog(
+    service: SafeDbService,
+    cache: SchemaCache,
+    connectionId: String,
+    refresh: Boolean,
+): Arg<List<TableInfo>> {
+    if (service.listConnections().none { it.id == connectionId }) {
+        return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
+    }
+    return Arg.Ok(visibleTables(service, cache.get(connectionId, refresh)))
+}
 
 private suspend fun visibleTables(service: SafeDbService, schema: Schema): List<TableInfo> {
     val blocked = service.getSettings().blockedSchemas

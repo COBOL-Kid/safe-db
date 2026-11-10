@@ -7,7 +7,6 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
-import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.nio.file.Files
 import java.nio.file.Path
@@ -56,7 +55,6 @@ internal fun registerExportTools(server: Server, resultStore: ResultStore, resul
                     },
                 required = listOf("result_id"),
             ),
-        toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("export_result failed") { handleExportResult(resultStore, resultsDir, request) }
     }

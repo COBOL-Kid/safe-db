@@ -30,6 +30,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -193,6 +194,48 @@ internal fun optionalArray(request: CallToolRequest, name: String): Arg<JsonArra
     return Arg.Ok(array)
 }
 
+internal sealed interface DestructiveConfirmationParse<out T> {
+    data object Missing : DestructiveConfirmationParse<Nothing>
+
+    data class Ready<T>(val confirmation: T) : DestructiveConfirmationParse<T>
+
+    data class Invalid(val result: CallToolResult) : DestructiveConfirmationParse<Nothing>
+}
+
+internal fun <T> parseDestructiveConfirmation(
+    request: CallToolRequest,
+    deserializer: DeserializationStrategy<T>,
+): DestructiveConfirmationParse<T> {
+    val obj =
+        when (val parsed = optionalObject(request, "confirmation")) {
+            is Arg.Err -> return DestructiveConfirmationParse.Invalid(parsed.result)
+            is Arg.Ok -> parsed.value ?: return DestructiveConfirmationParse.Missing
+        }
+    return try {
+        DestructiveConfirmationParse.Ready(toolJson.decodeFromJsonElement(deserializer, obj))
+    } catch (_: SerializationException) {
+        DestructiveConfirmationParse.Invalid(
+            toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid")
+        )
+    }
+}
+
+internal class IssuedTokens {
+    private val tokens = ConcurrentHashMap<String, String>()
+
+    fun issue(id: String): String {
+        val token = UUID.randomUUID().toString()
+        tokens[id] = token
+        return token
+    }
+
+    fun matches(id: String, token: String): Boolean = tokens[id] == token
+
+    fun consume(id: String) {
+        tokens.remove(id)
+    }
+}
+
 internal suspend fun runMcpTool(
     fallback: String,
     block: suspend () -> CallToolResult,
@@ -322,7 +365,7 @@ internal fun registerConnectionTools(
     service: SafeDbService,
     schemaCache: SchemaCache,
 ) {
-    val deleteTokens = DeleteConfirmationTokens()
+    val deleteTokens = IssuedTokens()
     server.addTool(
         name = "list_connections",
         description =
@@ -404,7 +447,7 @@ internal fun ConnectionDef.toSummary(): ConnectionSummary =
 private suspend fun handleDeleteConnection(
     service: SafeDbService,
     schemaCache: SchemaCache,
-    tokens: DeleteConfirmationTokens,
+    tokens: IssuedTokens,
     request: CallToolRequest,
 ): CallToolResult {
     requireKnownArguments(request, "connection_id", "confirmation").getOrElse {
@@ -417,10 +460,11 @@ private suspend fun handleDeleteConnection(
     val connection =
         service.listConnections().find { it.id == id }
             ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
-    when (val parsed = parseDeleteConfirmation(request)) {
-        DeleteConfirmationParse.Missing -> return deleteConfirmationRequired(connection, tokens)
-        is DeleteConfirmationParse.Invalid -> return parsed.result
-        is DeleteConfirmationParse.Ready -> {
+    when (val parsed = parseDestructiveConfirmation(request, McpDeleteConfirmation.serializer())) {
+        DestructiveConfirmationParse.Missing ->
+            return deleteConfirmationRequired(connection, tokens)
+        is DestructiveConfirmationParse.Invalid -> return parsed.result
+        is DestructiveConfirmationParse.Ready -> {
             if (
                 parsed.confirmation.connectionId != id ||
                     !tokens.matches(id, parsed.confirmation.token)
@@ -441,9 +485,9 @@ private suspend fun handleDeleteConnection(
 
 private fun deleteConfirmationRequired(
     connection: ConnectionDef,
-    tokens: DeleteConfirmationTokens,
+    tokens: IssuedTokens,
 ): CallToolResult {
-    val confirmation = tokens.issue(connection.id)
+    val confirmation = McpDeleteConfirmation(connection.id, tokens.issue(connection.id))
     return toolError(
         ERROR_CONFIRMATION_REQUIRED,
         "Deleting connection '${connection.name}' (${connection.dialect.displayName()}, ${connection.database}) " +
@@ -455,45 +499,4 @@ private fun deleteConfirmationRequired(
             ),
         confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
     )
-}
-
-private fun parseDeleteConfirmation(request: CallToolRequest): DeleteConfirmationParse {
-    val obj =
-        when (val parsed = optionalObject(request, "confirmation")) {
-            is Arg.Err -> return DeleteConfirmationParse.Invalid(parsed.result)
-            is Arg.Ok -> parsed.value ?: return DeleteConfirmationParse.Missing
-        }
-    return try {
-        DeleteConfirmationParse.Ready(
-            toolJson.decodeFromJsonElement(McpDeleteConfirmation.serializer(), obj)
-        )
-    } catch (_: SerializationException) {
-        DeleteConfirmationParse.Invalid(
-            toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid")
-        )
-    }
-}
-
-private sealed interface DeleteConfirmationParse {
-    data object Missing : DeleteConfirmationParse
-
-    data class Ready(val confirmation: McpDeleteConfirmation) : DeleteConfirmationParse
-
-    data class Invalid(val result: CallToolResult) : DeleteConfirmationParse
-}
-
-private class DeleteConfirmationTokens {
-    private val tokens = ConcurrentHashMap<String, String>()
-
-    fun issue(connectionId: String): McpDeleteConfirmation {
-        val token = UUID.randomUUID().toString()
-        tokens[connectionId] = token
-        return McpDeleteConfirmation(connectionId, token)
-    }
-
-    fun matches(connectionId: String, token: String): Boolean = tokens[connectionId] == token
-
-    fun consume(connectionId: String) {
-        tokens.remove(connectionId)
-    }
 }

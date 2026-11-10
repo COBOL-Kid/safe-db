@@ -252,17 +252,10 @@ private suspend fun handleRunQuery(
         .getOrElse {
             return it
         }
-    val connectionId =
-        requiredString(request, "connection_id").getOrElse {
+    val resolved =
+        resolveSqlSpec(service, request).getOrElse {
             return it
         }
-    val sql =
-        requiredString(request, "sql").getOrElse {
-            return it
-        }
-    val connection =
-        service.listConnections().find { it.id == connectionId }
-            ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
 
     val confirmation =
         when (val parsed = parseConfirmation(request)) {
@@ -271,15 +264,10 @@ private suspend fun handleRunQuery(
             is ConfirmationParse.Ready -> parsed.confirmation
         }
 
-    val spec =
-        when (val prepared = prepareSql(service, connection, sql, request)) {
-            is PreparedQuery.Ok -> prepared.spec
-            is PreparedQuery.Err -> return prepared.result
-        }
-
     return try {
-        val completed = service.runQuery(QueryRunRequest(connectionId, spec, confirmation))
-        successReceipt(completed, resultStore, spec, connectionId)
+        val completed =
+            service.runQuery(QueryRunRequest(resolved.connectionId, resolved.spec, confirmation))
+        successReceipt(completed, resultStore, resolved.spec, resolved.connectionId)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -294,26 +282,13 @@ private suspend fun handleAssessQuery(
     requireKnownArguments(request, "connection_id", "sql", "default_schema").getOrElse {
         return it
     }
-    val connectionId =
-        requiredString(request, "connection_id").getOrElse {
+    val resolved =
+        resolveSqlSpec(service, request).getOrElse {
             return it
-        }
-    val sql =
-        requiredString(request, "sql").getOrElse {
-            return it
-        }
-    val connection =
-        service.listConnections().find { it.id == connectionId }
-            ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
-
-    val spec =
-        when (val prepared = prepareSql(service, connection, sql, request)) {
-            is PreparedQuery.Ok -> prepared.spec
-            is PreparedQuery.Err -> return prepared.result
         }
 
     return try {
-        val assessment = service.assessQuery(QueryRunRequest(connectionId, spec))
+        val assessment = service.assessQuery(QueryRunRequest(resolved.connectionId, resolved.spec))
         val risk = assessment.riskEvaluation
         val receipt =
             QueryAssessmentReceipt(
@@ -334,6 +309,33 @@ private suspend fun handleAssessQuery(
         throw error
     } catch (error: QueryFailureException) {
         mapQueryFailure(error)
+    }
+}
+
+internal data class ResolvedSql(
+    val connectionId: String,
+    val connection: ConnectionDef,
+    val spec: QuerySpec,
+)
+
+internal suspend fun resolveSqlSpec(
+    service: SafeDbService,
+    request: CallToolRequest,
+): Arg<ResolvedSql> {
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return Arg.Err(it)
+        }
+    val sql =
+        requiredString(request, "sql").getOrElse {
+            return Arg.Err(it)
+        }
+    val connection =
+        service.listConnections().find { it.id == connectionId }
+            ?: return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
+    return when (val prepared = prepareSql(service, connection, sql, request)) {
+        is PreparedQuery.Ok -> Arg.Ok(ResolvedSql(connectionId, connection, prepared.spec))
+        is PreparedQuery.Err -> Arg.Err(prepared.result)
     }
 }
 

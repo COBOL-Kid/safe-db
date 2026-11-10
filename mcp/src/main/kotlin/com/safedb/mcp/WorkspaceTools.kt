@@ -20,9 +20,6 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.ResultColumn
 import com.safedb.model.SavedQuery
 import com.safedb.query.specToSql
-import com.safedb.query.sql.SqlParseResult
-import com.safedb.query.sql.mySqlBackslashEscapes
-import com.safedb.query.sql.parseSqlToSpec
 import com.safedb.query.validateQuery
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
@@ -34,12 +31,10 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -57,7 +52,7 @@ internal fun registerWorkspaceTools(
     resultStore: ResultStore,
     nowMs: () -> Long,
 ) {
-    val deleteTokens = SavedQueryConfirmationTokens()
+    val deleteTokens = IssuedTokens()
 
     server.addTool(
         name = "list_saved_queries",
@@ -396,39 +391,20 @@ private suspend fun handleSaveQuery(
         requiredString(request, "sql").getOrElse {
             return it
         }
-    val defaultSchemaArg =
-        optionalString(request, "default_schema").getOrElse {
-            return it
-        }
     val connection =
         service.listConnections().find { it.id == connectionId }
             ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
 
     val schema = service.getSchema(connectionId)
     val settings = service.getSettings()
-    val defaultSchema = defaultSchemaArg ?: settingsDefaultSchema(settings, connectionId)
-    val parsed =
-        when (
-            val result =
-                parseSqlToSpec(
-                    sql,
-                    connection.dialect,
-                    schema,
-                    defaultSchema,
-                    mySqlBackslashEscapes(connection),
-                )
-        ) {
-            is SqlParseResult.Failure ->
-                return toolError(
-                    ERROR_PARSE,
-                    result.issues.joinToString(separator = " ") { mcpParseMessage(it) },
-                )
-            is SqlParseResult.Success -> result.spec
-        }
     val spec =
+        when (val prepared = prepareSql(service, connection, sql, request)) {
+            is PreparedQuery.Ok -> prepared.spec
+            is PreparedQuery.Err -> return prepared.result
+        }
+    val validatedSpec =
         when (
-            val validated =
-                validateQuery(parsed, schema, settings.blockedSchemas, connection.dialect)
+            val validated = validateQuery(spec, schema, settings.blockedSchemas, connection.dialect)
         ) {
             is Outcome.Ok -> validated.value.first.spec()
             is Outcome.Err -> return toolError(ERROR_VALIDATION, validated.message)
@@ -439,7 +415,7 @@ private suspend fun handleSaveQuery(
             id = UUID.randomUUID().toString(),
             name = name,
             connectionId = connectionId,
-            spec = spec,
+            spec = validatedSpec,
             createdAt = (nowMs() / 1000).toString(),
         )
     service.saveSavedQuery(saved)
@@ -449,7 +425,7 @@ private suspend fun handleSaveQuery(
 
 private suspend fun handleDeleteSavedQuery(
     service: SafeDbService,
-    tokens: SavedQueryConfirmationTokens,
+    tokens: IssuedTokens,
     request: CallToolRequest,
 ): CallToolResult {
     requireKnownArguments(request, "query_id", "confirmation").getOrElse {
@@ -462,10 +438,13 @@ private suspend fun handleDeleteSavedQuery(
     val saved =
         service.listSavedQueries().find { it.id == queryId }
             ?: return toolError(ERROR_NOT_FOUND, "Saved query not found")
-    when (val parsed = parseSavedQueryConfirmation(request)) {
-        SavedQueryConfirmationParse.Missing -> return savedQueryConfirmationRequired(saved, tokens)
-        is SavedQueryConfirmationParse.Invalid -> return parsed.result
-        is SavedQueryConfirmationParse.Ready -> {
+    when (
+        val parsed =
+            parseDestructiveConfirmation(request, McpDeleteSavedQueryConfirmation.serializer())
+    ) {
+        DestructiveConfirmationParse.Missing -> return savedQueryConfirmationRequired(saved, tokens)
+        is DestructiveConfirmationParse.Invalid -> return parsed.result
+        is DestructiveConfirmationParse.Ready -> {
             if (
                 parsed.confirmation.queryId != queryId ||
                     !tokens.matches(queryId, parsed.confirmation.token)
@@ -726,9 +705,9 @@ private fun HistoryEntry.toSummary(
 
 private fun savedQueryConfirmationRequired(
     saved: SavedQuery,
-    tokens: SavedQueryConfirmationTokens,
+    tokens: IssuedTokens,
 ): CallToolResult {
-    val confirmation = tokens.issue(saved.id)
+    val confirmation = McpDeleteSavedQueryConfirmation(saved.id, tokens.issue(saved.id))
     return toolError(
         ERROR_CONFIRMATION_REQUIRED,
         "Deleting saved query '${saved.name}' (${saved.id}) removes it from this MCP store. " +
@@ -737,23 +716,6 @@ private fun savedQueryConfirmationRequired(
         reasons = listOf("This deletes saved query ${saved.name} (${saved.id})."),
         confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
     )
-}
-
-private fun parseSavedQueryConfirmation(request: CallToolRequest): SavedQueryConfirmationParse {
-    val obj =
-        when (val parsed = optionalObject(request, "confirmation")) {
-            is Arg.Err -> return SavedQueryConfirmationParse.Invalid(parsed.result)
-            is Arg.Ok -> parsed.value ?: return SavedQueryConfirmationParse.Missing
-        }
-    return try {
-        SavedQueryConfirmationParse.Ready(
-            toolJson.decodeFromJsonElement(McpDeleteSavedQueryConfirmation.serializer(), obj)
-        )
-    } catch (_: SerializationException) {
-        SavedQueryConfirmationParse.Invalid(
-            toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid")
-        )
-    }
 }
 
 @Serializable
@@ -827,28 +789,3 @@ internal data class McpDeleteSavedQueryConfirmation(
 )
 
 @Serializable private data class DeletedSavedQuery(val deleted: String)
-
-private sealed interface SavedQueryConfirmationParse {
-    data object Missing : SavedQueryConfirmationParse
-
-    data class Ready(val confirmation: McpDeleteSavedQueryConfirmation) :
-        SavedQueryConfirmationParse
-
-    data class Invalid(val result: CallToolResult) : SavedQueryConfirmationParse
-}
-
-private class SavedQueryConfirmationTokens {
-    private val tokens = ConcurrentHashMap<String, String>()
-
-    fun issue(queryId: String): McpDeleteSavedQueryConfirmation {
-        val token = UUID.randomUUID().toString()
-        tokens[queryId] = token
-        return McpDeleteSavedQueryConfirmation(queryId, token)
-    }
-
-    fun matches(queryId: String, token: String): Boolean = tokens[queryId] == token
-
-    fun consume(queryId: String) {
-        tokens.remove(queryId)
-    }
-}
