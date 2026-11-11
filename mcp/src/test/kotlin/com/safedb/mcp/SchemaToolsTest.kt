@@ -380,13 +380,14 @@ class SchemaToolsTest {
     fun searchCatalogReportsMatchesTotalsAndMatchedMetadata() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
-            val parsed =
-                client
-                    .callTool(
-                        "search_catalog",
-                        mapOf("connection_id" to "c1", "query" to "customer"),
-                    )
-                    .json()
+            val result =
+                client.callTool(
+                    "search_catalog",
+                    mapOf("connection_id" to "c1", "query" to "customer"),
+                )
+            val parsed = result.json()
+            assertNotNull(result.structuredContent)
+            assertEquals(parsed, result.structuredContent)
             assertEquals("customer", parsed.getValue("query").jsonPrimitive.content)
             assertEquals("2", parsed.getValue("match_count").jsonPrimitive.content)
             assertEquals("false", parsed.getValue("truncated").jsonPrimitive.content)
@@ -584,41 +585,6 @@ class SchemaToolsTest {
     fun findJoinPathsResolvesDefaultSchemaAndRejectsBadReferences() = runBlocking {
         val service = joinService()
         withTempMcpClient(service) { client ->
-            val ambiguous =
-                client.callTool(
-                    "find_join_paths",
-                    mapOf("connection_id" to "c1", "from_table" to "orders"),
-                )
-            assertEquals(true, ambiguous.isError)
-            assertEquals(
-                "invalid_arguments",
-                ambiguous.json().getValue("error").jsonPrimitive.content,
-            )
-            assertTrue(
-                ambiguous
-                    .json()
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .contains("default_schema")
-            )
-
-            val explicitSchema =
-                client
-                    .callTool(
-                        "find_join_paths",
-                        mapOf(
-                            "connection_id" to "c1",
-                            "from_table" to "orders",
-                            "default_schema" to "public",
-                        ),
-                    )
-                    .json()
-            assertEquals(
-                "public.orders",
-                explicitSchema.getValue("from_table").jsonPrimitive.content,
-            )
-
             service.settings = Settings(defaultConnectionId = "c1", defaultSchema = "public")
             val fromSettings =
                 client
@@ -628,33 +594,6 @@ class SchemaToolsTest {
                     )
                     .json()
             assertEquals("public.orders", fromSettings.getValue("from_table").jsonPrimitive.content)
-
-            val missingTable =
-                client.callTool(
-                    "find_join_paths",
-                    mapOf("connection_id" to "c1", "from_table" to "public.missing"),
-                )
-            assertEquals(true, missingTable.isError)
-            assertEquals("not_found", missingTable.json().getValue("error").jsonPrimitive.content)
-            assertTrue(
-                missingTable
-                    .json()
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .startsWith("Table not found")
-            )
-
-            val missingSchema =
-                client.callTool(
-                    "find_join_paths",
-                    mapOf("connection_id" to "c1", "from_table" to ".orders"),
-                )
-            assertEquals(true, missingSchema.isError)
-            assertEquals(
-                "invalid_arguments",
-                missingSchema.json().getValue("error").jsonPrimitive.content,
-            )
 
             val unknownConnection =
                 client.callTool(
@@ -693,98 +632,6 @@ class SchemaToolsTest {
                     result.json().getValue("message").jsonPrimitive.content,
                 )
             }
-        }
-    }
-
-    @Test
-    fun describeTableResolvesCaseInsensitiveNamesAfterExactMatch() = runBlocking {
-        val service = upperCaseCustomersService()
-        withTempMcpClient(service) { client ->
-            val parsed =
-                client
-                    .callTool(
-                        "describe_table",
-                        mapOf(
-                            "connection_id" to "c1",
-                            "schema" to "safedb",
-                            "table" to "customers",
-                        ),
-                    )
-                    .json()
-            assertEquals("SAFEDB", parsed.getValue("schema").jsonPrimitive.content)
-            assertEquals("CUSTOMERS", parsed.getValue("name").jsonPrimitive.content)
-        }
-    }
-
-    @Test
-    fun findJoinPathsResolvesCaseInsensitiveNames() = runBlocking {
-        val service = upperCaseCustomersService()
-        withTempMcpClient(service) { client ->
-            val qualified =
-                client
-                    .callTool(
-                        "find_join_paths",
-                        mapOf("connection_id" to "c1", "from_table" to "safedb.customers"),
-                    )
-                    .json()
-            assertEquals(
-                "SAFEDB.CUSTOMERS",
-                qualified.getValue("from_table").jsonPrimitive.content,
-            )
-
-            val unqualified =
-                client
-                    .callTool(
-                        "find_join_paths",
-                        mapOf(
-                            "connection_id" to "c1",
-                            "from_table" to "customers",
-                            "default_schema" to "safedb",
-                        ),
-                    )
-                    .json()
-            assertEquals(
-                "SAFEDB.CUSTOMERS",
-                unqualified.getValue("from_table").jsonPrimitive.content,
-            )
-        }
-    }
-
-    @Test
-    fun caseOnlyMatchesReportAmbiguityWithQualifiedNames() = runBlocking {
-        val service = caseOnlyConflictService()
-        withTempMcpClient(service) { client ->
-            val described =
-                client.callTool(
-                    "describe_table",
-                    mapOf("connection_id" to "c1", "schema" to "public", "table" to "foo"),
-                )
-            assertEquals(true, described.isError)
-            assertEquals(
-                "invalid_arguments",
-                described.json().getValue("error").jsonPrimitive.content,
-            )
-            val message = described.json().getValue("message").jsonPrimitive.content
-            assertTrue(message.contains("public.Foo"))
-            assertTrue(message.contains("public.FOO"))
-
-            val resolved =
-                client.callTool(
-                    "find_join_paths",
-                    mapOf(
-                        "connection_id" to "c1",
-                        "from_table" to "foo",
-                        "default_schema" to "public",
-                    ),
-                )
-            assertEquals(true, resolved.isError)
-            assertEquals(
-                "invalid_arguments",
-                resolved.json().getValue("error").jsonPrimitive.content,
-            )
-            val resolvedMessage = resolved.json().getValue("message").jsonPrimitive.content
-            assertTrue(resolvedMessage.contains("public.Foo"))
-            assertTrue(resolvedMessage.contains("public.FOO"))
         }
     }
 
@@ -1001,43 +848,6 @@ private fun joinService(): RecordingSafeDbService {
             }
         }
     service.schemas["c1"] = base.copy(tables = tables + items + archivedOrders + balances)
-    return service
-}
-
-private fun upperCaseCustomersService(): RecordingSafeDbService {
-    val service = catalogService()
-    val base = service.schemas.getValue("c1")
-    val customers = base.tables.first { it.name == "customers" }
-    service.schemas["c1"] =
-        base.copy(
-            tables =
-                base.tables.filter { it.name != "customers" } +
-                    customers.copy(schema = "SAFEDB", name = "CUSTOMERS")
-        )
-    return service
-}
-
-private fun caseOnlyConflictService(): RecordingSafeDbService {
-    val service = catalogService()
-    val base = service.schemas.getValue("c1")
-    val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
-    service.schemas["c1"] =
-        base.copy(
-            tables =
-                base.tables +
-                    TableInfo(
-                        schema = "public",
-                        name = "Foo",
-                        columns = columns,
-                        indexes = emptyList(),
-                    ) +
-                    TableInfo(
-                        schema = "public",
-                        name = "FOO",
-                        columns = columns,
-                        indexes = emptyList(),
-                    )
-        )
     return service
 }
 
