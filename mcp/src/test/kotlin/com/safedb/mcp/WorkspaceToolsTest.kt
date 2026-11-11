@@ -23,6 +23,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -151,6 +152,7 @@ class WorkspaceToolsTest {
             assertEquals("Customers", saved.name)
             assertEquals("c1", saved.connectionId)
             assertEquals(2, saved.spec.columns.size)
+            assertEquals(listOf("c1"), service.schemaCalls)
         }
     }
 
@@ -346,11 +348,14 @@ class WorkspaceToolsTest {
             )
         withTempMcpClient(service) { client ->
             val resultId = storeWorkspaceResult(client)
-            val body =
-                client.callJson(
+            val result =
+                client.callTool(
                     "apply_recipe",
                     mapOf("result_id" to resultId, "recipe_id" to "r1"),
                 )
+            val body = result.json()
+            assertNotNull(result.structuredContent)
+            assertEquals(body, result.structuredContent)
             assertEquals(resultId, body.string("result_id"))
             assertEquals(
                 listOf("region", "Count"),
@@ -392,11 +397,14 @@ class WorkspaceToolsTest {
             )
         withTempMcpClient(service) { client ->
             val resultId = storeWorkspaceResult(client)
-            val worksheet =
-                client.callJson(
+            val worksheetResult =
+                client.callTool(
                     "apply_recipe",
                     mapOf("result_id" to resultId, "recipe_id" to "r2"),
                 )
+            val worksheet = worksheetResult.json()
+            assertNotNull(worksheetResult.structuredContent)
+            assertEquals(worksheet, worksheetResult.structuredContent)
             assertEquals(resultId, worksheet.string("result_id"))
             assertEquals(
                 listOf("region", "amount", "created"),

@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.explore.ExploreConfig
+import com.safedb.explore.ExplorePreviewResult
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.applyExplore
@@ -306,27 +307,7 @@ private suspend fun handlePivotResult(
         )
 
     val preview = applyExplore(entry.result, config)
-    val slice =
-        sliceRows(
-            preview.result,
-            offset = 0,
-            limit = GET_RESULT_ROWS_MAX,
-            maxBytes = MCP_PAYLOAD_MAX_BYTES,
-        )
-    val receipt =
-        PivotResultReceipt(
-            resultId = resultId,
-            columns = preview.result.columns,
-            rowCount = preview.result.rowCount,
-            sampleCapped = entry.result.truncated,
-            pivotTruncated =
-                slice.moreRowsRemain ||
-                    slice.cellsTruncated ||
-                    preview.layout.overflowMessage != null,
-            warnings = preview.warnings,
-            rows = slice.rows,
-        )
-    return objectToolResult(receipt)
+    return pivotResultReceipt(resultId, entry, preview)
 }
 
 private suspend fun handleFilterResultRows(
@@ -431,6 +412,34 @@ private suspend fun handleFilterResultRows(
             rows = slice.rows,
         )
     return objectToolResult(page)
+}
+
+internal fun pivotResultReceipt(
+    resultId: String,
+    entry: StoredResultEntry,
+    preview: ExplorePreviewResult,
+): CallToolResult {
+    val slice =
+        sliceRows(
+            preview.result,
+            offset = 0,
+            limit = GET_RESULT_ROWS_MAX,
+            maxBytes = MCP_PAYLOAD_MAX_BYTES,
+        )
+    val receipt =
+        PivotResultReceipt(
+            resultId = resultId,
+            columns = preview.result.columns,
+            rowCount = preview.result.rowCount,
+            sampleCapped = entry.result.truncated,
+            pivotTruncated =
+                slice.moreRowsRemain ||
+                    slice.cellsTruncated ||
+                    preview.layout.overflowMessage != null,
+            warnings = preview.warnings,
+            rows = slice.rows,
+        )
+    return objectToolResult(receipt)
 }
 
 @Serializable

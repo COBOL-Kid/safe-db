@@ -61,14 +61,13 @@ internal fun registerMcpResourcesAndPrompts(
         val connectionId =
             variables["connection_id"]?.takeIf { it.isNotBlank() }
                 ?: throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
-        if (service.listConnections().none { it.id == connectionId }) {
-            throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
-        }
+        val connection =
+            service.listConnections().find { it.id == connectionId }
+                ?: throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
         val schema = schemaCache.get(connectionId)
         val tables =
-            visibleTablesForConnection(service, connectionId, schema.tables).map {
-                it.toResourceSummary()
-            }
+            visibleTables(schema.tables, service.getSettings().blockedSchemas, connection.dialect)
+                .map { it.toResourceSummary() }
         ReadResourceResult(
             contents =
                 listOf(

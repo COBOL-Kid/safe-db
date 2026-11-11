@@ -148,8 +148,64 @@ class SpecToSqlTest {
             )
         val spec = simpleSpec().copy(filters = filters)
 
-        assertTrue(specToSql(spec, Dialect.Postgres).contains("c.name ILIKE '%abc%'"))
-        assertTrue(specToSql(spec, Dialect.MySql).contains("c.name LIKE '%abc%'"))
+        assertTrue(specToSql(spec, Dialect.Postgres).contains("c.name ILIKE '%abc%' ESCAPE '!'"))
+        assertTrue(specToSql(spec, Dialect.MySql).contains("c.name LIKE '%abc%' ESCAPE '!'"))
+    }
+
+    @Test
+    fun rendersEmptyInListsAsConstantPredicates() {
+        val filters =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(
+                        leaf("id", FilterOp.In, list(LiteralKind.Int)),
+                        leaf("id", FilterOp.NotIn, list(LiteralKind.Int)),
+                    ),
+            )
+        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres)
+
+        assertTrue(sql.contains("1=0"))
+        assertTrue(sql.contains("1=1"))
+        assertTrue(!sql.contains("IS NULL"))
+        assertTrue(!sql.contains("IS NOT NULL"))
+    }
+
+    @Test
+    fun escapesLikeWildcardsInFriendlyPatterns() {
+        val filters =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(leaf("name", FilterOp.Contains, single(LiteralKind.Text, "50%_!"))),
+            )
+        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres)
+
+        assertTrue(sql.contains("c.name LIKE '%50!%!_!!%' ESCAPE '!'"))
+    }
+
+    @Test
+    fun roundTripsContainsWithWildcardCharacters() {
+        val filters =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(leaf("name", FilterOp.Contains, single(LiteralKind.Text, "50%_!"))),
+            )
+        val spec = simpleSpec().copy(filters = filters)
+
+        for (dialect in Dialect.entries) {
+            val sql = specToSql(spec, dialect)
+            val parsed =
+                assertIs<SqlParseResult.Success>(
+                    parseSqlToSpec(sql, dialect, schema(), null),
+                    "failed for $dialect: $sql",
+                )
+            val parsedLeaf = assertIs<FilterNode.Leaf>(parsed.spec.filters.children.single())
+            // ESCAPE is consumed, and Contains is not reconstructed from LIKE.
+            assertEquals(FilterOp.Like, parsedLeaf.spec.op)
+            assertEquals("%50!%!_!!%", (parsedLeaf.spec.value as FilterValue.Single).literal.text)
+        }
     }
 
     @Test

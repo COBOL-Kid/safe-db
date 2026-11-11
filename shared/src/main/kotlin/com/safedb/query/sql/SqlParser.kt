@@ -60,6 +60,7 @@ private val NON_ALIAS_WORDS =
 private val SET_OPERATIONS = setOf("UNION", "INTERSECT", "EXCEPT")
 private val OUTER_JOIN_WORDS = setOf("LEFT", "RIGHT", "FULL", "CROSS", "OUTER")
 private val COMPARISON_OPERATORS = setOf("=", "<>", "!=", ">", ">=", "<", "<=")
+private const val LIKE_ESCAPE_CHAR = "!"
 
 private class SqlParser(
     private val tokens: List<SqlToken>,
@@ -358,7 +359,9 @@ private class SqlParser(
             }
             word == "LIKE" -> {
                 advance()
-                predicate(column, FilterOp.Like, listOf(parseLiteral()))
+                val value = parseLiteral()
+                consumeOptionalLikeEscape()
+                predicate(column, FilterOp.Like, listOf(value))
             }
             word == "ILIKE" -> {
                 val ilikeToken = advance()
@@ -369,14 +372,18 @@ private class SqlParser(
                         ilikeToken.span,
                     )
                 }
-                predicate(column, FilterOp.Ilike, listOf(parseLiteral()))
+                val value = parseLiteral()
+                consumeOptionalLikeEscape()
+                predicate(column, FilterOp.Ilike, listOf(value))
             }
             word == "NOT" -> {
                 advance()
                 when (wordAt(0)) {
                     "LIKE" -> {
                         advance()
-                        predicate(column, FilterOp.NotLike, listOf(parseLiteral()))
+                        val value = parseLiteral()
+                        consumeOptionalLikeEscape()
+                        predicate(column, FilterOp.NotLike, listOf(value))
                     }
                     "IN" -> {
                         advance()
@@ -496,6 +503,30 @@ private class SqlParser(
             fail(SqlIssueCode.Unsupported, SqlMessages.EXPRESSION, after.span)
         }
         return literal
+    }
+
+    // Clipboard SQL escapes LIKE metacharacters with `!`; accept the explicit ESCAPE clause so that
+    // rendered patterns paste back. It only validates the escape character and does not change the
+    // operator.
+    private fun consumeOptionalLikeEscape() {
+        if (wordAt(0) != "ESCAPE") return
+        advance()
+        val token = peek()
+        if (token == null || token.type != SqlTokenType.StringLiteral) {
+            fail(
+                SqlIssueCode.Syntax,
+                "Expected a string literal after ESCAPE.",
+                token?.span ?: endSpan(),
+            )
+        }
+        advance()
+        if (token.value != LIKE_ESCAPE_CHAR) {
+            fail(
+                SqlIssueCode.Syntax,
+                "Only ESCAPE '$LIKE_ESCAPE_CHAR' is supported.",
+                token.span,
+            )
+        }
     }
 
     private fun parseColumnRefList(): List<SqlColumnRefAst> {

@@ -354,6 +354,7 @@ internal fun createSafeDbMcpServer(
     registerSchemaTools(server, service, schemaCache)
     registerQueryTools(server, service, store)
     registerExploreTools(server, store)
+    registerRecipeTools(server, service, store)
     registerWorkspaceTools(server, service, store, nowMs)
     registerExportTools(server, store, resultsDir)
     registerMcpResourcesAndPrompts(server, service, schemaCache, store)

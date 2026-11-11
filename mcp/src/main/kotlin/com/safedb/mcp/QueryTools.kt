@@ -6,6 +6,7 @@ import com.safedb.model.MAX_RESULT_BYTES
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultColumn
+import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.byteBudgetTruncationWarning
 import com.safedb.query.QueryConfirmationCondition
@@ -373,6 +374,8 @@ internal data class ResolvedSql(
     val connectionId: String,
     val connection: ConnectionDef,
     val spec: QuerySpec,
+    val schema: Schema,
+    val settings: Settings,
 )
 
 internal suspend fun resolveSqlSpec(
@@ -390,22 +393,31 @@ internal suspend fun resolveSqlSpec(
     val connection =
         service.listConnections().find { it.id == connectionId }
             ?: return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
-    return when (val prepared = prepareSql(service, connection, sql, request)) {
-        is PreparedQuery.Ok -> Arg.Ok(ResolvedSql(connectionId, connection, prepared.spec))
-        is PreparedQuery.Err -> Arg.Err(prepared.result)
-    }
+    val prepared =
+        prepareSql(service, connection, sql, request).getOrElse {
+            return Arg.Err(it)
+        }
+    return Arg.Ok(
+        ResolvedSql(connectionId, connection, prepared.spec, prepared.schema, prepared.settings)
+    )
 }
+
+internal data class PreparedSql(
+    val spec: QuerySpec,
+    val schema: Schema,
+    val settings: Settings,
+)
 
 internal suspend fun prepareSql(
     service: SafeDbService,
     connection: ConnectionDef,
     sql: String,
     request: CallToolRequest,
-): PreparedQuery {
+): Arg<PreparedSql> {
     val (schema, settings) = service.getSchema(connection.id) to service.getSettings()
     val defaultSchema =
         optionalString(request, "default_schema").getOrElse {
-            return PreparedQuery.Err(it)
+            return Arg.Err(it)
         } ?: settingsDefaultSchema(settings, connection.id)
     return when (
         val parsed =
@@ -418,13 +430,13 @@ internal suspend fun prepareSql(
             )
     ) {
         is SqlParseResult.Failure ->
-            PreparedQuery.Err(
+            Arg.Err(
                 toolError(
                     ERROR_PARSE,
                     parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
                 )
             )
-        is SqlParseResult.Success -> PreparedQuery.Ok(parsed.spec)
+        is SqlParseResult.Success -> Arg.Ok(PreparedSql(parsed.spec, schema, settings))
     }
 }
 
@@ -634,12 +646,6 @@ private fun QueryExecutionConfirmation.toPayload(): McpQueryConfirmation =
                 }
                 .sortedWith(compareBy({ it.reasonCode }, { it.conditionKey })),
     )
-
-internal sealed interface PreparedQuery {
-    data class Ok(val spec: QuerySpec) : PreparedQuery
-
-    data class Err(val result: CallToolResult) : PreparedQuery
-}
 
 internal sealed interface ConfirmationParse {
     data object Missing : ConfirmationParse

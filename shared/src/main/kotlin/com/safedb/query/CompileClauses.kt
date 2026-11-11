@@ -8,6 +8,7 @@ import com.safedb.model.FilterOp
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
+import com.safedb.model.JoinSpec
 import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.TableRef
@@ -23,50 +24,50 @@ internal fun buildFromClause(spec: QuerySpec, dialect: Dialect): String {
     return quotedTableAlias(spec.tables[0], dialect)
 }
 
-internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String {
-    if (spec.tables.size <= 1) return ""
-
-    val included = mutableSetOf(spec.tables[0].alias)
-    val remaining = spec.tables.drop(1).map { it.alias }.toMutableList()
-    val clauses = mutableListOf<String>()
-
-    while (remaining.isNotEmpty()) {
-        var found: Pair<Int, String>? = null
-        for ((i, alias) in remaining.withIndex()) {
-            for ((left, _, right, _) in spec.joins) {
-                if (
-                    (left == alias && included.contains(right)) ||
-                        (right == alias && included.contains(left))
-                ) {
-                    found = i to alias
-                    break
-                }
-            }
-            if (found != null) break
-        }
-
-        val (idx, alias) = found ?: break
-        remaining.removeAt(idx)
-        included.add(alias)
-
-        val tableRef = spec.tables.first { it.alias == alias }
-        val joinTarget = "INNER JOIN ${quotedTableAlias(tableRef, dialect)}"
-
+internal fun buildJoinClause(spec: QuerySpec, dialect: Dialect): String =
+    walkJoinOrder(spec).joinToString("\n") { step ->
+        val joinTarget = "INNER JOIN ${quotedTableAlias(step.table, dialect)}"
         val onClause =
-            spec.joins
-                .filter { candidate ->
-                    (candidate.leftAlias == alias && included.contains(candidate.rightAlias)) ||
-                        (candidate.rightAlias == alias && included.contains(candidate.leftAlias))
-                }
-                .joinToString(" AND ") { candidate ->
-                    "${quote(candidate.leftAlias, dialect)}.${quote(candidate.leftColumn, dialect)} = " +
-                        "${quote(candidate.rightAlias, dialect)}.${quote(candidate.rightColumn, dialect)}"
-                }
-
-        clauses.add("$joinTarget ON $onClause")
+            step.conditions.joinToString(" AND ") { candidate ->
+                "${quote(candidate.leftAlias, dialect)}.${quote(candidate.leftColumn, dialect)} = " +
+                    "${quote(candidate.rightAlias, dialect)}.${quote(candidate.rightColumn, dialect)}"
+            }
+        "$joinTarget ON $onClause"
     }
 
-    return clauses.joinToString("\n")
+// One joinable table in dependency order, with the ON conditions that connect it to the tables
+// already in scope. Shared by the bound compiler and the clipboard renderer so both emit the same
+// join order; each caller keeps its own identifier quoting.
+internal data class JoinStep(val table: TableRef, val conditions: List<JoinSpec>)
+
+internal fun walkJoinOrder(spec: QuerySpec): List<JoinStep> {
+    if (spec.tables.size <= 1) return emptyList()
+
+    val included = mutableSetOf(spec.tables.first().alias)
+    val remaining = spec.tables.drop(1).map { it.alias }.toMutableList()
+    val steps = mutableListOf<JoinStep>()
+
+    while (remaining.isNotEmpty()) {
+        val alias =
+            remaining.firstOrNull { candidate ->
+                spec.joins.any { join ->
+                    (join.leftAlias == candidate && join.rightAlias in included) ||
+                        (join.rightAlias == candidate && join.leftAlias in included)
+                }
+            } ?: break
+        remaining.remove(alias)
+        included += alias
+
+        val table = spec.tables.first { it.alias == alias }
+        val conditions =
+            spec.joins.filter { join ->
+                (join.leftAlias == alias && join.rightAlias in included) ||
+                    (join.rightAlias == alias && join.leftAlias in included)
+            }
+        steps += JoinStep(table, conditions)
+    }
+
+    return steps
 }
 
 // Oracle rejects table-alias AS (ORA-03048); column AS remains valid.
@@ -318,18 +319,3 @@ private fun friendlyPatternOperator(op: FilterOp): String =
         FilterOp.EndsWith -> "LIKE"
         else -> error("Not a friendly text pattern: $op")
     }
-
-private fun friendlyPatternText(op: FilterOp, text: String): String {
-    val escaped = escapeLikeLiteral(text)
-    return when (op) {
-        FilterOp.Contains,
-        FilterOp.ContainsIgnoreCase,
-        FilterOp.NotContains -> "%$escaped%"
-        FilterOp.StartsWith -> "$escaped%"
-        FilterOp.EndsWith -> "%$escaped"
-        else -> error("Not a friendly text pattern: $op")
-    }
-}
-
-private fun escapeLikeLiteral(text: String): String =
-    text.replace("!", "!!").replace("%", "!%").replace("_", "!_")

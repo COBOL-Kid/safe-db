@@ -156,15 +156,8 @@ internal constructor(
         }
     }
 
-    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
-        val def =
-            configStore.get(request.connectionId)
-                ?: throw IllegalArgumentException("Connection not found")
-        val password = SecretsManager.passwordForDefinition(def).getOrThrow()
-        val settings = settingsStore.load()
-        val session =
-            querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
-        return try {
+    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult =
+        withQuerySession(request.connectionId) { def, session, settings ->
             when (
                 val outcome =
                     runQueryCore(
@@ -199,20 +192,10 @@ internal constructor(
                     throw QueryFailureException(outcome.error)
                 }
             }
-        } finally {
-            session.close()
         }
-    }
 
-    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult {
-        val def =
-            configStore.get(request.connectionId)
-                ?: throw IllegalArgumentException("Connection not found")
-        val password = SecretsManager.passwordForDefinition(def).getOrThrow()
-        val settings = settingsStore.load()
-        val session =
-            querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
-        return try {
+    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult =
+        withQuerySession(request.connectionId) { def, session, settings ->
             when (
                 val outcome =
                     assessQueryCore(
@@ -236,6 +219,20 @@ internal constructor(
                 }
                 is QueryAssessmentOutcome.Failure -> throw QueryFailureException(outcome.error)
             }
+        }
+
+    private suspend fun <T> withQuerySession(
+        connectionId: String,
+        block: suspend (def: ConnectionDef, session: QuerySession, settings: Settings) -> T,
+    ): T {
+        val def =
+            configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val password = SecretsManager.passwordForDefinition(def).getOrThrow()
+        val settings = settingsStore.load()
+        val session =
+            querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
+        return try {
+            block(def, session, settings)
         } finally {
             session.close()
         }

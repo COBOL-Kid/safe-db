@@ -89,31 +89,13 @@ private fun renderTableRef(table: TableRef, dialect: Dialect): String {
 }
 
 private fun renderJoins(spec: QuerySpec, dialect: Dialect): String {
-    if (spec.tables.size <= 1) return ""
-    val included = mutableSetOf(spec.tables.first().alias)
-    val remaining = spec.tables.drop(1).map { it.alias }.toMutableList()
-    val clauses = mutableListOf<String>()
-    while (remaining.isNotEmpty()) {
-        val alias =
-            remaining.firstOrNull { candidate ->
-                spec.joins.any { join ->
-                    (join.leftAlias == candidate && join.rightAlias in included) ||
-                        (join.rightAlias == candidate && join.leftAlias in included)
-                }
-            } ?: break
-        remaining.remove(alias)
-        included += alias
-        val table = spec.tables.first { it.alias == alias }
+    val steps = walkJoinOrder(spec)
+    if (steps.isEmpty()) return ""
+    return steps.joinToString(separator = "\n", prefix = "\n") { step ->
         val conditions =
-            spec.joins
-                .filter { join ->
-                    (join.leftAlias == alias && join.rightAlias in included) ||
-                        (join.rightAlias == alias && join.leftAlias in included)
-                }
-                .joinToString(" AND ") { renderJoinCondition(it, dialect) }
-        clauses += "INNER JOIN ${renderTableRef(table, dialect)} ON $conditions"
+            step.conditions.joinToString(" AND ") { join -> renderJoinCondition(join, dialect) }
+        "INNER JOIN ${renderTableRef(step.table, dialect)} ON $conditions"
     }
-    return clauses.joinToString(separator = "\n", prefix = "\n")
 }
 
 private fun renderJoinCondition(join: JoinSpec, dialect: Dialect): String =
@@ -172,7 +154,7 @@ private fun renderFilter(filter: FilterSpec, dialect: Dialect): String {
                         if (dialect == Dialect.Postgres) "ILIKE" else "LIKE"
                     else -> "LIKE"
                 }
-            "$column $operator ${quoteText(pattern)}"
+            "$column $operator ${quoteText(pattern)} ESCAPE '!'"
         }
         filter.op.sqlOperator() != null -> {
             val literal = (filter.value as? FilterValue.Single)?.literal ?: return ""
@@ -187,8 +169,7 @@ private fun renderFilter(filter: FilterSpec, dialect: Dialect): String {
             val literals =
                 (filter.value as? FilterValue.ListValue)?.literals?.map(::renderLiteral).orEmpty()
             when {
-                literals.isEmpty() && filter.op == FilterOp.In -> "$column IS NULL"
-                literals.isEmpty() -> "$column IS NOT NULL"
+                literals.isEmpty() -> if (filter.op == FilterOp.In) "1=0" else "1=1"
                 else ->
                     "$column ${if (filter.op == FilterOp.In) "IN" else "NOT IN"} " +
                         "(${literals.joinToString(", ")})"
@@ -215,16 +196,6 @@ private fun FilterOp.isFriendlyPattern(): Boolean =
             FilterOp.StartsWith,
             FilterOp.EndsWith,
         )
-
-private fun friendlyPatternText(op: FilterOp, text: String): String =
-    when (op) {
-        FilterOp.Contains,
-        FilterOp.ContainsIgnoreCase,
-        FilterOp.NotContains -> "%$text%"
-        FilterOp.StartsWith -> "$text%"
-        FilterOp.EndsWith -> "%$text"
-        else -> text
-    }
 
 private fun renderLiteral(literal: FilterLiteral): String =
     when (literal.kind) {

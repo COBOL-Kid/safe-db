@@ -1,6 +1,7 @@
 package com.safedb.query
 
 import com.safedb.model.Dialect
+import com.safedb.model.FilterOp
 import com.safedb.query.sql.sqlKeywords
 import com.safedb.query.sql.sqlWord
 import java.util.Locale
@@ -56,3 +57,21 @@ internal fun buildIlike(columnRef: String, ph: String, dialect: Dialect): String
         Dialect.Oracle,
         Dialect.Db2 -> "UPPER($columnRef) LIKE UPPER($ph)"
     }
+
+// Escapes the LIKE metacharacters so a friendly pattern matches them literally. Kept in sync with
+// the ESCAPE '!' the renderers append.
+internal fun escapeLikeLiteral(text: String): String =
+    text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+// Wraps an escaped literal with the wildcards a friendly text operator implies.
+internal fun friendlyPatternText(op: FilterOp, text: String): String {
+    val escaped = escapeLikeLiteral(text)
+    return when (op) {
+        FilterOp.Contains,
+        FilterOp.ContainsIgnoreCase,
+        FilterOp.NotContains -> "%$escaped%"
+        FilterOp.StartsWith -> "$escaped%"
+        FilterOp.EndsWith -> "%$escaped"
+        else -> error("Not a friendly text pattern: $op")
+    }
+}

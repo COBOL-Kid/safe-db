@@ -6,6 +6,7 @@ import com.safedb.connection.transportPresetForLocation
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.Settings
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.normalizeSettings
@@ -285,9 +286,7 @@ internal suspend fun executeMcpCommand(
                 0
             }
             is McpCommand.SettingsRiskGate -> {
-                val current = service.getSettings()
-                val updated = normalizeSettings(current.copy(queryRiskGate = command.gate))
-                service.saveSettings(updated)
+                val updated = updateSettings(service) { it.copy(queryRiskGate = command.gate) }
                 io.print("query_risk_gate: ${updated.queryRiskGate}")
                 0
             }
@@ -297,49 +296,39 @@ internal suspend fun executeMcpCommand(
                     1
                 } else {
                     val updated =
-                        normalizeSettings(
-                            service
-                                .getSettings()
-                                .copy(
-                                    defaultConnectionId = command.connectionId,
-                                    defaultSchema = command.defaultSchema,
-                                )
-                        )
-                    service.saveSettings(updated)
+                        updateSettings(service) {
+                            it.copy(
+                                defaultConnectionId = command.connectionId,
+                                defaultSchema = command.defaultSchema,
+                            )
+                        }
                     io.print("default_connection_id: ${updated.defaultConnectionId}")
                     io.print("default_schema: ${updated.defaultSchema ?: "(none)"}")
                     0
                 }
             }
             McpCommand.SettingsClearDefaultConnection -> {
-                val updated =
-                    normalizeSettings(
-                        service.getSettings().copy(defaultConnectionId = null, defaultSchema = null)
-                    )
-                service.saveSettings(updated)
+                updateSettings(service) {
+                    it.copy(defaultConnectionId = null, defaultSchema = null)
+                }
                 io.print("Cleared default connection")
                 0
             }
             is McpCommand.SettingsBlockSchema -> {
-                val current = service.getSettings()
                 val updated =
-                    normalizeSettings(
-                        current.copy(blockedSchemas = current.blockedSchemas + command.schema)
-                    )
-                service.saveSettings(updated)
-                io.print("blocked_schemas: ${updated.blockedSchemas.joinToString(", ")}")
+                    updateSettings(service) {
+                        it.copy(blockedSchemas = it.blockedSchemas + command.schema)
+                    }
+                io.print("blocked_schemas: ${blockedSchemasText(updated.blockedSchemas)}")
                 0
             }
             is McpCommand.SettingsUnblockSchema -> {
-                val current = service.getSettings()
                 val updated =
-                    normalizeSettings(
-                        current.copy(
-                            blockedSchemas =
-                                current.blockedSchemas - command.schema.trim().lowercase()
+                    updateSettings(service) {
+                        it.copy(
+                            blockedSchemas = it.blockedSchemas - command.schema.trim().lowercase()
                         )
-                    )
-                service.saveSettings(updated)
+                    }
                 io.print("blocked_schemas: ${blockedSchemasText(updated.blockedSchemas)}")
                 0
             }
@@ -403,29 +392,23 @@ private suspend fun importRecipe(path: String, service: SafeDbService, io: CliIo
 
 private suspend fun testConnections(id: String?, service: SafeDbService, io: CliIo): Int {
     val connections = service.listConnections()
-    if (id != null) {
-        val def = connections.firstOrNull { it.id == id }
-        if (def == null) {
-            io.printErr("safe-db-mcp: connection not found: $id")
-            return 1
+    val targets =
+        if (id != null) {
+            val def = connections.firstOrNull { it.id == id }
+            if (def == null) {
+                io.printErr("safe-db-mcp: connection not found: $id")
+                return 1
+            }
+            listOf(def)
+        } else {
+            connections
         }
-        return try {
-            service.testConnection(def, null)
-            io.print("OK ${def.id}  ${def.name}  ${def.dialect}  ${def.database}")
-            0
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            io.printErr("FAIL ${def.id}  ${def.name}: ${error.message}")
-            1
-        }
-    }
-    if (connections.isEmpty()) {
+    if (targets.isEmpty()) {
         io.print("No connections.")
         return 0
     }
     var failed = false
-    connections.forEach { def ->
+    for (def in targets) {
         try {
             service.testConnection(def, null)
             io.print("OK ${def.id}  ${def.name}  ${def.dialect}  ${def.database}")
@@ -437,6 +420,15 @@ private suspend fun testConnections(id: String?, service: SafeDbService, io: Cli
         }
     }
     return if (failed) 1 else 0
+}
+
+private suspend fun updateSettings(
+    service: SafeDbService,
+    transform: (Settings) -> Settings,
+): Settings {
+    val updated = normalizeSettings(transform(service.getSettings()))
+    service.saveSettings(updated)
+    return updated
 }
 
 private fun blockedSchemasText(schemas: List<String>): String =

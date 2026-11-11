@@ -339,6 +339,46 @@ class SqlParserTest {
     }
 
     @Test
+    fun likeEscapeClauseIsAccepted() {
+        val like =
+            assertIs<SqlConditionAst.Predicate>(
+                parse("SELECT id FROM t WHERE a LIKE 'x!%' ESCAPE '!'").where
+            )
+        assertEquals(FilterOp.Like, like.op)
+        assertEquals("x!%", like.values.single().raw)
+
+        val notLike =
+            assertIs<SqlConditionAst.Predicate>(
+                parse("SELECT id FROM t WHERE a NOT LIKE 'x' ESCAPE '!'").where
+            )
+        assertEquals(FilterOp.NotLike, notLike.op)
+
+        val ilike =
+            assertIs<SqlConditionAst.Predicate>(
+                parse("SELECT id FROM t WHERE a ILIKE 'x' ESCAPE '!'", Dialect.Postgres).where
+            )
+        assertEquals(FilterOp.Ilike, ilike.op)
+    }
+
+    @Test
+    fun likeEscapeMustBeExclamationMark() {
+        val issue = failParse("SELECT id FROM t WHERE a LIKE 'x' ESCAPE '#'")
+        assertEquals(SqlIssueCode.Syntax, issue.code)
+    }
+
+    @Test
+    fun likeEscapeRequiresAStringLiteral() {
+        assertEquals(
+            SqlIssueCode.Syntax,
+            failParse("SELECT id FROM t WHERE a LIKE 'x' ESCAPE").code,
+        )
+        assertEquals(
+            SqlIssueCode.Syntax,
+            failParse("SELECT id FROM t WHERE a LIKE 'x' ESCAPE 1").code,
+        )
+    }
+
+    @Test
     fun explicitZeroLimitIsRejected() {
         // QuerySpec reserves 0 as the builder's "unset" sentinel, which validateQuery rewrites to
         // 500 — running 500 rows for a typed LIMIT 0 would be the opposite of what was asked.

@@ -324,10 +324,16 @@ fun findJoinPaths(
     val hops = maxHops.coerceIn(1, 3)
     if (fromSchema == toSchema && fromTable == toTable) return emptyList()
 
+    val edgeCache = mutableMapOf<Pair<String, String>, List<JoinEdge>>()
+    fun edges(schema: String, table: String) =
+        edgeCache.getOrPut(schema to table) {
+            orderedEdges(tables, schema, table, includeIndexedColumns)
+        }
+
     val paths = mutableListOf<JoinPath>()
     val queue = ArrayDeque<Pair<JoinPath, Set<Pair<String, String>>>>()
     val start = fromSchema to fromTable
-    for (edge in orderedEdges(tables, fromSchema, fromTable, includeIndexedColumns)) {
+    for (edge in edges(fromSchema, fromTable)) {
         val next = edge.toSchema to edge.toTable
         if (next == start) continue
         queue += JoinPath(listOf(edge)) to setOf(start, next)
@@ -342,7 +348,7 @@ fun findJoinPaths(
             continue
         }
         if (path.steps.size == hops) continue
-        for (edge in orderedEdges(tables, last.toSchema, last.toTable, includeIndexedColumns)) {
+        for (edge in edges(last.toSchema, last.toTable)) {
             val next = edge.toSchema to edge.toTable
             if (next in visited) continue
             queue += JoinPath(path.steps + edge) to (visited + next)
