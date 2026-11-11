@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.adapter.ConnectionFailedException
+import com.safedb.model.Dialect
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.SafeDbJson
@@ -25,6 +26,7 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -56,6 +58,9 @@ class QueryToolsTest {
             assertFalse(text.contains("localhost"))
             assertFalse(text.contains("should-not-leak"))
             val parsed = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+            assertNotNull(result.structuredContent)
+            assertEquals(parsed, result.structuredContent)
+            assertEquals("Postgres", parsed.getValue("dialect").jsonPrimitive.content)
             assertEquals(
                 "id",
                 parsed.columns()[0].jsonObject.getValue("name").jsonPrimitive.content,
@@ -66,6 +71,8 @@ class QueryToolsTest {
             )
             assertEquals("2", parsed.getValue("row_count").jsonPrimitive.content)
             assertFalse(parsed.containsKey("sample_capped"))
+            assertFalse(parsed.containsKey("sample_cap_reason"))
+            assertEquals("true", parsed.getValue("sample_unbounded").jsonPrimitive.content)
             assertFalse(parsed.containsKey("truncated"))
             assertFalse(parsed.containsKey("artifact_path"))
             assertFalse(parsed.containsKey("artifact_bytes"))
@@ -111,6 +118,8 @@ class QueryToolsTest {
                     .json()
             assertEquals("50", parsed.getValue("row_count").jsonPrimitive.content)
             assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertEquals("sql_limit", parsed.getValue("sample_cap_reason").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("sample_unbounded"))
             assertFalse(parsed.containsKey("truncated"))
             assertTrue(
                 parsed.getValue("warnings").jsonArray.any {
@@ -154,6 +163,8 @@ class QueryToolsTest {
                     )
                     .json()
             assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertEquals("byte_budget", parsed.getValue("sample_cap_reason").jsonPrimitive.content)
+            assertEquals("true", parsed.getValue("sample_unbounded").jsonPrimitive.content)
             val warnings = parsed.warningTexts()
             assertTrue(warnings.any { it == byteBudgetTruncationWarning() })
             assertTrue(warnings.any { "encoded-byte budget" in it })
@@ -186,6 +197,8 @@ class QueryToolsTest {
                     .json()
             val warnings = parsed.warningTexts()
             assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertEquals("byte_budget", parsed.getValue("sample_cap_reason").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("sample_unbounded"))
             assertTrue(warnings.any { "encoded-byte budget" in it })
             assertTrue(warnings.none { "LIMIT 50" in it })
             assertTrue(warnings.none { it.contains("Raise LIMIT") })
@@ -1252,6 +1265,7 @@ class QueryToolsTest {
                 )
             assertFalse(result.isError == true)
             val body = result.json()
+            assertEquals("Postgres", body.getValue("dialect").jsonPrimitive.content)
             val columns = body.getValue("columns").jsonArray
             assertEquals(
                 "customers__id",
@@ -1437,6 +1451,7 @@ class QueryToolsTest {
     fun receiptOmitsNullArtifactKeys() {
         val receipt =
             QueryReceipt(
+                dialect = Dialect.Postgres,
                 columns = emptyList(),
                 rowCount = 0,
                 sampleCapped = false,
@@ -1451,9 +1466,15 @@ class QueryToolsTest {
         assertFalse(omitted.contains("\"artifact_path\""))
         assertFalse(omitted.contains("\"artifact_bytes\""))
         assertFalse(omitted.contains("\"sample_capped\""))
+        assertFalse(omitted.contains("\"sample_cap_reason\""))
+        assertFalse(omitted.contains("\"sample_unbounded\""))
 
-        val capped = toolJson.encodeToString(receipt.copy(sampleCapped = true))
+        val capped =
+            toolJson.encodeToString(
+                receipt.copy(sampleCapped = true, sampleCapReason = "sql_limit")
+            )
         assertTrue(capped.contains("\"sample_capped\""))
+        assertTrue(capped.contains("\"sample_cap_reason\":\"sql_limit\""))
         assertFalse(capped.contains("\"artifact_path\""))
         assertFalse(capped.contains("\"artifact_bytes\""))
     }

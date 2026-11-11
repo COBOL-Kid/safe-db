@@ -1,7 +1,6 @@
 package com.safedb.mcp
 
 import com.safedb.model.TableInfo
-import com.safedb.query.isSchemaBlocked
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.GetPromptResult
@@ -66,15 +65,10 @@ internal fun registerMcpResourcesAndPrompts(
             throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
         }
         val schema = schemaCache.get(connectionId)
-        val blocked = service.getSettings().blockedSchemas
         val tables =
-            schema.tables
-                .filter { !isSchemaBlocked(it.schema, blocked) }
-                .sortedWith(
-                    compareBy<TableInfo, String>(String.CASE_INSENSITIVE_ORDER) { it.schema }
-                        .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
-                )
-                .map { it.toResourceSummary() }
+            visibleTablesForConnection(service, connectionId, schema.tables).map {
+                it.toResourceSummary()
+            }
         ReadResourceResult(
             contents =
                 listOf(

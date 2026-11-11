@@ -1,10 +1,8 @@
 package com.safedb.mcp
 
-import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.model.TableSizeClass
 import com.safedb.model.qualifiedName
-import com.safedb.query.isSchemaBlocked
 import com.safedb.schema.JoinEdge
 import com.safedb.schema.findDirectJoinEdges
 import com.safedb.schema.findJoinPaths
@@ -35,7 +33,8 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             "List visible tables for a saved connection as schema, name, qualified_name, " +
                 "size_class, and column_count. Uses a cached catalog (5 minute TTL); pass " +
                 "refresh=true to introspect again. Honor blocked_schemas: blocked and system " +
-                "catalogs are omitted. Use describe_table for columns (including " +
+                "catalogs are omitted, and Db2 omits EXPLAIN_* and ADVISE_* catalog tables. Use " +
+                "describe_table for columns (including " +
                 "join_eligible), indexes, foreign keys, and incoming_foreign_keys of one " +
                 "table. Do not expect the full catalog in one payload. " +
                 "Add connections with `safe-db-mcp setup` or `safe-db-mcp connections add`.",
@@ -73,10 +72,13 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
         description =
             "Describe one visible table: columns (name, data_type, nullable, join_eligible), " +
                 "indexes, foreign keys, and incoming_foreign_keys (source table and columns, " +
-                "cardinality, optionality). Pass schema and table from list_tables. Uses the " +
-                "same cached catalog as list_tables (5 minute TTL); pass refresh=true to " +
-                "introspect again. Unknown or blocked tables return an error. Do not dump the " +
-                "full catalog.",
+                "cardinality, optionality). Pass schema and table exactly as list_tables returns " +
+                "them; Oracle and Db2 names are often uppercase. Lookup is exact first, then " +
+                "case-insensitive. Uses the same cached catalog as list_tables (5 minute TTL); " +
+                "pass refresh=true to introspect again. Unknown or blocked tables return an " +
+                "error; a case-only ambiguity lists both names. Do not dump the " +
+                "full catalog. The result includes JSON text and structuredContent with the " +
+                "same object.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -114,6 +116,29 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                         )
                     },
                 required = listOf("connection_id", "schema", "table"),
+            ),
+        outputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put("schema", buildJsonObject { put("type", "string") })
+                        put("name", buildJsonObject { put("type", "string") })
+                        put("qualified_name", buildJsonObject { put("type", "string") })
+                        put("columns", buildJsonObject { put("type", "array") })
+                        put("indexes", buildJsonObject { put("type", "array") })
+                        put("foreign_keys", buildJsonObject { put("type", "array") })
+                        put("incoming_foreign_keys", buildJsonObject { put("type", "array") })
+                    },
+                required =
+                    listOf(
+                        "schema",
+                        "name",
+                        "qualified_name",
+                        "columns",
+                        "indexes",
+                        "foreign_keys",
+                        "incoming_foreign_keys",
+                    ),
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
@@ -195,13 +220,16 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
         description =
             "Find join relationships for a visible table from the cached catalog. Without " +
                 "to_table, returns direct neighbors with foreign_key or indexed_columns edges, " +
-                "column pairs, an on_clause, and FK cardinality and optionality. With to_table, " +
+                "column pairs, an on_clause, and FK cardinality and optionality. Pass " +
+                "foreign_key_only=true to exclude indexed-column candidates. With to_table, " +
                 "returns up to 10 paths of at most max_hops (default " +
-                "$FIND_JOIN_PATHS_DEFAULT_HOPS, max $FIND_JOIN_PATHS_MAX_HOPS). from_table and " +
-                "to_table accept schema.table or table; unqualified names use default_schema, " +
+                "$FIND_JOIN_PATHS_DEFAULT_HOPS, max $FIND_JOIN_PATHS_MAX_HOPS). Copy from_table and " +
+                "to_table from list_tables (uppercase on Oracle and Db2); they accept " +
+                "schema.table or table, and unqualified names use default_schema, " +
                 "the saved default schema for this connection, or a unique visible table. " +
                 "Honors blocked_schemas and uses the same cached catalog (5 minute TTL); pass " +
-                "refresh=true to introspect again.",
+                "refresh=true to introspect again. The result includes JSON text and " +
+                "structuredContent with the same object.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -253,6 +281,17 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                             },
                         )
                         put(
+                            "foreign_key_only",
+                            buildJsonObject {
+                                put("type", "boolean")
+                                put(
+                                    "description",
+                                    "If true, exclude indexed-column candidates and return only " +
+                                        "foreign-key edges. Default false.",
+                                )
+                            },
+                        )
+                        put(
                             "refresh",
                             buildJsonObject {
                                 put("type", "boolean")
@@ -264,6 +303,17 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                         )
                     },
                 required = listOf("connection_id", "from_table"),
+            ),
+        outputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put("from_table", buildJsonObject { put("type", "string") })
+                        put("to_table", buildJsonObject { put("type", "string") })
+                        put("neighbors", buildJsonObject { put("type", "array") })
+                        put("paths", buildJsonObject { put("type", "array") })
+                    },
+                required = listOf("from_table"),
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
@@ -327,11 +377,10 @@ private suspend fun handleDescribeTable(
             return it
         }
     val table =
-        tables.find { it.schema == schemaName && it.name == tableName }
-            ?: return toolError(ERROR_NOT_FOUND, "Table not found")
-    return CallToolResult(
-        content = listOf(TextContent(text = toolJson.encodeToString(table.toDetail(tables))))
-    )
+        resolveTable(schemaName, tableName, tables).getOrElse {
+            return it
+        }
+    return objectToolResult(table.toDetail(tables))
 }
 
 private suspend fun handleSearchCatalog(
@@ -398,6 +447,7 @@ private suspend fun handleFindJoinPaths(
             "to_table",
             "default_schema",
             "max_hops",
+            "foreign_key_only",
             "refresh",
         )
         .getOrElse {
@@ -423,6 +473,10 @@ private suspend fun handleFindJoinPaths(
         optionalBoolean(request, "refresh").getOrElse {
             return it
         } == true
+    val foreignKeyOnly =
+        optionalBoolean(request, "foreign_key_only").getOrElse {
+            return it
+        } == true
     if (maxHopsArg != null && (maxHopsArg < 1 || maxHopsArg > FIND_JOIN_PATHS_MAX_HOPS)) {
         return toolError(
             ERROR_INVALID_ARGUMENTS,
@@ -445,13 +499,19 @@ private suspend fun handleFindJoinPaths(
     val maxHops = (maxHopsArg ?: FIND_JOIN_PATHS_DEFAULT_HOPS)
 
     if (toReference == null) {
-        val edges = findDirectJoinEdges(tables, fromTable.schema, fromTable.name)
+        val edges =
+            findDirectJoinEdges(
+                tables,
+                fromTable.schema,
+                fromTable.name,
+                includeIndexedColumns = !foreignKeyOnly,
+            )
         val result =
             JoinPathsResult(
                 fromTable = fromTable.qualifiedName(),
                 neighbors = edges.map { it.toStepSummary() },
             )
-        return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(result))))
+        return objectToolResult(result)
     }
 
     val toTable =
@@ -466,6 +526,7 @@ private suspend fun handleFindJoinPaths(
             toTable.schema,
             toTable.name,
             maxHops = maxHops,
+            includeIndexedColumns = !foreignKeyOnly,
         )
     val result =
         JoinPathsResult(
@@ -479,7 +540,7 @@ private suspend fun handleFindJoinPaths(
                     )
                 },
         )
-    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(result))))
+    return objectToolResult(result)
 }
 
 private fun resolveTableReference(
@@ -496,27 +557,90 @@ private fun resolveTableReference(
                 toolError(ERROR_INVALID_ARGUMENTS, "table names must be schema.table or table")
             )
         }
-        return tables.find { it.schema == schema && it.name == name }?.let { Arg.Ok(it) }
-            ?: Arg.Err(toolError(ERROR_NOT_FOUND, "Table not found"))
+        return resolveTable(schema, name, tables)
     }
-    val explicitSchema = defaultSchema
-    if (explicitSchema != null) {
-        return tables
-            .find { it.schema == explicitSchema && it.name == reference }
-            ?.let { Arg.Ok(it) } ?: Arg.Err(toolError(ERROR_NOT_FOUND, "Table not found"))
+    if (defaultSchema != null) {
+        return resolveTable(defaultSchema, reference, tables)
     }
-    val candidates = tables.filter { it.name == reference }
-    return when (candidates.size) {
-        0 -> Arg.Err(toolError(ERROR_NOT_FOUND, "Table not found"))
-        1 -> Arg.Ok(candidates.single())
+    return resolveUnqualifiedTable(reference, tables)
+}
+
+private fun resolveTable(
+    schemaName: String,
+    tableName: String,
+    tables: List<TableInfo>,
+): Arg<TableInfo> {
+    tables
+        .find { it.schema == schemaName && it.name == tableName }
+        ?.let {
+            return Arg.Ok(it)
+        }
+    val matches = tables.filter {
+        it.schema.equals(schemaName, ignoreCase = true) &&
+            it.name.equals(tableName, ignoreCase = true)
+    }
+    return when (matches.size) {
+        1 -> Arg.Ok(matches.single())
+        0 -> Arg.Err(tableNotFound(tables))
+        else -> Arg.Err(ambiguousTableError(matches))
+    }
+}
+
+private fun resolveUnqualifiedTable(
+    reference: String,
+    tables: List<TableInfo>,
+): Arg<TableInfo> {
+    val exact = tables.filter { it.name == reference }
+    when {
+        exact.size == 1 -> return Arg.Ok(exact.single())
+        exact.size > 1 -> {
+            if (exact.map { it.qualifiedName() }.distinct().size == 1) {
+                return Arg.Ok(exact.first())
+            }
+            return Arg.Err(defaultSchemaRequired(reference))
+        }
+    }
+    val matches = tables.filter { it.name.equals(reference, ignoreCase = true) }
+    return when (matches.size) {
+        1 -> Arg.Ok(matches.single())
+        0 -> Arg.Err(tableNotFound(tables))
         else ->
             Arg.Err(
-                toolError(
-                    ERROR_INVALID_ARGUMENTS,
-                    "default_schema is required to disambiguate '$reference'",
-                )
+                if (sameTableIgnoringCase(matches)) ambiguousTableError(matches)
+                else defaultSchemaRequired(reference)
             )
     }
+}
+
+private fun sameTableIgnoringCase(tables: List<TableInfo>): Boolean =
+    tables.map { it.qualifiedName().lowercase() }.distinct().size == 1
+
+private fun defaultSchemaRequired(reference: String): CallToolResult =
+    toolError(
+        ERROR_INVALID_ARGUMENTS,
+        "default_schema is required to disambiguate '$reference'",
+    )
+
+private fun ambiguousTableError(tables: List<TableInfo>): CallToolResult =
+    toolError(
+        ERROR_INVALID_ARGUMENTS,
+        "Table reference is ambiguous: " +
+            tables
+                .map { it.qualifiedName() }
+                .sortedWith(String.CASE_INSENSITIVE_ORDER)
+                .joinToString(", "),
+    )
+
+private fun tableNotFound(tables: List<TableInfo>): CallToolResult {
+    val suggestions =
+        tables.map { it.qualifiedName() }.sortedWith(String.CASE_INSENSITIVE_ORDER).take(5)
+    val message =
+        if (suggestions.isEmpty()) {
+            "Table not found"
+        } else {
+            "Table not found. Suggested tables: ${suggestions.joinToString(", ")}"
+        }
+    return toolError(ERROR_NOT_FOUND, message)
 }
 
 @Serializable
@@ -642,17 +766,13 @@ private suspend fun visibleCatalog(
     if (service.listConnections().none { it.id == connectionId }) {
         return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
     }
-    return Arg.Ok(visibleTables(service, cache.get(connectionId, refresh)))
-}
-
-private suspend fun visibleTables(service: SafeDbService, schema: Schema): List<TableInfo> {
-    val blocked = service.getSettings().blockedSchemas
-    return schema.tables
-        .filter { !isSchemaBlocked(it.schema, blocked) }
-        .sortedWith(
-            compareBy<TableInfo, String>(String.CASE_INSENSITIVE_ORDER) { it.schema }
-                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+    return Arg.Ok(
+        visibleTablesForConnection(
+            service,
+            connectionId,
+            cache.get(connectionId, refresh).tables,
         )
+    )
 }
 
 private fun TableInfo.toSummary(): TableSummary =

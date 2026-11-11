@@ -350,8 +350,9 @@ private suspend fun handleRunSavedQuery(
     val saved =
         service.listSavedQueries().find { it.id == queryId }
             ?: return toolError(ERROR_NOT_FOUND, "Saved query not found")
-    service.listConnections().find { it.id == saved.connectionId }
-        ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
+    val connection =
+        service.listConnections().find { it.id == saved.connectionId }
+            ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
 
     val confirmation =
         when (val parsed = parseConfirmation(request)) {
@@ -363,7 +364,7 @@ private suspend fun handleRunSavedQuery(
     return try {
         val completed =
             service.runQuery(QueryRunRequest(saved.connectionId, saved.spec, confirmation))
-        successReceipt(completed, resultStore, saved.spec, saved.connectionId)
+        successReceipt(completed, resultStore, saved.spec, connection)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {

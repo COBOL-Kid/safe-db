@@ -6,7 +6,6 @@ import com.safedb.persist.restrictToOwnerReadWrite
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.nio.file.Files
 import java.nio.file.Path
@@ -108,7 +107,7 @@ private suspend fun handleExportResult(
             bytes = bytes,
             sampleCapped = entry.result.truncated,
         )
-    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
+    return objectToolResult(receipt)
 }
 
 private fun resolveExportFilename(resultId: String, filename: String?): Arg<String> {

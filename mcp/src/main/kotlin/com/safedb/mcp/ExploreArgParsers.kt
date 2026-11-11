@@ -40,7 +40,7 @@ internal fun parseDimensions(
                     return invalidArgument("$argument[$index] must be a string or object")
                 }
                 val column = element.content
-                if (column !in columns) return unknownColumn(column)
+                if (column !in columns) return unknownColumn(column, columns)
                 dimensions += PivotDimension(column = column)
             }
             is JsonObject -> {
@@ -127,7 +127,9 @@ internal fun parseMeasures(array: JsonArray, columns: Set<String>): Arg<List<Piv
             obj.stringField("fn") ?: return invalidArgument("measures[$index].fn is required")
         val fn = parseMeasureFn(fnText) ?: return invalidArgument("Unknown measure fn '$fnText'")
         val sourceColumn = obj.stringField("source_column")
-        if (sourceColumn != null && sourceColumn !in columns) return unknownColumn(sourceColumn)
+        if (sourceColumn != null && sourceColumn !in columns) {
+            return unknownColumn(sourceColumn, columns)
+        }
         val showAs =
             parseShowAs(obj["show_as"]).getOrElse {
                 return Arg.Err(it)
@@ -253,7 +255,7 @@ internal fun parseExploreSort(obj: JsonObject, columns: Set<String>): Arg<Explor
     val target =
         when {
             column != null -> {
-                if (column !in columns) return unknownColumn(column)
+                if (column !in columns) return unknownColumn(column, columns)
                 ExploreSortTarget.Dimension(column)
             }
             measureAlias != null -> ExploreSortTarget.Measure(measureAlias)
@@ -357,7 +359,7 @@ internal fun parseColumnProjection(
         if (primitive == null || !primitive.isString) {
             return invalidArgument("columns[$index] must be a string")
         }
-        if (primitive.content !in columns) return unknownColumn(primitive.content)
+        if (primitive.content !in columns) return unknownColumn(primitive.content, columns)
         projection += primitive.content
     }
     return Arg.Ok(projection)
@@ -375,7 +377,7 @@ internal fun parseObjectArray(array: JsonArray, argument: String): Arg<List<Json
 
 internal fun requireColumn(obj: JsonObject, columns: Set<String>, path: String): Arg<String> {
     val column = obj.stringField("column") ?: return invalidArgument("$path.column is required")
-    if (column !in columns) return unknownColumn(column)
+    if (column !in columns) return unknownColumn(column, columns)
     return Arg.Ok(column)
 }
 
@@ -409,5 +411,7 @@ private fun normalize(value: String): String = value.lowercase().filter { it.isL
 private fun invalidArgument(message: String): Arg<Nothing> =
     Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, message))
 
-private fun unknownColumn(column: String): Arg<Nothing> =
-    invalidArgument("Unknown column '$column'")
+private fun unknownColumn(column: String, knownColumns: Set<String>): Arg<Nothing> {
+    val known = knownColumns.sorted().take(8).joinToString(", ")
+    return invalidArgument("Unknown column '$column'. Known columns: $known")
+}

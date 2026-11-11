@@ -12,6 +12,9 @@ import com.safedb.model.normalizeSettings
 import com.safedb.secrets.PasswordFile
 import com.safedb.secrets.PasswordFileException
 import com.safedb.service.SafeDbService
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 
@@ -28,6 +31,9 @@ internal const val MCP_USAGE =
        safe-db-mcp settings clear-default-connection
        safe-db-mcp settings block-schema <schema>
        safe-db-mcp settings unblock-schema <schema>
+       safe-db-mcp recipes list
+       safe-db-mcp recipes import /absolute/path/recipe.json
+       safe-db-mcp recipes export <recipe_id>
 
 Add a connection interactively or with flags. Passwords are never flags; use a prompt
 or --password-file /absolute/path.
@@ -75,6 +81,12 @@ internal sealed interface McpCommand {
     data class SettingsBlockSchema(val schema: String) : McpCommand
 
     data class SettingsUnblockSchema(val schema: String) : McpCommand
+
+    data object RecipesList : McpCommand
+
+    data class RecipesImport(val path: String) : McpCommand
+
+    data class RecipesExport(val id: String) : McpCommand
 }
 
 internal data class ConnectionAddFlags(
@@ -143,6 +155,26 @@ internal fun parseMcpArgs(args: Array<String>): McpCommand {
             }
         }
         "settings" -> parseSettingsCommand(args)
+        "recipes" -> parseRecipesCommand(args)
+        else -> throw McpCliUsageException()
+    }
+}
+
+private fun parseRecipesCommand(args: Array<String>): McpCommand {
+    if (args.size < 2) throw McpCliUsageException()
+    return when (args[1]) {
+        "list" -> {
+            if (args.size != 2) throw McpCliUsageException()
+            McpCommand.RecipesList
+        }
+        "import" -> {
+            if (args.size != 3 || args[2].startsWith("-")) throw McpCliUsageException()
+            McpCommand.RecipesImport(args[2])
+        }
+        "export" -> {
+            if (args.size != 3 || args[2].startsWith("-")) throw McpCliUsageException()
+            McpCommand.RecipesExport(args[2])
+        }
         else -> throw McpCliUsageException()
     }
 }
@@ -311,6 +343,31 @@ internal suspend fun executeMcpCommand(
                 io.print("blocked_schemas: ${blockedSchemasText(updated.blockedSchemas)}")
                 0
             }
+            McpCommand.RecipesList -> {
+                val recipes = service.listExploreRecipes()
+                if (recipes.isEmpty()) {
+                    io.print("No recipes.")
+                } else {
+                    recipes.forEach { recipe ->
+                        io.print(
+                            "${recipe.id}  ${recipe.name}  ${recipe.defaultMode}  " +
+                                "${recipe.requiredFields.size} fields  ${recipe.updatedAt}"
+                        )
+                    }
+                }
+                0
+            }
+            is McpCommand.RecipesImport -> importRecipe(command.path, service, io)
+            is McpCommand.RecipesExport -> {
+                val recipe = service.listExploreRecipes().firstOrNull { it.id == command.id }
+                if (recipe == null) {
+                    io.printErr("safe-db-mcp: recipe not found: ${command.id}")
+                    1
+                } else {
+                    io.print(service.exportExploreRecipe(recipe))
+                    0
+                }
+            }
         }
     } catch (error: CancellationException) {
         throw error
@@ -324,6 +381,25 @@ internal suspend fun executeMcpCommand(
         io.printErr("safe-db-mcp: ${error.message}")
         1
     }
+
+private const val MAX_RECIPE_IMPORT_BYTES = 1024 * 1024
+
+private suspend fun importRecipe(path: String, service: SafeDbService, io: CliIo): Int {
+    val file = Path.of(path)
+    if (!file.isAbsolute) {
+        throw McpCliUsageException("Recipe path must be absolute: $path")
+    }
+    if (!Files.isRegularFile(file)) {
+        throw IllegalArgumentException("Recipe file not found: $path")
+    }
+    if (Files.size(file) > MAX_RECIPE_IMPORT_BYTES) {
+        throw IllegalArgumentException("Recipe file is larger than 1 MiB: $path")
+    }
+    val json = Files.readString(file, Charsets.UTF_8)
+    val recipe = service.importExploreRecipe(json, Instant.now().epochSecond.toString())
+    io.print("Imported ${recipe.id}  ${recipe.name}")
+    return 0
+}
 
 private suspend fun testConnections(id: String?, service: SafeDbService, io: CliIo): Int {
     val connections = service.listConnections()

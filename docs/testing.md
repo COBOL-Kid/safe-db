@@ -62,7 +62,7 @@ Checked-in `testdata_*.sql` files keep the original small shop tables and add ge
 | Object | Rows | Why |
 | --- | --- | --- |
 | Existing `customers` / `orders` (and MySQL's shop tables) | unchanged | JDBC contract tests |
-| `scan_events` | 1,000,000 | Large size class, full-scan query timeout, High on an uncapped scan |
+| `scan_events` | 1,000,000 | Large size class, full-scan query timeout. A plan-confirmed large scan scores Elevated (4): allowed at Standard, blocked at Cautious. |
 | `wide_rows` | 50,000 | Medium, 24 mixed-type columns, indexed and non-indexed |
 | `payload_rows` | 20,000 | ~2 KiB text per row so a column select approaches the 10 MiB output cap |
 | `event_notes` | 10,000 | FK without an index (InnoDB still auto-indexes MySQL FKs), NULLs, unicode. FK-without-index is ignored under a small LIMIT. |

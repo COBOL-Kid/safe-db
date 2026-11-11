@@ -1,8 +1,10 @@
 package com.safedb.mcp
 
 import com.safedb.model.ColumnInfo
+import com.safedb.model.Dialect
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
+import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableSizeClass
@@ -12,6 +14,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonArray
@@ -77,6 +80,8 @@ class SchemaToolsTest {
             assertTrue(text.contains("incoming_foreign_keys"))
             assertFalse(text.contains("capabilities"))
             val parsed = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+            assertNotNull(described.structuredContent)
+            assertEquals(parsed, described.structuredContent)
             assertEquals("public", parsed.getValue("schema").jsonPrimitive.content)
             assertEquals("orders", parsed.getValue("name").jsonPrimitive.content)
             val columns = parsed.getValue("columns").jsonArray
@@ -283,10 +288,10 @@ class SchemaToolsTest {
                 )
             assertEquals(true, unknownTable.isError)
             assertEquals("not_found", unknownTable.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Table not found",
-                unknownTable.json().getValue("message").jsonPrimitive.content,
-            )
+            val unknownTableMessage = unknownTable.json().getValue("message").jsonPrimitive.content
+            assertTrue(unknownTableMessage.startsWith("Table not found"))
+            assertTrue(unknownTableMessage.contains("public.customers"))
+            assertTrue(unknownTableMessage.contains("public.orders"))
 
             val blocked =
                 client.callTool(
@@ -295,9 +300,13 @@ class SchemaToolsTest {
                 )
             assertEquals(true, blocked.isError)
             assertEquals("not_found", blocked.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Table not found",
-                blocked.json().getValue("message").jsonPrimitive.content,
+            assertTrue(
+                blocked
+                    .json()
+                    .getValue("message")
+                    .jsonPrimitive
+                    .content
+                    .startsWith("Table not found")
             )
             assertFalse(blocked.text().contains("blocked", ignoreCase = true))
 
@@ -308,9 +317,13 @@ class SchemaToolsTest {
                 )
             assertEquals(true, catalog.isError)
             assertEquals("not_found", catalog.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Table not found",
-                catalog.json().getValue("message").jsonPrimitive.content,
+            assertTrue(
+                catalog
+                    .json()
+                    .getValue("message")
+                    .jsonPrimitive
+                    .content
+                    .startsWith("Table not found")
             )
             assertFalse(catalog.text().contains("oid"))
             assertFalse(catalog.text().contains("pg_class"))
@@ -623,9 +636,13 @@ class SchemaToolsTest {
                 )
             assertEquals(true, missingTable.isError)
             assertEquals("not_found", missingTable.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Table not found",
-                missingTable.json().getValue("message").jsonPrimitive.content,
+            assertTrue(
+                missingTable
+                    .json()
+                    .getValue("message")
+                    .jsonPrimitive
+                    .content
+                    .startsWith("Table not found")
             )
 
             val missingSchema =
@@ -680,6 +697,200 @@ class SchemaToolsTest {
     }
 
     @Test
+    fun describeTableResolvesCaseInsensitiveNamesAfterExactMatch() = runBlocking {
+        val service = upperCaseCustomersService()
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "describe_table",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "schema" to "safedb",
+                            "table" to "customers",
+                        ),
+                    )
+                    .json()
+            assertEquals("SAFEDB", parsed.getValue("schema").jsonPrimitive.content)
+            assertEquals("CUSTOMERS", parsed.getValue("name").jsonPrimitive.content)
+        }
+    }
+
+    @Test
+    fun findJoinPathsResolvesCaseInsensitiveNames() = runBlocking {
+        val service = upperCaseCustomersService()
+        withTempMcpClient(service) { client ->
+            val qualified =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf("connection_id" to "c1", "from_table" to "safedb.customers"),
+                    )
+                    .json()
+            assertEquals(
+                "SAFEDB.CUSTOMERS",
+                qualified.getValue("from_table").jsonPrimitive.content,
+            )
+
+            val unqualified =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "customers",
+                            "default_schema" to "safedb",
+                        ),
+                    )
+                    .json()
+            assertEquals(
+                "SAFEDB.CUSTOMERS",
+                unqualified.getValue("from_table").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
+    fun caseOnlyMatchesReportAmbiguityWithQualifiedNames() = runBlocking {
+        val service = caseOnlyConflictService()
+        withTempMcpClient(service) { client ->
+            val described =
+                client.callTool(
+                    "describe_table",
+                    mapOf("connection_id" to "c1", "schema" to "public", "table" to "foo"),
+                )
+            assertEquals(true, described.isError)
+            assertEquals(
+                "invalid_arguments",
+                described.json().getValue("error").jsonPrimitive.content,
+            )
+            val message = described.json().getValue("message").jsonPrimitive.content
+            assertTrue(message.contains("public.Foo"))
+            assertTrue(message.contains("public.FOO"))
+
+            val resolved =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "from_table" to "foo",
+                        "default_schema" to "public",
+                    ),
+                )
+            assertEquals(true, resolved.isError)
+            assertEquals(
+                "invalid_arguments",
+                resolved.json().getValue("error").jsonPrimitive.content,
+            )
+            val resolvedMessage = resolved.json().getValue("message").jsonPrimitive.content
+            assertTrue(resolvedMessage.contains("public.Foo"))
+            assertTrue(resolvedMessage.contains("public.FOO"))
+        }
+    }
+
+    @Test
+    fun listTablesAndCatalogHideDb2InternalTables() = runBlocking {
+        val service = db2Service()
+        withTempMcpClient(service) { client ->
+            val listed = client.callTool("list_tables", mapOf("connection_id" to "c1"))
+            assertFalse(listed.isError == true)
+            val rows = kotlinx.serialization.json.Json.parseToJsonElement(listed.text()).jsonArray
+            assertEquals(
+                listOf("CUSTOMERS"),
+                rows.map { it.jsonObject.getValue("name").jsonPrimitive.content },
+            )
+
+            val searched =
+                client
+                    .callTool(
+                        "search_catalog",
+                        mapOf("connection_id" to "c1", "query" to "EXPLAIN"),
+                    )
+                    .json()
+            assertEquals("0", searched.getValue("match_count").jsonPrimitive.content)
+
+            val hidden =
+                client.callTool(
+                    "describe_table",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "schema" to "DB2INST1",
+                        "table" to "EXPLAIN_INSTANCE",
+                    ),
+                )
+            assertEquals(true, hidden.isError)
+            assertEquals("not_found", hidden.json().getValue("error").jsonPrimitive.content)
+            assertFalse(hidden.text().contains("EXPLAIN_INSTANCE"))
+        }
+    }
+
+    @Test
+    fun findJoinPathsForeignKeyOnlyExcludesIndexedCandidates() = runBlocking {
+        val service = joinService()
+        withTempMcpClient(service) { client ->
+            val all =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf("connection_id" to "c1", "from_table" to "public.customers"),
+                    )
+                    .json()
+            val neighbors =
+                all.getValue("neighbors").jsonArray.map {
+                    it.jsonObject.getValue("to_table").jsonPrimitive.content to
+                        it.jsonObject.getValue("kind").jsonPrimitive.content
+                }
+            assertTrue(neighbors.contains("orders" to "foreign_key"))
+            assertTrue(neighbors.contains("balances" to "indexed_columns"))
+
+            val foreignKeyOnly =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "public.customers",
+                            "foreign_key_only" to true,
+                        ),
+                    )
+                    .json()
+            val foreignKeyNeighbors =
+                foreignKeyOnly.getValue("neighbors").jsonArray.map {
+                    it.jsonObject.getValue("to_table").jsonPrimitive.content to
+                        it.jsonObject.getValue("kind").jsonPrimitive.content
+                }
+            assertTrue(foreignKeyNeighbors.contains("orders" to "foreign_key"))
+            assertTrue(foreignKeyNeighbors.none { it.first == "balances" })
+            assertTrue(foreignKeyNeighbors.all { it.second == "foreign_key" })
+
+            val paths =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "public.customers",
+                            "to_table" to "public.orders",
+                            "foreign_key_only" to true,
+                        ),
+                    )
+                    .json()
+            val pathSteps = paths.getValue("paths").jsonArray.first().jsonObject
+            assertEquals(
+                "orders",
+                pathSteps
+                    .getValue("steps")
+                    .jsonArray
+                    .first()
+                    .jsonObject
+                    .getValue("to_table")
+                    .jsonPrimitive
+                    .content,
+            )
+        }
+    }
+
+    @Test
     fun deleteConnectionDropsTheCachedCatalog() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
@@ -718,12 +929,7 @@ private fun joinService(): RecordingSafeDbService {
             name = "items",
             columns =
                 listOf(
-                    ColumnInfo(
-                        name = "id",
-                        dataType = "int",
-                        nullable = false,
-                        joinEligible = true,
-                    ),
+                    ColumnInfo(name = "id", dataType = "int", nullable = false),
                     ColumnInfo(name = "order_id", dataType = "int", nullable = false),
                 ),
             indexes =
@@ -755,7 +961,114 @@ private fun joinService(): RecordingSafeDbService {
             columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false)),
             indexes = emptyList(),
         )
-    service.schemas["c1"] = base.copy(tables = base.tables + items + archivedOrders)
+    val balances =
+        TableInfo(
+            schema = "public",
+            name = "balances",
+            columns =
+                listOf(
+                    ColumnInfo(name = "id", dataType = "int", nullable = false),
+                    ColumnInfo(
+                        name = "customers_id",
+                        dataType = "int",
+                        nullable = false,
+                        joinEligible = true,
+                    ),
+                ),
+            indexes =
+                listOf(
+                    IndexInfo(
+                        name = "balances_pkey",
+                        columns = listOf("id"),
+                        kind = "btree",
+                        isUnique = true,
+                        isPrimary = true,
+                    )
+                ),
+            tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Medium),
+        )
+    val tables =
+        base.tables.map { table ->
+            if (table.name == "customers") {
+                table.copy(
+                    columns =
+                        table.columns.map {
+                            if (it.name == "id") it.copy(joinEligible = true) else it
+                        }
+                )
+            } else {
+                table
+            }
+        }
+    service.schemas["c1"] = base.copy(tables = tables + items + archivedOrders + balances)
+    return service
+}
+
+private fun upperCaseCustomersService(): RecordingSafeDbService {
+    val service = catalogService()
+    val base = service.schemas.getValue("c1")
+    val customers = base.tables.first { it.name == "customers" }
+    service.schemas["c1"] =
+        base.copy(
+            tables =
+                base.tables.filter { it.name != "customers" } +
+                    customers.copy(schema = "SAFEDB", name = "CUSTOMERS")
+        )
+    return service
+}
+
+private fun caseOnlyConflictService(): RecordingSafeDbService {
+    val service = catalogService()
+    val base = service.schemas.getValue("c1")
+    val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
+    service.schemas["c1"] =
+        base.copy(
+            tables =
+                base.tables +
+                    TableInfo(
+                        schema = "public",
+                        name = "Foo",
+                        columns = columns,
+                        indexes = emptyList(),
+                    ) +
+                    TableInfo(
+                        schema = "public",
+                        name = "FOO",
+                        columns = columns,
+                        indexes = emptyList(),
+                    )
+        )
+    return service
+}
+
+private fun db2Service(): RecordingSafeDbService {
+    val service = RecordingSafeDbService()
+    service.connections += sampleMcpConnection(dialect = Dialect.Db2)
+    val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
+    service.schemas["c1"] =
+        Schema(
+            tables =
+                listOf(
+                    TableInfo(
+                        schema = "DB2INST1",
+                        name = "CUSTOMERS",
+                        columns = columns,
+                        indexes = emptyList(),
+                    ),
+                    TableInfo(
+                        schema = "DB2INST1",
+                        name = "EXPLAIN_INSTANCE",
+                        columns = columns,
+                        indexes = emptyList(),
+                    ),
+                    TableInfo(
+                        schema = "DB2INST1",
+                        name = "ADVISE_INDEX",
+                        columns = columns,
+                        indexes = emptyList(),
+                    ),
+                )
+        )
     return service
 }
 

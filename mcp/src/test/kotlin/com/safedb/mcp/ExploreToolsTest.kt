@@ -161,7 +161,7 @@ class ExploreToolsTest {
                 unknownColumn.json().getValue("error").jsonPrimitive.content,
             )
             assertEquals(
-                "Unknown column 'nope'",
+                "Unknown column 'nope'. Known columns: amount, created, region",
                 unknownColumn.json().getValue("message").jsonPrimitive.content,
             )
 
@@ -180,7 +180,7 @@ class ExploreToolsTest {
                 )
             assertEquals(true, unknownMeasureColumn.isError)
             assertEquals(
-                "Unknown column 'nope'",
+                "Unknown column 'nope'. Known columns: amount, created, region",
                 unknownMeasureColumn.json().getValue("message").jsonPrimitive.content,
             )
 
@@ -518,7 +518,7 @@ class ExploreToolsTest {
                 )
             assertEquals(true, unknownColumn.isError)
             assertEquals(
-                "Unknown column 'nope'",
+                "Unknown column 'nope'. Known columns: amount, created, region",
                 unknownColumn.json().getValue("message").jsonPrimitive.content,
             )
 
@@ -532,7 +532,7 @@ class ExploreToolsTest {
                 )
             assertEquals(true, unknownSortColumn.isError)
             assertEquals(
-                "Unknown column 'nope'",
+                "Unknown column 'nope'. Known columns: amount, created, region",
                 unknownSortColumn.json().getValue("message").jsonPrimitive.content,
             )
 
@@ -543,7 +543,7 @@ class ExploreToolsTest {
                 )
             assertEquals(true, unknownProjection.isError)
             assertEquals(
-                "Unknown column 'nope'",
+                "Unknown column 'nope'. Known columns: amount, created, region",
                 unknownProjection.json().getValue("message").jsonPrimitive.content,
             )
 
@@ -575,6 +575,44 @@ class ExploreToolsTest {
             assertEquals(
                 "unknown argument 'bogus'",
                 unknownArgument.json().getValue("message").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
+    fun unknownColumnErrorsSuggestKnownColumnsInDialectCasing() = runBlocking {
+        val service = exploreService()
+        service.runQueryResult =
+            QueryRunResult(
+                QueryResult(
+                    columns =
+                        listOf(
+                            ResultColumn("CUSTOMERS__ID", "int"),
+                            ResultColumn("CUSTOMERS__EMAIL", "text"),
+                        ),
+                    rows =
+                        listOf(listOf(ResultCell.integer(1), ResultCell.text("user@example.com"))),
+                    rowCount = 1,
+                    truncated = false,
+                    warnings = emptyList(),
+                ),
+                allowedMcpRisk(),
+            )
+        withTempMcpClient(service) { client ->
+            val resultId = storeExploreResult(client)
+            val unknown =
+                client.callTool(
+                    "pivot_result",
+                    mapOf(
+                        "result_id" to resultId,
+                        "row_dimensions" to
+                            listOf(Json.parseToJsonElement("""{"column":"customers__id"}""")),
+                    ),
+                )
+            assertEquals(true, unknown.isError)
+            assertEquals(
+                "Unknown column 'customers__id'. Known columns: CUSTOMERS__EMAIL, CUSTOMERS__ID",
+                unknown.json().getValue("message").jsonPrimitive.content,
             )
         }
     }

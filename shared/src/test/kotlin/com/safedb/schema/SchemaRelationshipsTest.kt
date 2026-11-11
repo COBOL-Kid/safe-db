@@ -326,6 +326,38 @@ class SchemaRelationshipsTest {
         assertEquals(JoinCandidateKind.IndexedColumns, indexed.kind)
         assertEquals(listOf(JoinColumnPair("id", "customers_id")), indexed.columns)
         assertEquals(null, indexed.foreignKeyName)
+
+        val foreignKeyOnly =
+            findDirectJoinEdges(
+                listOf(customers, orders, balances),
+                "public",
+                "customers",
+                includeIndexedColumns = false,
+            )
+        assertTrue(
+            foreignKeyOnly.any { it.toTable == "orders" && it.kind == JoinCandidateKind.ForeignKey }
+        )
+        assertTrue(foreignKeyOnly.none { it.kind == JoinCandidateKind.IndexedColumns })
+        assertTrue(foreignKeyOnly.none { it.toTable == "balances" })
+
+        val foreignKeyOnlyPaths =
+            findJoinPaths(
+                listOf(customers, orders, balances),
+                "public",
+                "customers",
+                "public",
+                "orders",
+                maxHops = 2,
+                includeIndexedColumns = false,
+            )
+        assertEquals(1, foreignKeyOnlyPaths.size)
+        assertEquals(
+            listOf("orders"),
+            foreignKeyOnlyPaths.single().steps.map { it.toTable },
+        )
+        assertTrue(
+            foreignKeyOnlyPaths.single().steps.all { it.kind == JoinCandidateKind.ForeignKey }
+        )
     }
 
     @Test

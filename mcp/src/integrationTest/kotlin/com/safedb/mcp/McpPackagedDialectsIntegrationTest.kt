@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.model.ConnectionDef
+import com.safedb.model.Dialect
 import com.safedb.testsupport.IntegrationAssumptions
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -132,6 +133,35 @@ class McpPackagedDialectsIntegrationTest {
                     },
                     "customers not listed: $listedText",
                 )
+
+                val described =
+                    client.callTool(
+                        "describe_table",
+                        mapOf(
+                            "connection_id" to connection.id,
+                            "schema" to defaultSchema,
+                            "table" to "customers",
+                        ),
+                    )
+                assertNotEquals(true, described.isError, described.text())
+                val describedName =
+                    Json.parseToJsonElement(described.text())
+                        .jsonObject
+                        .getValue("name")
+                        .jsonPrimitive
+                        .content
+                assertTrue(describedName.equals("customers", ignoreCase = true), described.text())
+
+                if (connection.dialect == Dialect.Db2) {
+                    val hiddenPrefixes = listOf("ADVISE_", "EXPLAIN_")
+                    assertTrue(
+                        tables.none { table ->
+                            val name = table.jsonObject.getValue("name").jsonPrimitive.content
+                            hiddenPrefixes.any { name.startsWith(it, ignoreCase = true) }
+                        },
+                        "Db2 internal catalog tables leaked: $listedText",
+                    )
+                }
 
                 val queried =
                     client.callTool(

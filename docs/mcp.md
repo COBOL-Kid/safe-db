@@ -49,7 +49,7 @@ On Windows, `list_connections` is the same list the UI uses. On macOS, MCP conne
 
 ## CLI
 
-The binary is `safe-db-mcp`. With no arguments it speaks MCP JSON-RPC on stdin/stdout (stdout is reserved for protocol; logs go to stderr).
+The binary is `safe-db-mcp`. With no arguments it speaks MCP JSON-RPC on stdin/stdout (stdout is reserved for protocol; logs go to stderr). Stdout is authoritative protocol output; stderr may include expected SDK `ERROR` stack traces (including `-32002` resource-not-found) during normal calls.
 
 Add connections with the human CLI, not with tools. Passwords are never flags.
 
@@ -66,6 +66,9 @@ safe-db-mcp settings default-connection <id> [--default-schema <schema>]
 safe-db-mcp settings clear-default-connection
 safe-db-mcp settings block-schema <schema>
 safe-db-mcp settings unblock-schema <schema>
+safe-db-mcp recipes list
+safe-db-mcp recipes import /absolute/path/recipe.json
+safe-db-mcp recipes export <recipe_id>
 ```
 
 Example:
@@ -94,6 +97,8 @@ safe-db-mcp setup --dialect mysql --database app --username readonly --password-
 
 `safe-db-mcp settings` with no subcommand is `settings show`. It prints `query_risk_gate`, `default_connection_id`, `default_schema`, and `blocked_schemas`. `risk-gate` writes the stored gate. `default-connection` also stores the optional `--default-schema`; `clear-default-connection` clears both. `block-schema` appends a schema and `unblock-schema` removes it.
 
+`recipes list` prints `id  name  defaultMode  N fields  updatedAt` per recipe, or `No recipes.` `recipes import` requires an absolute regular file (UTF-8, at most 1 MiB); the store validates and versions it, renames duplicates, and assigns a new id. `recipes export <recipe_id>` prints the recipe JSON to stdout. Recipes contain no credentials.
+
 ## Tools
 
 Progressive catalog, then a gated query. Do not expect the full [`Schema`](../shared/src/main/kotlin/com/safedb/model/Schema.kt) or full [`QueryResult`](../shared/src/main/kotlin/com/safedb/model/Ir.kt) as a tool payload. No tool accepts a password or a URL with embedded credentials.
@@ -102,19 +107,19 @@ Progressive catalog, then a gated query. Do not expect the full [`Schema`](../sh
 | --- | --- |
 | `list_connections` | `id`, `name`, `dialect`, `database`. No secrets. `readOnlyHint`. |
 | `delete_connection` | Delete a saved connection by `connection_id`. First call returns `confirmation_required` with reasons and a confirmation object; show the user, then retry with that object. Do not auto-confirm or invent the object. Invalidates the schema cache for that id. `destructiveHint`. |
-| `list_tables` | `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `getSchema` (5 min TTL, optional `refresh=true`). Honors `blocked_schemas` and built-in system catalogs. `readOnlyHint`. |
-| `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Columns (`name`, `data_type`, `nullable`, `join_eligible`), indexes, `foreign_keys`, and `incoming_foreign_keys` (source table and columns, cardinality, optionality). Same cache. Unknown or blocked → `not_found`. `readOnlyHint`. |
+| `list_tables` | JSON array of `schema`, `name`, `qualified_name`, `size_class`, `column_count`. Cached `getSchema` (5 min TTL, optional `refresh=true`). Honors `blocked_schemas` and built-in system catalogs; on Db2 also hides `EXPLAIN_*` / `ADVISE_*` internal catalog tables. `readOnlyHint`. |
+| `describe_table` | `connection_id` + `schema` + `table` from `list_tables`. Exact match first, then case-insensitive; Oracle/Db2 catalog names are often uppercase. Columns (`name`, `data_type`, `nullable`, `join_eligible`), indexes, `foreign_keys`, and `incoming_foreign_keys` (source table and columns, cardinality, optionality). Same cache. Unknown → `not_found` with up to 5 suggested tables; a case-only ambiguity → `invalid_arguments` listing both names. Blocked/system schemas stay `not_found`. `readOnlyHint`. |
 | `search_catalog` | Case-insensitive substring search of the cached catalog across table and schema names, column names and types, index names and key columns, and foreign-key names, columns, and referenced tables. `limit` defaults to `SEARCH_CATALOG_DEFAULT_LIMIT` (25) and caps at `SEARCH_CATALOG_MAX_LIMIT` (50). Returns `match_count` (before the limit), `truncated`, and per-table `matched_columns`, `matched_indexes`, `matched_foreign_keys`. Honors `blocked_schemas`; same cache and `refresh`. `readOnlyHint`. |
-| `find_join_paths` | Without `to_table`, direct neighbors of `from_table` with `foreign_key` or `indexed_columns` edges, column pairs, an `on_clause`, and FK cardinality and optionality. With `to_table`, up to 10 paths of at most `max_hops` (default `FIND_JOIN_PATHS_DEFAULT_HOPS` (2), max `FIND_JOIN_PATHS_MAX_HOPS` (3)). Tables accept `schema.table` or `table`; unqualified names use `default_schema`, the saved default schema for this connection, or a unique visible table. Honors `blocked_schemas`; same cache and `refresh`. `readOnlyHint`. |
-| `assess_query` | Dry-run one `SELECT` on a saved connection: parse, validate, compile, run `EXPLAIN`, and evaluate the risk gate and confirmation requirements without executing the `SELECT` or writing query history. Returns `columns`, `compiled_sql`, `parameter_count`, `warnings`, a slim `risk` summary, and `confirmation_required` with reasons when confirmation would be required. `readOnlyHint`. |
-| `run_query` | `connection_id` and `sql`. Optional `default_schema`: schema used when a table name has no prefix. Copy `list_tables.schema` for this connection (MySQL: usually the database name). Omit when every table is already `schema.table`. Not filled from `connection.database`. If the argument is omitted, [`settingsDefaultSchema`](../mcp/src/main/kotlin/com/safedb/mcp/QueryTools.kt) uses `default_schema` from `settings.json` only when `default_connection_id` is this connection; any other connection does not inherit it. An explicit `default_schema` argument always wins. Accepted SQL matches the desktop app ([query-engine.md](query-engine.md)); compiled columns are `table__column`. Parses SQL to `QuerySpec`, then `SafeDbService.runQuery` (fresh introspect on execute). Receipt, not the grid. No tool annotations. |
+| `find_join_paths` | Without `to_table`, returns `{from_table, neighbors}`: direct neighbors of `from_table` with `foreign_key` or `indexed_columns` edges, column pairs, an `on_clause`, and FK cardinality and optionality. With `to_table`, returns `{from_table, to_table, paths}`: up to 10 paths of at most `max_hops` (default `FIND_JOIN_PATHS_DEFAULT_HOPS` (2), max `FIND_JOIN_PATHS_MAX_HOPS` (3)). Optional `foreign_key_only` (default false) excludes `indexed_columns` candidates. Tables accept `schema.table` or `table`; unqualified names use `default_schema`, the saved default schema for this connection, or a unique visible table. Honors `blocked_schemas`; same cache and `refresh`. `readOnlyHint`. |
+| `assess_query` | Dry-run one `SELECT` on a saved connection: parse, validate, compile, run `EXPLAIN`, and evaluate the risk gate and confirmation requirements without executing the `SELECT` or writing query history. Returns `dialect`, `columns`, `compiled_sql`, `parameter_count`, `warnings`, a slim `risk` summary, and `confirmation_required` with reasons when confirmation would be required. `readOnlyHint`. |
+| `run_query` | `connection_id` and `sql`. Optional `default_schema`: schema used when a table name has no prefix. Copy `list_tables.schema` for this connection (MySQL: usually the database name). Omit when every table is already `schema.table`. Not filled from `connection.database`. If the argument is omitted, [`settingsDefaultSchema`](../mcp/src/main/kotlin/com/safedb/mcp/QueryTools.kt) uses `default_schema` from `settings.json` only when `default_connection_id` is this connection; any other connection does not inherit it. An explicit `default_schema` argument always wins. Accepted SQL matches the desktop app ([query-engine.md](query-engine.md)); compiled columns are `table__column`. Parses SQL to `QuerySpec`, then `SafeDbService.runQuery` (fresh introspect on execute). Receipt, not the grid, including `dialect` and the sample-cap fields. No tool annotations. |
 | `get_result_rows` | Page the in-memory sample for a `result_id`. `offset` default 0 (negative clamps to 0). `limit` default 50, hard cap 50; 0 or negative is `invalid_arguments`. Pages also stop around 32 KiB; long cell values are truncated with `…[truncated]`. `page_truncated` plus `next_offset` when more sample rows remain. Unknown or expired → `not_found`. `readOnlyHint`. |
 | `summarize_result` | Per-column stats on that same sample. Echoes `sample_capped` when the original fetch was capped. Unknown or expired → `not_found`. `readOnlyHint`. |
-| `pivot_result` | Pivot the in-memory sample by `result_id` with `row_dimensions`, `column_dimensions`, `measures`, `filters`, and `sort`; the same `:shared` Explore pivot engine as the desktop app. With no dimensions or measures it uses a default row count pivot. Returns pivoted columns, `row_count`, `pivot_truncated`, warnings, and at most 50 rows / 32 KiB. Unknown or expired → `not_found`. `readOnlyHint`. |
-| `filter_result_rows` | Filter, sort, project, and page the in-memory sample by `result_id` using the `:shared` worksheet engine. `filters` support comparison ops incl. `between`, `is_null`, and `members`; `sorts` accept `column` and `asc`/`desc`; `columns` limits the projection. `offset` defaults to 0 and `limit` defaults to and caps at 50. `matched_row_count` is after filtering; `sample_row_count` is the stored sample size. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `pivot_result` | Pivot the in-memory sample by `result_id` with `row_dimensions`, `column_dimensions`, `measures`, `filters`, and `sort`; the same `:shared` Explore pivot engine as the desktop app. With no dimensions or measures it uses a default row count pivot, which adds a `Total` row; its measure column keeps the default `Count` name. A measure's `label` names the output column (defaults to the function label); `alias` is for formulas and `sort.measure_alias`. Use receipt column names verbatim (dialect casing). Returns pivoted columns, `row_count`, `pivot_truncated`, warnings, and at most 50 rows / 32 KiB. Unknown or expired → `not_found`. `readOnlyHint`. |
+| `filter_result_rows` | Filter, sort, project, and page the in-memory sample by `result_id` using the `:shared` worksheet engine. `filters` support comparison ops incl. `between`, `is_null`, and `members`; `sorts` accept `column` and `asc`/`desc`; `columns` limits the projection. Use receipt column names verbatim (dialect casing); an unknown column reports the known columns. `offset` defaults to 0 and `limit` defaults to and caps at 50. `matched_row_count` is after filtering; `sample_row_count` is the stored sample size. Unknown or expired → `not_found`. `readOnlyHint`. |
 | `export_result` | Write the in-memory sample for a `result_id` to an owner-only CSV under `{dataDir}/results/exports/`. Optional simple `filename` (letters, digits, dot, underscore, dash; `.csv` appended when missing). Returns `result_id`, `file_path`, `row_count`, `bytes`, and `sample_capped`. Unknown or expired → `not_found`. |
 | `list_saved_queries` | Saved queries from the MCP store as `id`, `name`, `connection_id`, `sql`, `tables`, and `created_at`. Optional `connection_id` filter. `readOnlyHint`. |
-| `run_saved_query` | Run a saved query by `query_id` on its saved connection. Accepts the same confirmation object as `run_query` and returns a `run_query`-style receipt with `result_id`. Unknown `query_id` → `not_found`. |
+| `run_saved_query` | Run a saved query by `query_id` on its saved connection. Accepts the same confirmation object as `run_query` and returns a `run_query`-style receipt (including `dialect` and the sample-cap fields) with `result_id`. Unknown `query_id` → `not_found`. |
 | `save_query` | Validate and save a `SELECT` for a connection with `name`, `sql`, and optional `default_schema`. Rejects the same SQL as `run_query`. Returns the saved query summary. |
 | `delete_saved_query` | Delete a saved query by `query_id`. First call returns `confirmation_required`; show the reasons, then retry with the returned confirmation object. Do not auto-confirm or invent the object. `destructiveHint`. |
 | `list_recipes` | List Explore recipes from the MCP store as `id`, `name`, `description`, `default_mode`, `required_fields`, and `updated_at`. `readOnlyHint`. |
@@ -124,6 +129,38 @@ Progressive catalog, then a gated query. Do not expect the full [`Schema`](../sh
 Initialize includes a short `instructions` string: add connections with the CLI; start with `list_connections`; pass `id` as `connection_id`; pass `default_schema` from `list_tables` for unqualified SQL; page with `result_id`; `delete_connection` requires an echoed confirmation; never send passwords. Tool list capability is `listChanged: false`.
 
 Page with `get_result_rows`, summarize with `summarize_result`, pivot with `pivot_result`, filter with `filter_result_rows`, or export with `export_result`. Results expire after 30 minutes (16 entries, 32 MiB).
+
+### Casing, catalog resolution, and envelopes
+
+Oracle and Db2 return uppercase catalog names. Copy `list_tables` values exactly; lookups are exact-match first, then case-insensitive. Two quoted identifiers that differ only by case make a reference ambiguous: `invalid_arguments` with both names (`Table reference is ambiguous: public.Foo, public.FOO`). An unknown table is `not_found` with up to 5 visible suggestions (`Table not found. Suggested tables: public.customers, public.orders`); blocked and system schemas stay `not_found` and are not suggested.
+
+Result columns use dialect casing (`customers__id` vs `CUSTOMERS__ID`). Pass receipt names verbatim to `filter_result_rows`, `pivot_result`, and `sorts`. Unknown-column errors list the known columns, sorted and capped at 8 (`Unknown column 'customers__id'. Known columns: CUSTOMERS__EMAIL, CUSTOMERS__ID`).
+
+`list_tables` returns a JSON array; `describe_table`, `run_query`, and `find_join_paths` return objects. `find_join_paths` is `{from_table, neighbors}` without `to_table` and `{from_table, to_table, paths}` with it:
+
+```json
+{ "from_table": "public.orders", "neighbors": [
+  { "from_schema": "public", "from_table": "orders", "to_schema": "public", "to_table": "customers",
+    "kind": "foreign_key", "columns": [{ "left_column": "customer_id", "right_column": "id" }],
+    "on_clause": "public.orders.customer_id = public.customers.id", "cardinality": "ManyToOne" } ] }
+```
+
+```json
+{ "from_table": "public.orders", "to_table": "public.customers",
+  "paths": [{ "hops": 1, "steps": [{ "from_table": "orders", "to_table": "customers", "kind": "foreign_key" }] }] }
+```
+
+The default `pivot_result` adds a `Total` row and keeps the `Count` measure name:
+
+```json
+{ "columns": [{ "name": "region", "data_type": "text" }, { "name": "Count", "data_type": "int8" }],
+  "row_count": 3, "pivot_truncated": false, "warnings": [],
+  "rows": [{ "region": "EU", "Count": 2 }, { "region": "US", "Count": 5 }, { "region": "Total", "Count": 7 }] }
+```
+
+Db2 `EXPLAIN_*` / `ADVISE_*` internal tables are hidden from `list_tables`, `search_catalog`, `describe_table`, `find_join_paths`, and the tables resource. They stay queryable through `run_query` when named explicitly; there is no `include_internal` flag.
+
+Object tools also return `structuredContent` equal to the parsed text object: `run_query`, `run_saved_query`, `assess_query`, `describe_table`, `find_join_paths`, `get_result_rows`, `summarize_result`, `pivot_result`, `filter_result_rows`, and `export_result`. Array tools stay text-only. `outputSchema` is published for `run_query`, `assess_query`, `describe_table`, and `find_join_paths`.
 
 Constants (change the constant and update this page in the same change):
 
@@ -154,7 +191,7 @@ Resources return the same JSON shapes as the tools and share the schema cache an
 | Resource | Contents |
 | --- | --- |
 | `safedb://connections` | Saved connections (`id`, `name`, `dialect`, `database`). No secrets. |
-| `safedb://connections/{connection_id}/tables` | Visible tables for one connection (`schema`, `name`, `qualified_name`, `column_count`). Honors `blocked_schemas`. Unknown connection → MCP resource-not-found (`-32002`). |
+| `safedb://connections/{connection_id}/tables` | Visible tables for one connection (`schema`, `name`, `qualified_name`, `column_count`). Honors `blocked_schemas`; omits Db2 `EXPLAIN_*` / `ADVISE_*` internal tables. Unknown connection → MCP resource-not-found (`-32002`). |
 | `safedb://results/{result_id}/summary` | Column summary of the in-memory sample: `row_count`, `sample_capped`, and per-column `null_count`, min/max, and distinct values. Unknown or expired `result_id` → MCP resource-not-found (`-32002`). |
 
 Prompts provide a short guided workflow:
@@ -170,12 +207,30 @@ Resource and prompt list capability is `listChanged: false`; resource subscripti
 
 A successful call returns JSON with:
 
-- `columns` (`name`, `data_type`). Names are `table__column` (the compiled result alias).
+- `dialect` (`Postgres`, `MySql`, `Mssql`, `Oracle`, `Db2`).
+- `columns` (`name`, `data_type`). Names are `table__column` (the compiled result alias) in dialect casing, e.g. `customers__id` or `CUSTOMERS__ID`.
 - `row_count`, `preview_truncated`, `warnings`
-- `sample_capped` when the fetched sample hit a caller `LIMIT` or the encoded-byte budget (omitted when false). A row-limit stop names that `LIMIT` and says to raise it or add filters. A byte-budget stop, including a query that omitted `LIMIT`, says to add filters or select fewer columns. Raising `LIMIT` does not read past the budget
+- `sample_capped` when the fetched sample hit a caller `LIMIT` or the encoded-byte budget (omitted when false). `sample_cap_reason` is then `sql_limit` or `byte_budget`. `sample_unbounded` is true when the original SQL omitted `LIMIT` (omitted when false). A row-limit stop names that `LIMIT` and says to raise it or add filters. A byte-budget stop, including a query that omitted `LIMIT`, says to add filters or select fewer columns. Raising `LIMIT` does not read past the budget
 - `risk`: `state`, `severity`, `score`, `effective_gate`, `reasons`, `plan_status`
 - `preview`: about 10 flattened rows (`null` / bool / number / string; binary as base64), also stopped at the 32 KiB payload budget. Long cells end with `…[truncated]`. Not tagged `ResultCell` objects.
 - `result_id` for later paging and summary
+
+Read `sample_capped`, `sample_cap_reason`, and `sample_unbounded` instead of string-matching warning text.
+
+```json
+{
+  "dialect": "Postgres",
+  "columns": [{ "name": "customers__id", "data_type": "int4" }],
+  "row_count": 1,
+  "sample_capped": true,
+  "sample_cap_reason": "sql_limit",
+  "warnings": ["This sample is the full fetch (LIMIT 100); paging does not get more table rows. Raise LIMIT or add filters."],
+  "risk": { "state": "Allowed", "severity": "Minimal", "score": 0, "effective_gate": "Standard", "reasons": [], "plan_status": "Available" },
+  "preview": [{ "customers__id": 1 }],
+  "preview_truncated": false,
+  "result_id": "res_01"
+}
+```
 
 `sample_capped` is the engine byte or caller `LIMIT` cap from [query-engine.md](query-engine.md). `preview_truncated` is true when the preview is shorter than `row_count` or cells were truncated to the MCP cell budget. A positive SQL limit is kept up to the maximum 32-bit integer; a larger whole number clamps. Omitting `LIMIT` is the same as the builder's ALL choice and emits no SQL row limit. The client reads with a statement fetch size and stops at `MAX_RESULT_BYTES` (10 MiB encoded). The receipt does not include the full sample.
 

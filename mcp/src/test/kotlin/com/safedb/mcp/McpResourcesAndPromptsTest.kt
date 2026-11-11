@@ -5,6 +5,10 @@ import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotMeasure
+import com.safedb.model.ColumnInfo
+import com.safedb.model.Dialect
+import com.safedb.model.Schema
+import com.safedb.model.TableInfo
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.types.GetPromptRequest
 import io.modelcontextprotocol.kotlin.sdk.types.GetPromptRequestParams
@@ -86,6 +90,19 @@ class McpResourcesAndPromptsTest {
                     client.readText("safedb://connections/missing/tables")
                 }
             assertEquals("Connection not found", missingConnection.message)
+        }
+    }
+
+    @Test
+    fun connectionTablesResourceHidesDb2InternalCatalogTables() = runBlocking {
+        val service = db2ResourcesService()
+        withTempMcpClient(service) { client ->
+            val tables =
+                Json.parseToJsonElement(client.readText("safedb://connections/c1/tables")).jsonArray
+            assertEquals(
+                listOf("CUSTOMERS"),
+                tables.map { it.jsonObject.getValue("name").jsonPrimitive.content },
+            )
         }
     }
 
@@ -192,6 +209,37 @@ private suspend fun Client.readText(uri: String): String {
 
 private fun promptText(result: GetPromptResult): String =
     (result.messages.single().content as TextContent).text
+
+private fun db2ResourcesService(): RecordingSafeDbService {
+    val service = RecordingSafeDbService()
+    service.connections += sampleMcpConnection(dialect = Dialect.Db2)
+    val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
+    service.schemas["c1"] =
+        Schema(
+            tables =
+                listOf(
+                    TableInfo(
+                        schema = "DB2INST1",
+                        name = "CUSTOMERS",
+                        columns = columns,
+                        indexes = emptyList(),
+                    ),
+                    TableInfo(
+                        schema = "DB2INST1",
+                        name = "EXPLAIN_INSTANCE",
+                        columns = columns,
+                        indexes = emptyList(),
+                    ),
+                    TableInfo(
+                        schema = "DB2INST1",
+                        name = "ADVISE_INDEX",
+                        columns = columns,
+                        indexes = emptyList(),
+                    ),
+                )
+        )
+    return service
+}
 
 private fun resourcesService(): RecordingSafeDbService {
     val service = RecordingSafeDbService()

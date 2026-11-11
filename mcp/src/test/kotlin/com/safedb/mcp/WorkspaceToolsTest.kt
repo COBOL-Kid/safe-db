@@ -89,6 +89,7 @@ class WorkspaceToolsTest {
                     ),
                 )
             assertTrue(receipt.containsKey("result_id"))
+            assertEquals("Postgres", receipt.string("dialect"))
             assertEquals("5", receipt.string("row_count"))
             assertEquals("c1", service.runQueryRequests.single().connectionId)
             assertEquals(spec, service.runQueryRequests.single().spec)

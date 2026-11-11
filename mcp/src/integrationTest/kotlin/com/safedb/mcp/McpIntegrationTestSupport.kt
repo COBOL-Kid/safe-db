@@ -454,6 +454,8 @@ internal suspend fun assertLiveQueryLimitAndTypedReads(
     val defaulted = runQuery(client, connectionId, defaultSchema, "SELECT id FROM customers")
     assertEquals(customerRows.toString(), defaulted.rowCount())
     assertFalse(defaulted.containsKey("sample_capped"))
+    assertFalse(defaulted.containsKey("sample_cap_reason"))
+    assertEquals("true", defaulted.getValue("sample_unbounded").jsonPrimitive.content)
     assertTrue(defaulted.warnings().none { "defaulting to" in it })
     assertEquals(
         (customerRows > PREVIEW_ROW_LIMIT).toString(),
@@ -463,6 +465,8 @@ internal suspend fun assertLiveQueryLimitAndTypedReads(
     val capped = runQuery(client, connectionId, defaultSchema, "SELECT id FROM customers LIMIT 2")
     assertEquals("2", capped.rowCount())
     assertEquals("true", capped.getValue("sample_capped").jsonPrimitive.content)
+    assertEquals("sql_limit", capped.getValue("sample_cap_reason").jsonPrimitive.content)
+    assertFalse(capped.containsKey("sample_unbounded"))
     assertTrue(
         capped.warnings().any { "LIMIT 2" in it && "paging does not get more table rows" in it }
     )

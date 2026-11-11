@@ -10,6 +10,8 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -94,6 +96,33 @@ class McpRuntimeTest {
             assertEquals(false, client.serverCapabilities?.resources?.subscribe)
             assertEquals(false, client.serverCapabilities?.prompts?.listChanged)
             val tools = client.listTools().tools.associateBy { it.name }
+            assertNotNull(tools.getValue("run_query").outputSchema)
+            assertNotNull(tools.getValue("assess_query").outputSchema)
+            assertNotNull(tools.getValue("describe_table").outputSchema)
+            assertNotNull(tools.getValue("find_join_paths").outputSchema)
+            assertNull(tools.getValue("list_tables").outputSchema)
+            assertTrue(
+                tools.getValue("run_query").outputSchema?.properties?.containsKey("row_count") ==
+                    true
+            )
+            assertTrue(
+                tools
+                    .getValue("assess_query")
+                    .outputSchema
+                    ?.properties
+                    ?.containsKey("compiled_sql") == true
+            )
+            assertTrue(
+                tools.getValue("describe_table").outputSchema?.properties?.containsKey("columns") ==
+                    true
+            )
+            assertTrue(
+                tools
+                    .getValue("find_join_paths")
+                    .outputSchema
+                    ?.properties
+                    ?.containsKey("from_table") == true
+            )
             assertEquals(true, tools.getValue("list_connections").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("list_tables").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("describe_table").annotations?.readOnlyHint)

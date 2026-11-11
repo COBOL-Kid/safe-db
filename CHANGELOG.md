@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Recipe CLI: added `safe-db-mcp recipes list`, `recipes import <absolute path>`, and `recipes export <recipe_id>`.
+- Case-insensitive catalog lookup for `describe_table` and `find_join_paths`, with up to 5 suggested tables when a name is unknown and `invalid_arguments` listing both names when a reference is ambiguous.
+- Db2 internal catalog tables (`EXPLAIN_*`, `ADVISE_*`) are hidden from `list_tables`, `search_catalog`, `describe_table`, `find_join_paths`, and the tables resource.
+- `find_join_paths` accepts `foreign_key_only` to exclude indexed-column candidates.
+- Unknown-column errors on `filter_result_rows`, `pivot_result`, and `sorts` list known result columns.
+- `run_query`, `run_saved_query`, and `assess_query` receipts include `dialect`; capped samples report `sample_cap_reason` (`sql_limit` or `byte_budget`) and unbounded SQL sets `sample_unbounded`.
+- Additive `structuredContent` for object tools and published `outputSchema` for `run_query`, `assess_query`, `describe_table`, and `find_join_paths`.
+
 ## 1.1.0
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.0` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.0-all.jar`; npm packages are stamped 1.1.0 at assemble time.

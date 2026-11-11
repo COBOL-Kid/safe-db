@@ -197,6 +197,7 @@ fun findDirectJoinEdges(
     tables: List<TableInfo>,
     fromSchema: String,
     fromTable: String,
+    includeIndexedColumns: Boolean = true,
 ): List<JoinEdge> {
     val from =
         tables.firstOrNull { it.schema == fromSchema && it.name == fromTable } ?: return emptyList()
@@ -254,44 +255,53 @@ fun findDirectJoinEdges(
         }
     }
 
-    val indexedByTable = linkedMapOf<Pair<String, String>, MutableList<JoinColumnPair>>()
-    for (target in tables) {
-        if (target.schema == from.schema && target.name == from.name) continue
-        for (left in from.columns) {
-            if (!left.joinEligible) continue
-            for (right in target.columns) {
-                if (!right.joinEligible) continue
-                if (left.category != right.category) continue
-                if (!columnsCompatibleByConvention(from.name, left.name, target.name, right.name)) {
-                    continue
+    if (includeIndexedColumns) {
+        val indexedByTable = linkedMapOf<Pair<String, String>, MutableList<JoinColumnPair>>()
+        for (target in tables) {
+            if (target.schema == from.schema && target.name == from.name) continue
+            for (left in from.columns) {
+                if (!left.joinEligible) continue
+                for (right in target.columns) {
+                    if (!right.joinEligible) continue
+                    if (left.category != right.category) continue
+                    if (
+                        !columnsCompatibleByConvention(
+                            from.name,
+                            left.name,
+                            target.name,
+                            right.name,
+                        )
+                    ) {
+                        continue
+                    }
+                    val pair = JoinColumnPair(left.name, right.name)
+                    if (ForeignKeyPair(target.schema, target.name, pair) in foreignKeyPairs) {
+                        continue
+                    }
+                    indexedByTable.getOrPut(target.schema to target.name, ::mutableListOf).add(pair)
                 }
-                val pair = JoinColumnPair(left.name, right.name)
-                if (ForeignKeyPair(target.schema, target.name, pair) in foreignKeyPairs) {
-                    continue
-                }
-                indexedByTable.getOrPut(target.schema to target.name, ::mutableListOf).add(pair)
             }
         }
+        indexedByTable.entries
+            .sortedWith(
+                compareBy<Map.Entry<Pair<String, String>, MutableList<JoinColumnPair>>> {
+                        it.key.first.lowercase()
+                    }
+                    .thenBy { it.key.second.lowercase() }
+            )
+            .forEach { (key, pairs) ->
+                val (schema, name) = key
+                edges +=
+                    JoinEdge(
+                        fromSchema = from.schema,
+                        fromTable = from.name,
+                        toSchema = schema,
+                        toTable = name,
+                        kind = JoinCandidateKind.IndexedColumns,
+                        columns = pairs.distinct(),
+                    )
+            }
     }
-    indexedByTable.entries
-        .sortedWith(
-            compareBy<Map.Entry<Pair<String, String>, MutableList<JoinColumnPair>>> {
-                    it.key.first.lowercase()
-                }
-                .thenBy { it.key.second.lowercase() }
-        )
-        .forEach { (key, pairs) ->
-            val (schema, name) = key
-            edges +=
-                JoinEdge(
-                    fromSchema = from.schema,
-                    fromTable = from.name,
-                    toSchema = schema,
-                    toTable = name,
-                    kind = JoinCandidateKind.IndexedColumns,
-                    columns = pairs.distinct(),
-                )
-        }
 
     return edges.distinct()
 }
@@ -309,6 +319,7 @@ fun findJoinPaths(
     toSchema: String,
     toTable: String,
     maxHops: Int = 2,
+    includeIndexedColumns: Boolean = true,
 ): List<JoinPath> {
     val hops = maxHops.coerceIn(1, 3)
     if (fromSchema == toSchema && fromTable == toTable) return emptyList()
@@ -316,7 +327,7 @@ fun findJoinPaths(
     val paths = mutableListOf<JoinPath>()
     val queue = ArrayDeque<Pair<JoinPath, Set<Pair<String, String>>>>()
     val start = fromSchema to fromTable
-    for (edge in orderedEdges(tables, fromSchema, fromTable)) {
+    for (edge in orderedEdges(tables, fromSchema, fromTable, includeIndexedColumns)) {
         val next = edge.toSchema to edge.toTable
         if (next == start) continue
         queue += JoinPath(listOf(edge)) to setOf(start, next)
@@ -331,7 +342,7 @@ fun findJoinPaths(
             continue
         }
         if (path.steps.size == hops) continue
-        for (edge in orderedEdges(tables, last.toSchema, last.toTable)) {
+        for (edge in orderedEdges(tables, last.toSchema, last.toTable, includeIndexedColumns)) {
             val next = edge.toSchema to edge.toTable
             if (next in visited) continue
             queue += JoinPath(path.steps + edge) to (visited + next)
@@ -353,8 +364,9 @@ private fun orderedEdges(
     tables: List<TableInfo>,
     schema: String,
     table: String,
+    includeIndexedColumns: Boolean,
 ): List<JoinEdge> =
-    findDirectJoinEdges(tables, schema, table)
+    findDirectJoinEdges(tables, schema, table, includeIndexedColumns)
         .sortedWith(
             compareBy<JoinEdge> { edge ->
                     when (edge.kind) {

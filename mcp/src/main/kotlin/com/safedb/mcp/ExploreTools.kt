@@ -11,7 +11,6 @@ import com.safedb.model.ResultColumn
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.EncodeDefault
@@ -27,11 +26,15 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
         description =
             "Pivot the in-memory sample of a previous run_query by result_id. With no " +
                 "dimensions or measures, uses the default pivot (first non-identifier column " +
-                "grouped with a row count). row_dimensions and column_dimensions accept column " +
+                "grouped with a row count and a Total row). row_dimensions and " +
+                "column_dimensions accept column " +
                 "names or objects with column, label, grouping (exact, year, quarter, month, " +
                 "iso_week, day, or {bin_size, bin_start}), sort_mode, sort_measure_alias, and " +
                 "show_subtotals. measures accept alias, fn, source_column, label, formula, and " +
-                "show_as. filters support members, label, and value comparison objects. sort " +
+                "show_as; label names the output column (defaults to the function label) while " +
+                "alias is for formulas and sort.measure_alias. Use receipt column names " +
+                "verbatim (dialect casing). filters support members, label, and value " +
+                "comparison objects. sort " +
                 "accepts column or measure_alias with asc/desc. Returns pivoted columns, " +
                 "row_count, pivot_truncated, warnings, and at most $GET_RESULT_ROWS_MAX rows " +
                 "capped at $MCP_PAYLOAD_MAX_BYTES bytes. Unknown or expired result_id returns " +
@@ -132,7 +135,9 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                 "starts_with, ends_with, greater_than, greater_than_or_equal, less_than, " +
                 "less_than_or_equal, between, is_null, is_not_null, members) with value, " +
                 "second_value, or included_keys. sorts accept column and asc/desc. columns " +
-                "limits the projected fields. offset defaults to 0 (negative clamps to 0); " +
+                "limits the projected fields. Use receipt column names verbatim (dialect " +
+                "casing); an unknown column reports the known columns. offset defaults to 0 " +
+                "(negative clamps to 0); " +
                 "limit defaults to $GET_RESULT_ROWS_MAX and caps at $GET_RESULT_ROWS_MAX. " +
                 "matched_row_count reports rows after filtering; sample_row_count reports the " +
                 "stored sample size. Pages stop around $MCP_PAYLOAD_MAX_BYTES bytes. Unknown " +
@@ -321,7 +326,7 @@ private suspend fun handlePivotResult(
             warnings = preview.warnings,
             rows = slice.rows,
         )
-    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
+    return objectToolResult(receipt)
 }
 
 private suspend fun handleFilterResultRows(
@@ -425,7 +430,7 @@ private suspend fun handleFilterResultRows(
             warnings = entry.result.warnings + worksheet.warnings,
             rows = slice.rows,
         )
-    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(page))))
+    return objectToolResult(page)
 }
 
 @Serializable

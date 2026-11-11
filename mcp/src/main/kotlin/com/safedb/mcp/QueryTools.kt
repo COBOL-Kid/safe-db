@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.model.ConnectionDef
+import com.safedb.model.Dialect
 import com.safedb.model.MAX_RESULT_BYTES
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
@@ -25,7 +26,6 @@ import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
@@ -49,8 +49,10 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                 "Rejects aggregates and functions, OFFSET, subqueries, CTEs, UNION, " +
                 "LEFT/CROSS or comma joins, AS aliases, and leading NOT. Result columns are " +
                 "named table__column. Pass connection_id from list_connections and sql. Do " +
-                "not pass a password or URL. Returns a receipt: columns, row_count, " +
-                "sample_capped (omitted when false), preview_truncated, warnings, a slim " +
+                "not pass a password or URL. Returns a receipt: dialect, columns, row_count, " +
+                "sample_capped (omitted when false), sample_cap_reason (sql_limit or " +
+                "byte_budget) when capped, sample_unbounded when the SQL omitted LIMIT " +
+                "(omitted when false), preview_truncated, warnings, a slim " +
                 "risk summary, a short preview (~10 flattened rows), and result_id. " +
                 "Page with get_result_rows or summarize_result using result_id. Preview " +
                 "and pages are capped at $MCP_PAYLOAD_MAX_BYTES bytes; long cell values " +
@@ -59,7 +61,8 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                 "32 MiB). On error risk_gate, rewrite the query; do not retry the same " +
                 "query. On error confirmation_required, " +
                 "show the reasons to the user, then retry with the returned confirmation " +
-                "object; do not auto-confirm. Unknown extra arguments are invalid_arguments.",
+                "object; do not auto-confirm. Unknown extra arguments are invalid_arguments. " +
+                "The result includes JSON text and structuredContent with the same object.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -112,6 +115,34 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                     },
                 required = listOf("connection_id", "sql"),
             ),
+        outputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put("dialect", buildJsonObject { put("type", "string") })
+                        put("columns", buildJsonObject { put("type", "array") })
+                        put("row_count", buildJsonObject { put("type", "integer") })
+                        put("warnings", buildJsonObject { put("type", "array") })
+                        put("risk", buildJsonObject { put("type", "object") })
+                        put("preview", buildJsonObject { put("type", "array") })
+                        put("preview_truncated", buildJsonObject { put("type", "boolean") })
+                        put("result_id", buildJsonObject { put("type", "string") })
+                        put("sample_capped", buildJsonObject { put("type", "boolean") })
+                        put("sample_cap_reason", buildJsonObject { put("type", "string") })
+                        put("sample_unbounded", buildJsonObject { put("type", "boolean") })
+                    },
+                required =
+                    listOf(
+                        "dialect",
+                        "columns",
+                        "row_count",
+                        "warnings",
+                        "risk",
+                        "preview",
+                        "preview_truncated",
+                        "result_id",
+                    ),
+            ),
     ) { request ->
         runMcpTool("run_query failed") { handleRunQuery(service, resultStore, request) }
     }
@@ -121,9 +152,10 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
         description =
             "Assess one SELECT on a saved connection without running it. Parses the SQL exactly " +
                 "like run_query, resolves result columns, compiles the statement, and returns " +
-                "columns, compiled_sql, parameter_count, warnings, a slim risk summary, and " +
-                "confirmation_required with reasons when the risk gate would require " +
-                "confirmation. Unknown extra arguments are invalid_arguments.",
+                "dialect, columns, compiled_sql, parameter_count, warnings, a slim risk " +
+                "summary, and confirmation_required with reasons when the risk gate would " +
+                "require confirmation. Unknown extra arguments are invalid_arguments. The " +
+                "result includes JSON text and structuredContent with the same object.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -156,6 +188,30 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                         )
                     },
                 required = listOf("connection_id", "sql"),
+            ),
+        outputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put("dialect", buildJsonObject { put("type", "string") })
+                        put("columns", buildJsonObject { put("type", "array") })
+                        put("compiled_sql", buildJsonObject { put("type", "string") })
+                        put("parameter_count", buildJsonObject { put("type", "integer") })
+                        put("warnings", buildJsonObject { put("type", "array") })
+                        put("risk", buildJsonObject { put("type", "object") })
+                        put("confirmation_required", buildJsonObject { put("type", "boolean") })
+                        put("reasons", buildJsonObject { put("type", "array") })
+                    },
+                required =
+                    listOf(
+                        "dialect",
+                        "columns",
+                        "compiled_sql",
+                        "parameter_count",
+                        "warnings",
+                        "risk",
+                        "confirmation_required",
+                    ),
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
@@ -267,7 +323,7 @@ private suspend fun handleRunQuery(
     return try {
         val completed =
             service.runQuery(QueryRunRequest(resolved.connectionId, resolved.spec, confirmation))
-        successReceipt(completed, resultStore, resolved.spec, resolved.connectionId)
+        successReceipt(completed, resultStore, resolved.spec, resolved.connection)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -292,6 +348,7 @@ private suspend fun handleAssessQuery(
         val risk = assessment.riskEvaluation
         val receipt =
             QueryAssessmentReceipt(
+                dialect = resolved.connection.dialect,
                 columns = assessment.columns,
                 compiledSql = assessment.compiledSql,
                 parameterCount = assessment.parameterCount,
@@ -304,7 +361,7 @@ private suspend fun handleAssessQuery(
                         ?.map { it.message }
                         ?.takeIf { it.isNotEmpty() },
             )
-        CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
+        objectToolResult(receipt)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -419,10 +476,10 @@ internal suspend fun successReceipt(
     completed: QueryRunResult,
     resultStore: ResultStore,
     spec: QuerySpec,
-    connectionId: String,
+    connection: ConnectionDef,
 ): CallToolResult {
     val result = completed.queryResult
-    val stored = resultStore.put(result, tables = spec.tables, connectionId = connectionId)
+    val stored = resultStore.put(result, tables = spec.tables, connectionId = connection.id)
     val preview = previewRows(result)
     val warnings = buildList {
         addAll(result.warnings)
@@ -430,24 +487,32 @@ internal suspend fun successReceipt(
     }
     val receipt =
         QueryReceipt(
+            dialect = connection.dialect,
             columns = result.columns,
             rowCount = result.rowCount,
             sampleCapped = result.truncated,
+            sampleCapReason =
+                if (result.truncated) sampleCapReason(spec, result.warnings) else null,
+            sampleUnbounded = spec.uncapped,
             warnings = warnings,
             risk = riskSummary(completed.riskEvaluation),
             preview = preview.rows,
             previewTruncated = preview.moreRowsRemain || preview.cellsTruncated,
             resultId = stored.resultId,
         )
-    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(receipt))))
+    return objectToolResult(receipt)
 }
 
-private fun sampleCappedWarning(spec: QuerySpec, resultWarnings: List<String>): String {
+private fun stoppedAtByteBudget(spec: QuerySpec, resultWarnings: List<String>): Boolean =
     // Uncapped SQL stores DEFAULT_LIMIT and ignores it. A byte-budget stop on a real LIMIT
     // has the same shape: raising that LIMIT does not read another row.
-    val stoppedAtByteBudget =
-        spec.uncapped || resultWarnings.any { it == byteBudgetTruncationWarning() }
-    if (stoppedAtByteBudget) {
+    spec.uncapped || resultWarnings.any { it == byteBudgetTruncationWarning() }
+
+private fun sampleCapReason(spec: QuerySpec, resultWarnings: List<String>): String =
+    if (stoppedAtByteBudget(spec, resultWarnings)) "byte_budget" else "sql_limit"
+
+private fun sampleCappedWarning(spec: QuerySpec, resultWarnings: List<String>): String {
+    if (stoppedAtByteBudget(spec, resultWarnings)) {
         return "This sample stopped at the $MAX_RESULT_BYTES encoded-byte budget; paging does not get more table rows. " +
             "Add filters or select fewer columns. Raising LIMIT does not read past this budget."
     }
@@ -490,7 +555,7 @@ private suspend fun handleGetResultRows(
             nextOffset = slice.nextOffset,
             rows = slice.rows,
         )
-    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(page))))
+    return objectToolResult(page)
 }
 
 private suspend fun handleSummarizeResult(
@@ -512,7 +577,7 @@ private suspend fun handleSummarizeResult(
             sampleCapped = result.truncated,
             columns = summarizeColumns(result),
         )
-    return CallToolResult(content = listOf(TextContent(text = toolJson.encodeToString(summary))))
+    return objectToolResult(summary)
 }
 
 internal fun mapQueryFailure(failure: QueryFailureException): CallToolResult {
@@ -586,11 +651,18 @@ internal sealed interface ConfirmationParse {
 
 @Serializable
 internal data class QueryReceipt(
+    val dialect: Dialect,
     val columns: List<ResultColumn>,
     @SerialName("row_count") val rowCount: Int,
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     @SerialName("sample_capped")
     val sampleCapped: Boolean = false,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("sample_cap_reason")
+    val sampleCapReason: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("sample_unbounded")
+    val sampleUnbounded: Boolean = false,
     val warnings: List<String>,
     val risk: QueryRiskSummary,
     val preview: List<JsonObject>,
@@ -610,6 +682,7 @@ internal data class ResultRowsPage(
 
 @Serializable
 internal data class QueryAssessmentReceipt(
+    val dialect: Dialect,
     val columns: List<ResultColumn>,
     @SerialName("compiled_sql") val compiledSql: String,
     @SerialName("parameter_count") val parameterCount: Int,
