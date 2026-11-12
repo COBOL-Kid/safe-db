@@ -287,9 +287,22 @@ class ApplyExploreTest {
                     ),
             )
 
+        assertEquals(listOf("Region", "Status", "Orders"), preview.result.columns.map { it.name })
         assertEquals(PivotRowKind.Group, preview.layout.rowEntries.first().kind)
         assertEquals("East", preview.layout.rowEntries.first().label)
         assertTrue(preview.layout.rowEntries.first().hasChildren)
+        assertEquals(
+            listOf(ResultCell.text("East"), ResultCell.Null, ResultCell.Null),
+            preview.result.rows.first(),
+        )
+        val eastPending =
+            preview.result.rows.first { row ->
+                row[0] == ResultCell.text("East") && row[1] == ResultCell.text("pending")
+            }
+        assertEquals(ResultCell.IntegerCell(2), eastPending[2])
+        val eastTotal = preview.result.rows.first { row -> row[0] == ResultCell.text("East total") }
+        assertEquals(ResultCell.Null, eastTotal[1])
+        assertEquals(ResultCell.IntegerCell(3), eastTotal[2])
         assertTrue(
             preview.layout.rowEntries.any {
                 it.label == "East total" && it.kind == PivotRowKind.Subtotal
@@ -423,13 +436,35 @@ class ApplyExploreTest {
                                 id = "f1",
                                 column = "t0__region",
                                 label = "Region",
-                                includedKeys = setOf(pivotCellKey(ResultCell.text("East"))),
+                                includedKeys = setOf("East"),
                             )
                         ),
                 ),
             )
         assertEquals(listOf("East", "Total"), memberFiltered.layout.rowEntries.map { it.label })
         assertEquals(ResultCell.IntegerCell(3), memberFiltered.result.rows.last()[1])
+
+        val internalKeyFiltered =
+            applyExplore(
+                sampleResult(),
+                ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("t0__region", id = "region")),
+                    measures = listOf(count),
+                    filters =
+                        listOf(
+                            PivotFilter.Members(
+                                id = "f1-internal",
+                                column = "t0__region",
+                                label = "Region",
+                                includedKeys = setOf(pivotCellKey(ResultCell.text("East"))),
+                            )
+                        ),
+                ),
+            )
+        assertEquals(
+            listOf("East", "Total"),
+            internalKeyFiltered.layout.rowEntries.map { it.label },
+        )
 
         val top =
             applyExplore(

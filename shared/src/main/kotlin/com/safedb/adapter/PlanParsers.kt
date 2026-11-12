@@ -228,7 +228,10 @@ internal fun parseMySqlPlan(raw: String, queryLimit: Long? = null): NormalizedQu
         }
 
         visit(document)
-        if (relations.isEmpty() && joins.isEmpty() && operations.isEmpty()) return null
+        if (relations.isEmpty() && joins.isEmpty() && operations.isEmpty()) {
+            if (!isMysqlZeroRowPlan(document)) return null
+            return NormalizedQueryPlan(rawOptimizerCost = findJsonCost(document) ?: 0.0)
+        }
         capMysqlEarlyStopRows(document, queryLimit, relations, joins)
         NormalizedQueryPlan(
             relations,
@@ -242,6 +245,25 @@ internal fun parseMySqlPlan(raw: String, queryLimit: Long? = null): NormalizedQu
 internal fun mysqlLimitFromSql(sql: String): Long? {
     val match = Regex("""(?i)\bLIMIT\s+(\d+)\s*;?\s*$""").find(sql.trim()) ?: return null
     return match.groupValues[1].toLong()
+}
+
+private fun isMysqlZeroRowPlan(element: JsonElement): Boolean {
+    val messages = mutableListOf<String>()
+    fun collect(node: JsonElement) {
+        when (node) {
+            is JsonArray -> node.forEach(::collect)
+            is JsonObject -> {
+                node.string("message")?.let(messages::add)
+                node.values.forEach(::collect)
+            }
+            else -> Unit
+        }
+    }
+    collect(element)
+    return messages.any { message ->
+        val lower = message.lowercase()
+        "impossible where" in lower || "no matching row" in lower
+    }
 }
 
 private fun mysqlAccessMethod(

@@ -40,6 +40,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -109,6 +110,84 @@ class QueryCoreTest {
         assertNull(success.riskEvaluation.finalAssessment)
         assertEquals(0, runner.explainCalls)
         assertEquals(1, runner.executeCalls)
+    }
+
+    @Test
+    fun planParseFailureDoesNotRequireConfirmationWhenStaticRiskAllows() = runBlocking {
+        val runner =
+            StubRunner(
+                explainResult =
+                    ExplainResult.Unavailable(
+                        PlanUnavailableReason.ParseFailure,
+                        "Could not normalize MySQL JSON plan",
+                    )
+            )
+        val outcome =
+            runQueryCore(
+                runner,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default(),
+            )
+        val success = assertIs<QueryCoreOutcome.Success>(outcome)
+        assertEquals(QueryPlanStatus.Unavailable, success.riskEvaluation.planStatus)
+        assertEquals(RiskGateState.Allowed, success.riskEvaluation.decision.state)
+        assertEquals(1, runner.explainCalls)
+        assertEquals(1, runner.executeCalls)
+    }
+
+    @Test
+    fun emptyResultDropsMaterialProjectedPayloadScore() = runBlocking {
+        val empty =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__id", "int")),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val uncapped = sampleSpec().copy(uncapped = true, limit = DEFAULT_LIMIT)
+        val populated =
+            assertIs<QueryCoreOutcome.Success>(
+                runQueryCore(
+                    StubRunner(),
+                    sampleConnection(),
+                    uncapped,
+                    sampleSchema(),
+                    Settings.default(),
+                )
+            )
+        val populatedAssessment = assertNotNull(populated.riskEvaluation.finalAssessment)
+        assertTrue(
+            populatedAssessment.signals.any { it.code == RiskSignalCode.MaterialProjectedPayload }
+        )
+        assertTrue(
+            populated.riskEvaluation.decision.reasons.any {
+                it.message.contains("projected result payload is material", ignoreCase = true)
+            }
+        )
+
+        val emptyOutcome =
+            runQueryCore(
+                StubRunner(execute = Outcome.ok(empty)),
+                sampleConnection(),
+                uncapped,
+                sampleSchema(),
+                Settings.default(),
+            )
+        val emptySuccess = assertIs<QueryCoreOutcome.Success>(emptyOutcome)
+        assertEquals(0, emptySuccess.result.rowCount)
+        val emptyAssessment = assertNotNull(emptySuccess.riskEvaluation.finalAssessment)
+        assertTrue(
+            emptyAssessment.signals.none { it.code == RiskSignalCode.MaterialProjectedPayload }
+        )
+        assertTrue(
+            emptySuccess.riskEvaluation.decision.reasons.none {
+                it.message.contains("projected result payload is material", ignoreCase = true)
+            }
+        )
+        assertTrue(emptyAssessment.score <= populatedAssessment.score)
     }
 
     @Test
@@ -430,7 +509,10 @@ class QueryCoreTest {
         val changedReasonRunner =
             StubRunner(
                 explainResult =
-                    ExplainResult.Unavailable(PlanUnavailableReason.ParseFailure, "unreadable plan")
+                    ExplainResult.Unavailable(
+                        PlanUnavailableReason.UnsupportedShape,
+                        "unsupported plan",
+                    )
             )
         val changedReason =
             runQueryCore(

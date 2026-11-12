@@ -343,6 +343,29 @@ fun displayColumnLabel(raw: String, tables: List<TableRef>): String {
     return raw.substring(alias.length + 2)
 }
 
+fun ExploreConfig.withTableAwareLabels(
+    columns: List<ResultColumn>,
+    tables: List<TableRef>,
+): ExploreConfig {
+    val labels = displayColumnLabels(columns, tables)
+    fun PivotDimension.relabel(): PivotDimension {
+        val auto = labels[column] ?: displayColumnLabel(column, tables)
+        val isDefault = label == displayColumnLabel(column) || label == column
+        return if (isDefault) copy(label = auto) else this
+    }
+    fun PivotMeasure.relabel(): PivotMeasure {
+        val source = sourceColumn ?: return this
+        if (label != defaultMeasureLabel(fn, source)) return this
+        val auto = labels[source] ?: displayColumnLabel(source, tables)
+        return copy(label = defaultMeasureLabel(fn, source, auto))
+    }
+    return copy(
+        rowDimensions = rowDimensions.map { it.relabel() },
+        columnDimensions = columnDimensions.map { it.relabel() },
+        measures = measures.map { it.relabel() },
+    )
+}
+
 fun displayColumnLabels(
     columns: List<ResultColumn>,
     tables: List<TableRef> = emptyList(),
@@ -386,8 +409,12 @@ fun exploreSpecHash(spec: QuerySpec): String {
     return digest.joinToString("") { "%02x".format(it) }
 }
 
-private fun defaultMeasureLabel(fn: MeasureFn, sourceColumn: String?): String {
-    val source = sourceColumn?.let(::displayColumnLabel)
+internal fun defaultMeasureLabel(
+    fn: MeasureFn,
+    sourceColumn: String?,
+    displaySource: String? = null,
+): String {
+    val source = displaySource ?: sourceColumn?.let(::displayColumnLabel)
     if (fn == MeasureFn.Count) return source?.let { "Count $it" } ?: "Count"
     val counting = fn == MeasureFn.CountNumbers || fn == MeasureFn.CountDistinct
     return "${fn.shortLabel} ${source ?: if (counting) "values" else "value"}"

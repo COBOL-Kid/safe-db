@@ -162,7 +162,7 @@ private class WorksheetEngine(
             val comparison = compareTextOrNumber(text, filter.value)
             when (filter.op) {
                 WorksheetFilterOp.Members ->
-                    filter.includedKeys.isEmpty() || pivotCellKey(cell) in filter.includedKeys
+                    filter.includedKeys.isEmpty() || pivotCellMatches(cell, filter.includedKeys)
                 WorksheetFilterOp.Equals -> filterEquals(cell, text, filter.value)
                 WorksheetFilterOp.NotEquals -> !filterEquals(cell, text, filter.value)
                 WorksheetFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)

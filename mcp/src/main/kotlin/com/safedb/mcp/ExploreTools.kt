@@ -2,17 +2,14 @@ package com.safedb.mcp
 
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExplorePreviewResult
-import com.safedb.explore.PivotDimension
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyWorksheet
-import com.safedb.explore.displayColumnLabel
-import com.safedb.explore.displayColumnLabels
+import com.safedb.explore.withTableAwareLabels
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
-import com.safedb.model.TableRef
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -340,7 +337,7 @@ private suspend fun handlePivotResult(
     val preview =
         applyExplore(
             entry.result,
-            config.withTableAwareDimensionLabels(entry.result.columns, entry.tables),
+            config.withTableAwareLabels(entry.result.columns, entry.tables),
         )
     return pivotResultReceipt(resultId, entry, preview)
 }
@@ -451,22 +448,6 @@ private suspend fun handleFilterResultRows(
             rows = slice.rows,
         )
     return objectToolResult(page)
-}
-
-internal fun ExploreConfig.withTableAwareDimensionLabels(
-    columns: List<ResultColumn>,
-    tables: List<TableRef>,
-): ExploreConfig {
-    val labels = displayColumnLabels(columns, tables)
-    fun PivotDimension.relabel(): PivotDimension {
-        val auto = labels[column] ?: displayColumnLabel(column, tables)
-        val isDefault = label == displayColumnLabel(column) || label == column
-        return if (isDefault) copy(label = auto) else this
-    }
-    return copy(
-        rowDimensions = rowDimensions.map { it.relabel() },
-        columnDimensions = columnDimensions.map { it.relabel() },
-    )
 }
 
 internal fun pivotResultReceipt(

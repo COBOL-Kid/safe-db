@@ -262,7 +262,7 @@ private class VisualizationPlanner(
             val cell = record.cell(filter.column)
             when (filter) {
                 is PivotFilter.Members ->
-                    filter.includedKeys.isEmpty() || pivotCellKey(cell) in filter.includedKeys
+                    filter.includedKeys.isEmpty() || pivotCellMatches(cell, filter.includedKeys)
                 is PivotFilter.Label -> {
                     val text = cell.text()
                     when (filter.op) {

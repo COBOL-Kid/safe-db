@@ -202,7 +202,7 @@ internal fun buildPivotReport(session: ExploreSession, preview: ExplorePreviewRe
 
     val measures = layout.measures
     val hasRowLabels = layout.rowDimensions.isNotEmpty()
-    val offset = if (hasRowLabels) 1 else 0
+    val offset = layout.rowDimensions.size
     val headerRows =
         layout.columnHeaderRows.map { row ->
             row.map { header ->

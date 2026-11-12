@@ -513,6 +513,76 @@ class QueryRiskTest {
     }
 
     @Test
+    fun additionalJoinedRelationsCollapseToOneSignal() {
+        val assessment =
+            assess(
+                spec(
+                    tables =
+                        listOf(
+                            TableRef("public", "customers", "t0"),
+                            TableRef("public", "orders", "t1"),
+                            TableRef("public", "items", "t2"),
+                            TableRef("public", "payments", "t3"),
+                        ),
+                    joins =
+                        listOf(
+                            JoinSpec("t0", "id", "t1", "customer_id"),
+                            JoinSpec("t1", "id", "t2", "order_id"),
+                            JoinSpec("t2", "id", "t3", "item_id"),
+                        ),
+                    columns = listOf(ColumnSel("t0", "id")),
+                ),
+                listOf(
+                    table(
+                        "customers",
+                        columns = listOf(column("id").copy(joinEligible = true)),
+                        indexes = listOf(index("customers_id", listOf(IndexKey("id")))),
+                    ),
+                    table(
+                        "orders",
+                        columns =
+                            listOf(
+                                column("id").copy(joinEligible = true),
+                                column("customer_id").copy(joinEligible = true),
+                            ),
+                        indexes =
+                            listOf(
+                                index("orders_id", listOf(IndexKey("id"))),
+                                index("orders_customer", listOf(IndexKey("customer_id"))),
+                            ),
+                    ),
+                    table(
+                        "items",
+                        columns =
+                            listOf(
+                                column("id").copy(joinEligible = true),
+                                column("order_id").copy(joinEligible = true),
+                            ),
+                        indexes =
+                            listOf(
+                                index("items_id", listOf(IndexKey("id"))),
+                                index("items_order", listOf(IndexKey("order_id"))),
+                            ),
+                    ),
+                    table(
+                        "payments",
+                        columns = listOf(column("id"), column("item_id").copy(joinEligible = true)),
+                        indexes = listOf(index("payments_item", listOf(IndexKey("item_id")))),
+                    ),
+                ),
+            )
+
+        val extra = assessment.signals.single { it.code == RiskSignalCode.AdditionalJoinedRelation }
+        assertEquals(3, extra.points)
+        assertEquals(
+            1,
+            applyRiskGate(assessment, QueryRiskGate.Standard).reasons.count {
+                it.message == "The query joins an additional relation."
+            },
+        )
+    }
+
+    @Test
     fun uniquenessRequiresExactCompleteNonPartialKeySet() {
         val query =
             spec(

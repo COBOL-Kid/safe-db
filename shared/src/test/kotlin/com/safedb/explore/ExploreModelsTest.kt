@@ -78,6 +78,18 @@ class ExploreModelsTest {
         assertEquals("Distinct values", PivotMeasure("b", MeasureFn.CountDistinct).label)
         assertEquals("StdDevP value", PivotMeasure("c", MeasureFn.StdDevPopulation).label)
         assertEquals("StdDev amount", PivotMeasure("d", MeasureFn.StdDev, "t0__amount").label)
+        assertEquals(
+            "Sum big_events__amount",
+            PivotMeasure("e", MeasureFn.Sum, "big_events__amount").label,
+        )
+        assertEquals(
+            "Sum amount",
+            defaultMeasureLabel(MeasureFn.Sum, "big_events__amount", "amount"),
+        )
+        assertEquals(
+            "Max orders.id",
+            defaultMeasureLabel(MeasureFn.Max, "o__id", "orders.id"),
+        )
 
         assertEquals("Count rows", MeasureFn.Count.label)
         assertEquals("Population standard deviation", MeasureFn.StdDevPopulation.label)
@@ -85,5 +97,34 @@ class ExploreModelsTest {
             MeasureFn.entries.size,
             MeasureFn.entries.map { it.shortLabel }.distinct().size,
         )
+    }
+
+    @Test
+    fun tableAwareLabelsRelabelDefaultMeasuresAndKeepExplicitOnes() {
+        val tables =
+            listOf(
+                TableRef("public", "big_events", "big_events"),
+                TableRef("public", "orders", "o"),
+            )
+        val columns =
+            listOf(
+                ResultColumn("big_events__amount", "int"),
+                ResultColumn("o__id", "int"),
+                ResultColumn("c__id", "int"),
+            )
+        val config =
+            ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("o__id")),
+                    measures =
+                        listOf(
+                            PivotMeasure("total", MeasureFn.Sum, "big_events__amount"),
+                            PivotMeasure("max_id", MeasureFn.Max, "o__id", "Revenue"),
+                        ),
+                )
+                .withTableAwareLabels(columns, tables + TableRef("public", "customers", "c"))
+
+        assertEquals("orders.id", config.rowDimensions.single().label)
+        assertEquals("Sum amount", config.measures[0].label)
+        assertEquals("Revenue", config.measures[1].label)
     }
 }

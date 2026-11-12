@@ -239,7 +239,7 @@ class ExploreArgParsersTest {
             assertIs<Arg.Ok<List<PivotFilter>>>(
                     parsePivotFilters(
                         objects(
-                            """{"column":"region","op":"members","included_keys":["TextCell:east"]}""",
+                            """{"column":"region","op":"members","included_keys":["east"]}""",
                             """{"column":"region","op":"contains","value":"ea"}""",
                             """{"column":"amount","op":"between","measure_alias":"count","value":"1","second_value":"10"}""",
                         ),
@@ -250,7 +250,7 @@ class ExploreArgParsersTest {
 
         assertEquals(3, filters.size)
         val members = assertIs<PivotFilter.Members>(filters[0])
-        assertEquals(setOf("TextCell:east"), members.includedKeys)
+        assertEquals(setOf("east"), members.includedKeys)
         val label = assertIs<PivotFilter.Label>(filters[1])
         assertEquals(LabelFilterOp.Contains, label.op)
         assertEquals("ea", label.value)
@@ -341,7 +341,7 @@ class ExploreArgParsersTest {
             assertIs<Arg.Ok<List<WorksheetFilter>>>(
                     parseWorksheetFilters(
                         objects(
-                            """{"column":"region","op":"members","included_keys":["TextCell:east"]}""",
+                            """{"column":"region","op":"members","included_keys":["east"]}""",
                             """{"column":"region","op":"eq","value":"east"}""",
                             """{"column":"amount","op":"between","value":"5","second_value":"25"}""",
                             """{"column":"amount","op":"is_null"}""",
@@ -353,7 +353,7 @@ class ExploreArgParsersTest {
 
         assertEquals(4, filters.size)
         assertEquals(WorksheetFilterOp.Members, filters[0].op)
-        assertEquals(setOf("TextCell:east"), filters[0].includedKeys)
+        assertEquals(setOf("east"), filters[0].includedKeys)
         assertEquals(WorksheetFilterOp.Equals, filters[1].op)
         assertEquals("east", filters[1].value)
         assertEquals(WorksheetFilterOp.Between, filters[2].op)

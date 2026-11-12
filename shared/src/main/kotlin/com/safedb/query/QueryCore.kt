@@ -213,6 +213,7 @@ suspend fun assessQueryCore(
                             )
                         )
                     is UnavailablePlanDisposition.Confirm -> disposition.requirement
+                    UnavailablePlanDisposition.Proceed -> null
                 }
             is ExplainResult.Available -> optimizerCostConfirmation(def, fingerprint, explain)
         }
@@ -307,6 +308,8 @@ private sealed class UnavailablePlanDisposition {
     data class HardFail(val message: String) : UnavailablePlanDisposition()
 
     data class Confirm(val requirement: QueryConfirmationRequirement) : UnavailablePlanDisposition()
+
+    data object Proceed : UnavailablePlanDisposition()
 }
 
 private fun unavailablePlanDisposition(
@@ -321,8 +324,8 @@ private fun unavailablePlanDisposition(
             UnavailablePlanDisposition.HardFail(
                 "Query plan assessment failed: ${explain.message.ifBlank { "connection error" }}"
             )
+        PlanUnavailableReason.ParseFailure -> UnavailablePlanDisposition.Proceed
         PlanUnavailableReason.PermissionDenied,
-        PlanUnavailableReason.ParseFailure,
         PlanUnavailableReason.UnsupportedShape,
         PlanUnavailableReason.CleanupFailure,
         PlanUnavailableReason.ExecutionFailure ->
@@ -429,6 +432,7 @@ private suspend fun executeCompiled(
         (warnings + result.warnings).let { all ->
             if (rows.isEmpty()) all.filterNot { it == LARGE_LIMIT_WARNING } else all
         }
+    val alignedEvaluation = if (rows.isEmpty()) alignEmptyResultRisk(evaluation) else evaluation
 
     return QueryCoreOutcome.Success(
         result =
@@ -439,6 +443,6 @@ private suspend fun executeCompiled(
                 warnings = combinedWarnings,
             ),
         historySpec = normalizedSpec,
-        riskEvaluation = evaluation,
+        riskEvaluation = alignedEvaluation,
     )
 }

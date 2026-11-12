@@ -174,7 +174,6 @@ class ApplyWorksheetTest {
 
     @Test
     fun numericBinsAndMemberFiltersUseTypedBuckets() {
-        val included = pivotCellKey(ResultCell.text("East"))
         val preview =
             applyWorksheet(
                 sample(),
@@ -193,7 +192,7 @@ class ApplyWorksheetTest {
                                 "region-filter",
                                 "region",
                                 op = WorksheetFilterOp.Members,
-                                includedKeys = setOf(included),
+                                includedKeys = setOf("East"),
                             )
                         ),
                 ),
@@ -204,6 +203,45 @@ class ApplyWorksheetTest {
             preview.rows.filter { it.kind == WorksheetRowKind.Group }.map { it.label },
         )
         assertEquals(2, preview.rows.count { it.kind == WorksheetRowKind.Detail })
+    }
+
+    @Test
+    fun memberFiltersMatchDocumentedCellValuesAndInternalKeys() {
+        val sample =
+            QueryResult(
+                columns = listOf(ResultColumn("event", "varchar"), ResultColumn("n", "int")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("view"), ResultCell.IntegerCell(1)),
+                        listOf(ResultCell.text("click"), ResultCell.IntegerCell(2)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        fun matched(keys: Set<String>, column: String = "event"): Int =
+            applyWorksheet(
+                    sample,
+                    WorksheetConfig(
+                        filters =
+                            listOf(
+                                WorksheetFilter(
+                                    "members",
+                                    column,
+                                    op = WorksheetFilterOp.Members,
+                                    includedKeys = keys,
+                                )
+                            )
+                    ),
+                )
+                .rows
+                .count { it.kind == WorksheetRowKind.Detail }
+
+        assertEquals(1, matched(setOf("view")))
+        assertEquals(1, matched(setOf("1"), column = "n"))
+        assertEquals(1, matched(setOf(pivotCellKey(ResultCell.text("click")))))
+        assertEquals(2, matched(setOf("view", "click")))
     }
 
     @Test

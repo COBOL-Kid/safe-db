@@ -51,7 +51,7 @@ class ApplyVisualizationTest {
                                 "region",
                                 "region",
                                 "Region",
-                                setOf(pivotCellKey(ResultCell.text("West"))),
+                                setOf("West"),
                             )
                         ),
                     topN = 10,

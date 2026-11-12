@@ -96,8 +96,7 @@ object SecretsManager {
                         "Could not read credentials (${unwrapCredentialError(error).message ?: error})."
                     )
                 )
-            }
-                ?: return Result.failure(IllegalStateException(passwordNotFoundMessage()))
+            } ?: return Result.failure(IllegalStateException(passwordNotFoundMessage()))
         val record = runCatching {
             json.decodeFromString<BoundCredential>(raw)
         }
@@ -137,9 +136,9 @@ object SecretsManager {
 
     fun passwordNotFoundMessage(): String =
         if (activeLabel == "disabled") {
-            "Password not found for this connection because $ENV_BACKEND=disabled holds " +
-                "passwords in process memory only; they are not persisted. Unset that " +
-                "variable and add the connection again."
+            "Password not found for this connection because $ENV_BACKEND=disabled is " +
+                "overriding the persisted credential store. Unset $ENV_BACKEND so the " +
+                "saved password can be read; do not add the connection again."
         } else {
             "Password not found for this connection. Delete and add the connection again to store the password."
         }

@@ -21,9 +21,15 @@ Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engin
 - `run_query` / `assess_query` risk `reasons` include the same scoring evidence on allowed queries as on blocked queries.
 - Empty `run_query` samples keep JDBC column types (instead of `"unknown"`) and omit `sample_unbounded` plus the large-limit warning when the result is known empty.
 - Pivot dimension names use table-aware display labels for default, explicit, and recipe pivots (strip `{alias}__`; qualify collisions as `table.column`).
+- Pivot measure names use the same table-aware display labels (`Sum amount`, `Max orders.id` on collision).
+- Multi-dimension pivots emit one output column per row dimension; totals stay in the totaled dimension instead of collapsing into a single header.
+- `filter_result_rows` `members` / `included_keys` matches actual cell values (`view`, `1`) as well as internal `TextCell:view` keys.
+- Failure to parse a MySQL JSON plan, including Impossible WHERE / no matching const-table plans, no longer forces `confirmation_required` on ordinary gated SELECTs.
+- `setup` / `connections add` refuse to save a connection when `SAFEDB_KEYCHAIN_BACKEND=disabled`; `connections test` then says to unset that override rather than add the connection again.
+- Empty `run_query` samples drop the leftover material-payload risk score/reason.
+- Duplicate “joins an additional relation” risk reasons collapse to one signal.
 - A mismatched destructive confirmation no longer replaces a still-valid outstanding token.
 - `filter_result_rows` documents that `members` takes `included_keys`, not `value`.
-- `setup` / `connections add` refuse to save a connection when `SAFEDB_KEYCHAIN_BACKEND=disabled`, and a later `connections test` explains that no password was persisted.
 
 ## 1.0.1
 

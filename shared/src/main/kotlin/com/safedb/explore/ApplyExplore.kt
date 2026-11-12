@@ -125,8 +125,8 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             }
         overflowMessage?.let(warnings::add)
 
-        val includeRowHeader = rowDimensions.isNotEmpty()
-        val columns = buildOutputColumns(includeRowHeader, maxColumns)
+        val rowHeaderCount = rowDimensions.size
+        val columns = buildOutputColumns(maxColumns)
         val resultRows = mutableListOf<List<ResultCell>>()
         val formattedRows = mutableListOf<List<String>>()
         val rowEntries = mutableListOf<PivotRowEntry>()
@@ -136,9 +136,12 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             rowEntries += rowSlice.toEntry()
             val cells = mutableListOf<ResultCell>()
             val formatted = mutableListOf<String>()
-            if (includeRowHeader) {
-                cells += ResultCell.text(rowSlice.label)
-                formatted += rowSlice.label
+            if (rowHeaderCount > 0) {
+                val headers = rowHeaderValues(rowSlice)
+                cells += headers.map { value ->
+                    if (value.isEmpty()) ResultCell.Null else ResultCell.text(value)
+                }
+                formatted += headers
             }
             for (columnSlice in maxColumns) {
                 val rowBits = rowSlice.node.rows
@@ -169,7 +172,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         val columnGroups = maxColumns.mapIndexed { index, slice ->
             ExploreColumnGroup(
                 label = slice.labels.lastOrNull(),
-                startColumnIndex = (if (includeRowHeader) 1 else 0) + index * measures.size,
+                startColumnIndex = rowHeaderCount + index * measures.size,
                 measureAliases = measures.map { it.alias },
                 isTotal = slice.isGrandTotal || slice.isSubtotal,
             )
@@ -209,7 +212,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     if (filter.includedKeys.isEmpty()) true
                     else {
                         val cell = indexes[filter.column]?.let(row::getOrNull)
-                        pivotCellKey(cell) in filter.includedKeys
+                        pivotCellMatches(cell, filter.includedKeys)
                     }
                 }
                 is PivotFilter.Label -> {
@@ -666,12 +669,27 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         }
     }
 
-    private fun buildOutputColumns(
-        includeRowHeader: Boolean,
-        columns: List<ColumnSlice>,
-    ): List<ResultColumn> = buildList {
-        if (includeRowHeader)
-            add(ResultColumn(rowDimensions.firstOrNull()?.label ?: "Row labels", "text"))
+    private fun rowHeaderValues(slice: RowSlice): List<String> {
+        val path = slice.node.labels()
+        return List(rowDimensions.size) { index ->
+            when (slice.kind) {
+                PivotRowKind.GrandTotal -> if (index == 0) slice.label else ""
+                PivotRowKind.Subtotal ->
+                    when {
+                        index < slice.node.depth - 1 -> path.getOrElse(index) { "" }
+                        index == slice.node.depth - 1 -> slice.label
+                        else -> ""
+                    }
+                PivotRowKind.Group,
+                PivotRowKind.Leaf -> path.getOrElse(index) { "" }
+            }
+        }
+    }
+
+    private fun buildOutputColumns(columns: List<ColumnSlice>): List<ResultColumn> = buildList {
+        for (dimension in rowDimensions) {
+            add(ResultColumn(dimension.label, "text"))
+        }
         for ((_, labels, _, _) in columns) {
             for (measure in measures) {
                 val prefix = labels.joinToString(" / ")
@@ -737,6 +755,18 @@ fun pivotCellKey(cell: ResultCell?): String =
         is ResultCell.Null -> "<null>"
         else -> "${cell::class.simpleName}:${cellText(cell)}"
     }
+
+fun pivotCellMatches(cell: ResultCell?, includedKeys: Set<String>): Boolean {
+    if (includedKeys.isEmpty()) return true
+    if (pivotCellKey(cell) in includedKeys) return true
+    val text =
+        when (cell) {
+            null,
+            is ResultCell.Null -> "<null>"
+            else -> cellText(cell)
+        }
+    return text in includedKeys
+}
 
 fun pivotCellLineageKey(rowPath: String, columnPath: String, measureAlias: String): String =
     cellKey(rowPath, columnPath, measureAlias)

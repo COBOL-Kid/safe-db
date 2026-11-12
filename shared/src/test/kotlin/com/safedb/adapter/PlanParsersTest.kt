@@ -331,6 +331,23 @@ class PlanParsersTest {
     }
 
     @Test
+    fun mysqlImpossibleWhereIsAZeroRowPlanInsteadOfParseFailure() {
+        val impossible =
+            parseMySqlPlan("""{"query_block":{"select_id":1,"message":"Impossible WHERE"}}""")
+        assertNotNull(impossible)
+        assertTrue(impossible.relations.isEmpty())
+        assertEquals(0.0, impossible.rawOptimizerCost)
+
+        val constMiss =
+            parseMySqlPlan(
+                """{"query_block":{"select_id":1,"message":"no matching row in const table"}}"""
+            )
+        assertNotNull(constMiss)
+        assertTrue(constMiss.relations.isEmpty())
+        assertEquals(0.0, constMiss.rawOptimizerCost)
+    }
+
+    @Test
     fun malformedAndUnknownShapesRemainUnavailableToCallers() {
         assertNull(parsePostgresPlan("not json"))
         assertNull(parseMySqlPlan("{}"))

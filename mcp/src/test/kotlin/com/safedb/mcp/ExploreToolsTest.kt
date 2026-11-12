@@ -3,6 +3,7 @@ package com.safedb.mcp
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
+import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotMeasure
 import com.safedb.explore.RecipeField
@@ -21,7 +22,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -232,6 +235,57 @@ class ExploreToolsTest {
             assertEquals("20", rows[0].jsonObject.getValue("amount").jsonPrimitive.content)
             assertEquals("east", rows[0].jsonObject.getValue("region").jsonPrimitive.content)
             assertEquals("10", rows[1].jsonObject.getValue("amount").jsonPrimitive.content)
+
+            val members =
+                client
+                    .callTool(
+                        "filter_result_rows",
+                        mapOf(
+                            "result_id" to resultId,
+                            "filters" to
+                                listOf(
+                                    Json.parseToJsonElement(
+                                        """{"column":"region","op":"members","included_keys":["east"]}"""
+                                    )
+                                ),
+                        ),
+                    )
+                    .json()
+            assertEquals("2", members.getValue("matched_row_count").jsonPrimitive.content)
+
+            val numericMembers =
+                client
+                    .callTool(
+                        "filter_result_rows",
+                        mapOf(
+                            "result_id" to resultId,
+                            "filters" to
+                                listOf(
+                                    Json.parseToJsonElement(
+                                        """{"column":"amount","op":"members","included_keys":["10"]}"""
+                                    )
+                                ),
+                        ),
+                    )
+                    .json()
+            assertEquals("1", numericMembers.getValue("matched_row_count").jsonPrimitive.content)
+
+            val internalKeys =
+                client
+                    .callTool(
+                        "filter_result_rows",
+                        mapOf(
+                            "result_id" to resultId,
+                            "filters" to
+                                listOf(
+                                    Json.parseToJsonElement(
+                                        """{"column":"region","op":"members","included_keys":["TextCell:east"]}"""
+                                    )
+                                ),
+                        ),
+                    )
+                    .json()
+            assertEquals("2", internalKeys.getValue("matched_row_count").jsonPrimitive.content)
         }
     }
 
@@ -630,7 +684,11 @@ class ExploreToolsTest {
     fun filterResultRowsSchemaDocumentsMembersIncludedKeys() = runBlocking {
         withTempMcpClient(exploreSampleService()) { client ->
             val filters =
-                client.listTools().tools.single { it.name == "filter_result_rows" }.inputSchema
+                client
+                    .listTools()
+                    .tools
+                    .single { it.name == "filter_result_rows" }
+                    .inputSchema
                     .properties
                     ?.get("filters")
                     ?.jsonObject
@@ -674,13 +732,12 @@ class ExploreToolsTest {
                                     ),
                                 ),
                             indexes = emptyList(),
-                        ),
+                        )
             )
         val eventsResult =
             QueryResult(
                 columns = listOf(ResultColumn("big_events__event_name", "text")),
-                rows =
-                    listOf(listOf(ResultCell.text("login")), listOf(ResultCell.text("logout"))),
+                rows = listOf(listOf(ResultCell.text("login")), listOf(ResultCell.text("logout"))),
                 rowCount = 2,
                 truncated = false,
                 warnings = emptyList(),
@@ -715,7 +772,9 @@ class ExploreToolsTest {
                         measures = listOf(PivotMeasure.countRows()),
                     ),
                 requiredFields =
-                    listOf(RecipeField(column = "event_name", label = "event_name", dataType = "text")),
+                    listOf(
+                        RecipeField(column = "event_name", label = "event_name", dataType = "text")
+                    ),
             )
         withTempMcpClient(service) { client ->
             val eventsId =
@@ -787,12 +846,223 @@ class ExploreToolsTest {
             assertEquals(listOf("customers.id", "Count"), aliasedDefault)
             assertEquals(listOf("orders.id", "Count"), aliasedOrders)
             assertEquals(listOf("customers.id", "Count"), aliasedCustomers)
+
+            val twoDimensions =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf(
+                            "result_id" to joinId,
+                            "row_dimensions" to listOf("c__id", "o__id"),
+                            "measures" to
+                                listOf(Json.parseToJsonElement("""{"alias":"n","fn":"count"}""")),
+                        ),
+                    )
+                    .json()
+            assertEquals(
+                listOf("customers.id", "orders.id", "Count"),
+                twoDimensions.getValue("columns").jsonArray.map {
+                    it.jsonObject.getValue("name").jsonPrimitive.content
+                },
+            )
+            val twoDimensionRows = twoDimensions.getValue("rows").jsonArray.map { it.jsonObject }
+            fun text(row: JsonObject, column: String): String? =
+                (row[column] as? JsonPrimitive)?.content
+            val leaf = twoDimensionRows.first { row ->
+                text(row, "customers.id") == "10" && text(row, "orders.id") == "1"
+            }
+            assertEquals("1", leaf.getValue("Count").jsonPrimitive.content)
+            val total = twoDimensionRows.first { row -> text(row, "customers.id") == "Total" }
+            assertEquals(JsonNull, total.getValue("orders.id"))
+            assertEquals("2", total.getValue("Count").jsonPrimitive.content)
+            val subtotal = twoDimensionRows.first { row ->
+                text(row, "customers.id")?.endsWith(" total") == true
+            }
+            assertEquals(JsonNull, subtotal.getValue("orders.id"))
+        }
+    }
+
+    @Test
+    fun pivotMeasureNamesAgreeForDefaultExplicitAndRecipe() = runBlocking {
+        val service = exploreSampleService()
+        val schema = service.schemas.getValue("c1")
+        service.schemas["c1"] =
+            schema.copy(
+                tables =
+                    schema.tables +
+                        TableInfo(
+                            schema = "public",
+                            name = "big_events",
+                            columns =
+                                listOf(
+                                    ColumnInfo(
+                                        name = "event_name",
+                                        dataType = "text",
+                                        nullable = false,
+                                    ),
+                                    ColumnInfo(name = "amount", dataType = "int", nullable = false),
+                                    ColumnInfo(name = "qty", dataType = "int", nullable = false),
+                                    ColumnInfo(
+                                        name = "customer_id",
+                                        dataType = "int",
+                                        nullable = false,
+                                    ),
+                                ),
+                            indexes = emptyList(),
+                        )
+            )
+        val eventsResult =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("big_events__event_name", "text"),
+                        ResultColumn("big_events__amount", "int"),
+                        ResultColumn("big_events__qty", "int"),
+                        ResultColumn("big_events__customer_id", "int"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("login"),
+                            ResultCell.integer(10),
+                            ResultCell.integer(2),
+                            ResultCell.integer(1),
+                        ),
+                        listOf(
+                            ResultCell.text("logout"),
+                            ResultCell.integer(4),
+                            ResultCell.integer(1),
+                            ResultCell.integer(2),
+                        ),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val joinResult =
+            QueryResult(
+                columns = listOf(ResultColumn("c__id", "int"), ResultColumn("o__id", "int")),
+                rows = listOf(listOf(ResultCell.integer(10), ResultCell.integer(1))),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        service.runQueryHandler = { request ->
+            val aliases = request.spec.tables.map { it.alias }.toSet()
+            val result = if ("c" in aliases && "o" in aliases) joinResult else eventsResult
+            QueryRunResult(result, allowedMcpRisk())
+        }
+        service.exploreRecipes +=
+            ExploreRecipe(
+                id = "r-sum",
+                name = "Event sums",
+                createdAt = "1",
+                updatedAt = "2",
+                defaultMode = ExploreMode.Pivot,
+                pivot =
+                    ExploreConfig(
+                        rowDimensions = listOf(PivotDimension("event_name")),
+                        measures =
+                            listOf(PivotMeasure("total", MeasureFn.Sum, "amount", "Sum amount")),
+                    ),
+                requiredFields =
+                    listOf(
+                        RecipeField(column = "event_name", label = "event_name", dataType = "text"),
+                        RecipeField(column = "amount", label = "amount", dataType = "int"),
+                    ),
+            )
+        withTempMcpClient(service) { client ->
+            val eventsId =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to
+                                "SELECT event_name, amount, qty, customer_id FROM public.big_events",
+                        ),
+                    )
+                    .json()
+                    .getValue("result_id")
+                    .jsonPrimitive
+                    .content
+            val explicit =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf(
+                            "result_id" to eventsId,
+                            "row_dimensions" to listOf("big_events__event_name"),
+                            "measures" to
+                                listOf(
+                                    Json.parseToJsonElement(
+                                        """{"alias":"total","fn":"sum","source_column":"big_events__amount"}"""
+                                    ),
+                                    Json.parseToJsonElement(
+                                        """{"alias":"avg_qty","fn":"avg","source_column":"big_events__qty"}"""
+                                    ),
+                                    Json.parseToJsonElement(
+                                        """{"alias":"buyers","fn":"count_distinct","source_column":"big_events__customer_id"}"""
+                                    ),
+                                ),
+                            "show_column_totals" to false,
+                        ),
+                    )
+                    .columnNames()
+            assertEquals(
+                listOf("event_name", "Sum amount", "Avg qty", "Distinct customer_id"),
+                explicit,
+            )
+
+            val recipeNames =
+                client
+                    .callTool(
+                        "apply_recipe",
+                        mapOf("result_id" to eventsId, "recipe_id" to "r-sum"),
+                    )
+                    .columnNames()
+            assertEquals(listOf("event_name", "Sum amount"), recipeNames)
+
+            val joinId =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to
+                                "SELECT c.id, o.id FROM public.customers c JOIN public.orders o ON c.id = o.customer_id",
+                        ),
+                    )
+                    .json()
+                    .getValue("result_id")
+                    .jsonPrimitive
+                    .content
+            val collidingMeasures =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf(
+                            "result_id" to joinId,
+                            "row_dimensions" to listOf("c__id"),
+                            "measures" to
+                                listOf(
+                                    Json.parseToJsonElement(
+                                        """{"alias":"max_id","fn":"max","source_column":"o__id"}"""
+                                    )
+                                ),
+                            "show_column_totals" to false,
+                        ),
+                    )
+                    .columnNames()
+            assertEquals(listOf("customers.id", "Max orders.id"), collidingMeasures)
         }
     }
 }
 
 private fun CallToolResult.columnNames(): List<String> =
-    json().getValue("columns").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content }
+    json().getValue("columns").jsonArray.map {
+        it.jsonObject.getValue("name").jsonPrimitive.content
+    }
 
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()

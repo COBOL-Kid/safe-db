@@ -8,6 +8,7 @@ import com.safedb.explore.applyExplore
 import com.safedb.explore.applyWorksheet
 import com.safedb.explore.remapRecipe
 import com.safedb.explore.resolveRecipeFields
+import com.safedb.explore.withTableAwareLabels
 import com.safedb.model.FilterGroup
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
@@ -167,7 +168,7 @@ private suspend fun handleApplyRecipe(
             val preview =
                 applyExplore(
                     entry.result,
-                    config.withTableAwareDimensionLabels(entry.result.columns, entry.tables),
+                    config.withTableAwareLabels(entry.result.columns, entry.tables),
                 )
             pivotResultReceipt(resultId, entry, preview)
         }

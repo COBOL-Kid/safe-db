@@ -95,6 +95,9 @@ class SecretsTest {
         val message = result.exceptionOrNull()!!.message!!
         assertTrue(message.contains("Password not found"))
         assertTrue(message.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
+        assertTrue(message.contains("Unset SAFEDB_KEYCHAIN_BACKEND"))
+        assertTrue(message.contains("do not add the connection again"))
+        assertFalse(message.contains("Delete and add the connection again"))
     }
 
     @Test
