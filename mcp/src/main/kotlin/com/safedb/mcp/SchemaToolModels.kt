@@ -134,8 +134,9 @@ internal fun TableInfo.toSummary(): TableSummary =
         columnCount = columns.size,
     )
 
-internal fun TableInfo.toDetail(tables: List<TableInfo>): TableDetail =
-    TableDetail(
+internal fun TableInfo.toDetail(tables: List<TableInfo>): TableDetail {
+    val visibleKeys = tables.mapTo(HashSet()) { it.schema to it.name }
+    return TableDetail(
         schema = schema,
         name = name,
         qualifiedName = qualifiedName(),
@@ -160,15 +161,17 @@ internal fun TableInfo.toDetail(tables: List<TableInfo>): TableDetail =
                 )
             },
         foreignKeys =
-            foreignKeys.map {
-                TableForeignKey(
-                    name = it.name,
-                    columns = it.columns,
-                    referencedSchema = it.referencedSchema,
-                    referencedTable = it.referencedTable,
-                    referencedColumns = it.referencedColumns,
-                )
-            },
+            foreignKeys
+                .filter { (it.referencedSchema to it.referencedTable) in visibleKeys }
+                .map {
+                    TableForeignKey(
+                        name = it.name,
+                        columns = it.columns,
+                        referencedSchema = it.referencedSchema,
+                        referencedTable = it.referencedTable,
+                        referencedColumns = it.referencedColumns,
+                    )
+                },
         incomingForeignKeys =
             incomingForeignKeysFor(tables, schema, name).map {
                 TableIncomingForeignKey(
@@ -182,6 +185,7 @@ internal fun TableInfo.toDetail(tables: List<TableInfo>): TableDetail =
                 )
             },
     )
+}
 
 internal fun com.safedb.schema.CatalogTableMatch.toSummary(): CatalogMatchSummary =
     CatalogMatchSummary(

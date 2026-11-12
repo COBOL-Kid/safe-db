@@ -6,18 +6,6 @@ import com.safedb.model.Schema
 import com.safedb.model.TableInfo
 import com.safedb.model.keyColumnNames
 
-internal enum class SchemaMapCardinality {
-    OneToOne,
-    ManyToOne,
-    Unknown,
-}
-
-internal enum class SchemaMapOptionality {
-    Required,
-    Optional,
-    Unknown,
-}
-
 internal enum class SchemaMapColumnMarkerKind {
     PrimaryKey,
     Unique,
@@ -54,8 +42,8 @@ internal data class SchemaMapRelationship(
     val targetNodeId: String,
     val sourceColumns: List<String>,
     val targetColumns: List<String>,
-    val cardinality: SchemaMapCardinality,
-    val optionality: SchemaMapOptionality,
+    val cardinality: RelationshipCardinality,
+    val optionality: RelationshipOptionality,
     val label: String,
 )
 
@@ -102,18 +90,8 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                         foreignKey.referencedTable,
                     )
             }
-            val cardinality =
-                when (relationshipCardinality(table, foreignKey)) {
-                    RelationshipCardinality.OneToOne -> SchemaMapCardinality.OneToOne
-                    RelationshipCardinality.ManyToOne -> SchemaMapCardinality.ManyToOne
-                    RelationshipCardinality.Unknown -> SchemaMapCardinality.Unknown
-                }
-            val optionality =
-                when (relationshipOptionality(table, foreignKey)) {
-                    RelationshipOptionality.Required -> SchemaMapOptionality.Required
-                    RelationshipOptionality.Optional -> SchemaMapOptionality.Optional
-                    RelationshipOptionality.Unknown -> SchemaMapOptionality.Unknown
-                }
+            val cardinality = relationshipCardinality(table, foreignKey)
+            val optionality = relationshipOptionality(table, foreignKey)
             relationships +=
                 SchemaMapRelationship(
                     id =
@@ -263,7 +241,7 @@ internal fun layoutSchemaMap(
 private fun relationshipLabel(
     table: TableInfo,
     foreignKey: ForeignKeyInfo,
-    cardinality: SchemaMapCardinality,
+    cardinality: RelationshipCardinality,
 ): String {
     val source =
         relationshipEndpoint(
@@ -280,9 +258,9 @@ private fun relationshipLabel(
             localSchema = table.schema,
         )
     return when (cardinality) {
-        SchemaMapCardinality.ManyToOne -> "$target has many $source."
-        SchemaMapCardinality.OneToOne -> "$target can have one $source."
-        SchemaMapCardinality.Unknown -> "$source is connected to $target."
+        RelationshipCardinality.ManyToOne -> "$target has many $source."
+        RelationshipCardinality.OneToOne -> "$target can have one $source."
+        RelationshipCardinality.Unknown -> "$source is connected to $target."
     }
 }
 

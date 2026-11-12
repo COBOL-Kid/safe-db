@@ -1,8 +1,6 @@
 package com.safedb.mcp
 
 import com.safedb.model.Settings
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -125,6 +123,32 @@ class SchemaJoinToolsTest {
     }
 
     @Test
+    fun findJoinPathsRejectsNonStringDefaultSchemaWithoutLoadingCatalog() = runBlocking {
+        val service = catalogService()
+        withTempMcpClient(service) { client ->
+            val result =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "from_table" to "orders",
+                        "default_schema" to 123,
+                    ),
+                )
+            assertEquals(true, result.isError)
+            assertEquals(
+                "invalid_arguments",
+                result.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                "default_schema must be a string",
+                result.json().getValue("message").jsonPrimitive.content,
+            )
+        }
+        assertTrue(service.schemaCalls.isEmpty())
+    }
+
+    @Test
     fun findJoinPathsRejectsMaxHopsOutsideTheRange() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
@@ -226,8 +250,3 @@ class SchemaJoinToolsTest {
         }
     }
 }
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): kotlinx.serialization.json.JsonObject =
-    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject

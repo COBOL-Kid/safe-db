@@ -20,12 +20,12 @@ import kotlinx.serialization.json.put
 
 private val SAFE_EXPORT_FILENAME = Regex("^[A-Za-z0-9._-]+$")
 
-internal fun registerExportTools(server: Server, resultStore: ResultStore, resultsDir: Path) {
+internal fun registerExportTools(server: Server, resultStore: ResultStore, exportsDir: Path) {
     server.addTool(
         name = "export_result",
         description =
             "Write the in-memory sample of a previous run_query to a CSV file under the " +
-                "MCP results directory. Pass result_id and an optional simple filename " +
+                "MCP exports directory. Pass result_id and an optional simple filename " +
                 "(letters, digits, dot, underscore, and dash only); .csv is appended when " +
                 "missing. Returns result_id, file_path, row_count, bytes, and sample_capped. " +
                 "Unknown or expired result_id returns not_found.",
@@ -33,35 +33,33 @@ internal fun registerExportTools(server: Server, resultStore: ResultStore, resul
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "result_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "result_id from a successful run_query receipt")
-                            },
-                        )
+                        put("result_id", resultIdProperty())
                         put(
                             "filename",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Optional simple filename without path separators. " +
-                                        "Defaults to <result_id>.csv.",
-                                )
-                            },
+                            stringProp(
+                                "Optional simple filename without path separators. " +
+                                    "Defaults to <result_id>.csv."
+                            ),
                         )
                     },
                 required = listOf("result_id"),
             ),
+        outputSchema =
+            objectOutputSchema(listOf("result_id", "file_path", "row_count", "bytes")) {
+                put("result_id", stringProp())
+                put("file_path", stringProp())
+                put("row_count", intProp())
+                put("bytes", intProp())
+                put("sample_capped", boolProp())
+            },
     ) { request ->
-        runMcpTool("export_result failed") { handleExportResult(resultStore, resultsDir, request) }
+        runMcpTool("export_result failed") { handleExportResult(resultStore, exportsDir, request) }
     }
 }
 
 private suspend fun handleExportResult(
     resultStore: ResultStore,
-    resultsDir: Path,
+    exportsDir: Path,
     request: CallToolRequest,
 ): CallToolResult {
     requireKnownArguments(request, "result_id", "filename").getOrElse {
@@ -83,7 +81,6 @@ private suspend fun handleExportResult(
             is Arg.Err -> return resolved.result
         }
 
-    val exportsDir = resultsDir.resolve("exports")
     val target = exportsDir.resolve(resolvedFilename)
     val bytes =
         withContext(Dispatchers.IO) {

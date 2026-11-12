@@ -1,8 +1,6 @@
 package com.safedb.mcp
 
 import io.modelcontextprotocol.kotlin.sdk.client.Client
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -11,22 +9,20 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class ExportToolsTest {
     @Test
     fun exportResultWritesCsvWithTheDefaultFilename() = runBlocking {
         val service = exportService()
-        withExportClient(service) { client, resultsDir ->
+        withExportClient(service) { client, _, exportsDir ->
             val resultId = storeExportResult(client)
             val receipt = client.callJson("export_result", mapOf("result_id" to resultId))
             assertEquals(resultId, receipt.string("result_id"))
             assertEquals("2", receipt.string("row_count"))
             assertFalse(receipt.containsKey("sample_capped"))
-            val target = resultsDir.resolve("exports").resolve("$resultId.csv")
+            val target = exportsDir.resolve("$resultId.csv")
             assertEquals(target.toString(), receipt.string("file_path"))
             assertTrue(Files.isRegularFile(target))
             assertEquals(Files.size(target).toString(), receipt.string("bytes"))
@@ -40,7 +36,7 @@ class ExportToolsTest {
     @Test
     fun exportResultAcceptsSimpleCustomFilenames() = runBlocking {
         val service = exportService()
-        withExportClient(service) { client, resultsDir ->
+        withExportClient(service) { client, _, exportsDir ->
             val resultId = storeExportResult(client)
 
             val withoutExtension =
@@ -48,7 +44,7 @@ class ExportToolsTest {
                     "export_result",
                     mapOf("result_id" to resultId, "filename" to "report"),
                 )
-            val report = resultsDir.resolve("exports").resolve("report.csv")
+            val report = exportsDir.resolve("report.csv")
             assertEquals(report.toString(), withoutExtension.string("file_path"))
             assertTrue(Files.isRegularFile(report))
 
@@ -57,7 +53,7 @@ class ExportToolsTest {
                     "export_result",
                     mapOf("result_id" to resultId, "filename" to "Report.CSV"),
                 )
-            val upper = resultsDir.resolve("exports").resolve("Report.CSV")
+            val upper = exportsDir.resolve("Report.CSV")
             assertEquals(upper.toString(), withUppercaseExtension.string("file_path"))
             assertTrue(Files.isRegularFile(upper))
 
@@ -71,7 +67,7 @@ class ExportToolsTest {
             val blank =
                 client.callJson("export_result", mapOf("result_id" to resultId, "filename" to ""))
             assertEquals(
-                resultsDir.resolve("exports").resolve("$resultId.csv").toString(),
+                exportsDir.resolve("$resultId.csv").toString(),
                 blank.string("file_path"),
             )
         }
@@ -80,7 +76,7 @@ class ExportToolsTest {
     @Test
     fun exportResultRejectsPathSeparatorsAndUnknownResults() = runBlocking {
         val service = exportService()
-        withExportClient(service) { client, resultsDir ->
+        withExportClient(service) { client, resultsDir, _ ->
             val resultId = storeExportResult(client)
             listOf("../evil", "sub/evil", "..", ".", ".hidden", "a b.csv", """a\b.csv""").forEach {
                 filename ->
@@ -129,10 +125,41 @@ class ExportToolsTest {
                 sampleMcpQueryResult(truncated = true),
                 allowedMcpRisk(),
             )
-        withExportClient(service) { client, _ ->
+        withExportClient(service) { client, _, _ ->
             val resultId = storeExportResult(client)
             val receipt = client.callJson("export_result", mapOf("result_id" to resultId))
             assertEquals("true", receipt.string("sample_capped"))
+        }
+    }
+
+    @Test
+    fun exportedCsvSurvivesResultStoreRestart() = runBlocking {
+        val service = exportService()
+        val dataDir = Files.createTempDirectory("safedb-mcp-export-persist")
+        val resultsDir = dataDir.resolve("results")
+        val exportsDir = dataDir.resolve("exports")
+        try {
+            lateinit var csvPath: Path
+            lateinit var csvContents: String
+            withMcpClient(
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = resultsDir,
+                    exportsDir = exportsDir,
+                )
+            ) { client ->
+                val resultId = storeExportResult(client)
+                val receipt = client.callJson("export_result", mapOf("result_id" to resultId))
+                csvPath = exportsDir.resolve("$resultId.csv")
+                assertEquals(csvPath.toString(), receipt.string("file_path"))
+                assertTrue(Files.isRegularFile(csvPath))
+                csvContents = Files.readString(csvPath)
+            }
+            ResultStore(resultsDir)
+            assertTrue(Files.isRegularFile(csvPath))
+            assertEquals(csvContents, Files.readString(csvPath))
+        } finally {
+            dataDir.toFile().deleteRecursively()
         }
     }
 
@@ -147,15 +174,23 @@ class ExportToolsTest {
 
 private suspend fun withExportClient(
     service: RecordingSafeDbService,
-    block: suspend (Client, Path) -> Unit,
+    block: suspend (Client, Path, Path) -> Unit,
 ) {
-    val resultsDir = Files.createTempDirectory("safedb-mcp-export")
+    val dataDir = Files.createTempDirectory("safedb-mcp-export")
+    val resultsDir = dataDir.resolve("results")
+    val exportsDir = dataDir.resolve("exports")
     try {
-        withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir)) { client ->
-            block(client, resultsDir)
+        withMcpClient(
+            createSafeDbMcpServer(
+                service,
+                resultsDir = resultsDir,
+                exportsDir = exportsDir,
+            )
+        ) { client ->
+            block(client, resultsDir, exportsDir)
         }
     } finally {
-        resultsDir.toFile().deleteRecursively()
+        dataDir.toFile().deleteRecursively()
     }
 }
 
@@ -187,8 +222,5 @@ private suspend fun storeExportResult(client: Client): String {
 
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()
-
-private fun CallToolResult.json(): JsonObject =
-    Json.parseToJsonElement((content.single() as TextContent).text).jsonObject
 
 private fun JsonObject.string(name: String): String = getValue(name).jsonPrimitive.content

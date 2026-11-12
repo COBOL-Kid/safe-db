@@ -346,18 +346,25 @@ class SqlParserTest {
             )
         assertEquals(FilterOp.Like, like.op)
         assertEquals("x!%", like.values.single().raw)
+        assertTrue(like.likeEscape)
 
         val notLike =
             assertIs<SqlConditionAst.Predicate>(
                 parse("SELECT id FROM t WHERE a NOT LIKE 'x' ESCAPE '!'").where
             )
         assertEquals(FilterOp.NotLike, notLike.op)
+        assertTrue(notLike.likeEscape)
 
         val ilike =
             assertIs<SqlConditionAst.Predicate>(
                 parse("SELECT id FROM t WHERE a ILIKE 'x' ESCAPE '!'", Dialect.Postgres).where
             )
         assertEquals(FilterOp.Ilike, ilike.op)
+        assertTrue(ilike.likeEscape)
+
+        val withoutEscape =
+            assertIs<SqlConditionAst.Predicate>(parse("SELECT id FROM t WHERE a LIKE 'x'").where)
+        assertFalse(withoutEscape.likeEscape)
     }
 
     @Test

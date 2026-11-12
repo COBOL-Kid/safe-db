@@ -35,8 +35,8 @@ class SchemaMapGraphTest {
             )
 
         val relationship = graph.relationships.single()
-        assertEquals(SchemaMapCardinality.ManyToOne, relationship.cardinality)
-        assertEquals(SchemaMapOptionality.Required, relationship.optionality)
+        assertEquals(RelationshipCardinality.ManyToOne, relationship.cardinality)
+        assertEquals(RelationshipOptionality.Required, relationship.optionality)
         assertEquals("customers.id has many orders.customer_id.", relationship.label)
     }
 
@@ -82,8 +82,8 @@ class SchemaMapGraphTest {
             )
 
         val relationship = graph.relationships.single()
-        assertEquals(SchemaMapCardinality.OneToOne, relationship.cardinality)
-        assertEquals(SchemaMapOptionality.Optional, relationship.optionality)
+        assertEquals(RelationshipCardinality.OneToOne, relationship.cardinality)
+        assertEquals(RelationshipOptionality.Optional, relationship.optionality)
         assertEquals(
             "customers (tenant_id and id) can have one profile (tenant_id and customer_id).",
             relationship.label,
@@ -103,7 +103,7 @@ class SchemaMapGraphTest {
         val relationship =
             buildSchemaMapGraph(Schema(listOf(parent(), child)), "public").relationships.single()
 
-        assertEquals(SchemaMapCardinality.Unknown, relationship.cardinality)
+        assertEquals(RelationshipCardinality.Unknown, relationship.cardinality)
         assertEquals(
             "orders.customer_id is connected to customers.id.",
             relationship.label,
@@ -134,9 +134,9 @@ class SchemaMapGraphTest {
         val relationship =
             buildSchemaMapGraph(Schema(listOf(parent(), child)), "public").relationships.single()
 
-        assertEquals(SchemaMapCardinality.ManyToOne, relationship.cardinality)
+        assertEquals(RelationshipCardinality.ManyToOne, relationship.cardinality)
 
-        fun cardinalityFor(index: IndexInfo): SchemaMapCardinality {
+        fun cardinalityFor(index: IndexInfo): RelationshipCardinality {
             val indexedChild =
                 table(
                     "orders",
@@ -150,7 +150,7 @@ class SchemaMapGraphTest {
                 .cardinality
         }
         assertEquals(
-            SchemaMapCardinality.ManyToOne,
+            RelationshipCardinality.ManyToOne,
             cardinalityFor(
                 IndexInfo(
                     "orders_partial_key",
@@ -161,7 +161,7 @@ class SchemaMapGraphTest {
             ),
         )
         assertEquals(
-            SchemaMapCardinality.Unknown,
+            RelationshipCardinality.Unknown,
             cardinalityFor(
                 IndexInfo(
                     "orders_unknown_predicate_key",
@@ -172,7 +172,7 @@ class SchemaMapGraphTest {
             ),
         )
         assertEquals(
-            SchemaMapCardinality.OneToOne,
+            RelationshipCardinality.OneToOne,
             cardinalityFor(
                 IndexInfo(
                     "orders_customer_pkey",

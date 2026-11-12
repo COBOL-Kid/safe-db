@@ -1,12 +1,13 @@
 package com.safedb.mcp
 
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import com.safedb.model.ColumnInfo
+import com.safedb.model.ForeignKeyInfo
+import com.safedb.model.Schema
+import com.safedb.model.TableInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonArray
@@ -338,6 +339,109 @@ class SchemaToolsTest {
     }
 
     @Test
+    fun describeTableResolvesExactCaseWhenBothExist() = runBlocking {
+        val service = catalogService()
+        val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
+        service.schemas["c1"] =
+            Schema(
+                tables =
+                    listOf(
+                        TableInfo(
+                            schema = "public",
+                            name = "Foo",
+                            columns = columns,
+                            indexes = emptyList(),
+                        ),
+                        TableInfo(
+                            schema = "public",
+                            name = "FOO",
+                            columns = columns,
+                            indexes = emptyList(),
+                        ),
+                    )
+            )
+        withTempMcpClient(service) { client ->
+            val foo =
+                client
+                    .callTool(
+                        "describe_table",
+                        mapOf("connection_id" to "c1", "schema" to "public", "table" to "Foo"),
+                    )
+                    .json()
+            assertEquals("Foo", foo.getValue("name").jsonPrimitive.content)
+
+            val upper =
+                client
+                    .callTool(
+                        "describe_table",
+                        mapOf("connection_id" to "c1", "schema" to "public", "table" to "FOO"),
+                    )
+                    .json()
+            assertEquals("FOO", upper.getValue("name").jsonPrimitive.content)
+
+            val ambiguous =
+                client.callTool(
+                    "describe_table",
+                    mapOf("connection_id" to "c1", "schema" to "public", "table" to "foo"),
+                )
+            assertEquals(true, ambiguous.isError)
+            assertEquals(
+                "invalid_arguments",
+                ambiguous.json().getValue("error").jsonPrimitive.content,
+            )
+            val message = ambiguous.json().getValue("message").jsonPrimitive.content
+            assertTrue(message.contains("public.Foo"))
+            assertTrue(message.contains("public.FOO"))
+        }
+    }
+
+    @Test
+    fun describeTableHidesOutgoingForeignKeysToBlockedSchemas() = runBlocking {
+        val service = catalogService()
+        val schema = service.schemas.getValue("c1")
+        val hiddenFk =
+            ForeignKeyInfo(
+                name = "orders_events_fk",
+                columns = listOf("customer_id"),
+                referencedSchema = "audit",
+                referencedTable = "events",
+                referencedColumns = listOf("id"),
+            )
+        service.schemas["c1"] =
+            schema.copy(
+                tables =
+                    schema.tables.map { table ->
+                        if (table.name == "orders") {
+                            table.copy(foreignKeys = table.foreignKeys + hiddenFk)
+                        } else {
+                            table
+                        }
+                    }
+            )
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "describe_table",
+                        mapOf("connection_id" to "c1", "schema" to "public", "table" to "orders"),
+                    )
+                    .json()
+            val foreignKeys = parsed.getValue("foreign_keys").jsonArray
+            assertEquals(1, foreignKeys.size)
+            val fk = foreignKeys.single().jsonObject
+            assertEquals("orders_customer_fk", fk.getValue("name").jsonPrimitive.content)
+            assertEquals("customers", fk.getValue("referenced_table").jsonPrimitive.content)
+            assertTrue(
+                foreignKeys.none {
+                    it.jsonObject.getValue("referenced_schema").jsonPrimitive.content == "audit"
+                }
+            )
+            assertFalse(parsed.toString().contains("orders_events_fk"))
+            assertFalse(parsed.toString().contains("audit"))
+        }
+    }
+
+    @Test
     fun describeCustomersReportsIncomingForeignKeys() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
@@ -436,7 +540,10 @@ class SchemaToolsTest {
         withTempMcpClient(catalogService()) { client ->
             val tools = client.listTools().tools.associateBy { it.name }
             assertEquals(true, tools.getValue("list_tables").annotations?.readOnlyHint)
-            assertNull(tools.getValue("list_tables").outputSchema)
+            assertTrue(
+                tools.getValue("list_tables").outputSchema?.properties?.containsKey("tables") ==
+                    true
+            )
             assertEquals(true, tools.getValue("describe_table").annotations?.readOnlyHint)
             assertTrue(
                 tools.getValue("describe_table").outputSchema?.properties?.containsKey("columns") ==
@@ -445,8 +552,3 @@ class SchemaToolsTest {
         }
     }
 }
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): kotlinx.serialization.json.JsonObject =
-    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject

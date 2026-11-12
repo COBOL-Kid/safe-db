@@ -1,6 +1,5 @@
 package com.safedb.mcp
 
-import com.safedb.model.TableInfo
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.GetPromptResult
@@ -11,8 +10,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.ReadResourceResult
 import io.modelcontextprotocol.kotlin.sdk.types.Role
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.TextResourceContents
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 
 internal const val CONNECTIONS_RESOURCE_URI = "safedb://connections"
 
@@ -61,13 +58,10 @@ internal fun registerMcpResourcesAndPrompts(
         val connectionId =
             variables["connection_id"]?.takeIf { it.isNotBlank() }
                 ?: throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
-        val connection =
-            service.listConnections().find { it.id == connectionId }
-                ?: throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
-        val schema = schemaCache.get(connectionId)
         val tables =
-            visibleTables(schema.tables, service.getSettings().blockedSchemas, connection.dialect)
-                .map { it.toResourceSummary() }
+            visibleCatalog(service, schemaCache, connectionId, refresh = false).getOrElse {
+                throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
+            }
         ReadResourceResult(
             contents =
                 listOf(
@@ -76,7 +70,7 @@ internal fun registerMcpResourcesAndPrompts(
                             "{connection_id}",
                             connectionId,
                         ),
-                        toolJson.encodeToString(tables),
+                        toolJson.encodeToString(TableListResult(tables.map { it.toSummary() })),
                     )
                 )
         )
@@ -94,13 +88,7 @@ internal fun registerMcpResourcesAndPrompts(
         val entry =
             resultStore.getEntry(resultId)
                 ?: throw McpException(RESOURCE_NOT_FOUND_CODE, "Result not found")
-        val summary =
-            ResultSummary(
-                resultId = resultId,
-                rowCount = entry.result.rowCount,
-                sampleCapped = entry.result.truncated,
-                columns = summarizeColumns(entry.result),
-            )
+        val summary = buildResultSummary(resultId, entry.result)
         ReadResourceResult(
             contents =
                 listOf(
@@ -209,19 +197,3 @@ private fun userWorkflowPrompt(
 
 private fun jsonResource(uri: String, text: String): TextResourceContents =
     TextResourceContents(text = text, uri = uri, mimeType = APPLICATION_JSON)
-
-private fun TableInfo.toResourceSummary(): ResourceTableSummary =
-    ResourceTableSummary(
-        schema = schema,
-        name = name,
-        qualifiedName = "$schema.$name",
-        columnCount = columns.size,
-    )
-
-@Serializable
-internal data class ResourceTableSummary(
-    val schema: String,
-    val name: String,
-    @SerialName("qualified_name") val qualifiedName: String,
-    @SerialName("column_count") val columnCount: Int,
-)

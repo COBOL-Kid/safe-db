@@ -44,15 +44,7 @@ internal fun registerWorkspaceTools(
         inputSchema =
             ToolSchema(
                 properties =
-                    buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Optional connection id from list_connections")
-                            },
-                        )
-                    }
+                    buildJsonObject { put("connection_id", connectionIdProperty(optional = true)) }
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
@@ -88,28 +80,12 @@ internal fun registerWorkspaceTools(
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "query_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Saved query id from list_saved_queries")
-                            },
-                        )
-                        put(
-                            "confirmation",
-                            buildJsonObject {
-                                put("type", "object")
-                                put(
-                                    "description",
-                                    "Echo the confirmation object from a confirmation_required " +
-                                        "error after showing the reasons to the user. Do not " +
-                                        "invent this object.",
-                                )
-                            },
-                        )
+                        put("query_id", stringProp("Saved query id from list_saved_queries"))
+                        put("confirmation", confirmationProperty())
                     },
                 required = listOf("query_id"),
             ),
+        outputSchema = queryReceiptOutputSchema(),
     ) { request ->
         runMcpTool("run_saved_query failed") { handleRunSavedQuery(service, resultStore, request) }
     }
@@ -125,41 +101,24 @@ internal fun registerWorkspaceTools(
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Connection id from list_connections")
-                            },
-                        )
-                        put(
-                            "name",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Display name for the saved query")
-                            },
-                        )
-                        put(
-                            "sql",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "A single SELECT accepted by run_query")
-                            },
-                        )
-                        put(
-                            "default_schema",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Schema used when a table name has no schema prefix. Copy " +
-                                        "list_tables.schema for this connection.",
-                                )
-                            },
-                        )
+                        put("connection_id", connectionIdProperty())
+                        put("name", stringProp("Display name for the saved query"))
+                        put("sql", sqlProperty("A single SELECT accepted by run_query"))
+                        put("default_schema", defaultSchemaProperty())
                     },
                 required = listOf("connection_id", "name", "sql"),
             ),
+        outputSchema =
+            objectOutputSchema(
+                listOf("id", "name", "connection_id", "sql", "tables", "created_at")
+            ) {
+                put("id", stringProp())
+                put("name", stringProp())
+                put("connection_id", stringProp())
+                put("sql", stringProp())
+                put("tables", arrayProp())
+                put("created_at", stringProp())
+            },
     ) { request ->
         runMcpTool("save_query failed") { handleSaveQuery(service, request, nowMs) }
     }
@@ -174,28 +133,12 @@ internal fun registerWorkspaceTools(
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "query_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Saved query id from list_saved_queries")
-                            },
-                        )
-                        put(
-                            "confirmation",
-                            buildJsonObject {
-                                put("type", "object")
-                                put(
-                                    "description",
-                                    "Echo the confirmation object from a confirmation_required " +
-                                        "error after showing the reasons to the user. Do not " +
-                                        "invent this object.",
-                                )
-                            },
-                        )
+                        put("query_id", stringProp("Saved query id from list_saved_queries"))
+                        put("confirmation", confirmationProperty())
                     },
                 required = listOf("query_id"),
             ),
+        outputSchema = objectOutputSchema(listOf("deleted")) { put("deleted", stringProp()) },
         toolAnnotations = ToolAnnotations(destructiveHint = true),
     ) { request ->
         handleDeleteSavedQuery(service, deleteTokens, request)
@@ -213,25 +156,14 @@ internal fun registerWorkspaceTools(
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Optional connection id from list_connections")
-                            },
-                        )
+                        put("connection_id", connectionIdProperty(optional = true))
                         put(
                             "limit",
-                            buildJsonObject {
-                                put("type", "integer")
-                                put(
-                                    "description",
-                                    "Max entries to return (1–$HISTORY_MAX_LIMIT). Default " +
-                                        "$HISTORY_DEFAULT_LIMIT. Values over $HISTORY_MAX_LIMIT " +
-                                        "cap at $HISTORY_MAX_LIMIT. 0 or negative is " +
-                                        "invalid_arguments.",
-                                )
-                            },
+                            boundedLimitProperty(
+                                defaultLimit = HISTORY_DEFAULT_LIMIT,
+                                maxLimit = HISTORY_MAX_LIMIT,
+                                noun = "entries",
+                            ),
                         )
                     }
             ),
@@ -301,11 +233,7 @@ private suspend fun handleSaveQuery(
             createdAt = (nowMs() / 1000).toString(),
         )
     service.saveSavedQuery(saved)
-    val payload =
-        toolJson.encodeToString(
-            saved.toSummary(mapOf(resolved.connection.id to resolved.connection))
-        )
-    return CallToolResult(content = listOf(TextContent(text = payload)))
+    return objectToolResult(saved.toSummary(mapOf(resolved.connection.id to resolved.connection)))
 }
 
 private suspend fun handleDeleteSavedQuery(
@@ -323,28 +251,18 @@ private suspend fun handleDeleteSavedQuery(
     val saved =
         service.listSavedQueries().find { it.id == queryId }
             ?: return toolError(ERROR_NOT_FOUND, "Saved query not found")
-    when (
-        val parsed =
-            parseDestructiveConfirmation(request, McpDeleteSavedQueryConfirmation.serializer())
+    return runDestructiveConfirmedTool(
+        request = request,
+        tokens = tokens,
+        targetId = queryId,
+        serializer = McpDeleteSavedQueryConfirmation.serializer(),
+        confirmedId = { it.queryId },
+        tokenOf = { it.token },
+        confirmationRequired = { token -> savedQueryConfirmationRequired(saved, token) },
+        failureMessage = "delete_saved_query failed",
     ) {
-        DestructiveConfirmationParse.Missing -> return savedQueryConfirmationRequired(saved, tokens)
-        is DestructiveConfirmationParse.Invalid -> return parsed.result
-        is DestructiveConfirmationParse.Ready -> {
-            if (
-                parsed.confirmation.queryId != queryId ||
-                    !tokens.matches(queryId, parsed.confirmation.token)
-            ) {
-                return savedQueryConfirmationRequired(saved, tokens)
-            }
-        }
-    }
-    return runMcpTool("delete_saved_query failed") {
         service.deleteSavedQuery(queryId)
-        tokens.consume(queryId)
-        CallToolResult(
-            content =
-                listOf(TextContent(text = toolJson.encodeToString(DeletedSavedQuery(queryId))))
-        )
+        objectToolResult(DeletedSavedQuery(queryId))
     }
 }
 
@@ -381,8 +299,13 @@ private suspend fun handleListQueryHistory(
 
 private const val MISSING_CONNECTION_SQL = "-- connection not found"
 
-private fun sqlForConnection(spec: QuerySpec, connection: ConnectionDef?): String =
-    connection?.let { specToSql(spec, it.dialect) } ?: MISSING_CONNECTION_SQL
+private fun sqlForConnection(spec: QuerySpec, connection: ConnectionDef?): String {
+    if (connection == null) return MISSING_CONNECTION_SQL
+    return when (val result = specToSql(spec, connection.dialect)) {
+        is Outcome.Ok -> result.value
+        is Outcome.Err -> "-- invalid query spec: ${result.message}"
+    }
+}
 
 private fun SavedQuery.toSummary(connectionsById: Map<String, ConnectionDef>): SavedQuerySummary =
     SavedQuerySummary(
@@ -411,11 +334,8 @@ private fun HistoryEntry.toSummary(
         riskGateState = riskGateState,
     )
 
-private fun savedQueryConfirmationRequired(
-    saved: SavedQuery,
-    tokens: IssuedTokens,
-): CallToolResult {
-    val confirmation = McpDeleteSavedQueryConfirmation(saved.id, tokens.issue(saved.id))
+private fun savedQueryConfirmationRequired(saved: SavedQuery, token: String): CallToolResult {
+    val confirmation = McpDeleteSavedQueryConfirmation(saved.id, token)
     return toolError(
         ERROR_CONFIRMATION_REQUIRED,
         "Deleting saved query '${saved.name}' (${saved.id}) removes it from this MCP store. " +

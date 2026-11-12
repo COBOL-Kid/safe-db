@@ -48,6 +48,7 @@ internal sealed class SqlConditionAst {
         val op: FilterOp,
         val values: List<SqlLiteralAst>,
         val span: SqlSpan,
+        val likeEscape: Boolean = false,
     ) : SqlConditionAst()
 }
 

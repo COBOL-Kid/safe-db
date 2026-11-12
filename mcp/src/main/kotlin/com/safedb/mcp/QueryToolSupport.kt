@@ -29,7 +29,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -42,10 +41,8 @@ internal suspend fun executeConfirmedQuery(
     request: CallToolRequest,
 ): CallToolResult {
     val confirmation =
-        when (val parsed = parseConfirmation(request)) {
-            is ConfirmationParse.Missing -> null
-            is ConfirmationParse.Invalid -> return parsed.result
-            is ConfirmationParse.Ready -> parsed.confirmation
+        parseConfirmation(request).getOrElse {
+            return it
         }
 
     return try {
@@ -113,7 +110,7 @@ internal suspend fun resolveSqlSpec(
 internal fun mcpParseMessage(issue: SqlIssue): String =
     when {
         issue.code == SqlIssueCode.SchemaRequired ->
-            "Pass default_schema from list_tables.schema, or qualify the table as schema.table."
+            "Pass default_schema from list_tables.tables[].schema, or qualify the table as schema.table."
         "Explore" in issue.message ->
             issue.message.replace("Explore", "pivot_result or summarize_result")
         else -> issue.message
@@ -122,12 +119,11 @@ internal fun mcpParseMessage(issue: SqlIssue): String =
 internal fun settingsDefaultSchema(settings: Settings, connectionId: String): String? =
     settings.defaultSchema.takeIf { settings.defaultConnectionId == connectionId }
 
-internal fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
+internal fun parseConfirmation(request: CallToolRequest): Arg<QueryExecutionConfirmation?> {
     val obj =
-        when (val parsed = optionalObject(request, "confirmation")) {
-            is Arg.Err -> return ConfirmationParse.Invalid(parsed.result)
-            is Arg.Ok -> parsed.value ?: return ConfirmationParse.Missing
-        }
+        optionalObject(request, "confirmation").getOrElse {
+            return Arg.Err(it)
+        } ?: return Arg.Ok(null)
     return try {
         val payload = toolJson.decodeFromJsonElement(McpQueryConfirmation.serializer(), obj)
         val conditions =
@@ -139,7 +135,7 @@ internal fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
                     )
                 }
                 .toSet()
-        ConfirmationParse.Ready(
+        Arg.Ok(
             QueryExecutionConfirmation(
                 connectionId = payload.connectionId,
                 connectionFingerprint = payload.connectionFingerprint,
@@ -147,10 +143,8 @@ internal fun parseConfirmation(request: CallToolRequest): ConfirmationParse {
                 conditions = conditions,
             )
         )
-    } catch (_: SerializationException) {
-        ConfirmationParse.Invalid(toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid"))
     } catch (_: IllegalArgumentException) {
-        ConfirmationParse.Invalid(toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid"))
+        Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid"))
     }
 }
 
@@ -256,14 +250,6 @@ private fun QueryExecutionConfirmation.toPayload(): McpQueryConfirmation =
                 }
                 .sortedWith(compareBy({ it.reasonCode }, { it.conditionKey })),
     )
-
-internal sealed interface ConfirmationParse {
-    data object Missing : ConfirmationParse
-
-    data class Ready(val confirmation: QueryExecutionConfirmation) : ConfirmationParse
-
-    data class Invalid(val result: CallToolResult) : ConfirmationParse
-}
 
 @Serializable
 internal data class QueryReceipt(

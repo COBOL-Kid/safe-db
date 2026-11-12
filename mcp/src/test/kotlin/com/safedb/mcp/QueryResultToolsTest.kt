@@ -2,10 +2,7 @@ package com.safedb.mcp
 
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
-import com.safedb.model.Settings
 import com.safedb.service.QueryRunResult
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,11 +17,18 @@ import kotlinx.serialization.json.jsonPrimitive
 class QueryResultToolsTest {
     @Test
     fun getResultRowsPagesWithCapAndSummarizeUsesStoredId() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+        val dataDir = Files.createTempDirectory("safedb-mcp-results")
+        val resultsDir = dataDir.resolve("results")
         try {
             val service = queryService()
             service.runQueryResult = sampleMcpRunResult(rowCount = 60, truncated = true)
-            withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir)) { client ->
+            withMcpClient(
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = resultsDir,
+                    exportsDir = dataDir.resolve("exports"),
+                )
+            ) { client ->
                 val receipt =
                     client
                         .callTool(
@@ -105,7 +109,7 @@ class QueryResultToolsTest {
                 assertEquals("true", idCol.getValue("distinct_truncated").jsonPrimitive.content)
             }
         } finally {
-            resultsDir.toFile().deleteRecursively()
+            dataDir.toFile().deleteRecursively()
         }
     }
 
@@ -243,7 +247,8 @@ class QueryResultToolsTest {
 
     @Test
     fun artifactWriteFailureStillReturnsPageableInMemoryResult() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+        val dataDir = Files.createTempDirectory("safedb-mcp-results")
+        val resultsDir = dataDir.resolve("results")
         try {
             val service = queryService()
             val store =
@@ -255,6 +260,7 @@ class QueryResultToolsTest {
                 createSafeDbMcpServer(
                     service,
                     resultsDir = resultsDir,
+                    exportsDir = dataDir.resolve("exports"),
                     resultStore = store,
                 )
             ) { client ->
@@ -294,13 +300,14 @@ class QueryResultToolsTest {
                 Files.list(resultsDir).use { files -> assertEquals(0L, files.count()) }
             }
         } finally {
-            resultsDir.toFile().deleteRecursively()
+            dataDir.toFile().deleteRecursively()
         }
     }
 
     @Test
     fun unknownAndExpiredResultIsNotFound() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+        val dataDir = Files.createTempDirectory("safedb-mcp-results")
+        val resultsDir = dataDir.resolve("results")
         try {
             val service = queryService()
             val clock = mutableListOf(1_000L)
@@ -310,6 +317,7 @@ class QueryResultToolsTest {
                     nowMs = { clock.single() },
                     resultStoreTtlMs = 100,
                     resultsDir = resultsDir,
+                    exportsDir = dataDir.resolve("exports"),
                 )
             ) { client ->
                 val missing = client.callTool("get_result_rows", emptyMap())
@@ -367,7 +375,7 @@ class QueryResultToolsTest {
                 )
             }
         } finally {
-            resultsDir.toFile().deleteRecursively()
+            dataDir.toFile().deleteRecursively()
         }
     }
 
@@ -380,18 +388,3 @@ class QueryResultToolsTest {
         }
     }
 }
-
-private fun queryService(): RecordingSafeDbService {
-    val service = RecordingSafeDbService()
-    service.connections += sampleMcpConnection()
-    service.passwords["c1"] = "should-not-leak"
-    service.schemas["c1"] = sampleMcpSchema()
-    service.settings = Settings(blockedSchemas = listOf("audit"))
-    service.runQueryResult = sampleMcpRunResult()
-    return service
-}
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): JsonObject =
-    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject

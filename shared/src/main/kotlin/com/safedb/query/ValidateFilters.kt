@@ -85,6 +85,12 @@ internal fun validateLeaf(
         )
     }
 
+    if (filter.likeEscape && filter.op !in setOf(FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike)) {
+        return Outcome.err(
+            "likeEscape is only valid with LIKE, NOT LIKE, or ILIKE (got '${opLabel(filter.op)}' on '${filter.tableAlias}.${filter.column}')"
+        )
+    }
+
     if (!col.isIndexed) {
         val warning =
             "This query may scan more data than expected because it searches the non-indexed field '${table.name}.${col.name}'. Safe DB will still use the row limit and timeout."

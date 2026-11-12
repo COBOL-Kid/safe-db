@@ -52,7 +52,7 @@ class McpCliRecipesTest {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
         val recipeFile = directory.resolve("recipe.json")
         Files.writeString(recipeFile, MINIMAL_RECIPE_JSON)
-        val service = realRecipeService(directory)
+        val service = createMcpService(directory)
 
         val importIo = BufferCliIo()
         val importCommand = parseMcpArgs(arrayOf("recipes", "import", recipeFile.toString()))
@@ -101,7 +101,7 @@ class McpCliRecipesTest {
             0,
             executeMcpCommand(
                 McpCommand.RecipesList,
-                realRecipeService(directory),
+                createMcpService(directory),
                 io,
                 tty = false,
             ),
@@ -112,7 +112,7 @@ class McpCliRecipesTest {
     @Test
     fun recipesExportUnknownIdExits1() = runBlocking {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val service = realRecipeService(directory)
+        val service = createMcpService(directory)
         val io = BufferCliIo()
 
         assertEquals(
@@ -128,7 +128,7 @@ class McpCliRecipesTest {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
         val recipeFile = directory.resolve("recipe.json")
         Files.writeString(recipeFile, "{ not a recipe")
-        val service = realRecipeService(directory)
+        val service = createMcpService(directory)
         val io = BufferCliIo()
         val command = parseMcpArgs(arrayOf("recipes", "import", recipeFile.toString()))
 
@@ -141,7 +141,7 @@ class McpCliRecipesTest {
     @Test
     fun recipesRelativeImportPathIsRejectedWithoutSaving() = runBlocking {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val service = realRecipeService(directory)
+        val service = createMcpService(directory)
         val io = BufferCliIo()
 
         assertEquals(
@@ -155,7 +155,7 @@ class McpCliRecipesTest {
     @Test
     fun recipesImportRejectsMissingAndOversizedFiles() = runBlocking {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
-        val service = realRecipeService(directory)
+        val service = createMcpService(directory)
 
         val missingIo = BufferCliIo()
         assertEquals(
@@ -190,7 +190,7 @@ class McpCliRecipesTest {
         val directory = Files.createTempDirectory("safedb-mcp-cli")
         val recipeFile = directory.resolve("invalid-utf8.json")
         Files.write(recipeFile, byteArrayOf(0x7B, 0xFF.toByte(), 0x7D))
-        val service = realRecipeService(directory)
+        val service = createMcpService(directory)
         val io = BufferCliIo()
         val command = parseMcpArgs(arrayOf("recipes", "import", recipeFile.toString()))
 

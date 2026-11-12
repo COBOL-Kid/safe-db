@@ -31,10 +31,15 @@ internal fun resolveTable(
     tableName: String,
     tables: List<TableInfo>,
 ): Arg<TableInfo> {
-    val matches = tables.filter {
-        it.schema.equals(schemaName, ignoreCase = true) &&
-            it.name.equals(tableName, ignoreCase = true)
-    }
+    val matches =
+        matchExactThenIgnoreCase(
+            tables,
+            exactPredicate = { it.schema == schemaName && it.name == tableName },
+            ignoreCasePredicate = {
+                it.schema.equals(schemaName, ignoreCase = true) &&
+                    it.name.equals(tableName, ignoreCase = true)
+            },
+        )
     return pickTable(matches, unqualifiedReference = null, allTables = tables)
 }
 
@@ -42,12 +47,22 @@ internal fun resolveUnqualifiedTable(
     reference: String,
     tables: List<TableInfo>,
 ): Arg<TableInfo> {
-    val exact = tables.filter { it.name == reference }
-    if (exact.isNotEmpty()) {
-        return pickTable(exact, reference, tables)
-    }
-    val matches = tables.filter { it.name.equals(reference, ignoreCase = true) }
+    val matches =
+        matchExactThenIgnoreCase(
+            tables,
+            exactPredicate = { it.name == reference },
+            ignoreCasePredicate = { it.name.equals(reference, ignoreCase = true) },
+        )
     return pickTable(matches, reference, tables)
+}
+
+private fun matchExactThenIgnoreCase(
+    tables: List<TableInfo>,
+    exactPredicate: (TableInfo) -> Boolean,
+    ignoreCasePredicate: (TableInfo) -> Boolean,
+): List<TableInfo> {
+    val exact = tables.filter(exactPredicate)
+    return if (exact.isNotEmpty()) exact else tables.filter(ignoreCasePredicate)
 }
 
 private fun pickTable(

@@ -1,5 +1,6 @@
 package com.safedb.query
 
+import com.safedb.model.BindValue
 import com.safedb.model.CURRENT_SCHEMA_VERSION
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ColumnSel
@@ -15,6 +16,7 @@ import com.safedb.model.GroupSpec
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.MetadataCoverage
+import com.safedb.model.Outcome
 import com.safedb.model.QuerySpec
 import com.safedb.model.Schema
 import com.safedb.model.SortDirection
@@ -26,7 +28,6 @@ import com.safedb.query.sql.SqlParseResult
 import com.safedb.query.sql.parseSqlToSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -35,7 +36,7 @@ class SpecToSqlTest {
     fun rendersSimpleSelectWithQuotedIdentifiers() {
         val spec = simpleSpec()
 
-        val sql = specToSql(spec, Dialect.Postgres)
+        val sql = specToSql(spec, Dialect.Postgres).unwrap()
 
         assertEquals(
             "SELECT c.id, c.name\n" + "FROM public.customers AS c\n" + "LIMIT 25",
@@ -47,18 +48,18 @@ class SpecToSqlTest {
     fun rendersDialectSpecificLimitsAndAliasSyntax() {
         val spec = simpleSpec()
 
-        val mssql = specToSql(spec, Dialect.Mssql)
+        val mssql = specToSql(spec, Dialect.Mssql).unwrap()
         assertTrue(mssql.startsWith("SELECT TOP 25 "))
         assertTrue(mssql.contains("public.customers AS c"))
 
-        val oracle = specToSql(spec, Dialect.Oracle)
+        val oracle = specToSql(spec, Dialect.Oracle).unwrap()
         assertTrue(oracle.contains("\"public\".\"customers\" \"c\""))
         assertTrue(oracle.endsWith("FETCH FIRST 25 ROWS ONLY"))
 
-        val db2 = specToSql(spec, Dialect.Db2)
+        val db2 = specToSql(spec, Dialect.Db2).unwrap()
         assertTrue(db2.endsWith("FETCH FIRST 25 ROWS ONLY"))
 
-        val mysql = specToSql(spec, Dialect.MySql)
+        val mysql = specToSql(spec, Dialect.MySql).unwrap()
         assertTrue(mysql.contains("c.id"))
         assertTrue(mysql.endsWith("LIMIT 25"))
     }
@@ -67,7 +68,7 @@ class SpecToSqlTest {
     fun rendersStarDistinctAndUncappedSelects() {
         val spec = simpleSpec().copy(columns = emptyList(), distinct = true, uncapped = true)
 
-        val sql = specToSql(spec, Dialect.Postgres)
+        val sql = specToSql(spec, Dialect.Postgres).unwrap()
 
         assertTrue(sql.startsWith("SELECT DISTINCT *"))
         assertTrue(!sql.contains("LIMIT"))
@@ -112,7 +113,7 @@ class SpecToSqlTest {
                         leaf("name", FilterOp.NotContains, single(LiteralKind.Text, "no")),
                     ),
             )
-        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres)
+        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres).unwrap()
 
         assertTrue(sql.contains("c.name = 'O''Brien'"))
         assertTrue(sql.contains("c.age <> 42"))
@@ -149,8 +150,12 @@ class SpecToSqlTest {
             )
         val spec = simpleSpec().copy(filters = filters)
 
-        assertTrue(specToSql(spec, Dialect.Postgres).contains("c.name ILIKE '%abc%' ESCAPE '!'"))
-        assertTrue(specToSql(spec, Dialect.MySql).contains("c.name LIKE '%abc%' ESCAPE '!'"))
+        assertTrue(
+            specToSql(spec, Dialect.Postgres).unwrap().contains("c.name ILIKE '%abc%' ESCAPE '!'")
+        )
+        assertTrue(
+            specToSql(spec, Dialect.MySql).unwrap().contains("c.name LIKE '%abc%' ESCAPE '!'")
+        )
     }
 
     @Test
@@ -164,7 +169,7 @@ class SpecToSqlTest {
                         leaf("id", FilterOp.NotIn, list(LiteralKind.Int)),
                     ),
             )
-        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres)
+        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres).unwrap()
 
         assertTrue(sql.contains("1=0"))
         assertTrue(sql.contains("1=1"))
@@ -173,17 +178,16 @@ class SpecToSqlTest {
     }
 
     @Test
-    fun incompleteFriendlyPatternAndBetweenThrow() {
+    fun incompleteFriendlyPatternAndBetweenReturnErr() {
         val containsMissing =
             FilterGroup(
                 id = "root",
                 children = listOf(leaf("name", FilterOp.Contains, null)),
             )
         val containsFailure =
-            assertFailsWith<IllegalStateException> {
-                specToSql(simpleSpec().copy(filters = containsMissing), Dialect.Postgres)
-            }
-        assertTrue(containsFailure.message.orEmpty().contains("is missing its value"))
+            specToSql(simpleSpec().copy(filters = containsMissing), Dialect.Postgres)
+        assertIs<Outcome.Err>(containsFailure)
+        assertTrue(containsFailure.message.contains("single text value"))
 
         val betweenMissing =
             FilterGroup(
@@ -191,10 +195,9 @@ class SpecToSqlTest {
                 children = listOf(leaf("created_on", FilterOp.Between, null)),
             )
         val betweenFailure =
-            assertFailsWith<IllegalStateException> {
-                specToSql(simpleSpec().copy(filters = betweenMissing), Dialect.Postgres)
-            }
-        assertTrue(betweenFailure.message.orEmpty().contains("is missing its value"))
+            specToSql(simpleSpec().copy(filters = betweenMissing), Dialect.Postgres)
+        assertIs<Outcome.Err>(betweenFailure)
+        assertTrue(betweenFailure.message.contains("is missing its value"))
 
         val betweenWrongShape =
             FilterGroup(
@@ -209,10 +212,18 @@ class SpecToSqlTest {
                     ),
             )
         val wrongShapeFailure =
-            assertFailsWith<IllegalStateException> {
-                specToSql(simpleSpec().copy(filters = betweenWrongShape), Dialect.Postgres)
-            }
-        assertTrue(wrongShapeFailure.message.orEmpty().contains("BETWEEN expects a pair"))
+            specToSql(simpleSpec().copy(filters = betweenWrongShape), Dialect.Postgres)
+        assertIs<Outcome.Err>(wrongShapeFailure)
+        assertTrue(wrongShapeFailure.message.contains("BETWEEN expects a pair"))
+
+        val invalidInt =
+            FilterGroup(
+                id = "root",
+                children = listOf(leaf("age", FilterOp.Eq, single(LiteralKind.Int, "nope"))),
+            )
+        val invalidIntFailure = specToSql(simpleSpec().copy(filters = invalidInt), Dialect.Postgres)
+        assertIs<Outcome.Err>(invalidIntFailure)
+        assertTrue(invalidIntFailure.message.contains("not a valid integer"))
     }
 
     @Test
@@ -223,7 +234,7 @@ class SpecToSqlTest {
                 children =
                     listOf(leaf("name", FilterOp.Contains, single(LiteralKind.Text, "50%_!"))),
             )
-        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres)
+        val sql = specToSql(simpleSpec().copy(filters = filters), Dialect.Postgres).unwrap()
 
         assertTrue(sql.contains("c.name LIKE '%50!%!_!!%' ESCAPE '!'"))
     }
@@ -239,7 +250,7 @@ class SpecToSqlTest {
         val spec = simpleSpec().copy(filters = filters)
 
         for (dialect in Dialect.entries) {
-            val sql = specToSql(spec, dialect)
+            val sql = specToSql(spec, dialect).unwrap()
             val parsed =
                 assertIs<SqlParseResult.Success>(
                     parseSqlToSpec(sql, dialect, schema(), null),
@@ -248,8 +259,68 @@ class SpecToSqlTest {
             val parsedLeaf = assertIs<FilterNode.Leaf>(parsed.spec.filters.children.single())
             // ESCAPE is consumed, and Contains is not reconstructed from LIKE.
             assertEquals(FilterOp.Like, parsedLeaf.spec.op)
+            assertTrue(parsedLeaf.spec.likeEscape)
             assertEquals("%50!%!_!!%", (parsedLeaf.spec.value as FilterValue.Single).literal.text)
+            assertEscapedLikeRoundTrip(parsed.spec, dialect, "LIKE")
         }
+    }
+
+    @Test
+    fun roundTripsNotLikeAndIlikeEscapeClauses() {
+        val notLikeFilters =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(
+                        leaf(
+                            "name",
+                            FilterOp.NotLike,
+                            single(LiteralKind.Text, "%50!%!_!!%"),
+                            likeEscape = true,
+                        )
+                    ),
+            )
+        val notLikeSpec = simpleSpec().copy(filters = notLikeFilters)
+        for (dialect in Dialect.entries) {
+            val sql = specToSql(notLikeSpec, dialect).unwrap()
+            assertTrue(sql.contains("NOT LIKE"), sql)
+            assertTrue(sql.contains("ESCAPE '!'"), sql)
+            val parsed =
+                assertIs<SqlParseResult.Success>(
+                    parseSqlToSpec(sql, dialect, schema(), null),
+                    "failed for $dialect: $sql",
+                )
+            val parsedLeaf = assertIs<FilterNode.Leaf>(parsed.spec.filters.children.single())
+            assertEquals(FilterOp.NotLike, parsedLeaf.spec.op)
+            assertTrue(parsedLeaf.spec.likeEscape)
+            assertEscapedLikeRoundTrip(parsed.spec, dialect, "NOT LIKE")
+        }
+
+        val ilikeFilters =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(
+                        leaf(
+                            "name",
+                            FilterOp.Ilike,
+                            single(LiteralKind.Text, "%50!%!_!!%"),
+                            likeEscape = true,
+                        )
+                    ),
+            )
+        val ilikeSpec = simpleSpec().copy(filters = ilikeFilters)
+        val ilikeSql = specToSql(ilikeSpec, Dialect.Postgres).unwrap()
+        assertTrue(ilikeSql.contains("ILIKE"))
+        assertTrue(ilikeSql.contains("ESCAPE '!'"))
+        val parsedIlike =
+            assertIs<SqlParseResult.Success>(
+                parseSqlToSpec(ilikeSql, Dialect.Postgres, schema(), null)
+            )
+        val ilikeLeaf = assertIs<FilterNode.Leaf>(parsedIlike.spec.filters.children.single())
+        assertEquals(FilterOp.Ilike, ilikeLeaf.spec.op)
+        assertTrue(ilikeLeaf.spec.likeEscape)
+        assertEscapedLikeRoundTrip(parsedIlike.spec, Dialect.Postgres, "ILIKE")
     }
 
     @Test
@@ -273,7 +344,7 @@ class SpecToSqlTest {
                     ),
             )
 
-        val sql = specToSql(spec, Dialect.Postgres)
+        val sql = specToSql(spec, Dialect.Postgres).unwrap()
 
         assertTrue(sql.contains("INNER JOIN public.orders AS o ON o.customer_id = c.id"))
         assertTrue(sql.contains("GROUP BY c.id, c.name"))
@@ -284,7 +355,7 @@ class SpecToSqlTest {
     fun roundTripsThroughParseSqlToSpecAcrossDialects() {
         for (dialect in Dialect.entries) {
             val spec = richSpec()
-            val sql = specToSql(spec, dialect)
+            val sql = specToSql(spec, dialect).unwrap()
             val parsed = parseSqlToSpec(sql, dialect, schema(), defaultSchema = null)
             val result = assertIs<SqlParseResult.Success>(parsed, "failed for $dialect: $sql")
             assertSpecMatches(spec, result.spec, dialect)
@@ -322,7 +393,12 @@ class SpecToSqlTest {
 
         val parsed =
             assertIs<SqlParseResult.Success>(
-                parseSqlToSpec(specToSql(spec, Dialect.Postgres), Dialect.Postgres, schema(), null)
+                parseSqlToSpec(
+                    specToSql(spec, Dialect.Postgres).unwrap(),
+                    Dialect.Postgres,
+                    schema(),
+                    null,
+                )
             )
 
         assertEquals(spec.copy(filters = parsed.spec.filters), parsed.spec)
@@ -334,7 +410,12 @@ class SpecToSqlTest {
 
         val parsed =
             assertIs<SqlParseResult.Success>(
-                parseSqlToSpec(specToSql(spec, Dialect.Postgres), Dialect.Postgres, schema(), null)
+                parseSqlToSpec(
+                    specToSql(spec, Dialect.Postgres).unwrap(),
+                    Dialect.Postgres,
+                    schema(),
+                    null,
+                )
             )
 
         assertEquals(
@@ -366,13 +447,34 @@ class SpecToSqlTest {
 
         val parsed =
             assertIs<SqlParseResult.Success>(
-                parseSqlToSpec(specToSql(spec, Dialect.Postgres), Dialect.Postgres, schema(), null)
+                parseSqlToSpec(
+                    specToSql(spec, Dialect.Postgres).unwrap(),
+                    Dialect.Postgres,
+                    schema(),
+                    null,
+                )
             )
 
         assertEquals(
             listOf(FilterOp.Like, FilterOp.Ilike),
             leaves(parsed.spec.filters).map { it.op },
         )
+    }
+
+    private fun assertEscapedLikeRoundTrip(
+        spec: QuerySpec,
+        dialect: Dialect,
+        operator: String,
+    ) {
+        val rendered = specToSql(spec, dialect).unwrap()
+        assertTrue(rendered.contains("ESCAPE '!'"), rendered)
+        assertTrue(rendered.contains(operator), rendered)
+
+        val validated = validateQuery(spec, schema(), emptyList(), dialect).unwrap().first
+        val compiled = compileValidated(validated, dialect).unwrap()
+        assertTrue(compiled.sql.contains("ESCAPE '!'"), compiled.sql)
+        assertTrue(compiled.sql.contains(operator), compiled.sql)
+        assertEquals(listOf(BindValue.Text("%50!%!_!!%")), compiled.params)
     }
 
     private fun assertSpecMatches(original: QuerySpec, parsed: QuerySpec, dialect: Dialect) {
@@ -518,7 +620,12 @@ private fun column(name: String, dataType: String) =
         category = classifyColumn(dataType),
     )
 
-private fun leaf(column: String, op: FilterOp, value: FilterValue?): FilterNode.Leaf =
+private fun leaf(
+    column: String,
+    op: FilterOp,
+    value: FilterValue?,
+    likeEscape: Boolean = false,
+): FilterNode.Leaf =
     FilterNode.Leaf(
         FilterSpec(
             id = "$column-$op",
@@ -526,6 +633,7 @@ private fun leaf(column: String, op: FilterOp, value: FilterValue?): FilterNode.
             column = column,
             op = op,
             value = value,
+            likeEscape = likeEscape,
         )
     )
 

@@ -1,7 +1,11 @@
 package com.safedb.mcp
 
+import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.qualifiedName
+import com.safedb.schema.FIND_JOIN_PATHS_DEFAULT_HOPS
+import com.safedb.schema.FIND_JOIN_PATHS_MAX_HOPS
+import com.safedb.schema.FIND_JOIN_PATHS_MAX_RESULTS
 import com.safedb.schema.findDirectJoinEdges
 import com.safedb.schema.findJoinPaths
 import com.safedb.schema.searchCatalogTables
@@ -16,8 +20,6 @@ import kotlinx.serialization.json.put
 
 internal const val SEARCH_CATALOG_DEFAULT_LIMIT = 25
 internal const val SEARCH_CATALOG_MAX_LIMIT = 50
-internal const val FIND_JOIN_PATHS_DEFAULT_HOPS = 2
-internal const val FIND_JOIN_PATHS_MAX_HOPS = 3
 
 internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: SchemaCache) {
     server.addTool(
@@ -37,26 +39,12 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Connection id from list_connections")
-                            },
-                        )
-                        put(
-                            "refresh",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put(
-                                    "description",
-                                    "If true, ignore the cached catalog and introspect again",
-                                )
-                            },
-                        )
+                        put("connection_id", connectionIdProperty())
+                        put("refresh", refreshProperty())
                     },
                 required = listOf("connection_id"),
             ),
+        outputSchema = objectOutputSchema(listOf("tables")) { put("tables", arrayProp()) },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_tables failed") { handleListTables(service, cache, request) }
@@ -78,63 +66,33 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Connection id from list_connections")
-                            },
-                        )
-                        put(
-                            "schema",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Schema name from list_tables")
-                            },
-                        )
-                        put(
-                            "table",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Table name from list_tables")
-                            },
-                        )
-                        put(
-                            "refresh",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put(
-                                    "description",
-                                    "If true, ignore the cached catalog and introspect again",
-                                )
-                            },
-                        )
+                        put("connection_id", connectionIdProperty())
+                        put("schema", stringProp("Schema name from list_tables"))
+                        put("table", stringProp("Table name from list_tables"))
+                        put("refresh", refreshProperty())
                     },
                 required = listOf("connection_id", "schema", "table"),
             ),
         outputSchema =
-            ToolSchema(
-                properties =
-                    buildJsonObject {
-                        put("schema", buildJsonObject { put("type", "string") })
-                        put("name", buildJsonObject { put("type", "string") })
-                        put("qualified_name", buildJsonObject { put("type", "string") })
-                        put("columns", buildJsonObject { put("type", "array") })
-                        put("indexes", buildJsonObject { put("type", "array") })
-                        put("foreign_keys", buildJsonObject { put("type", "array") })
-                        put("incoming_foreign_keys", buildJsonObject { put("type", "array") })
-                    },
-                required =
-                    listOf(
-                        "schema",
-                        "name",
-                        "qualified_name",
-                        "columns",
-                        "indexes",
-                        "foreign_keys",
-                        "incoming_foreign_keys",
-                    ),
-            ),
+            objectOutputSchema(
+                listOf(
+                    "schema",
+                    "name",
+                    "qualified_name",
+                    "columns",
+                    "indexes",
+                    "foreign_keys",
+                    "incoming_foreign_keys",
+                )
+            ) {
+                put("schema", stringProp())
+                put("name", stringProp())
+                put("qualified_name", stringProp())
+                put("columns", arrayProp())
+                put("indexes", arrayProp())
+                put("foreign_keys", arrayProp())
+                put("incoming_foreign_keys", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("describe_table failed") { handleDescribeTable(service, cache, request) }
@@ -155,56 +113,33 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Connection id from list_connections")
-                            },
-                        )
+                        put("connection_id", connectionIdProperty())
                         put(
                             "query",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Case-insensitive substring to match against table metadata.",
-                                )
-                            },
+                            stringProp(
+                                "Case-insensitive substring to match against table metadata."
+                            ),
                         )
-                        put(
-                            "schema",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Optional schema filter")
-                            },
-                        )
+                        put("schema", stringProp("Optional schema filter"))
                         put(
                             "limit",
-                            buildJsonObject {
-                                put("type", "integer")
-                                put(
-                                    "description",
-                                    "Max matches to return (1–$SEARCH_CATALOG_MAX_LIMIT). " +
-                                        "Default $SEARCH_CATALOG_DEFAULT_LIMIT. Values over " +
-                                        "$SEARCH_CATALOG_MAX_LIMIT cap at $SEARCH_CATALOG_MAX_LIMIT. " +
-                                        "0 or negative is invalid_arguments.",
-                                )
-                            },
+                            boundedLimitProperty(
+                                defaultLimit = SEARCH_CATALOG_DEFAULT_LIMIT,
+                                maxLimit = SEARCH_CATALOG_MAX_LIMIT,
+                                noun = "matches",
+                            ),
                         )
-                        put(
-                            "refresh",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put(
-                                    "description",
-                                    "If true, ignore the cached catalog and introspect again",
-                                )
-                            },
-                        )
+                        put("refresh", refreshProperty())
                     },
                 required = listOf("connection_id", "query"),
             ),
+        outputSchema =
+            objectOutputSchema(listOf("query", "match_count", "truncated", "matches")) {
+                put("query", stringProp())
+                put("match_count", intProp())
+                put("truncated", boolProp())
+                put("matches", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("search_catalog failed") { handleSearchCatalog(service, cache, request) }
@@ -217,7 +152,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                 "to_table, returns direct neighbors with foreign_key or indexed_columns edges, " +
                 "column pairs, an on_clause, and FK cardinality and optionality. Pass " +
                 "foreign_key_only=true to exclude indexed-column candidates. With to_table, " +
-                "returns up to 10 paths of at most max_hops (default " +
+                "returns up to $FIND_JOIN_PATHS_MAX_RESULTS paths of at most max_hops (default " +
                 "$FIND_JOIN_PATHS_DEFAULT_HOPS, max $FIND_JOIN_PATHS_MAX_HOPS). Copy from_table and " +
                 "to_table from list_tables (uppercase on Oracle and Db2); they accept " +
                 "schema.table or table, and unqualified names use default_schema, " +
@@ -229,87 +164,40 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Connection id from list_connections")
-                            },
-                        )
-                        put(
-                            "from_table",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "schema.table or table from list_tables")
-                            },
-                        )
+                        put("connection_id", connectionIdProperty())
+                        put("from_table", stringProp("schema.table or table from list_tables"))
                         put(
                             "to_table",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Optional schema.table or table. Omit for direct neighbors.",
-                                )
-                            },
+                            stringProp(
+                                "Optional schema.table or table. Omit for direct neighbors."
+                            ),
                         )
-                        put(
-                            "default_schema",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Schema used when a table name has no schema prefix. Copy " +
-                                        "list_tables.schema for this connection.",
-                                )
-                            },
-                        )
+                        put("default_schema", defaultSchemaProperty())
                         put(
                             "max_hops",
-                            buildJsonObject {
-                                put("type", "integer")
-                                put(
-                                    "description",
-                                    "Maximum path length (1–$FIND_JOIN_PATHS_MAX_HOPS). " +
-                                        "Default $FIND_JOIN_PATHS_DEFAULT_HOPS.",
-                                )
-                            },
+                            intProp(
+                                "Maximum path length (1–$FIND_JOIN_PATHS_MAX_HOPS). " +
+                                    "Default $FIND_JOIN_PATHS_DEFAULT_HOPS."
+                            ),
                         )
                         put(
                             "foreign_key_only",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put(
-                                    "description",
-                                    "If true, exclude indexed-column candidates and return only " +
-                                        "foreign-key edges. Default false.",
-                                )
-                            },
+                            boolProp(
+                                "If true, exclude indexed-column candidates and return only " +
+                                    "foreign-key edges. Default false."
+                            ),
                         )
-                        put(
-                            "refresh",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put(
-                                    "description",
-                                    "If true, ignore the cached catalog and introspect again",
-                                )
-                            },
-                        )
+                        put("refresh", refreshProperty())
                     },
                 required = listOf("connection_id", "from_table"),
             ),
         outputSchema =
-            ToolSchema(
-                properties =
-                    buildJsonObject {
-                        put("from_table", buildJsonObject { put("type", "string") })
-                        put("to_table", buildJsonObject { put("type", "string") })
-                        put("neighbors", buildJsonObject { put("type", "array") })
-                        put("paths", buildJsonObject { put("type", "array") })
-                    },
-                required = listOf("from_table"),
-            ),
+            objectOutputSchema(listOf("from_table")) {
+                put("from_table", stringProp())
+                put("to_table", stringProp())
+                put("neighbors", arrayProp())
+                put("paths", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("find_join_paths failed") { handleFindJoinPaths(service, cache, request) }
@@ -456,6 +344,10 @@ private suspend fun handleFindJoinPaths(
         optionalString(request, "to_table").getOrElse {
             return it
         }
+    val defaultSchemaArg =
+        optionalString(request, "default_schema").getOrElse {
+            return it
+        }
     val maxHopsArg =
         optionalInt(request, "max_hops").getOrElse {
             return it
@@ -474,15 +366,12 @@ private suspend fun handleFindJoinPaths(
             "max_hops must be between 1 and $FIND_JOIN_PATHS_MAX_HOPS",
         )
     }
+    val settings = service.getSettings()
     val tables =
-        visibleCatalog(service, cache, connectionId, refresh).getOrElse {
+        visibleCatalog(service, cache, connectionId, refresh, settings).getOrElse {
             return it
         }
-    val settings = service.getSettings()
-    val defaultSchema =
-        optionalString(request, "default_schema").getOrElse {
-            return it
-        } ?: settingsDefaultSchema(settings, connectionId)
+    val defaultSchema = defaultSchemaArg ?: settingsDefaultSchema(settings, connectionId)
     val fromTable =
         resolveTableReference(fromReference, defaultSchema, tables).getOrElse {
             return it
@@ -534,15 +423,24 @@ private suspend fun handleFindJoinPaths(
     return objectToolResult(result)
 }
 
-private suspend fun visibleCatalog(
+internal suspend fun visibleCatalog(
     service: SafeDbService,
     cache: SchemaCache,
     connectionId: String,
     refresh: Boolean,
+): Arg<List<TableInfo>> =
+    visibleCatalog(service, cache, connectionId, refresh, service.getSettings())
+
+internal suspend fun visibleCatalog(
+    service: SafeDbService,
+    cache: SchemaCache,
+    connectionId: String,
+    refresh: Boolean,
+    settings: Settings,
 ): Arg<List<TableInfo>> {
     val connection =
         service.listConnections().find { it.id == connectionId }
             ?: return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
     val tables = cache.get(connectionId, refresh).tables
-    return Arg.Ok(visibleTables(tables, service.getSettings().blockedSchemas, connection.dialect))
+    return Arg.Ok(visibleTables(tables, settings.blockedSchemas, connection.dialect))
 }

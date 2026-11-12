@@ -1,10 +1,8 @@
 package com.safedb.mcp
 
-import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.RecipeField
-import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyWorksheet
@@ -67,43 +65,30 @@ internal fun registerRecipeTools(
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "result_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "result_id from a successful run_query receipt")
-                            },
-                        )
-                        put(
-                            "recipe_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Recipe id from list_recipes")
-                            },
-                        )
+                        put("result_id", resultIdProperty())
+                        put("recipe_id", stringProp("Recipe id from list_recipes"))
                         put(
                             "mode",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Optional pivot or worksheet. Defaults to the recipe.",
-                                )
-                            },
+                            stringProp("Optional pivot or worksheet. Defaults to the recipe."),
                         )
                         put(
                             "field_mapping",
-                            buildJsonObject {
-                                put("type", "object")
-                                put(
-                                    "description",
-                                    "Map required recipe column names to result column names.",
-                                )
-                            },
+                            objectProp("Map required recipe column names to result column names."),
                         )
                     },
                 required = listOf("result_id", "recipe_id"),
             ),
+        outputSchema =
+            objectOutputSchema(listOf("result_id", "columns", "row_count", "warnings", "rows")) {
+                put("result_id", stringProp())
+                put("columns", arrayProp())
+                put("row_count", intProp())
+                put("sample_capped", boolProp())
+                put("pivot_truncated", boolProp())
+                put("worksheet_truncated", boolProp())
+                put("warnings", arrayProp())
+                put("rows", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("apply_recipe failed") { handleApplyRecipe(service, resultStore, request) }
@@ -173,12 +158,22 @@ private suspend fun handleApplyRecipe(
 
     return when (targetMode) {
         RecipeTargetMode.Pivot -> {
-            val config = remapped.pivot ?: ExploreConfig.defaultFor(entry.result, entry.tables)
+            val config =
+                remapped.pivot
+                    ?: return toolError(
+                        ERROR_VALIDATION,
+                        "Recipe '${recipe.id}' has no pivot configuration",
+                    )
             val preview = applyExplore(entry.result, config)
             pivotResultReceipt(resultId, entry, preview)
         }
         RecipeTargetMode.Worksheet -> {
-            val config = remapped.worksheet ?: WorksheetConfig()
+            val config =
+                remapped.worksheet
+                    ?: return toolError(
+                        ERROR_VALIDATION,
+                        "Recipe '${recipe.id}' has no worksheet configuration",
+                    )
             val worksheet = applyWorksheet(entry.result, config, entry.tables)
             worksheetResultReceipt(resultId, entry, worksheet)
         }

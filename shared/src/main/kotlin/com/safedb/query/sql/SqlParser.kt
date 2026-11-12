@@ -4,6 +4,7 @@ import com.safedb.model.Dialect
 import com.safedb.model.FilterOp
 import com.safedb.model.SortDirection
 import com.safedb.model.displayName
+import com.safedb.query.LIKE_ESCAPE_CHAR
 import java.util.Locale
 
 internal sealed class SqlStatementResult {
@@ -60,7 +61,6 @@ private val NON_ALIAS_WORDS =
 private val SET_OPERATIONS = setOf("UNION", "INTERSECT", "EXCEPT")
 private val OUTER_JOIN_WORDS = setOf("LEFT", "RIGHT", "FULL", "CROSS", "OUTER")
 private val COMPARISON_OPERATORS = setOf("=", "<>", "!=", ">", ">=", "<", "<=")
-private const val LIKE_ESCAPE_CHAR = "!"
 
 private class SqlParser(
     private val tokens: List<SqlToken>,
@@ -360,8 +360,8 @@ private class SqlParser(
             word == "LIKE" -> {
                 advance()
                 val value = parseLiteral()
-                consumeOptionalLikeEscape()
-                predicate(column, FilterOp.Like, listOf(value))
+                val likeEscape = consumeOptionalLikeEscape()
+                predicate(column, FilterOp.Like, listOf(value), likeEscape)
             }
             word == "ILIKE" -> {
                 val ilikeToken = advance()
@@ -373,8 +373,8 @@ private class SqlParser(
                     )
                 }
                 val value = parseLiteral()
-                consumeOptionalLikeEscape()
-                predicate(column, FilterOp.Ilike, listOf(value))
+                val likeEscape = consumeOptionalLikeEscape()
+                predicate(column, FilterOp.Ilike, listOf(value), likeEscape)
             }
             word == "NOT" -> {
                 advance()
@@ -382,8 +382,8 @@ private class SqlParser(
                     "LIKE" -> {
                         advance()
                         val value = parseLiteral()
-                        consumeOptionalLikeEscape()
-                        predicate(column, FilterOp.NotLike, listOf(value))
+                        val likeEscape = consumeOptionalLikeEscape()
+                        predicate(column, FilterOp.NotLike, listOf(value), likeEscape)
                     }
                     "IN" -> {
                         advance()
@@ -430,9 +430,16 @@ private class SqlParser(
         column: SqlColumnRefAst,
         op: FilterOp,
         values: List<SqlLiteralAst>,
+        likeEscape: Boolean = false,
     ): SqlConditionAst.Predicate {
         val end = values.lastOrNull()?.span?.end ?: previousEnd()
-        return SqlConditionAst.Predicate(column, op, values, SqlSpan(column.span.start, end))
+        return SqlConditionAst.Predicate(
+            column,
+            op,
+            values,
+            SqlSpan(column.span.start, end),
+            likeEscape,
+        )
     }
 
     private fun parseInList(): List<SqlLiteralAst> {
@@ -505,11 +512,11 @@ private class SqlParser(
         return literal
     }
 
-    // Clipboard SQL escapes LIKE metacharacters with `!`; accept the explicit ESCAPE clause so that
-    // rendered patterns paste back. It only validates the escape character and does not change the
-    // operator.
-    private fun consumeOptionalLikeEscape() {
-        if (wordAt(0) != "ESCAPE") return
+    // Clipboard SQL and friendly patterns use ESCAPE '!'. Accept that clause so pasted SQL
+    // round-trips, and return true when it is present so FilterSpec.likeEscape is preserved.
+    // Only ESCAPE '!' is allowed; any other escape character is rejected.
+    private fun consumeOptionalLikeEscape(): Boolean {
+        if (wordAt(0) != "ESCAPE") return false
         advance()
         val token = peek()
         if (token == null || token.type != SqlTokenType.StringLiteral) {
@@ -527,6 +534,7 @@ private class SqlParser(
                 token.span,
             )
         }
+        return true
     }
 
     private fun parseColumnRefList(): List<SqlColumnRefAst> {

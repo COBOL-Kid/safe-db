@@ -1,5 +1,7 @@
 package com.safedb.schema
 
+import com.safedb.model.ColumnCategory
+import com.safedb.model.ColumnInfo
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
 import com.safedb.model.TableInfo
@@ -115,6 +117,7 @@ fun searchCatalogTables(
     schemaFilter: String? = null,
 ): List<CatalogTableMatch> {
     val needle = query.trim().lowercase()
+    val visibleKeys = tables.mapTo(HashSet()) { it.schema to it.name }
     val filtered =
         if (schemaFilter.isNullOrBlank()) {
             tables
@@ -147,10 +150,11 @@ fun searchCatalogTables(
         val matchedForeignKeys =
             table.foreignKeys
                 .filter { foreignKey ->
-                    matches(foreignKey.name) ||
-                        foreignKey.columns.any(::matches) ||
-                        foreignKey.referencedColumns.any(::matches) ||
-                        matches(foreignKey.referencedTable)
+                    (foreignKey.referencedSchema to foreignKey.referencedTable) in visibleKeys &&
+                        (matches(foreignKey.name) ||
+                            foreignKey.columns.any(::matches) ||
+                            foreignKey.referencedColumns.any(::matches) ||
+                            matches(foreignKey.referencedTable))
                 }
                 .map { it.name }
         val tableMatches =
@@ -194,22 +198,68 @@ data class JoinEdge(
 
 data class JoinPath(val steps: List<JoinEdge>)
 
+const val FIND_JOIN_PATHS_DEFAULT_HOPS = 2
+const val FIND_JOIN_PATHS_MAX_HOPS = 3
+const val FIND_JOIN_PATHS_MAX_RESULTS = 10
+
+private const val MAX_ENUMERATED_JOIN_PATHS = 256
+private const val MAX_BFS_QUEUE_STATES = 2_048
+
+internal class CatalogJoinIndex(tables: List<TableInfo>) {
+    val byQualifiedName: Map<Pair<String, String>, TableInfo> = tables.associateBy {
+        it.schema to it.name
+    }
+
+    val incomingForeignKeysByTarget:
+        Map<Pair<String, String>, List<Pair<TableInfo, ForeignKeyInfo>>>
+
+    val joinEligibleByCategory: Map<ColumnCategory, List<Pair<TableInfo, ColumnInfo>>>
+
+    init {
+        val incoming =
+            mutableMapOf<Pair<String, String>, MutableList<Pair<TableInfo, ForeignKeyInfo>>>()
+        val byCategory = mutableMapOf<ColumnCategory, MutableList<Pair<TableInfo, ColumnInfo>>>()
+        for (table in tables) {
+            val sourceKey = table.schema to table.name
+            for (foreignKey in table.foreignKeys) {
+                if (!isCompleteForeignKey(foreignKey)) continue
+                val targetKey = foreignKey.referencedSchema to foreignKey.referencedTable
+                if (targetKey == sourceKey) continue
+                incoming.getOrPut(targetKey, ::mutableListOf).add(table to foreignKey)
+            }
+            for (column in table.columns) {
+                if (!column.joinEligible) continue
+                byCategory.getOrPut(column.category, ::mutableListOf).add(table to column)
+            }
+        }
+        incomingForeignKeysByTarget = incoming
+        joinEligibleByCategory = byCategory
+    }
+}
+
 fun findDirectJoinEdges(
     tables: List<TableInfo>,
     fromSchema: String,
     fromTable: String,
     includeIndexedColumns: Boolean = true,
+): List<JoinEdge> =
+    findDirectJoinEdges(CatalogJoinIndex(tables), fromSchema, fromTable, includeIndexedColumns)
+
+private fun findDirectJoinEdges(
+    index: CatalogJoinIndex,
+    fromSchema: String,
+    fromTable: String,
+    includeIndexedColumns: Boolean,
 ): List<JoinEdge> {
-    val from =
-        tables.firstOrNull { it.schema == fromSchema && it.name == fromTable } ?: return emptyList()
-    val byQualifiedName = tables.associateBy { it.schema to it.name }
+    val from = index.byQualifiedName[fromSchema to fromTable] ?: return emptyList()
     val edges = mutableListOf<JoinEdge>()
     val foreignKeyPairs = mutableSetOf<ForeignKeyPair>()
 
     for (foreignKey in from.foreignKeys) {
         if (!isCompleteForeignKey(foreignKey)) continue
         val target =
-            byQualifiedName[foreignKey.referencedSchema to foreignKey.referencedTable] ?: continue
+            index.byQualifiedName[foreignKey.referencedSchema to foreignKey.referencedTable]
+                ?: continue
         val edge =
             foreignKeyJoinEdge(
                 from = from,
@@ -223,32 +273,23 @@ fun findDirectJoinEdges(
         edges += edge
     }
 
-    for (source in tables) {
-        if (source.schema == from.schema && source.name == from.name) continue
-        for (foreignKey in source.foreignKeys) {
-            if (!isCompleteForeignKey(foreignKey)) continue
-            if (
-                foreignKey.referencedSchema != from.schema ||
-                    foreignKey.referencedTable != from.name
-            ) {
-                continue
-            }
-            val edge =
-                foreignKeyJoinEdge(
-                    from = from,
-                    to = source,
-                    foreignKey = foreignKey,
-                    leftColumns = foreignKey.referencedColumns,
-                    rightColumns = foreignKey.columns,
-                    owner = source,
-                ) ?: continue
-            foreignKeyPairs += foreignKeyPairsFor(source, edge)
-            edges += edge
-        }
+    for ((source, foreignKey) in
+        index.incomingForeignKeysByTarget[from.schema to from.name].orEmpty()) {
+        val edge =
+            foreignKeyJoinEdge(
+                from = from,
+                to = source,
+                foreignKey = foreignKey,
+                leftColumns = foreignKey.referencedColumns,
+                rightColumns = foreignKey.columns,
+                owner = source,
+            ) ?: continue
+        foreignKeyPairs += foreignKeyPairsFor(source, edge)
+        edges += edge
     }
 
     if (includeIndexedColumns) {
-        edges += indexedColumnEdges(from, tables, foreignKeyPairs)
+        edges += indexedColumnEdges(from, index, foreignKeyPairs)
     }
 
     return edges.distinct()
@@ -281,33 +322,29 @@ private fun foreignKeyPairsFor(target: TableInfo, edge: JoinEdge): List<ForeignK
 
 private fun indexedColumnEdges(
     from: TableInfo,
-    tables: List<TableInfo>,
+    index: CatalogJoinIndex,
     foreignKeyPairs: Set<ForeignKeyPair>,
 ): List<JoinEdge> {
     val indexedByTable = linkedMapOf<Pair<String, String>, MutableList<JoinColumnPair>>()
-    for (target in tables) {
-        if (target.schema == from.schema && target.name == from.name) continue
-        for (left in from.columns) {
-            if (!left.joinEligible) continue
-            for (right in target.columns) {
-                if (!right.joinEligible) continue
-                if (left.category != right.category) continue
-                if (
-                    !columnsCompatibleByConvention(
-                        from.name,
-                        left.name,
-                        target.name,
-                        right.name,
-                    )
-                ) {
-                    continue
-                }
-                val pair = JoinColumnPair(left.name, right.name)
-                if (ForeignKeyPair(target.schema, target.name, pair) in foreignKeyPairs) {
-                    continue
-                }
-                indexedByTable.getOrPut(target.schema to target.name, ::mutableListOf).add(pair)
+    for (left in from.columns) {
+        if (!left.joinEligible) continue
+        for ((target, right) in index.joinEligibleByCategory[left.category].orEmpty()) {
+            if (target.schema == from.schema && target.name == from.name) continue
+            if (
+                !columnsCompatibleByConvention(
+                    from.name,
+                    left.name,
+                    target.name,
+                    right.name,
+                )
+            ) {
+                continue
             }
+            val pair = JoinColumnPair(left.name, right.name)
+            if (ForeignKeyPair(target.schema, target.name, pair) in foreignKeyPairs) {
+                continue
+            }
+            indexedByTable.getOrPut(target.schema to target.name, ::mutableListOf).add(pair)
         }
     }
     return indexedByTable.entries
@@ -342,40 +379,56 @@ fun findJoinPaths(
     fromTable: String,
     toSchema: String,
     toTable: String,
-    maxHops: Int = 2,
+    maxHops: Int = FIND_JOIN_PATHS_DEFAULT_HOPS,
     includeIndexedColumns: Boolean = true,
 ): List<JoinPath> {
-    val hops = maxHops.coerceIn(1, 3)
+    val hops = maxHops.coerceIn(1, FIND_JOIN_PATHS_MAX_HOPS)
     if (fromSchema == toSchema && fromTable == toTable) return emptyList()
 
+    val index = CatalogJoinIndex(tables)
     val edgeCache = mutableMapOf<Pair<String, String>, List<JoinEdge>>()
     fun edges(schema: String, table: String) =
         edgeCache.getOrPut(schema to table) {
-            orderedEdges(tables, schema, table, includeIndexedColumns)
+            orderedEdges(index, schema, table, includeIndexedColumns)
         }
 
     val paths = mutableListOf<JoinPath>()
     val queue = ArrayDeque<Pair<JoinPath, Set<Pair<String, String>>>>()
     val start = fromSchema to fromTable
+    var enqueued = 0
+    fun tryEnqueue(path: JoinPath, visited: Set<Pair<String, String>>): Boolean {
+        if (enqueued >= MAX_BFS_QUEUE_STATES) return false
+        queue += path to visited
+        enqueued += 1
+        return true
+    }
+
     for (edge in edges(fromSchema, fromTable)) {
         val next = edge.toSchema to edge.toTable
         if (next == start) continue
-        queue += JoinPath(listOf(edge)) to setOf(start, next)
+        if (!tryEnqueue(JoinPath(listOf(edge)), setOf(start, next))) break
     }
 
+    var currentDepth = 1
     while (queue.isNotEmpty()) {
         val (path, visited) = queue.removeFirst()
+        val depth = path.steps.size
+        if (depth > currentDepth) {
+            if (paths.size >= FIND_JOIN_PATHS_MAX_RESULTS) break
+            currentDepth = depth
+        }
+        if (paths.size >= MAX_ENUMERATED_JOIN_PATHS) break
         val last = path.steps.last()
-        if (path.steps.size > hops) continue
         if (last.toSchema == toSchema && last.toTable == toTable) {
             paths += path
             continue
         }
-        if (path.steps.size == hops) continue
+        if (depth == hops) continue
+        if (paths.size >= FIND_JOIN_PATHS_MAX_RESULTS) continue
         for (edge in edges(last.toSchema, last.toTable)) {
             val next = edge.toSchema to edge.toTable
             if (next in visited) continue
-            queue += JoinPath(path.steps + edge) to (visited + next)
+            if (!tryEnqueue(JoinPath(path.steps + edge), visited + next)) break
         }
     }
 
@@ -387,16 +440,16 @@ fun findJoinPaths(
                     path.steps.joinToString("|") { "${it.toSchema}.${it.toTable}" }.lowercase()
                 }
         )
-        .take(10)
+        .take(FIND_JOIN_PATHS_MAX_RESULTS)
 }
 
 private fun orderedEdges(
-    tables: List<TableInfo>,
+    index: CatalogJoinIndex,
     schema: String,
     table: String,
     includeIndexedColumns: Boolean,
 ): List<JoinEdge> =
-    findDirectJoinEdges(tables, schema, table, includeIndexedColumns)
+    findDirectJoinEdges(index, schema, table, includeIndexedColumns)
         .sortedWith(
             compareBy<JoinEdge> { edge ->
                     when (edge.kind) {

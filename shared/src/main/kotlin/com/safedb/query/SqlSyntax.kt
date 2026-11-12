@@ -9,6 +9,9 @@ import com.safedb.query.sql.sqlKeywords
 import com.safedb.query.sql.sqlWord
 import java.util.Locale
 
+internal const val LIKE_ESCAPE_CHAR = "!"
+internal const val LIKE_ESCAPE_CLAUSE = "ESCAPE '$LIKE_ESCAPE_CHAR'"
+
 internal fun quote(ident: String, dialect: Dialect): String =
     when (dialect) {
         Dialect.Postgres,

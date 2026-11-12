@@ -100,14 +100,14 @@ import com.safedb.model.IndexInfo
 import com.safedb.schema.MAP_CARD_FOOTER
 import com.safedb.schema.MAP_CARD_HEADER
 import com.safedb.schema.MAP_CARD_ROW
+import com.safedb.schema.RelationshipCardinality
+import com.safedb.schema.RelationshipOptionality
 import com.safedb.schema.SCHEMA_MAP_RENDER_PADDING_DP
 import com.safedb.schema.SCHEMA_MAP_SCROLLBAR_CORNER
-import com.safedb.schema.SchemaMapCardinality
 import com.safedb.schema.SchemaMapColumnMarker
 import com.safedb.schema.SchemaMapColumnMarkerKind
 import com.safedb.schema.SchemaMapGraph
 import com.safedb.schema.SchemaMapNode
-import com.safedb.schema.SchemaMapOptionality
 import com.safedb.schema.SchemaMapPoint
 import com.safedb.schema.SchemaMapRelationship
 import com.safedb.schema.SchemaMapRelationshipGeometry
@@ -755,7 +755,7 @@ private fun SchemaRelationships(
 private fun DrawScope.drawSourceMarker(
     point: Offset,
     towardRight: Boolean,
-    cardinality: SchemaMapCardinality,
+    cardinality: RelationshipCardinality,
     color: Color,
 ) {
     val direction = if (towardRight) 1f else -1f
@@ -763,7 +763,7 @@ private fun DrawScope.drawSourceMarker(
     drawCircle(color, radius = 3.dp.toPx(), center = Offset(near, point.y))
     val markerX = point.x + direction * 14.dp.toPx()
     when (cardinality) {
-        SchemaMapCardinality.ManyToOne -> {
+        RelationshipCardinality.ManyToOne -> {
             val tipX = point.x + direction * 23.dp.toPx()
             drawLine(
                 color,
@@ -779,14 +779,14 @@ private fun DrawScope.drawSourceMarker(
                 1.6.dp.toPx(),
             )
         }
-        SchemaMapCardinality.OneToOne ->
+        RelationshipCardinality.OneToOne ->
             drawLine(
                 color,
                 Offset(markerX, point.y - 7.dp.toPx()),
                 Offset(markerX, point.y + 7.dp.toPx()),
                 1.8.dp.toPx(),
             )
-        SchemaMapCardinality.Unknown -> {
+        RelationshipCardinality.Unknown -> {
             val radius = 5.dp.toPx()
             val diamond =
                 Path().apply {
@@ -808,7 +808,7 @@ private fun DrawScope.drawSourceMarker(
 private fun DrawScope.drawTargetMarker(
     point: Offset,
     towardRight: Boolean,
-    optionality: SchemaMapOptionality,
+    optionality: RelationshipOptionality,
     color: Color,
 ) {
     val direction = if (towardRight) 1f else -1f
@@ -820,14 +820,14 @@ private fun DrawScope.drawTargetMarker(
         1.8.dp.toPx(),
     )
     when (optionality) {
-        SchemaMapOptionality.Optional ->
+        RelationshipOptionality.Optional ->
             drawCircle(
                 color,
                 radius = 3.dp.toPx(),
                 center = Offset(point.x + direction * 16.dp.toPx(), point.y),
                 style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()),
             )
-        SchemaMapOptionality.Required -> {
+        RelationshipOptionality.Required -> {
             val second = point.x + direction * 13.dp.toPx()
             drawLine(
                 color,
@@ -836,7 +836,7 @@ private fun DrawScope.drawTargetMarker(
                 1.8.dp.toPx(),
             )
         }
-        SchemaMapOptionality.Unknown -> Unit
+        RelationshipOptionality.Unknown -> Unit
     }
 }
 

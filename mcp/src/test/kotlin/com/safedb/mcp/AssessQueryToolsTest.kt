@@ -1,7 +1,6 @@
 package com.safedb.mcp
 
 import com.safedb.model.ResultColumn
-import com.safedb.model.Settings
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -11,14 +10,11 @@ import com.safedb.query.QueryPlanStatus
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
 import com.safedb.service.QueryFailureException
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -233,18 +229,3 @@ class AssessQueryToolsTest {
         }
     }
 }
-
-private fun queryService(): RecordingSafeDbService {
-    val service = RecordingSafeDbService()
-    service.connections += sampleMcpConnection()
-    service.passwords["c1"] = "should-not-leak"
-    service.schemas["c1"] = sampleMcpSchema()
-    service.settings = Settings(blockedSchemas = listOf("audit"))
-    service.runQueryResult = sampleMcpRunResult()
-    return service
-}
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): JsonObject =
-    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject

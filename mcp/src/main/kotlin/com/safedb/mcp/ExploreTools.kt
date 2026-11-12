@@ -44,85 +44,64 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "result_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "result_id from a successful run_query receipt")
-                            },
-                        )
+                        put("result_id", resultIdProperty())
                         put(
                             "row_dimensions",
-                            buildJsonObject {
-                                put("type", "array")
-                                put(
-                                    "description",
-                                    "Row grouping fields. Each item is a column name or an object.",
-                                )
-                            },
+                            arrayProp(
+                                "Row grouping fields. Each item is a column name or an object."
+                            ),
                         )
                         put(
                             "column_dimensions",
-                            buildJsonObject {
-                                put("type", "array")
-                                put(
-                                    "description",
-                                    "Column grouping fields. Each item is a column name or an object.",
-                                )
-                            },
+                            arrayProp(
+                                "Column grouping fields. Each item is a column name or an object."
+                            ),
                         )
                         put(
                             "measures",
-                            buildJsonObject {
-                                put("type", "array")
-                                put(
-                                    "description",
-                                    "Measure objects with alias and fn, plus optional " +
-                                        "source_column, label, formula, and show_as.",
-                                )
-                            },
+                            arrayProp(
+                                "Measure objects with alias and fn, plus optional " +
+                                    "source_column, label, formula, and show_as."
+                            ),
                         )
-                        put(
-                            "filters",
-                            buildJsonObject {
-                                put("type", "array")
-                                put("description", "Pivot filter objects.")
-                            },
-                        )
+                        put("filters", arrayProp("Pivot filter objects."))
                         put(
                             "sort",
-                            buildJsonObject {
-                                put("type", "object")
-                                put(
-                                    "description",
-                                    "Sort by column or measure_alias with direction asc or desc.",
-                                )
-                            },
+                            objectProp(
+                                "Sort by column or measure_alias with direction asc or desc."
+                            ),
                         )
-                        put(
-                            "show_row_totals",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put("description", "Show a total column. Default true.")
-                            },
-                        )
+                        put("show_row_totals", boolProp("Show a total column. Default true."))
                         put(
                             "show_column_totals",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put("description", "Show a grand total row. Default true.")
-                            },
+                            boolProp("Show a grand total row. Default true."),
                         )
                         put(
                             "show_subtotals",
-                            buildJsonObject {
-                                put("type", "boolean")
-                                put("description", "Show subtotal rows and columns. Default true.")
-                            },
+                            boolProp("Show subtotal rows and columns. Default true."),
                         )
                     },
                 required = listOf("result_id"),
             ),
+        outputSchema =
+            objectOutputSchema(
+                listOf(
+                    "result_id",
+                    "columns",
+                    "row_count",
+                    "pivot_truncated",
+                    "warnings",
+                    "rows",
+                )
+            ) {
+                put("result_id", stringProp())
+                put("columns", arrayProp())
+                put("row_count", intProp())
+                put("sample_capped", boolProp())
+                put("pivot_truncated", boolProp())
+                put("warnings", arrayProp())
+                put("rows", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("pivot_result failed") { handlePivotResult(resultStore, request) }
@@ -147,56 +126,44 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "result_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "result_id from a successful run_query receipt")
-                            },
-                        )
-                        put(
-                            "filters",
-                            buildJsonObject {
-                                put("type", "array")
-                                put("description", "Worksheet filter objects.")
-                            },
-                        )
-                        put(
-                            "sorts",
-                            buildJsonObject {
-                                put("type", "array")
-                                put("description", "Sort objects with column and direction.")
-                            },
-                        )
-                        put(
-                            "columns",
-                            buildJsonObject {
-                                put("type", "array")
-                                put("description", "Optional column name projection.")
-                            },
-                        )
-                        put(
-                            "offset",
-                            buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Row offset. Default 0.")
-                            },
-                        )
+                        put("result_id", resultIdProperty())
+                        put("filters", arrayProp("Worksheet filter objects."))
+                        put("sorts", arrayProp("Sort objects with column and direction."))
+                        put("columns", arrayProp("Optional column name projection."))
+                        put("offset", intProp("Row offset. Default 0."))
                         put(
                             "limit",
-                            buildJsonObject {
-                                put("type", "integer")
-                                put(
-                                    "description",
-                                    "Max rows (1–$GET_RESULT_ROWS_MAX). Default " +
-                                        "$GET_RESULT_ROWS_MAX. 0 or negative is " +
-                                        "invalid_arguments.",
-                                )
-                            },
+                            boundedLimitProperty(
+                                defaultLimit = GET_RESULT_ROWS_MAX,
+                                maxLimit = GET_RESULT_ROWS_MAX,
+                                noun = "rows",
+                            ),
                         )
                     },
                 required = listOf("result_id"),
             ),
+        outputSchema =
+            objectOutputSchema(
+                listOf(
+                    "result_id",
+                    "offset",
+                    "matched_row_count",
+                    "sample_row_count",
+                    "page_truncated",
+                    "warnings",
+                    "rows",
+                )
+            ) {
+                put("result_id", stringProp())
+                put("offset", intProp())
+                put("matched_row_count", intProp())
+                put("sample_row_count", intProp())
+                put("sample_capped", boolProp())
+                put("page_truncated", boolProp())
+                put("next_offset", intProp())
+                put("warnings", arrayProp())
+                put("rows", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("filter_result_rows failed") { handleFilterResultRows(resultStore, request) }
@@ -387,24 +354,22 @@ private suspend fun handleFilterResultRows(
     val offset = offsetArg.coerceAtLeast(0)
     val limit = (limitArg ?: GET_RESULT_ROWS_MAX).coerceAtMost(GET_RESULT_ROWS_MAX)
     val matchedRowCount = detailIndexes.size
-    val windowRows =
-        detailIndexes.drop(offset).take(limit).map { rowIndex ->
-            val source =
-                entry.result.rows.getOrNull(rowIndex)
-                    ?: error("Worksheet row $rowIndex is outside the stored result")
-            columnIndexes.map { columnIndex -> source.getOrElse(columnIndex) { ResultCell.Null } }
-        }
-    val window =
+    val projectedRows = detailIndexes.map { rowIndex ->
+        val source =
+            entry.result.rows.getOrNull(rowIndex)
+                ?: error("Worksheet row $rowIndex is outside the stored result")
+        columnIndexes.map { columnIndex -> source.getOrElse(columnIndex) { ResultCell.Null } }
+    }
+    val projected =
         QueryResult(
             columns = columnIndexes.map { entry.result.columns[it] },
-            rows = windowRows,
-            rowCount = windowRows.size,
+            rows = projectedRows,
+            rowCount = projectedRows.size,
             truncated = entry.result.truncated,
             warnings = worksheet.warnings,
         )
-    val slice = sliceRows(window, offset = 0, limit = limit, maxBytes = MCP_PAYLOAD_MAX_BYTES)
-    val consumed = offset + slice.rows.size
-    val pageTruncated = consumed < matchedRowCount
+    val slice =
+        sliceRows(projected, offset = offset, limit = limit, maxBytes = MCP_PAYLOAD_MAX_BYTES)
     val page =
         FilteredResultRowsPage(
             resultId = resultId,
@@ -412,8 +377,8 @@ private suspend fun handleFilterResultRows(
             matchedRowCount = matchedRowCount,
             sampleRowCount = entry.result.rowCount,
             sampleCapped = entry.result.truncated,
-            pageTruncated = pageTruncated,
-            nextOffset = if (pageTruncated) consumed else null,
+            pageTruncated = slice.moreRowsRemain,
+            nextOffset = slice.nextOffset,
             warnings = entry.result.warnings + worksheet.warnings,
             rows = slice.rows,
         )

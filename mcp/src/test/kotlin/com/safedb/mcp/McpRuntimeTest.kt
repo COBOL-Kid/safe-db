@@ -1,7 +1,9 @@
 package com.safedb.mcp
 
+import com.safedb.model.SavedQuery
 import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.SecretsManager
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -10,6 +12,8 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -106,6 +110,80 @@ class McpRuntimeTest {
     }
 
     @Test
+    fun objectToolsPublishOutputSchemaAndStructuredContent() = runBlocking {
+        val objectTools =
+            setOf(
+                "apply_recipe",
+                "assess_query",
+                "delete_connection",
+                "delete_saved_query",
+                "describe_table",
+                "export_result",
+                "filter_result_rows",
+                "find_join_paths",
+                "get_result_rows",
+                "list_tables",
+                "pivot_result",
+                "run_query",
+                "run_saved_query",
+                "save_query",
+                "search_catalog",
+                "summarize_result",
+            )
+        val arrayTools =
+            setOf(
+                "list_connections",
+                "list_query_history",
+                "list_recipes",
+                "list_saved_queries",
+            )
+        val service = RecordingSafeDbService()
+        service.connections += sampleMcpConnection()
+        service.schemas["c1"] = sampleMcpSchema()
+        service.savedQueries +=
+            SavedQuery(
+                id = "q1",
+                name = "Customers",
+                connectionId = "c1",
+                spec = sampleMcpQuerySpec(),
+                createdAt = "1",
+            )
+        withTempMcpClient(service) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(20, tools.size)
+            assertEquals(objectTools + arrayTools, tools.keys)
+            objectTools.forEach { name -> assertNotNull(tools.getValue(name).outputSchema, name) }
+            arrayTools.forEach { name -> assertNull(tools.getValue(name).outputSchema, name) }
+
+            val saved =
+                client.callTool(
+                    "save_query",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "name" to "Orders",
+                        "sql" to "SELECT id FROM public.customers",
+                    ),
+                )
+            assertStructuredMatchesText(saved)
+
+            val pending = client.callTool("delete_saved_query", mapOf("query_id" to "q1"))
+            val confirmation =
+                Json.parseToJsonElement((pending.content.single() as TextContent).text)
+                    .jsonObject
+                    .getValue("confirmation")
+            val deletedSaved =
+                client.callTool(
+                    "delete_saved_query",
+                    mapOf("query_id" to "q1", "confirmation" to confirmation),
+                )
+            assertStructuredMatchesText(deletedSaved)
+
+            val deletedConnection = client.deleteConnectionConfirmed("c1")
+            assertStructuredMatchesText(deletedConnection)
+        }
+    }
+
+    @Test
     fun printlnAfterRedirectLandsOnStderrNotProtocolStream() {
         val protocol = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
@@ -125,4 +203,11 @@ class McpRuntimeTest {
             System.setOut(previous)
         }
     }
+}
+
+private fun assertStructuredMatchesText(result: CallToolResult) {
+    assertFalse(result.isError == true)
+    val parsed = Json.parseToJsonElement((result.content.single() as TextContent).text).jsonObject
+    assertNotNull(result.structuredContent)
+    assertEquals(parsed, result.structuredContent)
 }

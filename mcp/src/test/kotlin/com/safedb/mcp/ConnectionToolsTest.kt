@@ -1,8 +1,6 @@
 package com.safedb.mcp
 
 import com.safedb.model.Dialect
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -232,7 +230,3 @@ class ConnectionToolsTest {
         }
     }
 }
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): JsonObject = Json.parseToJsonElement(text()).jsonObject

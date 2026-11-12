@@ -5,8 +5,6 @@ import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.client.Client
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -21,7 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class ExploreToolsTest {
     @Test
     fun pivotResultUsesTheDefaultConfiguration() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val body = client.callTool("pivot_result", mapOf("result_id" to resultId)).json()
@@ -48,7 +46,7 @@ class ExploreToolsTest {
 
     @Test
     fun pivotResultBuildsCustomDimensionsGroupingMeasuresFiltersAndSort() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val body =
@@ -101,7 +99,7 @@ class ExploreToolsTest {
 
     @Test
     fun pivotResultSupportsNumericBinsAndColumnTotals() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val body =
@@ -135,7 +133,7 @@ class ExploreToolsTest {
 
     @Test
     fun pivotResultHandlesUnknownIdsAndInvalidArguments() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val unknown = client.callTool("pivot_result", mapOf("result_id" to "missing"))
             assertEquals(true, unknown.isError)
@@ -183,7 +181,7 @@ class ExploreToolsTest {
 
     @Test
     fun filterResultRowsFiltersSortsAndProjects() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val body =
@@ -229,7 +227,7 @@ class ExploreToolsTest {
 
     @Test
     fun filterResultRowsPagesAndClampsOffsets() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val page =
@@ -268,7 +266,7 @@ class ExploreToolsTest {
 
     @Test
     fun filterResultRowsProjectsOnlyThePageWindow() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val page =
@@ -319,7 +317,7 @@ class ExploreToolsTest {
 
     @Test
     fun filterResultRowsSupportsNullAndBetweenFilters() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         service.runQueryResult =
             QueryRunResult(
                 QueryResult(
@@ -401,8 +399,98 @@ class ExploreToolsTest {
     }
 
     @Test
+    fun pivotAndFilterRejectUnknownNestedKeysAndWrongTypes() = runBlocking {
+        val service = exploreSampleService()
+        withTempMcpClient(service) { client ->
+            val resultId = storeExploreResult(client)
+            val unknownDimensionKey =
+                client.callTool(
+                    "pivot_result",
+                    mapOf(
+                        "result_id" to resultId,
+                        "row_dimensions" to
+                            listOf(Json.parseToJsonElement("""{"column":"region","bogus":true}""")),
+                    ),
+                )
+            assertEquals(true, unknownDimensionKey.isError)
+            assertEquals(
+                "unknown field 'row_dimensions[0].bogus'",
+                unknownDimensionKey.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val showSubtotalsString =
+                client.callTool(
+                    "pivot_result",
+                    mapOf(
+                        "result_id" to resultId,
+                        "row_dimensions" to
+                            listOf(
+                                Json.parseToJsonElement(
+                                    """{"column":"region","show_subtotals":"true"}"""
+                                )
+                            ),
+                    ),
+                )
+            assertEquals(true, showSubtotalsString.isError)
+            assertEquals(
+                "row_dimensions[0].show_subtotals must be a boolean",
+                showSubtotalsString.json().getValue("message").jsonPrimitive.content,
+            )
+
+            val includedKeysNumber =
+                client.callTool(
+                    "filter_result_rows",
+                    mapOf(
+                        "result_id" to resultId,
+                        "filters" to
+                            listOf(
+                                Json.parseToJsonElement(
+                                    """{"column":"region","op":"members","included_keys":[1]}"""
+                                )
+                            ),
+                    ),
+                )
+            assertEquals(true, includedKeysNumber.isError)
+            assertEquals(
+                "filters[0].included_keys[0] must be a string",
+                includedKeysNumber.json().getValue("message").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
+    fun filterResultRowsStopsAtTheByteBudgetAndReturnsNextOffset() = runBlocking {
+        val service = exploreSampleService()
+        val payload = "x".repeat(2_048)
+        val wideColumns =
+            (1..24).map { index -> ResultColumn("c${index.toString().padStart(2, '0')}", "text") }
+        val wideRows = List(50) { wideColumns.map { ResultCell.text(payload) } }
+        service.runQueryResult =
+            QueryRunResult(
+                QueryResult(
+                    columns = wideColumns,
+                    rows = wideRows,
+                    rowCount = 50,
+                    truncated = false,
+                    warnings = emptyList(),
+                ),
+                allowedMcpRisk(),
+            )
+        withTempMcpClient(service) { client ->
+            val resultId = storeExploreResult(client)
+            val page = client.callTool("filter_result_rows", mapOf("result_id" to resultId)).json()
+            assertTrue(page.getValue("rows").jsonArray.size < GET_RESULT_ROWS_MAX)
+            assertEquals("true", page.getValue("page_truncated").jsonPrimitive.content)
+            assertEquals(
+                page.getValue("rows").jsonArray.size.toString(),
+                page.getValue("next_offset").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
     fun filterResultRowsHandlesUnknownIdsAndInvalidArguments() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val unknown = client.callTool("filter_result_rows", mapOf("result_id" to "missing"))
             assertEquals(true, unknown.isError)
@@ -435,7 +523,7 @@ class ExploreToolsTest {
 
     @Test
     fun unknownColumnErrorsSuggestKnownColumnsInDialectCasing() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         service.runQueryResult =
             QueryRunResult(
                 QueryResult(
@@ -473,7 +561,7 @@ class ExploreToolsTest {
 
     @Test
     fun pivotResultRejectsMissingResultIdAndMalformedPayload() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val missingResultId = client.callTool("pivot_result", emptyMap())
@@ -497,7 +585,7 @@ class ExploreToolsTest {
 
     @Test
     fun filterResultRowsRejectsMissingResultIdAndMalformedPayload() = runBlocking {
-        val service = exploreService()
+        val service = exploreSampleService()
         withTempMcpClient(service) { client ->
             val resultId = storeExploreResult(client)
             val missingResultId = client.callTool("filter_result_rows", emptyMap())
@@ -521,7 +609,7 @@ class ExploreToolsTest {
 
     @Test
     fun exploreToolsAreReadOnly() = runBlocking {
-        withTempMcpClient(exploreService()) { client ->
+        withTempMcpClient(exploreSampleService()) { client ->
             val tools = client.listTools().tools.associateBy { it.name }
             assertEquals(true, tools.getValue("pivot_result").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("filter_result_rows").annotations?.readOnlyHint)
@@ -531,56 +619,6 @@ class ExploreToolsTest {
 
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()
-
-private fun exploreService(): RecordingSafeDbService {
-    val service = RecordingSafeDbService()
-    service.connections += sampleMcpConnection()
-    service.passwords["c1"] = "should-not-leak"
-    service.schemas["c1"] = sampleMcpSchema()
-    service.runQueryResult = QueryRunResult(exploreQueryResult(), allowedMcpRisk())
-    return service
-}
-
-private fun exploreQueryResult(): QueryResult =
-    QueryResult(
-        columns =
-            listOf(
-                ResultColumn("region", "text"),
-                ResultColumn("amount", "int"),
-                ResultColumn("created", "text"),
-            ),
-        rows =
-            listOf(
-                listOf(
-                    ResultCell.text("east"),
-                    ResultCell.integer(10),
-                    ResultCell.text("2024-01-05"),
-                ),
-                listOf(
-                    ResultCell.text("east"),
-                    ResultCell.integer(20),
-                    ResultCell.text("2024-02-15"),
-                ),
-                listOf(
-                    ResultCell.text("west"),
-                    ResultCell.integer(30),
-                    ResultCell.text("2024-03-10"),
-                ),
-                listOf(
-                    ResultCell.text("west"),
-                    ResultCell.integer(40),
-                    ResultCell.text("2024-04-20"),
-                ),
-                listOf(
-                    ResultCell.text("north"),
-                    ResultCell.integer(50),
-                    ResultCell.text("2025-01-01"),
-                ),
-            ),
-        rowCount = 5,
-        truncated = false,
-        warnings = emptyList(),
-    )
 
 private suspend fun storeExploreResult(client: Client): String {
     val receipt =
@@ -595,7 +633,3 @@ private suspend fun storeExploreResult(client: Client): String {
             .json()
     return receipt.getValue("result_id").jsonPrimitive.content
 }
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): JsonObject = Json.parseToJsonElement(text()).jsonObject

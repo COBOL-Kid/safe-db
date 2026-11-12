@@ -1,9 +1,11 @@
 package com.safedb.mcp
 
+import com.safedb.model.FilterGroup
+import com.safedb.model.FilterNode
+import com.safedb.model.FilterOp
+import com.safedb.model.FilterSpec
 import com.safedb.model.HistoryEntry
-import com.safedb.model.QueryResult
-import com.safedb.model.ResultCell
-import com.safedb.model.ResultColumn
+import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
 import com.safedb.query.QueryExecutionConfirmation
@@ -11,7 +13,6 @@ import com.safedb.query.specToSql
 import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -39,7 +40,7 @@ class WorkspaceToolsTest {
             assertEquals("Customers", first.string("name"))
             assertEquals("c1", first.string("connection_id"))
             assertEquals(
-                specToSql(sampleMcpQuerySpec(), service.connections.single().dialect),
+                specToSql(sampleMcpQuerySpec(), service.connections.single().dialect).unwrap(),
                 first.string("sql"),
             )
             assertEquals(
@@ -70,7 +71,7 @@ class WorkspaceToolsTest {
         var confirmation: QueryExecutionConfirmation? = null
         service.runQueryHandler = { request ->
             confirmation = request.confirmation
-            QueryRunResult(workspaceQueryResult(), allowedMcpRisk())
+            QueryRunResult(sampleExploreQueryResult(), allowedMcpRisk())
         }
 
         withTempMcpClient(service) { client ->
@@ -302,7 +303,7 @@ class WorkspaceToolsTest {
             assertEquals("7", first.string("risk_final_score"))
             assertEquals("Allowed", first.string("risk_gate_state"))
             assertEquals(
-                specToSql(sampleMcpQuerySpec(), service.connections.single().dialect),
+                specToSql(sampleMcpQuerySpec(), service.connections.single().dialect).unwrap(),
                 first.string("sql"),
             )
             assertFalse(first.containsKey("error"))
@@ -347,56 +348,72 @@ class WorkspaceToolsTest {
             assertNull(tools.getValue("run_saved_query").annotations)
         }
     }
+
+    @Test
+    fun listSavedQueriesAndHistoryTolerateMalformedFilters() = runBlocking {
+        val service = workspaceService()
+        val malformed = malformedBetweenSpec()
+        service.savedQueries += savedQuery("q-bad", "Broken", "c1", spec = malformed)
+        service.savedQueries += savedQuery("q1", "Customers", "c1")
+        service.historyEntries += historyEntry("h-bad", spec = malformed)
+        service.historyEntries += historyEntry("h1")
+
+        withTempMcpClient(service) { client ->
+            val saved = client.callTool("list_saved_queries", emptyMap()).jsonArray()
+            assertEquals(2, saved.size)
+            val brokenSaved = saved[0].jsonObject
+            assertEquals("q-bad", brokenSaved.string("id"))
+            assertTrue(brokenSaved.string("sql").startsWith("-- invalid query spec:"))
+            val healthySaved = saved[1].jsonObject
+            assertEquals("q1", healthySaved.string("id"))
+            assertEquals(
+                specToSql(sampleMcpQuerySpec(), service.connections.single().dialect).unwrap(),
+                healthySaved.string("sql"),
+            )
+
+            val history = client.callTool("list_query_history", emptyMap()).jsonArray()
+            assertEquals(2, history.size)
+            val brokenHistory = history[0].jsonObject
+            assertEquals("h-bad", brokenHistory.string("id"))
+            assertTrue(brokenHistory.string("sql").startsWith("-- invalid query spec:"))
+            val healthyHistory = history[1].jsonObject
+            assertEquals("h1", healthyHistory.string("id"))
+            assertEquals(
+                specToSql(sampleMcpQuerySpec(), service.connections.single().dialect).unwrap(),
+                healthyHistory.string("sql"),
+            )
+        }
+    }
 }
+
+private fun malformedBetweenSpec(): QuerySpec =
+    sampleMcpQuerySpec()
+        .copy(
+            filters =
+                FilterGroup(
+                    id = "g1",
+                    children =
+                        listOf(
+                            FilterNode.Leaf(
+                                FilterSpec(
+                                    id = "f1",
+                                    tableAlias = "customers",
+                                    column = "id",
+                                    op = FilterOp.Between,
+                                    value = null,
+                                )
+                            )
+                        ),
+                )
+        )
 
 private fun workspaceService(): RecordingSafeDbService {
     val service = RecordingSafeDbService()
     service.connections += sampleMcpConnection()
     service.schemas["c1"] = sampleMcpSchema()
-    service.runQueryResult = QueryRunResult(workspaceQueryResult(), allowedMcpRisk())
+    service.runQueryResult = QueryRunResult(sampleExploreQueryResult(), allowedMcpRisk())
     return service
 }
-
-private fun workspaceQueryResult(): QueryResult =
-    QueryResult(
-        columns =
-            listOf(
-                ResultColumn("region", "text"),
-                ResultColumn("amount", "int"),
-                ResultColumn("created", "text"),
-            ),
-        rows =
-            listOf(
-                listOf(
-                    ResultCell.text("east"),
-                    ResultCell.integer(10),
-                    ResultCell.text("2024-01-05"),
-                ),
-                listOf(
-                    ResultCell.text("east"),
-                    ResultCell.integer(20),
-                    ResultCell.text("2024-02-15"),
-                ),
-                listOf(
-                    ResultCell.text("west"),
-                    ResultCell.integer(30),
-                    ResultCell.text("2024-03-10"),
-                ),
-                listOf(
-                    ResultCell.text("west"),
-                    ResultCell.integer(40),
-                    ResultCell.text("2024-04-20"),
-                ),
-                listOf(
-                    ResultCell.text("north"),
-                    ResultCell.integer(50),
-                    ResultCell.text("2025-01-01"),
-                ),
-            ),
-        rowCount = 5,
-        truncated = false,
-        warnings = emptyList(),
-    )
 
 private fun savedQuery(
     id: String,
@@ -419,12 +436,13 @@ private fun historyEntry(
     connectionName: String = "Demo",
     error: String? = null,
     riskSeverity: String? = "Low",
+    spec: QuerySpec = sampleMcpQuerySpec(),
 ): HistoryEntry =
     HistoryEntry(
         id = id,
         connectionId = connectionId,
         connectionName = connectionName,
-        spec = sampleMcpQuerySpec(),
+        spec = spec,
         rowCount = 5,
         warnings = listOf("sample capped"),
         error = error,
@@ -437,16 +455,7 @@ private fun historyEntry(
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()
 
-private fun CallToolResult.json(): JsonObject =
-    Json.parseToJsonElement((content.single() as TextContent).text).jsonObject
-
 private fun CallToolResult.jsonArray(): kotlinx.serialization.json.JsonArray =
-    Json.parseToJsonElement((content.single() as TextContent).text).jsonArray
+    Json.parseToJsonElement(text()).jsonArray
 
 private fun JsonObject.string(name: String): String = getValue(name).jsonPrimitive.content
-
-private fun assertError(result: CallToolResult, code: String, message: String) {
-    assertEquals(true, result.isError)
-    assertEquals(code, result.json().string("error"))
-    assertEquals(message, result.json().string("message"))
-}

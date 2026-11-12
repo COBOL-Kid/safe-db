@@ -67,7 +67,10 @@ class McpResourcesAndPromptsTest {
             assertEquals("app", connection.getValue("database").jsonPrimitive.content)
 
             val tables =
-                Json.parseToJsonElement(client.readText("safedb://connections/c1/tables")).jsonArray
+                Json.parseToJsonElement(client.readText("safedb://connections/c1/tables"))
+                    .jsonObject
+                    .getValue("tables")
+                    .jsonArray
             val names = tables.map { it.jsonObject.getValue("name").jsonPrimitive.content }
             assertEquals(listOf("events", "customers", "orders"), names)
             assertTrue(
@@ -84,6 +87,7 @@ class McpResourcesAndPromptsTest {
                 customers.getValue("qualified_name").jsonPrimitive.content,
             )
             assertEquals("2", customers.getValue("column_count").jsonPrimitive.content)
+            assertEquals("Small", customers.getValue("size_class").jsonPrimitive.content)
 
             val missingConnection =
                 assertFailsWith<McpException> {
@@ -98,7 +102,10 @@ class McpResourcesAndPromptsTest {
         val service = db2ResourcesService()
         withTempMcpClient(service) { client ->
             val tables =
-                Json.parseToJsonElement(client.readText("safedb://connections/c1/tables")).jsonArray
+                Json.parseToJsonElement(client.readText("safedb://connections/c1/tables"))
+                    .jsonObject
+                    .getValue("tables")
+                    .jsonArray
             assertEquals(
                 listOf("CUSTOMERS"),
                 tables.map { it.jsonObject.getValue("name").jsonPrimitive.content },

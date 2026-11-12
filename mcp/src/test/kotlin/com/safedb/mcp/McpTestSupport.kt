@@ -46,6 +46,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.test.assertEquals
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -55,7 +56,9 @@ import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 internal const val PIPE_BUFFER = 64 * 1024
 
@@ -253,6 +256,76 @@ internal fun sampleMcpAssessment(
         riskEvaluation = risk,
     )
 
+internal fun CallToolResult.text(): String = (content.single() as TextContent).text
+
+internal fun CallToolResult.json(): JsonObject = Json.parseToJsonElement(text()).jsonObject
+
+internal fun assertError(result: CallToolResult, code: String, message: String) {
+    assertEquals(true, result.isError)
+    assertEquals(code, result.json().getValue("error").jsonPrimitive.content)
+    assertEquals(message, result.json().getValue("message").jsonPrimitive.content)
+}
+
+internal fun queryService(): RecordingSafeDbService {
+    val service = RecordingSafeDbService()
+    service.connections += sampleMcpConnection()
+    service.passwords["c1"] = "should-not-leak"
+    service.schemas["c1"] = sampleMcpSchema()
+    service.settings = Settings(blockedSchemas = listOf("audit"))
+    service.runQueryResult = sampleMcpRunResult()
+    return service
+}
+
+internal fun sampleExploreQueryResult(): QueryResult =
+    QueryResult(
+        columns =
+            listOf(
+                ResultColumn("region", "text"),
+                ResultColumn("amount", "int"),
+                ResultColumn("created", "text"),
+            ),
+        rows =
+            listOf(
+                listOf(
+                    ResultCell.text("east"),
+                    ResultCell.integer(10),
+                    ResultCell.text("2024-01-05"),
+                ),
+                listOf(
+                    ResultCell.text("east"),
+                    ResultCell.integer(20),
+                    ResultCell.text("2024-02-15"),
+                ),
+                listOf(
+                    ResultCell.text("west"),
+                    ResultCell.integer(30),
+                    ResultCell.text("2024-03-10"),
+                ),
+                listOf(
+                    ResultCell.text("west"),
+                    ResultCell.integer(40),
+                    ResultCell.text("2024-04-20"),
+                ),
+                listOf(
+                    ResultCell.text("north"),
+                    ResultCell.integer(50),
+                    ResultCell.text("2025-01-01"),
+                ),
+            ),
+        rowCount = 5,
+        truncated = false,
+        warnings = emptyList(),
+    )
+
+internal fun exploreSampleService(): RecordingSafeDbService {
+    val service = RecordingSafeDbService()
+    service.connections += sampleMcpConnection()
+    service.passwords["c1"] = "should-not-leak"
+    service.schemas["c1"] = sampleMcpSchema()
+    service.runQueryResult = QueryRunResult(sampleExploreQueryResult(), allowedMcpRisk())
+    return service
+}
+
 internal fun sampleMcpSchema(): Schema =
     Schema(
         tables =
@@ -369,11 +442,18 @@ internal suspend fun Client.deleteConnectionConfirmed(connectionId: String): Cal
 }
 
 internal suspend fun withTempMcpClient(service: SafeDbService, block: suspend (Client) -> Unit) {
-    val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+    val dataDir = Files.createTempDirectory("safedb-mcp")
     try {
-        withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir), block)
+        withMcpClient(
+            createSafeDbMcpServer(
+                service,
+                resultsDir = dataDir.resolve("results"),
+                exportsDir = dataDir.resolve("exports"),
+            ),
+            block,
+        )
     } finally {
-        resultsDir.toFile().deleteRecursively()
+        dataDir.toFile().deleteRecursively()
     }
 }
 

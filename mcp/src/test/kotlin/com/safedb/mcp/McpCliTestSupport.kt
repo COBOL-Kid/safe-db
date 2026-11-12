@@ -1,19 +1,6 @@
 package com.safedb.mcp
 
-import com.safedb.service.SafeDbServiceImpl
-import com.safedb.store.ConfigStore
-import com.safedb.store.QueryStore
-import com.safedb.store.RecipeStore
-import com.safedb.store.SettingsStore
 import java.nio.file.Path
-
-internal fun realRecipeService(directory: Path): SafeDbServiceImpl =
-    SafeDbServiceImpl(
-        configStore = ConfigStore.new(directory),
-        queryStore = QueryStore.new(directory),
-        settingsStore = SettingsStore.new(directory),
-        recipeStore = RecipeStore.new(directory),
-    )
 
 internal const val MINIMAL_RECIPE_JSON =
     """{

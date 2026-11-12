@@ -388,6 +388,7 @@ private class SqlSpecBuilder(
             column = column.name,
             op = predicate.op,
             value = value,
+            likeEscape = predicate.likeEscape,
         )
     }
 

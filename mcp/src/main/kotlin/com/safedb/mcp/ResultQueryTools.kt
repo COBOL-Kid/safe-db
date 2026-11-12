@@ -25,39 +25,36 @@ internal fun registerResultQueryTools(server: Server, resultStore: ResultStore) 
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "result_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "result_id from a successful run_query receipt")
-                            },
-                        )
+                        put("result_id", resultIdProperty())
                         put(
                             "offset",
-                            buildJsonObject {
-                                put("type", "integer")
-                                put(
-                                    "description",
-                                    "Row offset into the in-memory sample. Default 0.",
-                                )
-                            },
+                            intProp("Row offset into the in-memory sample. Default 0."),
                         )
                         put(
                             "limit",
-                            buildJsonObject {
-                                put("type", "integer")
-                                put(
-                                    "description",
-                                    "Max rows to return (1–50). Default 50. Values over 50 " +
-                                        "cap at 50. 0 or negative is invalid_arguments. " +
-                                        "A page may contain fewer rows when it hits the " +
+                            boundedLimitProperty(
+                                defaultLimit = GET_RESULT_ROWS_MAX,
+                                maxLimit = GET_RESULT_ROWS_MAX,
+                                noun = "rows",
+                                extraNote =
+                                    " A page may contain fewer rows when it hits the " +
                                         "$MCP_PAYLOAD_MAX_BYTES byte budget.",
-                                )
-                            },
+                            ),
                         )
                     },
                 required = listOf("result_id"),
             ),
+        outputSchema =
+            objectOutputSchema(
+                listOf("result_id", "offset", "row_count", "page_truncated", "rows")
+            ) {
+                put("result_id", stringProp())
+                put("offset", intProp())
+                put("row_count", intProp())
+                put("page_truncated", boolProp())
+                put("next_offset", intProp())
+                put("rows", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("get_result_rows failed") { handleGetResultRows(resultStore, request) }
@@ -73,18 +70,16 @@ internal fun registerResultQueryTools(server: Server, resultStore: ResultStore) 
                 "minutes. Unknown or expired result_id returns not_found.",
         inputSchema =
             ToolSchema(
-                properties =
-                    buildJsonObject {
-                        put(
-                            "result_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "result_id from a successful run_query receipt")
-                            },
-                        )
-                    },
+                properties = buildJsonObject { put("result_id", resultIdProperty()) },
                 required = listOf("result_id"),
             ),
+        outputSchema =
+            objectOutputSchema(listOf("result_id", "row_count", "columns")) {
+                put("result_id", stringProp())
+                put("row_count", intProp())
+                put("columns", arrayProp())
+                put("sample_capped", boolProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("summarize_result failed") { handleSummarizeResult(resultStore, request) }
@@ -141,12 +136,5 @@ private suspend fun handleSummarizeResult(
             return it
         }
     val result = resultStore.get(resultId) ?: return toolError(ERROR_NOT_FOUND, "Result not found")
-    val summary =
-        ResultSummary(
-            resultId = resultId,
-            rowCount = result.rowCount,
-            sampleCapped = result.truncated,
-            columns = summarizeColumns(result),
-        )
-    return objectToolResult(summary)
+    return objectToolResult(buildResultSummary(resultId, result))
 }

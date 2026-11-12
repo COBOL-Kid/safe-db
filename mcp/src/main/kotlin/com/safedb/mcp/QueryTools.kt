@@ -36,88 +36,17 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Connection id from list_connections")
-                            },
-                        )
-                        put(
-                            "sql",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "A single SELECT. Result columns are named table__column. " +
-                                        "No aggregates or functions, OFFSET, subqueries, CTEs, " +
-                                        "UNION, LEFT/CROSS or comma joins, AS aliases, or " +
-                                        "leading NOT. Joins need indexed or FK columns.",
-                                )
-                            },
-                        )
-                        put(
-                            "default_schema",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Schema used when a table name has no schema prefix. Copy " +
-                                        "list_tables.schema for this connection (MySQL: usually " +
-                                        "the database name). Omit when every table is already " +
-                                        "schema.table.",
-                                )
-                            },
-                        )
-                        put(
-                            "confirmation",
-                            buildJsonObject {
-                                put("type", "object")
-                                put(
-                                    "description",
-                                    "Echo the confirmation object from a confirmation_required " +
-                                        "error after showing the reasons to the user. Do not " +
-                                        "invent this object.",
-                                )
-                            },
-                        )
+                        put("connection_id", connectionIdProperty())
+                        put("sql", sqlProperty())
+                        put("default_schema", defaultSchemaProperty())
+                        put("confirmation", confirmationProperty())
                     },
                 required = listOf("connection_id", "sql"),
             ),
-        outputSchema =
-            ToolSchema(
-                properties =
-                    buildJsonObject {
-                        put("dialect", buildJsonObject { put("type", "string") })
-                        put("columns", buildJsonObject { put("type", "array") })
-                        put("row_count", buildJsonObject { put("type", "integer") })
-                        put("warnings", buildJsonObject { put("type", "array") })
-                        put("risk", buildJsonObject { put("type", "object") })
-                        put("preview", buildJsonObject { put("type", "array") })
-                        put("preview_truncated", buildJsonObject { put("type", "boolean") })
-                        put("result_id", buildJsonObject { put("type", "string") })
-                        put("sample_capped", buildJsonObject { put("type", "boolean") })
-                        put("sample_cap_reason", buildJsonObject { put("type", "string") })
-                        put("sample_unbounded", buildJsonObject { put("type", "boolean") })
-                    },
-                required =
-                    listOf(
-                        "dialect",
-                        "columns",
-                        "row_count",
-                        "warnings",
-                        "risk",
-                        "preview",
-                        "preview_truncated",
-                        "result_id",
-                    ),
-            ),
+        outputSchema = queryReceiptOutputSchema(),
     ) { request ->
         runMcpTool("run_query failed") { handleRunQuery(service, resultStore, request) }
     }
-
-    registerAssessQueryTools(server, service)
-    registerResultQueryTools(server, resultStore)
 }
 
 private suspend fun handleRunQuery(

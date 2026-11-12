@@ -436,6 +436,162 @@ class ExploreArgParsersTest {
     }
 
     @Test
+    fun nestedObjectsRejectUnknownKeysAndWrongTypes() {
+        val unknownDimensionKey =
+            assertIs<Arg.Err>(
+                parseDimensions(
+                    objects("""{"column":"region","bogus":true}"""),
+                    columns,
+                    "row_dimensions",
+                )
+            )
+        assertEquals("unknown field 'row_dimensions[0].bogus'", unknownDimensionKey.message())
+
+        val unknownGroupingKey =
+            assertIs<Arg.Err>(
+                parseDimensions(
+                    objects("""{"column":"amount","grouping":{"bin_size":"25","unit":"n"}}"""),
+                    columns,
+                    "row_dimensions",
+                )
+            )
+        assertEquals(
+            "unknown field 'row_dimensions[0].grouping.unit'",
+            unknownGroupingKey.message(),
+        )
+
+        val showSubtotalsString =
+            assertIs<Arg.Err>(
+                parseDimensions(
+                    objects("""{"column":"region","show_subtotals":"true"}"""),
+                    columns,
+                    "row_dimensions",
+                )
+            )
+        assertEquals(
+            "row_dimensions[0].show_subtotals must be a boolean",
+            showSubtotalsString.message(),
+        )
+
+        val labelNumber =
+            assertIs<Arg.Err>(
+                parseDimensions(
+                    objects("""{"column":"region","label":42}"""),
+                    columns,
+                    "row_dimensions",
+                )
+            )
+        assertEquals("row_dimensions[0].label must be a string", labelNumber.message())
+
+        val binStartNumber =
+            assertIs<Arg.Err>(
+                parseDimensions(
+                    objects("""{"column":"amount","grouping":{"bin_size":"25","bin_start":0}}"""),
+                    columns,
+                    "row_dimensions",
+                )
+            )
+        assertEquals(
+            "row_dimensions[0].grouping.bin_start must be a string",
+            binStartNumber.message(),
+        )
+
+        val unknownMeasureKey =
+            assertIs<Arg.Err>(
+                parseMeasures(objects("""{"alias":"x","fn":"count","bogus":1}"""), columns)
+            )
+        assertEquals("unknown field 'measures[0].bogus'", unknownMeasureKey.message())
+
+        val measureLabelNumber =
+            assertIs<Arg.Err>(
+                parseMeasures(objects("""{"alias":"x","fn":"count","label":42}"""), columns)
+            )
+        assertEquals("measures[0].label must be a string", measureLabelNumber.message())
+
+        val countString =
+            assertIs<Arg.Err>(
+                parsePivotFilters(
+                    objects(
+                        """{"column":"region","op":"top","measure_alias":"count","count":"5"}"""
+                    ),
+                    columns,
+                )
+            )
+        assertEquals("filters[0].count must be an integer", countString.message())
+
+        val includedKeysNumber =
+            assertIs<Arg.Err>(
+                parsePivotFilters(
+                    objects("""{"column":"region","op":"members","included_keys":[1]}"""),
+                    columns,
+                )
+            )
+        assertEquals("filters[0].included_keys[0] must be a string", includedKeysNumber.message())
+
+        val extraMembersValue =
+            assertIs<Arg.Err>(
+                parsePivotFilters(
+                    objects("""{"column":"region","op":"members","value":"x"}"""),
+                    columns,
+                )
+            )
+        assertEquals("unknown field 'filters[0].value'", extraMembersValue.message())
+
+        val extraLabelCount =
+            assertIs<Arg.Err>(
+                parsePivotFilters(
+                    objects("""{"column":"region","op":"equals","count":5}"""),
+                    columns,
+                )
+            )
+        assertEquals("unknown field 'filters[0].count'", extraLabelCount.message())
+
+        val extraValueIncludedKeys =
+            assertIs<Arg.Err>(
+                parsePivotFilters(
+                    objects(
+                        """{"column":"amount","op":"gt","measure_alias":"count","included_keys":[]}"""
+                    ),
+                    columns,
+                )
+            )
+        assertEquals("unknown field 'filters[0].included_keys'", extraValueIncludedKeys.message())
+
+        val bothSortTargets =
+            assertIs<Arg.Err>(
+                parseExploreSort(
+                    jsonObject("""{"column":"region","measure_alias":"count"}"""),
+                    columns,
+                )
+            )
+        assertEquals(
+            "sort cannot include both column and measure_alias",
+            bothSortTargets.message(),
+        )
+
+        val unknownSortKey =
+            assertIs<Arg.Err>(
+                parseExploreSort(jsonObject("""{"column":"region","bogus":1}"""), columns)
+            )
+        assertEquals("unknown field 'sort.bogus'", unknownSortKey.message())
+
+        val unknownWorksheetFilterKey =
+            assertIs<Arg.Err>(
+                parseWorksheetFilters(
+                    objects("""{"column":"region","op":"eq","bogus":true}"""),
+                    columns,
+                )
+            )
+        assertEquals("unknown field 'filters[0].bogus'", unknownWorksheetFilterKey.message())
+
+        val unknownWorksheetSortKey =
+            assertIs<Arg.Err>(
+                parseWorksheetSorts(objects("""{"column":"region","bogus":1}"""), columns)
+            )
+        assertEquals("unknown field 'sorts[0].bogus'", unknownWorksheetSortKey.message())
+    }
+
+    @Test
     fun optionalArrayRejectsNonArrayCollections() {
         val request =
             CallToolRequest(

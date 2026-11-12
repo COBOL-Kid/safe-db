@@ -264,6 +264,31 @@ class QueryEngineTest {
     }
 
     @Test
+    fun validateQueryRejectsLikeEscapeOnNonLikeOperator() {
+        val spec =
+            sampleSpec()
+                .copy(
+                    filters =
+                        sampleSpec()
+                            .filters
+                            .copy(
+                                children =
+                                    sampleSpec().filters.children +
+                                        FilterNode.Leaf(
+                                            leaf(
+                                                    FilterOp.Eq,
+                                                    FilterValue.Single(lit(LiteralKind.Int, "1")),
+                                                )
+                                                .copy(likeEscape = true)
+                                        )
+                            )
+                )
+        val err = validateQuery(spec, sampleSchema(), emptyList()).unwrapErr()
+        assertTrue(err.contains("likeEscape"))
+        assertTrue(err.contains("LIKE"))
+    }
+
+    @Test
     fun validateRejectsFilterMissingValue() {
         val spec =
             sampleSpec()

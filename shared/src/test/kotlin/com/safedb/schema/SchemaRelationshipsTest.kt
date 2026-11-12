@@ -264,6 +264,53 @@ class SchemaRelationshipsTest {
     }
 
     @Test
+    fun searchCatalogTablesIgnoresForeignKeysAbsentFromTheVisibleCatalog() {
+        val customers = table(name = "customers", columns = listOf(column("id")))
+        val orders =
+            table(
+                name = "orders",
+                columns = listOf(column("id"), column("customer_id"), column("secret_id")),
+                foreignKeys =
+                    listOf(
+                        foreignKey(
+                            "orders_customer_fk",
+                            listOf("customer_id"),
+                            "customers",
+                            listOf("id"),
+                        ),
+                        foreignKey(
+                            "orders_secret_fk",
+                            listOf("secret_id"),
+                            "secrets",
+                            listOf("id"),
+                            referencedSchema = "hidden",
+                        ),
+                    ),
+            )
+        val invoices =
+            table(
+                schema = "sales",
+                name = "invoices",
+                columns = listOf(column("id"), column("order_id")),
+                foreignKeys =
+                    listOf(
+                        foreignKey("invoices_order_fk", listOf("order_id"), "orders", listOf("id"))
+                    ),
+            )
+        val visible = listOf(customers, orders, invoices)
+
+        val byHiddenTable = searchCatalogTables(visible, query = "secrets")
+        assertTrue(byHiddenTable.isEmpty())
+
+        val byHiddenFk = searchCatalogTables(visible, query = "orders_secret_fk")
+        assertTrue(byHiddenFk.isEmpty())
+
+        val crossSchema = searchCatalogTables(visible, query = "orders", schemaFilter = "sales")
+        assertEquals(listOf("sales.invoices"), crossSchema.map { it.qualifiedName })
+        assertEquals(listOf("invoices_order_fk"), crossSchema.single().matchedForeignKeys)
+    }
+
+    @Test
     fun directJoinEdgesIncludeOutgoingIncomingAndIndexedCandidates() {
         val customers =
             table(
@@ -510,6 +557,41 @@ class SchemaRelationshipsTest {
         assertTrue(
             paths.all { path -> path.steps.map { it.toTable }.distinct().size == path.steps.size }
         )
+    }
+
+    @Test
+    fun findJoinPathsOnDenseCatalogReturnsBoundedSortedShortestPaths() {
+        val tables =
+            (1..25).map { index ->
+                table(
+                    name = "t%02d".format(index),
+                    columns =
+                        listOf(
+                            column("id", primary = true, joinEligible = true),
+                            column("tenant_id", indexed = true, joinEligible = true),
+                        ),
+                )
+            }
+        val started = System.nanoTime()
+        val paths =
+            findJoinPaths(
+                tables,
+                "public",
+                "t01",
+                "public",
+                "t02",
+                maxHops = FIND_JOIN_PATHS_MAX_HOPS,
+            )
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        assertEquals(FIND_JOIN_PATHS_MAX_RESULTS, paths.size)
+        assertEquals(1, paths.first().steps.size)
+        assertEquals(listOf("t02"), paths.first().steps.map { it.toTable })
+        assertTrue(paths.drop(1).all { it.steps.size == 2 })
+        assertEquals(
+            listOf("t03", "t04", "t05", "t06", "t07", "t08", "t09", "t10", "t11"),
+            paths.drop(1).map { it.steps.first().toTable },
+        )
+        assertTrue(elapsedMs < 2_000, "dense join search took ${elapsedMs}ms")
     }
 }
 

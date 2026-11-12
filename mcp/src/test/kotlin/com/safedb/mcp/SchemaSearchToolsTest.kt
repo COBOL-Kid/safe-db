@@ -1,7 +1,6 @@
 package com.safedb.mcp
 
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import com.safedb.model.ForeignKeyInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -119,6 +118,68 @@ class SchemaSearchToolsTest {
     }
 
     @Test
+    fun searchCatalogDoesNotMatchForeignKeysToBlockedSchemas() = runBlocking {
+        val service = catalogService()
+        val schema = service.schemas.getValue("c1")
+        val hiddenFk =
+            ForeignKeyInfo(
+                name = "orders_events_fk",
+                columns = listOf("customer_id"),
+                referencedSchema = "audit",
+                referencedTable = "events",
+                referencedColumns = listOf("id"),
+            )
+        service.schemas["c1"] =
+            schema.copy(
+                tables =
+                    schema.tables.map { table ->
+                        if (table.name == "orders") {
+                            table.copy(foreignKeys = table.foreignKeys + hiddenFk)
+                        } else {
+                            table
+                        }
+                    }
+            )
+        withTempMcpClient(service) { client ->
+            val byTarget =
+                client
+                    .callTool(
+                        "search_catalog",
+                        mapOf("connection_id" to "c1", "query" to "events"),
+                    )
+                    .json()
+            assertEquals("0", byTarget.getValue("match_count").jsonPrimitive.content)
+            assertTrue(byTarget.getValue("matches").jsonArray.isEmpty())
+
+            val byName =
+                client
+                    .callTool(
+                        "search_catalog",
+                        mapOf("connection_id" to "c1", "query" to "orders_events_fk"),
+                    )
+                    .json()
+            assertEquals("0", byName.getValue("match_count").jsonPrimitive.content)
+            assertTrue(byName.getValue("matches").jsonArray.isEmpty())
+
+            val visible =
+                client
+                    .callTool(
+                        "search_catalog",
+                        mapOf("connection_id" to "c1", "query" to "orders_customer_fk"),
+                    )
+                    .json()
+            val matches = visible.getValue("matches").jsonArray
+            assertEquals(1, matches.size)
+            assertEquals(
+                listOf("orders_customer_fk"),
+                matches.single().jsonObject.getValue("matched_foreign_keys").jsonArray.map {
+                    it.jsonPrimitive.content
+                },
+            )
+        }
+    }
+
+    @Test
     fun searchCatalogHonorsTheSchemaFilter() = runBlocking {
         val service = catalogService()
         withTempMcpClient(service) { client ->
@@ -142,8 +203,3 @@ class SchemaSearchToolsTest {
         }
     }
 }
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): kotlinx.serialization.json.JsonObject =
-    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject

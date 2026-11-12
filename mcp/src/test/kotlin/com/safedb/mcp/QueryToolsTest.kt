@@ -18,8 +18,6 @@ import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunResult
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -352,7 +350,11 @@ class QueryToolsTest {
                 mismatched.getValue("message").jsonPrimitive.content.contains("default_schema")
             )
             assertTrue(
-                mismatched.getValue("message").jsonPrimitive.content.contains("list_tables.schema")
+                mismatched
+                    .getValue("message")
+                    .jsonPrimitive
+                    .content
+                    .contains("list_tables.tables[].schema")
             )
             assertEquals(requestsAfterMatchingConnection, service.runQueryRequests.size)
         }
@@ -766,10 +768,17 @@ class QueryToolsTest {
 
     @Test
     fun successReceiptIncludesResultIdAndJsonlArtifact() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+        val dataDir = Files.createTempDirectory("safedb-mcp-results")
+        val resultsDir = dataDir.resolve("results")
         try {
             val service = queryService()
-            withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir)) { client ->
+            withMcpClient(
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = resultsDir,
+                    exportsDir = dataDir.resolve("exports"),
+                )
+            ) { client ->
                 val parsed =
                     client
                         .callTool(
@@ -798,7 +807,7 @@ class QueryToolsTest {
                 assertEquals(2, parsed.getValue("preview").jsonArray.size)
             }
         } finally {
-            resultsDir.toFile().deleteRecursively()
+            dataDir.toFile().deleteRecursively()
         }
     }
 
@@ -939,21 +948,6 @@ class QueryToolsTest {
         }
     }
 }
-
-private fun queryService(): RecordingSafeDbService {
-    val service = RecordingSafeDbService()
-    service.connections += sampleMcpConnection()
-    service.passwords["c1"] = "should-not-leak"
-    service.schemas["c1"] = sampleMcpSchema()
-    service.settings = Settings(blockedSchemas = listOf("audit"))
-    service.runQueryResult = sampleMcpRunResult()
-    return service
-}
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): JsonObject =
-    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject
 
 private fun JsonObject.columns() = getValue("columns").jsonArray
 

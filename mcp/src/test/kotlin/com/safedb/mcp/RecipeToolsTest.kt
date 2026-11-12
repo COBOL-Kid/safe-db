@@ -14,7 +14,6 @@ import com.safedb.model.ResultColumn
 import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -30,7 +29,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class RecipeToolsTest {
     @Test
     fun listRecipesMapsSummaryFields() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.exploreRecipes +=
             sampleRecipe(
                 id = "r1",
@@ -85,7 +84,7 @@ class RecipeToolsTest {
 
     @Test
     fun applyRecipePivotsTheStoredResult() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.exploreRecipes +=
             sampleRecipe(
                 pivot =
@@ -118,7 +117,7 @@ class RecipeToolsTest {
 
     @Test
     fun applyRecipeSupportsWorksheetMode() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.exploreRecipes +=
             sampleRecipe(
                 id = "r2",
@@ -157,7 +156,7 @@ class RecipeToolsTest {
 
     @Test
     fun applyRecipeUsesPivotForVisualizationRecipeWithPivot() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.exploreRecipes +=
             sampleRecipe(
                 id = "r3",
@@ -179,7 +178,7 @@ class RecipeToolsTest {
 
     @Test
     fun applyRecipeRejectsVisualizationOnlyRecipe() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.exploreRecipes +=
             sampleRecipe(
                 id = "r4",
@@ -204,7 +203,7 @@ class RecipeToolsTest {
 
     @Test
     fun applyRecipeWorksheetReceiptUsesSourceColumnNames() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.runQueryHandler = { QueryRunResult(prefixedRecipeQueryResult(), allowedMcpRisk()) }
         service.exploreRecipes +=
             sampleRecipe(
@@ -229,7 +228,7 @@ class RecipeToolsTest {
 
     @Test
     fun applyRecipeResolvesManualFieldMappingsAndRejectsUnresolvedFields() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.exploreRecipes +=
             sampleRecipe(
                 requiredFields =
@@ -306,8 +305,76 @@ class RecipeToolsTest {
     }
 
     @Test
+    fun applyRecipeRequiresConfiguredMode() = runBlocking {
+        val service = exploreSampleService()
+        service.exploreRecipes +=
+            sampleRecipe(
+                id = "pivot-only",
+                defaultMode = ExploreMode.Pivot,
+                pivot =
+                    ExploreConfig(
+                        rowDimensions = listOf(PivotDimension("region")),
+                        measures = listOf(PivotMeasure.countRows()),
+                    ),
+                worksheet = null,
+                requiredFields = emptyList(),
+            )
+        service.exploreRecipes +=
+            sampleRecipe(
+                id = "worksheet-only",
+                defaultMode = ExploreMode.Worksheet,
+                pivot = null,
+                worksheet = WorksheetConfig(),
+                requiredFields = emptyList(),
+            )
+        service.exploreRecipes +=
+            sampleRecipe(
+                id = "pivot-missing",
+                defaultMode = ExploreMode.Pivot,
+                pivot = null,
+                worksheet = null,
+                requiredFields = emptyList(),
+            )
+        withTempMcpClient(service) { client ->
+            val resultId = storeRecipeResult(client)
+            assertError(
+                client.callTool(
+                    "apply_recipe",
+                    mapOf(
+                        "result_id" to resultId,
+                        "recipe_id" to "pivot-only",
+                        "mode" to "worksheet",
+                    ),
+                ),
+                "validation",
+                "Recipe 'pivot-only' has no worksheet configuration",
+            )
+            assertError(
+                client.callTool(
+                    "apply_recipe",
+                    mapOf(
+                        "result_id" to resultId,
+                        "recipe_id" to "worksheet-only",
+                        "mode" to "pivot",
+                    ),
+                ),
+                "validation",
+                "Recipe 'worksheet-only' has no pivot configuration",
+            )
+            assertError(
+                client.callTool(
+                    "apply_recipe",
+                    mapOf("result_id" to resultId, "recipe_id" to "pivot-missing"),
+                ),
+                "validation",
+                "Recipe 'pivot-missing' has no pivot configuration",
+            )
+        }
+    }
+
+    @Test
     fun applyRecipeHandlesUnknownRecordsAndInvalidMode() = runBlocking {
-        val service = recipeService()
+        val service = exploreSampleService()
         service.exploreRecipes += sampleRecipe()
         withTempMcpClient(service) { client ->
             val unknownResult =
@@ -345,62 +412,13 @@ class RecipeToolsTest {
 
     @Test
     fun recipeToolsAreReadOnly() = runBlocking {
-        withTempMcpClient(recipeService()) { client ->
+        withTempMcpClient(exploreSampleService()) { client ->
             val tools = client.listTools().tools.associateBy { it.name }
             assertEquals(true, tools.getValue("list_recipes").annotations?.readOnlyHint)
             assertEquals(true, tools.getValue("apply_recipe").annotations?.readOnlyHint)
         }
     }
 }
-
-private fun recipeService(): RecordingSafeDbService {
-    val service = RecordingSafeDbService()
-    service.connections += sampleMcpConnection()
-    service.schemas["c1"] = sampleMcpSchema()
-    service.runQueryResult = QueryRunResult(recipeQueryResult(), allowedMcpRisk())
-    return service
-}
-
-private fun recipeQueryResult(): QueryResult =
-    QueryResult(
-        columns =
-            listOf(
-                ResultColumn("region", "text"),
-                ResultColumn("amount", "int"),
-                ResultColumn("created", "text"),
-            ),
-        rows =
-            listOf(
-                listOf(
-                    ResultCell.text("east"),
-                    ResultCell.integer(10),
-                    ResultCell.text("2024-01-05"),
-                ),
-                listOf(
-                    ResultCell.text("east"),
-                    ResultCell.integer(20),
-                    ResultCell.text("2024-02-15"),
-                ),
-                listOf(
-                    ResultCell.text("west"),
-                    ResultCell.integer(30),
-                    ResultCell.text("2024-03-10"),
-                ),
-                listOf(
-                    ResultCell.text("west"),
-                    ResultCell.integer(40),
-                    ResultCell.text("2024-04-20"),
-                ),
-                listOf(
-                    ResultCell.text("north"),
-                    ResultCell.integer(50),
-                    ResultCell.text("2025-01-01"),
-                ),
-            ),
-        rowCount = 5,
-        truncated = false,
-        warnings = emptyList(),
-    )
 
 private fun prefixedRecipeQueryResult(): QueryResult =
     QueryResult(
@@ -459,16 +477,7 @@ private suspend fun storeRecipeResult(client: Client): String {
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()
 
-private fun CallToolResult.json(): JsonObject =
-    Json.parseToJsonElement((content.single() as TextContent).text).jsonObject
-
 private fun CallToolResult.jsonArray(): kotlinx.serialization.json.JsonArray =
-    Json.parseToJsonElement((content.single() as TextContent).text).jsonArray
+    Json.parseToJsonElement(text()).jsonArray
 
 private fun JsonObject.string(name: String): String = getValue(name).jsonPrimitive.content
-
-private fun assertError(result: CallToolResult, code: String, message: String) {
-    assertEquals(true, result.isError)
-    assertEquals(code, result.json().string("error"))
-    assertEquals(message, result.json().string("message"))
-}

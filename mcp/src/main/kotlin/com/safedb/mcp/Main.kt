@@ -38,7 +38,11 @@ fun main(args: Array<String>) {
                 val dataDir = McpDataDirectory.resolve()
                 val service = createMcpRuntime(dataDir)
                 runMcpStdio(
-                    createSafeDbMcpServer(service, resultsDir = dataDir.resolve("results")),
+                    createSafeDbMcpServer(
+                        service,
+                        resultsDir = dataDir.resolve("results"),
+                        exportsDir = dataDir.resolve("exports"),
+                    ),
                     stdout,
                 )
             }

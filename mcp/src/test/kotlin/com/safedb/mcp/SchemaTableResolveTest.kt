@@ -56,6 +56,21 @@ class SchemaTableResolveTest {
     }
 
     @Test
+    fun exactQualifiedMatchWinsWhenCaseVariantsCoexist() {
+        val tables = listOf(table("public", "Foo"), table("public", "FOO"))
+        val foo = assertIs<Arg.Ok<TableInfo>>(resolveTable("public", "Foo", tables))
+        assertEquals("public.Foo", foo.value.qualifiedName())
+        val upper = assertIs<Arg.Ok<TableInfo>>(resolveTable("public", "FOO", tables))
+        assertEquals("public.FOO", upper.value.qualifiedName())
+        val err = assertIs<Arg.Err>(resolveTable("public", "foo", tables))
+        assertEquals("invalid_arguments", err.error())
+        val message = err.message()
+        assertTrue(message.contains("Table reference is ambiguous"))
+        assertTrue(message.contains("public.Foo"))
+        assertTrue(message.contains("public.FOO"))
+    }
+
+    @Test
     fun duplicateQualifiedRowsAreAmbiguous() {
         val tables = listOf(table("public", "orders"), table("public", "orders"))
         val err = assertIs<Arg.Err>(resolveTable("public", "orders", tables))

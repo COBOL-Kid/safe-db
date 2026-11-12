@@ -27,59 +27,33 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
             ToolSchema(
                 properties =
                     buildJsonObject {
-                        put(
-                            "connection_id",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "Connection id from list_connections")
-                            },
-                        )
-                        put(
-                            "sql",
-                            buildJsonObject {
-                                put("type", "string")
-                                put("description", "A single SELECT to assess without executing.")
-                            },
-                        )
-                        put(
-                            "default_schema",
-                            buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "Schema used when a table name has no schema prefix. Copy " +
-                                        "list_tables.schema for this connection (MySQL: usually " +
-                                        "the database name).",
-                                )
-                            },
-                        )
+                        put("connection_id", connectionIdProperty())
+                        put("sql", sqlProperty("A single SELECT to assess without executing."))
+                        put("default_schema", defaultSchemaProperty())
                     },
                 required = listOf("connection_id", "sql"),
             ),
         outputSchema =
-            ToolSchema(
-                properties =
-                    buildJsonObject {
-                        put("dialect", buildJsonObject { put("type", "string") })
-                        put("columns", buildJsonObject { put("type", "array") })
-                        put("compiled_sql", buildJsonObject { put("type", "string") })
-                        put("parameter_count", buildJsonObject { put("type", "integer") })
-                        put("warnings", buildJsonObject { put("type", "array") })
-                        put("risk", buildJsonObject { put("type", "object") })
-                        put("confirmation_required", buildJsonObject { put("type", "boolean") })
-                        put("reasons", buildJsonObject { put("type", "array") })
-                    },
-                required =
-                    listOf(
-                        "dialect",
-                        "columns",
-                        "compiled_sql",
-                        "parameter_count",
-                        "warnings",
-                        "risk",
-                        "confirmation_required",
-                    ),
-            ),
+            objectOutputSchema(
+                listOf(
+                    "dialect",
+                    "columns",
+                    "compiled_sql",
+                    "parameter_count",
+                    "warnings",
+                    "risk",
+                    "confirmation_required",
+                )
+            ) {
+                put("dialect", stringProp())
+                put("columns", arrayProp())
+                put("compiled_sql", stringProp())
+                put("parameter_count", intProp())
+                put("warnings", arrayProp())
+                put("risk", objectProp())
+                put("confirmation_required", boolProp())
+                put("reasons", arrayProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("assess_query failed") { handleAssessQuery(service, request) }

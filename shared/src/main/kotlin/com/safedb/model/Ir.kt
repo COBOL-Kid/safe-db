@@ -113,6 +113,7 @@ data class FilterSpec(
     val column: String,
     val op: FilterOp,
     val value: FilterValue? = null,
+    @SerialName("like_escape") val likeEscape: Boolean = false,
 )
 
 @Serializable(with = FilterValueSerializer::class)

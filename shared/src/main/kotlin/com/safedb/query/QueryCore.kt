@@ -264,14 +264,9 @@ suspend fun runQueryCore(
                 )
             RiskGateState.ConfirmationRequired -> {
                 val requirement =
-                    baseEvaluation.confirmationRequirement
-                        ?: return QueryCoreOutcome.Failure(
-                            QueryCoreError(
-                                error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
-                                warnings = warnings,
-                                riskEvaluation = baseEvaluation,
-                            )
-                        )
+                    checkNotNull(baseEvaluation.confirmationRequirement) {
+                        "ConfirmationRequired state must carry a confirmationRequirement"
+                    }
                 if (confirmation == requirement.confirmation) {
                     baseEvaluation.copy(
                         decision =

@@ -117,6 +117,7 @@ fun FilterRow(
                             column = firstCol.name,
                             op = op,
                             value = rebuildValue(op, firstCol.dataType, filter.value),
+                            likeEscape = false,
                         )
                     )
                 },
@@ -136,6 +137,7 @@ fun FilterRow(
                             column = colName,
                             op = op,
                             value = rebuildValue(op, col.dataType, filter.value),
+                            likeEscape = false,
                         )
                     )
                 },
@@ -148,7 +150,13 @@ fun FilterRow(
                 options = availableOps.map { it to opLabel(it) },
                 onSelected = { op ->
                     val dataType = columnInfo?.dataType ?: return@FilterDropdown
-                    update(filter.copy(op = op, value = rebuildValue(op, dataType, filter.value)))
+                    update(
+                        filter.copy(
+                            op = op,
+                            value = rebuildValue(op, dataType, filter.value),
+                            likeEscape = false,
+                        )
+                    )
                 },
                 modifier = Modifier.width(FILTER_OP_DROPDOWN_WIDTH_DP.dp),
             )

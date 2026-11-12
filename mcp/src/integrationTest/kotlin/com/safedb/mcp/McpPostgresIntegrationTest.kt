@@ -44,7 +44,12 @@ class McpPostgresIntegrationTest {
                     settingsStore = SettingsStore.new(dataDir),
                 )
             service.createConnection(connection, password)
-            val server = createSafeDbMcpServer(service, resultsDir = resultsDir)
+            val server =
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = resultsDir,
+                    exportsDir = dataDir.resolve("exports"),
+                )
 
             withIntegrationMcpClient(server) { client ->
                 val listed = client.callTool("list_tables", mapOf("connection_id" to connection.id))
@@ -165,7 +170,12 @@ class McpPostgresIntegrationTest {
                     settingsStore = SettingsStore.new(dataDir),
                 )
             service.createConnection(connection, password)
-            val server = createSafeDbMcpServer(service, resultsDir = dataDir.resolve("results"))
+            val server =
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = dataDir.resolve("results"),
+                    exportsDir = dataDir.resolve("exports"),
+                )
             withIntegrationMcpClient(server) { client ->
                 assertLiveQueryLimitAndTypedReads(
                     client,
