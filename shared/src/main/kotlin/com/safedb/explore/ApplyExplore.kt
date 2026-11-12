@@ -327,8 +327,8 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                 )
             return
         }
-        out +=
-            if (config.subtotalPosition == SubtotalPosition.Top && showSubtotal) {
+        if (config.subtotalPosition == SubtotalPosition.Top && showSubtotal) {
+            out +=
                 RowSlice(
                     node,
                     "${node.bucket?.label.orEmpty()} total",
@@ -336,15 +336,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     hasChildren = true,
                     expanded = true,
                 )
-            } else {
-                RowSlice(
-                    node,
-                    node.bucket?.label.orEmpty(),
-                    PivotRowKind.Group,
-                    hasChildren = true,
-                    expanded = true,
-                )
-            }
+        }
         val childDimension = rowDimensions.getOrNull(node.depth)
         val children =
             if (childDimension == null) node.children.values.toList()
@@ -356,7 +348,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     node,
                     "${node.bucket?.label.orEmpty()} total",
                     PivotRowKind.Subtotal,
-                    hasChildren = false,
+                    hasChildren = true,
                     expanded = true,
                 )
         }

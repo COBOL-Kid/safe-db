@@ -226,7 +226,7 @@ class ExploreViewModelTest {
                 showColumnTotals = false,
             )
         }
-        val path = viewModel.preview.layout.rowEntries.first().pathKey
+        val path = viewModel.preview.layout.rowEntries.first { it.hasChildren }.pathKey
         viewModel.toggleRowPath(path)
 
         assertTrue(path in viewModel.config.collapsedRowPaths)

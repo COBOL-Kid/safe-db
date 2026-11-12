@@ -29,6 +29,7 @@ Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engin
 - Empty `run_query` samples drop the leftover material-payload risk score/reason.
 - Duplicate “joins an additional relation” risk reasons collapse to one signal.
 - Duplicate “high-row scan of a large table” risk reasons from a self-join collapse to one reason; both sides still count toward the score.
+- Multi-dimension pivots no longer emit empty parent-group header rows with a null child and null measures, including when `show_subtotals` is false.
 - A mismatched destructive confirmation no longer replaces a still-valid outstanding token.
 - `filter_result_rows` documents that `members` takes `included_keys`, not `value`.
 

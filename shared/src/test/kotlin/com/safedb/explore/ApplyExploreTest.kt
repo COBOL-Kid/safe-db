@@ -288,13 +288,7 @@ class ApplyExploreTest {
             )
 
         assertEquals(listOf("Region", "Status", "Orders"), preview.result.columns.map { it.name })
-        assertEquals(PivotRowKind.Group, preview.layout.rowEntries.first().kind)
-        assertEquals("East", preview.layout.rowEntries.first().label)
-        assertTrue(preview.layout.rowEntries.first().hasChildren)
-        assertEquals(
-            listOf(ResultCell.text("East"), ResultCell.Null, ResultCell.Null),
-            preview.result.rows.first(),
-        )
+        assertTrue(preview.result.rows.none(::isEmptyParentHeaderRow))
         val eastPending =
             preview.result.rows.first { row ->
                 row[0] == ResultCell.text("East") && row[1] == ResultCell.text("pending")
@@ -305,11 +299,11 @@ class ApplyExploreTest {
         assertEquals(ResultCell.IntegerCell(3), eastTotal[2])
         assertTrue(
             preview.layout.rowEntries.any {
-                it.label == "East total" && it.kind == PivotRowKind.Subtotal
+                it.label == "East total" && it.kind == PivotRowKind.Subtotal && it.hasChildren
             }
         )
 
-        val eastPath = preview.layout.rowEntries.first().pathKey
+        val eastPath = preview.layout.rowEntries.first { it.label == "East total" }.pathKey
         val collapsed =
             applyExplore(
                 sampleResult(),
@@ -416,9 +410,83 @@ class ApplyExploreTest {
                 ),
             )
 
-        assertEquals("2026", preview.layout.rowEntries.first().label)
+        assertEquals(
+            "2026",
+            (preview.result.rows.first()[0] as ResultCell.TextCell).value.text,
+        )
         assertTrue(preview.layout.rowEntries.any { it.label == "0 – 50" })
         assertTrue(preview.layout.rowEntries.any { it.label == "50 – 100" })
+    }
+
+    @Test
+    fun twoDimensionPivotOmitsEmptyParentHeaderRowsWhenSubtotalsAreOff() {
+        val preview = twoDimensionRegionStatusPivot(showSubtotals = false)
+
+        assertTrue(preview.result.rows.none(::isEmptyParentHeaderRow))
+        assertTrue(
+            preview.result.rows.none {
+                (it[0] as ResultCell.TextCell).value.text.endsWith(" total")
+            }
+        )
+        assertEquals(
+            listOf(
+                listOf(
+                    ResultCell.text("East"),
+                    ResultCell.text("pending"),
+                    ResultCell.IntegerCell(2),
+                ),
+                listOf(
+                    ResultCell.text("East"),
+                    ResultCell.text("shipped"),
+                    ResultCell.IntegerCell(1),
+                ),
+                listOf(
+                    ResultCell.text("West"),
+                    ResultCell.text("pending"),
+                    ResultCell.IntegerCell(1),
+                ),
+                listOf(
+                    ResultCell.text("West"),
+                    ResultCell.text("shipped"),
+                    ResultCell.IntegerCell(1),
+                ),
+                listOf(
+                    ResultCell.text("(blank)"),
+                    ResultCell.text("pending"),
+                    ResultCell.IntegerCell(1),
+                ),
+                listOf(ResultCell.text("Total"), ResultCell.Null, ResultCell.IntegerCell(6)),
+            ),
+            preview.result.rows,
+        )
+        assertTrue(preview.layout.rowEntries.none { it.kind == PivotRowKind.Group })
+        assertTrue(preview.layout.rowEntries.none { it.kind == PivotRowKind.Subtotal })
+        assertEquals(PivotRowKind.GrandTotal, preview.layout.rowEntries.last().kind)
+    }
+
+    @Test
+    fun twoDimensionPivotOmitsEmptyParentHeaderRowsWhenSubtotalsAreOn() {
+        val preview = twoDimensionRegionStatusPivot(showSubtotals = true)
+
+        assertTrue(preview.result.rows.none(::isEmptyParentHeaderRow))
+        val eastPending =
+            preview.result.rows.first { row ->
+                row[0] == ResultCell.text("East") && row[1] == ResultCell.text("pending")
+            }
+        assertEquals(ResultCell.IntegerCell(2), eastPending[2])
+        val eastTotal = preview.result.rows.first { row -> row[0] == ResultCell.text("East total") }
+        assertEquals(ResultCell.Null, eastTotal[1])
+        assertEquals(ResultCell.IntegerCell(3), eastTotal[2])
+        val grandTotal = preview.result.rows.last()
+        assertEquals(ResultCell.text("Total"), grandTotal[0])
+        assertEquals(ResultCell.Null, grandTotal[1])
+        assertEquals(ResultCell.IntegerCell(6), grandTotal[2])
+        assertTrue(
+            preview.layout.rowEntries.any {
+                it.label == "East total" && it.kind == PivotRowKind.Subtotal
+            }
+        )
+        assertTrue(preview.layout.rowEntries.none { it.kind == PivotRowKind.Group })
     }
 
     @Test
@@ -736,6 +804,27 @@ class ApplyExploreTest {
         assertEquals(MAX_VISIBLE_COLUMN_LEAVES, preview.layout.columnLeaves.size)
         assertNotNull(preview.layout.overflowMessage)
         assertTrue(preview.result.warnings.any { it.contains("visible column groups") })
+    }
+
+    private fun twoDimensionRegionStatusPivot(showSubtotals: Boolean): ExplorePreviewResult =
+        applyExplore(
+            sampleResult(),
+            ExploreConfig(
+                rowDimensions =
+                    listOf(
+                        PivotDimension("t0__region", "Region", id = "region"),
+                        PivotDimension("t0__status", "Status", id = "status"),
+                    ),
+                measures = listOf(PivotMeasure("count", MeasureFn.Count, label = "Orders")),
+                showSubtotals = showSubtotals,
+            ),
+        )
+
+    private fun isEmptyParentHeaderRow(row: List<ResultCell>): Boolean {
+        if (row.size < 3) return false
+        val parent = (row[0] as? ResultCell.TextCell)?.value?.text.orEmpty()
+        val isTotal = parent == "Total" || parent.endsWith(" total")
+        return !isTotal && row[1] is ResultCell.Null && row.drop(2).all { it is ResultCell.Null }
     }
 
     private fun sampleResult(): QueryResult =

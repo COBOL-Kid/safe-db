@@ -868,6 +868,14 @@ class ExploreToolsTest {
             val twoDimensionRows = twoDimensions.getValue("rows").jsonArray.map { it.jsonObject }
             fun text(row: JsonObject, column: String): String? =
                 (row[column] as? JsonPrimitive)?.content
+            fun isEmptyParentHeader(row: JsonObject): Boolean {
+                val parent = text(row, "customers.id").orEmpty()
+                val isTotal = parent == "Total" || parent.endsWith(" total")
+                return !isTotal &&
+                    row.getValue("orders.id") is JsonNull &&
+                    row.getValue("Count") is JsonNull
+            }
+            assertTrue(twoDimensionRows.none(::isEmptyParentHeader))
             val leaf = twoDimensionRows.first { row ->
                 text(row, "customers.id") == "10" && text(row, "orders.id") == "1"
             }
@@ -879,6 +887,34 @@ class ExploreToolsTest {
                 text(row, "customers.id")?.endsWith(" total") == true
             }
             assertEquals(JsonNull, subtotal.getValue("orders.id"))
+            assertEquals("1", subtotal.getValue("Count").jsonPrimitive.content)
+
+            val withoutSubtotals =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf(
+                            "result_id" to joinId,
+                            "row_dimensions" to listOf("c__id", "o__id"),
+                            "measures" to
+                                listOf(Json.parseToJsonElement("""{"alias":"n","fn":"count"}""")),
+                            "show_subtotals" to false,
+                        ),
+                    )
+                    .json()
+            val withoutSubtotalRows =
+                withoutSubtotals.getValue("rows").jsonArray.map { it.jsonObject }
+            assertTrue(withoutSubtotalRows.none(::isEmptyParentHeader))
+            assertTrue(
+                withoutSubtotalRows.none { row ->
+                    text(row, "customers.id")?.endsWith(" total") == true
+                }
+            )
+            val withoutSubtotalsTotal = withoutSubtotalRows.first { row ->
+                text(row, "customers.id") == "Total"
+            }
+            assertEquals(JsonNull, withoutSubtotalsTotal.getValue("orders.id"))
+            assertEquals("2", withoutSubtotalsTotal.getValue("Count").jsonPrimitive.content)
         }
     }
 
