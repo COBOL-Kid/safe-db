@@ -22,6 +22,7 @@ import java.io.Reader
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.sql.ResultSetMetaData
 import java.sql.SQLException
 import java.sql.Types
 import java.util.Base64
@@ -225,17 +226,15 @@ fun decodeQueryResult(
     dialect: Dialect,
 ): com.safedb.model.QueryResult {
     val meta = rs.metaData
-    if (!rs.next()) {
-        val columns =
-            columnsFromCompiledSql(compiledSql, dialect).map {
+    val hasRow = rs.next()
+    val columns =
+        resultColumnsFromMetadata(meta)
+            ?: columnsFromCompiledSql(compiledSql, dialect).map {
                 com.safedb.model.ResultColumn(it, "unknown")
             }
+    if (!hasRow) {
         return com.safedb.model.QueryResult.fromRows(columns, emptyList())
     }
-    val columns =
-        (1..meta.columnCount).map { index ->
-            com.safedb.model.ResultColumn(meta.getColumnLabel(index), meta.getColumnTypeName(index))
-        }
     val budget = ResultRowBudget()
     do {
         val row =
@@ -246,6 +245,15 @@ fun decodeQueryResult(
         if (!budget.accept(row)) break
     } while (rs.next())
     return budget.toResult(columns)
+}
+
+private fun resultColumnsFromMetadata(meta: ResultSetMetaData): List<com.safedb.model.ResultColumn>? {
+    val count = meta.columnCount
+    if (count <= 0) return null
+    return (1..count).map { index ->
+        val typeName = meta.getColumnTypeName(index)?.takeIf { it.isNotBlank() } ?: "unknown"
+        com.safedb.model.ResultColumn(meta.getColumnLabel(index), typeName)
+    }
 }
 
 fun jdbcSql(compiled: CompiledQuery, dialect: Dialect): String =

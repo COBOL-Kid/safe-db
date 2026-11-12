@@ -253,14 +253,19 @@ class WorkspaceToolsTest {
                     .callTool("delete_saved_query", mapOf("query_id" to "q1"))
                     .json()
                     .getValue("confirmation")
-            assertFalse(first == second)
+            assertEquals(first, second)
 
-            val stale =
+            val mismatched =
                 client.callTool(
                     "delete_saved_query",
-                    mapOf("query_id" to "q1", "confirmation" to first),
+                    mapOf(
+                        "query_id" to "q1",
+                        "confirmation" to
+                            Json.parseToJsonElement("""{"query_id":"q1","token":"invented"}"""),
+                    ),
                 )
-            assertError(stale, "confirmation_required", stale.json().string("message"))
+            assertError(mismatched, "confirmation_required", mismatched.json().string("message"))
+            assertEquals(first, mismatched.json().getValue("confirmation"))
 
             val malformed =
                 client.callTool(
@@ -274,6 +279,14 @@ class WorkspaceToolsTest {
 
             val unknown = client.callTool("delete_saved_query", mapOf("query_id" to "nope"))
             assertError(unknown, "not_found", "Saved query not found")
+
+            val deleted =
+                client.callTool(
+                    "delete_saved_query",
+                    mapOf("query_id" to "q1", "confirmation" to first),
+                )
+            assertFalse(deleted.isError == true)
+            assertTrue(service.savedQueries.isEmpty())
         }
     }
 

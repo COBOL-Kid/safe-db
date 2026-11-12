@@ -16,6 +16,11 @@ internal class IssuedTokens {
         return token
     }
 
+    fun existingOrIssue(id: String): String {
+        val created = UUID.randomUUID().toString()
+        return tokens.putIfAbsent(id, created) ?: created
+    }
+
     fun matches(id: String, token: String): Boolean = tokens[id] == token
 
     fun consume(id: String) {
@@ -44,7 +49,7 @@ internal suspend fun <C> runDestructiveConfirmedTool(
             confirmedId(confirmation) != targetId ||
             !tokens.matches(targetId, tokenOf(confirmation))
     ) {
-        return confirmationRequired(tokens.issue(targetId))
+        return confirmationRequired(tokens.existingOrIssue(targetId))
     }
     return runMcpTool(failureMessage) {
         val result = action()

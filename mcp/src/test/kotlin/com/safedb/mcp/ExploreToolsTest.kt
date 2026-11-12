@@ -1,13 +1,23 @@
 package com.safedb.mcp
 
+import com.safedb.explore.ExploreConfig
+import com.safedb.explore.ExploreMode
+import com.safedb.explore.ExploreRecipe
+import com.safedb.explore.PivotDimension
+import com.safedb.explore.PivotMeasure
+import com.safedb.explore.RecipeField
+import com.safedb.model.ColumnInfo
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.TableInfo
 import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.client.Client
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -615,7 +625,174 @@ class ExploreToolsTest {
             assertEquals(true, tools.getValue("filter_result_rows").annotations?.readOnlyHint)
         }
     }
+
+    @Test
+    fun filterResultRowsSchemaDocumentsMembersIncludedKeys() = runBlocking {
+        withTempMcpClient(exploreSampleService()) { client ->
+            val filters =
+                client.listTools().tools.single { it.name == "filter_result_rows" }.inputSchema
+                    .properties
+                    ?.get("filters")
+                    ?.jsonObject
+            assertNotNull(filters)
+            val description = filters.getValue("description").jsonPrimitive.content
+            assertTrue(description.contains("included_keys"))
+            assertTrue(description.contains("members"))
+            val includedKeys =
+                filters
+                    .getValue("items")
+                    .jsonObject
+                    .getValue("properties")
+                    .jsonObject
+                    .getValue("included_keys")
+                    .jsonObject
+                    .getValue("description")
+                    .jsonPrimitive
+                    .content
+            assertTrue(includedKeys.contains("members"))
+        }
+    }
+
+    @Test
+    fun pivotDimensionNamesAgreeForDefaultExplicitRecipeAndAliasedJoins() = runBlocking {
+        val service = exploreSampleService()
+        val schema = service.schemas.getValue("c1")
+        service.schemas["c1"] =
+            schema.copy(
+                tables =
+                    schema.tables +
+                        TableInfo(
+                            schema = "public",
+                            name = "big_events",
+                            columns =
+                                listOf(
+                                    ColumnInfo(name = "id", dataType = "int", nullable = false),
+                                    ColumnInfo(
+                                        name = "event_name",
+                                        dataType = "text",
+                                        nullable = false,
+                                    ),
+                                ),
+                            indexes = emptyList(),
+                        ),
+            )
+        val eventsResult =
+            QueryResult(
+                columns = listOf(ResultColumn("big_events__event_name", "text")),
+                rows =
+                    listOf(listOf(ResultCell.text("login")), listOf(ResultCell.text("logout"))),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val joinResult =
+            QueryResult(
+                columns = listOf(ResultColumn("c__id", "int"), ResultColumn("o__id", "int")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.integer(10), ResultCell.integer(1)),
+                        listOf(ResultCell.integer(11), ResultCell.integer(2)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        service.runQueryHandler = { request ->
+            val aliases = request.spec.tables.map { it.alias }.toSet()
+            val result = if ("c" in aliases && "o" in aliases) joinResult else eventsResult
+            QueryRunResult(result, allowedMcpRisk())
+        }
+        service.exploreRecipes +=
+            ExploreRecipe(
+                id = "r-events",
+                name = "Events",
+                createdAt = "1",
+                updatedAt = "2",
+                defaultMode = ExploreMode.Pivot,
+                pivot =
+                    ExploreConfig(
+                        rowDimensions = listOf(PivotDimension("event_name")),
+                        measures = listOf(PivotMeasure.countRows()),
+                    ),
+                requiredFields =
+                    listOf(RecipeField(column = "event_name", label = "event_name", dataType = "text")),
+            )
+        withTempMcpClient(service) { client ->
+            val eventsId =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to "SELECT event_name FROM public.big_events",
+                        ),
+                    )
+                    .json()
+                    .getValue("result_id")
+                    .jsonPrimitive
+                    .content
+            val defaultNames =
+                client.callTool("pivot_result", mapOf("result_id" to eventsId)).columnNames()
+            val explicitNames =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf(
+                            "result_id" to eventsId,
+                            "row_dimensions" to listOf("big_events__event_name"),
+                        ),
+                    )
+                    .columnNames()
+            val recipeNames =
+                client
+                    .callTool(
+                        "apply_recipe",
+                        mapOf("result_id" to eventsId, "recipe_id" to "r-events"),
+                    )
+                    .columnNames()
+            assertEquals(listOf("event_name", "Count"), defaultNames)
+            assertEquals(defaultNames, explicitNames)
+            assertEquals(defaultNames, recipeNames)
+
+            val joinId =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to
+                                "SELECT c.id, o.id FROM public.customers c JOIN public.orders o ON c.id = o.customer_id",
+                        ),
+                    )
+                    .json()
+                    .getValue("result_id")
+                    .jsonPrimitive
+                    .content
+            val aliasedDefault =
+                client.callTool("pivot_result", mapOf("result_id" to joinId)).columnNames()
+            val aliasedOrders =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf("result_id" to joinId, "row_dimensions" to listOf("o__id")),
+                    )
+                    .columnNames()
+            val aliasedCustomers =
+                client
+                    .callTool(
+                        "pivot_result",
+                        mapOf("result_id" to joinId, "row_dimensions" to listOf("c__id")),
+                    )
+                    .columnNames()
+            assertEquals(listOf("customers.id", "Count"), aliasedDefault)
+            assertEquals(listOf("orders.id", "Count"), aliasedOrders)
+            assertEquals(listOf("customers.id", "Count"), aliasedCustomers)
+        }
+    }
 }
+
+private fun CallToolResult.columnNames(): List<String> =
+    json().getValue("columns").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content }
 
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()

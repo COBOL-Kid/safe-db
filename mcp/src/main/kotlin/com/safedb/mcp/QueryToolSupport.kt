@@ -9,6 +9,7 @@ import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.byteBudgetTruncationWarning
+import com.safedb.query.LARGE_LIMIT_WARNING
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryError
@@ -157,8 +158,9 @@ internal suspend fun successReceipt(
     val result = completed.queryResult
     val stored = resultStore.put(result, tables = spec.tables)
     val preview = previewRows(result)
+    val emptySample = result.rowCount == 0
     val warnings = buildList {
-        addAll(result.warnings)
+        addAll(result.warnings.filterNot { emptySample && it == LARGE_LIMIT_WARNING })
         if (result.truncated) add(sampleCappedWarning(spec, result.warnings))
     }
     val receipt =
@@ -169,7 +171,7 @@ internal suspend fun successReceipt(
             sampleCapped = result.truncated,
             sampleCapReason =
                 if (result.truncated) sampleCapReason(spec, result.warnings) else null,
-            sampleUnbounded = spec.uncapped,
+            sampleUnbounded = spec.uncapped && !emptySample,
             warnings = warnings,
             risk = riskSummary(completed.riskEvaluation),
             preview = preview.rows,

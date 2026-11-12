@@ -617,6 +617,61 @@ class AdapterTest {
     }
 
     @Test
+    fun decodeQueryResultKeepsJdbcTypesWhenTheSampleIsEmpty() {
+        val meta =
+            Proxy.newProxyInstance(
+                ResultSetMetaData::class.java.classLoader,
+                arrayOf(ResultSetMetaData::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "getColumnCount" -> 2
+                    "getColumnLabel" ->
+                        when (args!![0] as Int) {
+                            1 -> "customers__id"
+                            2 -> "customers__email"
+                            else -> error("unexpected column ${args[0]}")
+                        }
+                    "getColumnTypeName" ->
+                        when (args!![0] as Int) {
+                            1 -> "int4"
+                            2 -> "text"
+                            else -> error("unexpected column ${args[0]}")
+                        }
+                    "toString" -> "meta"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSetMetaData
+        val rs =
+            Proxy.newProxyInstance(
+                ResultSet::class.java.classLoader,
+                arrayOf(ResultSet::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getMetaData" -> meta
+                    "next" -> false
+                    "toString" -> "rs"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSet
+
+        val result =
+            decodeQueryResult(
+                rs,
+                """SELECT "customers"."id" AS "customers__id" FROM "public"."customers"""",
+                Dialect.Postgres,
+            )
+
+        assertEquals(0, result.rowCount)
+        assertEquals(
+            listOf(
+                com.safedb.model.ResultColumn("customers__id", "int4"),
+                com.safedb.model.ResultColumn("customers__email", "text"),
+            ),
+            result.columns,
+        )
+    }
+
+    @Test
     fun postgresPreparedStatementsRewriteNumberedPlaceholders() {
         assertEquals(
             "SELECT * FROM \"orders\" WHERE status=? AND created_at>=?",

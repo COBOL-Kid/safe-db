@@ -21,7 +21,7 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
                 "not pass a password or URL. Returns a receipt: dialect, columns, row_count, " +
                 "sample_capped (omitted when false), sample_cap_reason (sql_limit or " +
                 "byte_budget) when capped, sample_unbounded when the SQL omitted LIMIT " +
-                "(omitted when false), preview_truncated, warnings, a slim " +
+                "and the sample is non-empty (omitted when false), preview_truncated, warnings, a slim " +
                 "risk summary, a short preview (~10 flattened rows), and result_id. " +
                 "Page with get_result_rows or summarize_result using result_id. Preview " +
                 "and pages are capped at $MCP_PAYLOAD_MAX_BYTES bytes; long cell values " +

@@ -84,6 +84,23 @@ class QueryRiskTest {
     }
 
     @Test
+    fun allowedQueriesKeepTheSameScoringReasonsAsBlockedQueries() {
+        val evidence = signal(RiskCategory.Access, 4)
+        val elevated = assessmentWithScore(3).copy(signals = listOf(evidence))
+        val allowed = applyRiskGate(elevated, QueryRiskGate.Standard)
+        assertEquals(RiskGateState.Allowed, allowed.state)
+        assertEquals(
+            listOf(RiskDecisionReason(evidence.code.name, signalMessage(evidence))),
+            allowed.reasons,
+        )
+
+        val high = assessmentWithScore(6).copy(signals = listOf(evidence))
+        val blocked = applyRiskGate(high, QueryRiskGate.Standard)
+        assertEquals(RiskGateState.Blocked, blocked.state)
+        assertEquals(allowed.reasons, blocked.reasons)
+    }
+
+    @Test
     fun disabledGateDoesNotRequireAssessmentWhileEnabledGateIsPending() {
         assertEquals(RiskGateState.Allowed, applyRiskGate(null, QueryRiskGate.Disabled).state)
         assertEquals(

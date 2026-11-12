@@ -142,6 +142,10 @@ class ConnectionToolsTest {
                 "confirmation_required",
                 invented.json().getValue("error").jsonPrimitive.content,
             )
+            assertEquals(
+                confirmation.getValue("token").jsonPrimitive.content,
+                invented.json().getValue("confirmation").jsonObject.getValue("token").jsonPrimitive.content,
+            )
             assertEquals(listOf("c1"), service.connections.map { it.id })
 
             val asString =
@@ -156,25 +160,22 @@ class ConnectionToolsTest {
             )
             assertEquals(listOf("c1"), service.connections.map { it.id })
 
-            val stale =
+            val deleted =
                 client.callTool(
                     "delete_connection",
                     mapOf("connection_id" to "c1", "confirmation" to confirmation),
                 )
-            assertEquals(true, stale.isError)
-            assertEquals(
-                "confirmation_required",
-                stale.json().getValue("error").jsonPrimitive.content,
-            )
-            val echoed = stale.json().getValue("confirmation")
-            val deleted =
-                client.callTool(
-                    "delete_connection",
-                    mapOf("connection_id" to "c1", "confirmation" to echoed),
-                )
             assertFalse(deleted.isError == true)
             assertTrue(deleted.text().contains("c1"))
             assertTrue(service.connections.isEmpty())
+
+            val replayed =
+                client.callTool(
+                    "delete_connection",
+                    mapOf("connection_id" to "c1", "confirmation" to confirmation),
+                )
+            assertEquals(true, replayed.isError)
+            assertEquals("not_found", replayed.json().getValue("error").jsonPrimitive.content)
         }
     }
 

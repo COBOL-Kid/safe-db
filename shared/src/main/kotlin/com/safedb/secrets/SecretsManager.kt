@@ -97,11 +97,7 @@ object SecretsManager {
                     )
                 )
             }
-                ?: return Result.failure(
-                    IllegalStateException(
-                        "Password not found for this connection. Delete and add the connection again to store the password."
-                    )
-                )
+                ?: return Result.failure(IllegalStateException(passwordNotFoundMessage()))
         val record = runCatching {
             json.decodeFromString<BoundCredential>(raw)
         }
@@ -138,6 +134,15 @@ object SecretsManager {
     }
 
     fun lockCredentials() = CredentialSession.lockCredentials()
+
+    fun passwordNotFoundMessage(): String =
+        if (activeLabel == "disabled") {
+            "Password not found for this connection because $ENV_BACKEND=disabled holds " +
+                "passwords in process memory only; they are not persisted. Unset that " +
+                "variable and add the connection again."
+        } else {
+            "Password not found for this connection. Delete and add the connection again to store the password."
+        }
 
     fun formatSaveCredentialError(err: Throwable): String {
         val message = unwrapCredentialError(err).message ?: err.toString()

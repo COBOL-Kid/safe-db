@@ -7,6 +7,7 @@ import com.safedb.model.Settings
 import com.safedb.model.TableRef
 import com.safedb.model.byteBudgetTruncationWarning
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.LARGE_LIMIT_WARNING
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -77,6 +78,7 @@ class QueryToolsTest {
             assertEquals("Allowed", risk.getValue("state").jsonPrimitive.content)
             assertEquals("Minimal", risk.getValue("severity").jsonPrimitive.content)
             assertEquals("Standard", risk.getValue("effective_gate").jsonPrimitive.content)
+            assertEquals(emptyList<String>(), risk.getValue("reasons").jsonArray.map { it.jsonPrimitive.content })
             val preview = parsed.getValue("preview").jsonArray
             assertEquals(2, preview.size)
             assertEquals("false", parsed.getValue("preview_truncated").jsonPrimitive.content)
@@ -94,6 +96,65 @@ class QueryToolsTest {
         assertTrue(spec.uncapped)
         assertEquals(DEFAULT_LIMIT, spec.limit)
         assertNull(service.runQueryRequests.single().confirmation)
+    }
+
+    @Test
+    fun emptyUncappedSampleOmitsUnboundedFlagAndLargeLimitWarning() = runBlocking {
+        val service = queryService()
+        service.runQueryResult =
+            sampleMcpRunResult(rowCount = 0, warnings = listOf(LARGE_LIMIT_WARNING))
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to "SELECT id FROM public.customers WHERE id = -1",
+                        ),
+                    )
+                    .json()
+            assertEquals("0", parsed.getValue("row_count").jsonPrimitive.content)
+            assertEquals(
+                "int",
+                parsed.columns()[0].jsonObject.getValue("data_type").jsonPrimitive.content,
+            )
+            assertFalse(parsed.containsKey("sample_unbounded"))
+            assertTrue(parsed.getValue("warnings").jsonArray.none { it.jsonPrimitive.content == LARGE_LIMIT_WARNING })
+        }
+        assertTrue(service.runQueryRequests.single().spec.uncapped)
+    }
+
+    @Test
+    fun allowedElevatedRiskIncludesScoringReasons() = runBlocking {
+        val service = queryService()
+        val reason = RiskDecisionReason("NoEffectiveRestriction", "No effective restriction applies to scan_events.")
+        service.runQueryResult =
+            QueryRunResult(
+                sampleMcpQueryResult(),
+                allowedMcpRisk(
+                    severity = QueryRiskSeverity.Elevated,
+                    score = 4,
+                    reasons = listOf(reason),
+                ),
+            )
+        withTempMcpClient(service) { client ->
+            val risk =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                    )
+                    .json()
+                    .getValue("risk")
+                    .jsonObject
+            assertEquals("Allowed", risk.getValue("state").jsonPrimitive.content)
+            assertEquals("Elevated", risk.getValue("severity").jsonPrimitive.content)
+            assertEquals(
+                listOf(reason.message),
+                risk.getValue("reasons").jsonArray.map { it.jsonPrimitive.content },
+            )
+        }
     }
 
     @Test

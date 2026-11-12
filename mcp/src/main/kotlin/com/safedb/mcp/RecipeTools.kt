@@ -164,7 +164,11 @@ private suspend fun handleApplyRecipe(
                         ERROR_VALIDATION,
                         "Recipe '${recipe.id}' has no pivot configuration",
                     )
-            val preview = applyExplore(entry.result, config)
+            val preview =
+                applyExplore(
+                    entry.result,
+                    config.withTableAwareDimensionLabels(entry.result.columns, entry.tables),
+                )
             pivotResultReceipt(resultId, entry, preview)
         }
         RecipeTargetMode.Worksheet -> {

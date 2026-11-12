@@ -7,7 +7,10 @@ import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.safedb.secrets.ENV_BACKEND
 import com.safedb.secrets.PasswordFile
+import com.safedb.secrets.RequestedBackend
+import com.safedb.secrets.SecretsManager
 import com.safedb.service.SafeDbService
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -133,12 +136,25 @@ internal suspend fun testConnections(id: String?, service: SafeDbService, io: Cl
     return if (failed) 1 else 0
 }
 
+internal fun ephemeralPasswordStoreRequested(
+    envValue: String? = System.getenv(ENV_BACKEND),
+): Boolean = SecretsManager.parseRequestedBackendFrom(envValue) == RequestedBackend.Disabled
+
 internal suspend fun addConnection(
     flags: ConnectionAddFlags,
     service: SafeDbService,
     io: CliIo,
     tty: Boolean,
+    envBackend: String? = System.getenv(ENV_BACKEND),
 ): Int {
+    if (ephemeralPasswordStoreRequested(envBackend)) {
+        throw IllegalStateException(
+            "Refusing to save the connection: $ENV_BACKEND=disabled holds passwords in " +
+                "process memory only, so this connection could not authenticate after setup " +
+                "exits. Unset $ENV_BACKEND (Linux/macOS then uses the owner-only file store) " +
+                "and run setup again."
+        )
+    }
     val dialect = parseDialect(requiredFlag(flags.dialect, "--dialect", "Dialect", tty, io))
     val host = requiredFlag(flags.host, "--host", "Host", tty, io, defaultValue = "localhost")
     val defaultPort = DIALECTS.first { it.value == dialect }.defaultPort

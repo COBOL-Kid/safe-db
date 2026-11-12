@@ -6,6 +6,7 @@ import com.safedb.model.qualifiedName
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
@@ -93,12 +94,34 @@ class SchemaTableResolveTest {
     @Test
     fun unknownTableIsNotFoundWithSuggestions() {
         val tables = sampleMcpSchema().tables
-        val err = assertIs<Arg.Err>(resolveTableReference("public.missing", null, tables))
+        val err = assertIs<Arg.Err>(resolveTableReference("public.custmers", null, tables))
         assertEquals("not_found", err.error())
         val message = err.message()
         assertTrue(message.startsWith("Table not found"))
         assertTrue(message.contains("public.customers"))
-        assertTrue(message.contains("public.orders"))
+        assertFalse(message.contains("public.orders"))
+        assertFalse(message.contains("payload_rows"))
+    }
+
+    @Test
+    fun unknownTableSuggestionsRankBySimilarityNotAlphabeticalOrder() {
+        val tables =
+            sampleMcpSchema().tables +
+                table("public", "payload_rows") +
+                table("public", "scan_events") +
+                table("public", "event_notes")
+        val suggestions = similarTableNames("custmers", tables)
+        assertEquals(listOf("public.customers"), suggestions)
+        assertEquals(suggestions, similarTableNames("public.custmers", tables))
+
+        val prefix = similarTableNames("ord", tables)
+        assertEquals(listOf("public.orders"), prefix)
+
+        val unrelated = similarTableNames("zzzzz", tables)
+        assertTrue(unrelated.isEmpty())
+
+        val none = assertIs<Arg.Err>(resolveTableReference("public.missing", null, tables))
+        assertEquals("Table not found", none.message())
     }
 
     @Test

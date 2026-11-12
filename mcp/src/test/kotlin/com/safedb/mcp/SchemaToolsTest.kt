@@ -280,14 +280,14 @@ class SchemaToolsTest {
             val unknownTable =
                 client.callTool(
                     "describe_table",
-                    mapOf("connection_id" to "c1", "schema" to "public", "table" to "missing"),
+                    mapOf("connection_id" to "c1", "schema" to "public", "table" to "custmers"),
                 )
             assertEquals(true, unknownTable.isError)
             assertEquals("not_found", unknownTable.json().getValue("error").jsonPrimitive.content)
             val unknownTableMessage = unknownTable.json().getValue("message").jsonPrimitive.content
             assertTrue(unknownTableMessage.startsWith("Table not found"))
             assertTrue(unknownTableMessage.contains("public.customers"))
-            assertTrue(unknownTableMessage.contains("public.orders"))
+            assertFalse(unknownTableMessage.contains("public.orders"))
 
             val blocked =
                 client.callTool(

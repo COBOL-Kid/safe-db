@@ -112,6 +112,33 @@ class QueryCoreTest {
     }
 
     @Test
+    fun emptyUncappedResultDropsTheLargeLimitWarning() = runBlocking {
+        val empty =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__id", "int")),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val runner = StubRunner(execute = Outcome.ok(empty))
+        val settings = Settings.default().copy(queryRiskGate = QueryRiskGate.Disabled)
+        val uncapped = sampleSpec().copy(uncapped = true, limit = DEFAULT_LIMIT)
+        val emptyOutcome =
+            runQueryCore(runner, sampleConnection(), uncapped, sampleSchema(), settings)
+        val emptySuccess = assertIs<QueryCoreOutcome.Success>(emptyOutcome)
+        assertEquals(0, emptySuccess.result.rowCount)
+        assertTrue(emptySuccess.result.warnings.none { it == LARGE_LIMIT_WARNING })
+
+        val populatedRunner = StubRunner(execute = Outcome.ok(sampleResult()))
+        val populated =
+            runQueryCore(populatedRunner, sampleConnection(), uncapped, sampleSchema(), settings)
+        val populatedSuccess = assertIs<QueryCoreOutcome.Success>(populated)
+        assertTrue(populatedSuccess.result.warnings.any { it == LARGE_LIMIT_WARNING })
+        assertTrue(populatedSuccess.result.rowCount > 0)
+    }
+
+    @Test
     fun planCheckTimeoutReturnsExecutionErrorInsteadOfConfirmation() = runBlocking {
         val runner =
             StubRunner(

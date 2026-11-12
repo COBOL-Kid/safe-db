@@ -1,9 +1,11 @@
 package com.safedb.mcp
 
 import com.safedb.model.ConnectionDef
+import com.safedb.secrets.ENV_BACKEND
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 class McpCliConnectionsTest {
@@ -99,6 +101,26 @@ class McpCliConnectionsTest {
         )
         assertEquals("OK c1  Demo  Postgres  app\n", io.stdout.toString())
         assertEquals("FAIL c2  Reporting: timed out\n", io.stderr.toString())
+    }
+
+    @Test
+    fun addRefusesWhenKeychainBackendIsDisabled() = runBlocking {
+        val service = RecordingSafeDbService()
+        val io = BufferCliIo()
+        val flags =
+            ConnectionAddFlags(
+                dialect = "postgres",
+                database = "app",
+                username = "readonly",
+                passwordFile = "/tmp/unused",
+            )
+        val error =
+            assertFailsWith<IllegalStateException> {
+                addConnection(flags, service, io, tty = false, envBackend = "disabled")
+            }
+        assertTrue(error.message!!.contains("$ENV_BACKEND=disabled"))
+        assertTrue(service.connections.isEmpty())
+        assertEquals(null, service.tested)
     }
 
     @Test

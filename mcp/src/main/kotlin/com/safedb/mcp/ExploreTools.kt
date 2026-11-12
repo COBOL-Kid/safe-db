@@ -2,13 +2,17 @@ package com.safedb.mcp
 
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExplorePreviewResult
+import com.safedb.explore.PivotDimension
 import com.safedb.explore.WorksheetConfig
 import com.safedb.explore.WorksheetRowKind
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyWorksheet
+import com.safedb.explore.displayColumnLabel
+import com.safedb.explore.displayColumnLabels
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.TableRef
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -64,7 +68,13 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                                     "source_column, label, formula, and show_as."
                             ),
                         )
-                        put("filters", arrayProp("Pivot filter objects."))
+                        put(
+                            "filters",
+                            arrayProp(
+                                "Pivot filter objects. members uses included_keys (not value); " +
+                                    "label/value comparisons use value."
+                            ),
+                        )
                         put(
                             "sort",
                             objectProp(
@@ -113,8 +123,9 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
             "Filter, sort, project, and page the in-memory sample of a previous run_query by " +
                 "result_id. filters accept column plus op (equals, not_equals, contains, " +
                 "starts_with, ends_with, greater_than, greater_than_or_equal, less_than, " +
-                "less_than_or_equal, between, is_null, is_not_null, members) with value, " +
-                "second_value, or included_keys. sorts accept column and asc/desc. columns " +
+                "less_than_or_equal, between, is_null, is_not_null, members). Comparison ops " +
+                "use value and optional second_value (between). members uses included_keys, " +
+                "not value. sorts accept column and asc/desc. columns " +
                 "limits the projected fields. Use receipt column names verbatim (dialect " +
                 "casing); an unknown column reports the known columns. offset defaults to 0 " +
                 "(negative clamps to 0); " +
@@ -127,7 +138,60 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                 properties =
                     buildJsonObject {
                         put("result_id", resultIdProperty())
-                        put("filters", arrayProp("Worksheet filter objects."))
+                        put(
+                            "filters",
+                            buildJsonObject {
+                                put("type", "array")
+                                put(
+                                    "description",
+                                    "Worksheet filter objects. Each item has column, op, and " +
+                                        "the value field for that op. Comparison ops " +
+                                        "(equals, contains, between, ...) use value and " +
+                                        "optional second_value. members uses included_keys " +
+                                        "(an array of strings), not value.",
+                                )
+                                put(
+                                    "items",
+                                    buildJsonObject {
+                                        put("type", "object")
+                                        put(
+                                            "properties",
+                                            buildJsonObject {
+                                                put("column", stringProp("Result column name"))
+                                                put(
+                                                    "op",
+                                                    stringProp(
+                                                        "equals, not_equals, contains, " +
+                                                            "starts_with, ends_with, " +
+                                                            "greater_than, " +
+                                                            "greater_than_or_equal, " +
+                                                            "less_than, less_than_or_equal, " +
+                                                            "between, is_null, is_not_null, " +
+                                                            "or members"
+                                                    ),
+                                                )
+                                                put(
+                                                    "value",
+                                                    stringProp(
+                                                        "Comparison value. Not used when op is members."
+                                                    ),
+                                                )
+                                                put(
+                                                    "second_value",
+                                                    stringProp("Upper bound when op is between."),
+                                                )
+                                                put(
+                                                    "included_keys",
+                                                    arrayProp(
+                                                        "Member keys to keep when op is members. Do not send value."
+                                                    ),
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                            },
+                        )
                         put("sorts", arrayProp("Sort objects with column and direction."))
                         put("columns", arrayProp("Optional column name projection."))
                         put("offset", intProp("Row offset. Default 0."))
@@ -273,7 +337,11 @@ private suspend fun handlePivotResult(
             showSubtotals = showSubtotals ?: defaults.showSubtotals,
         )
 
-    val preview = applyExplore(entry.result, config)
+    val preview =
+        applyExplore(
+            entry.result,
+            config.withTableAwareDimensionLabels(entry.result.columns, entry.tables),
+        )
     return pivotResultReceipt(resultId, entry, preview)
 }
 
@@ -383,6 +451,22 @@ private suspend fun handleFilterResultRows(
             rows = slice.rows,
         )
     return objectToolResult(page)
+}
+
+internal fun ExploreConfig.withTableAwareDimensionLabels(
+    columns: List<ResultColumn>,
+    tables: List<TableRef>,
+): ExploreConfig {
+    val labels = displayColumnLabels(columns, tables)
+    fun PivotDimension.relabel(): PivotDimension {
+        val auto = labels[column] ?: displayColumnLabel(column, tables)
+        val isDefault = label == displayColumnLabel(column) || label == column
+        return if (isDefault) copy(label = auto) else this
+    }
+    return copy(
+        rowDimensions = rowDimensions.map { it.relabel() },
+        columnDimensions = columnDimensions.map { it.relabel() },
+    )
 }
 
 internal fun pivotResultReceipt(

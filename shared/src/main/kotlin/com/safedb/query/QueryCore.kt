@@ -425,6 +425,10 @@ private suspend fun executeCompiled(
         } else {
             result.rows
         }
+    val combinedWarnings =
+        (warnings + result.warnings).let { all ->
+            if (rows.isEmpty()) all.filterNot { it == LARGE_LIMIT_WARNING } else all
+        }
 
     return QueryCoreOutcome.Success(
         result =
@@ -432,7 +436,7 @@ private suspend fun executeCompiled(
                 rows = rows,
                 rowCount = rows.size,
                 truncated = result.truncated || limitTruncated,
-                warnings = warnings + result.warnings,
+                warnings = combinedWarnings,
             ),
         historySpec = normalizedSpec,
         riskEvaluation = evaluation,

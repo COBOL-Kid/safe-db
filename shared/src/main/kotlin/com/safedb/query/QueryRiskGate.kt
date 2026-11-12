@@ -84,27 +84,27 @@ fun applyRiskGate(
     val band = blockingBand(userSetting)!!
     val blocked = assessment.severity.ordinal >= band.ordinal
     val reasons =
-        if (blocked) {
-            assessment.signals
-                .sortedWith(
-                    // EvidenceConfidence declares High first, so ascending ordinal
-                    // is descending confidence.
-                    compareBy<RiskSignal> { it.confidence.ordinal }
-                        .thenByDescending(RiskSignal::points)
-                )
-                .take(3)
-                .map { signal -> RiskDecisionReason(signal.code.name, signalMessage(signal)) }
-                .ifEmpty {
+        assessment.signals
+            .sortedWith(
+                // EvidenceConfidence declares High first, so ascending ordinal
+                // is descending confidence.
+                compareBy<RiskSignal> { it.confidence.ordinal }
+                    .thenByDescending(RiskSignal::points)
+            )
+            .take(3)
+            .map { signal -> RiskDecisionReason(signal.code.name, signalMessage(signal)) }
+            .ifEmpty {
+                if (blocked) {
                     listOf(
                         RiskDecisionReason(
                             "severity_gate",
                             "Query risk is ${assessment.severity.label}.",
                         )
                     )
+                } else {
+                    emptyList()
                 }
-        } else {
-            emptyList()
-        }
+            }
     return QueryRiskDecision(
         fingerprint,
         if (blocked) RiskGateState.Blocked else RiskGateState.Allowed,

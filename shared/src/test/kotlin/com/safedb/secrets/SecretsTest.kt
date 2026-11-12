@@ -88,6 +88,16 @@ class SecretsTest {
     }
 
     @Test
+    fun missingPasswordExplainsDisabledKeychainBackend() {
+        SecretsManager.initStore("disabled")
+        val result = SecretsManager.passwordForDefinition(connectionDef("missing-password"))
+        assertTrue(result.isFailure)
+        val message = result.exceptionOrNull()!!.message!!
+        assertTrue(message.contains("Password not found"))
+        assertTrue(message.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
+    }
+
+    @Test
     fun linuxCannotSelectTheOsCredentialStore() {
         listOf("auto", "protected").forEach { backend ->
             val error =
