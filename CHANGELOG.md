@@ -28,6 +28,7 @@ Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engin
 - `setup` / `connections add` refuse to save a connection when `SAFEDB_KEYCHAIN_BACKEND=disabled`; `connections test` then says to unset that override rather than add the connection again.
 - Empty `run_query` samples drop the leftover material-payload risk score/reason.
 - Duplicate “joins an additional relation” risk reasons collapse to one signal.
+- Duplicate “high-row scan of a large table” risk reasons from a self-join collapse to one reason; both sides still count toward the score.
 - A mismatched destructive confirmation no longer replaces a still-valid outstanding token.
 - `filter_result_rows` documents that `members` takes `included_keys`, not `value`.
 

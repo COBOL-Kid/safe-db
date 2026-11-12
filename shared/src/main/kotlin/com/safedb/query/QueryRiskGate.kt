@@ -88,11 +88,11 @@ fun applyRiskGate(
             .sortedWith(
                 // EvidenceConfidence declares High first, so ascending ordinal
                 // is descending confidence.
-                compareBy<RiskSignal> { it.confidence.ordinal }
-                    .thenByDescending(RiskSignal::points)
+                compareBy<RiskSignal> { it.confidence.ordinal }.thenByDescending(RiskSignal::points)
             )
-            .take(3)
             .map { signal -> RiskDecisionReason(signal.code.name, signalMessage(signal)) }
+            .distinctBy(RiskDecisionReason::message)
+            .take(3)
             .ifEmpty {
                 if (blocked) {
                     listOf(

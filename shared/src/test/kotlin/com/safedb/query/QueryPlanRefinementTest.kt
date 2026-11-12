@@ -725,6 +725,62 @@ class QueryPlanRefinementTest {
         assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Cautious).state)
     }
 
+    @Test
+    fun selfJoinLargeScansKeepBothSidesInTheScoreWithoutRepeatingTheScanReason() {
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        )
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1_000_000,
+                            ),
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t1",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1_000_000,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 1_000_000)),
+                ),
+                twoTableSpec(left = "scan_events", right = "scan_events"),
+                Schema(listOf(table("scan_events", TableSizeClass.Large, EvidenceConfidence.High))),
+            )
+
+        assertEquals(
+            2,
+            refined.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
+        )
+        assertEquals(8, refined.score)
+        assertEquals(QueryRiskSeverity.VeryHigh, refined.severity)
+        val decision = applyRiskGate(refined, QueryRiskGate.Flexible)
+        assertEquals(RiskGateState.Blocked, decision.state)
+        assertEquals(
+            1,
+            decision.reasons.count {
+                it.message == "Plan evidence indicates a high-row scan of a large table."
+            },
+        )
+    }
+
     private fun refineAccess(
         method: PlanAccessMethod,
         rows: Long,

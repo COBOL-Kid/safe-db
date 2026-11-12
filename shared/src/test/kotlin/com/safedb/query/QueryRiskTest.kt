@@ -101,6 +101,75 @@ class QueryRiskTest {
     }
 
     @Test
+    fun identicalSelfJoinScanReasonsAppearOnceWhileBothSidesKeepTheirPoints() {
+        val left =
+            RiskSignal(
+                RiskSignalCode.PlanConfirmedLargeScan,
+                RiskCategory.Access,
+                RiskSubject(tableAlias = "t0", table = "scan_events"),
+                4,
+                SignalBasis.PlanEvidence,
+                EvidenceConfidence.High,
+                RiskTarget.Access("t0"),
+            )
+        val right =
+            RiskSignal(
+                RiskSignalCode.PlanConfirmedLargeScan,
+                RiskCategory.Access,
+                RiskSubject(tableAlias = "t1", table = "scan_events"),
+                4,
+                SignalBasis.PlanEvidence,
+                EvidenceConfidence.High,
+                RiskTarget.Access("t1"),
+            )
+        val extraJoin =
+            RiskSignal(
+                RiskSignalCode.AdditionalJoinedRelation,
+                RiskCategory.Joins,
+                RiskSubject(operation = "join"),
+                1,
+                SignalBasis.StaticSchema,
+                EvidenceConfidence.High,
+            )
+        val joinExpansion =
+            RiskSignal(
+                RiskSignalCode.PlanConfirmedJoinExpansion,
+                RiskCategory.Joins,
+                RiskSubject(operation = "join t0-t1"),
+                3,
+                SignalBasis.PlanEvidence,
+                EvidenceConfidence.High,
+                RiskTarget.Join(setOf("t0", "t1")),
+            )
+        val assessment =
+            buildAssessment("self-join", listOf(left, right, extraJoin, joinExpansion), emptyList())
+
+        assertEquals(
+            2,
+            assessment.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
+        )
+        assertEquals(8, assessment.score)
+        assertEquals(QueryRiskSeverity.VeryHigh, assessment.severity)
+
+        val decision = applyRiskGate(assessment, QueryRiskGate.Flexible)
+        assertEquals(RiskGateState.Blocked, decision.state)
+        assertEquals(
+            1,
+            decision.reasons.count {
+                it.message == "Plan evidence indicates a high-row scan of a large table."
+            },
+        )
+        assertEquals(
+            listOf(
+                "Plan evidence indicates a high-row scan of a large table.",
+                "Plan evidence indicates high join expansion.",
+                "The query joins an additional relation.",
+            ),
+            decision.reasons.map { it.message },
+        )
+    }
+
+    @Test
     fun disabledGateDoesNotRequireAssessmentWhileEnabledGateIsPending() {
         assertEquals(RiskGateState.Allowed, applyRiskGate(null, QueryRiskGate.Disabled).state)
         assertEquals(
