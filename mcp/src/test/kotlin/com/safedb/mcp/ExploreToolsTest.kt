@@ -401,6 +401,57 @@ class ExploreToolsTest {
     }
 
     @Test
+    fun filterResultRowsProjectsOnlyThePageWindow() = runBlocking {
+        val service = exploreService()
+        withTempMcpClient(service) { client ->
+            val resultId = storeExploreResult(client)
+            val page =
+                client.callJson(
+                    "filter_result_rows",
+                    mapOf(
+                        "result_id" to resultId,
+                        "columns" to listOf("region"),
+                        "offset" to 2,
+                        "limit" to 2,
+                    ),
+                )
+            assertEquals("2", page.getValue("offset").jsonPrimitive.content)
+            assertEquals("5", page.getValue("matched_row_count").jsonPrimitive.content)
+            assertEquals("true", page.getValue("page_truncated").jsonPrimitive.content)
+            assertEquals("4", page.getValue("next_offset").jsonPrimitive.content)
+            val rows = page.getValue("rows").jsonArray
+            assertEquals(2, rows.size)
+            assertEquals(listOf("region"), rows[0].jsonObject.keys.toList())
+            assertEquals("west", rows[0].jsonObject.getValue("region").jsonPrimitive.content)
+            assertEquals("west", rows[1].jsonObject.getValue("region").jsonPrimitive.content)
+
+            val lastPage =
+                client.callJson(
+                    "filter_result_rows",
+                    mapOf(
+                        "result_id" to resultId,
+                        "columns" to listOf("region"),
+                        "offset" to 4,
+                    ),
+                )
+            assertEquals("5", lastPage.getValue("matched_row_count").jsonPrimitive.content)
+            assertEquals("false", lastPage.getValue("page_truncated").jsonPrimitive.content)
+            assertFalse(lastPage.containsKey("next_offset"))
+            assertEquals(
+                "north",
+                lastPage
+                    .getValue("rows")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("region")
+                    .jsonPrimitive
+                    .content,
+            )
+        }
+    }
+
+    @Test
     fun filterResultRowsSupportsNullAndBetweenFilters() = runBlocking {
         val service = exploreService()
         service.runQueryResult =

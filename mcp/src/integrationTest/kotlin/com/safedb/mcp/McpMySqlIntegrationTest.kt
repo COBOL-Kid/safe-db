@@ -50,7 +50,8 @@ class McpMySqlIntegrationTest {
                 assertNotEquals(true, listed.isError)
                 val listedText = listed.text()
                 assertPayloadIsPrivate(listedText, connection, password)
-                val tables = Json.parseToJsonElement(listedText).jsonArray
+                val tables =
+                    Json.parseToJsonElement(listedText).jsonObject.getValue("tables").jsonArray
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject
@@ -206,7 +207,8 @@ class McpMySqlIntegrationTest {
                 assertNotEquals(true, listed.isError)
                 val listedText = listed.text()
                 assertPayloadIsPrivate(listedText, connection, password)
-                val tables = Json.parseToJsonElement(listedText).jsonArray
+                val tables =
+                    Json.parseToJsonElement(listedText).jsonObject.getValue("tables").jsonArray
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject

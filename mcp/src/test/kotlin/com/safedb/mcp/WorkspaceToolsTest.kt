@@ -1,13 +1,5 @@
 package com.safedb.mcp
 
-import com.safedb.explore.ExploreConfig
-import com.safedb.explore.ExploreMode
-import com.safedb.explore.ExploreRecipe
-import com.safedb.explore.PivotDimension
-import com.safedb.explore.PivotMeasure
-import com.safedb.explore.RecipeField
-import com.safedb.explore.VisualizationConfig
-import com.safedb.explore.WorksheetConfig
 import com.safedb.model.HistoryEntry
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
@@ -23,7 +15,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -55,6 +46,10 @@ class WorkspaceToolsTest {
                 first.getValue("tables").jsonArray.map { it.jsonPrimitive.content },
             )
             assertEquals("100", first.string("created_at"))
+
+            val second = all[1].jsonObject
+            assertEquals("q2", second.string("id"))
+            assertEquals("-- connection not found", second.string("sql"))
 
             val filtered =
                 client.callTool("list_saved_queries", mapOf("connection_id" to "c1")).jsonArray()
@@ -281,280 +276,6 @@ class WorkspaceToolsTest {
     }
 
     @Test
-    fun listRecipesMapsSummaryFields() = runBlocking {
-        val service = workspaceService()
-        service.exploreRecipes +=
-            sampleRecipe(
-                id = "r1",
-                description = "",
-                defaultMode = ExploreMode.Pivot,
-                pivot = ExploreConfig(rowDimensions = listOf(PivotDimension("region"))),
-                requiredFields =
-                    listOf(
-                        RecipeField(
-                            column = "region",
-                            label = "Region",
-                            dataType = "text",
-                            sourceTable = "customers",
-                        )
-                    ),
-            )
-        service.exploreRecipes +=
-            sampleRecipe(
-                id = "r2",
-                description = "Worksheet layout",
-                defaultMode = ExploreMode.Worksheet,
-                pivot = null,
-                worksheet = WorksheetConfig(),
-                requiredFields = emptyList(),
-            )
-        withTempMcpClient(service) { client ->
-            val body = client.callTool("list_recipes", emptyMap()).jsonArray()
-            assertEquals(2, body.size)
-            val first = body[0].jsonObject
-            assertEquals("r1", first.string("id"))
-            assertEquals("By region", first.string("name"))
-            assertFalse(first.containsKey("description"))
-            assertEquals("pivot", first.string("default_mode"))
-            assertEquals("2", first.string("updated_at"))
-            val field = first.getValue("required_fields").jsonArray.single().jsonObject
-            assertEquals("region", field.string("column"))
-            assertEquals("Region", field.string("label"))
-            assertEquals("text", field.string("data_type"))
-            assertEquals("customers", field.string("source_table"))
-
-            val second = body[1].jsonObject
-            assertEquals("Worksheet layout", second.string("description"))
-            assertEquals("worksheet", second.string("default_mode"))
-
-            assertError(
-                client.callTool("list_recipes", mapOf("bogus" to 1)),
-                "invalid_arguments",
-                "unknown argument 'bogus'",
-            )
-        }
-    }
-
-    @Test
-    fun applyRecipePivotsTheStoredResult() = runBlocking {
-        val service = workspaceService()
-        service.exploreRecipes +=
-            sampleRecipe(
-                pivot =
-                    ExploreConfig(
-                        rowDimensions = listOf(PivotDimension("region")),
-                        measures = listOf(PivotMeasure.countRows()),
-                    )
-            )
-        withTempMcpClient(service) { client ->
-            val resultId = storeWorkspaceResult(client)
-            val result =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r1"),
-                )
-            val body = result.json()
-            assertNotNull(result.structuredContent)
-            assertEquals(body, result.structuredContent)
-            assertEquals(resultId, body.string("result_id"))
-            assertEquals(
-                listOf("region", "Count"),
-                body.getValue("columns").jsonArray.map { it.jsonObject.string("name") },
-            )
-            assertEquals("4", body.string("row_count"))
-            assertFalse(body.containsKey("sample_capped"))
-            assertEquals("false", body.string("pivot_truncated"))
-            assertTrue(body.getValue("rows").jsonArray.isNotEmpty())
-        }
-    }
-
-    @Test
-    fun applyRecipeSupportsWorksheetModeAndVisualizationDefaults() = runBlocking {
-        val service = workspaceService()
-        service.exploreRecipes +=
-            sampleRecipe(
-                id = "r2",
-                defaultMode = ExploreMode.Worksheet,
-                pivot = null,
-                worksheet = WorksheetConfig(),
-                requiredFields = emptyList(),
-            )
-        service.exploreRecipes +=
-            sampleRecipe(
-                id = "r3",
-                defaultMode = ExploreMode.Visualization,
-                pivot = ExploreConfig(rowDimensions = listOf(PivotDimension("region"))),
-                requiredFields = emptyList(),
-            )
-        service.exploreRecipes +=
-            sampleRecipe(
-                id = "r4",
-                defaultMode = ExploreMode.Visualization,
-                pivot = null,
-                worksheet = null,
-                visualization = VisualizationConfig(),
-                requiredFields = emptyList(),
-            )
-        withTempMcpClient(service) { client ->
-            val resultId = storeWorkspaceResult(client)
-            val worksheetResult =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r2"),
-                )
-            val worksheet = worksheetResult.json()
-            assertNotNull(worksheetResult.structuredContent)
-            assertEquals(worksheet, worksheetResult.structuredContent)
-            assertEquals(resultId, worksheet.string("result_id"))
-            assertEquals(
-                listOf("region", "amount", "created"),
-                worksheet.getValue("columns").jsonArray.map { it.jsonObject.string("name") },
-            )
-            assertEquals("5", worksheet.string("row_count"))
-            assertEquals("false", worksheet.string("worksheet_truncated"))
-            assertEquals(5, worksheet.getValue("rows").jsonArray.size)
-
-            val explicit =
-                client.callJson(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r2", "mode" to "WORKSHEET"),
-                )
-            assertEquals("5", explicit.string("row_count"))
-
-            val visualizationWithPivot =
-                client.callJson(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r3"),
-                )
-            assertEquals("4", visualizationWithPivot.string("row_count"))
-            assertTrue(visualizationWithPivot.containsKey("pivot_truncated"))
-
-            val visualizationWithoutPivot =
-                client.callJson(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r4"),
-                )
-            assertTrue(visualizationWithoutPivot.containsKey("pivot_truncated"))
-        }
-    }
-
-    @Test
-    fun applyRecipeResolvesManualFieldMappingsAndRejectsUnresolvedFields() = runBlocking {
-        val service = workspaceService()
-        service.exploreRecipes +=
-            sampleRecipe(
-                requiredFields =
-                    listOf(RecipeField(column = "amount_total", label = "Total", dataType = "int")),
-                pivot =
-                    ExploreConfig(
-                        rowDimensions = listOf(PivotDimension("region")),
-                        measures =
-                            listOf(
-                                PivotMeasure(
-                                    alias = "total",
-                                    fn = com.safedb.explore.MeasureFn.Sum,
-                                    sourceColumn = "amount_total",
-                                )
-                            ),
-                    ),
-            )
-        withTempMcpClient(service) { client ->
-            val resultId = storeWorkspaceResult(client)
-            val unresolved =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r1"),
-                )
-            assertError(
-                unresolved,
-                "validation",
-                "Recipe has unresolved fields: amount_total. " +
-                    "Pass field_mapping to map them to result columns.",
-            )
-
-            val mapped =
-                client.callJson(
-                    "apply_recipe",
-                    mapOf(
-                        "result_id" to resultId,
-                        "recipe_id" to "r1",
-                        "field_mapping" to Json.parseToJsonElement("""{"amount_total":"amount"}"""),
-                    ),
-                )
-            assertEquals("4", mapped.string("row_count"))
-            assertTrue(mapped.getValue("rows").jsonArray.isNotEmpty())
-
-            val invalidValue =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf(
-                        "result_id" to resultId,
-                        "recipe_id" to "r1",
-                        "field_mapping" to Json.parseToJsonElement("""{"amount_total":5}"""),
-                    ),
-                )
-            assertError(
-                invalidValue,
-                "invalid_arguments",
-                "field_mapping values must be strings",
-            )
-
-            val blankValue =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf(
-                        "result_id" to resultId,
-                        "recipe_id" to "r1",
-                        "field_mapping" to Json.parseToJsonElement("""{"amount_total":""}"""),
-                    ),
-                )
-            assertError(
-                blankValue,
-                "invalid_arguments",
-                "field_mapping values must be strings",
-            )
-        }
-    }
-
-    @Test
-    fun applyRecipeHandlesUnknownRecordsAndInvalidMode() = runBlocking {
-        val service = workspaceService()
-        service.exploreRecipes += sampleRecipe()
-        withTempMcpClient(service) { client ->
-            val unknownResult =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf("result_id" to "missing", "recipe_id" to "r1"),
-                )
-            assertError(unknownResult, "not_found", "Result not found")
-
-            val resultId = storeWorkspaceResult(client)
-            val unknownRecipe =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "missing"),
-                )
-            assertError(unknownRecipe, "not_found", "Recipe not found")
-
-            val invalidMode =
-                client.callTool(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r1", "mode" to "chart"),
-                )
-            assertError(invalidMode, "invalid_arguments", "mode must be pivot or worksheet")
-
-            assertError(
-                client.callTool(
-                    "apply_recipe",
-                    mapOf("result_id" to resultId, "recipe_id" to "r1", "bogus" to 1),
-                ),
-                "invalid_arguments",
-                "unknown argument 'bogus'",
-            )
-        }
-    }
-
-    @Test
     fun listQueryHistoryDefaultsCapsFiltersAndMapsFields() = runBlocking {
         val service = workspaceService()
         repeat(60) { index ->
@@ -597,6 +318,7 @@ class WorkspaceToolsTest {
             val filteredEntry = filtered.single().jsonObject
             assertEquals("h-error", filteredEntry.string("id"))
             assertEquals("Remote", filteredEntry.string("connection_name"))
+            assertEquals("-- connection not found", filteredEntry.string("sql"))
             assertEquals("boom", filteredEntry.string("error"))
             assertFalse(filteredEntry.containsKey("risk_severity"))
 
@@ -678,33 +400,6 @@ private fun savedQuery(
         createdAt = createdAt,
     )
 
-private fun sampleRecipe(
-    id: String = "r1",
-    description: String = "",
-    defaultMode: ExploreMode = ExploreMode.Pivot,
-    pivot: ExploreConfig? =
-        ExploreConfig(
-            rowDimensions = listOf(PivotDimension("region")),
-            measures = listOf(PivotMeasure.countRows()),
-        ),
-    worksheet: WorksheetConfig? = null,
-    visualization: VisualizationConfig? = null,
-    requiredFields: List<RecipeField> =
-        listOf(RecipeField(column = "region", label = "Region", dataType = "text")),
-): ExploreRecipe =
-    ExploreRecipe(
-        id = id,
-        name = "By region",
-        description = description,
-        createdAt = "1",
-        updatedAt = "2",
-        defaultMode = defaultMode,
-        pivot = pivot,
-        worksheet = worksheet,
-        visualization = visualization,
-        requiredFields = requiredFields,
-    )
-
 private fun historyEntry(
     id: String,
     connectionId: String = "c1",
@@ -725,20 +420,6 @@ private fun historyEntry(
         riskFinalScore = 7,
         riskGateState = "Allowed",
     )
-
-private suspend fun storeWorkspaceResult(client: Client): String {
-    val receipt =
-        client
-            .callTool(
-                "run_query",
-                mapOf(
-                    "connection_id" to "c1",
-                    "sql" to "SELECT id, email FROM public.customers",
-                ),
-            )
-            .json()
-    return receipt.string("result_id")
-}
 
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()

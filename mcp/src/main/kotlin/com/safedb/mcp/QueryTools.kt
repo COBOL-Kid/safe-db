@@ -313,7 +313,16 @@ private suspend fun handleRunQuery(
         resolveSqlSpec(service, request).getOrElse {
             return it
         }
+    return executeConfirmedQuery(service, resultStore, resolved.connection, resolved.spec, request)
+}
 
+internal suspend fun executeConfirmedQuery(
+    service: SafeDbService,
+    resultStore: ResultStore,
+    connection: ConnectionDef,
+    spec: QuerySpec,
+    request: CallToolRequest,
+): CallToolResult {
     val confirmation =
         when (val parsed = parseConfirmation(request)) {
             is ConfirmationParse.Missing -> null
@@ -322,9 +331,8 @@ private suspend fun handleRunQuery(
         }
 
     return try {
-        val completed =
-            service.runQuery(QueryRunRequest(resolved.connectionId, resolved.spec, confirmation))
-        successReceipt(completed, resultStore, resolved.spec, resolved.connection)
+        val completed = service.runQuery(QueryRunRequest(connection.id, spec, confirmation))
+        successReceipt(completed, resultStore, spec, connection)
     } catch (error: CancellationException) {
         throw error
     } catch (error: QueryFailureException) {
@@ -393,51 +401,33 @@ internal suspend fun resolveSqlSpec(
     val connection =
         service.listConnections().find { it.id == connectionId }
             ?: return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
-    val prepared =
-        prepareSql(service, connection, sql, request).getOrElse {
-            return Arg.Err(it)
-        }
-    return Arg.Ok(
-        ResolvedSql(connectionId, connection, prepared.spec, prepared.schema, prepared.settings)
-    )
-}
-
-internal data class PreparedSql(
-    val spec: QuerySpec,
-    val schema: Schema,
-    val settings: Settings,
-)
-
-internal suspend fun prepareSql(
-    service: SafeDbService,
-    connection: ConnectionDef,
-    sql: String,
-    request: CallToolRequest,
-): Arg<PreparedSql> {
-    val (schema, settings) = service.getSchema(connection.id) to service.getSettings()
+    val schema = service.getSchema(connection.id)
+    val settings = service.getSettings()
     val defaultSchema =
         optionalString(request, "default_schema").getOrElse {
             return Arg.Err(it)
         } ?: settingsDefaultSchema(settings, connection.id)
-    return when (
-        val parsed =
-            parseSqlToSpec(
-                sql,
-                connection.dialect,
-                schema,
-                defaultSchema,
-                mySqlBackslashEscapes(connection),
-            )
-    ) {
-        is SqlParseResult.Failure ->
-            Arg.Err(
-                toolError(
-                    ERROR_PARSE,
-                    parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
+    val spec =
+        when (
+            val parsed =
+                parseSqlToSpec(
+                    sql,
+                    connection.dialect,
+                    schema,
+                    defaultSchema,
+                    mySqlBackslashEscapes(connection),
                 )
-            )
-        is SqlParseResult.Success -> Arg.Ok(PreparedSql(parsed.spec, schema, settings))
-    }
+        ) {
+            is SqlParseResult.Failure ->
+                return Arg.Err(
+                    toolError(
+                        ERROR_PARSE,
+                        parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
+                    )
+                )
+            is SqlParseResult.Success -> parsed.spec
+        }
+    return Arg.Ok(ResolvedSql(connectionId, connection, spec, schema, settings))
 }
 
 internal fun mcpParseMessage(issue: SqlIssue): String =
@@ -491,7 +481,7 @@ internal suspend fun successReceipt(
     connection: ConnectionDef,
 ): CallToolResult {
     val result = completed.queryResult
-    val stored = resultStore.put(result, tables = spec.tables, connectionId = connection.id)
+    val stored = resultStore.put(result, tables = spec.tables)
     val preview = previewRows(result)
     val warnings = buildList {
         addAll(result.warnings)

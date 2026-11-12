@@ -300,22 +300,3 @@ private fun buildLeaf(
         else -> Outcome.err("Unsupported operator in compiler")
     }
 }
-
-private fun FilterOp.isFriendlyTextPattern(): Boolean =
-    this in
-        setOf(
-            FilterOp.Contains,
-            FilterOp.ContainsIgnoreCase,
-            FilterOp.NotContains,
-            FilterOp.StartsWith,
-            FilterOp.EndsWith,
-        )
-
-private fun friendlyPatternOperator(op: FilterOp): String =
-    when (op) {
-        FilterOp.NotContains -> "NOT LIKE"
-        FilterOp.Contains,
-        FilterOp.StartsWith,
-        FilterOp.EndsWith -> "LIKE"
-        else -> error("Not a friendly text pattern: $op")
-    }

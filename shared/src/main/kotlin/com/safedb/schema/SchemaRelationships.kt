@@ -209,21 +209,17 @@ fun findDirectJoinEdges(
         if (!isCompleteForeignKey(foreignKey)) continue
         val target =
             byQualifiedName[foreignKey.referencedSchema to foreignKey.referencedTable] ?: continue
-        val pairs =
-            columnPairs(from, foreignKey.columns, target, foreignKey.referencedColumns) ?: continue
-        pairs.forEach { foreignKeyPairs += ForeignKeyPair(target.schema, target.name, it) }
-        edges +=
-            JoinEdge(
-                fromSchema = from.schema,
-                fromTable = from.name,
-                toSchema = target.schema,
-                toTable = target.name,
-                kind = JoinCandidateKind.ForeignKey,
-                columns = pairs,
-                foreignKeyName = foreignKey.name,
-                cardinality = relationshipCardinality(from, foreignKey),
-                optionality = relationshipOptionality(from, foreignKey),
-            )
+        val edge =
+            foreignKeyJoinEdge(
+                from = from,
+                to = target,
+                foreignKey = foreignKey,
+                leftColumns = foreignKey.columns,
+                rightColumns = foreignKey.referencedColumns,
+                owner = from,
+            ) ?: continue
+        foreignKeyPairs += foreignKeyPairsFor(target, edge)
+        edges += edge
     }
 
     for (source in tables) {
@@ -236,74 +232,101 @@ fun findDirectJoinEdges(
             ) {
                 continue
             }
-            val pairs =
-                columnPairs(from, foreignKey.referencedColumns, source, foreignKey.columns)
-                    ?: continue
-            pairs.forEach { foreignKeyPairs += ForeignKeyPair(source.schema, source.name, it) }
-            edges +=
-                JoinEdge(
-                    fromSchema = from.schema,
-                    fromTable = from.name,
-                    toSchema = source.schema,
-                    toTable = source.name,
-                    kind = JoinCandidateKind.ForeignKey,
-                    columns = pairs,
-                    foreignKeyName = foreignKey.name,
-                    cardinality = relationshipCardinality(source, foreignKey),
-                    optionality = relationshipOptionality(source, foreignKey),
-                )
+            val edge =
+                foreignKeyJoinEdge(
+                    from = from,
+                    to = source,
+                    foreignKey = foreignKey,
+                    leftColumns = foreignKey.referencedColumns,
+                    rightColumns = foreignKey.columns,
+                    owner = source,
+                ) ?: continue
+            foreignKeyPairs += foreignKeyPairsFor(source, edge)
+            edges += edge
         }
     }
 
     if (includeIndexedColumns) {
-        val indexedByTable = linkedMapOf<Pair<String, String>, MutableList<JoinColumnPair>>()
-        for (target in tables) {
-            if (target.schema == from.schema && target.name == from.name) continue
-            for (left in from.columns) {
-                if (!left.joinEligible) continue
-                for (right in target.columns) {
-                    if (!right.joinEligible) continue
-                    if (left.category != right.category) continue
-                    if (
-                        !columnsCompatibleByConvention(
-                            from.name,
-                            left.name,
-                            target.name,
-                            right.name,
-                        )
-                    ) {
-                        continue
-                    }
-                    val pair = JoinColumnPair(left.name, right.name)
-                    if (ForeignKeyPair(target.schema, target.name, pair) in foreignKeyPairs) {
-                        continue
-                    }
-                    indexedByTable.getOrPut(target.schema to target.name, ::mutableListOf).add(pair)
-                }
-            }
-        }
-        indexedByTable.entries
-            .sortedWith(
-                compareBy<Map.Entry<Pair<String, String>, MutableList<JoinColumnPair>>> {
-                        it.key.first.lowercase()
-                    }
-                    .thenBy { it.key.second.lowercase() }
-            )
-            .forEach { (key, pairs) ->
-                val (schema, name) = key
-                edges +=
-                    JoinEdge(
-                        fromSchema = from.schema,
-                        fromTable = from.name,
-                        toSchema = schema,
-                        toTable = name,
-                        kind = JoinCandidateKind.IndexedColumns,
-                        columns = pairs.distinct(),
-                    )
-            }
+        edges += indexedColumnEdges(from, tables, foreignKeyPairs)
     }
 
     return edges.distinct()
+}
+
+private fun foreignKeyJoinEdge(
+    from: TableInfo,
+    to: TableInfo,
+    foreignKey: ForeignKeyInfo,
+    leftColumns: List<String>,
+    rightColumns: List<String>,
+    owner: TableInfo,
+): JoinEdge? {
+    val pairs = columnPairs(from, leftColumns, to, rightColumns) ?: return null
+    return JoinEdge(
+        fromSchema = from.schema,
+        fromTable = from.name,
+        toSchema = to.schema,
+        toTable = to.name,
+        kind = JoinCandidateKind.ForeignKey,
+        columns = pairs,
+        foreignKeyName = foreignKey.name,
+        cardinality = relationshipCardinality(owner, foreignKey),
+        optionality = relationshipOptionality(owner, foreignKey),
+    )
+}
+
+private fun foreignKeyPairsFor(target: TableInfo, edge: JoinEdge): List<ForeignKeyPair> =
+    edge.columns.map { ForeignKeyPair(target.schema, target.name, it) }
+
+private fun indexedColumnEdges(
+    from: TableInfo,
+    tables: List<TableInfo>,
+    foreignKeyPairs: Set<ForeignKeyPair>,
+): List<JoinEdge> {
+    val indexedByTable = linkedMapOf<Pair<String, String>, MutableList<JoinColumnPair>>()
+    for (target in tables) {
+        if (target.schema == from.schema && target.name == from.name) continue
+        for (left in from.columns) {
+            if (!left.joinEligible) continue
+            for (right in target.columns) {
+                if (!right.joinEligible) continue
+                if (left.category != right.category) continue
+                if (
+                    !columnsCompatibleByConvention(
+                        from.name,
+                        left.name,
+                        target.name,
+                        right.name,
+                    )
+                ) {
+                    continue
+                }
+                val pair = JoinColumnPair(left.name, right.name)
+                if (ForeignKeyPair(target.schema, target.name, pair) in foreignKeyPairs) {
+                    continue
+                }
+                indexedByTable.getOrPut(target.schema to target.name, ::mutableListOf).add(pair)
+            }
+        }
+    }
+    return indexedByTable.entries
+        .sortedWith(
+            compareBy<Map.Entry<Pair<String, String>, MutableList<JoinColumnPair>>> {
+                    it.key.first.lowercase()
+                }
+                .thenBy { it.key.second.lowercase() }
+        )
+        .map { (key, pairs) ->
+            val (schema, name) = key
+            JoinEdge(
+                fromSchema = from.schema,
+                fromTable = from.name,
+                toSchema = schema,
+                toTable = name,
+                kind = JoinCandidateKind.IndexedColumns,
+                columns = pairs.distinct(),
+            )
+        }
 }
 
 private data class ForeignKeyPair(

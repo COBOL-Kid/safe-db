@@ -63,6 +63,27 @@ internal fun buildIlike(columnRef: String, ph: String, dialect: Dialect): String
 internal fun escapeLikeLiteral(text: String): String =
     text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
 
+internal fun FilterOp.isFriendlyTextPattern(): Boolean =
+    this in
+        setOf(
+            FilterOp.Contains,
+            FilterOp.ContainsIgnoreCase,
+            FilterOp.NotContains,
+            FilterOp.StartsWith,
+            FilterOp.EndsWith,
+        )
+
+// The LIKE operator a friendly text pattern uses. ContainsIgnoreCase is resolved by the caller
+// because Postgres supports ILIKE while other dialects fall back to LIKE.
+internal fun friendlyPatternOperator(op: FilterOp): String =
+    when (op) {
+        FilterOp.NotContains -> "NOT LIKE"
+        FilterOp.Contains,
+        FilterOp.StartsWith,
+        FilterOp.EndsWith -> "LIKE"
+        else -> error("Not a friendly text pattern: $op")
+    }
+
 // Wraps an escaped literal with the wildcards a friendly text operator implies.
 internal fun friendlyPatternText(op: FilterOp, text: String): String {
     val escaped = escapeLikeLiteral(text)

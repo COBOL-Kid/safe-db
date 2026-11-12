@@ -28,21 +28,8 @@ import com.safedb.model.TableRef
 import com.safedb.model.TableSizeClass
 import com.safedb.model.TableSizeEstimate
 import com.safedb.model.TransportSecurity
-import com.safedb.secrets.DisabledMemoryStore
-import com.safedb.secrets.SecretsManager
-import com.safedb.service.QueryAssessmentResult
-import com.safedb.service.QueryFailureException
-import com.safedb.service.QueryRunRequest
-import com.safedb.service.QuerySession
-import com.safedb.service.QuerySessionFactory
-import com.safedb.service.SafeDbServiceImpl
-import com.safedb.store.ConfigStore
-import com.safedb.store.QueryStore
-import com.safedb.store.SettingsStore
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -194,66 +181,6 @@ class AssessQueryCoreTest {
             assertNotNull(failure.error.riskEvaluation).planStatus,
         )
     }
-
-    @Test
-    fun serviceAssessQueryReportsAssessmentWithoutRecordingHistory() = runBlocking {
-        SecretsManager.useStoreForTest(DisabledMemoryStore())
-        val dir = Files.createTempDirectory("safedb-assess-test")
-        val configStore = ConfigStore.new(dir)
-        val queryStore = QueryStore.new(dir)
-        configStore.save(serviceConnection())
-        SecretsManager.savePasswordForDefinition(serviceConnection(), "secret").getOrThrow()
-        val service =
-            SafeDbServiceImpl(
-                configStore = configStore,
-                queryStore = queryStore,
-                settingsStore = SettingsStore.new(dir),
-                querySessionFactory =
-                    QuerySessionFactory { _, _ -> QuerySession(serviceSchema(), StubRunner()) },
-            )
-
-        val result: QueryAssessmentResult =
-            service.assessQuery(QueryRunRequest("c1", serviceSpec()))
-
-        assertEquals(serviceSpec(), result.normalizedSpec)
-        assertEquals(listOf(ResultColumn("t0__id", "int")), result.columns)
-        assertEquals(0, result.parameterCount)
-        assertTrue(result.compiledSql.startsWith("SELECT "))
-        assertEquals(RiskGateState.Allowed, result.riskEvaluation.decision.state)
-        assertTrue(queryStore.listHistory().isEmpty())
-    }
-
-    @Test
-    fun serviceAssessQueryThrowsOnValidationFailureWithoutHistory() = runBlocking {
-        SecretsManager.useStoreForTest(DisabledMemoryStore())
-        val dir = Files.createTempDirectory("safedb-assess-test")
-        val configStore = ConfigStore.new(dir)
-        val queryStore = QueryStore.new(dir)
-        configStore.save(serviceConnection())
-        SecretsManager.savePasswordForDefinition(serviceConnection(), "secret").getOrThrow()
-        val service =
-            SafeDbServiceImpl(
-                configStore = configStore,
-                queryStore = queryStore,
-                settingsStore = SettingsStore.new(dir),
-                querySessionFactory =
-                    QuerySessionFactory { _, _ -> QuerySession(serviceSchema(), StubRunner()) },
-            )
-
-        val failure =
-            assertFailsWith<QueryFailureException> {
-                service.assessQuery(
-                    QueryRunRequest(
-                        "c1",
-                        serviceSpec()
-                            .copy(tables = listOf(TableRef("safedb_test", "missing", "t0"))),
-                    )
-                )
-            }
-
-        assertIs<QueryError.Validation>(failure.queryError)
-        assertTrue(queryStore.listHistory().isEmpty())
-    }
 }
 
 private class StubRunner(
@@ -345,56 +272,4 @@ private fun sampleResult() =
         rowCount = 1,
         truncated = false,
         warnings = emptyList(),
-    )
-
-private fun serviceConnection() =
-    ConnectionDef(
-        id = "c1",
-        name = "Assess",
-        dialect = Dialect.MySql,
-        host = "localhost",
-        port = 3306,
-        database = "safedb_test",
-        username = "testuser",
-        transportSecurity = TransportSecurity(),
-    )
-
-private fun serviceSpec() =
-    QuerySpec(
-        tables = listOf(TableRef(schema = "safedb_test", name = "customers", alias = "t0")),
-        columns = listOf(ColumnSel("t0", "id")),
-        filters = FilterGroup(id = "root"),
-        limit = 10,
-        schemaVersion = CURRENT_SCHEMA_VERSION,
-    )
-
-private fun serviceSchema() =
-    Schema(
-        tables =
-            listOf(
-                TableInfo(
-                    schema = "safedb_test",
-                    name = "customers",
-                    columns =
-                        listOf(
-                            ColumnInfo(
-                                name = "id",
-                                dataType = "int",
-                                nullable = false,
-                                isIndexed = true,
-                                joinEligible = true,
-                                category = ColumnCategory.Integer,
-                            )
-                        ),
-                    indexes = emptyList(),
-                    indexMetadata = MetadataCoverage.complete(),
-                    foreignKeyMetadata = MetadataCoverage.complete(),
-                    tableSize =
-                        TableSizeEstimate(
-                            TableSizeClass.Unknown,
-                            MetadataCoverage.complete(),
-                            EvidenceConfidence.High,
-                        ),
-                )
-            )
     )

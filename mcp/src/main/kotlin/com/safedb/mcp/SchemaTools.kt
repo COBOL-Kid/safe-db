@@ -12,7 +12,6 @@ import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.EncodeDefault
@@ -36,7 +35,9 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                 "catalogs are omitted, and Db2 omits EXPLAIN_* and ADVISE_* catalog tables. Use " +
                 "describe_table for columns (including " +
                 "join_eligible), indexes, foreign keys, and incoming_foreign_keys of one " +
-                "table. Do not expect the full catalog in one payload. " +
+                "table. Do not expect the full catalog in one payload. The result is an object " +
+                "{tables: [...]} (not a top-level array); it includes JSON text and " +
+                "structuredContent with the same object. " +
                 "Add connections with `safe-db-mcp setup` or `safe-db-mcp connections add`.",
         inputSchema =
             ToolSchema(
@@ -337,15 +338,11 @@ private suspend fun handleListTables(
         optionalBoolean(request, "refresh").getOrElse {
             return it
         } == true
-    val payload =
-        toolJson.encodeToString(
-            visibleCatalog(service, cache, connectionId, refresh)
-                .getOrElse {
-                    return it
-                }
-                .map { it.toSummary() }
-        )
-    return CallToolResult(content = listOf(TextContent(text = payload)))
+    val tables =
+        visibleCatalog(service, cache, connectionId, refresh).getOrElse {
+            return it
+        }
+    return objectToolResult(TableListResult(tables.map { it.toSummary() }))
 }
 
 private suspend fun handleDescribeTable(
@@ -542,6 +539,8 @@ private suspend fun handleFindJoinPaths(
         )
     return objectToolResult(result)
 }
+
+@Serializable internal data class TableListResult(val tables: List<TableSummary>)
 
 @Serializable
 internal data class TableSummary(

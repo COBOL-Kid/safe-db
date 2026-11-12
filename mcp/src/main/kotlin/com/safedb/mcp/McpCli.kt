@@ -13,6 +13,9 @@ import com.safedb.model.normalizeSettings
 import com.safedb.secrets.PasswordFile
 import com.safedb.secrets.PasswordFileException
 import com.safedb.service.SafeDbService
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -199,20 +202,20 @@ private fun parseSettingsCommand(args: Array<String>): McpCommand {
             if (args.size != 2) throw McpCliUsageException()
             McpCommand.SettingsClearDefaultConnection
         }
-        "block-schema" -> {
-            if (args.size != 3 || args[2].isBlank() || args[2].startsWith("-")) {
-                throw McpCliUsageException()
-            }
-            McpCommand.SettingsBlockSchema(args[2])
-        }
-        "unblock-schema" -> {
-            if (args.size != 3 || args[2].isBlank() || args[2].startsWith("-")) {
-                throw McpCliUsageException()
-            }
-            McpCommand.SettingsUnblockSchema(args[2])
-        }
+        "block-schema" -> McpCommand.SettingsBlockSchema(parseSchemaArg(args))
+        "unblock-schema" -> McpCommand.SettingsUnblockSchema(parseSchemaArg(args))
         else -> throw McpCliUsageException()
     }
+}
+
+private fun parseSchemaArg(args: Array<String>): String {
+    if (args.size != 3) throw McpCliUsageException()
+    return normalizeSchema(args[2])
+}
+
+private fun normalizeSchema(raw: String): String {
+    if (raw.isBlank() || raw.startsWith("-")) throw McpCliUsageException()
+    return raw.trim().lowercase()
 }
 
 private fun parseDefaultConnection(args: Array<String>): McpCommand.SettingsDefaultConnection {
@@ -315,20 +318,16 @@ internal suspend fun executeMcpCommand(
                 0
             }
             is McpCommand.SettingsBlockSchema -> {
+                val schema = normalizeSchema(command.schema)
                 val updated =
-                    updateSettings(service) {
-                        it.copy(blockedSchemas = it.blockedSchemas + command.schema)
-                    }
+                    updateSettings(service) { it.copy(blockedSchemas = it.blockedSchemas + schema) }
                 io.print("blocked_schemas: ${blockedSchemasText(updated.blockedSchemas)}")
                 0
             }
             is McpCommand.SettingsUnblockSchema -> {
+                val schema = normalizeSchema(command.schema)
                 val updated =
-                    updateSettings(service) {
-                        it.copy(
-                            blockedSchemas = it.blockedSchemas - command.schema.trim().lowercase()
-                        )
-                    }
+                    updateSettings(service) { it.copy(blockedSchemas = it.blockedSchemas - schema) }
                 io.print("blocked_schemas: ${blockedSchemasText(updated.blockedSchemas)}")
                 0
             }
@@ -381,10 +380,20 @@ private suspend fun importRecipe(path: String, service: SafeDbService, io: CliIo
     if (!Files.isRegularFile(file)) {
         throw IllegalArgumentException("Recipe file not found: $path")
     }
-    if (Files.size(file) > MAX_RECIPE_IMPORT_BYTES) {
+    val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_RECIPE_IMPORT_BYTES + 1) }
+    if (bytes.size > MAX_RECIPE_IMPORT_BYTES) {
         throw IllegalArgumentException("Recipe file is larger than 1 MiB: $path")
     }
-    val json = Files.readString(file, Charsets.UTF_8)
+    val json =
+        try {
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (error: Exception) {
+            throw IllegalArgumentException("Recipe file is not valid UTF-8: $path", error)
+        }
     val recipe = service.importExploreRecipe(json, Instant.now().epochSecond.toString())
     io.print("Imported ${recipe.id}  ${recipe.name}")
     return 0
@@ -426,7 +435,7 @@ private suspend fun updateSettings(
     service: SafeDbService,
     transform: (Settings) -> Settings,
 ): Settings {
-    val updated = normalizeSettings(transform(service.getSettings()))
+    val updated = normalizeSettings(transform(normalizeSettings(service.getSettings())))
     service.saveSettings(updated)
     return updated
 }

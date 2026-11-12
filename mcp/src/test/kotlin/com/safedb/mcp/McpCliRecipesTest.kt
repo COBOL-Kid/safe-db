@@ -184,4 +184,19 @@ class McpCliRecipesTest {
         assertTrue(oversizedIo.stderr.toString().contains("larger than 1 MiB"))
         assertTrue(service.listExploreRecipes().isEmpty())
     }
+
+    @Test
+    fun recipesImportRejectsInvalidUtf8WithoutSaving() = runBlocking {
+        val directory = Files.createTempDirectory("safedb-mcp-cli")
+        val recipeFile = directory.resolve("invalid-utf8.json")
+        Files.write(recipeFile, byteArrayOf(0x7B, 0xFF.toByte(), 0x7D))
+        val service = realRecipeService(directory)
+        val io = BufferCliIo()
+        val command = parseMcpArgs(arrayOf("recipes", "import", recipeFile.toString()))
+
+        assertEquals(1, executeMcpCommand(command, service, io, tty = false))
+        assertTrue(io.stderr.toString().contains("valid UTF-8"))
+        assertTrue(service.listExploreRecipes().isEmpty())
+        assertEquals("", io.stdout.toString())
+    }
 }

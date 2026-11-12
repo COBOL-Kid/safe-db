@@ -1,14 +1,12 @@
 package com.safedb.mcp
 
 import com.safedb.model.ConnectionDef
-import com.safedb.model.Dialect
 import com.safedb.model.HistoryEntry
 import com.safedb.model.Outcome
+import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.query.specToSql
 import com.safedb.query.validateQuery
-import com.safedb.service.QueryFailureException
-import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
@@ -17,7 +15,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.util.UUID
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -262,23 +259,7 @@ private suspend fun handleRunSavedQuery(
     val connection =
         service.listConnections().find { it.id == saved.connectionId }
             ?: return toolError(ERROR_NOT_FOUND, "Connection not found")
-
-    val confirmation =
-        when (val parsed = parseConfirmation(request)) {
-            is ConfirmationParse.Missing -> null
-            is ConfirmationParse.Invalid -> return parsed.result
-            is ConfirmationParse.Ready -> parsed.confirmation
-        }
-
-    return try {
-        val completed =
-            service.runQuery(QueryRunRequest(saved.connectionId, saved.spec, confirmation))
-        successReceipt(completed, resultStore, saved.spec, connection)
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: QueryFailureException) {
-        mapQueryFailure(error)
-    }
+    return executeConfirmedQuery(service, resultStore, connection, saved.spec, request)
 }
 
 private suspend fun handleSaveQuery(
@@ -398,27 +379,29 @@ private suspend fun handleListQueryHistory(
     return CallToolResult(content = listOf(TextContent(text = payload)))
 }
 
-private fun SavedQuery.toSummary(connectionsById: Map<String, ConnectionDef>): SavedQuerySummary {
-    val dialect = connectionsById[connectionId]?.dialect ?: Dialect.Postgres
-    return SavedQuerySummary(
+private const val MISSING_CONNECTION_SQL = "-- connection not found"
+
+private fun sqlForConnection(spec: QuerySpec, connection: ConnectionDef?): String =
+    connection?.let { specToSql(spec, it.dialect) } ?: MISSING_CONNECTION_SQL
+
+private fun SavedQuery.toSummary(connectionsById: Map<String, ConnectionDef>): SavedQuerySummary =
+    SavedQuerySummary(
         id = id,
         name = name,
         connectionId = connectionId,
-        sql = specToSql(spec, dialect),
+        sql = sqlForConnection(spec, connectionsById[connectionId]),
         tables = spec.tables.map { "${it.schema}.${it.name}" },
         createdAt = createdAt,
     )
-}
 
 private fun HistoryEntry.toSummary(
     connectionsById: Map<String, ConnectionDef>
-): HistoryEntrySummary {
-    val dialect = connectionsById[connectionId]?.dialect ?: Dialect.Postgres
-    return HistoryEntrySummary(
+): HistoryEntrySummary =
+    HistoryEntrySummary(
         id = id,
         connectionId = connectionId,
         connectionName = connectionName,
-        sql = specToSql(spec, dialect),
+        sql = sqlForConnection(spec, connectionsById[connectionId]),
         rowCount = rowCount,
         warnings = warnings,
         error = error,
@@ -427,7 +410,6 @@ private fun HistoryEntry.toSummary(
         riskFinalScore = riskFinalScore,
         riskGateState = riskGateState,
     )
-}
 
 private fun savedQueryConfirmationRequired(
     saved: SavedQuery,

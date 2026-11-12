@@ -36,7 +36,10 @@ class SchemaToolsTest {
             assertFalse(text.contains("pg_catalog"))
             assertFalse(text.contains("should-not-leak"))
             assertFalse(text.contains("localhost"))
-            val rows = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonArray
+            val parsed = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+            assertNotNull(listed.structuredContent)
+            assertEquals(parsed, listed.structuredContent)
+            val rows = parsed.getValue("tables").jsonArray
             assertEquals(2, rows.size)
             assertEquals("public", rows[0].jsonObject.getValue("schema").jsonPrimitive.content)
             assertEquals("customers", rows[0].jsonObject.getValue("name").jsonPrimitive.content)
@@ -641,7 +644,11 @@ class SchemaToolsTest {
         withTempMcpClient(service) { client ->
             val listed = client.callTool("list_tables", mapOf("connection_id" to "c1"))
             assertFalse(listed.isError == true)
-            val rows = kotlinx.serialization.json.Json.parseToJsonElement(listed.text()).jsonArray
+            val parsed =
+                kotlinx.serialization.json.Json.parseToJsonElement(listed.text()).jsonObject
+            assertNotNull(listed.structuredContent)
+            assertEquals(parsed, listed.structuredContent)
+            val rows = parsed.getValue("tables").jsonArray
             assertEquals(
                 listOf("CUSTOMERS"),
                 rows.map { it.jsonObject.getValue("name").jsonPrimitive.content },

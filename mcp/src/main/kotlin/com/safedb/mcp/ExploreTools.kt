@@ -380,34 +380,43 @@ private suspend fun handleFilterResultRows(
         worksheet.rows
             .filter { it.kind == WorksheetRowKind.Detail }
             .mapNotNull { it.sourceRowIndex }
+    val columnIndexesByName =
+        entry.result.columns.mapIndexed { index, column -> column.name to index }.toMap()
     val columnIndexes =
-        projection?.map { name -> entry.result.columns.indexOfFirst { it.name == name } }
-            ?: entry.result.columns.indices.toList()
-    val projectedColumns = columnIndexes.map { entry.result.columns[it] }
-    val projectedRows = detailIndexes.map { rowIndex ->
-        val source = entry.result.rows.getOrNull(rowIndex)
-        columnIndexes.map { columnIndex -> source?.getOrNull(columnIndex) ?: ResultCell.Null }
-    }
-    val projected =
+        projection?.map { name ->
+            columnIndexesByName[name]
+                ?: error("Projection column '$name' is missing from the stored result")
+        } ?: entry.result.columns.indices.toList()
+    val offset = offsetArg.coerceAtLeast(0)
+    val limit = (limitArg ?: GET_RESULT_ROWS_MAX).coerceAtMost(GET_RESULT_ROWS_MAX)
+    val matchedRowCount = detailIndexes.size
+    val windowRows =
+        detailIndexes.drop(offset).take(limit).map { rowIndex ->
+            val source =
+                entry.result.rows.getOrNull(rowIndex)
+                    ?: error("Worksheet row $rowIndex is outside the stored result")
+            columnIndexes.map { columnIndex -> source.getOrElse(columnIndex) { ResultCell.Null } }
+        }
+    val window =
         QueryResult(
-            columns = projectedColumns,
-            rows = projectedRows,
-            rowCount = projectedRows.size,
+            columns = columnIndexes.map { entry.result.columns[it] },
+            rows = windowRows,
+            rowCount = windowRows.size,
             truncated = entry.result.truncated,
             warnings = worksheet.warnings,
         )
-    val offset = offsetArg.coerceAtLeast(0)
-    val limit = (limitArg ?: GET_RESULT_ROWS_MAX).coerceAtMost(GET_RESULT_ROWS_MAX)
-    val slice = sliceRows(projected, offset, limit, MCP_PAYLOAD_MAX_BYTES)
+    val slice = sliceRows(window, offset = 0, limit = limit, maxBytes = MCP_PAYLOAD_MAX_BYTES)
+    val consumed = offset + slice.rows.size
+    val pageTruncated = consumed < matchedRowCount
     val page =
         FilteredResultRowsPage(
             resultId = resultId,
             offset = offset,
-            matchedRowCount = projected.rowCount,
+            matchedRowCount = matchedRowCount,
             sampleRowCount = entry.result.rowCount,
             sampleCapped = entry.result.truncated,
-            pageTruncated = slice.moreRowsRemain,
-            nextOffset = slice.nextOffset,
+            pageTruncated = pageTruncated,
+            nextOffset = if (pageTruncated) consumed else null,
             warnings = entry.result.warnings + worksheet.warnings,
             rows = slice.rows,
         )

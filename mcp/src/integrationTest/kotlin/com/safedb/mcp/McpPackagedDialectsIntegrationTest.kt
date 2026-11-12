@@ -122,7 +122,8 @@ class McpPackagedDialectsIntegrationTest {
                 assertNotEquals(true, listed.isError, listed.text())
                 val listedText = listed.text()
                 assertPayloadIsPrivate(listedText, connection, password)
-                val tables = Json.parseToJsonElement(listedText).jsonArray
+                val tables =
+                    Json.parseToJsonElement(listedText).jsonObject.getValue("tables").jsonArray
                 assertTrue(
                     tables.any {
                         it.jsonObject

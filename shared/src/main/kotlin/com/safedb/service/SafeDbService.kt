@@ -54,8 +54,7 @@ interface SafeDbService {
 
     suspend fun runQuery(request: QueryRunRequest): QueryRunResult
 
-    suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult =
-        throw UnsupportedOperationException("assessQuery")
+    suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult
 
     suspend fun listSavedQueries(): List<SavedQuery>
 

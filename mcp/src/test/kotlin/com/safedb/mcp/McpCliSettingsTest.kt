@@ -213,6 +213,14 @@ class McpCliSettingsTest {
             McpCommand.SettingsUnblockSchema("pg_catalog"),
             parseMcpArgs(arrayOf("settings", "unblock-schema", "pg_catalog")),
         )
+        assertEquals(
+            McpCommand.SettingsBlockSchema("pg_catalog"),
+            parseMcpArgs(arrayOf("settings", "block-schema", " PG_Catalog ")),
+        )
+        assertEquals(
+            McpCommand.SettingsUnblockSchema("pg_catalog"),
+            parseMcpArgs(arrayOf("settings", "unblock-schema", " PG_Catalog ")),
+        )
 
         val service = RecordingSafeDbService()
         val io = BufferCliIo()

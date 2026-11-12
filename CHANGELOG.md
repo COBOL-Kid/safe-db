@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-- Recipe CLI: added `safe-db-mcp recipes list`, `recipes import <absolute path>`, and `recipes export <recipe_id>`.
 - Case-insensitive catalog lookup for `describe_table` and `find_join_paths`, with up to 5 suggested tables when a name is unknown and `invalid_arguments` listing both names when a reference is ambiguous.
 - Db2 internal catalog tables (`EXPLAIN_*`, `ADVISE_*`) are hidden from `list_tables`, `search_catalog`, `describe_table`, `find_join_paths`, and the tables resource.
 - `find_join_paths` accepts `foreign_key_only` to exclude indexed-column candidates.
@@ -19,7 +18,7 @@ Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engin
 - In-memory sample analysis: added `pivot_result` and `filter_result_rows` on `result_id`, backed by the `:shared` Explore pivot and worksheet engines, plus `export_result` to write owner-only CSV exports under `{dataDir}/results/exports/`.
 - Workspace tools: added `list_saved_queries`, `run_saved_query`, `save_query`, `delete_saved_query` (two-step confirmation), `list_recipes`, `apply_recipe`, and `list_query_history`, all backed by the shared `specToSql` compiler.
 - MCP resources and prompts: added `safedb://connections`, `safedb://connections/{connection_id}/tables`, and `safedb://results/{result_id}/summary` resources plus `explore-database` and `analyze-result` prompts.
-- CLI enhancements: added `safe-db-mcp connections test [<id>]` and `safe-db-mcp settings` (`show`, `risk-gate`, `default-connection`, `clear-default-connection`, `block-schema`, `unblock-schema`).
+- CLI enhancements: added `safe-db-mcp connections test [<id>]` and `safe-db-mcp settings` (`show`, `risk-gate`, `default-connection`, `clear-default-connection`, `block-schema`, `unblock-schema`); added `safe-db-mcp recipes list`, `recipes import <absolute path>`, and `recipes export <recipe_id>`.
 
 ## 1.0.1
 

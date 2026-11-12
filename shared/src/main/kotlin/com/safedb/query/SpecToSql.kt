@@ -143,31 +143,48 @@ private fun renderFilterNode(
 
 private fun renderFilter(filter: FilterSpec, dialect: Dialect): String {
     val column = renderColumn(filter.tableAlias, filter.column, dialect)
-    return when {
-        filter.op.isFriendlyPattern() -> {
-            val literal = (filter.value as? FilterValue.Single)?.literal ?: return ""
+    return when (filter.op) {
+        FilterOp.Eq,
+        FilterOp.Ne,
+        FilterOp.Gt,
+        FilterOp.Gte,
+        FilterOp.Lt,
+        FilterOp.Lte,
+        FilterOp.Like,
+        FilterOp.NotLike -> {
+            val literal = filter.singleLiteral()
+            "$column ${filter.op.sqlOperator()} ${renderLiteral(literal)}"
+        }
+        FilterOp.Contains,
+        FilterOp.ContainsIgnoreCase,
+        FilterOp.NotContains,
+        FilterOp.StartsWith,
+        FilterOp.EndsWith -> {
+            val literal = filter.singleLiteral()
             val pattern = friendlyPatternText(filter.op, literal.text)
             val operator =
-                when (filter.op) {
-                    FilterOp.NotContains -> "NOT LIKE"
-                    FilterOp.ContainsIgnoreCase ->
-                        if (dialect == Dialect.Postgres) "ILIKE" else "LIKE"
-                    else -> "LIKE"
+                if (filter.op == FilterOp.ContainsIgnoreCase) {
+                    if (dialect == Dialect.Postgres) "ILIKE" else "LIKE"
+                } else {
+                    friendlyPatternOperator(filter.op)
                 }
             "$column $operator ${quoteText(pattern)} ESCAPE '!'"
         }
-        filter.op.sqlOperator() != null -> {
-            val literal = (filter.value as? FilterValue.Single)?.literal ?: return ""
-            "$column ${filter.op.sqlOperator()} ${renderLiteral(literal)}"
-        }
-        filter.op == FilterOp.Ilike -> {
-            val literal = (filter.value as? FilterValue.Single)?.literal ?: return ""
+        FilterOp.Ilike -> {
+            val literal = filter.singleLiteral()
             val operator = if (dialect == Dialect.Postgres) "ILIKE" else "LIKE"
             "$column $operator ${renderLiteral(literal)}"
         }
-        filter.op == FilterOp.In || filter.op == FilterOp.NotIn -> {
+        FilterOp.In,
+        FilterOp.NotIn -> {
+            val value =
+                filter.value
+                    ?: error("Filter on ${filter.tableAlias}.${filter.column} is missing its value")
             val literals =
-                (filter.value as? FilterValue.ListValue)?.literals?.map(::renderLiteral).orEmpty()
+                when (value) {
+                    is FilterValue.ListValue -> value.literals.map(::renderLiteral)
+                    else -> error("IN expects a list of values")
+                }
             when {
                 literals.isEmpty() -> if (filter.op == FilterOp.In) "1=0" else "1=1"
                 else ->
@@ -175,27 +192,31 @@ private fun renderFilter(filter: FilterSpec, dialect: Dialect): String {
                         "(${literals.joinToString(", ")})"
             }
         }
-        filter.op == FilterOp.Between -> {
-            val pair = filter.value as? FilterValue.Pair ?: return ""
+        FilterOp.Between -> {
+            val value =
+                filter.value
+                    ?: error("Filter on ${filter.tableAlias}.${filter.column} is missing its value")
+            val pair =
+                when (value) {
+                    is FilterValue.Pair -> value
+                    else -> error("BETWEEN expects a pair of values")
+                }
             "$column BETWEEN ${renderLiteral(pair.first)} AND ${renderLiteral(pair.second)}"
         }
-        filter.op == FilterOp.IsNull -> "$column IS NULL"
-        filter.op == FilterOp.IsNotNull -> "$column IS NOT NULL"
-        filter.op == FilterOp.IsEmpty -> "$column = ''"
-        filter.op == FilterOp.IsNotEmpty -> "$column <> ''"
-        else -> ""
+        FilterOp.IsNull -> "$column IS NULL"
+        FilterOp.IsNotNull -> "$column IS NOT NULL"
+        FilterOp.IsEmpty -> "$column = ''"
+        FilterOp.IsNotEmpty -> "$column <> ''"
     }
 }
 
-private fun FilterOp.isFriendlyPattern(): Boolean =
-    this in
-        setOf(
-            FilterOp.Contains,
-            FilterOp.ContainsIgnoreCase,
-            FilterOp.NotContains,
-            FilterOp.StartsWith,
-            FilterOp.EndsWith,
-        )
+private fun FilterSpec.singleLiteral(): FilterLiteral {
+    val value = this.value ?: error("Filter on ${tableAlias}.${column} is missing its value")
+    return when (value) {
+        is FilterValue.Single -> value.literal
+        else -> error("${op} expects a single value")
+    }
+}
 
 private fun renderLiteral(literal: FilterLiteral): String =
     when (literal.kind) {

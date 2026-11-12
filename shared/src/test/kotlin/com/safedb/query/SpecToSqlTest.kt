@@ -26,6 +26,7 @@ import com.safedb.query.sql.SqlParseResult
 import com.safedb.query.sql.parseSqlToSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -169,6 +170,49 @@ class SpecToSqlTest {
         assertTrue(sql.contains("1=1"))
         assertTrue(!sql.contains("IS NULL"))
         assertTrue(!sql.contains("IS NOT NULL"))
+    }
+
+    @Test
+    fun incompleteFriendlyPatternAndBetweenThrow() {
+        val containsMissing =
+            FilterGroup(
+                id = "root",
+                children = listOf(leaf("name", FilterOp.Contains, null)),
+            )
+        val containsFailure =
+            assertFailsWith<IllegalStateException> {
+                specToSql(simpleSpec().copy(filters = containsMissing), Dialect.Postgres)
+            }
+        assertTrue(containsFailure.message.orEmpty().contains("is missing its value"))
+
+        val betweenMissing =
+            FilterGroup(
+                id = "root",
+                children = listOf(leaf("created_on", FilterOp.Between, null)),
+            )
+        val betweenFailure =
+            assertFailsWith<IllegalStateException> {
+                specToSql(simpleSpec().copy(filters = betweenMissing), Dialect.Postgres)
+            }
+        assertTrue(betweenFailure.message.orEmpty().contains("is missing its value"))
+
+        val betweenWrongShape =
+            FilterGroup(
+                id = "root",
+                children =
+                    listOf(
+                        leaf(
+                            "created_on",
+                            FilterOp.Between,
+                            single(LiteralKind.Date, "2024-01-01"),
+                        )
+                    ),
+            )
+        val wrongShapeFailure =
+            assertFailsWith<IllegalStateException> {
+                specToSql(simpleSpec().copy(filters = betweenWrongShape), Dialect.Postgres)
+            }
+        assertTrue(wrongShapeFailure.message.orEmpty().contains("BETWEEN expects a pair"))
     }
 
     @Test
