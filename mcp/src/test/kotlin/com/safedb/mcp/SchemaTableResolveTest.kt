@@ -56,6 +56,26 @@ class SchemaTableResolveTest {
     }
 
     @Test
+    fun duplicateQualifiedRowsAreAmbiguous() {
+        val tables = listOf(table("public", "orders"), table("public", "orders"))
+        val err = assertIs<Arg.Err>(resolveTable("public", "orders", tables))
+        assertEquals("invalid_arguments", err.error())
+        assertTrue(err.message().contains("Table reference is ambiguous"))
+    }
+
+    @Test
+    fun duplicateExactUnqualifiedRowsAreAmbiguous() {
+        val tables = listOf(table("public", "orders"), table("public", "orders"))
+        val direct = assertIs<Arg.Err>(resolveUnqualifiedTable("orders", tables))
+        assertEquals("invalid_arguments", direct.error())
+        assertTrue(direct.message().contains("Table reference is ambiguous"))
+
+        val viaReference = assertIs<Arg.Err>(resolveTableReference("orders", null, tables))
+        assertEquals("invalid_arguments", viaReference.error())
+        assertTrue(viaReference.message().contains("Table reference is ambiguous"))
+    }
+
+    @Test
     fun unknownTableIsNotFoundWithSuggestions() {
         val tables = sampleMcpSchema().tables
         val err = assertIs<Arg.Err>(resolveTableReference("public.missing", null, tables))

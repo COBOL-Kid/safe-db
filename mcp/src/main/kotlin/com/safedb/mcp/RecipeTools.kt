@@ -172,39 +172,51 @@ private suspend fun handleApplyRecipe(
         }
 
     return when (targetMode) {
-        ExploreMode.Pivot -> {
+        RecipeTargetMode.Pivot -> {
             val config = remapped.pivot ?: ExploreConfig.defaultFor(entry.result, entry.tables)
             val preview = applyExplore(entry.result, config)
             pivotResultReceipt(resultId, entry, preview)
         }
-        ExploreMode.Worksheet -> {
+        RecipeTargetMode.Worksheet -> {
             val config = remapped.worksheet ?: WorksheetConfig()
             val worksheet = applyWorksheet(entry.result, config, entry.tables)
-            val converted = worksheet.toQueryResult()
-            val slice =
-                sliceRows(
-                    converted,
-                    offset = 0,
-                    limit = GET_RESULT_ROWS_MAX,
-                    maxBytes = MCP_PAYLOAD_MAX_BYTES,
-                )
-            val receipt =
-                WorksheetResultReceipt(
-                    resultId = resultId,
-                    columns = converted.columns,
-                    rowCount = converted.rowCount,
-                    sampleCapped = entry.result.truncated,
-                    worksheetTruncated = slice.moreRowsRemain || slice.cellsTruncated,
-                    warnings = worksheet.warnings,
-                    rows = slice.rows,
-                )
-            objectToolResult(receipt)
+            worksheetResultReceipt(resultId, entry, worksheet)
         }
-        ExploreMode.Visualization ->
-            // The recipe default can only be Visualization when it also has an explicit mode;
-            // resolveRecipeMode never returns Visualization.
-            error("Visualization is not a supported recipe target")
     }
+}
+
+private fun worksheetResultReceipt(
+    resultId: String,
+    entry: StoredResultEntry,
+    worksheet: WorksheetPreview,
+): CallToolResult {
+    val columns = worksheet.columns.map { ResultColumn(it.sourceColumn ?: it.id, it.dataType) }
+    val converted =
+        QueryResult(
+            columns = columns,
+            rows = worksheet.rows.map { row -> row.cells.map { it.value } },
+            rowCount = worksheet.rows.size,
+            truncated = false,
+            warnings = worksheet.warnings,
+        )
+    val slice =
+        sliceRows(
+            converted,
+            offset = 0,
+            limit = GET_RESULT_ROWS_MAX,
+            maxBytes = MCP_PAYLOAD_MAX_BYTES,
+        )
+    val receipt =
+        WorksheetResultReceipt(
+            resultId = resultId,
+            columns = columns,
+            rowCount = worksheet.rows.size,
+            sampleCapped = entry.result.truncated,
+            worksheetTruncated = slice.moreRowsRemain || slice.cellsTruncated,
+            warnings = worksheet.warnings,
+            rows = slice.rows,
+        )
+    return objectToolResult(receipt)
 }
 
 private fun parseFieldMapping(objectArg: JsonObject?): Arg<Map<String, String>> {
@@ -222,33 +234,36 @@ private fun parseFieldMapping(objectArg: JsonObject?): Arg<Map<String, String>> 
     return Arg.Ok(mapping)
 }
 
-private fun resolveRecipeMode(modeArg: String?, recipe: ExploreRecipe): Arg<ExploreMode> {
+private enum class RecipeTargetMode {
+    Pivot,
+    Worksheet,
+}
+
+private fun resolveRecipeMode(modeArg: String?, recipe: ExploreRecipe): Arg<RecipeTargetMode> {
     if (modeArg != null) {
         return when (modeArg.lowercase()) {
-            "pivot" -> Arg.Ok(ExploreMode.Pivot)
-            "worksheet" -> Arg.Ok(ExploreMode.Worksheet)
+            "pivot" -> Arg.Ok(RecipeTargetMode.Pivot)
+            "worksheet" -> Arg.Ok(RecipeTargetMode.Worksheet)
             else -> Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "mode must be pivot or worksheet"))
         }
     }
-    return Arg.Ok(
-        when {
-            recipe.defaultMode == ExploreMode.Pivot ||
-                (recipe.defaultMode == ExploreMode.Visualization && recipe.pivot != null) ->
-                ExploreMode.Pivot
-            recipe.worksheet != null -> ExploreMode.Worksheet
-            else -> ExploreMode.Pivot
-        }
-    )
+    return when (recipe.defaultMode) {
+        ExploreMode.Pivot -> Arg.Ok(RecipeTargetMode.Pivot)
+        ExploreMode.Worksheet -> Arg.Ok(RecipeTargetMode.Worksheet)
+        ExploreMode.Visualization ->
+            when {
+                recipe.pivot != null -> Arg.Ok(RecipeTargetMode.Pivot)
+                recipe.worksheet != null -> Arg.Ok(RecipeTargetMode.Worksheet)
+                else ->
+                    Arg.Err(
+                        toolError(
+                            ERROR_VALIDATION,
+                            "Recipe '${recipe.id}' has no pivot or worksheet configuration",
+                        )
+                    )
+            }
+    }
 }
-
-private fun WorksheetPreview.toQueryResult(): QueryResult =
-    QueryResult(
-        columns = columns.map { ResultColumn(it.label, it.dataType) },
-        rows = rows.map { row -> row.cells.map { it.value } },
-        rowCount = rows.size,
-        truncated = false,
-        warnings = warnings,
-    )
 
 private fun ExploreRecipe.toSummary(): RecipeSummary =
     RecipeSummary(

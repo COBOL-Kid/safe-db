@@ -1,7 +1,10 @@
 package com.safedb.query
 
 import com.safedb.model.Dialect
+import com.safedb.model.FilterGroup
+import com.safedb.model.FilterNode
 import com.safedb.model.FilterOp
+import com.safedb.model.GroupConnector
 import com.safedb.query.sql.sqlKeywords
 import com.safedb.query.sql.sqlWord
 import java.util.Locale
@@ -62,6 +65,49 @@ internal fun buildIlike(columnRef: String, ph: String, dialect: Dialect): String
 // the ESCAPE '!' the renderers append.
 internal fun escapeLikeLiteral(text: String): String =
     text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+// Oracle rejects AS between a table and its alias.
+internal fun tableAliasSeparator(dialect: Dialect): String =
+    when (dialect) {
+        Dialect.Oracle -> " "
+        Dialect.Postgres,
+        Dialect.MySql,
+        Dialect.Mssql,
+        Dialect.Db2 -> " AS "
+    }
+
+// SQL Server places its row cap at the head of the SELECT list; every other dialect appends a
+// clause after the rest of the statement.
+internal fun rowLimitSelectPrefix(dialect: Dialect, limit: Long?): String =
+    when (dialect) {
+        Dialect.Mssql -> if (limit != null) "TOP $limit " else ""
+        Dialect.Postgres,
+        Dialect.MySql,
+        Dialect.Oracle,
+        Dialect.Db2 -> ""
+    }
+
+internal fun rowLimitSuffix(dialect: Dialect, limit: Long?): String =
+    when (dialect) {
+        Dialect.Mssql -> ""
+        Dialect.Oracle,
+        Dialect.Db2 -> if (limit != null) "\nFETCH FIRST $limit ROWS ONLY" else ""
+        Dialect.Postgres,
+        Dialect.MySql -> if (limit != null) "\nLIMIT $limit" else ""
+    }
+
+internal fun connectorSql(connector: GroupConnector): String =
+    when (connector) {
+        GroupConnector.And -> " AND "
+        GroupConnector.Or -> " OR "
+    }
+
+// The connector before a child comes from its override when it has one, otherwise its parent.
+internal fun childConnector(
+    overrides: Map<String, GroupConnector>,
+    group: FilterGroup,
+    child: FilterNode,
+): GroupConnector = overrides[filterNodeId(child)] ?: group.connector
 
 internal fun FilterOp.isFriendlyTextPattern(): Boolean =
     this in

@@ -15,6 +15,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -332,6 +333,18 @@ class WorkspaceToolsTest {
                 "invalid_arguments",
                 "unknown argument 'bogus'",
             )
+        }
+    }
+
+    @Test
+    fun workspaceToolAnnotationsAreDocumented() = runBlocking {
+        withTempMcpClient(workspaceService()) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(true, tools.getValue("list_saved_queries").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("list_query_history").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("delete_saved_query").annotations?.destructiveHint)
+            assertNull(tools.getValue("save_query").annotations)
+            assertNull(tools.getValue("run_saved_query").annotations)
         }
     }
 }

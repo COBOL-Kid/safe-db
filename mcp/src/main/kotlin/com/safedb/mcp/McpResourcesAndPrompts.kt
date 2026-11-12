@@ -126,41 +126,22 @@ internal fun registerMcpResourcesAndPrompts(
                 )
             ),
     ) { request ->
-        val connectionId = request.arguments?.get("connection_id")?.takeIf { it.isNotBlank() }
-        GetPromptResult(
+        userWorkflowPrompt(
             description = "Explore a safe-db connection safely",
-            messages =
-                listOf(
-                    PromptMessage(
-                        Role.User,
-                        TextContent(
-                            text =
-                                buildString {
-                                    if (connectionId != null) {
-                                        append("Explore safe-db connection '$connectionId'. ")
-                                    } else {
-                                        append(
-                                            "Explore a safe-db connection. Start with " +
-                                                "list_connections to choose a connection_id. "
-                                        )
-                                    }
-                                    append(
-                                        "Call list_tables with connection_id and note the " +
-                                            "schema names. Use describe_table for columns, " +
-                                            "indexes, and foreign keys. Use find_join_paths to " +
-                                            "discover indexed or foreign-key join paths. Use " +
-                                            "search_catalog when the table name is unknown. " +
-                                            "Then assess_query the intended SELECT and inspect " +
-                                            "the risk summary and confirmation reasons. " +
-                                            "Finally run_query with a bounded SELECT and page " +
-                                            "the sample with get_result_rows or " +
-                                            "summarize_result. Never send a password or " +
-                                            "connection URL."
-                                    )
-                                }
-                        ),
-                    )
-                ),
+            value = request.arguments?.get("connection_id"),
+            presentPrefix = { "Explore safe-db connection '$it'. " },
+            missingPrefix =
+                "Explore a safe-db connection. Start with list_connections to choose a " +
+                    "connection_id. ",
+            body =
+                "Call list_tables with connection_id and note the schema names. Use " +
+                    "describe_table for columns, indexes, and foreign keys. Use " +
+                    "find_join_paths to discover indexed or foreign-key join paths. Use " +
+                    "search_catalog when the table name is unknown. Then assess_query the " +
+                    "intended SELECT and inspect the risk summary and confirmation reasons. " +
+                    "Finally run_query with a bounded SELECT and page the sample with " +
+                    "get_result_rows or summarize_result. Never send a password or " +
+                    "connection URL.",
         )
     }
 
@@ -174,45 +155,56 @@ internal fun registerMcpResourcesAndPrompts(
                 PromptArgument(
                     name = "result_id",
                     description = "result_id from a successful run_query receipt",
-                    required = true,
+                    required = false,
                 )
             ),
     ) { request ->
-        val resultId = request.arguments?.get("result_id")?.takeIf { it.isNotBlank() }
-        GetPromptResult(
+        userWorkflowPrompt(
             description = "Analyze a fetched result sample in memory",
-            messages =
-                listOf(
-                    PromptMessage(
-                        Role.User,
-                        TextContent(
-                            text =
-                                buildString {
-                                    if (resultId != null) {
-                                        append("Analyze safe-db result '$resultId'. ")
-                                    } else {
-                                        append(
-                                            "Analyze a safe-db result. Start with run_query to " +
-                                                "obtain a result_id. "
-                                        )
-                                    }
-                                    append(
-                                        "Use summarize_result for column null counts, ranges, " +
-                                            "and distinct values. Use pivot_result to group and " +
-                                            "aggregate the sample, or filter_result_rows to " +
-                                            "filter, sort, and page it. Use apply_recipe with a " +
-                                            "recipe_id from list_recipes to apply a saved " +
-                                            "Explore layout. Use export_result to write the " +
-                                            "sample to CSV. Work from the in-memory sample and " +
-                                            "do not re-run the original query unless more rows " +
-                                            "are required."
-                                    )
-                                }
-                        ),
-                    )
-                ),
+            value = request.arguments?.get("result_id"),
+            presentPrefix = { "Analyze safe-db result '$it'. " },
+            missingPrefix =
+                "Analyze a safe-db result. Start with run_query to obtain a result_id. ",
+            body =
+                "Use summarize_result for column null counts, ranges, and distinct values. " +
+                    "Use pivot_result to group and aggregate the sample, or " +
+                    "filter_result_rows to filter, sort, and page it. Use apply_recipe with " +
+                    "a recipe_id from list_recipes to apply a saved Explore layout. Use " +
+                    "export_result to write the sample to CSV. Work from the in-memory " +
+                    "sample and do not re-run the original query unless more rows are " +
+                    "required.",
         )
     }
+}
+
+private fun userWorkflowPrompt(
+    description: String,
+    value: String?,
+    presentPrefix: (String) -> String,
+    missingPrefix: String,
+    body: String,
+): GetPromptResult {
+    val resolved = value?.takeIf { it.isNotBlank() }
+    return GetPromptResult(
+        description = description,
+        messages =
+            listOf(
+                PromptMessage(
+                    Role.User,
+                    TextContent(
+                        text =
+                            buildString {
+                                if (resolved != null) {
+                                    append(presentPrefix(resolved))
+                                } else {
+                                    append(missingPrefix)
+                                }
+                                append(body)
+                            }
+                    ),
+                )
+            ),
+    )
 }
 
 private fun jsonResource(uri: String, text: String): TextResourceContents =

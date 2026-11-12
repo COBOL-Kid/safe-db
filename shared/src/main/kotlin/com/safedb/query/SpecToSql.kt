@@ -20,9 +20,10 @@ import com.safedb.model.sqlOperator
 // are inlined instead of bound, so the result is meant for inspection and clipboard use; it still
 // round-trips through parseSqlToSpec for the supported shapes.
 fun specToSql(spec: QuerySpec, dialect: Dialect): String = buildString {
+    val rowLimit = if (spec.uncapped) null else spec.limit.toLong()
     append("SELECT ")
     if (spec.distinct) append("DISTINCT ")
-    if (dialect == Dialect.Mssql && !spec.uncapped) append("TOP ${spec.limit} ")
+    append(rowLimitSelectPrefix(dialect, rowLimit))
     append(renderProjection(spec, dialect))
 
     if (spec.tables.isNotEmpty()) {
@@ -52,16 +53,7 @@ fun specToSql(spec: QuerySpec, dialect: Dialect): String = buildString {
             }
         )
     }
-    if (!spec.uncapped) {
-        when (dialect) {
-            // SQL Server places TOP before the select list.
-            Dialect.Mssql -> Unit
-            Dialect.Oracle,
-            Dialect.Db2 -> append("\nFETCH FIRST ${spec.limit} ROWS ONLY")
-            Dialect.Postgres,
-            Dialect.MySql -> append("\nLIMIT ${spec.limit}")
-        }
-    }
+    append(rowLimitSuffix(dialect, rowLimit))
 }
 
 private fun renderProjection(spec: QuerySpec, dialect: Dialect): String {
@@ -76,15 +68,7 @@ private fun renderTableRef(table: TableRef, dialect: Dialect): String {
     val relation =
         "${quoteIfRequired(table.schema, dialect)}.${quoteIfRequired(table.name, dialect)}"
     val alias = quoteIfRequired(table.alias, dialect)
-    val separator =
-        when (dialect) {
-            // Oracle rejects AS between a table and its alias.
-            Dialect.Oracle -> " "
-            Dialect.Postgres,
-            Dialect.MySql,
-            Dialect.Mssql,
-            Dialect.Db2 -> " AS "
-        }
+    val separator = tableAliasSeparator(dialect)
     return "$relation$separator$alias"
 }
 
@@ -118,13 +102,7 @@ private fun renderFilterGroup(
     val joined = buildString {
         append(parts.first().second)
         for ((index, part) in parts.drop(1)) {
-            val connector = overrides[filterNodeId(group.children[index])] ?: group.connector
-            append(
-                when (connector) {
-                    GroupConnector.And -> " AND "
-                    GroupConnector.Or -> " OR "
-                }
-            )
+            append(connectorSql(childConnector(overrides, group, group.children[index])))
             append(part)
         }
     }

@@ -45,6 +45,9 @@ data class IndexInfo(
     @SerialName("is_partial") val isPartial: Boolean? = null,
 )
 
+fun IndexInfo.keyColumnNames(): List<String> =
+    if (keys.isNotEmpty()) keys.mapNotNull { it.column } else columns
+
 @Serializable
 data class MetadataCoverage(
     val state: MetadataCoverageState = MetadataCoverageState.Unavailable,

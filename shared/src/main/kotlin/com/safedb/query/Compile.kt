@@ -41,9 +41,7 @@ fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<Compi
         if (spec.distinct) {
             append("DISTINCT ")
         }
-        if (dialect == Dialect.Mssql && fetchLimit != null) {
-            append("TOP $fetchLimit ")
-        }
+        append(rowLimitSelectPrefix(dialect, fetchLimit))
         append(selectClause)
         append('\n')
         append("FROM ")
@@ -65,18 +63,7 @@ fun compileValidated(validated: ValidatedQuery, dialect: Dialect): Outcome<Compi
             append("\nORDER BY ")
             append(orderByClause)
         }
-        if (fetchLimit != null) {
-            when (dialect) {
-                Dialect.Mssql -> Unit
-                Dialect.Oracle,
-                Dialect.Db2 -> {
-                    append("\nFETCH FIRST $fetchLimit ROWS ONLY")
-                }
-                else -> {
-                    append("\nLIMIT $fetchLimit")
-                }
-            }
-        }
+        append(rowLimitSuffix(dialect, fetchLimit))
     }
 
     return Outcome.ok(CompiledQuery(sql = sql, params = params.toList()))

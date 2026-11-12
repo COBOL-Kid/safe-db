@@ -117,7 +117,7 @@ class RecipeToolsTest {
     }
 
     @Test
-    fun applyRecipeSupportsWorksheetModeAndVisualizationDefaults() = runBlocking {
+    fun applyRecipeSupportsWorksheetMode() = runBlocking {
         val service = recipeService()
         service.exploreRecipes +=
             sampleRecipe(
@@ -125,22 +125,6 @@ class RecipeToolsTest {
                 defaultMode = ExploreMode.Worksheet,
                 pivot = null,
                 worksheet = WorksheetConfig(),
-                requiredFields = emptyList(),
-            )
-        service.exploreRecipes +=
-            sampleRecipe(
-                id = "r3",
-                defaultMode = ExploreMode.Visualization,
-                pivot = ExploreConfig(rowDimensions = listOf(PivotDimension("region"))),
-                requiredFields = emptyList(),
-            )
-        service.exploreRecipes +=
-            sampleRecipe(
-                id = "r4",
-                defaultMode = ExploreMode.Visualization,
-                pivot = null,
-                worksheet = null,
-                visualization = VisualizationConfig(),
                 requiredFields = emptyList(),
             )
         withTempMcpClient(service) { client ->
@@ -168,7 +152,21 @@ class RecipeToolsTest {
                     mapOf("result_id" to resultId, "recipe_id" to "r2", "mode" to "WORKSHEET"),
                 )
             assertEquals("5", explicit.string("row_count"))
+        }
+    }
 
+    @Test
+    fun applyRecipeUsesPivotForVisualizationRecipeWithPivot() = runBlocking {
+        val service = recipeService()
+        service.exploreRecipes +=
+            sampleRecipe(
+                id = "r3",
+                defaultMode = ExploreMode.Visualization,
+                pivot = ExploreConfig(rowDimensions = listOf(PivotDimension("region"))),
+                requiredFields = emptyList(),
+            )
+        withTempMcpClient(service) { client ->
+            val resultId = storeRecipeResult(client)
             val visualizationWithPivot =
                 client.callJson(
                     "apply_recipe",
@@ -176,13 +174,56 @@ class RecipeToolsTest {
                 )
             assertEquals("4", visualizationWithPivot.string("row_count"))
             assertTrue(visualizationWithPivot.containsKey("pivot_truncated"))
+        }
+    }
 
-            val visualizationWithoutPivot =
-                client.callJson(
+    @Test
+    fun applyRecipeRejectsVisualizationOnlyRecipe() = runBlocking {
+        val service = recipeService()
+        service.exploreRecipes +=
+            sampleRecipe(
+                id = "r4",
+                defaultMode = ExploreMode.Visualization,
+                pivot = null,
+                worksheet = null,
+                visualization = VisualizationConfig(),
+                requiredFields = emptyList(),
+            )
+        withTempMcpClient(service) { client ->
+            val resultId = storeRecipeResult(client)
+            assertError(
+                client.callTool(
                     "apply_recipe",
                     mapOf("result_id" to resultId, "recipe_id" to "r4"),
+                ),
+                "validation",
+                "Recipe 'r4' has no pivot or worksheet configuration",
+            )
+        }
+    }
+
+    @Test
+    fun applyRecipeWorksheetReceiptUsesSourceColumnNames() = runBlocking {
+        val service = recipeService()
+        service.runQueryHandler = { QueryRunResult(prefixedRecipeQueryResult(), allowedMcpRisk()) }
+        service.exploreRecipes +=
+            sampleRecipe(
+                id = "r2",
+                defaultMode = ExploreMode.Worksheet,
+                pivot = null,
+                worksheet = WorksheetConfig(),
+                requiredFields = emptyList(),
+            )
+        withTempMcpClient(service) { client ->
+            val resultId = storeRecipeResult(client)
+            val worksheet =
+                client.callJson(
+                    "apply_recipe",
+                    mapOf("result_id" to resultId, "recipe_id" to "r2"),
                 )
-            assertTrue(visualizationWithoutPivot.containsKey("pivot_truncated"))
+            val names = worksheet.getValue("columns").jsonArray.map { it.jsonObject.string("name") }
+            assertTrue(names.contains("t0__amount"))
+            assertFalse(names.contains("amount"))
         }
     }
 
@@ -301,6 +342,15 @@ class RecipeToolsTest {
             )
         }
     }
+
+    @Test
+    fun recipeToolsAreReadOnly() = runBlocking {
+        withTempMcpClient(recipeService()) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(true, tools.getValue("list_recipes").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("apply_recipe").annotations?.readOnlyHint)
+        }
+    }
 }
 
 private fun recipeService(): RecordingSafeDbService {
@@ -348,6 +398,19 @@ private fun recipeQueryResult(): QueryResult =
                 ),
             ),
         rowCount = 5,
+        truncated = false,
+        warnings = emptyList(),
+    )
+
+private fun prefixedRecipeQueryResult(): QueryResult =
+    QueryResult(
+        columns = listOf(ResultColumn("region", "text"), ResultColumn("t0__amount", "int")),
+        rows =
+            listOf(
+                listOf(ResultCell.text("east"), ResultCell.integer(10)),
+                listOf(ResultCell.text("west"), ResultCell.integer(20)),
+            ),
+        rowCount = 2,
         truncated = false,
         warnings = emptyList(),
     )

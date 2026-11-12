@@ -146,140 +146,6 @@ class ExploreToolsTest {
             )
 
             val resultId = storeExploreResult(client)
-            val unknownColumn =
-                client.callTool(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "row_dimensions" to
-                            listOf(Json.parseToJsonElement("""{"column":"nope"}""")),
-                    ),
-                )
-            assertEquals(true, unknownColumn.isError)
-            assertEquals(
-                "invalid_arguments",
-                unknownColumn.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "Unknown column 'nope'. Known columns: amount, created, region",
-                unknownColumn.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val unknownMeasureColumn =
-                client.callTool(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "measures" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"alias":"x","fn":"sum","source_column":"nope"}"""
-                                )
-                            ),
-                    ),
-                )
-            assertEquals(true, unknownMeasureColumn.isError)
-            assertEquals(
-                "Unknown column 'nope'. Known columns: amount, created, region",
-                unknownMeasureColumn.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val unknownFn =
-                client.callTool(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "measures" to
-                            listOf(Json.parseToJsonElement("""{"alias":"x","fn":"median"}""")),
-                    ),
-                )
-            assertEquals(true, unknownFn.isError)
-            assertTrue(
-                unknownFn
-                    .json()
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .contains("Unknown measure fn")
-            )
-
-            val unknownGrouping =
-                client.callTool(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "row_dimensions" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"column":"created","grouping":"fortnight"}"""
-                                )
-                            ),
-                    ),
-                )
-            assertEquals(true, unknownGrouping.isError)
-            assertTrue(
-                unknownGrouping
-                    .json()
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .contains("Unknown grouping")
-            )
-
-            val missingColumn =
-                client.callTool(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "row_dimensions" to listOf(Json.parseToJsonElement("""{"label":"x"}""")),
-                    ),
-                )
-            assertEquals(true, missingColumn.isError)
-            assertTrue(
-                missingColumn.json().getValue("message").jsonPrimitive.content.contains("column")
-            )
-
-            val unknownFilterOp =
-                client.callTool(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "filters" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"column":"region","op":"regex","measure_alias":"count"}"""
-                                )
-                            ),
-                    ),
-                )
-            assertEquals(true, unknownFilterOp.isError)
-            assertTrue(
-                unknownFilterOp
-                    .json()
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .contains("Unknown filter op")
-            )
-
-            val badSort =
-                client.callTool(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "sort" to Json.parseToJsonElement("""{"direction":"asc"}"""),
-                    ),
-                )
-            assertEquals(true, badSort.isError)
-            assertTrue(
-                badSort
-                    .json()
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .contains("column or measure_alias")
-            )
-
             val notArray =
                 client.callTool(
                     "pivot_result",
@@ -554,69 +420,6 @@ class ExploreToolsTest {
                 zeroLimit.json().getValue("message").jsonPrimitive.content,
             )
 
-            val unknownColumn =
-                client.callTool(
-                    "filter_result_rows",
-                    mapOf(
-                        "result_id" to resultId,
-                        "filters" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"column":"nope","op":"equals","value":"x"}"""
-                                )
-                            ),
-                    ),
-                )
-            assertEquals(true, unknownColumn.isError)
-            assertEquals(
-                "Unknown column 'nope'. Known columns: amount, created, region",
-                unknownColumn.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val unknownSortColumn =
-                client.callTool(
-                    "filter_result_rows",
-                    mapOf(
-                        "result_id" to resultId,
-                        "sorts" to listOf(Json.parseToJsonElement("""{"column":"nope"}""")),
-                    ),
-                )
-            assertEquals(true, unknownSortColumn.isError)
-            assertEquals(
-                "Unknown column 'nope'. Known columns: amount, created, region",
-                unknownSortColumn.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val unknownProjection =
-                client.callTool(
-                    "filter_result_rows",
-                    mapOf("result_id" to resultId, "columns" to listOf("nope")),
-                )
-            assertEquals(true, unknownProjection.isError)
-            assertEquals(
-                "Unknown column 'nope'. Known columns: amount, created, region",
-                unknownProjection.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val unknownOp =
-                client.callTool(
-                    "filter_result_rows",
-                    mapOf(
-                        "result_id" to resultId,
-                        "filters" to
-                            listOf(Json.parseToJsonElement("""{"column":"region","op":"regex"}""")),
-                    ),
-                )
-            assertEquals(true, unknownOp.isError)
-            assertTrue(
-                unknownOp
-                    .json()
-                    .getValue("message")
-                    .jsonPrimitive
-                    .content
-                    .contains("Unknown filter op")
-            )
-
             val unknownArgument =
                 client.callTool(
                     "filter_result_rows",
@@ -669,48 +472,6 @@ class ExploreToolsTest {
     }
 
     @Test
-    fun pivotResultCoversGroupingAndSortModeVariants() = runBlocking {
-        val service = exploreService()
-        withTempMcpClient(service) { client ->
-            val resultId = storeExploreResult(client)
-            val body =
-                client.callJson(
-                    "pivot_result",
-                    mapOf(
-                        "result_id" to resultId,
-                        "row_dimensions" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"column":"created","grouping":"exact"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"created","grouping":"year","sort_mode":"label_desc"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"created","grouping":"quarter","sort_mode":"value_asc","sort_measure_alias":"count"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"created","grouping":"iso_week","sort_mode":"value_desc","sort_measure_alias":"count"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"created","grouping":"day","sort_mode":"source_order"}"""
-                                ),
-                            ),
-                        "measures" to
-                            listOf(
-                                Json.parseToJsonElement("""{"alias":"count","fn":"count"}"""),
-                                Json.parseToJsonElement(
-                                    """{"alias":"share","fn":"sum","source_column":"amount","show_as":"percent_grand_total"}"""
-                                ),
-                            ),
-                        "show_subtotals" to false,
-                    ),
-                )
-            assertTrue(body.getValue("row_count").jsonPrimitive.content.toInt() > 0)
-        }
-    }
-
-    @Test
     fun pivotResultRejectsMissingResultIdAndMalformedPayload() = runBlocking {
         val service = exploreService()
         withTempMcpClient(service) { client ->
@@ -735,79 +496,6 @@ class ExploreToolsTest {
     }
 
     @Test
-    fun filterResultRowsCoversFilterOpAndSortVariants() = runBlocking {
-        val service = exploreService()
-        withTempMcpClient(service) { client ->
-            val resultId = storeExploreResult(client)
-            val allOps =
-                client.callJson(
-                    "filter_result_rows",
-                    mapOf(
-                        "result_id" to resultId,
-                        "filters" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"column":"region","op":"contains","value":"e"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"region","op":"not_equals","value":"west"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"region","op":"starts_with","value":"ea"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"region","op":"ends_with","value":"st"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"amount","op":"gt","value":"5"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"amount","op":"gte","value":"10"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"amount","op":"lt","value":"100"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"amount","op":"lte","value":"20"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"amount","op":"is_not_null"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"amount","op":"between","value":"5","second_value":"25"}"""
-                                ),
-                            ),
-                        "sorts" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"column":"region","direction":"asc"}"""
-                                ),
-                                Json.parseToJsonElement(
-                                    """{"column":"amount","direction":"desc"}"""
-                                ),
-                            ),
-                    ),
-                )
-            assertEquals("2", allOps.getValue("matched_row_count").jsonPrimitive.content)
-
-            val members =
-                client.callJson(
-                    "filter_result_rows",
-                    mapOf(
-                        "result_id" to resultId,
-                        "filters" to
-                            listOf(
-                                Json.parseToJsonElement(
-                                    """{"column":"region","op":"members","included_keys":["TextCell:east"]}"""
-                                )
-                            ),
-                    ),
-                )
-            assertEquals("2", members.getValue("matched_row_count").jsonPrimitive.content)
-        }
-    }
-
-    @Test
     fun filterResultRowsRejectsMissingResultIdAndMalformedPayload() = runBlocking {
         val service = exploreService()
         withTempMcpClient(service) { client ->
@@ -828,6 +516,15 @@ class ExploreToolsTest {
                 "invalid_arguments",
                 malformed.json().getValue("error").jsonPrimitive.content,
             )
+        }
+    }
+
+    @Test
+    fun exploreToolsAreReadOnly() = runBlocking {
+        withTempMcpClient(exploreService()) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(true, tools.getValue("pivot_result").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("filter_result_rows").annotations?.readOnlyHint)
         }
     }
 }

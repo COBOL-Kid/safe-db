@@ -223,6 +223,15 @@ class AssessQueryToolsTest {
             service.assessQueryRequests.single().spec.tables.single().schema,
         )
     }
+
+    @Test
+    fun assessQueryToolMetadataIsDocumented() = runBlocking {
+        withTempMcpClient(queryService()) { client ->
+            val tool = client.listTools().tools.single { it.name == "assess_query" }
+            assertEquals(true, tool.annotations?.readOnlyHint)
+            assertTrue(tool.outputSchema?.properties?.containsKey("compiled_sql") == true)
+        }
+    }
 }
 
 private fun queryService(): RecordingSafeDbService {

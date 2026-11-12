@@ -74,14 +74,7 @@ internal fun walkJoinOrder(spec: QuerySpec): List<JoinStep> {
 private fun quotedTableAlias(table: TableRef, dialect: Dialect): String {
     val relation = "${quote(table.schema, dialect)}.${quote(table.name, dialect)}"
     val alias = quote(table.alias, dialect)
-    val separator =
-        when (dialect) {
-            Dialect.Oracle -> " "
-            Dialect.Postgres,
-            Dialect.MySql,
-            Dialect.Mssql,
-            Dialect.Db2 -> " AS "
-        }
+    val separator = tableAliasSeparator(dialect)
     return "$relation$separator$alias"
 }
 
@@ -138,20 +131,13 @@ private fun joinChildren(
         append(parts[0].second)
         for ((origI, part) in parts.drop(1)) {
             val child = group.children[origI]
-            val connector = overrides[filterNodeId(child)] ?: group.connector
-            append(connectorSql(connector))
+            append(connectorSql(childConnector(overrides, group, child)))
             append(part)
         }
     }
 
     return Outcome.ok(if (wrap && parts.size > 1) "($joined)" else joined)
 }
-
-private fun connectorSql(connector: GroupConnector): String =
-    when (connector) {
-        GroupConnector.And -> " AND "
-        GroupConnector.Or -> " OR "
-    }
 
 private fun buildWhereNode(
     node: FilterNode,

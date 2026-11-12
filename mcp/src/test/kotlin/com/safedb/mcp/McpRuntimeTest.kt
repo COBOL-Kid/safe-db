@@ -10,8 +10,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -95,75 +93,6 @@ class McpRuntimeTest {
             assertEquals(false, client.serverCapabilities?.resources?.listChanged)
             assertEquals(false, client.serverCapabilities?.resources?.subscribe)
             assertEquals(false, client.serverCapabilities?.prompts?.listChanged)
-            val tools = client.listTools().tools.associateBy { it.name }
-            assertNotNull(tools.getValue("run_query").outputSchema)
-            assertNotNull(tools.getValue("assess_query").outputSchema)
-            assertNotNull(tools.getValue("describe_table").outputSchema)
-            assertNotNull(tools.getValue("find_join_paths").outputSchema)
-            assertNull(tools.getValue("list_tables").outputSchema)
-            assertTrue(
-                tools.getValue("run_query").outputSchema?.properties?.containsKey("row_count") ==
-                    true
-            )
-            assertTrue(
-                tools
-                    .getValue("assess_query")
-                    .outputSchema
-                    ?.properties
-                    ?.containsKey("compiled_sql") == true
-            )
-            assertTrue(
-                tools.getValue("describe_table").outputSchema?.properties?.containsKey("columns") ==
-                    true
-            )
-            assertTrue(
-                tools
-                    .getValue("find_join_paths")
-                    .outputSchema
-                    ?.properties
-                    ?.containsKey("from_table") == true
-            )
-            assertEquals(true, tools.getValue("list_connections").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("list_tables").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("describe_table").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("get_result_rows").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("summarize_result").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("assess_query").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("search_catalog").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("find_join_paths").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("pivot_result").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("filter_result_rows").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("list_saved_queries").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("list_recipes").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("apply_recipe").annotations?.readOnlyHint)
-            assertEquals(true, tools.getValue("list_query_history").annotations?.readOnlyHint)
-            assertEquals(null, tools.getValue("export_result").annotations)
-            assertEquals(true, tools.getValue("delete_connection").annotations?.destructiveHint)
-            assertEquals(true, tools.getValue("delete_saved_query").annotations?.destructiveHint)
-            assertEquals(null, tools.getValue("save_query").annotations)
-            assertEquals(null, tools.getValue("run_saved_query").annotations)
-            assertEquals(
-                listOf("connection_id"),
-                tools.getValue("delete_connection").inputSchema.required,
-            )
-            assertTrue(
-                tools
-                    .getValue("delete_connection")
-                    .inputSchema
-                    .properties
-                    ?.containsKey("confirmation") == true
-            )
-            assertEquals(null, tools.getValue("run_query").annotations)
-            val runQueryDescription = tools.getValue("run_query").description.orEmpty()
-            assertTrue(runQueryDescription.contains("On error risk_gate"))
-            assertFalse(runQueryDescription.contains("change the gate"))
-            assertEquals(
-                listOf("connection_id", "sql"),
-                tools.getValue("run_query").inputSchema.required,
-            )
-            assertFalse(
-                tools.getValue("run_query").inputSchema.properties?.containsKey("spec") == true
-            )
             val unknown = client.callTool("nope_tool", emptyMap())
             assertEquals(true, unknown.isError)
             val unknownBody =

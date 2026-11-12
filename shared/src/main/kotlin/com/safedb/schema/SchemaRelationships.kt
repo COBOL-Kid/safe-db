@@ -4,6 +4,7 @@ import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.IndexInfo
 import com.safedb.model.TableInfo
 import com.safedb.model.TableSizeClass
+import com.safedb.model.keyColumnNames
 import com.safedb.model.qualifiedName
 
 enum class RelationshipCardinality {
@@ -141,7 +142,7 @@ fun searchCatalogTables(
             table.columns.filter { matches(it.name) || matches(it.dataType) }.map { it.name }
         val matchedIndexes =
             table.indexes
-                .filter { index -> matches(index.name) || indexKeyColumns(index).any(::matches) }
+                .filter { index -> matches(index.name) || index.keyColumnNames().any(::matches) }
                 .map { it.name }
         val matchedForeignKeys =
             table.foreignKeys
@@ -434,14 +435,14 @@ private fun columnsCompatibleByConvention(
 ): Boolean {
     val left = leftColumn.lowercase()
     val right = rightColumn.lowercase()
+    // A generic "id" column only identifies a row within its own table; matching id = id across
+    // tables would invent an edge that carries no meaning.
+    if (left == "id" && right == "id") return false
     if (left == right) return true
     if (left == "id" && right == "${leftTable.lowercase()}_id") return true
     if (right == "id" && left == "${rightTable.lowercase()}_id") return true
     return false
 }
-
-private fun indexKeyColumns(index: IndexInfo): List<String> =
-    if (index.keys.isNotEmpty()) index.keys.mapNotNull { it.column } else index.columns
 
 private fun exactIndexKeyColumns(index: IndexInfo): List<String>? =
     if (index.keys.isNotEmpty()) {

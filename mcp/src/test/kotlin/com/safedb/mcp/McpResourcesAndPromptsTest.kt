@@ -160,7 +160,7 @@ class McpResourcesAndPromptsTest {
             assertEquals(false, explore.arguments?.single()?.required)
             assertEquals("connection_id", explore.arguments?.single()?.name)
             val analyze = prompts.first { it.name == ANALYZE_RESULT_PROMPT }
-            assertEquals(true, analyze.arguments?.single()?.required)
+            assertEquals(false, analyze.arguments?.single()?.required)
             assertEquals("result_id", analyze.arguments?.single()?.name)
 
             val withConnection =

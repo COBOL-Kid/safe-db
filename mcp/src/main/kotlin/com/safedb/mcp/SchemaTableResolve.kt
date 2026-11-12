@@ -31,20 +31,11 @@ internal fun resolveTable(
     tableName: String,
     tables: List<TableInfo>,
 ): Arg<TableInfo> {
-    tables
-        .find { it.schema == schemaName && it.name == tableName }
-        ?.let {
-            return Arg.Ok(it)
-        }
     val matches = tables.filter {
         it.schema.equals(schemaName, ignoreCase = true) &&
             it.name.equals(tableName, ignoreCase = true)
     }
-    return when (matches.size) {
-        1 -> Arg.Ok(matches.single())
-        0 -> Arg.Err(tableNotFound(tables))
-        else -> Arg.Err(ambiguousTableError(matches))
-    }
+    return pickTable(matches, unqualifiedReference = null, allTables = tables)
 }
 
 internal fun resolveUnqualifiedTable(
@@ -52,29 +43,26 @@ internal fun resolveUnqualifiedTable(
     tables: List<TableInfo>,
 ): Arg<TableInfo> {
     val exact = tables.filter { it.name == reference }
-    when {
-        exact.size == 1 -> return Arg.Ok(exact.single())
-        exact.size > 1 -> {
-            if (exact.map { it.qualifiedName() }.distinct().size == 1) {
-                return Arg.Ok(exact.first())
-            }
-            return Arg.Err(defaultSchemaRequired(reference))
-        }
+    if (exact.isNotEmpty()) {
+        return pickTable(exact, reference, tables)
     }
     val matches = tables.filter { it.name.equals(reference, ignoreCase = true) }
-    return when (matches.size) {
-        1 -> Arg.Ok(matches.single())
-        0 -> Arg.Err(tableNotFound(tables))
-        else ->
-            Arg.Err(
-                if (sameTableIgnoringCase(matches)) ambiguousTableError(matches)
-                else defaultSchemaRequired(reference)
-            )
-    }
+    return pickTable(matches, reference, tables)
 }
 
-internal fun sameTableIgnoringCase(tables: List<TableInfo>): Boolean =
-    tables.map { it.qualifiedName().lowercase() }.distinct().size == 1
+private fun pickTable(
+    candidates: List<TableInfo>,
+    unqualifiedReference: String?,
+    allTables: List<TableInfo>,
+): Arg<TableInfo> =
+    when {
+        candidates.isEmpty() -> Arg.Err(tableNotFound(allTables))
+        candidates.size == 1 -> Arg.Ok(candidates.single())
+        unqualifiedReference != null &&
+            candidates.map { it.qualifiedName().lowercase() }.distinct().size > 1 ->
+            Arg.Err(defaultSchemaRequired(unqualifiedReference))
+        else -> Arg.Err(ambiguousTableError(candidates))
+    }
 
 internal fun defaultSchemaRequired(reference: String): CallToolResult =
     toolError(

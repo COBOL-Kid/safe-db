@@ -351,22 +351,19 @@ private suspend fun handleFilterResultRows(
 
     val filters =
         filtersArg?.let {
-            when (val parsed = parseWorksheetFilters(it, knownColumns)) {
-                is Arg.Ok -> parsed.value
-                is Arg.Err -> return parsed.result
+            parseWorksheetFilters(it, knownColumns).getOrElse {
+                return it
             }
         } ?: emptyList()
     val sorts =
         sortsArg?.let {
-            when (val parsed = parseWorksheetSorts(it, knownColumns)) {
-                is Arg.Ok -> parsed.value
-                is Arg.Err -> return parsed.result
+            parseWorksheetSorts(it, knownColumns).getOrElse {
+                return it
             }
         } ?: emptyList()
     val projection = columnsArg?.let {
-        when (val parsed = parseColumnProjection(it, knownColumns)) {
-            is Arg.Ok -> parsed.value
-            is Arg.Err -> return parsed.result
+        parseColumnProjection(it, knownColumns).getOrElse {
+            return it
         }
     }
 

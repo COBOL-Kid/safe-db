@@ -391,6 +391,56 @@ class SchemaRelationshipsTest {
     }
 
     @Test
+    fun indexedCandidatesSkipGenericIdToIdButKeepNamedConventionMatches() {
+        val accounts =
+            table(
+                name = "accounts",
+                columns = listOf(column("id", primary = true, joinEligible = true)),
+                indexes = listOf(index("accounts_pkey", listOf("id"), primary = true)),
+            )
+        val sessions =
+            table(
+                name = "sessions",
+                columns = listOf(column("id", primary = true, joinEligible = true)),
+                indexes = listOf(index("sessions_pkey", listOf("id"), primary = true)),
+            )
+
+        val genericIdEdges = findDirectJoinEdges(listOf(accounts, sessions), "public", "accounts")
+        assertTrue(genericIdEdges.none { it.kind == JoinCandidateKind.IndexedColumns })
+
+        val customers =
+            table(
+                name = "customers",
+                columns =
+                    listOf(
+                        column("id", primary = true, joinEligible = true),
+                        column("customer_id", indexed = true, joinEligible = true),
+                    ),
+                indexes = listOf(index("customers_pkey", listOf("id"), primary = true)),
+            )
+        val invoices =
+            table(
+                name = "invoices",
+                columns = listOf(column("customer_id", indexed = true, joinEligible = true)),
+            )
+
+        val namedEdges = findDirectJoinEdges(listOf(customers, invoices), "public", "customers")
+        val sameName = namedEdges.single { it.kind == JoinCandidateKind.IndexedColumns }
+        assertEquals(listOf(JoinColumnPair("customer_id", "customer_id")), sameName.columns)
+
+        val balances =
+            table(
+                name = "balances",
+                columns = listOf(column("customers_id", indexed = true, joinEligible = true)),
+            )
+
+        val idToTableIdEdges =
+            findDirectJoinEdges(listOf(customers, balances), "public", "customers")
+        val convention = idToTableIdEdges.single { it.kind == JoinCandidateKind.IndexedColumns }
+        assertEquals(listOf(JoinColumnPair("id", "customers_id")), convention.columns)
+    }
+
+    @Test
     fun joinPathsFindShortestRoutesAndRespectMaxHops() {
         val customers = table(name = "customers", columns = listOf(column("id", primary = true)))
         val orders =

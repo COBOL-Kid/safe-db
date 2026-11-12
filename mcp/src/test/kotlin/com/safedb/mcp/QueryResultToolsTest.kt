@@ -370,6 +370,15 @@ class QueryResultToolsTest {
             resultsDir.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun resultToolsAreReadOnly() = runBlocking {
+        withTempMcpClient(queryService()) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(true, tools.getValue("get_result_rows").annotations?.readOnlyHint)
+            assertEquals(true, tools.getValue("summarize_result").annotations?.readOnlyHint)
+        }
+    }
 }
 
 private fun queryService(): RecordingSafeDbService {

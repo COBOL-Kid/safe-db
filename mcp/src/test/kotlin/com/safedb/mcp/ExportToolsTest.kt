@@ -8,6 +8,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -132,6 +133,14 @@ class ExportToolsTest {
             val resultId = storeExportResult(client)
             val receipt = client.callJson("export_result", mapOf("result_id" to resultId))
             assertEquals("true", receipt.string("sample_capped"))
+        }
+    }
+
+    @Test
+    fun exportResultToolHasNoAnnotations() = runBlocking {
+        withTempMcpClient(exportService()) { client ->
+            val tool = client.listTools().tools.single { it.name == "export_result" }
+            assertNull(tool.annotations)
         }
     }
 }

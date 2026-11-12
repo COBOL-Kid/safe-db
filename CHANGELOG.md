@@ -1,14 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- Case-insensitive catalog lookup for `describe_table` and `find_join_paths`, with up to 5 suggested tables when a name is unknown and `invalid_arguments` listing both names when a reference is ambiguous.
-- Db2 internal catalog tables (`EXPLAIN_*`, `ADVISE_*`) are hidden from `list_tables`, `search_catalog`, `describe_table`, `find_join_paths`, and the tables resource.
-- `find_join_paths` accepts `foreign_key_only` to exclude indexed-column candidates.
-- Unknown-column errors on `filter_result_rows`, `pivot_result`, and `sorts` list known result columns.
-- `run_query`, `run_saved_query`, and `assess_query` receipts include `dialect`; capped samples report `sample_cap_reason` (`sql_limit` or `byte_budget`) and unbounded SQL sets `sample_unbounded`.
-- Additive `structuredContent` for object tools and published `outputSchema` for `run_query`, `assess_query`, `describe_table`, and `find_join_paths`.
-
 ## 1.1.0
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.0` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.0-all.jar`; npm packages are stamped 1.1.0 at assemble time.
@@ -19,6 +10,13 @@ Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engin
 - Workspace tools: added `list_saved_queries`, `run_saved_query`, `save_query`, `delete_saved_query` (two-step confirmation), `list_recipes`, `apply_recipe`, and `list_query_history`, all backed by the shared `specToSql` compiler.
 - MCP resources and prompts: added `safedb://connections`, `safedb://connections/{connection_id}/tables`, and `safedb://results/{result_id}/summary` resources plus `explore-database` and `analyze-result` prompts.
 - CLI enhancements: added `safe-db-mcp connections test [<id>]` and `safe-db-mcp settings` (`show`, `risk-gate`, `default-connection`, `clear-default-connection`, `block-schema`, `unblock-schema`); added `safe-db-mcp recipes list`, `recipes import <absolute path>`, and `recipes export <recipe_id>`.
+- Case-insensitive catalog lookup for `describe_table` and `find_join_paths`, with up to 5 suggested tables when a name is unknown and `invalid_arguments` listing both names when a reference is ambiguous.
+- Db2 internal catalog tables (`EXPLAIN_*`, `ADVISE_*`) are hidden from `list_tables`, `search_catalog`, `describe_table`, `find_join_paths`, and the tables resource.
+- `find_join_paths` accepts `foreign_key_only` to exclude indexed-column candidates.
+- Unknown-column errors on `filter_result_rows`, `pivot_result`, and `sorts` list known result columns.
+- `run_query`, `run_saved_query`, and `assess_query` receipts include `dialect`; capped samples report `sample_cap_reason` (`sql_limit` or `byte_budget`) and unbounded SQL sets `sample_unbounded`.
+- Additive `structuredContent` for object tools and published `outputSchema` for `run_query`, `assess_query`, `describe_table`, and `find_join_paths`.
+- Intentional MCP contract changes: a visualization-only `apply_recipe` (no pivot and no worksheet) is a `validation` error; worksheet receipt column names are source columns, not display labels; `analyze-result` `result_id` is optional.
 
 ## 1.0.1
 

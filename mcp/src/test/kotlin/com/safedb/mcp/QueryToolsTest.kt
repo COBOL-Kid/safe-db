@@ -923,6 +923,21 @@ class QueryToolsTest {
         assertFalse(capped.contains("\"artifact_path\""))
         assertFalse(capped.contains("\"artifact_bytes\""))
     }
+
+    @Test
+    fun runQueryToolMetadataIsDocumented() = runBlocking {
+        withTempMcpClient(queryService()) { client ->
+            val tool = client.listTools().tools.single { it.name == "run_query" }
+            assertNull(tool.annotations)
+            assertEquals(listOf("connection_id", "sql"), tool.inputSchema.required)
+            assertFalse(tool.inputSchema.properties?.containsKey("spec") == true)
+            val description = tool.description.orEmpty()
+            assertTrue(description.contains("On error risk_gate"))
+            assertFalse(description.contains("change the gate"))
+            assertNotNull(tool.outputSchema)
+            assertTrue(tool.outputSchema?.properties?.containsKey("row_count") == true)
+        }
+    }
 }
 
 private fun queryService(): RecordingSafeDbService {

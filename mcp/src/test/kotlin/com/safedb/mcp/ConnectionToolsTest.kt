@@ -219,6 +219,18 @@ class ConnectionToolsTest {
             assertEquals(listOf("c1"), deleteService.connections.map { it.id })
         }
     }
+
+    @Test
+    fun connectionToolMetadataIsDocumented() = runBlocking {
+        withTempMcpClient(RecordingSafeDbService()) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(true, tools.getValue("list_connections").annotations?.readOnlyHint)
+            val delete = tools.getValue("delete_connection")
+            assertEquals(true, delete.annotations?.destructiveHint)
+            assertEquals(listOf("connection_id"), delete.inputSchema.required)
+            assertTrue(delete.inputSchema.properties?.containsKey("confirmation") == true)
+        }
+    }
 }
 
 private fun CallToolResult.text(): String = (content.single() as TextContent).text
