@@ -11,7 +11,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
     server.addTool(

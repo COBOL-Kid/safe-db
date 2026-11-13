@@ -6,7 +6,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal fun registerQueryTools(server: Server, service: SafeDbService, resultStore: ResultStore) {
     val resultTtlMinutes = RESULT_STORE_TTL_MS / 60_000

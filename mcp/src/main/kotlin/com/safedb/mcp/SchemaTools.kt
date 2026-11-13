@@ -16,7 +16,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal const val SEARCH_CATALOG_DEFAULT_LIMIT = 25
 internal const val SEARCH_CATALOG_MAX_LIMIT = 50
@@ -360,7 +359,7 @@ private suspend fun handleFindJoinPaths(
         optionalBoolean(request, "foreign_key_only").getOrElse {
             return it
         } == true
-    if (maxHopsArg != null && (maxHopsArg < 1 || maxHopsArg > FIND_JOIN_PATHS_MAX_HOPS)) {
+    if (maxHopsArg != null && maxHopsArg !in 1..FIND_JOIN_PATHS_MAX_HOPS) {
         return toolError(
             ERROR_INVALID_ARGUMENTS,
             "max_hops must be between 1 and $FIND_JOIN_PATHS_MAX_HOPS",

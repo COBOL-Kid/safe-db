@@ -78,7 +78,10 @@ class QueryToolsTest {
             assertEquals("Allowed", risk.getValue("state").jsonPrimitive.content)
             assertEquals("Minimal", risk.getValue("severity").jsonPrimitive.content)
             assertEquals("Standard", risk.getValue("effective_gate").jsonPrimitive.content)
-            assertEquals(emptyList<String>(), risk.getValue("reasons").jsonArray.map { it.jsonPrimitive.content })
+            assertEquals(
+                emptyList<String>(),
+                risk.getValue("reasons").jsonArray.map { it.jsonPrimitive.content },
+            )
             val preview = parsed.getValue("preview").jsonArray
             assertEquals(2, preview.size)
             assertEquals("false", parsed.getValue("preview_truncated").jsonPrimitive.content)
@@ -120,7 +123,11 @@ class QueryToolsTest {
                 parsed.columns()[0].jsonObject.getValue("data_type").jsonPrimitive.content,
             )
             assertFalse(parsed.containsKey("sample_unbounded"))
-            assertTrue(parsed.getValue("warnings").jsonArray.none { it.jsonPrimitive.content == LARGE_LIMIT_WARNING })
+            assertTrue(
+                parsed.getValue("warnings").jsonArray.none {
+                    it.jsonPrimitive.content == LARGE_LIMIT_WARNING
+                }
+            )
         }
         assertTrue(service.runQueryRequests.single().spec.uncapped)
     }
@@ -128,7 +135,11 @@ class QueryToolsTest {
     @Test
     fun allowedElevatedRiskIncludesScoringReasons() = runBlocking {
         val service = queryService()
-        val reason = RiskDecisionReason("NoEffectiveRestriction", "No effective restriction applies to scan_events.")
+        val reason =
+            RiskDecisionReason(
+                "NoEffectiveRestriction",
+                "No effective restriction applies to scan_events.",
+            )
         service.runQueryResult =
             QueryRunResult(
                 sampleMcpQueryResult(),

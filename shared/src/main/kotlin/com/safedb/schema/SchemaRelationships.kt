@@ -326,21 +326,21 @@ private fun indexedColumnEdges(
     foreignKeyPairs: Set<ForeignKeyPair>,
 ): List<JoinEdge> {
     val indexedByTable = linkedMapOf<Pair<String, String>, MutableList<JoinColumnPair>>()
-    for (left in from.columns) {
-        if (!left.joinEligible) continue
-        for ((target, right) in index.joinEligibleByCategory[left.category].orEmpty()) {
+    for ((leftName, _, _, _, joinEligible, category) in from.columns) {
+        if (!joinEligible) continue
+        for ((target, right) in index.joinEligibleByCategory[category].orEmpty()) {
             if (target.schema == from.schema && target.name == from.name) continue
             if (
                 !columnsCompatibleByConvention(
                     from.name,
-                    left.name,
+                    leftName,
                     target.name,
                     right.name,
                 )
             ) {
                 continue
             }
-            val pair = JoinColumnPair(left.name, right.name)
+            val pair = JoinColumnPair(leftName, right.name)
             if (ForeignKeyPair(target.schema, target.name, pair) in foreignKeyPairs) {
                 continue
             }

@@ -679,8 +679,8 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
     }
 
     private fun buildOutputColumns(columns: List<ColumnSlice>): List<ResultColumn> = buildList {
-        for (dimension in rowDimensions) {
-            add(ResultColumn(dimension.label, "text"))
+        for ((_, label) in rowDimensions) {
+            add(ResultColumn(label, "text"))
         }
         for ((_, labels, _, _) in columns) {
             for (measure in measures) {

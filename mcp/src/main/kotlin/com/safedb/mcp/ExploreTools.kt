@@ -290,28 +290,28 @@ private suspend fun handlePivotResult(
         resultStore.getEntry(resultId) ?: return toolError(ERROR_NOT_FOUND, "Result not found")
     val columns = entry.result.columns.map { it.name }.toSet()
 
-    val rowDimensions = rowDimensionsArg?.let {
-        parseDimensions(it, columns, "row_dimensions").getOrElse {
+    val rowDimensions = rowDimensionsArg?.let { value ->
+        parseDimensions(value, columns, "row_dimensions").getOrElse {
             return it
         }
     }
-    val columnDimensions = columnDimensionsArg?.let {
-        parseDimensions(it, columns, "column_dimensions").getOrElse {
+    val columnDimensions = columnDimensionsArg?.let { value ->
+        parseDimensions(value, columns, "column_dimensions").getOrElse {
             return it
         }
     }
-    val measures = measuresArg?.let {
-        parseMeasures(it, columns).getOrElse {
+    val measures = measuresArg?.let { value ->
+        parseMeasures(value, columns).getOrElse {
             return it
         }
     }
-    val filters = filtersArg?.let {
-        parsePivotFilters(it, columns).getOrElse {
+    val filters = filtersArg?.let { value ->
+        parsePivotFilters(value, columns).getOrElse {
             return it
         }
     }
-    val sort = sortArg?.let {
-        parseExploreSort(it, columns).getOrElse {
+    val sort = sortArg?.let { value ->
+        parseExploreSort(value, columns).getOrElse {
             return it
         }
     }
@@ -382,19 +382,19 @@ private suspend fun handleFilterResultRows(
     val knownColumns = entry.result.columns.map { it.name }.toSet()
 
     val filters =
-        filtersArg?.let {
-            parseWorksheetFilters(it, knownColumns).getOrElse {
+        filtersArg?.let { value ->
+            parseWorksheetFilters(value, knownColumns).getOrElse {
                 return it
             }
         } ?: emptyList()
     val sorts =
-        sortsArg?.let {
-            parseWorksheetSorts(it, knownColumns).getOrElse {
+        sortsArg?.let { value ->
+            parseWorksheetSorts(value, knownColumns).getOrElse {
                 return it
             }
         } ?: emptyList()
-    val projection = columnsArg?.let {
-        parseColumnProjection(it, knownColumns).getOrElse {
+    val projection = columnsArg?.let { value ->
+        parseColumnProjection(value, knownColumns).getOrElse {
             return it
         }
     }

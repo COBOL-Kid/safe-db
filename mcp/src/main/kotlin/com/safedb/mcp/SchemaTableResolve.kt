@@ -67,7 +67,7 @@ private fun matchExactThenIgnoreCase(
     ignoreCasePredicate: (TableInfo) -> Boolean,
 ): List<TableInfo> {
     val exact = tables.filter(exactPredicate)
-    return if (exact.isNotEmpty()) exact else tables.filter(ignoreCasePredicate)
+    return exact.ifEmpty { tables.filter(ignoreCasePredicate) }
 }
 
 private fun pickTable(
@@ -112,21 +112,29 @@ internal fun tableNotFound(requested: String, tables: List<TableInfo>): CallTool
     return toolError(ERROR_NOT_FOUND, message)
 }
 
-internal fun similarTableNames(requested: String, tables: List<TableInfo>, limit: Int = 5): List<String> {
+internal fun similarTableNames(
+    requested: String,
+    tables: List<TableInfo>,
+    limit: Int = 5,
+): List<String> {
     val query = requested.trim()
     if (query.isEmpty()) return emptyList()
     val bare = query.substringAfterLast('.').ifBlank { query }
     return tables
+        .asSequence()
         .mapNotNull { table ->
             // Rank by the table name only. Comparing the full schema.table string would
             // treat a shared schema prefix as similarity and suggest unrelated tables.
             if (!isSimilarTableName(bare, table.name)) return@mapNotNull null
             RankedTable(table.qualifiedName(), tableNameDistance(bare, table.name))
         }
-        .sortedWith(compareBy<RankedTable> { it.distance }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        .sortedWith(
+            compareBy<RankedTable> { it.distance }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+        )
         .map { it.name }
         .distinct()
         .take(limit)
+        .toList()
 }
 
 private data class RankedTable(val name: String, val distance: Int)
@@ -134,8 +142,8 @@ private data class RankedTable(val name: String, val distance: Int)
 private fun isSimilarTableName(query: String, candidate: String): Boolean {
     val q = query.lowercase()
     val c = candidate.lowercase()
-    if (q.length >= 2 && (c.startsWith(q) || (q.startsWith(c) && c.length >= 2))) return true
-    return tableNameDistance(q, c) <= maxOf(2, q.length / 3)
+    return (q.length >= 2 && (c.startsWith(q) || (q.startsWith(c) && c.length >= 2))) ||
+        tableNameDistance(q, c) <= maxOf(2, q.length / 3)
 }
 
 private fun tableNameDistance(left: String, right: String): Int {

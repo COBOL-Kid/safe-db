@@ -16,7 +16,6 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 private val SAFE_EXPORT_FILENAME = Regex("^[A-Za-z0-9._-]+$")
 

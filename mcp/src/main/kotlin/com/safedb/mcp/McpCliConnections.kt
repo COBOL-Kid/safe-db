@@ -83,9 +83,14 @@ internal fun parseAddFlags(args: List<String>): ConnectionAddFlags {
 }
 
 private fun parseConnectionsTest(args: Array<String>): McpCommand =
-    when {
-        args.size == 2 -> McpCommand.ConnectionsTest(null)
-        args.size == 3 && !args[2].startsWith("-") -> McpCommand.ConnectionsTest(args[2])
+    when (args.size) {
+        2 -> McpCommand.ConnectionsTest(null)
+        3 ->
+            if (args[2].startsWith("-")) {
+                throw McpCliUsageException()
+            } else {
+                McpCommand.ConnectionsTest(args[2])
+            }
         else -> throw McpCliUsageException()
     }
 
@@ -137,7 +142,7 @@ internal suspend fun testConnections(id: String?, service: SafeDbService, io: Cl
 }
 
 internal fun ephemeralPasswordStoreRequested(
-    envValue: String? = System.getenv(ENV_BACKEND),
+    envValue: String? = System.getenv(ENV_BACKEND)
 ): Boolean = SecretsManager.parseRequestedBackendFrom(envValue) == RequestedBackend.Disabled
 
 internal suspend fun addConnection(

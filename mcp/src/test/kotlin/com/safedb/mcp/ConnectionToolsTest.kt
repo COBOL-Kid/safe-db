@@ -144,7 +144,13 @@ class ConnectionToolsTest {
             )
             assertEquals(
                 confirmation.getValue("token").jsonPrimitive.content,
-                invented.json().getValue("confirmation").jsonObject.getValue("token").jsonPrimitive.content,
+                invented
+                    .json()
+                    .getValue("confirmation")
+                    .jsonObject
+                    .getValue("token")
+                    .jsonPrimitive
+                    .content,
             )
             assertEquals(listOf("c1"), service.connections.map { it.id })
 

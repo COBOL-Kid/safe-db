@@ -247,7 +247,9 @@ fun decodeQueryResult(
     return budget.toResult(columns)
 }
 
-private fun resultColumnsFromMetadata(meta: ResultSetMetaData): List<com.safedb.model.ResultColumn>? {
+private fun resultColumnsFromMetadata(
+    meta: ResultSetMetaData
+): List<com.safedb.model.ResultColumn>? {
     val count = meta.columnCount
     if (count <= 0) return null
     return (1..count).map { index ->

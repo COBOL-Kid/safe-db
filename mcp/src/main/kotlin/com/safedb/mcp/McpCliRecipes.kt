@@ -7,6 +7,8 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val MAX_RECIPE_IMPORT_BYTES = 1024 * 1024
 
@@ -49,22 +51,25 @@ internal suspend fun importRecipe(path: String, service: SafeDbService, io: CliI
     if (!file.isAbsolute) {
         throw McpCliUsageException("Recipe path must be absolute: $path")
     }
-    if (!Files.isRegularFile(file)) {
-        throw IllegalArgumentException("Recipe file not found: $path")
-    }
-    val bytes = Files.newInputStream(file).use { it.readNBytes(MAX_RECIPE_IMPORT_BYTES + 1) }
-    if (bytes.size > MAX_RECIPE_IMPORT_BYTES) {
-        throw IllegalArgumentException("Recipe file is larger than 1 MiB: $path")
-    }
     val json =
-        try {
-            StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(bytes))
-                .toString()
-        } catch (error: Exception) {
-            throw IllegalArgumentException("Recipe file is not valid UTF-8: $path", error)
+        withContext(Dispatchers.IO) {
+            if (!Files.isRegularFile(file)) {
+                throw IllegalArgumentException("Recipe file not found: $path")
+            }
+            val bytes =
+                Files.newInputStream(file).use { it.readNBytes(MAX_RECIPE_IMPORT_BYTES + 1) }
+            if (bytes.size > MAX_RECIPE_IMPORT_BYTES) {
+                throw IllegalArgumentException("Recipe file is larger than 1 MiB: $path")
+            }
+            try {
+                StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString()
+            } catch (error: Exception) {
+                throw IllegalArgumentException("Recipe file is not valid UTF-8: $path", error)
+            }
         }
     val recipe = service.importExploreRecipe(json, Instant.now().epochSecond.toString())
     io.print("Imported ${recipe.id}  ${recipe.name}")

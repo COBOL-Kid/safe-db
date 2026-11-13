@@ -10,12 +10,6 @@ import kotlinx.serialization.KSerializer
 internal class IssuedTokens {
     private val tokens = ConcurrentHashMap<String, String>()
 
-    fun issue(id: String): String {
-        val token = UUID.randomUUID().toString()
-        tokens[id] = token
-        return token
-    }
-
     fun existingOrIssue(id: String): String {
         val created = UUID.randomUUID().toString()
         return tokens.putIfAbsent(id, created) ?: created

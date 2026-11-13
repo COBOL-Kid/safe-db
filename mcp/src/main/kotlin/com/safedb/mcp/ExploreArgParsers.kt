@@ -105,9 +105,13 @@ internal fun parseDimensions(
 }
 
 private fun parseGrouping(element: JsonElement?, parentPath: String): Arg<PivotGrouping> =
-    when {
-        element == null || element is JsonNull -> Arg.Ok(PivotGrouping.Exact)
-        element is JsonPrimitive && element.isString -> {
+    when (element) {
+        null,
+        is JsonNull -> Arg.Ok(PivotGrouping.Exact)
+        is JsonPrimitive -> {
+            if (!element.isString) {
+                return invalidArgument("grouping must be a string or object")
+            }
             val grouping =
                 when (normalize(element.content)) {
                     "exact" -> PivotGrouping.Exact
@@ -120,7 +124,7 @@ private fun parseGrouping(element: JsonElement?, parentPath: String): Arg<PivotG
                 }
             Arg.Ok(grouping)
         }
-        element is JsonObject -> {
+        is JsonObject -> {
             val path = "$parentPath.grouping"
             requireKnownKeys(element, path, "bin_size", "bin_start").getOrElse {
                 return Arg.Err(it)
