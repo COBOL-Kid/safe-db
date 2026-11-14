@@ -71,7 +71,7 @@ fun tokenizeSql(
                 SqlSpan(start, end),
                 value ?: sql.substring(start, end),
                 error,
-            )
+            ),
         )
     }
 

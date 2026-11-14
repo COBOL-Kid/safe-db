@@ -31,7 +31,7 @@ class SeedMysqlTest {
                     "7",
                     "--batch-size",
                     "3",
-                )
+                ),
             )
 
         assertTrue(options.reset)
@@ -257,7 +257,7 @@ class SeedMysqlTest {
             safeDbAppDataDirForStateReset(
                 environment = PlatformEnvironment("Windows 11", "C:/Users/test"),
                 report = { resetMessage = it },
-            )
+            ),
         )
         assertEquals("-> skipping safe-db app state reset (APPDATA is not set)", resetMessage)
     }
@@ -276,7 +276,7 @@ class SeedMysqlTest {
             safeDbAppDataDirForStateReset(
                 environment = PlatformEnvironment("Linux", "/home/test"),
                 report = { resetMessage = it },
-            )
+            ),
         )
         assertEquals(
             "-> skipping safe-db app state reset " +
@@ -302,7 +302,7 @@ class SeedMysqlTest {
             safeDbAppDataDirForStateReset(
                 environment = PlatformEnvironment("Haiku", "/home/test"),
                 report = { resetMessage = it },
-            )
+            ),
         )
         assertEquals(
             "-> skipping safe-db app state reset " +

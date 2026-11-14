@@ -38,7 +38,7 @@ fun assessValidatedQueryRisk(
                 } else {
                     assessStaticQueryRisk(validated, schema, dialect)
                 },
-        )
+        ),
     )
 }
 
@@ -60,7 +60,7 @@ fun evaluateQueryRisk(
             planStatus =
                 if (assessment == null) QueryPlanStatus.Disabled else QueryPlanStatus.NotRequested,
             decision = applyRiskGate(assessment, settings.queryRiskGate),
-        )
+        ),
     )
 }
 
@@ -84,27 +84,28 @@ fun applyRiskGate(
     val band = blockingBand(userSetting)!!
     val blocked = assessment.severity.ordinal >= band.ordinal
     val reasons =
-        if (blocked) {
-            assessment.signals
-                .sortedWith(
-                    // EvidenceConfidence declares High first, so ascending ordinal
-                    // is descending confidence.
-                    compareBy<RiskSignal> { it.confidence.ordinal }
-                        .thenByDescending(RiskSignal::points)
-                )
-                .take(3)
-                .map { signal -> RiskDecisionReason(signal.code.name, signalMessage(signal)) }
-                .ifEmpty {
+        assessment.signals
+            .sortedWith(
+                // EvidenceConfidence declares High first, so ascending ordinal
+                // is descending confidence.
+                compareBy<RiskSignal> { it.confidence.ordinal }
+                    .thenByDescending(RiskSignal::points),
+            )
+            .map { signal -> RiskDecisionReason(signal.code.name, signalMessage(signal)) }
+            .distinctBy(RiskDecisionReason::message)
+            .take(3)
+            .ifEmpty {
+                if (blocked) {
                     listOf(
                         RiskDecisionReason(
                             "severity_gate",
                             "Query risk is ${assessment.severity.label}.",
-                        )
+                        ),
                     )
+                } else {
+                    emptyList()
                 }
-        } else {
-            emptyList()
-        }
+            }
     return QueryRiskDecision(
         fingerprint,
         if (blocked) RiskGateState.Blocked else RiskGateState.Allowed,

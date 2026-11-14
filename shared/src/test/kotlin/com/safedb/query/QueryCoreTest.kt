@@ -40,6 +40,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -53,7 +54,7 @@ class QueryCoreTest {
                     ExplainResult.Unavailable(
                         PlanUnavailableReason.PermissionDenied,
                         "planner disabled",
-                    )
+                    ),
             )
         val spec = sampleSpec()
         val first =
@@ -94,7 +95,8 @@ class QueryCoreTest {
     fun disabledRiskModeSkipsExplainAndRunsWithoutConfirmation() = runBlocking {
         val runner =
             StubRunner(
-                explainResult = ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout")
+                explainResult =
+                    ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout"),
             )
         val outcome =
             runQueryCore(
@@ -112,10 +114,116 @@ class QueryCoreTest {
     }
 
     @Test
+    fun planParseFailureDoesNotRequireConfirmationWhenStaticRiskAllows() = runBlocking {
+        val runner =
+            StubRunner(
+                explainResult =
+                    ExplainResult.Unavailable(
+                        PlanUnavailableReason.ParseFailure,
+                        "Could not normalize MySQL JSON plan",
+                    ),
+            )
+        val outcome =
+            runQueryCore(
+                runner,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default(),
+            )
+        val success = assertIs<QueryCoreOutcome.Success>(outcome)
+        assertEquals(QueryPlanStatus.Unavailable, success.riskEvaluation.planStatus)
+        assertEquals(RiskGateState.Allowed, success.riskEvaluation.decision.state)
+        assertEquals(1, runner.explainCalls)
+        assertEquals(1, runner.executeCalls)
+    }
+
+    @Test
+    fun emptyResultDropsMaterialProjectedPayloadScore() = runBlocking {
+        val empty =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__id", "int")),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val uncapped = sampleSpec().copy(uncapped = true, limit = DEFAULT_LIMIT)
+        val populated =
+            assertIs<QueryCoreOutcome.Success>(
+                runQueryCore(
+                    StubRunner(),
+                    sampleConnection(),
+                    uncapped,
+                    sampleSchema(),
+                    Settings.default(),
+                ),
+            )
+        val populatedAssessment = assertNotNull(populated.riskEvaluation.finalAssessment)
+        assertTrue(
+            populatedAssessment.signals.any { it.code == RiskSignalCode.MaterialProjectedPayload },
+        )
+        assertTrue(
+            populated.riskEvaluation.decision.reasons.any {
+                it.message.contains("projected result payload is material", ignoreCase = true)
+            },
+        )
+
+        val emptyOutcome =
+            runQueryCore(
+                StubRunner(execute = Outcome.ok(empty)),
+                sampleConnection(),
+                uncapped,
+                sampleSchema(),
+                Settings.default(),
+            )
+        val emptySuccess = assertIs<QueryCoreOutcome.Success>(emptyOutcome)
+        assertEquals(0, emptySuccess.result.rowCount)
+        val emptyAssessment = assertNotNull(emptySuccess.riskEvaluation.finalAssessment)
+        assertTrue(
+            emptyAssessment.signals.none { it.code == RiskSignalCode.MaterialProjectedPayload },
+        )
+        assertTrue(
+            emptySuccess.riskEvaluation.decision.reasons.none {
+                it.message.contains("projected result payload is material", ignoreCase = true)
+            },
+        )
+        assertTrue(emptyAssessment.score <= populatedAssessment.score)
+    }
+
+    @Test
+    fun emptyUncappedResultDropsTheLargeLimitWarning() = runBlocking {
+        val empty =
+            QueryResult(
+                columns = listOf(ResultColumn("t0__id", "int")),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val runner = StubRunner(execute = Outcome.ok(empty))
+        val settings = Settings.default().copy(queryRiskGate = QueryRiskGate.Disabled)
+        val uncapped = sampleSpec().copy(uncapped = true, limit = DEFAULT_LIMIT)
+        val emptyOutcome =
+            runQueryCore(runner, sampleConnection(), uncapped, sampleSchema(), settings)
+        val emptySuccess = assertIs<QueryCoreOutcome.Success>(emptyOutcome)
+        assertEquals(0, emptySuccess.result.rowCount)
+        assertTrue(emptySuccess.result.warnings.none { it == LARGE_LIMIT_WARNING })
+
+        val populatedRunner = StubRunner(execute = Outcome.ok(sampleResult()))
+        val populated =
+            runQueryCore(populatedRunner, sampleConnection(), uncapped, sampleSchema(), settings)
+        val populatedSuccess = assertIs<QueryCoreOutcome.Success>(populated)
+        assertTrue(populatedSuccess.result.warnings.any { it == LARGE_LIMIT_WARNING })
+        assertTrue(populatedSuccess.result.rowCount > 0)
+    }
+
+    @Test
     fun planCheckTimeoutReturnsExecutionErrorInsteadOfConfirmation() = runBlocking {
         val runner =
             StubRunner(
-                explainResult = ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout")
+                explainResult =
+                    ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout"),
             )
 
         val outcome =
@@ -189,7 +297,7 @@ class QueryCoreTest {
                     ExplainResult.Unavailable(
                         PlanUnavailableReason.ConnectionFailure,
                         "An I/O error occurred.",
-                    )
+                    ),
             )
 
         val outcome =
@@ -216,7 +324,7 @@ class QueryCoreTest {
         val runner =
             StubRunner(
                 explainResult =
-                    ExplainResult.Unavailable(PlanUnavailableReason.ExecutionFailure, dump)
+                    ExplainResult.Unavailable(PlanUnavailableReason.ExecutionFailure, dump),
             )
 
         val outcome =
@@ -230,7 +338,7 @@ class QueryCoreTest {
 
         val confirmationError =
             assertIs<QueryError.ConfirmationRequired>(
-                assertIs<QueryCoreOutcome.Failure>(outcome).error.error
+                assertIs<QueryCoreOutcome.Failure>(outcome).error.error,
             )
         assertEquals(
             PlanUnavailableReason.ExecutionFailure,
@@ -253,11 +361,11 @@ class QueryCoreTest {
                                         alias = "t0",
                                         method = PlanAccessMethod.BoundedLookup,
                                         estimatedRows = 1,
-                                    )
+                                    ),
                                 ),
                             rawOptimizerCost = Double.MAX_VALUE,
-                        )
-                    )
+                        ),
+                    ),
             )
 
         val outcome =
@@ -293,10 +401,10 @@ class QueryCoreTest {
                                         alias = "t0",
                                         method = PlanAccessMethod.BoundedLookup,
                                         estimatedRows = 1,
-                                    )
-                                )
-                        )
-                    )
+                                    ),
+                                ),
+                        ),
+                    ),
             )
 
         val first =
@@ -324,7 +432,9 @@ class QueryCoreTest {
             val runner =
                 StubRunner(
                     explainResult =
-                        ExplainResult.Available(NormalizedQueryPlan(rawOptimizerCost = invalidCost))
+                        ExplainResult.Available(
+                            NormalizedQueryPlan(rawOptimizerCost = invalidCost),
+                        ),
                 )
 
             val outcome =
@@ -352,12 +462,12 @@ class QueryCoreTest {
         val runner =
             StubRunner(
                 explainResult =
-                    ExplainResult.Unavailable(PlanUnavailableReason.PermissionDenied, "denied")
+                    ExplainResult.Unavailable(PlanUnavailableReason.PermissionDenied, "denied"),
             )
         val spec = sampleSpec()
         val first =
             assertIs<QueryCoreOutcome.Failure>(
-                runQueryCore(runner, sampleConnection(), spec, sampleSchema(), Settings.default())
+                runQueryCore(runner, sampleConnection(), spec, sampleSchema(), Settings.default()),
             )
         val required =
             assertIs<QueryError.ConfirmationRequired>(first.error.error).requirement.confirmation
@@ -391,19 +501,22 @@ class QueryCoreTest {
             )
 
         assertIs<QueryError.ConfirmationRequired>(
-            assertIs<QueryCoreOutcome.Failure>(wrongConnection).error.error
+            assertIs<QueryCoreOutcome.Failure>(wrongConnection).error.error,
         )
         assertIs<QueryError.ConfirmationRequired>(
-            assertIs<QueryCoreOutcome.Failure>(wrongQuery).error.error
+            assertIs<QueryCoreOutcome.Failure>(wrongQuery).error.error,
         )
         assertIs<QueryError.ConfirmationRequired>(
-            assertIs<QueryCoreOutcome.Failure>(changedConnectionDefinition).error.error
+            assertIs<QueryCoreOutcome.Failure>(changedConnectionDefinition).error.error,
         )
 
         val changedReasonRunner =
             StubRunner(
                 explainResult =
-                    ExplainResult.Unavailable(PlanUnavailableReason.ParseFailure, "unreadable plan")
+                    ExplainResult.Unavailable(
+                        PlanUnavailableReason.UnsupportedShape,
+                        "unsupported plan",
+                    ),
             )
         val changedReason =
             runQueryCore(
@@ -415,7 +528,7 @@ class QueryCoreTest {
                 required,
             )
         assertIs<QueryError.ConfirmationRequired>(
-            assertIs<QueryCoreOutcome.Failure>(changedReason).error.error
+            assertIs<QueryCoreOutcome.Failure>(changedReason).error.error,
         )
         assertEquals(0, runner.executeCalls)
         assertEquals(0, changedReasonRunner.executeCalls)
@@ -450,11 +563,11 @@ class QueryCoreTest {
                                         alias = "t0",
                                         method = PlanAccessMethod.TableScan,
                                         estimatedRows = 150_000,
-                                    )
+                                    ),
                                 ),
                             rawOptimizerCost = 1.0,
-                        )
-                    )
+                        ),
+                    ),
             )
         val blocked =
             runQueryCore(
@@ -472,7 +585,7 @@ class QueryCoreTest {
                             QueryConfirmationCondition(
                                 QueryConfirmationReasonCode.PlanUnavailable,
                                 "TimedOut",
-                            )
+                            ),
                         ),
                 ),
             )
@@ -488,11 +601,11 @@ class QueryCoreTest {
         val runner =
             StubRunner(
                 explainResult =
-                    ExplainResult.Unavailable(PlanUnavailableReason.PermissionDenied, "denied")
+                    ExplainResult.Unavailable(PlanUnavailableReason.PermissionDenied, "denied"),
             )
         val initialFailure =
             assertIs<QueryCoreOutcome.Failure>(
-                runQueryCore(runner, connection, sampleSpec(), sampleSchema(), Settings.default())
+                runQueryCore(runner, connection, sampleSpec(), sampleSchema(), Settings.default()),
             )
         val exactConfirmation =
             assertIs<QueryError.ConfirmationRequired>(initialFailure.error.error)
@@ -579,10 +692,10 @@ class QueryCoreTest {
                                 alias = "t0",
                                 method = PlanAccessMethod.BoundedLookup,
                                 estimatedRows = 1,
-                            )
+                            ),
                         ),
                     rawOptimizerCost = 1.0,
-                )
+                ),
             ),
         private val execute: Outcome<QueryResult> = Outcome.ok(sampleResult()),
     ) : QueryRunner {
@@ -646,10 +759,10 @@ private fun riskySpec() =
                                     op = FilterOp.Contains,
                                     value =
                                         FilterValue.Single(
-                                            FilterLiteral(LiteralKind.Text, "needle")
+                                            FilterLiteral(LiteralKind.Text, "needle"),
                                         ),
-                                )
-                            )
+                                ),
+                            ),
                         ),
                 ),
             groups = listOf(GroupSpec("t0", "notes")),
@@ -689,8 +802,8 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Medium) =
                             MetadataCoverage.complete(),
                             com.safedb.model.EvidenceConfidence.High,
                         ),
-                )
-            )
+                ),
+            ),
     )
 
 private fun sampleResult() =

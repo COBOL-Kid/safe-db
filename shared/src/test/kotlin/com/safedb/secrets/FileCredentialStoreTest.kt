@@ -52,7 +52,7 @@ class FileCredentialStoreTest {
         assertTrue(
             assertFailsWith<IllegalStateException> { store.getPassword("safe-db", "conn-1") }
                 .message!!
-                .contains("owner-only")
+                .contains("owner-only"),
         )
     }
 

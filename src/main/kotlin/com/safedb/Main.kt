@@ -48,7 +48,7 @@ internal fun requireSupportedDesktopPlatform(
         }
     if (platform == null || !platform.supportsDesktopApp) {
         reportError(
-            "safe-db: unsupported operating system '$osName'; supported platforms are macOS and Windows"
+            "safe-db: unsupported operating system '$osName'; supported platforms are macOS and Windows",
         )
         exit(2)
     }

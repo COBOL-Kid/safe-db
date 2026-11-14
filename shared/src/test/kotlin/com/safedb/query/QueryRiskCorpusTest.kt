@@ -125,7 +125,7 @@ private data class RiskCorpusCase(
                                 includedColumns = false,
                             ),
                         isPartial = false,
-                    )
+                    ),
                 )
             } else {
                 emptyList()
@@ -158,8 +158,8 @@ private data class RiskCorpusCase(
                                         "id",
                                         FilterOp.Eq,
                                         FilterValue.Single(FilterLiteral(LiteralKind.Int, "1")),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
                     )
                 CorpusPredicate.BroadTextWithoutIndex ->
@@ -174,8 +174,8 @@ private data class RiskCorpusCase(
                                         "notes",
                                         FilterOp.Contains,
                                         FilterValue.Single(FilterLiteral(LiteralKind.Text, "term")),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
                     )
             }
@@ -241,7 +241,7 @@ private fun joinedTable(
                         "public",
                         "orders",
                         listOf("id"),
-                    )
+                    ),
                 )
             } else {
                 emptyList()

@@ -225,7 +225,7 @@ fun preserveStaticRiskForUnavailablePlan(
                     "plan_unavailable",
                     RiskSubject(operation = "query plan"),
                     reason.name,
-                )
+                ),
     )
 
 // Postgres appends a per-partition suffix to the query alias (t0_1, t0_2).
@@ -261,7 +261,7 @@ private fun mergePartitionedRelations(
                             estimatedRows = if (rows.isEmpty()) null else rows.sum(),
                             specializedTextEvidence =
                                 group.any(PlanRelationAccess::specializedTextEvidence),
-                        )
+                        ),
                 )
             }
         }

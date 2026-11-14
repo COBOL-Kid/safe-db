@@ -60,7 +60,7 @@ class ApplyWorksheetTest {
             applyWorksheet(
                 nullAndEmpty,
                 WorksheetConfig(
-                    sorts = listOf(WorksheetSort(WorksheetValueRef.Column("name"), SortDir.Asc))
+                    sorts = listOf(WorksheetSort(WorksheetValueRef.Column("name"), SortDir.Asc)),
                 ),
             )
         val values =
@@ -85,7 +85,7 @@ class ApplyWorksheetTest {
                                 "region",
                                 op = WorksheetFilterOp.Equals,
                                 value = "East",
-                            )
+                            ),
                         ),
                     sorts =
                         listOf(
@@ -111,8 +111,8 @@ class ApplyWorksheetTest {
                                 "amount",
                                 op = WorksheetFilterOp.Equals,
                                 value = "10.00",
-                            )
-                        )
+                            ),
+                        ),
                 ),
             )
         val notEquals =
@@ -126,8 +126,8 @@ class ApplyWorksheetTest {
                                 "amount",
                                 op = WorksheetFilterOp.NotEquals,
                                 value = "20.0",
-                            )
-                        )
+                            ),
+                        ),
                 ),
             )
 
@@ -168,13 +168,12 @@ class ApplyWorksheetTest {
         val collapsed =
             applyWorksheet(sample(), base.copy(collapsedGroupPaths = setOf(east.pathKey)))
         assertTrue(
-            collapsed.rows.none { it.kind == WorksheetRowKind.Detail && it.pathKey == "row:0" }
+            collapsed.rows.none { it.kind == WorksheetRowKind.Detail && it.pathKey == "row:0" },
         )
     }
 
     @Test
     fun numericBinsAndMemberFiltersUseTypedBuckets() {
-        val included = pivotCellKey(ResultCell.text("East"))
         val preview =
             applyWorksheet(
                 sample(),
@@ -185,7 +184,7 @@ class ApplyWorksheetTest {
                                 "amount-bin",
                                 "amount",
                                 grouping = PivotGrouping.NumberBin("10"),
-                            )
+                            ),
                         ),
                     filters =
                         listOf(
@@ -193,8 +192,8 @@ class ApplyWorksheetTest {
                                 "region-filter",
                                 "region",
                                 op = WorksheetFilterOp.Members,
-                                includedKeys = setOf(included),
-                            )
+                                includedKeys = setOf("East"),
+                            ),
                         ),
                 ),
             )
@@ -204,6 +203,45 @@ class ApplyWorksheetTest {
             preview.rows.filter { it.kind == WorksheetRowKind.Group }.map { it.label },
         )
         assertEquals(2, preview.rows.count { it.kind == WorksheetRowKind.Detail })
+    }
+
+    @Test
+    fun memberFiltersMatchDocumentedCellValuesAndInternalKeys() {
+        val sample =
+            QueryResult(
+                columns = listOf(ResultColumn("event", "varchar"), ResultColumn("n", "int")),
+                rows =
+                    listOf(
+                        listOf(ResultCell.text("view"), ResultCell.IntegerCell(1)),
+                        listOf(ResultCell.text("click"), ResultCell.IntegerCell(2)),
+                    ),
+                rowCount = 2,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        fun matched(keys: Set<String>, column: String = "event"): Int =
+            applyWorksheet(
+                    sample,
+                    WorksheetConfig(
+                        filters =
+                            listOf(
+                                WorksheetFilter(
+                                    "members",
+                                    column,
+                                    op = WorksheetFilterOp.Members,
+                                    includedKeys = keys,
+                                ),
+                            ),
+                    ),
+                )
+                .rows
+                .count { it.kind == WorksheetRowKind.Detail }
+
+        assertEquals(1, matched(setOf("view")))
+        assertEquals(1, matched(setOf("1"), column = "n"))
+        assertEquals(1, matched(setOf(pivotCellKey(ResultCell.text("click")))))
+        assertEquals(2, matched(setOf("view", "click")))
     }
 
     @Test
@@ -231,7 +269,7 @@ class ApplyWorksheetTest {
                                 "month",
                                 "day",
                                 grouping = PivotGrouping.Date(DateGroupUnit.Month),
-                            )
+                            ),
                         ),
                     sorts = listOf(WorksheetSort(WorksheetValueRef.Column("day"))),
                 ),
@@ -246,7 +284,7 @@ class ApplyWorksheetTest {
                                 "amount-bin",
                                 "amount",
                                 grouping = PivotGrouping.NumberBin("2"),
-                            )
+                            ),
                         ),
                     sorts = listOf(WorksheetSort(WorksheetValueRef.Column("amount"))),
                 ),
@@ -272,7 +310,7 @@ class ApplyWorksheetTest {
                         listOf(
                             WorksheetCalculation.RowFormula("net", "Net", "[amount] - [discount]"),
                             WorksheetCalculation.RowFormula("bad", "Bad", "[amount] / 0"),
-                        )
+                        ),
                 ),
             )
         val first = preview.rows.first()
@@ -283,7 +321,7 @@ class ApplyWorksheetTest {
         )
         assertEquals("Division by zero", first.cells.last().error)
         assertTrue(
-            preview.rows[2].cells[preview.rows[2].cells.lastIndex - 1].value is ResultCell.Null
+            preview.rows[2].cells[preview.rows[2].cells.lastIndex - 1].value is ResultCell.Null,
         )
         assertEquals(sample().rowCount, preview.calculationErrorCount)
     }
@@ -454,7 +492,7 @@ class ApplyWorksheetTest {
                                 fn = WorksheetWindowFn.RunningTotal,
                                 source = WorksheetValueRef.Column("amount"),
                                 restartColumns = listOf("first", "second"),
-                            )
+                            ),
                         ),
                 ),
             )
@@ -613,8 +651,8 @@ class ApplyWorksheetTest {
                                 "Running",
                                 WorksheetWindowFn.RunningAverage,
                                 WorksheetValueRef.Column("amount"),
-                            )
-                        )
+                            ),
+                        ),
                 ),
             )
 
@@ -632,7 +670,7 @@ class ApplyWorksheetTest {
                         listOf(
                             WorksheetCalculation.GroupFormula("a", "A", "[b] + 1"),
                             WorksheetCalculation.GroupFormula("b", "B", "[a] + 1"),
-                        )
+                        ),
                 ),
             )
 

@@ -36,6 +36,10 @@ open class FakeSafeDbServiceSupport : SafeDbService {
         throw UnsupportedOperationException("runQuery")
     }
 
+    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult {
+        throw UnsupportedOperationException("assessQuery")
+    }
+
     override suspend fun listSavedQueries(): List<SavedQuery> = emptyList()
 
     override suspend fun saveSavedQuery(query: SavedQuery) = Unit

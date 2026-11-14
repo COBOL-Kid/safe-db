@@ -229,12 +229,14 @@ class SqlTokenizerTest {
 
         assertNull(mySqlBackslashEscapes(connection()))
         assertNull(
-            mySqlBackslashEscapes(connection(DriverProperty("sessionVariables", "wait_timeout=60")))
+            mySqlBackslashEscapes(
+                connection(DriverProperty("sessionVariables", "wait_timeout=60")),
+            ),
         )
         assertEquals(
             true,
             mySqlBackslashEscapes(
-                connection(DriverProperty("sessionVariables", "sql_mode='STRICT_TRANS_TABLES'"))
+                connection(DriverProperty("sessionVariables", "sql_mode='STRICT_TRANS_TABLES'")),
             ),
         )
         assertEquals(
@@ -244,15 +246,15 @@ class SqlTokenizerTest {
                     DriverProperty(
                         "sessionVariables",
                         "sql_mode='STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES'",
-                    )
-                )
+                    ),
+                ),
             ),
         )
         assertNull(
             mySqlBackslashEscapes(
                 connection(DriverProperty("sessionVariables", "sql_mode='ANSI'"))
-                    .copy(dialect = Dialect.Postgres)
-            )
+                    .copy(dialect = Dialect.Postgres),
+            ),
         )
     }
 
@@ -298,18 +300,18 @@ class SqlTokenizerTest {
     @Test
     fun mysqlDashDashNeedsWhitespaceToStartAComment() {
         assertTrue(
-            tokenizeSql("SELECT id -- note", Dialect.MySql).any { it.type == SqlTokenType.Comment }
+            tokenizeSql("SELECT id -- note", Dialect.MySql).any { it.type == SqlTokenType.Comment },
         )
         // MySQL reads `--2` as two unary minuses, not a comment swallowing the rest of the line.
         assertTrue(
             tokenizeSql("SELECT id FROM t WHERE a = --2", Dialect.MySql).none {
                 it.type == SqlTokenType.Comment
-            }
+            },
         )
         assertTrue(
             tokenizeSql("SELECT id FROM t WHERE a = --2", Dialect.Postgres).any {
                 it.type == SqlTokenType.Comment
-            }
+            },
         )
     }
 
@@ -335,7 +337,7 @@ class SqlTokenizerTest {
             val tokens = significant(input, dialect)
             assertEquals(SqlTokenType.Comment, tokens.first().type)
             assertTrue(
-                tokens.any { it.type == SqlTokenType.Keyword && sqlWord(it.text) == "SELECT" }
+                tokens.any { it.type == SqlTokenType.Keyword && sqlWord(it.text) == "SELECT" },
             )
         }
     }

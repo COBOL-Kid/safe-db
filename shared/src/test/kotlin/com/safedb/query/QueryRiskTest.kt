@@ -84,6 +84,92 @@ class QueryRiskTest {
     }
 
     @Test
+    fun allowedQueriesKeepTheSameScoringReasonsAsBlockedQueries() {
+        val evidence = signal(RiskCategory.Access, 4)
+        val elevated = assessmentWithScore(3).copy(signals = listOf(evidence))
+        val allowed = applyRiskGate(elevated, QueryRiskGate.Standard)
+        assertEquals(RiskGateState.Allowed, allowed.state)
+        assertEquals(
+            listOf(RiskDecisionReason(evidence.code.name, signalMessage(evidence))),
+            allowed.reasons,
+        )
+
+        val high = assessmentWithScore(6).copy(signals = listOf(evidence))
+        val blocked = applyRiskGate(high, QueryRiskGate.Standard)
+        assertEquals(RiskGateState.Blocked, blocked.state)
+        assertEquals(allowed.reasons, blocked.reasons)
+    }
+
+    @Test
+    fun identicalSelfJoinScanReasonsAppearOnceWhileBothSidesKeepTheirPoints() {
+        val left =
+            RiskSignal(
+                RiskSignalCode.PlanConfirmedLargeScan,
+                RiskCategory.Access,
+                RiskSubject(tableAlias = "t0", table = "scan_events"),
+                4,
+                SignalBasis.PlanEvidence,
+                EvidenceConfidence.High,
+                RiskTarget.Access("t0"),
+            )
+        val right =
+            RiskSignal(
+                RiskSignalCode.PlanConfirmedLargeScan,
+                RiskCategory.Access,
+                RiskSubject(tableAlias = "t1", table = "scan_events"),
+                4,
+                SignalBasis.PlanEvidence,
+                EvidenceConfidence.High,
+                RiskTarget.Access("t1"),
+            )
+        val extraJoin =
+            RiskSignal(
+                RiskSignalCode.AdditionalJoinedRelation,
+                RiskCategory.Joins,
+                RiskSubject(operation = "join"),
+                1,
+                SignalBasis.StaticSchema,
+                EvidenceConfidence.High,
+            )
+        val joinExpansion =
+            RiskSignal(
+                RiskSignalCode.PlanConfirmedJoinExpansion,
+                RiskCategory.Joins,
+                RiskSubject(operation = "join t0-t1"),
+                3,
+                SignalBasis.PlanEvidence,
+                EvidenceConfidence.High,
+                RiskTarget.Join(setOf("t0", "t1")),
+            )
+        val assessment =
+            buildAssessment("self-join", listOf(left, right, extraJoin, joinExpansion), emptyList())
+
+        assertEquals(
+            2,
+            assessment.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
+        )
+        assertEquals(8, assessment.score)
+        assertEquals(QueryRiskSeverity.VeryHigh, assessment.severity)
+
+        val decision = applyRiskGate(assessment, QueryRiskGate.Flexible)
+        assertEquals(RiskGateState.Blocked, decision.state)
+        assertEquals(
+            1,
+            decision.reasons.count {
+                it.message == "Plan evidence indicates a high-row scan of a large table."
+            },
+        )
+        assertEquals(
+            listOf(
+                "Plan evidence indicates a high-row scan of a large table.",
+                "Plan evidence indicates high join expansion.",
+                "The query joins an additional relation.",
+            ),
+            decision.reasons.map { it.message },
+        )
+    }
+
+    @Test
     fun disabledGateDoesNotRequireAssessmentWhileEnabledGateIsPending() {
         assertEquals(RiskGateState.Allowed, applyRiskGate(null, QueryRiskGate.Disabled).state)
         assertEquals(
@@ -113,7 +199,7 @@ class QueryRiskTest {
 
         assertTrue(assessment.uncertainties.any { it.reasonCode == "permission_denied" })
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
     }
 
@@ -129,7 +215,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("notes", ColumnCategory.Text)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
@@ -171,13 +257,13 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("id"), column("notes", ColumnCategory.Text)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
         assertFalse(assessment.signals.any { it.code == RiskSignalCode.ScanProneTextPredicate })
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
         assertFalse(assessment.signals.any { it.code == RiskSignalCode.NoEffectiveRestriction })
     }
@@ -203,7 +289,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("id"), column("notes", ColumnCategory.Text)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
@@ -252,7 +338,7 @@ class QueryRiskTest {
 
         assertTrue(assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath })
         assertTrue(
-            assessment.signals.any { it.code == RiskSignalCode.OrBranchWithoutCompatiblePath }
+            assessment.signals.any { it.code == RiskSignalCode.OrBranchWithoutCompatiblePath },
         )
         assertTrue(assessment.signals.any { it.code == RiskSignalCode.ScanProneTextPredicate })
         assertEquals(QueryRiskSeverity.High, assessment.severity)
@@ -290,7 +376,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("notes", ColumnCategory.Text)),
                         indexes = listOf(fullText),
-                    )
+                    ),
                 ),
                 dialect = Dialect.MySql,
             )
@@ -330,12 +416,12 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("account_id"), column("created_at")),
                         indexes = listOf(index),
-                    )
+                    ),
                 ),
             )
 
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
     }
 
@@ -346,7 +432,7 @@ class QueryRiskTest {
                 columns = listOf(column("created_at", ColumnCategory.DateTime)),
                 indexes =
                     listOf(
-                        index("orders_created", listOf(IndexKey("created_at", SortDirection.Desc)))
+                        index("orders_created", listOf(IndexKey("created_at", SortDirection.Desc))),
                     ),
             )
         val descending =
@@ -411,7 +497,7 @@ class QueryRiskTest {
                         index(
                             "line_items_order",
                             listOf(IndexKey("order_id"), IndexKey("store_id")),
-                        )
+                        ),
                     ),
                 foreignKeys =
                     listOf(
@@ -421,7 +507,7 @@ class QueryRiskTest {
                             "public",
                             "orders",
                             listOf("id", "store_id"),
-                        )
+                        ),
                     ),
             )
         val parent =
@@ -434,7 +520,7 @@ class QueryRiskTest {
                             "orders_pk",
                             listOf(IndexKey("id"), IndexKey("store_id")),
                             unique = true,
-                        )
+                        ),
                     ),
             )
         val query =
@@ -458,7 +544,7 @@ class QueryRiskTest {
             assessment.signals.count { it.code == RiskSignalCode.AdditionalJoinedRelation },
         )
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex }
+            assessment.signals.any { it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex },
         )
     }
 
@@ -492,6 +578,76 @@ class QueryRiskTest {
         assertEquals(
             1,
             assessment.signals.count { it.code == RiskSignalCode.AdditionalJoinedRelation },
+        )
+    }
+
+    @Test
+    fun additionalJoinedRelationsCollapseToOneSignal() {
+        val assessment =
+            assess(
+                spec(
+                    tables =
+                        listOf(
+                            TableRef("public", "customers", "t0"),
+                            TableRef("public", "orders", "t1"),
+                            TableRef("public", "items", "t2"),
+                            TableRef("public", "payments", "t3"),
+                        ),
+                    joins =
+                        listOf(
+                            JoinSpec("t0", "id", "t1", "customer_id"),
+                            JoinSpec("t1", "id", "t2", "order_id"),
+                            JoinSpec("t2", "id", "t3", "item_id"),
+                        ),
+                    columns = listOf(ColumnSel("t0", "id")),
+                ),
+                listOf(
+                    table(
+                        "customers",
+                        columns = listOf(column("id").copy(joinEligible = true)),
+                        indexes = listOf(index("customers_id", listOf(IndexKey("id")))),
+                    ),
+                    table(
+                        "orders",
+                        columns =
+                            listOf(
+                                column("id").copy(joinEligible = true),
+                                column("customer_id").copy(joinEligible = true),
+                            ),
+                        indexes =
+                            listOf(
+                                index("orders_id", listOf(IndexKey("id"))),
+                                index("orders_customer", listOf(IndexKey("customer_id"))),
+                            ),
+                    ),
+                    table(
+                        "items",
+                        columns =
+                            listOf(
+                                column("id").copy(joinEligible = true),
+                                column("order_id").copy(joinEligible = true),
+                            ),
+                        indexes =
+                            listOf(
+                                index("items_id", listOf(IndexKey("id"))),
+                                index("items_order", listOf(IndexKey("order_id"))),
+                            ),
+                    ),
+                    table(
+                        "payments",
+                        columns = listOf(column("id"), column("item_id").copy(joinEligible = true)),
+                        indexes = listOf(index("payments_item", listOf(IndexKey("item_id")))),
+                    ),
+                ),
+            )
+
+        val extra = assessment.signals.single { it.code == RiskSignalCode.AdditionalJoinedRelation }
+        assertEquals(3, extra.points)
+        assertEquals(
+            1,
+            applyRiskGate(assessment, QueryRiskGate.Standard).reasons.count {
+                it.message == "The query joins an additional relation."
+            },
         )
     }
 
@@ -679,7 +835,7 @@ class QueryRiskTest {
                                 column("details", ColumnCategory.Text),
                             ),
                         indexes = listOf(specializedNotes),
-                    )
+                    ),
                 ),
             )
 
@@ -767,8 +923,8 @@ class QueryRiskTest {
                                     TableSizeClass.Small,
                                     MetadataCoverage.complete(),
                                     EvidenceConfidence.High,
-                                )
-                        )
+                                ),
+                        ),
                 ),
             )
         val unknown = assess(spec(), listOf(table().copy(tableSize = TableSizeEstimate())))
@@ -778,7 +934,7 @@ class QueryRiskTest {
             unknown.signals.any {
                 it.code == RiskSignalCode.NoEffectiveRestriction &&
                     it.confidence == EvidenceConfidence.Unknown
-            }
+            },
         )
         assertTrue(unknown.uncertainties.any { it.code == "table_size_unknown" })
     }
@@ -798,8 +954,8 @@ class QueryRiskTest {
                                             size,
                                             MetadataCoverage.complete(),
                                             confidence,
-                                        )
-                                )
+                                        ),
+                                ),
                         ),
                     )
                 assertEquals(
@@ -849,7 +1005,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("payload", ColumnCategory.Binary)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
@@ -885,7 +1041,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("name", ColumnCategory.Text)),
                         indexes = listOf(hashIndex),
-                    )
+                    ),
                 ),
             )
 
@@ -912,14 +1068,14 @@ class QueryRiskTest {
                                 index(
                                     "orders_account_name",
                                     listOf(IndexKey("account_id"), IndexKey("name")),
-                                )
+                                ),
                             ),
-                    )
+                    ),
                 ),
             )
 
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
     }
 
@@ -934,7 +1090,7 @@ class QueryRiskTest {
         assertTrue(
             refined.uncertainties.any {
                 it.code == "plan_unavailable" && it.reasonCode == "PermissionDenied"
-            }
+            },
         )
     }
 
@@ -1012,9 +1168,9 @@ private fun leaf(alias: String, column: String, op: FilterOp, value: String): Fi
                     FilterLiteral(
                         if (value.toLongOrNull() != null) LiteralKind.Int else LiteralKind.Text,
                         value,
-                    )
+                    ),
                 ),
-        )
+        ),
     )
 
 private fun listLeaf(alias: String, column: String, op: FilterOp): FilterNode.Leaf =
@@ -1025,7 +1181,7 @@ private fun listLeaf(alias: String, column: String, op: FilterOp): FilterNode.Le
             column = column,
             op = op,
             value = FilterValue.ListValue(emptyList()),
-        )
+        ),
     )
 
 private fun listLeafValues(alias: String, column: String, vararg values: String): FilterNode.Leaf =
@@ -1036,7 +1192,7 @@ private fun listLeafValues(alias: String, column: String, vararg values: String)
             column = column,
             op = FilterOp.In,
             value = FilterValue.ListValue(values.map { FilterLiteral(LiteralKind.Text, it) }),
-        )
+        ),
     )
 
 private fun table(

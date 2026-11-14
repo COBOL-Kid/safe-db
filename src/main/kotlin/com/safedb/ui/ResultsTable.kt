@@ -95,7 +95,7 @@ fun ResultsTable(
                 modifier =
                     Modifier.fillMaxWidth()
                         .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 for (warning in result.warnings) {
                     Row(
@@ -143,7 +143,7 @@ fun ResultsTable(
                                     end = RESULT_TABLE_SCROLLBAR_GUTTER_DP.dp,
                                     bottom = RESULT_TABLE_SCROLLBAR_GUTTER_DP.dp,
                                 )
-                                .horizontalScroll(horizontalScroll)
+                                .horizontalScroll(horizontalScroll),
                     ) {
                         Row(
                             modifier =
@@ -187,11 +187,11 @@ fun ResultsTable(
                                         when {
                                             hovered ->
                                                 SafeDbTheme.colors.accentContainer.copy(
-                                                    alpha = 0.55f
+                                                    alpha = 0.55f,
                                                 )
                                             rowIdx % 2 == 1 ->
                                                 MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                                                    alpha = 0.6f
+                                                    alpha = 0.6f,
                                                 )
                                             else -> MaterialTheme.colorScheme.surface
                                         }
@@ -233,8 +233,8 @@ fun ResultsTable(
                                     HorizontalDivider(
                                         color =
                                             MaterialTheme.colorScheme.outlineVariant.copy(
-                                                alpha = 0.65f
-                                            )
+                                                alpha = 0.65f,
+                                            ),
                                     )
                                 }
                             }

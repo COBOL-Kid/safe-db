@@ -84,7 +84,7 @@ internal data class QueryConfirmationDialogCopy(
 )
 
 internal fun queryConfirmationDialogCopy(
-    requirement: QueryConfirmationRequirement
+    requirement: QueryConfirmationRequirement,
 ): QueryConfirmationDialogCopy {
     val reasonCodes = requirement.confirmation.reasonCodes
     val title =

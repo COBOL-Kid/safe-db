@@ -85,13 +85,13 @@ class MySqlQuerySafetyIntegrationTest {
             val error =
                 assertFailsWith<IllegalArgumentException> {
                     service.runQuery(
-                        QueryRunRequest(def.id, IntegrationFixtures.blockedSchemaQuery())
+                        QueryRunRequest(def.id, IntegrationFixtures.blockedSchemaQuery()),
                     )
                 }
             assertTrue(error.message?.contains("Schema 'mysql' is blocked") == true)
             assertTrue(
                 queryStore.listHistory().single().error?.contains("Schema 'mysql' is blocked") ==
-                    true
+                    true,
             )
         }
     }

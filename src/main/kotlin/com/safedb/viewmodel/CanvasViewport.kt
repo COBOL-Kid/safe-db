@@ -146,7 +146,7 @@ internal fun canvasPanForScrollDelta(
     val verticalUnits = if (shiftPressed) 0f else delta.y
     return Offset(
         horizontal.panForScrollOffset(
-            horizontal.scrollOffset + horizontalUnits * pixelsPerScrollUnit
+            horizontal.scrollOffset + horizontalUnits * pixelsPerScrollUnit,
         ),
         vertical.panForScrollOffset(vertical.scrollOffset + verticalUnits * pixelsPerScrollUnit),
     )

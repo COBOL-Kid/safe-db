@@ -1,8 +1,6 @@
 package com.safedb.mcp
 
 import com.safedb.model.Dialect
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -115,7 +113,7 @@ class ConnectionToolsTest {
             assertTrue(firstBody.getValue("message").jsonPrimitive.content.contains("Prod"))
             assertTrue(firstBody.getValue("message").jsonPrimitive.content.contains("shop"))
             assertFalse(
-                firstBody.getValue("message").jsonPrimitive.content.contains("should-not-leak")
+                firstBody.getValue("message").jsonPrimitive.content.contains("should-not-leak"),
             )
             assertFalse(firstBody.getValue("message").jsonPrimitive.content.contains("localhost"))
             val reasons = firstBody.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
@@ -135,7 +133,7 @@ class ConnectionToolsTest {
                                 mapOf(
                                     "connection_id" to JsonPrimitive("c1"),
                                     "token" to JsonPrimitive("invented"),
-                                )
+                                ),
                             ),
                     ),
                 )
@@ -143,6 +141,16 @@ class ConnectionToolsTest {
             assertEquals(
                 "confirmation_required",
                 invented.json().getValue("error").jsonPrimitive.content,
+            )
+            assertEquals(
+                confirmation.getValue("token").jsonPrimitive.content,
+                invented
+                    .json()
+                    .getValue("confirmation")
+                    .jsonObject
+                    .getValue("token")
+                    .jsonPrimitive
+                    .content,
             )
             assertEquals(listOf("c1"), service.connections.map { it.id })
 
@@ -158,25 +166,22 @@ class ConnectionToolsTest {
             )
             assertEquals(listOf("c1"), service.connections.map { it.id })
 
-            val stale =
+            val deleted =
                 client.callTool(
                     "delete_connection",
                     mapOf("connection_id" to "c1", "confirmation" to confirmation),
                 )
-            assertEquals(true, stale.isError)
-            assertEquals(
-                "confirmation_required",
-                stale.json().getValue("error").jsonPrimitive.content,
-            )
-            val echoed = stale.json().getValue("confirmation")
-            val deleted =
-                client.callTool(
-                    "delete_connection",
-                    mapOf("connection_id" to "c1", "confirmation" to echoed),
-                )
             assertFalse(deleted.isError == true)
             assertTrue(deleted.text().contains("c1"))
             assertTrue(service.connections.isEmpty())
+
+            val replayed =
+                client.callTool(
+                    "delete_connection",
+                    mapOf("connection_id" to "c1", "confirmation" to confirmation),
+                )
+            assertEquals(true, replayed.isError)
+            assertEquals("not_found", replayed.json().getValue("error").jsonPrimitive.content)
         }
     }
 
@@ -192,7 +197,7 @@ class ConnectionToolsTest {
             val listedBody = listed.json()
             assertEquals("internal", listedBody.getValue("error").jsonPrimitive.content)
             assertTrue(
-                listedBody.getValue("message").jsonPrimitive.content.contains("store read failed")
+                listedBody.getValue("message").jsonPrimitive.content.contains("store read failed"),
             )
         }
 
@@ -214,13 +219,21 @@ class ConnectionToolsTest {
                 deletedBody.getValue("message").jsonPrimitive.content,
             )
             assertFalse(
-                deletedBody.getValue("message").jsonPrimitive.content.contains("should-not-leak")
+                deletedBody.getValue("message").jsonPrimitive.content.contains("should-not-leak"),
             )
             assertEquals(listOf("c1"), deleteService.connections.map { it.id })
         }
     }
+
+    @Test
+    fun connectionToolMetadataIsDocumented() = runBlocking {
+        withTempMcpClient(RecordingSafeDbService()) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertEquals(true, tools.getValue("list_connections").annotations?.readOnlyHint)
+            val delete = tools.getValue("delete_connection")
+            assertEquals(true, delete.annotations?.destructiveHint)
+            assertEquals(listOf("connection_id"), delete.inputSchema.required)
+            assertTrue(delete.inputSchema.properties?.containsKey("confirmation") == true)
+        }
+    }
 }
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): JsonObject = Json.parseToJsonElement(text()).jsonObject

@@ -1,17 +1,20 @@
 package com.safedb.mcp
 
+import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ColumnSel
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
 import com.safedb.model.ForeignKeyInfo
+import com.safedb.model.HistoryEntry
 import com.safedb.model.IndexInfo
 import com.safedb.model.QueryResult
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
+import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.TableInfo
@@ -30,6 +33,7 @@ import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
 import com.safedb.service.FakeSafeDbServiceSupport
+import com.safedb.service.QueryAssessmentResult
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.QueryRunResult
 import com.safedb.service.SafeDbService
@@ -42,6 +46,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.test.assertEquals
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -51,7 +56,9 @@ import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 internal const val PIPE_BUFFER = 64 * 1024
 
@@ -86,6 +93,13 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     var runQueryResult: QueryRunResult? = null
     var runQueryError: Exception? = null
     var runQueryHandler: ((QueryRunRequest) -> QueryRunResult)? = null
+    val assessQueryRequests = mutableListOf<QueryRunRequest>()
+    var assessQueryResult: QueryAssessmentResult? = null
+    var assessQueryError: Exception? = null
+    var assessQueryHandler: ((QueryRunRequest) -> QueryAssessmentResult)? = null
+    val savedQueries = mutableListOf<SavedQuery>()
+    val exploreRecipes = mutableListOf<ExploreRecipe>()
+    val historyEntries = mutableListOf<HistoryEntry>()
 
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
         tested = def to password
@@ -118,6 +132,10 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
 
     override suspend fun getSettings(): Settings = settings
 
+    override suspend fun saveSettings(settings: Settings) {
+        this.settings = settings
+    }
+
     override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
         runQueryRequests += request
         runQueryHandler?.let {
@@ -126,6 +144,30 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         runQueryError?.let { throw it }
         return runQueryResult ?: throw UnsupportedOperationException("runQuery")
     }
+
+    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult {
+        assessQueryRequests += request
+        assessQueryHandler?.let {
+            return it(request)
+        }
+        assessQueryError?.let { throw it }
+        return assessQueryResult ?: throw UnsupportedOperationException("assessQuery")
+    }
+
+    override suspend fun listSavedQueries(): List<SavedQuery> = savedQueries.toList()
+
+    override suspend fun saveSavedQuery(query: SavedQuery) {
+        savedQueries.removeAll { it.id == query.id }
+        savedQueries += query
+    }
+
+    override suspend fun deleteSavedQuery(id: String) {
+        savedQueries.removeAll { it.id == id }
+    }
+
+    override suspend fun listExploreRecipes(): List<ExploreRecipe> = exploreRecipes.toList()
+
+    override suspend fun listHistory(): List<HistoryEntry> = historyEntries.toList()
 }
 
 internal fun sampleMcpQuerySpec(): QuerySpec =
@@ -198,6 +240,92 @@ internal fun sampleMcpRunResult(
 ): QueryRunResult =
     QueryRunResult(sampleMcpQueryResult(rowCount, truncated, warnings), allowedMcpRisk())
 
+internal fun sampleMcpAssessment(
+    columns: List<ResultColumn> = sampleMcpQueryResult().columns,
+    compiledSql: String = "SELECT customers.id, customers.email FROM public.customers",
+    parameterCount: Int = 0,
+    warnings: List<String> = emptyList(),
+    risk: QueryRiskEvaluation = allowedMcpRisk(),
+): QueryAssessmentResult =
+    QueryAssessmentResult(
+        normalizedSpec = sampleMcpQuerySpec(),
+        columns = columns,
+        compiledSql = compiledSql,
+        parameterCount = parameterCount,
+        warnings = warnings,
+        riskEvaluation = risk,
+    )
+
+internal fun CallToolResult.text(): String = (content.single() as TextContent).text
+
+internal fun CallToolResult.json(): JsonObject = Json.parseToJsonElement(text()).jsonObject
+
+internal fun assertError(result: CallToolResult, code: String, message: String) {
+    assertEquals(true, result.isError)
+    assertEquals(code, result.json().getValue("error").jsonPrimitive.content)
+    assertEquals(message, result.json().getValue("message").jsonPrimitive.content)
+}
+
+internal fun queryService(): RecordingSafeDbService {
+    val service = RecordingSafeDbService()
+    service.connections += sampleMcpConnection()
+    service.passwords["c1"] = "should-not-leak"
+    service.schemas["c1"] = sampleMcpSchema()
+    service.settings = Settings(blockedSchemas = listOf("audit"))
+    service.runQueryResult = sampleMcpRunResult()
+    return service
+}
+
+internal fun sampleExploreQueryResult(): QueryResult =
+    QueryResult(
+        columns =
+            listOf(
+                ResultColumn("region", "text"),
+                ResultColumn("amount", "int"),
+                ResultColumn("created", "text"),
+            ),
+        rows =
+            listOf(
+                listOf(
+                    ResultCell.text("east"),
+                    ResultCell.integer(10),
+                    ResultCell.text("2024-01-05"),
+                ),
+                listOf(
+                    ResultCell.text("east"),
+                    ResultCell.integer(20),
+                    ResultCell.text("2024-02-15"),
+                ),
+                listOf(
+                    ResultCell.text("west"),
+                    ResultCell.integer(30),
+                    ResultCell.text("2024-03-10"),
+                ),
+                listOf(
+                    ResultCell.text("west"),
+                    ResultCell.integer(40),
+                    ResultCell.text("2024-04-20"),
+                ),
+                listOf(
+                    ResultCell.text("north"),
+                    ResultCell.integer(50),
+                    ResultCell.text("2025-01-01"),
+                ),
+            ),
+        rowCount = 5,
+        truncated = false,
+        warnings = emptyList(),
+    )
+
+internal fun exploreSampleService(): RecordingSafeDbService {
+    val service = RecordingSafeDbService()
+    service.connections += sampleMcpConnection()
+    service.passwords["c1"] = "should-not-leak"
+    service.schemas["c1"] = sampleMcpSchema()
+    service.runQueryResult = QueryRunResult(sampleExploreQueryResult(), allowedMcpRisk())
+    return service
+}
+
 internal fun sampleMcpSchema(): Schema =
     Schema(
         tables =
@@ -218,7 +346,7 @@ internal fun sampleMcpSchema(): Schema =
                                 kind = "btree",
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                     tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Small),
                 ),
@@ -244,7 +372,7 @@ internal fun sampleMcpSchema(): Schema =
                                 kind = "btree",
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                     foreignKeys =
                         listOf(
@@ -254,7 +382,7 @@ internal fun sampleMcpSchema(): Schema =
                                 referencedSchema = "public",
                                 referencedTable = "customers",
                                 referencedColumns = listOf("id"),
-                            )
+                            ),
                         ),
                     tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Medium),
                 ),
@@ -271,7 +399,7 @@ internal fun sampleMcpSchema(): Schema =
                     columns = listOf(ColumnInfo(name = "oid", dataType = "oid", nullable = false)),
                     indexes = emptyList(),
                 ),
-            )
+            ),
     )
 
 internal class BufferCliIo(
@@ -314,11 +442,18 @@ internal suspend fun Client.deleteConnectionConfirmed(connectionId: String): Cal
 }
 
 internal suspend fun withTempMcpClient(service: SafeDbService, block: suspend (Client) -> Unit) {
-    val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+    val dataDir = Files.createTempDirectory("safedb-mcp")
     try {
-        withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir), block)
+        withMcpClient(
+            createSafeDbMcpServer(
+                service,
+                resultsDir = dataDir.resolve("results"),
+                exportsDir = dataDir.resolve("exports"),
+            ),
+            block,
+        )
     } finally {
-        resultsDir.toFile().deleteRecursively()
+        dataDir.toFile().deleteRecursively()
     }
 }
 

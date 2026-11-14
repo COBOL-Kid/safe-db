@@ -39,6 +39,10 @@ internal class DispatchingSafeDbService(
 
     override suspend fun runQuery(request: QueryRunRequest) = onIo { delegate.runQuery(request) }
 
+    override suspend fun assessQuery(request: QueryRunRequest) = onIo {
+        delegate.assessQuery(request)
+    }
+
     override suspend fun listSavedQueries(): List<SavedQuery> = onIo(delegate::listSavedQueries)
 
     override suspend fun saveSavedQuery(query: SavedQuery) = onIo { delegate.saveSavedQuery(query) }

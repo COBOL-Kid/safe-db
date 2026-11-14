@@ -169,7 +169,7 @@ fun Canvas(
                 leftColumn = source.sourceColumn,
                 rightAlias = targetAlias,
                 rightColumn = targetColumn,
-            )
+            ),
         )
     }
 
@@ -197,7 +197,7 @@ fun Canvas(
                     sourceColumn = column,
                     mouseX = tableRightX(like),
                     mouseY = port?.point?.y ?: columnY(like, column),
-                )
+                ),
             )
     }
 
@@ -343,7 +343,7 @@ fun Canvas(
                 onScrollTo = { target ->
                     val axis = currentHorizontalScroll.value
                     viewportState.updatePan(
-                        Offset(axis.panForScrollOffset(target), viewportState.pan.y)
+                        Offset(axis.panForScrollOffset(target), viewportState.pan.y),
                     )
                 },
             )
@@ -355,7 +355,7 @@ fun Canvas(
                 onScrollTo = { target ->
                     val axis = currentVerticalScroll.value
                     viewportState.updatePan(
-                        Offset(viewportState.pan.x, axis.panForScrollOffset(target))
+                        Offset(viewportState.pan.x, axis.panForScrollOffset(target)),
                     )
                 },
             )
@@ -377,7 +377,7 @@ fun Canvas(
                     .clipToBounds()
                     .onSizeChanged { viewport = it }
                     .pointerHoverIcon(
-                        if (joinLineHovered) PointerIcon.Hand else PointerIcon.Default
+                        if (joinLineHovered) PointerIcon.Hand else PointerIcon.Default,
                     )
                     .onPointerEvent(PointerEventType.Move) { event ->
                         event.changes.firstOrNull()?.position?.let { position ->
@@ -503,11 +503,11 @@ fun Canvas(
                                         viewportState.pan + dragAmount,
                                         horizontalScroll,
                                         verticalScroll,
-                                    )
+                                    ),
                                 )
                             }
                         }
-                    }
+                    },
         ) {
             Box(
                 modifier =
@@ -526,7 +526,7 @@ fun Canvas(
                                     contentTopInsetPx,
                                 )
                             transformOrigin = TransformOrigin(0f, 0f)
-                        }
+                        },
             ) {
                 val joinColor = SafeDbTheme.colors.actionPrimary
                 val haloColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
@@ -669,7 +669,7 @@ fun Canvas(
                                         active.state.copy(
                                             mouseX = active.state.mouseX + delta.x,
                                             mouseY = active.state.mouseY + delta.y,
-                                        )
+                                        ),
                                     )
                             }
                         },
@@ -737,7 +737,7 @@ fun Canvas(
             modifier =
                 Modifier.fillMaxWidth()
                     .height(CANVAS_FOOTER_HEIGHT_DP.dp)
-                    .background(SafeDbTheme.colors.workspaceCanvas)
+                    .background(SafeDbTheme.colors.workspaceCanvas),
         ) {
             CanvasZoomControls(
                 zoom = viewportState.zoom,
@@ -870,10 +870,10 @@ private fun RoutedJoinEdge.translated(deltaX: Float, deltaY: Float): RoutedJoinE
         points = points.map { point -> CanvasPoint(point.x + deltaX, point.y + deltaY) },
         sourcePort =
             sourcePort.copy(
-                point = CanvasPoint(sourcePort.point.x + deltaX, sourcePort.point.y + deltaY)
+                point = CanvasPoint(sourcePort.point.x + deltaX, sourcePort.point.y + deltaY),
             ),
         targetPort =
             targetPort.copy(
-                point = CanvasPoint(targetPort.point.x + deltaX, targetPort.point.y + deltaY)
+                point = CanvasPoint(targetPort.point.x + deltaX, targetPort.point.y + deltaY),
             ),
     )

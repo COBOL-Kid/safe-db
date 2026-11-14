@@ -164,7 +164,7 @@ fun writePivotReportHtml(
     output: OutputStream,
 ) {
     output.write(
-        renderHtmlDocument(buildPivotReport(session, preview)).toByteArray(StandardCharsets.UTF_8)
+        renderHtmlDocument(buildPivotReport(session, preview)).toByteArray(StandardCharsets.UTF_8),
     )
 }
 
@@ -176,7 +176,7 @@ fun writeWorksheetReportHtml(
 ) {
     output.write(
         renderHtmlDocument(buildWorksheetReport(session, projection, warnings))
-            .toByteArray(StandardCharsets.UTF_8)
+            .toByteArray(StandardCharsets.UTF_8),
     )
 }
 
@@ -188,7 +188,7 @@ fun writeVisualizationReportHtml(
 ) {
     output.write(
         renderHtmlDocument(buildVisualizationReport(session, preview, config))
-            .toByteArray(StandardCharsets.UTF_8)
+            .toByteArray(StandardCharsets.UTF_8),
     )
 }
 
@@ -202,7 +202,7 @@ internal fun buildPivotReport(session: ExploreSession, preview: ExplorePreviewRe
 
     val measures = layout.measures
     val hasRowLabels = layout.rowDimensions.isNotEmpty()
-    val offset = if (hasRowLabels) 1 else 0
+    val offset = layout.rowDimensions.size
     val headerRows =
         layout.columnHeaderRows.map { row ->
             row.map { header ->
@@ -371,7 +371,7 @@ internal fun buildChartSection(
                         label = mark.measureLabel,
                         sublabel = "${mark.sourceRowIndices.size} contributing rows",
                         d = mark.sourceRowIndices.takeIf { it.isNotEmpty() },
-                    )
+                    ),
                 ),
         )
     }
@@ -518,7 +518,7 @@ internal fun tableSectionFrom(result: QueryResult): HtmlTableSection {
                     row.map { cell ->
                         val (text, numeric) = cellToHtmlDisplay(cell)
                         HtmlCell(text, numeric)
-                    }
+                    },
             )
         }
     return HtmlTableSection(

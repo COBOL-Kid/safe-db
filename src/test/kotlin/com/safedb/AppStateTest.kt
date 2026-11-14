@@ -68,7 +68,7 @@ class AppStateTest {
             resolveDefaultQueryLocation(
                 Settings(defaultConnectionId = "missing", defaultSchema = "public"),
                 connections,
-            )
+            ),
         )
         assertNull(resolveDefaultQueryLocation(Settings(defaultConnectionId = "c1"), connections))
     }

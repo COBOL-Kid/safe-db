@@ -2,21 +2,9 @@ package com.safedb.schema
 
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ForeignKeyInfo
-import com.safedb.model.IndexInfo
 import com.safedb.model.Schema
 import com.safedb.model.TableInfo
-
-internal enum class SchemaMapCardinality {
-    OneToOne,
-    ManyToOne,
-    Unknown,
-}
-
-internal enum class SchemaMapOptionality {
-    Required,
-    Optional,
-    Unknown,
-}
+import com.safedb.model.keyColumnNames
 
 internal enum class SchemaMapColumnMarkerKind {
     PrimaryKey,
@@ -54,8 +42,8 @@ internal data class SchemaMapRelationship(
     val targetNodeId: String,
     val sourceColumns: List<String>,
     val targetColumns: List<String>,
-    val cardinality: SchemaMapCardinality,
-    val optionality: SchemaMapOptionality,
+    val cardinality: RelationshipCardinality,
+    val optionality: RelationshipOptionality,
     val label: String,
 )
 
@@ -134,7 +122,7 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                     qualifiedLabel = qualifiedDisplayName(table.schema, table.name),
                     table = table,
                     columns = table.columns.map { column -> projectColumn(table, column) },
-                )
+                ),
             )
         }
         externalColumns.entries
@@ -146,7 +134,7 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                         label = externalLabels.getValue(id),
                         qualifiedLabel = externalLabels.getValue(id),
                         externalColumns = columns.toList(),
-                    )
+                    ),
                 )
             }
     }
@@ -177,7 +165,7 @@ internal fun searchSchemaMap(graph: SchemaMapGraph, query: String): SchemaMapSea
         val metadataMatches =
             table?.indexes?.any { index ->
                 index.name.lowercase().contains(needle) ||
-                    indexKeyColumns(index).any { it.lowercase().contains(needle) }
+                    index.keyColumnNames().any { it.lowercase().contains(needle) }
             } == true ||
                 table?.foreignKeys?.any { foreignKey ->
                     foreignKey.name.lowercase().contains(needle) ||
@@ -250,53 +238,10 @@ internal fun layoutSchemaMap(
     return result
 }
 
-private fun relationshipCardinality(
-    table: TableInfo,
-    foreignKey: ForeignKeyInfo,
-): SchemaMapCardinality {
-    if (!table.indexMetadata.isComplete) return SchemaMapCardinality.Unknown
-
-    val foreignColumns = foreignKey.columns.toSet()
-    fun IndexInfo.exactForeignKeyColumns(): Boolean =
-        exactIndexKeyColumns(this)?.let { keys ->
-            keys.size == foreignKey.columns.size && keys.toSet() == foreignColumns
-        } == true
-
-    val exactUnique =
-        table.indexes.any { index ->
-            index.exactForeignKeyColumns() &&
-                (index.isPrimary || (index.isUnique && index.isPartial == false))
-        }
-    val ambiguousExactUnique =
-        table.indexes.any { index ->
-            !index.isPrimary &&
-                index.isUnique &&
-                index.isPartial == null &&
-                index.exactForeignKeyColumns()
-        }
-    return when {
-        exactUnique -> SchemaMapCardinality.OneToOne
-        ambiguousExactUnique -> SchemaMapCardinality.Unknown
-        else -> SchemaMapCardinality.ManyToOne
-    }
-}
-
-private fun relationshipOptionality(
-    table: TableInfo,
-    foreignKey: ForeignKeyInfo,
-): SchemaMapOptionality {
-    val columns = foreignKey.columns.map { name -> table.columns.find { it.name == name } }
-    return when {
-        columns.any { it == null } -> SchemaMapOptionality.Unknown
-        columns.any { requireNotNull(it).nullable } -> SchemaMapOptionality.Optional
-        else -> SchemaMapOptionality.Required
-    }
-}
-
 private fun relationshipLabel(
     table: TableInfo,
     foreignKey: ForeignKeyInfo,
-    cardinality: SchemaMapCardinality,
+    cardinality: RelationshipCardinality,
 ): String {
     val source =
         relationshipEndpoint(
@@ -313,9 +258,9 @@ private fun relationshipLabel(
             localSchema = table.schema,
         )
     return when (cardinality) {
-        SchemaMapCardinality.ManyToOne -> "$target has many $source."
-        SchemaMapCardinality.OneToOne -> "$target can have one $source."
-        SchemaMapCardinality.Unknown -> "$source is connected to $target."
+        RelationshipCardinality.ManyToOne -> "$target has many $source."
+        RelationshipCardinality.OneToOne -> "$target can have one $source."
+        RelationshipCardinality.Unknown -> "$source is connected to $target."
     }
 }
 
@@ -334,13 +279,13 @@ private fun relationshipEndpoint(
 }
 
 private fun projectColumn(table: TableInfo, column: ColumnInfo): SchemaMapColumn {
-    val primary = table.indexes.any { it.isPrimary && column.name in indexKeyColumns(it) }
+    val primary = table.indexes.any { it.isPrimary && column.name in it.keyColumnNames() }
     val unique =
-        table.indexes.any { !it.isPrimary && it.isUnique && column.name in indexKeyColumns(it) }
+        table.indexes.any { !it.isPrimary && it.isUnique && column.name in it.keyColumnNames() }
     val foreign = table.foreignKeys.any { column.name in it.columns }
     val indexes =
         table.indexes.any { index ->
-            (!index.isPrimary && !index.isUnique && column.name in indexKeyColumns(index)) ||
+            (!index.isPrimary && !index.isUnique && column.name in index.keyColumnNames()) ||
                 column.name in index.includedColumns
         }
     return SchemaMapColumn(
@@ -353,18 +298,6 @@ private fun projectColumn(table: TableInfo, column: ColumnInfo): SchemaMapColumn
         ),
     )
 }
-
-private fun indexKeyColumns(index: IndexInfo): List<String> =
-    if (index.keys.isNotEmpty()) index.keys.mapNotNull { it.column } else index.columns
-
-private fun exactIndexKeyColumns(index: IndexInfo): List<String>? =
-    if (index.keys.isNotEmpty()) {
-        index.keys
-            .takeUnless { keys -> keys.any { it.expression || it.column == null } }
-            ?.map { requireNotNull(it.column) }
-    } else {
-        index.columns
-    }
 
 // Escape separators because quoted database identifiers may contain dots and backslashes.
 private fun qualifiedId(schema: String, table: String): String =

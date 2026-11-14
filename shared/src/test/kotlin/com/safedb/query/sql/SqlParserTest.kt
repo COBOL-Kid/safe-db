@@ -37,7 +37,7 @@ class SqlParserTest {
                 ORDER BY u.name DESC, u.id
                 LIMIT 50
                 """
-                    .trimIndent()
+                    .trimIndent(),
             )
         assertTrue(ast.distinct)
         assertEquals(2, ast.items!!.size)
@@ -68,7 +68,7 @@ class SqlParserTest {
         val ast =
             parse(
                 "SELECT id FROM t WHERE a <> 1 AND b IS NOT NULL AND c NOT LIKE 'x' " +
-                    "AND d NOT IN (1, 2) AND e BETWEEN 1 AND 5 AND f ILIKE 'y' AND g <= -2"
+                    "AND d NOT IN (1, 2) AND e BETWEEN 1 AND 5 AND f ILIKE 'y' AND g <= -2",
             )
         val ops =
             assertIs<SqlConditionAst.And>(ast.where).children.map {
@@ -167,7 +167,7 @@ class SqlParserTest {
     @Test
     fun commentsDoNotHideStatements() {
         assertIs<SqlStatementResult.Ok>(
-            parseSqlStatement("SELECT id FROM users -- note", Dialect.Postgres)
+            parseSqlStatement("SELECT id FROM users -- note", Dialect.Postgres),
         )
         val hidden = failParse("SELECT id FROM users /* x */ ; DELETE FROM users")
         assertEquals(SqlIssueCode.MultipleStatements, hidden.code)
@@ -336,6 +336,53 @@ class SqlParserTest {
             assertEquals(SqlIssueCode.Unsupported, issue.code)
             assertTrue(issue.message.contains("ILIKE is PostgreSQL syntax"))
         }
+    }
+
+    @Test
+    fun likeEscapeClauseIsAccepted() {
+        val like =
+            assertIs<SqlConditionAst.Predicate>(
+                parse("SELECT id FROM t WHERE a LIKE 'x!%' ESCAPE '!'").where,
+            )
+        assertEquals(FilterOp.Like, like.op)
+        assertEquals("x!%", like.values.single().raw)
+        assertTrue(like.likeEscape)
+
+        val notLike =
+            assertIs<SqlConditionAst.Predicate>(
+                parse("SELECT id FROM t WHERE a NOT LIKE 'x' ESCAPE '!'").where,
+            )
+        assertEquals(FilterOp.NotLike, notLike.op)
+        assertTrue(notLike.likeEscape)
+
+        val ilike =
+            assertIs<SqlConditionAst.Predicate>(
+                parse("SELECT id FROM t WHERE a ILIKE 'x' ESCAPE '!'", Dialect.Postgres).where,
+            )
+        assertEquals(FilterOp.Ilike, ilike.op)
+        assertTrue(ilike.likeEscape)
+
+        val withoutEscape =
+            assertIs<SqlConditionAst.Predicate>(parse("SELECT id FROM t WHERE a LIKE 'x'").where)
+        assertFalse(withoutEscape.likeEscape)
+    }
+
+    @Test
+    fun likeEscapeMustBeExclamationMark() {
+        val issue = failParse("SELECT id FROM t WHERE a LIKE 'x' ESCAPE '#'")
+        assertEquals(SqlIssueCode.Syntax, issue.code)
+    }
+
+    @Test
+    fun likeEscapeRequiresAStringLiteral() {
+        assertEquals(
+            SqlIssueCode.Syntax,
+            failParse("SELECT id FROM t WHERE a LIKE 'x' ESCAPE").code,
+        )
+        assertEquals(
+            SqlIssueCode.Syntax,
+            failParse("SELECT id FROM t WHERE a LIKE 'x' ESCAPE 1").code,
+        )
     }
 
     @Test

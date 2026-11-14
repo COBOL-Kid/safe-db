@@ -13,7 +13,7 @@ class PlanParsersTest {
     fun postgresLimitCapsScanAndJoinRowsUnlessABlockingOperatorIntervenes() {
         val limitedScan =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":0.14,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}}]"""
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":0.14,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}}]""",
             )
         assertNotNull(limitedScan)
         assertEquals(1, limitedScan.relations.single().estimatedRows)
@@ -21,7 +21,7 @@ class PlanParsersTest {
 
         val limitedNestedLoop =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Nested Loop","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]"""
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Nested Loop","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]""",
             )
         assertNotNull(limitedNestedLoop)
         assertEquals(
@@ -32,7 +32,7 @@ class PlanParsersTest {
 
         val limitedSort =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":80.0,"Plans":[{"Node Type":"Sort","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}]}}]"""
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":80.0,"Plans":[{"Node Type":"Sort","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}]}}]""",
             )
         assertNotNull(limitedSort)
         assertEquals(1_000_000, limitedSort.relations.single().estimatedRows)
@@ -40,7 +40,7 @@ class PlanParsersTest {
 
         val limitedHashJoin =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":40.0,"Plans":[{"Node Type":"Hash Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":3}]}]}}]"""
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":40.0,"Plans":[{"Node Type":"Hash Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":3}]}]}}]""",
             )
         assertNotNull(limitedHashJoin)
         assertEquals(
@@ -54,7 +54,7 @@ class PlanParsersTest {
     fun postgresLimitAllowlistsNestedLoopJoinsAndFailsClosedForUnknownNodes() {
         val limitedNestedLoopLeftJoin =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Nested Loop Left Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]"""
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Nested Loop Left Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Index Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":1,"Index Cond":"(id = customer_id)"}]}]}}]""",
             )
         assertNotNull(limitedNestedLoopLeftJoin)
         assertEquals(
@@ -65,7 +65,7 @@ class PlanParsersTest {
 
         val limitedHashJoin =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":40.0,"Plans":[{"Node Type":"Hash Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":3}]}]}}]"""
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":40.0,"Plans":[{"Node Type":"Hash Join","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"customers","Alias":"t1","Plan Rows":3}]}]}}]""",
             )
         assertNotNull(limitedHashJoin)
         assertEquals(
@@ -75,7 +75,7 @@ class PlanParsersTest {
 
         val limitedUnknown =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Unknown Operator","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}]}}]"""
+                """[{"Plan":{"Node Type":"Limit","Plan Rows":1,"Total Cost":12.4,"Plans":[{"Node Type":"Unknown Operator","Plan Rows":1000000,"Plans":[{"Node Type":"Seq Scan","Schema":"analytics","Relation Name":"scan_events","Alias":"t0","Plan Rows":1000000}]}]}}]""",
             )
         assertNotNull(limitedUnknown)
         assertEquals(1_000_000, limitedUnknown.relations.single().estimatedRows)
@@ -94,7 +94,7 @@ class PlanParsersTest {
 
         val jsonLimit =
             parseMySqlPlan(
-                """{"query_block":{"limit":1,"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091}}}"""
+                """{"query_block":{"limit":1,"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091}}}""",
             )
         assertNotNull(jsonLimit)
         assertEquals(1, jsonLimit.relations.single().estimatedRows)
@@ -140,7 +140,7 @@ class PlanParsersTest {
 
         val unbounded =
             parseMySqlPlan(
-                """{"query_block":{"query_cost":"204212.05","table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":1000000}}}"""
+                """{"query_block":{"query_cost":"204212.05","table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":1000000}}}""",
             )
         assertNotNull(unbounded)
         assertEquals(1_000_000, unbounded.relations.single().estimatedRows)
@@ -156,7 +156,7 @@ class PlanParsersTest {
     fun postgresJsonNormalizesRelationsJoinsAndBlockingOperations() {
         val plan =
             parsePostgresPlan(
-                """[{"Plan":{"Node Type":"Sort","Plan Rows":25000,"Plans":[{"Node Type":"Hash Join","Plan Rows":25000,"Plans":[{"Node Type":"Index Scan","Schema":"public","Relation Name":"orders","Alias":"t0","Plan Rows":12,"Index Cond":"(id = 1)"},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"items","Alias":"t1","Plan Rows":120000}]}],"Total Cost":42.5}}]"""
+                """[{"Plan":{"Node Type":"Sort","Plan Rows":25000,"Plans":[{"Node Type":"Hash Join","Plan Rows":25000,"Plans":[{"Node Type":"Index Scan","Schema":"public","Relation Name":"orders","Alias":"t0","Plan Rows":12,"Index Cond":"(id = 1)"},{"Node Type":"Seq Scan","Schema":"public","Relation Name":"items","Alias":"t1","Plan Rows":120000}]}],"Total Cost":42.5}}]""",
             )
 
         assertNotNull(plan)
@@ -174,7 +174,7 @@ class PlanParsersTest {
     fun mysqlJsonNormalizesAccessAndNestedLoopOutput() {
         val plan =
             parseMySqlPlan(
-                """{"query_block":{"query_cost":"9.5","ordering_operation":{"rows_produced_per_join":50000,"nested_loop":[{"table":{"table_name":"orders","table_alias":"t0","access_type":"ref","rows_examined_per_scan":8}},{"table":{"table_name":"items","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":120000}}]}}}"""
+                """{"query_block":{"query_cost":"9.5","ordering_operation":{"rows_produced_per_join":50000,"nested_loop":[{"table":{"table_name":"orders","table_alias":"t0","access_type":"ref","rows_examined_per_scan":8}},{"table":{"table_name":"items","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":120000}}]}}}""",
             )
 
         assertNotNull(plan)
@@ -192,7 +192,7 @@ class PlanParsersTest {
     fun mysqlJoinOutputFallsBackToTheLastNestedLoopTablesCumulativeRows() {
         val plan =
             parseMySqlPlan(
-                """{"query_block":{"query_cost":"9.5","nested_loop":[{"table":{"table_name":"orders","table_alias":"t0","access_type":"ref","rows_examined_per_scan":8,"rows_produced_per_join":8}},{"table":{"table_name":"items","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":200,"rows_produced_per_join":2000000}}]}}"""
+                """{"query_block":{"query_cost":"9.5","nested_loop":[{"table":{"table_name":"orders","table_alias":"t0","access_type":"ref","rows_examined_per_scan":8,"rows_produced_per_join":8}},{"table":{"table_name":"items","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":200,"rows_produced_per_join":2000000}}]}}""",
             )
 
         assertNotNull(plan)
@@ -208,7 +208,7 @@ class PlanParsersTest {
     fun mysqlJoinOutputAccountsForTheDrivingTableWhenTheInnerLookupReportsOneRow() {
         val plan =
             parseMySqlPlan(
-                """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows_produced_per_join":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"eq_ref","rows_examined_per_scan":1,"rows_produced_per_join":1}}]}}"""
+                """{"query_block":{"nested_loop":[{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ALL","rows_examined_per_scan":906091,"rows_produced_per_join":906091}},{"table":{"table_name":"customers","table_alias":"t1","access_type":"eq_ref","rows_examined_per_scan":1,"rows_produced_per_join":1}}]}}""",
             )
 
         assertNotNull(plan)
@@ -228,7 +228,7 @@ class PlanParsersTest {
     fun mysqlCustomersDriveRefJoinKeepsTheInnerExaminedRowsAndJoinOutput() {
         val plan =
             parseMySqlPlan(
-                """{"query_block":{"nested_loop":[{"table":{"table_name":"customers","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":15,"rows_produced_per_join":15}},{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ref","possible_keys":["fk_scan_events_customer"],"key":"fk_scan_events_customer","used_key_parts":["customer_id"],"ref":["t1.id"],"rows_examined_per_scan":313725,"rows_produced_per_join":941176}}]}}"""
+                """{"query_block":{"nested_loop":[{"table":{"table_name":"customers","table_alias":"t1","access_type":"ALL","rows_examined_per_scan":15,"rows_produced_per_join":15}},{"table":{"table_name":"scan_events","table_alias":"t0","access_type":"ref","possible_keys":["fk_scan_events_customer"],"key":"fk_scan_events_customer","used_key_parts":["customer_id"],"ref":["t1.id"],"rows_examined_per_scan":313725,"rows_produced_per_join":941176}}]}}""",
             )
 
         assertNotNull(plan)
@@ -249,7 +249,7 @@ class PlanParsersTest {
     fun mysql9JsonSchemaNormalizesInputsAndIndexAccessType() {
         val plan =
             parseMySqlPlan(
-                """{"query_plan":{"inputs":[{"operation":"Index range scan on t0 using customer_idx","table_name":"customers","schema_name":"app","access_type":"index","index_access_type":"index_range_scan","estimated_rows":17.0,"estimated_total_cost":3.6}],"operation":"Filter","access_type":"filter","estimated_rows":17.0,"estimated_total_cost":3.6},"json_schema_version":"2.0"}"""
+                """{"query_plan":{"inputs":[{"operation":"Index range scan on t0 using customer_idx","table_name":"customers","schema_name":"app","access_type":"index","index_access_type":"index_range_scan","estimated_rows":17.0,"estimated_total_cost":3.6}],"operation":"Filter","access_type":"filter","estimated_rows":17.0,"estimated_total_cost":3.6},"json_schema_version":"2.0"}""",
             )
 
         assertNotNull(plan)
@@ -264,7 +264,7 @@ class PlanParsersTest {
     fun sqlServerXmlIsParsedWithoutExternalEntitySupport() {
         val plan =
             parseSqlServerPlan(
-                """<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan"><BatchSequence><Batch><Statements><StmtSimple StatementSubTreeCost="12.5"><QueryPlan><RelOp PhysicalOp="Sort" LogicalOp="Sort" EstimateRows="25000"><RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="5"><IndexScan><Object Schema="[dbo]" Table="[orders]" Alias="[t0]"/><SeekPredicates><SeekPredicateNew><SeekKeys><Prefix ScanType="EQ"/></SeekKeys></SeekPredicateNew></SeekPredicates></IndexScan></RelOp></RelOp></QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>"""
+                """<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan"><BatchSequence><Batch><Statements><StmtSimple StatementSubTreeCost="12.5"><QueryPlan><RelOp PhysicalOp="Sort" LogicalOp="Sort" EstimateRows="25000"><RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="5"><IndexScan><Object Schema="[dbo]" Table="[orders]" Alias="[t0]"/><SeekPredicates><SeekPredicateNew><SeekKeys><Prefix ScanType="EQ"/></SeekKeys></SeekPredicateNew></SeekPredicates></IndexScan></RelOp></RelOp></QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>""",
             )
 
         assertNotNull(plan)
@@ -278,7 +278,7 @@ class PlanParsersTest {
     fun sqlServerRebindsScaleInnerLoopRowEstimates() {
         val plan =
             parseSqlServerPlan(
-                """<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan"><BatchSequence><Batch><Statements><StmtSimple StatementSubTreeCost="12.5"><QueryPlan><RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="50" EstimateRebinds="999" EstimateRewinds="0"><IndexScan><Object Schema="[dbo]" Table="[items]" Alias="[t1]"/><SeekPredicates><SeekPredicateNew><SeekKeys><Prefix ScanType="EQ"/></SeekKeys></SeekPredicateNew></SeekPredicates></IndexScan></RelOp></QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>"""
+                """<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan"><BatchSequence><Batch><Statements><StmtSimple StatementSubTreeCost="12.5"><QueryPlan><RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="50" EstimateRebinds="999" EstimateRewinds="0"><IndexScan><Object Schema="[dbo]" Table="[items]" Alias="[t1]"/><SeekPredicates><SeekPredicateNew><SeekKeys><Prefix ScanType="EQ"/></SeekKeys></SeekPredicateNew></SeekPredicates></IndexScan></RelOp></QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>""",
             )
 
         assertNotNull(plan)
@@ -316,7 +316,7 @@ class PlanParsersTest {
                         120_000,
                         12.0,
                     ),
-                )
+                ),
             )
 
         assertNotNull(plan)
@@ -331,13 +331,30 @@ class PlanParsersTest {
     }
 
     @Test
+    fun mysqlImpossibleWhereIsAZeroRowPlanInsteadOfParseFailure() {
+        val impossible =
+            parseMySqlPlan("""{"query_block":{"select_id":1,"message":"Impossible WHERE"}}""")
+        assertNotNull(impossible)
+        assertTrue(impossible.relations.isEmpty())
+        assertEquals(0.0, impossible.rawOptimizerCost)
+
+        val constMiss =
+            parseMySqlPlan(
+                """{"query_block":{"select_id":1,"message":"no matching row in const table"}}""",
+            )
+        assertNotNull(constMiss)
+        assertTrue(constMiss.relations.isEmpty())
+        assertEquals(0.0, constMiss.rawOptimizerCost)
+    }
+
+    @Test
     fun malformedAndUnknownShapesRemainUnavailableToCallers() {
         assertNull(parsePostgresPlan("not json"))
         assertNull(parseMySqlPlan("{}"))
         assertNull(
             parseSqlServerPlan(
-                "<!DOCTYPE x [<!ENTITY ext SYSTEM 'file:///etc/passwd'>]><x>&ext;</x>"
-            )
+                "<!DOCTYPE x [<!ENTITY ext SYSTEM 'file:///etc/passwd'>]><x>&ext;</x>",
+            ),
         )
         assertNull(parseDb2LuwExplain(emptyList()))
         assertNull(parseDb2ZosPlan(emptyList()))
@@ -413,14 +430,14 @@ class PlanParsersTest {
                         null,
                     ),
                     Db2LuwExplainRow(4, 2, "FETCH", "APP", "ITEMS", "TA", "", null, null),
-                )
+                ),
             )
 
         assertNotNull(plan)
         assertTrue(
             plan.relations.none {
                 it.table == "ITEMS" && it.method == PlanAccessMethod.BoundedLookup
-            }
+            },
         )
         assertEquals(
             PlanAccessMethod.BoundedLookup,
@@ -448,7 +465,7 @@ class PlanParsersTest {
                         4,
                         2.0,
                     ),
-                )
+                ),
             )
 
         assertNotNull(plan)
@@ -510,7 +527,7 @@ class PlanParsersTest {
                         10,
                         1.0,
                     ),
-                )
+                ),
             )
 
         assertNotNull(plan)
@@ -597,7 +614,7 @@ class PlanParsersTest {
         assertTrue(plan.blockingOperations.any { it.kind == PlanOperationKind.Grouping })
         assertEquals(18.0, plan.rawOptimizerCost)
         assertNull(
-            parseDb2ZosPlan(listOf(Db2ZosPlanRow(1, 1, 1, 0, 0, "APP", null, "R", 0, null, null)))
+            parseDb2ZosPlan(listOf(Db2ZosPlanRow(1, 1, 1, 0, 0, "APP", null, "R", 0, null, null))),
         )
     }
 }

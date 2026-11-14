@@ -179,7 +179,7 @@ fun ExploreWindowContent(
                             modifier =
                                 Modifier.width(1.dp)
                                     .fillMaxHeight()
-                                    .background(MaterialTheme.colorScheme.outline)
+                                    .background(MaterialTheme.colorScheme.outline),
                         )
                         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                             ExploreFilterStrip(
@@ -276,11 +276,11 @@ fun ExploreWindowContent(
                                 modifier =
                                     Modifier.width(1.dp)
                                         .fillMaxHeight()
-                                        .background(MaterialTheme.colorScheme.outline)
+                                        .background(MaterialTheme.colorScheme.outline),
                             )
                             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                                 Column(
-                                    modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)
+                                    modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                                 ) {
                                     viewModel.visualizationPreview.warnings.firstOrNull()?.let {
                                         warning ->

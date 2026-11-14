@@ -128,7 +128,7 @@ class ResultStoreTest {
                 )
             assertFailsWith<CancellationException> { store.put(sampleMcpQueryResult()) }
             assertTrue(
-                Files.list(dir).use { stream -> stream.noneMatch { Files.isRegularFile(it) } }
+                Files.list(dir).use { stream -> stream.noneMatch { Files.isRegularFile(it) } },
             )
             assertNull(store.get(resultId!!))
         }

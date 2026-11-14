@@ -76,7 +76,7 @@ internal fun ImageComposeScene.requireContaining(text: String): SemanticsNode =
         ?: error(
             "No node containing '$text' in ${
                 allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
+            }",
         )
 
 internal fun ImageComposeScene.findExact(label: String): SemanticsNode? =
@@ -87,7 +87,7 @@ internal fun ImageComposeScene.requireExact(label: String): SemanticsNode =
         ?: error(
             "No node labeled '$label' in ${
                 allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
+            }",
         )
 
 internal fun ImageComposeScene.nodesLabeled(label: String): List<SemanticsNode> =
@@ -107,7 +107,7 @@ internal fun ImageComposeScene.requireByTag(tag: String): SemanticsNode =
         ?: error(
             "No node tagged '$tag' in ${
                 allSemanticsNodes().map { it.label() }.filter { it.isNotEmpty() }
-            }"
+            }",
         )
 
 @OptIn(ExperimentalComposeUiApi::class)

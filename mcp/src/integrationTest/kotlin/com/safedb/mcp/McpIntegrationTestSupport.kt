@@ -100,7 +100,7 @@ internal fun resolveShadowJar(): Path {
             assertNotNull(
                 System.getProperty(SHADOW_JAR_PROPERTY),
                 "Missing -D$SHADOW_JAR_PROPERTY; run this test via :mcp:integrationTest",
-            )
+            ),
         )
     assertTrue(Files.isRegularFile(shadowJar), "Shadow JAR does not exist: $shadowJar")
     return shadowJar
@@ -127,7 +127,7 @@ internal fun isolatedMcpDataDir(tempRoot: Path, home: Path): Path =
             userHome = home.toString(),
             appData = tempRoot.resolve("appdata").toString(),
             xdgDataHome = tempRoot.resolve("xdg-data").toString(),
-        )
+        ),
     )
 
 internal fun configureIsolatedEnvironment(
@@ -240,7 +240,7 @@ internal fun runPackagedMcpProcess(args: List<String>): PackagedProcessResult {
                     add("-jar")
                     add(shadowJar.toAbsolutePath().toString())
                     addAll(args)
-                }
+                },
             )
         configureIsolatedEnvironment(processBuilder, tempRoot, home)
         process = processBuilder.start()
@@ -454,6 +454,8 @@ internal suspend fun assertLiveQueryLimitAndTypedReads(
     val defaulted = runQuery(client, connectionId, defaultSchema, "SELECT id FROM customers")
     assertEquals(customerRows.toString(), defaulted.rowCount())
     assertFalse(defaulted.containsKey("sample_capped"))
+    assertFalse(defaulted.containsKey("sample_cap_reason"))
+    assertEquals("true", defaulted.getValue("sample_unbounded").jsonPrimitive.content)
     assertTrue(defaulted.warnings().none { "defaulting to" in it })
     assertEquals(
         (customerRows > PREVIEW_ROW_LIMIT).toString(),
@@ -463,8 +465,10 @@ internal suspend fun assertLiveQueryLimitAndTypedReads(
     val capped = runQuery(client, connectionId, defaultSchema, "SELECT id FROM customers LIMIT 2")
     assertEquals("2", capped.rowCount())
     assertEquals("true", capped.getValue("sample_capped").jsonPrimitive.content)
+    assertEquals("sql_limit", capped.getValue("sample_cap_reason").jsonPrimitive.content)
+    assertFalse(capped.containsKey("sample_unbounded"))
     assertTrue(
-        capped.warnings().any { "LIMIT 2" in it && "paging does not get more table rows" in it }
+        capped.warnings().any { "LIMIT 2" in it && "paging does not get more table rows" in it },
     )
 
     // Above the old 10_000 cap. The whole fixture still fits, so the sample is not capped.
@@ -537,6 +541,9 @@ internal fun assertPayloadIsPrivate(
     assertFalse(lower.contains("\"username\""))
     assertFalse(lower.contains("jdbc:mysql"))
     assertFalse(lower.contains("jdbc:postgresql"))
+    assertFalse(lower.contains("jdbc:sqlserver"))
+    assertFalse(lower.contains("jdbc:oracle"))
+    assertFalse(lower.contains("jdbc:db2"))
     assertFalse(payload.contains("${connection.host}:${connection.port}"))
     if (password.isNotEmpty()) {
         assertFalse(payload.contains(JsonPrimitive(password).toString()))

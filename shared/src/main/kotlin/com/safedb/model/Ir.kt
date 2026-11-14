@@ -113,6 +113,7 @@ data class FilterSpec(
     val column: String,
     val op: FilterOp,
     val value: FilterValue? = null,
+    @SerialName("like_escape") val likeEscape: Boolean = false,
 )
 
 @Serializable(with = FilterValueSerializer::class)
@@ -219,29 +220,29 @@ sealed class BindValue {
                     Int(
                         literal.text.toLongOrNull()
                             ?: throw IllegalArgumentException(
-                                "'${literal.text}' is not a valid integer"
-                            )
+                                "'${literal.text}' is not a valid integer",
+                            ),
                     )
                 LiteralKind.Decimal ->
                     Decimal(
                         literal.text.toBigDecimalOrNull()
                             ?: throw IllegalArgumentException(
-                                "'${literal.text}' is not a valid decimal"
-                            )
+                                "'${literal.text}' is not a valid decimal",
+                            ),
                     )
                 LiteralKind.Float ->
                     Float(
                         literal.text.toDoubleOrNull()
                             ?: throw IllegalArgumentException(
-                                "'${literal.text}' is not a valid number"
-                            )
+                                "'${literal.text}' is not a valid number",
+                            ),
                     )
                 LiteralKind.Bool ->
                     Bool(
                         parseBoolLiteral(literal.text)
                             ?: throw IllegalArgumentException(
-                                "'${literal.text}' is not a valid boolean"
-                            )
+                                "'${literal.text}' is not a valid boolean",
+                            ),
                     )
                 LiteralKind.Date -> Date(parseDateLiteral(literal.text).getOrThrow())
                 LiteralKind.DateTime -> DateTime(parseDateTimeLiteral(literal.text).getOrThrow())
@@ -278,11 +279,11 @@ fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
     val parsers =
         listOf(
             DateTimeFormatter.ofPattern(
-                "yyyy-MM-dd'T'HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]"
+                "yyyy-MM-dd'T'HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]",
             ),
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"),
             DateTimeFormatter.ofPattern(
-                "yyyy-MM-dd HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]"
+                "yyyy-MM-dd HH:mm:ss[.SSSSSS][.SSSSS][.SSSS][.SSS][.SS][.S]",
             ),
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
         )
@@ -300,11 +301,11 @@ fun parseDateTimeLiteral(text: String): Result<LocalDateTime> = runCatching {
     val hasOffset = runCatching { java.time.OffsetDateTime.parse(trimmed) }.isSuccess
     if (hasOffset) {
         throw IllegalArgumentException(
-            "'$text' has a UTC offset, which isn't supported; write the timestamp as the column's local time ($DATETIME_ACCEPTED_FORMATS)"
+            "'$text' has a UTC offset, which isn't supported; write the timestamp as the column's local time ($DATETIME_ACCEPTED_FORMATS)",
         )
     }
     throw IllegalArgumentException(
-        "'$text' is not a valid datetime; expected $DATETIME_ACCEPTED_FORMATS"
+        "'$text' is not a valid datetime; expected $DATETIME_ACCEPTED_FORMATS",
     )
 }
 
@@ -415,7 +416,7 @@ sealed class ResultCell {
                 BinaryValue(
                     base64 = Base64.getEncoder().encodeToString(clipped),
                     truncated = truncated,
-                )
+                ),
             )
         }
 
@@ -494,14 +495,14 @@ internal object FilterNodeSerializer : KSerializer<FilterNode> {
                     jsonDecoder.json.decodeFromJsonElement(
                         FilterSpec.serializer(),
                         objectValue.getValue("Leaf"),
-                    )
+                    ),
                 )
             "Group" in objectValue ->
                 FilterNode.Group(
                     jsonDecoder.json.decodeFromJsonElement(
                         FilterGroup.serializer(),
                         objectValue.getValue("Group"),
-                    )
+                    ),
                 )
             else -> throw SerializationException("Unknown FilterNode variant: $objectValue")
         }
@@ -537,7 +538,7 @@ internal object FilterValueSerializer : KSerializer<FilterValue> {
                                         FilterLiteral.serializer(),
                                         it,
                                     )
-                                }
+                                },
                             ),
                         )
                     }
@@ -555,7 +556,7 @@ internal object FilterValueSerializer : KSerializer<FilterValue> {
                                         FilterLiteral.serializer(),
                                         value.second,
                                     ),
-                                )
+                                ),
                             ),
                         )
                     }
@@ -574,13 +575,13 @@ internal object FilterValueSerializer : KSerializer<FilterValue> {
                     jsonDecoder.json.decodeFromJsonElement(
                         FilterLiteral.serializer(),
                         objectValue.getValue("Single"),
-                    )
+                    ),
                 )
             "List" in objectValue ->
                 FilterValue.ListValue(
                     objectValue.getValue("List").jsonArray.map {
                         jsonDecoder.json.decodeFromJsonElement(FilterLiteral.serializer(), it)
-                    }
+                    },
                 )
             "Pair" in objectValue -> {
                 val pair = objectValue.getValue("Pair").jsonArray

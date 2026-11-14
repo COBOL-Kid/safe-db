@@ -4,14 +4,13 @@ import com.safedb.adapter.Adapter
 import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ExplainResult
-import com.safedb.model.ResultCell
+import com.safedb.model.PlanAccessMethod
 import com.safedb.secrets.CredentialSession
 import com.safedb.secrets.DisabledMemoryStore
 import com.safedb.secrets.SecretsManager
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
-import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -46,10 +45,10 @@ class PostgresAdapterIntegrationTest {
                     expectedSchema = "public",
                 )
             val foreignKey = orders.foreignKeys.single()
-            assertEquals(listOf("customer_id"), foreignKey.columns)
-            assertEquals("public", foreignKey.referencedSchema)
-            assertEquals("customers", foreignKey.referencedTable)
-            assertEquals(listOf("id"), foreignKey.referencedColumns)
+            AdapterIntegrationAssertions.assertOrdersCustomerForeignKey(
+                foreignKey,
+                referencedSchema = "public",
+            )
         } finally {
             adapter.close()
         }
@@ -82,16 +81,13 @@ class PostgresAdapterIntegrationTest {
                         ),
                 )
             val result = adapter.executeQuery(compiled, 10_000)
-            assertTrue(result.rows.isNotEmpty())
-            assertIs<ResultCell.TextCell>(result.rows.first()[0])
-            assertTrue(result.rows.any { it[1] is ResultCell.Null })
-            assertIs<ResultCell.TextCell>(result.rows.first()[2])
+            AdapterIntegrationAssertions.assertDecodedOrdersRow(result)
             val plan =
                 assertIs<ExplainResult.Available>(Adapter.explainWithTimeout(adapter, compiled))
                     .plan
             val access = plan.relations.first { it.alias == "t0" }
             assertTrue(access.estimatedRows != null)
-            assertTrue(access.method != com.safedb.model.PlanAccessMethod.Unknown)
+            assertTrue(access.method != PlanAccessMethod.Unknown)
 
             val empty =
                 adapter.executeQuery(
@@ -102,8 +98,7 @@ class PostgresAdapterIntegrationTest {
                     ),
                     10_000,
                 )
-            assertTrue(empty.rows.isEmpty())
-            assertEquals(listOf("t0__id", "t0__email"), empty.columns.map { it.name })
+            AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
         } finally {
             adapter.close()
         }

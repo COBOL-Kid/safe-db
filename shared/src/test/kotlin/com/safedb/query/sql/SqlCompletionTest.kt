@@ -26,7 +26,7 @@ class SqlCompletionTest {
                 dialect = dialect,
                 schema = if (withSchema) schema else null,
                 defaultSchema = defaultSchema,
-            )
+            ),
         )
 
     private fun schemaWithTable(name: String): Schema =
@@ -38,8 +38,8 @@ class SqlCompletionTest {
                         name = name,
                         columns = listOf(column("id", "int")),
                         indexes = emptyList(),
-                    )
-                )
+                    ),
+                ),
         )
 
     private fun apply(
@@ -227,7 +227,7 @@ class SqlCompletionTest {
         assertEquals("\"order\"", item.insertText)
         val applied = apply(text, result, item)
         assertIs<SqlParseResult.Success>(
-            parseSqlToSpec(applied, Dialect.Postgres, schema, "public")
+            parseSqlToSpec(applied, Dialect.Postgres, schema, "public"),
         )
     }
 
@@ -242,7 +242,7 @@ class SqlCompletionTest {
             }
         assertEquals("`order details`", item.insertText)
         assertIs<SqlParseResult.Success>(
-            parseSqlToSpec(apply(text, result, item), Dialect.MySql, schema, "public")
+            parseSqlToSpec(apply(text, result, item), Dialect.MySql, schema, "public"),
         )
     }
 
@@ -254,7 +254,7 @@ class SqlCompletionTest {
         val item = result.items.single { it.kind == SqlCompletionKind.Table && it.label == "a]b" }
         assertEquals("[a]]b]", item.insertText)
         assertIs<SqlParseResult.Success>(
-            parseSqlToSpec(apply(text, result, item), Dialect.Mssql, schema, "public")
+            parseSqlToSpec(apply(text, result, item), Dialect.Mssql, schema, "public"),
         )
     }
 
@@ -266,7 +266,7 @@ class SqlCompletionTest {
         val item = result.items.single { it.kind == SqlCompletionKind.Table && it.label == "a\"b" }
         assertEquals("\"a\"\"b\"", item.insertText)
         assertIs<SqlParseResult.Success>(
-            parseSqlToSpec(apply(text, result, item), Dialect.Oracle, schema, "public")
+            parseSqlToSpec(apply(text, result, item), Dialect.Oracle, schema, "public"),
         )
     }
 
@@ -291,7 +291,7 @@ class SqlCompletionTest {
                             columns = listOf(column("id", "int")),
                             indexes = emptyList(),
                         ),
-                    )
+                    ),
             )
         val where = complete("SELECT id FROM users u JOIN categories c WHERE ", schema = schema)
         assertEquals("u.\"order\"", where.items.single { it.label == "u.order" }.insertText)

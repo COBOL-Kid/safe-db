@@ -72,10 +72,6 @@ class QueryPlanRefinementTest {
             )
 
         assertEquals(QueryRiskSeverity.Elevated, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Cautious).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Disabled).state)
     }
 
     @Test
@@ -95,7 +91,6 @@ class QueryPlanRefinementTest {
             )
         assertEquals(4, high.signals.single().points)
         assertEquals(QueryRiskSeverity.Elevated, high.severity)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -110,8 +105,8 @@ class QueryPlanRefinementTest {
                                 table = "orders",
                                 alias = "t0",
                                 method = PlanAccessMethod.FullIndexScan,
-                            )
-                        )
+                            ),
+                        ),
                 ),
                 oneTableSpec(),
                 Schema(listOf(table("orders"))),
@@ -129,8 +124,6 @@ class QueryPlanRefinementTest {
         val million = refineAccess(PlanAccessMethod.TableScan, 2_000_000, TableSizeClass.Unknown)
         assertEquals(4, million.signals.single().points)
         assertEquals(QueryRiskSeverity.Elevated, million.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Cautious).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(million, QueryRiskGate.Flexible).state)
 
         val moderate = refineAccess(PlanAccessMethod.TableScan, 150_000, TableSizeClass.Unknown)
         assertEquals(4, moderate.signals.single().points)
@@ -154,7 +147,7 @@ class QueryPlanRefinementTest {
                         listOf(
                             child("orders_2024_01", "t0_1", 80_000),
                             child("orders_2024_02", "t0_2", 80_000),
-                        )
+                        ),
                 ),
                 oneTableSpec(),
                 Schema(listOf(table("orders", TableSizeClass.Large, EvidenceConfidence.High))),
@@ -164,7 +157,6 @@ class QueryPlanRefinementTest {
         val signal = refined.signals.single()
         assertEquals(RiskSignalCode.PlanConfirmedLargeScan, signal.code)
         assertEquals(QueryRiskSeverity.Elevated, refined.severity)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
         assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
     }
 
@@ -222,7 +214,11 @@ class QueryPlanRefinementTest {
                     joins = listOf(PlanJoinEvidence(setOf("t0_1", "t0_2", "t1"), 50)),
                     blockingOperations =
                         listOf(
-                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0_1", "t0_2"), 50)
+                            PlanBlockingOperation(
+                                PlanOperationKind.Sort,
+                                setOf("t0_1", "t0_2"),
+                                50,
+                            ),
                         ),
                 ),
                 twoTableSpec(),
@@ -259,7 +255,7 @@ class QueryPlanRefinementTest {
                         SignalBasis.StaticSchema,
                         EvidenceConfidence.Medium,
                         RiskTarget.Access("t0_1"),
-                    )
+                    ),
                 ),
                 emptyList(),
             )
@@ -274,8 +270,8 @@ class QueryPlanRefinementTest {
                                 alias = "t0_1",
                                 method = PlanAccessMethod.BoundedLookup,
                                 estimatedRows = 5,
-                            )
-                        )
+                            ),
+                        ),
                 ),
                 suffixedSpec,
                 Schema(listOf(table("orders"))),
@@ -354,7 +350,7 @@ class QueryPlanRefinementTest {
                         SignalBasis.StaticSchema,
                         EvidenceConfidence.High,
                         target,
-                    )
+                    ),
                 ),
                 emptyList(),
             )
@@ -370,8 +366,8 @@ class QueryPlanRefinementTest {
                                 method = PlanAccessMethod.BoundedRange,
                                 estimatedRows = 5,
                                 specializedTextEvidence = true,
-                            )
-                        )
+                            ),
+                        ),
                 ),
                 oneTableSpec(),
                 Schema(listOf(table("orders"))),
@@ -411,7 +407,7 @@ class QueryPlanRefinementTest {
                                 alias = "t0",
                                 method = PlanAccessMethod.Unknown,
                                 estimatedRows = 10,
-                            )
+                            ),
                         ),
                     blockingOperations =
                         listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0"), null)),
@@ -463,7 +459,7 @@ class QueryPlanRefinementTest {
                     joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 50)),
                     blockingOperations =
                         listOf(
-                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50)
+                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50),
                         ),
                 ),
                 spec,
@@ -479,7 +475,11 @@ class QueryPlanRefinementTest {
                     joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 150_000)),
                     blockingOperations =
                         listOf(
-                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 25_000)
+                            PlanBlockingOperation(
+                                PlanOperationKind.Sort,
+                                setOf("t0", "t1"),
+                                25_000,
+                            ),
                         ),
                 ),
                 spec,
@@ -511,7 +511,7 @@ class QueryPlanRefinementTest {
                             1,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
-                        )
+                        ),
                     ),
                     emptyList(),
                 ),
@@ -544,8 +544,6 @@ class QueryPlanRefinementTest {
             refined.signals.single { it.target == RiskTarget.Access("t0") }.code,
         )
         assertEquals(QueryRiskSeverity.High, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -563,7 +561,7 @@ class QueryPlanRefinementTest {
                             1,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
-                        )
+                        ),
                     ),
                     emptyList(),
                 ),
@@ -598,8 +596,6 @@ class QueryPlanRefinementTest {
             refined.signals.single { it.target == joinTarget }.code,
         )
         assertEquals(QueryRiskSeverity.High, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -617,7 +613,7 @@ class QueryPlanRefinementTest {
                             1,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
-                        )
+                        ),
                     ),
                     emptyList(),
                 ),
@@ -652,8 +648,6 @@ class QueryPlanRefinementTest {
             refined.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
         )
         assertEquals(QueryRiskSeverity.High, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -719,10 +713,64 @@ class QueryPlanRefinementTest {
             refined.signals.any {
                 it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex ||
                     it.code == RiskSignalCode.JoinExpansionPossible
-            }
+            },
         )
         assertEquals(QueryRiskSeverity.Minimal, refined.severity)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Cautious).state)
+    }
+
+    @Test
+    fun selfJoinLargeScansKeepBothSidesInTheScoreWithoutRepeatingTheScanReason() {
+        val refined =
+            refineRiskWithPlan(
+                buildAssessment(
+                    "f",
+                    listOf(
+                        RiskSignal(
+                            RiskSignalCode.AdditionalJoinedRelation,
+                            RiskCategory.Joins,
+                            RiskSubject(operation = "join"),
+                            1,
+                            SignalBasis.StaticSchema,
+                            EvidenceConfidence.High,
+                        ),
+                    ),
+                    emptyList(),
+                ),
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t0",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1_000_000,
+                            ),
+                            PlanRelationAccess(
+                                table = "scan_events",
+                                alias = "t1",
+                                method = PlanAccessMethod.TableScan,
+                                estimatedRows = 1_000_000,
+                            ),
+                        ),
+                    joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 1_000_000)),
+                ),
+                twoTableSpec(left = "scan_events", right = "scan_events"),
+                Schema(listOf(table("scan_events", TableSizeClass.Large, EvidenceConfidence.High))),
+            )
+
+        assertEquals(
+            2,
+            refined.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
+        )
+        assertEquals(8, refined.score)
+        assertEquals(QueryRiskSeverity.VeryHigh, refined.severity)
+        val decision = applyRiskGate(refined, QueryRiskGate.Flexible)
+        assertEquals(
+            1,
+            decision.reasons.count {
+                it.message == "Plan evidence indicates a high-row scan of a large table."
+            },
+        )
     }
 
     private fun refineAccess(
@@ -742,8 +790,8 @@ class QueryPlanRefinementTest {
                             alias = "t0",
                             method = method,
                             estimatedRows = rows,
-                        )
-                    )
+                        ),
+                    ),
             ),
             oneTableSpec(),
             Schema(listOf(table("orders", size, confidence))),
@@ -795,7 +843,7 @@ private fun table(
                     keys = listOf(IndexKey("id")),
                     capabilities = IndexCapabilities(equality = true, ordering = true),
                     isPartial = false,
-                )
+                ),
             ),
         indexMetadata = MetadataCoverage.complete(),
         foreignKeyMetadata = MetadataCoverage.complete(),

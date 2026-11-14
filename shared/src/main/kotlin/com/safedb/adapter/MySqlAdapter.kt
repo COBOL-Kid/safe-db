@@ -32,7 +32,7 @@ object MySqlAdapter {
                 conn.metadataRows(
                     "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.TABLES " +
                         "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN $excluded " +
-                        "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+                        "ORDER BY TABLE_SCHEMA, TABLE_NAME",
                 ) { rs ->
                     MetadataTableKey(readString(rs, "TABLE_SCHEMA"), readString(rs, "TABLE_NAME"))
                 }
@@ -40,7 +40,7 @@ object MySqlAdapter {
                 conn.metadataRows(
                     "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE " +
                         "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA NOT IN $excluded " +
-                        "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
+                        "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION",
                 ) { rs ->
                     columnRow(
                         rs,
@@ -55,7 +55,7 @@ object MySqlAdapter {
                 conn.metadataRows(
                     "SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, COLUMN_NAME, INDEX_TYPE, COLLATION, " +
                         "(NON_UNIQUE = 0) AS is_unique FROM information_schema.STATISTICS " +
-                        "WHERE TABLE_SCHEMA NOT IN $excluded ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX"
+                        "WHERE TABLE_SCHEMA NOT IN $excluded ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
                 ) { rs ->
                     val kind = readString(rs, "INDEX_TYPE")
                     val name = readString(rs, "INDEX_NAME")
@@ -91,7 +91,7 @@ object MySqlAdapter {
                         "FROM information_schema.KEY_COLUMN_USAGE " +
                         "WHERE TABLE_SCHEMA NOT IN $excluded AND REFERENCED_TABLE_SCHEMA IS NOT NULL " +
                         "AND REFERENCED_TABLE_NAME IS NOT NULL AND REFERENCED_COLUMN_NAME IS NOT NULL " +
-                        "ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION"
+                        "ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION",
                 ) { rs ->
                     foreignKeyRow(rs)
                 }

@@ -117,7 +117,8 @@ fun FilterRow(
                             column = firstCol.name,
                             op = op,
                             value = rebuildValue(op, firstCol.dataType, filter.value),
-                        )
+                            likeEscape = false,
+                        ),
                     )
                 },
                 modifier = Modifier.width(FILTER_TABLE_DROPDOWN_WIDTH_DP.dp),
@@ -136,7 +137,8 @@ fun FilterRow(
                             column = colName,
                             op = op,
                             value = rebuildValue(op, col.dataType, filter.value),
-                        )
+                            likeEscape = false,
+                        ),
                     )
                 },
                 modifier = Modifier.width(FILTER_COLUMN_DROPDOWN_WIDTH_DP.dp),
@@ -148,7 +150,13 @@ fun FilterRow(
                 options = availableOps.map { it to opLabel(it) },
                 onSelected = { op ->
                     val dataType = columnInfo?.dataType ?: return@FilterDropdown
-                    update(filter.copy(op = op, value = rebuildValue(op, dataType, filter.value)))
+                    update(
+                        filter.copy(
+                            op = op,
+                            value = rebuildValue(op, dataType, filter.value),
+                            likeEscape = false,
+                        ),
+                    )
                 },
                 modifier = Modifier.width(FILTER_OP_DROPDOWN_WIDTH_DP.dp),
             )
@@ -169,8 +177,8 @@ fun FilterRow(
                                 val kind = single?.kind ?: LiteralKind.Bool
                                 update(
                                     filter.copy(
-                                        value = FilterValue.Single(FilterLiteral(kind, text))
-                                    )
+                                        value = FilterValue.Single(FilterLiteral(kind, text)),
+                                    ),
                                 )
                             },
                             modifier = Modifier.width(FILTER_BOOL_VALUE_WIDTH_DP.dp),
@@ -182,8 +190,8 @@ fun FilterRow(
                                 val kind = single?.kind ?: LiteralKind.Text
                                 update(
                                     filter.copy(
-                                        value = FilterValue.Single(FilterLiteral(kind, text))
-                                    )
+                                        value = FilterValue.Single(FilterLiteral(kind, text)),
+                                    ),
                                 )
                             },
                             placeholder = "value",
@@ -207,8 +215,8 @@ fun FilterRow(
                                 val second = pair?.second ?: FilterLiteral(LiteralKind.Text, "")
                                 update(
                                     filter.copy(
-                                        value = FilterValue.Pair(first.copy(text = text), second)
-                                    )
+                                        value = FilterValue.Pair(first.copy(text = text), second),
+                                    ),
                                 )
                             },
                             modifier = Modifier.width(FILTER_SINGLE_VALUE_WIDTH_DP.dp),
@@ -224,8 +232,8 @@ fun FilterRow(
                                 val second = pair?.second ?: FilterLiteral(LiteralKind.Text, "")
                                 update(
                                     filter.copy(
-                                        value = FilterValue.Pair(first, second.copy(text = text))
-                                    )
+                                        value = FilterValue.Pair(first, second.copy(text = text)),
+                                    ),
                                 )
                             },
                             modifier = Modifier.width(FILTER_SINGLE_VALUE_WIDTH_DP.dp),
@@ -282,8 +290,10 @@ fun FilterRow(
                                 update(
                                     filter.copy(
                                         value =
-                                            FilterValue.ListValue(current + FilterLiteral(kind, ""))
-                                    )
+                                            FilterValue.ListValue(
+                                                current + FilterLiteral(kind, ""),
+                                            ),
+                                    ),
                                 )
                             }
                         },
@@ -402,7 +412,7 @@ private fun CompactTextInput(
                 .height(30.dp)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
                 .semantics { this.contentDescription = contentDescription }
-                .padding(horizontal = 8.dp, vertical = 7.dp)
+                .padding(horizontal = 8.dp, vertical = 7.dp),
     ) {
         BasicTextField(
             value = value,
@@ -414,7 +424,7 @@ private fun CompactTextInput(
                 Modifier.fillMaxWidth()
                     .then(
                         if (focusRequester != null) Modifier.focusRequester(focusRequester)
-                        else Modifier
+                        else Modifier,
                     ),
             decorationBox = { innerTextField ->
                 Box(contentAlignment = Alignment.CenterStart) {

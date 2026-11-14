@@ -27,7 +27,7 @@ class PasswordFileTest {
                     PasswordFile.read("relative.txt", "Password file")
                 }
                 .message!!
-                .contains("absolute")
+                .contains("absolute"),
         )
 
         val directory = Files.createTempDirectory("safedb-password-file")
@@ -62,7 +62,7 @@ class PasswordFileTest {
                     PasswordFile.read(invalid.toString(), "Password file")
                 }
                 .message!!
-                .contains("UTF-8")
+                .contains("UTF-8"),
         )
     }
 
@@ -77,7 +77,7 @@ class PasswordFileTest {
                     PasswordFile.read(path.toString(), "Password file", requireOwnerOnly = true)
                 }
                 .message!!
-                .contains("owner-only")
+                .contains("owner-only"),
         )
 
         Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))

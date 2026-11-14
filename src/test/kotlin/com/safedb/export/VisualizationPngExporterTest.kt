@@ -45,7 +45,10 @@ class VisualizationPngExporterTest {
 
         val bytes = Files.readAllBytes(path)
         assertTrue(
-            bytes.take(8).toByteArray().contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10))
+            bytes
+                .take(8)
+                .toByteArray()
+                .contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10)),
         )
     }
 

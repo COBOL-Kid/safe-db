@@ -71,9 +71,11 @@ class Db2AdapterJdbcTest {
     @Test
     fun db2IntrospectRethrowsCatalogAuthorizationErrors() {
         val jdbc =
-            script({ sql ->
-                if (sql.compact().contains("FROM SYSCAT.TABLES FETCH FIRST")) denied() else null
-            })
+            script(
+                { sql ->
+                    if (sql.compact().contains("FROM SYSCAT.TABLES FETCH FIRST")) denied() else null
+                },
+            )
 
         val error = assertFailsWith<SQLException> { Db2Adapter.introspect(jdbc.dataSource()) }
 
@@ -100,17 +102,19 @@ class Db2AdapterJdbcTest {
     @Test
     fun db2ExecuteQueryDecodesTheRowAndCommits() {
         val jdbc =
-            script({ sql ->
-                if (sql.compact().contains("FROM \"APP\".\"ORDERS\"")) {
-                    query(
-                        listOf("ID"),
-                        listOf(listOf(7L)),
-                        typeNames = listOf("INTEGER"),
-                    )
-                } else {
-                    null
-                }
-            })
+            script(
+                { sql ->
+                    if (sql.compact().contains("FROM \"APP\".\"ORDERS\"")) {
+                        query(
+                            listOf("ID"),
+                            listOf(listOf(7L)),
+                            typeNames = listOf("INTEGER"),
+                        )
+                    } else {
+                        null
+                    }
+                },
+            )
 
         val result =
             Db2Adapter.executeQuery(
@@ -138,9 +142,11 @@ class Db2AdapterJdbcTest {
     @Test
     fun db2ExecuteQueryRollsBackAndRethrows() {
         val jdbc =
-            script({ sql ->
-                if (sql.compact().contains("FROM \"APP\".\"ORDERS\"")) failure("boom") else null
-            })
+            script(
+                { sql ->
+                    if (sql.compact().contains("FROM \"APP\".\"ORDERS\"")) failure("boom") else null
+                },
+            )
 
         val error =
             assertFailsWith<SQLException> {
@@ -245,7 +251,7 @@ class Db2AdapterJdbcTest {
         assertTrue(
             jdbc.sql.any {
                 it.contains("DELETE FROM \"APP\".EXPLAIN_INSTANCE WHERE EXPLAIN_REQUESTER = ?")
-            }
+            },
         )
     }
 
@@ -285,7 +291,7 @@ class Db2AdapterJdbcTest {
                 luwExplain(
                     authTables = undefined(),
                     systoolsTables = undefined(),
-                )
+                ),
             )
 
         assertUnavailable(
@@ -346,8 +352,8 @@ class Db2AdapterJdbcTest {
                         query(
                             listOf("OPERATOR_ID", "OPERATOR_TYPE", "TOTAL_COST"),
                             listOf(listOf(1, "RETURN", 12.5)),
-                        )
-                )
+                        ),
+                ),
             )
 
         assertUnavailable(explain(jdbc), PlanUnavailableReason.ParseFailure, "Could not normalize")
@@ -765,7 +771,7 @@ private fun luwExplain(
         query(
             KEY_COLUMNS,
             listOf(
-                listOf("APP", Timestamp(1_700_000_000_000L), "SQLC2P31", "NULLID", "", "P", 1, 1)
+                listOf("APP", Timestamp(1_700_000_000_000L), "SQLC2P31", "NULLID", "", "P", 1, 1),
             ),
         ),
     statementCost: JdbcReply = one("TOTAL_COST" to 40.0),
@@ -919,5 +925,5 @@ private fun <T> proxy(
     type.cast(
         Proxy.newProxyInstance(type.classLoader, arrayOf(type)) { _, method, args ->
             handler(method, args)
-        }
+        },
     )

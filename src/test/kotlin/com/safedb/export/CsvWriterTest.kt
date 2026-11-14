@@ -25,7 +25,7 @@ class CsvWriterTest {
                             ResultCell.text("Ada"),
                             ResultCell.text("hello, \"world\"\nagain"),
                             ResultCell.Null,
-                        )
+                        ),
                     ),
                 rowCount = 1,
                 truncated = false,

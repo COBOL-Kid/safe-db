@@ -117,7 +117,7 @@ internal fun ExplorePivotTable(
                 modifier =
                     Modifier.fillMaxWidth()
                         .background(SafeDbTheme.colors.warningContainer.copy(alpha = 0.55f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 result.warnings.forEach { warning ->
                     Row(
@@ -155,7 +155,7 @@ internal fun ExplorePivotTable(
                     Modifier.fillMaxSize()
                         .padding(end = 8.dp, bottom = 8.dp)
                         .verticalScroll(verticalScroll)
-                        .horizontalScroll(horizontalScroll)
+                        .horizontalScroll(horizontalScroll),
             ) {
                 layout.columnHeaderRows.forEach { headerRow ->
                     PivotNestedHeaderRow(
@@ -181,7 +181,7 @@ internal fun ExplorePivotTable(
                         onDrill = onDrill,
                     )
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
                     )
                 }
             }
@@ -229,13 +229,11 @@ private fun PivotNestedHeaderRow(
         modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val rowHeaderWidth =
-            if (layout.rowDimensions.isNotEmpty()) columns.firstOrNull()?.widthDp ?: 0 else 0
+        val rowHeaderWidth = columns.take(layout.rowDimensions.size).sumOf { it.widthDp }
         if (rowHeaderWidth > 0) Spacer(Modifier.width(rowHeaderWidth.dp))
         headerRow.forEach { header ->
             val startColumn =
-                (if (layout.rowDimensions.isNotEmpty()) 1 else 0) +
-                    header.startLeafIndex * layout.measures.size
+                layout.rowDimensions.size + header.startLeafIndex * layout.measures.size
             val spanColumns = header.leafSpan * layout.measures.size
             val width =
                 (startColumn until startColumn + spanColumns).sumOf {
@@ -247,7 +245,7 @@ private fun PivotNestedHeaderRow(
                         .background(
                             if (header.isTotal)
                                 SafeDbTheme.colors.accentContainer.copy(alpha = 0.45f)
-                            else Color.Transparent
+                            else Color.Transparent,
                         )
                         .padding(horizontal = 10.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -312,12 +310,12 @@ private fun PivotLeafHeaderRow(
                                         onConfigChange(toggleExploreSort(config, target))
                                     }
                                     .pointerHoverIcon(PointerIcon.Hand)
-                            else Modifier
+                            else Modifier,
                         )
                         .padding(horizontal = 12.dp, vertical = 7.dp),
                 style =
                     DataMono.copy(
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                     ),
                 color =
                     if (active) SafeDbTheme.colors.actionPrimary
@@ -357,20 +355,22 @@ private fun PivotDataRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         columns.forEachIndexed { columnIndex, column ->
-            val rowHeader = layout.rowDimensions.isNotEmpty() && columnIndex == 0
+            val headerCount = layout.rowDimensions.size
+            val rowHeader = columnIndex < headerCount
             if (rowHeader) {
+                val indent = if (headerCount == 1) (entry?.depth ?: 0) * 16 else 0
                 Row(
                     modifier =
                         Modifier.width(column.widthDp.dp)
                             .padding(
-                                start = (10 + (entry?.depth ?: 0) * 16).dp,
+                                start = (10 + indent).dp,
                                 end = 10.dp,
                                 top = 7.dp,
                                 bottom = 7.dp,
                             ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (entry?.hasChildren == true) {
+                    if (entry?.hasChildren == true && entry.depth == columnIndex) {
                         Icon(
                             imageVector =
                                 if (entry.expanded) Icons.Default.KeyboardArrowDown
@@ -384,7 +384,7 @@ private fun PivotDataRow(
                                     .padding(end = 4.dp),
                             tint = SafeDbTheme.colors.actionPrimary,
                         )
-                    } else if ((entry?.depth ?: 0) > 0) {
+                    } else if (headerCount == 1 && (entry?.depth ?: 0) > 0) {
                         Spacer(Modifier.width(22.dp))
                     }
                     Text(
@@ -394,14 +394,14 @@ private fun PivotDataRow(
                                 fontWeight =
                                     if (emphasized || entry?.kind == PivotRowKind.Group)
                                         FontWeight.SemiBold
-                                    else FontWeight.Normal
+                                    else FontWeight.Normal,
                             ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             } else {
-                val valueOffset = columnIndex - if (layout.rowDimensions.isNotEmpty()) 1 else 0
+                val valueOffset = columnIndex - headerCount
                 val leafIndex = valueOffset / layout.measures.size
                 val measureIndex = valueOffset % layout.measures.size
                 val leaf = layout.columnLeaves.getOrNull(leafIndex)
@@ -448,7 +448,7 @@ private fun PivotValueCell(
         modifier =
             Modifier.width(widthDp.dp).hoverable(interactionSource).pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { if (drillable) onDrill() })
-            }
+            },
     ) {
         Text(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
@@ -481,8 +481,8 @@ private fun ResultTableCellAlignment.textAlign(): TextAlign =
     }
 
 internal fun pivotSortTarget(layout: ExplorePivotLayout, columnIndex: Int): ExploreSortTarget? {
-    if (layout.rowDimensions.isNotEmpty() && columnIndex == 0) {
-        return layout.rowDimensions.firstOrNull()?.let { ExploreSortTarget.Dimension(it.column) }
+    layout.rowDimensions.getOrNull(columnIndex)?.let {
+        return ExploreSortTarget.Dimension(it.column)
     }
     // Running totals and differences depend on the current order, so they cannot be sort targets.
     return pivotLeafMeasure(layout, columnIndex)
@@ -495,12 +495,14 @@ internal fun pivotLeafLabel(
     columnIndex: Int,
     fallback: String,
 ): String {
-    if (layout.rowDimensions.isNotEmpty() && columnIndex == 0) return "Row labels"
+    layout.rowDimensions.getOrNull(columnIndex)?.let {
+        return it.label
+    }
     return pivotLeafMeasure(layout, columnIndex)?.label ?: fallback
 }
 
 private fun pivotLeafMeasure(layout: ExplorePivotLayout, columnIndex: Int): PivotMeasure? {
-    val offset = columnIndex - if (layout.rowDimensions.isNotEmpty()) 1 else 0
+    val offset = columnIndex - layout.rowDimensions.size
     if (offset < 0 || layout.measures.isEmpty()) return null
     return layout.measures.getOrNull(offset % layout.measures.size)
 }

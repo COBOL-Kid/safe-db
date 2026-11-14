@@ -94,7 +94,7 @@ internal class RelationalFixtureGenerator(
                 INDEX idx_categories_name (name)
             ) ENGINE=InnoDB;
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write()
         write(
@@ -118,7 +118,7 @@ internal class RelationalFixtureGenerator(
                 CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id)
             ) ENGINE=InnoDB;
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write()
         write(
@@ -142,7 +142,7 @@ internal class RelationalFixtureGenerator(
                 INDEX idx_customers_vip   (is_vip)
             ) ENGINE=InnoDB;
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write()
         write(
@@ -164,7 +164,7 @@ internal class RelationalFixtureGenerator(
                 CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
             ) ENGINE=InnoDB;
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write()
         write(
@@ -182,7 +182,7 @@ internal class RelationalFixtureGenerator(
                 CONSTRAINT fk_items_product FOREIGN KEY (product_id) REFERENCES products(id)
             ) ENGINE=InnoDB;
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write()
         write(
@@ -196,7 +196,7 @@ internal class RelationalFixtureGenerator(
                 logged_at   TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB;
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write()
     }
@@ -205,7 +205,7 @@ internal class RelationalFixtureGenerator(
         write("-- Generated safe-db PostgreSQL fixture")
         write("DROP VIEW IF EXISTS customer_order_summary;")
         write(
-            "DROP TABLE IF EXISTS order_items, inventory_log, orders, products, customers, categories CASCADE;"
+            "DROP TABLE IF EXISTS order_items, inventory_log, orders, products, customers, categories CASCADE;",
         )
         write()
         emitPortableSchema(
@@ -304,7 +304,7 @@ internal class RelationalFixtureGenerator(
                 created_at $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL
             );
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write("CREATE INDEX idx_categories_name ON categories(name);")
         write()
@@ -326,7 +326,7 @@ internal class RelationalFixtureGenerator(
                 CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id)
             );
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write("CREATE INDEX idx_products_category ON products(category_id);")
         write("CREATE INDEX idx_products_active ON products(is_active);")
@@ -350,7 +350,7 @@ internal class RelationalFixtureGenerator(
                 signed_up_at $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL
             );
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write("CREATE INDEX idx_customers_name ON customers(last_name, first_name);")
         write("CREATE INDEX idx_customers_city ON customers(city);")
@@ -372,7 +372,7 @@ internal class RelationalFixtureGenerator(
                 CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
             );
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write("CREATE INDEX idx_orders_customer ON orders(customer_id);")
         write("CREATE INDEX idx_orders_status ON orders(status);")
@@ -391,7 +391,7 @@ internal class RelationalFixtureGenerator(
                 CONSTRAINT fk_items_product FOREIGN KEY (product_id) REFERENCES products(id)
             );
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write("CREATE INDEX idx_items_order ON order_items(order_id);")
         write("CREATE INDEX idx_items_product ON order_items(product_id);")
@@ -407,7 +407,7 @@ internal class RelationalFixtureGenerator(
                 logged_at $timestampType DEFAULT CURRENT_TIMESTAMP NOT NULL
             );
             """
-                .trimIndent()
+                .trimIndent(),
         )
         write()
     }
@@ -613,7 +613,7 @@ internal class RelationalFixtureGenerator(
                         quantity.toString(),
                         sqlNumber(unitPrice),
                         sqlNumber(lineTotal),
-                    )
+                    ),
                 )
                 inventoryRows.add(
                     listOf(
@@ -623,7 +623,7 @@ internal class RelationalFixtureGenerator(
                         sqlString("generated order #$orderId"),
                         sqlString(random.pick(listOf("warehouse", "system", "batch-loader"))),
                         timestampLiteral(orderDate),
-                    )
+                    ),
                 )
                 itemId += 1
                 inventoryId += 1
@@ -646,7 +646,7 @@ internal class RelationalFixtureGenerator(
                     sqlString(random.pick(cities)),
                     if (random.chance(0.08)) sqlString("Generated reporting fixture order")
                     else "NULL",
-                )
+                ),
             )
             flush()
         }
@@ -682,7 +682,7 @@ internal class RelationalFixtureGenerator(
             write(
                 rows.joinToString("\n") { row ->
                     "INTO $table (${columns.joinToString(", ")}) VALUES (${row.joinToString(", ")})"
-                }
+                },
             )
             write("SELECT 1 FROM dual;")
         } else {

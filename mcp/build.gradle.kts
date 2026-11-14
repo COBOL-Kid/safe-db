@@ -58,11 +58,11 @@ integrationTest.compileClasspath += sourceSets.main.get().output
 integrationTest.runtimeClasspath += sourceSets.main.get().output
 
 configurations[integrationTest.implementationConfigurationName].extendsFrom(
-    configurations.testImplementation.get()
+    configurations.testImplementation.get(),
 )
 
 configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(
-    configurations.testRuntimeOnly.get()
+    configurations.testRuntimeOnly.get(),
 )
 
 dependencies {
@@ -167,7 +167,7 @@ fun configureMcpNpm(task: com.safedb.buildlogic.AssembleMcpNpm) {
     task.shadowJar.set(
         tasks
             .named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar")
-            .flatMap { it.archiveFile }
+            .flatMap { it.archiveFile },
     )
     task.packageVersion.set(provider { version.toString() })
     task.cacheDir.set(layout.buildDirectory.dir("npm-cache"))
@@ -197,7 +197,7 @@ tasks.register<com.safedb.buildlogic.AssembleMcpNpm>("assembleNpmAllPlatforms") 
     platforms.set(
         com.safedb.buildlogic.parseTemurinManifest(temurinManifestFile.asFile).platforms.map {
             it.npm
-        }
+        },
     )
     downloadJlinkJdk.set(true)
     onlyIf { com.safedb.buildlogic.isLinuxX64() }
@@ -221,14 +221,14 @@ val npmPackagedTest =
                 currentMcpNpmPlatform.map { platform ->
                     val java = com.safedb.buildlogic.javaExecutableName(platform)
                     "@safe-db/mcp-$platform/jre/bin/$java"
-                }
+                },
             )
         }
         val bundledJar = assembleNpm.flatMap { task ->
             task.outputDir.file(
                 currentMcpNpmPlatform.map { platform ->
                     "@safe-db/mcp-$platform/lib/safe-db-mcp.jar"
-                }
+                },
             )
         }
         inputs.file(bundledJava)

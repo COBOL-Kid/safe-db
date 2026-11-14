@@ -88,7 +88,7 @@ private class SeedMysql(rawArgs: List<String>) {
                 dockerPin.isNotEmpty() -> {
                     if (!commandExists("docker")) {
                         throw RuntimeException(
-                            "SAFEDB_TEST_MYSQL_DOCKER set but 'docker' not found in PATH"
+                            "SAFEDB_TEST_MYSQL_DOCKER set but 'docker' not found in PATH",
                         )
                     }
                     if (runCommand(listOf("docker", "inspect", dockerPin)).exitCode != 0) {
@@ -99,11 +99,11 @@ private class SeedMysql(rawArgs: List<String>) {
                                         "ps",
                                         "--format",
                                         "    {{.Names}} ({{.Image}})",
-                                    )
+                                    ),
                                 )
                                 .stdout
                         throw RuntimeException(
-                            "docker container '$dockerPin' not found\n  running containers:\n$running"
+                            "docker container '$dockerPin' not found\n  running containers:\n$running",
                         )
                     }
                     dockerPin
@@ -116,21 +116,21 @@ private class SeedMysql(rawArgs: List<String>) {
                             throw RuntimeException(
                                 "no 'mysql' client on PATH and no running mysql/mariadb container\n" +
                                     "  install a client (brew install mysql-client / apt install default-mysql-client)\n" +
-                                    "  or start a MySQL container, or set SAFEDB_TEST_MYSQL_DOCKER=<name>"
+                                    "  or start a MySQL container, or set SAFEDB_TEST_MYSQL_DOCKER=<name>",
                             )
                         1 -> matches.single()
                         else ->
                             throw RuntimeException(
                                 "multiple mysql/mariadb containers running; pin one:\n" +
                                     matches.joinToString("\n") { "    $it" } +
-                                    "\n  hint: SAFEDB_TEST_MYSQL_DOCKER=<name>"
+                                    "\n  hint: SAFEDB_TEST_MYSQL_DOCKER=<name>",
                             )
                     }
                 }
                 else ->
                     throw RuntimeException(
                         "no 'mysql' client in PATH and 'docker' not found either\n" +
-                            "  install with: brew install mysql-client (macOS) or apt install default-mysql-client (Debian/Ubuntu)"
+                            "  install with: brew install mysql-client (macOS) or apt install default-mysql-client (Debian/Ubuntu)",
                     )
             }
     }
@@ -158,7 +158,7 @@ private class SeedMysql(rawArgs: List<String>) {
                             "publish=$port",
                             "--format",
                             "{{.Names}}\t{{.Image}}",
-                        )
+                        ),
                     )
                     .stdout
                     .lineSequence()
@@ -182,7 +182,7 @@ private class SeedMysql(rawArgs: List<String>) {
                 password=$password
                 protocol=TCP
                 """
-                        .trimIndent() + "\n"
+                        .trimIndent() + "\n",
                 )
                 runCommand(listOf("chmod", "600", file.toString()))
             }
@@ -191,7 +191,7 @@ private class SeedMysql(rawArgs: List<String>) {
     private fun checkConnection() {
         if (dockerContainer.isNotEmpty()) {
             println(
-                "-> using docker container: $dockerContainer  (connecting to 127.0.0.1:3306 as $user)"
+                "-> using docker container: $dockerContainer  (connecting to 127.0.0.1:3306 as $user)",
             )
         } else {
             println("-> checking connection to $user@$host:$port")
@@ -202,12 +202,12 @@ private class SeedMysql(rawArgs: List<String>) {
                 throw RuntimeException(
                     "cannot connect to MySQL inside container '$dockerContainer' as $user\n" +
                         "  set SAFEDB_TEST_MYSQL_PASSWORD (or MYSQL_ROOT_PASSWORD on the container)\n" +
-                        "  and SAFEDB_TEST_MYSQL_USER if not using root"
+                        "  and SAFEDB_TEST_MYSQL_USER if not using root",
                 )
             }
             throw RuntimeException(
                 "cannot connect to MySQL at $user@$host:$port\n" +
-                    "  set SAFEDB_TEST_MYSQL_HOST / PORT / USER / PASSWORD and retry"
+                    "  set SAFEDB_TEST_MYSQL_HOST / PORT / USER / PASSWORD and retry",
             )
         }
         val version = mysqlRun("-N", "-e", "SELECT VERSION()").stdout.trim()

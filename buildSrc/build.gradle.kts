@@ -1,6 +1,6 @@
 plugins {
     `kotlin-dsl`
-    id("com.ncorti.ktfmt.gradle") version "0.27.0"
+    id("com.ncorti.ktfmt.gradle") version "0.28.0"
 }
 
 repositories {
@@ -18,3 +18,8 @@ tasks.test { useJUnitPlatform() }
 tasks.jar { finalizedBy(tasks.test) }
 
 ktfmt { kotlinLangStyle() }
+
+// ktfmt 0.65 still pins Guava 33.5.0-jre (GHSA-xxph-c9ww-hj94); use the patched release.
+configurations
+    .matching { it.name == "ktfmt" }
+    .configureEach { resolutionStrategy.force("com.google.guava:guava:33.8.0-jre") }

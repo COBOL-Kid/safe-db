@@ -58,23 +58,23 @@ internal fun WorksheetCalculationEditor(
     var formula by remember {
         mutableStateOf(
             (existing as? WorksheetCalculation.RowFormula)?.formula
-                ?: (existing as? WorksheetCalculation.GroupFormula)?.formula.orEmpty()
+                ?: (existing as? WorksheetCalculation.GroupFormula)?.formula.orEmpty(),
         )
     }
     var aggregateFn by remember {
         mutableStateOf(
-            (existing as? WorksheetCalculation.Aggregate)?.fn ?: WorksheetAggregateFn.Sum
+            (existing as? WorksheetCalculation.Aggregate)?.fn ?: WorksheetAggregateFn.Sum,
         )
     }
     var windowFn by remember {
         mutableStateOf(
-            (existing as? WorksheetCalculation.Window)?.fn ?: WorksheetWindowFn.RunningTotal
+            (existing as? WorksheetCalculation.Window)?.fn ?: WorksheetWindowFn.RunningTotal,
         )
     }
     var source by remember {
         mutableStateOf(
             sourceColumn(existing)
-                ?: sample.columns.firstOrNull { isNumericType(it.dataType) }?.name.orEmpty()
+                ?: sample.columns.firstOrNull { isNumericType(it.dataType) }?.name.orEmpty(),
         )
     }
     var groupColumn by remember {
@@ -82,7 +82,7 @@ internal fun WorksheetCalculationEditor(
     }
     var grain by remember {
         mutableStateOf(
-            (existing as? WorksheetCalculation.Window)?.grain ?: WorksheetGrain.DetailRows
+            (existing as? WorksheetCalculation.Window)?.grain ?: WorksheetGrain.DetailRows,
         )
     }
     var offset by remember {

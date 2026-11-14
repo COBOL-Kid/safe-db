@@ -56,14 +56,14 @@ class AdapterTest {
                         BindValue.Text("delivered'; DROP TABLE orders; --"),
                         BindValue.DateTime(LocalDateTime.of(2025, 1, 2, 3, 4, 5)),
                     ),
-                )
+                ),
             )
 
         assertTrue(
             sql.startsWith(
                 "DECLARE @P1 nvarchar(max) = N'delivered''; DROP TABLE orders; --';\n" +
-                    "DECLARE @P2 datetime2 = '2025-01-02T03:04:05';\n"
-            )
+                    "DECLARE @P2 datetime2 = '2025-01-02T03:04:05';\n",
+            ),
         )
         assertTrue(sql.endsWith("[status] = @P1 AND [created_at] >= @P2"))
     }
@@ -168,7 +168,7 @@ class AdapterTest {
         val ascii = BoundedSourceReader("x".repeat(cap + 50))
         val asciiCell =
             assertIs<ResultCell.TextCell>(
-                decodeJdbcValue(streamResultSet(reader = ascii), 1, "VARCHAR")
+                decodeJdbcValue(streamResultSet(reader = ascii), 1, "VARCHAR"),
             )
         assertTrue(asciiCell.value.truncated)
         assertEquals(cap, asciiCell.value.text.toByteArray(Charsets.UTF_8).size)
@@ -177,7 +177,7 @@ class AdapterTest {
         val exact = BoundedSourceReader("x".repeat(cap))
         val exactCell =
             assertIs<ResultCell.TextCell>(
-                decodeJdbcValue(streamResultSet(reader = exact), 1, "TEXT")
+                decodeJdbcValue(streamResultSet(reader = exact), 1, "TEXT"),
             )
         assertFalse(exactCell.value.truncated)
         assertEquals(cap, exact.supplied)
@@ -185,7 +185,7 @@ class AdapterTest {
         val accented = BoundedSourceReader("é".repeat(cap / 2 + 5))
         val accentedCell =
             assertIs<ResultCell.TextCell>(
-                decodeJdbcValue(streamResultSet(reader = accented), 1, "CLOB")
+                decodeJdbcValue(streamResultSet(reader = accented), 1, "CLOB"),
             )
         assertTrue(accentedCell.value.truncated)
         assertEquals(cap, accentedCell.value.text.toByteArray(Charsets.UTF_8).size)
@@ -194,7 +194,7 @@ class AdapterTest {
         val bytes = BoundedSourceStream(ByteArray(cap + 50) { 7 })
         val binaryCell =
             assertIs<ResultCell.BinaryCell>(
-                decodeJdbcValue(streamResultSet(stream = bytes), 1, "BLOB")
+                decodeJdbcValue(streamResultSet(stream = bytes), 1, "BLOB"),
             )
         assertTrue(binaryCell.value.truncated)
         assertEquals(cap, Base64.getDecoder().decode(binaryCell.value.base64).size)
@@ -224,8 +224,8 @@ class AdapterTest {
                             TransportSecurity(
                                 mode = TransportSecurityMode.VerifyIdentity,
                                 oracleWalletLocation = "/tmp/safe wallet",
-                            )
-                    )
+                            ),
+                    ),
             ),
         )
     }
@@ -342,12 +342,12 @@ class AdapterTest {
                         TransportSecurity(
                             TransportSecurityMode.VerifyIdentity,
                             oracleWalletLocation = "/wallet",
-                        )
+                        ),
                 )
         val caOnly =
             identity.copy(
                 transportSecurity =
-                    identity.transportSecurity.copy(mode = TransportSecurityMode.VerifyCa)
+                    identity.transportSecurity.copy(mode = TransportSecurityMode.VerifyCa),
             )
 
         assertEquals(
@@ -374,7 +374,7 @@ class AdapterTest {
                             listOf(
                                 DriverProperty("applicationName", "Enterprise Reporting"),
                                 DriverProperty("encrypt", "false"),
-                            )
+                            ),
                     ),
                 "pw",
             )
@@ -403,7 +403,7 @@ class AdapterTest {
                                 listOf(
                                     DriverProperty("connectTimeout", "0"),
                                     DriverProperty("socketTimeout", "0"),
-                                )
+                                ),
                         ),
                     "pw",
                 )
@@ -439,7 +439,7 @@ class AdapterTest {
                                 TransportSecurity(
                                     mode = TransportSecurityMode.Disabled,
                                     oracleWalletLocation = null,
-                                )
+                                ),
                         ),
                     "pw",
                 )
@@ -614,6 +614,61 @@ class AdapterTest {
         assertEquals(result.rowCount + 1, nextCalls)
         assertEquals(result.rowCount + 1, getterCalls)
         assertTrue(result.warnings.any { it.contains("encoded bytes") })
+    }
+
+    @Test
+    fun decodeQueryResultKeepsJdbcTypesWhenTheSampleIsEmpty() {
+        val meta =
+            Proxy.newProxyInstance(
+                ResultSetMetaData::class.java.classLoader,
+                arrayOf(ResultSetMetaData::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "getColumnCount" -> 2
+                    "getColumnLabel" ->
+                        when (args!![0] as Int) {
+                            1 -> "customers__id"
+                            2 -> "customers__email"
+                            else -> error("unexpected column ${args[0]}")
+                        }
+                    "getColumnTypeName" ->
+                        when (args!![0] as Int) {
+                            1 -> "int4"
+                            2 -> "text"
+                            else -> error("unexpected column ${args[0]}")
+                        }
+                    "toString" -> "meta"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSetMetaData
+        val rs =
+            Proxy.newProxyInstance(
+                ResultSet::class.java.classLoader,
+                arrayOf(ResultSet::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getMetaData" -> meta
+                    "next" -> false
+                    "toString" -> "rs"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSet
+
+        val result =
+            decodeQueryResult(
+                rs,
+                """SELECT "customers"."id" AS "customers__id" FROM "public"."customers"""",
+                Dialect.Postgres,
+            )
+
+        assertEquals(0, result.rowCount)
+        assertEquals(
+            listOf(
+                com.safedb.model.ResultColumn("customers__id", "int4"),
+                com.safedb.model.ResultColumn("customers__email", "text"),
+            ),
+            result.columns,
+        )
     }
 
     @Test

@@ -41,7 +41,7 @@ private fun applySteps(state: AppState, vm: AppViewModel, steps: Int) {
                     GroupSpec("t0", "status"),
                     GroupSpec("t0", "id"),
                     GroupSpec("t0", "total_cents"),
-                )
+                ),
             )
         }
         if (steps >= 5) {
@@ -53,7 +53,7 @@ private fun applySteps(state: AppState, vm: AppViewModel, steps: Int) {
                     column = "status",
                     op = FilterOp.Eq,
                     value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "pending")),
-                )
+                ),
             )
         }
         if (steps >= 6) vm.query.run("c1")

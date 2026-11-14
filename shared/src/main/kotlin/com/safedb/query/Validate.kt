@@ -20,6 +20,8 @@ import com.safedb.model.normalizeCatalogTypeName
 import java.security.MessageDigest
 
 const val LARGE_LIMIT_WARNING_THRESHOLD = 1000
+const val LARGE_LIMIT_WARNING =
+    "Large result limits are useful for reporting, but filters, selected columns, and indexed predicates keep queries faster and easier to reuse."
 const val DEFAULT_LIMIT = 500
 const val MAX_FILTER_DEPTH = 5
 const val MAX_IN_LIST_SIZE = 1000
@@ -211,7 +213,7 @@ fun validate(
 
     if (spec.schemaVersion != CURRENT_SCHEMA_VERSION) {
         return Outcome.err(
-            "Query schema version ${spec.schemaVersion} is unsupported; expected $CURRENT_SCHEMA_VERSION"
+            "Query schema version ${spec.schemaVersion} is unsupported; expected $CURRENT_SCHEMA_VERSION",
         )
     }
 
@@ -280,7 +282,7 @@ fun validate(
         if (dialect != null && !supportsGroupingAndSorting(groupColumn.dataType, dialect)) {
             return Outcome.err(
                 "Group column '$tableAlias.$column' has type '${groupColumn.dataType}', " +
-                    "which cannot be grouped by ${dialect.displayName()}"
+                    "which cannot be grouped by ${dialect.displayName()}",
             )
         }
         if (!groupedColumns.add(tableAlias to column)) {
@@ -302,7 +304,7 @@ fun validate(
         if (dialect != null && !supportsGroupingAndSorting(sortColumn.dataType, dialect)) {
             return Outcome.err(
                 "Sort column '$tableAlias.$column' has type '${sortColumn.dataType}', " +
-                    "which cannot be sorted by ${dialect.displayName()}"
+                    "which cannot be sorted by ${dialect.displayName()}",
             )
         }
         if (!sortedColumns.add(tableAlias to column)) {
@@ -325,7 +327,7 @@ fun validate(
         for ((tableAlias, column) in spec.columns) {
             if ((tableAlias to column) !in groupedColumns) {
                 return Outcome.err(
-                    "Selected output column '$tableAlias.$column' must appear in GROUP BY"
+                    "Selected output column '$tableAlias.$column' must appear in GROUP BY",
                 )
             }
         }
@@ -354,28 +356,28 @@ fun validate(
         val leftCol =
             leftTable.columns.find { it.name == join.leftColumn }
                 ?: return Outcome.err(
-                    "Join column '${join.leftAlias}.${join.leftColumn}' does not exist"
+                    "Join column '${join.leftAlias}.${join.leftColumn}' does not exist",
                 )
         val rightCol =
             rightTable.columns.find { it.name == join.rightColumn }
                 ?: return Outcome.err(
-                    "Join column '${join.rightAlias}.${join.rightColumn}' does not exist"
+                    "Join column '${join.rightAlias}.${join.rightColumn}' does not exist",
                 )
 
         val completeForeignKeyJoin = isPartOfCompleteForeignKey(schema, spec, join)
         if (!leftCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
-                "Join column '${join.leftAlias}.${join.leftColumn}' is not the leading key of an equality-capable index"
+                "Join column '${join.leftAlias}.${join.leftColumn}' is not the leading key of an equality-capable index",
             )
         }
         if (!rightCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
-                "Join column '${join.rightAlias}.${join.rightColumn}' is not the leading key of an equality-capable index"
+                "Join column '${join.rightAlias}.${join.rightColumn}' is not the leading key of an equality-capable index",
             )
         }
         if (leftCol.category != rightCol.category) {
             return Outcome.err(
-                "Join columns '${join.leftAlias}.${join.leftColumn}' and '${join.rightAlias}.${join.rightColumn}' have incompatible types"
+                "Join columns '${join.leftAlias}.${join.leftColumn}' and '${join.rightAlias}.${join.rightColumn}' have incompatible types",
             )
         }
     }
@@ -405,9 +407,7 @@ fun validate(
         warnings.add("Limit was 0; defaulted to $DEFAULT_LIMIT")
     }
     if (spec.uncapped || limit > LARGE_LIMIT_WARNING_THRESHOLD) {
-        warnings.add(
-            "Large result limits are useful for reporting, but filters, selected columns, and indexed predicates keep queries faster and easier to reuse."
-        )
+        warnings.add(LARGE_LIMIT_WARNING)
     }
 
     if (spec.columns.isEmpty()) {

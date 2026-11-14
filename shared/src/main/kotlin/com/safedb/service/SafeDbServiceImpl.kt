@@ -12,8 +12,10 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
+import com.safedb.query.QueryAssessmentOutcome
 import com.safedb.query.QueryCoreOutcome
 import com.safedb.query.QueryRunner
+import com.safedb.query.assessQueryCore
 import com.safedb.query.runQueryCore
 import com.safedb.secrets.SecretsManager
 import com.safedb.store.ConfigStore
@@ -95,11 +97,11 @@ internal constructor(
                     val previous =
                         configStore.get(def.id)
                             ?: throw IllegalArgumentException(
-                                "A password is required for a new connection"
+                                "A password is required for a new connection",
                             )
                     if (previous.credentialFingerprint() != def.credentialFingerprint()) {
                         throw IllegalArgumentException(
-                            "Connection changes require the password to be re-entered before testing"
+                            "Connection changes require the password to be re-entered before testing",
                         )
                     }
                     SecretsManager.passwordForDefinition(previous).getOrThrow()
@@ -154,15 +156,8 @@ internal constructor(
         }
     }
 
-    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
-        val def =
-            configStore.get(request.connectionId)
-                ?: throw IllegalArgumentException("Connection not found")
-        val password = SecretsManager.passwordForDefinition(def).getOrThrow()
-        val settings = settingsStore.load()
-        val session =
-            querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
-        return try {
+    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult =
+        withQuerySession(request.connectionId) { def, session, settings ->
             when (
                 val outcome =
                     runQueryCore(
@@ -197,6 +192,47 @@ internal constructor(
                     throw QueryFailureException(outcome.error)
                 }
             }
+        }
+
+    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult =
+        withQuerySession(request.connectionId) { def, session, settings ->
+            when (
+                val outcome =
+                    assessQueryCore(
+                        session.runner,
+                        def,
+                        request.spec,
+                        session.schema,
+                        settings,
+                    )
+            ) {
+                is QueryAssessmentOutcome.Success -> {
+                    val assessment = outcome.assessment
+                    QueryAssessmentResult(
+                        normalizedSpec = assessment.normalizedSpec,
+                        columns = assessment.columns,
+                        compiledSql = assessment.compiled.sql,
+                        parameterCount = assessment.compiled.params.size,
+                        warnings = assessment.warnings,
+                        riskEvaluation = assessment.riskEvaluation,
+                    )
+                }
+                is QueryAssessmentOutcome.Failure -> throw QueryFailureException(outcome.error)
+            }
+        }
+
+    private suspend fun <T> withQuerySession(
+        connectionId: String,
+        block: suspend (def: ConnectionDef, session: QuerySession, settings: Settings) -> T,
+    ): T {
+        val def =
+            configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val password = SecretsManager.passwordForDefinition(def).getOrThrow()
+        val settings = settingsStore.load()
+        val session =
+            querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
+        return try {
+            block(def, session, settings)
         } finally {
             session.close()
         }
@@ -262,7 +298,7 @@ internal constructor(
                 password == null
         ) {
             throw IllegalArgumentException(
-                "Endpoint or transport changes require the password to be re-entered"
+                "Endpoint or transport changes require the password to be re-entered",
             )
         }
         if (previous == null && password == null) {
@@ -330,7 +366,7 @@ internal constructor(
                         riskEvaluation?.confirmationRequirement?.let {
                             riskEvaluation.confirmationAccepted
                         },
-                )
+                ),
             )
         }
     }

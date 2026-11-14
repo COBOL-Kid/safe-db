@@ -220,7 +220,7 @@ private val customersInListFilter =
                     FilterLiteral(LiteralKind.Text, "alice"),
                     FilterLiteral(LiteralKind.Text, "bob"),
                     FilterLiteral(LiteralKind.Text, "carol"),
-                )
+                ),
             ),
     )
 
@@ -237,7 +237,7 @@ private val customerIdInListFilter =
                     FilterLiteral(LiteralKind.Int, "2"),
                     FilterLiteral(LiteralKind.Int, "3"),
                     FilterLiteral(LiteralKind.Int, "4"),
-                )
+                ),
             ),
     )
 

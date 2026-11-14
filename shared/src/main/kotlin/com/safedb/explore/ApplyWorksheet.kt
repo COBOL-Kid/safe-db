@@ -67,7 +67,7 @@ private class WorksheetEngine(
                         label = labels[column.name] ?: displayColumnLabel(column.name),
                         dataType = column.dataType,
                         sourceColumn = column.name,
-                    )
+                    ),
                 )
             }
             config.calculations.forEach { calculation ->
@@ -78,7 +78,7 @@ private class WorksheetEngine(
                         dataType = "calculated",
                         calculationId = calculation.id,
                         numberFormat = calculation.numberFormat,
-                    )
+                    ),
                 )
             }
         }
@@ -162,7 +162,7 @@ private class WorksheetEngine(
             val comparison = compareTextOrNumber(text, filter.value)
             when (filter.op) {
                 WorksheetFilterOp.Members ->
-                    filter.includedKeys.isEmpty() || pivotCellKey(cell) in filter.includedKeys
+                    filter.includedKeys.isEmpty() || pivotCellMatches(cell, filter.includedKeys)
                 WorksheetFilterOp.Equals -> filterEquals(cell, text, filter.value)
                 WorksheetFilterOp.NotEquals -> !filterEquals(cell, text, filter.value)
                 WorksheetFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)
@@ -254,7 +254,7 @@ private class WorksheetEngine(
                             return@Comparator if (dir == SortDir.Desc) -compared else compared
                     }
                     0
-                }
+                },
             )
         orderedBuckets.forEach { (bucket, bucketRecords) ->
             val path =
@@ -461,7 +461,7 @@ private class WorksheetEngine(
                 .mapIndexedNotNull { index, value -> value?.let { index to it } }
                 .sortedWith(
                     compareBy<Pair<Int, BigDecimal>> { it.second }
-                        .let { if (descending) it.reversed() else it }
+                        .let { if (descending) it.reversed() else it },
                 )
         val result = mutableMapOf<Int, Int>()
         var previous: BigDecimal? = null

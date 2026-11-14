@@ -142,7 +142,10 @@ class SqlEditorViewModelStateTest {
                     object : SqlStubService() {
                         override suspend fun runQuery(request: QueryRunRequest) =
                             throw QueryFailureException(
-                                QueryError.RiskGate(evaluation(RiskGateState.Blocked), request.spec)
+                                QueryError.RiskGate(
+                                    evaluation(RiskGateState.Blocked),
+                                    request.spec,
+                                ),
                             )
                     },
                 scope = scope,
@@ -178,7 +181,7 @@ class SqlEditorViewModelStateTest {
                                         evaluation(RiskGateState.ConfirmationRequired),
                                         requirement(),
                                         request.spec,
-                                    )
+                                    ),
                                 )
                             } else {
                                 confirmations.add(request)
@@ -222,7 +225,7 @@ class SqlEditorViewModelStateTest {
                                         evaluation(RiskGateState.ConfirmationRequired),
                                         requirement(),
                                         request.spec,
-                                    )
+                                    ),
                                 )
                             } else {
                                 executions++
@@ -265,7 +268,7 @@ class SqlEditorViewModelStateTest {
                                         evaluation(RiskGateState.ConfirmationRequired),
                                         requirement(),
                                         request.spec,
-                                    )
+                                    ),
                                 )
                             } else {
                                 executions++
@@ -304,7 +307,7 @@ class SqlEditorViewModelStateTest {
                                     evaluation(RiskGateState.ConfirmationRequired),
                                     requirement(),
                                     request.spec,
-                                )
+                                ),
                             )
                     },
                 scope = scope,
@@ -365,7 +368,10 @@ class SqlEditorViewModelStateTest {
                     object : SqlStubService() {
                         override suspend fun runQuery(request: QueryRunRequest) =
                             throw QueryFailureException(
-                                QueryError.RiskGate(evaluation(RiskGateState.Blocked), request.spec)
+                                QueryError.RiskGate(
+                                    evaluation(RiskGateState.Blocked),
+                                    request.spec,
+                                ),
                             )
                     },
                 scope = scope,
@@ -407,7 +413,7 @@ class SqlEditorViewModelStateTest {
                                     evaluation(RiskGateState.ConfirmationRequired),
                                     requirement(),
                                     request.spec,
-                                )
+                                ),
                             )
                         }
                     },
@@ -476,7 +482,10 @@ class SqlEditorViewModelStateTest {
                     object : SqlStubService() {
                         override suspend fun runQuery(request: QueryRunRequest) =
                             throw QueryFailureException(
-                                QueryError.RiskGate(evaluation(RiskGateState.Blocked), request.spec)
+                                QueryError.RiskGate(
+                                    evaluation(RiskGateState.Blocked),
+                                    request.spec,
+                                ),
                             )
                     },
                 scope = scope,

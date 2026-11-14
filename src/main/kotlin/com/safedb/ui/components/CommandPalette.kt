@@ -86,7 +86,7 @@ fun CommandPalette(
             PaletteCommand("nav-home", "Go to Home", "Home page", Icons.Filled.Home) {
                 appState.navigate(AppRoute.Home)
                 onDismiss()
-            }
+            },
         )
         add(
             PaletteCommand(
@@ -97,7 +97,7 @@ fun CommandPalette(
             ) {
                 appState.navigate(AppRoute.Connections)
                 onDismiss()
-            }
+            },
         )
         add(
             PaletteCommand(
@@ -108,25 +108,25 @@ fun CommandPalette(
             ) {
                 appState.navigate(AppRoute.Builder)
                 onDismiss()
-            }
+            },
         )
         add(
             PaletteCommand("nav-sql", "Go to SQL", "Write SELECT queries", Icons.Filled.Code) {
                 appState.navigate(AppRoute.Sql)
                 onDismiss()
-            }
+            },
         )
         add(
             PaletteCommand("nav-map", "Go to Map", "Explore database schema", Icons.Filled.Hub) {
                 appState.navigate(AppRoute.Map)
                 onDismiss()
-            }
+            },
         )
         add(
             PaletteCommand("nav-history", "Go to History", "Recent queries", Icons.Filled.History) {
                 appState.navigate(AppRoute.History)
                 onDismiss()
-            }
+            },
         )
         add(
             PaletteCommand(
@@ -137,7 +137,7 @@ fun CommandPalette(
             ) {
                 viewModel.lockCredentials()
                 onDismiss()
-            }
+            },
         )
         val runConnectionId = activeConnectionId
         val schemaMatchesConnection =
@@ -171,7 +171,7 @@ fun CommandPalette(
                         appState.navigate(AppRoute.Builder)
                         onDismiss()
                     }
-                }
+                },
             )
         }
         if (builderCommandsApply && viewModel.query.canvasTables.isNotEmpty()) {
@@ -185,7 +185,7 @@ fun CommandPalette(
                     viewModel.query.clear()
                     viewModel.dismissRecipeApplyNotice()
                     onDismiss()
-                }
+                },
             )
         }
         for (connection in connections) {
@@ -198,7 +198,7 @@ fun CommandPalette(
                 ) {
                     onConnectionSelected(connection)
                     onDismiss()
-                }
+                },
             )
         }
     }

@@ -22,7 +22,7 @@ Commands:
   seed     Reload the SQL Server, Oracle, and Db2 sample schemas and data.
   down     Remove the containers and their anonymous database volumes.
   reset    Regenerate certificates and recreate the ephemeral stack.
-  verify   Run required five-engine JDBC tests and the four-dialect TLS suite.
+  verify   Run required five-engine JDBC tests and the SSL suite (live TLS is MySQL, Postgres, and SQL Server; Oracle TCPS is opt-in).
   certs    Regenerate certificates and profiles while the stack is stopped.
 
 The generated CA keys, server keys, trust stores, profiles, and reports live under

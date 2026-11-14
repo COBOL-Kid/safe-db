@@ -87,7 +87,7 @@ fun SecondaryButton(
                 MaterialTheme.colorScheme.surfaceContainerLow
             } else {
                 MaterialTheme.colorScheme.surface.copy(alpha = 0f)
-            }
+            },
         )
 
     OutlinedButton(

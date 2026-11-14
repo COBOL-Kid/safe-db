@@ -267,6 +267,66 @@ class SafeDbServiceImplTest {
     }
 
     @Test
+    fun assessQueryReportsAssessmentWithoutRecordingHistory() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory =
+                    QuerySessionFactory { _, _ -> QuerySession(sampleSchema(), StubRunner()) },
+            )
+
+        val spec = sampleQuerySpec().copy(filters = FilterGroup(id = "root"))
+        val result: QueryAssessmentResult = service.assessQuery(QueryRunRequest("c1", spec))
+
+        assertEquals(spec, result.normalizedSpec)
+        assertEquals(listOf(ResultColumn("t0__id", "int")), result.columns)
+        assertEquals(0, result.parameterCount)
+        assertTrue(result.compiledSql.startsWith("SELECT "))
+        assertEquals(RiskGateState.Allowed, result.riskEvaluation.decision.state)
+        assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
+    fun assessQueryThrowsOnValidationFailureWithoutHistory() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory =
+                    QuerySessionFactory { _, _ -> QuerySession(sampleSchema(), StubRunner()) },
+            )
+
+        val failure =
+            assertFailsWith<QueryFailureException> {
+                service.assessQuery(
+                    QueryRunRequest(
+                        "c1",
+                        sampleQuerySpec()
+                            .copy(tables = listOf(TableRef("safedb_test", "missing", "t0"))),
+                    ),
+                )
+            }
+
+        assertIs<QueryError.Validation>(failure.queryError)
+        assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
     fun cancelledAdapterExecutionPropagatesClosesSessionAndWritesNoHistory() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
@@ -415,10 +475,10 @@ class SafeDbServiceImplTest {
                                 alias = "t0",
                                 method = PlanAccessMethod.TableScan,
                                 estimatedRows = 150_000,
-                            )
+                            ),
                         ),
                     rawOptimizerCost = 1.0,
-                )
+                ),
             )
 
         val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
@@ -586,7 +646,7 @@ class SafeDbServiceImplTest {
                 rowCount = 1,
                 warnings = emptyList(),
                 timestamp = "1",
-            )
+            ),
         )
         val service =
             SafeDbServiceImpl(
@@ -609,7 +669,7 @@ class SafeDbServiceImplTest {
                     QueryRunRequest(
                         "c1",
                         sampleQuerySpec().copy(schemaVersion = CURRENT_SCHEMA_VERSION + 1),
-                    )
+                    ),
                 )
             }
 
@@ -644,7 +704,7 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
                                 isIndexed = true,
                                 joinEligible = true,
                                 category = ColumnCategory.Integer,
-                            )
+                            ),
                         ),
                     indexes =
                         listOf(
@@ -654,7 +714,7 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
                                 supportsEquality = true,
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                     tableSize =
                         TableSizeEstimate(
@@ -662,8 +722,8 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
                             coverage = MetadataCoverage.complete(),
                             confidence = EvidenceConfidence.High,
                         ),
-                )
-            )
+                ),
+            ),
     )
 
 private class StubRunner : QueryRunner {
@@ -680,7 +740,7 @@ private class StubRunner : QueryRunner {
                 rowCount = 1,
                 truncated = false,
                 warnings = emptyList(),
-            )
+            ),
         )
 }
 

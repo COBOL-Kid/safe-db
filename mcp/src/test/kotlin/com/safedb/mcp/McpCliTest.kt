@@ -35,8 +35,8 @@ class McpCliTest {
         assertEquals("mysql", add.flags.dialect)
         assertTrue(
             MCP_USAGE.contains(
-                "safe-db-mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path"
-            )
+                "safe-db-mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path",
+            ),
         )
     }
 
@@ -89,7 +89,7 @@ class McpCliTest {
         val passwordFile = writeOwnerOnlyPasswordFile(directory, "secret")
         val command =
             parseMcpArgs(
-                validNonInteractiveAddArgs(passwordFile) + arrayOf("--transport", "opportunistic")
+                validNonInteractiveAddArgs(passwordFile) + arrayOf("--transport", "opportunistic"),
             )
         val service = RecordingSafeDbService()
         val io = BufferCliIo()
@@ -127,7 +127,7 @@ class McpCliTest {
                     "disabled",
                     "--password-file",
                     passwordFile.toString(),
-                )
+                ),
             )
 
         assertEquals(0, executeMcpCommand(command, service, io, tty = false))
@@ -166,7 +166,7 @@ class McpCliTest {
                     "disabled",
                     "--password-file",
                     passwordFile.toString(),
-                )
+                ),
             )
 
         assertEquals(1, executeMcpCommand(command, service, io, tty = false))
@@ -187,7 +187,7 @@ class McpCliTest {
                     "app",
                     "--username",
                     "readonly",
-                )
+                ),
             )
         assertEquals(2, executeMcpCommand(command, RecordingSafeDbService(), io, tty = false))
         assertTrue(io.stderr.toString().contains("--password-file"))
@@ -224,7 +224,7 @@ class McpCliTest {
                     "readonly",
                     "--transport",
                     "disabled",
-                )
+                ),
             )
         assertEquals(1, executeMcpCommand(command, passwordService, passwordIo, tty = true))
         assertTrue(passwordService.connections.isEmpty())
@@ -254,7 +254,7 @@ class McpCliTest {
                     "readonly",
                     "--transport",
                     "disabled",
-                )
+                ),
             )
 
         assertEquals(0, executeMcpCommand(command, service, io, tty = true))
@@ -282,7 +282,7 @@ class McpCliTest {
                     "app",
                     "--username",
                     "readonly",
-                )
+                ),
             )
         assertEquals(2, executeMcpCommand(command, service, io, tty = false))
         assertTrue(service.connections.isEmpty())
@@ -298,7 +298,7 @@ class McpCliTest {
         val secure =
             parseMcpArgs(
                 validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
-                    arrayOf("--transport", "verify-identity")
+                    arrayOf("--transport", "verify-identity"),
             )
 
         assertEquals(2, executeMcpCommand(secure, service, io, tty = false))
@@ -310,7 +310,7 @@ class McpCliTest {
         val disabled =
             parseMcpArgs(
                 validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
-                    arrayOf("--transport", "disabled")
+                    arrayOf("--transport", "disabled"),
             )
         assertEquals(0, executeMcpCommand(disabled, service, disabledIo, tty = false))
         assertEquals(null, service.connections.single().transportSecurity.oracleWalletLocation)
@@ -325,7 +325,7 @@ class McpCliTest {
         val command =
             parseMcpArgs(
                 validNonInteractiveAddArgs(passwordFile, dialect = "oracle") +
-                    arrayOf("--transport", "verify-identity", "--oracle-wallet", "/abs/path")
+                    arrayOf("--transport", "verify-identity", "--oracle-wallet", "/abs/path"),
             )
 
         assertEquals(0, executeMcpCommand(command, service, io, tty = false))
@@ -355,7 +355,7 @@ class McpCliTest {
         val secure =
             parseMcpArgs(
                 validNonInteractiveAddArgs(passwordFile, dialect = "db2") +
-                    arrayOf("--transport", "verify-identity")
+                    arrayOf("--transport", "verify-identity"),
             )
         assertEquals(0, executeMcpCommand(secure, RecordingSafeDbService(), secureIo, tty = false))
     }
@@ -378,7 +378,7 @@ class McpCliTest {
                     "reader",
                     "--password-file",
                     passwordFile.toString(),
-                )
+                ),
             )
 
         assertEquals(0, executeMcpCommand(command, service, io, tty = false))
@@ -410,7 +410,7 @@ class McpCliTest {
                     "readonly",
                     "--password-file",
                     passwordFile.toString(),
-                )
+                ),
             )
 
         assertEquals(0, executeMcpCommand(command, service, io, tty = false))
@@ -554,7 +554,7 @@ class McpCliTest {
                     "disabled",
                     "--password-file",
                     passwordFile.toString(),
-                )
+                ),
             )
 
         try {
@@ -563,26 +563,29 @@ class McpCliTest {
             assertEquals("File store", saved.name)
             assertEquals("stored-secret", SecretsManager.passwordForDefinition(saved).getOrThrow())
             assertFalse(
-                Files.readString(directory.resolve("connections.json")).contains("stored-secret")
+                Files.readString(directory.resolve("connections.json")).contains("stored-secret"),
             )
         } finally {
             SecretsManager.initStore("disabled")
         }
     }
-}
 
-private fun validNonInteractiveAddArgs(
-    passwordFile: java.nio.file.Path,
-    dialect: String = "postgres",
-): Array<String> =
-    arrayOf(
-        "setup",
-        "--dialect",
-        dialect,
-        "--database",
-        "app",
-        "--username",
-        "readonly",
-        "--password-file",
-        passwordFile.toString(),
-    )
+    @Test
+    fun usageTextListsConnectionAndSettingsCommands() {
+        assertTrue(MCP_USAGE.contains("safe-db-mcp connections test [<id>]"))
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings [show]"))
+        assertTrue(
+            MCP_USAGE.contains(
+                "safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>",
+            ),
+        )
+        assertTrue(
+            MCP_USAGE.contains(
+                "safe-db-mcp settings default-connection <id> [--default-schema <schema>]",
+            ),
+        )
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings clear-default-connection"))
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings block-schema <schema>"))
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings unblock-schema <schema>"))
+    }
+}

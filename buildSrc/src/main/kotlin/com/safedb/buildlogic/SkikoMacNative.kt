@@ -54,7 +54,7 @@ fun extractSkikoMacArm64Dylib(jar: File, destination: File) {
                 !expected.equals(actual, ignoreCase = true)
         ) {
             throw GradleException(
-                "$SKIKO_MAC_ARM64_DYLIB sha256 is $actual, sidecar says $expected"
+                "$SKIKO_MAC_ARM64_DYLIB sha256 is $actual, sidecar says $expected",
             )
         }
         requireArm64MachO(bytes)
@@ -92,7 +92,7 @@ private fun requireArm64MachO(bytes: ByteArray) {
     if (magic != MACH_O_64_MAGIC || cpuType != CPU_TYPE_ARM64) {
         throw GradleException(
             "$SKIKO_MAC_ARM64_DYLIB is not a 64-bit arm64 Mach-O " +
-                "(magic=${magic.toUInt().toString(16)} cpu=${cpuType.toUInt().toString(16)})"
+                "(magic=${magic.toUInt().toString(16)} cpu=${cpuType.toUInt().toString(16)})",
         )
     }
 }

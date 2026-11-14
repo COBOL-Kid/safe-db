@@ -2,7 +2,7 @@
 
 `./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 374 desktop, 675 shared, and 95 MCP tests, with 90% desktop, 87% shared, and 92% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 374 desktop, 713 shared, and 227 MCP tests, with 92% desktop, 88% shared, and 93% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report.
 
 | Command | Use |
 | --- | --- |
@@ -34,8 +34,8 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:run` | Stdio MCP server. Speaks JSON-RPC on stdin/stdout; use an MCP client or Inspector. Behavior and tools: [mcp.md](mcp.md). |
 | `./gradlew :mcp:run --args='connections list'` | List saved MCP connections (human CLI; not JSON-RPC). |
 | `./gradlew :mcp:run --args='setup --dialect postgres --database app --username readonly --password-file /absolute/path'` | Non-interactive connection add. Gradle typically has a null `System.console()`, so this is not a password prompt. |
-| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-1.0.1-all.jar`. |
-| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package, stamped 1.0.1 from Gradle (`mcp/npm/package.json` stays `0.0.0-dev` until assemble). Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
+| `./gradlew :mcp:shadowJar` | Fat JAR at `mcp/build/libs/safe-db-mcp-1.1.0-all.jar`. |
+| `./gradlew :mcp:assembleNpm` | jlink the current OS into `mcp/build/npm/@safe-db/mcp` plus one platform package, stamped 1.1.0 from Gradle (`mcp/npm/package.json` stays `0.0.0-dev` until assemble). Downloads a pinned Temurin 25 jlink JDK only on Linux x64; JMODs for the current platform go into `mcp/build/npm-cache/`. |
 | `./gradlew :mcp:assembleNpmAllPlatforms` | jlink every platform into `mcp/build/npm-all/@safe-db/mcp` plus platform packages. Linux x64 only (cross-links with Temurin JMODs). |
 | `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Part of `check` when `node` is on `PATH`; skips otherwise. |
 | `./gradlew :mcp:npmPackagedTest` | Packaged MCP stdio/MySQL smoke against the current-OS jlink image. Not part of `check`. |
@@ -55,14 +55,14 @@ SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integr
 
 `scripts/verify_ssl_compat.sh` expects pre-provisioned TLS endpoints and profiles under `/tmp/safedb-ssl` unless `SAFEDB_SSL_ROOT` is set; it calls `:shared:integrationTest` directly and, by default, writes its report beneath that fixture root. It is not a substitute for the normal optional JDBC suite.
 
-For a self-contained local harness, `scripts/docker_test_databases.sh up` generates disposable trusted/wrong CAs, server certificates, PKCS12 launch profiles, and the Oracle wallet-path fixture under `.docker/safedb-ssl`, then starts ordinary MySQL plus the five dialect endpoints used by the SSL suite (Db2 stays outside the TLS suite; z/OS needs a manual `db2jcc_license_cisuz.jar` step and a real subsystem, not Docker). Checked-in fixtures seed every dialect; `scripts/docker_test_databases.sh seed` reloads the SQL Server, Oracle, and Db2 sample schemas without recreating the stack. Database data directories use anonymous volumes that the helper renews on `up` and removes on `down`; generated TLS inputs remain on the host. `scripts/docker_test_databases.sh verify` requires the standard MySQL, PostgreSQL, SQL Server, Oracle, and Db2 adapter contracts before running the four-dialect SSL compatibility checks, all with fresh, uncached integration-test execution.
+For a self-contained local harness, `scripts/docker_test_databases.sh up` generates disposable trusted/wrong CAs, server certificates, PKCS12 launch profiles, and the Oracle wallet-path fixture under `.docker/safedb-ssl`, then starts ordinary MySQL plus the five dialect endpoints used by the SSL suite (Db2 stays outside the TLS suite; z/OS needs a manual `db2jcc_license_cisuz.jar` step and a real subsystem, not Docker). Checked-in fixtures seed every dialect; `scripts/docker_test_databases.sh seed` reloads the SQL Server, Oracle, and Db2 sample schemas without recreating the stack. Database data directories use anonymous volumes that the helper renews on `up` and removes on `down`; generated TLS inputs remain on the host. `scripts/docker_test_databases.sh verify` requires the standard MySQL, PostgreSQL, SQL Server, Oracle, and Db2 adapter contracts before the SSL compatibility checks, all with fresh, uncached integration-test execution. Live TLS handshakes cover MySQL, PostgreSQL, and SQL Server. Oracle coverage in that suite is TCP plus missing-wallet validation; it does not prove TCPS unless `SAFEDB_TEST_ORACLE_TCPS=true`.
 
 Checked-in `testdata_*.sql` files keep the original small shop tables and add generated bulk data (recursive CTEs, `generate_series`, or digit cross-joins — not giant literal inserts):
 
 | Object | Rows | Why |
 | --- | --- | --- |
 | Existing `customers` / `orders` (and MySQL's shop tables) | unchanged | JDBC contract tests |
-| `scan_events` | 1,000,000 | Large size class, full-scan query timeout, High on an uncapped scan |
+| `scan_events` | 1,000,000 | Large size class, full-scan query timeout. A plan-confirmed large scan scores Elevated (4): allowed at Standard, blocked at Cautious. |
 | `wide_rows` | 50,000 | Medium, 24 mixed-type columns, indexed and non-indexed |
 | `payload_rows` | 20,000 | ~2 KiB text per row so a column select approaches the 10 MiB output cap |
 | `event_notes` | 10,000 | FK without an index (InnoDB still auto-indexes MySQL FKs), NULLs, unicode. FK-without-index is ignored under a small LIMIT. |

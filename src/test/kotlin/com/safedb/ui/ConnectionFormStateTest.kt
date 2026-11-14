@@ -75,7 +75,7 @@ class ConnectionFormStateTest {
             transportOptionsFor(Dialect.Mssql)
                 .first { it.value == TransportSecurityMode.EncryptOnly }
                 .description
-                .contains("without validating the server certificate")
+                .contains("without validating the server certificate"),
         )
     }
 
@@ -87,7 +87,7 @@ class ConnectionFormStateTest {
                     .copy(
                         dialect = Dialect.Mssql,
                         transportSecurity = TransportSecurity(TransportSecurityMode.VerifyCa),
-                    )
+                    ),
             )
         assertEquals(
             TransportSecurityMode.VerifyIdentity,
@@ -105,7 +105,7 @@ class ConnectionFormStateTest {
                                 TransportSecurityMode.EncryptOnly,
                                 oracleWalletLocation = "/wallet",
                             ),
-                    )
+                    ),
             )
         assertEquals(
             TransportSecurityMode.VerifyCa,
@@ -120,7 +120,7 @@ class ConnectionFormStateTest {
                         dialect = Dialect.Db2,
                         port = 50000,
                         transportSecurity = TransportSecurity(TransportSecurityMode.VerifyCa),
-                    )
+                    ),
             )
         assertEquals(
             TransportSecurityMode.VerifyIdentity,
@@ -156,7 +156,7 @@ class ConnectionFormStateTest {
                         TransportSecurity(
                             TransportSecurityMode.EncryptOnly,
                             oracleWalletLocation = "/legacy-unused-wallet",
-                        )
+                        ),
                 )
         val state = ConnectionFormState(original)
 

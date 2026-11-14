@@ -83,7 +83,7 @@ class HtmlReportWriterTest {
     }
 
     @Test
-    fun hierarchicalPivotDoesNotAttachDrillToGroupRows() {
+    fun hierarchicalPivotOmitsGroupRowsAndKeepsDrillOnLeaves() {
         val session = session()
         val preview =
             applyExplore(
@@ -101,10 +101,11 @@ class HtmlReportWriterTest {
 
         val pivot = assertNotNull(buildPivotReport(session, preview).pivot)
 
-        val group = pivot.rows.first { it.kind == "group" }
-        assertEquals("pending", group.label)
-        assertTrue(group.cells.all { it.d == null })
-        assertTrue(pivot.rows.first { it.kind == "leaf" }.cells.any { it.d != null })
+        assertTrue(pivot.rows.none { it.kind == "group" })
+        val pendingTotal = pivot.rows.first { it.label == "pending total" }
+        assertEquals("subtotal", pendingTotal.kind)
+        val leaf = pivot.rows.first { it.kind == "leaf" }
+        assertTrue(leaf.cells.any { it.d != null })
     }
 
     @Test
@@ -465,7 +466,7 @@ class HtmlReportWriterTest {
                             "t0__amount",
                             "Amount",
                             aggregate = false,
-                        )
+                        ),
                     ),
             )
         val preview = applyVisualization(session.sample, config, session.baseSpec.tables)
@@ -518,7 +519,7 @@ class HtmlReportWriterTest {
                             expanded = true,
                             cells = listOf(WorksheetCell(ResultCell.integer(100))),
                             sourceRowIndex = 0,
-                        )
+                        ),
                     ),
                 hasRowLabels = false,
             )

@@ -51,8 +51,8 @@ class ApplyVisualizationTest {
                                 "region",
                                 "region",
                                 "Region",
-                                setOf(pivotCellKey(ResultCell.text("West"))),
-                            )
+                                setOf("West"),
+                            ),
                         ),
                     topN = 10,
                 ),
@@ -79,7 +79,7 @@ class ApplyVisualizationTest {
                                 "score",
                                 "Score",
                                 aggregate = false,
-                            )
+                            ),
                         ),
                     size = VisualizationField("amount"),
                 ),
@@ -124,7 +124,7 @@ class ApplyVisualizationTest {
                                 "Revenue",
                                 numberFormat =
                                     PivotNumberFormat(NumberFormatKind.Number, decimals = 0),
-                            )
+                            ),
                         ),
                 ),
             )

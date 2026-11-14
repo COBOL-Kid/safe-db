@@ -38,7 +38,7 @@ fun main() {
                 ResultCell.text(statuses[statusIndex]),
                 ResultCell.integer(totalCents),
                 ResultCell.text(
-                    "2026-08-${"%02d".format((i % 17) + 1)} ${"%02d".format(8 + (i % 11))}:${"%02d".format((i * 7) % 60)}"
+                    "2026-08-${"%02d".format((i % 17) + 1)} ${"%02d".format(8 + (i % 11))}:${"%02d".format((i * 7) % 60)}",
                 ),
             )
         }
@@ -90,7 +90,7 @@ fun main() {
                         "t0__total_cents",
                         "Revenue",
                         numberFormat = PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
-                    )
+                    ),
                 ),
             title = "Revenue by order status",
         )

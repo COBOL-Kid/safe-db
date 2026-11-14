@@ -19,7 +19,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "1.0.1"
+version = "1.1.0"
 
 kotlin { jvmToolchain(25) }
 
@@ -50,6 +50,15 @@ listOf(project(":shared"), project(":mcp")).forEach { subproject ->
 
 ktfmt { kotlinLangStyle() }
 
+// ktfmt 0.65 still pins Guava 33.5.0-jre, which is affected by GHSA-xxph-c9ww-hj94
+// (CVE-2026-102554). The formatter is a build-only tool, so force the patched release on its
+// isolated configuration rather than touching application dependencies.
+allprojects {
+    configurations
+        .matching { it.name == "ktfmt" }
+        .configureEach { resolutionStrategy.force("com.google.guava:guava:33.8.0-jre") }
+}
+
 // Dev-only headless renderers: compiled and run on demand, never packaged into the shipped app.
 val render = sourceSets.create("render")
 
@@ -58,7 +67,7 @@ render.compileClasspath += sourceSets.main.get().output
 render.runtimeClasspath += sourceSets.main.get().output
 
 configurations[render.implementationConfigurationName].extendsFrom(
-    configurations.implementation.get()
+    configurations.implementation.get(),
 )
 
 configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
@@ -98,21 +107,44 @@ tasks.named("jar") { dependsOn(extractMacSkikoNative) }
 
 tasks.named<KotlinCompile>("compileRenderKotlin") {
     friendPaths.from(
-        tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory }
+        tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory },
     )
 }
 
 qodana { resultsPath.set(layout.buildDirectory.dir("qodana/results").get().asFile.absolutePath) }
 
+// The Qodana IntelliJ engine cannot create its directory lock (a Unix domain socket) on a Windows
+// filesystem, which is where WSL checkouts under /mnt/c live. Keep the engine state on the Linux
+// side so `./gradlew qodanaScan` works from WSL.
+val qodanaStateDir =
+    providers.systemProperty("java.io.tmpdir").map {
+        "$it/qodana/safe-db-${rootDir.absolutePath.hashCode()}"
+    }
+
 tasks.qodanaScan {
     arguments.set(
-        listOf(
-            "--linter",
-            "qodana-jvm-community",
-            "--within-docker",
-            "false",
-            "--print-problems",
-        )
+        buildList {
+            addAll(
+                listOf(
+                    "--linter",
+                    "qodana-jvm-community",
+                    "--within-docker",
+                    "false",
+                    "--print-problems",
+                ),
+            )
+            if (providers.environmentVariable("WSL_DISTRO_NAME").isPresent) {
+                val stateDir = qodanaStateDir.get()
+                addAll(
+                    listOf(
+                        "--property",
+                        "idea.config.path=$stateDir/config",
+                        "--property",
+                        "idea.system.path=$stateDir/system",
+                    ),
+                )
+            }
+        },
     )
 }
 
@@ -182,7 +214,7 @@ compose.desktop {
             appResourcesRootDir.set(layout.projectDirectory.dir("packaging/resources"))
             packageName = "safe-db"
             // The macOS jpackage tool rejects installer versions whose major component is zero.
-            packageVersion = "1.0.1"
+            packageVersion = "1.1.0"
             vendor = "safe-db"
             description = "Safely explore production databases"
         }
@@ -201,8 +233,8 @@ val verifyUnitTestDiscovery =
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
         minimumDesktopTests.set(374)
-        minimumSharedTests.set(675)
-        minimumMcpTests.set(95)
+        minimumSharedTests.set(713)
+        minimumMcpTests.set(227)
     }
 
 val verifyCoverageRatchet =
@@ -213,7 +245,7 @@ val verifyCoverageRatchet =
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
         // Shared floor is unit coverage from `check`. JDBC adapter bodies are covered by
         // integrationTest, which kover ignores.
-        coverageFloors.set(mapOf("desktop" to 90, "shared" to 87))
+        coverageFloors.set(mapOf("desktop" to 92, "shared" to 88))
     }
 
 val verifyMcpCoverageRatchet =
@@ -222,7 +254,7 @@ val verifyMcpCoverageRatchet =
         description = "Enforces the checked-in MCP line coverage floor."
         dependsOn(":mcp:koverXmlReportUnit")
         reportFile.set(project(":mcp").layout.buildDirectory.file("reports/kover/reportUnit.xml"))
-        coverageFloors.set(mapOf("mcp" to 92))
+        coverageFloors.set(mapOf("mcp" to 93))
     }
 
 tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet, verifyMcpCoverageRatchet) }
@@ -261,40 +293,40 @@ val verifyIntegrationTestDiscovery =
             "Ensures required JDBC and MCP integration suites executed instead of silently skipping."
         dependsOn(":shared:integrationTest", ":mcp:integrationTest")
         sharedResultsDirectory.set(
-            project(":shared").layout.buildDirectory.dir("test-results/integrationTest")
+            project(":shared").layout.buildDirectory.dir("test-results/integrationTest"),
         )
         mcpResultsDirectory.set(
-            project(":mcp").layout.buildDirectory.dir("test-results/integrationTest")
+            project(":mcp").layout.buildDirectory.dir("test-results/integrationTest"),
         )
         requireMysql.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_MYSQL")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requirePostgres.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_POSTGRES")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requireMssql.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_MSSQL")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requireOracle.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_ORACLE")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requireDb2.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_DB2")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
     }
 

@@ -212,13 +212,14 @@ private fun addJoinSignals(
     uncertainties: MutableList<RiskUncertainty>,
 ) {
     val relationships = spec.joins.groupBy { join -> setOf(join.leftAlias, join.rightAlias) }
-    repeat(max(0, spec.tables.map { it.alias }.distinct().size - 1)) { index ->
+    val extraJoins = max(0, spec.tables.map { it.alias }.distinct().size - 1)
+    if (extraJoins > 0) {
         signals +=
             RiskSignal(
                 RiskSignalCode.AdditionalJoinedRelation,
                 RiskCategory.Joins,
-                RiskSubject(operation = "join ${index + 1}"),
-                1,
+                RiskSubject(operation = "join"),
+                extraJoins,
                 SignalBasis.StaticSchema,
                 EvidenceConfidence.High,
             )
@@ -565,6 +566,19 @@ internal fun tablesByAlias(spec: QuerySpec, schema: Schema): Map<String, TableIn
     spec.tables.associate { ref ->
         ref.alias to schema.tables.firstOrNull { it.schema == ref.schema && it.name == ref.name }
     }
+
+internal fun alignEmptyResultRisk(evaluation: QueryRiskEvaluation): QueryRiskEvaluation {
+    val assessment = evaluation.finalAssessment ?: evaluation.staticAssessment ?: return evaluation
+    val signals =
+        assessment.signals.filterNot { it.code == RiskSignalCode.MaterialProjectedPayload }
+    if (signals.size == assessment.signals.size) return evaluation
+    val rebuilt = buildAssessment(assessment.queryFingerprint, signals, assessment.uncertainties)
+    val gated = applyRiskGate(rebuilt, evaluation.decision.effectiveGate)
+    return evaluation.copy(
+        finalAssessment = rebuilt,
+        decision = evaluation.decision.copy(reasons = gated.reasons),
+    )
+}
 
 internal fun signalMessage(signal: RiskSignal): String =
     when (signal.code) {

@@ -112,7 +112,7 @@ fun HistoryScreen(
                     connectionId = entry.connectionId,
                     spec = entry.spec,
                     createdAt = Instant.now().epochSecond.toString(),
-                )
+                ),
             ) {
                 showSavePrompt = false
                 saveEntry = null

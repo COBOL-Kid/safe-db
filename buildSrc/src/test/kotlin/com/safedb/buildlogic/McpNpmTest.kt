@@ -48,8 +48,8 @@ class McpNpmTest {
                     "jdk.net",
                     "jdk.security.jgss",
                     "jdk.unsupported",
-                )
-            )
+                ),
+            ),
         )
         assertEquals(modules, modules.distinct())
     }

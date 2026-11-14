@@ -137,7 +137,7 @@ private fun ordersViewModel(): QueryViewModel {
                     ColumnInfo("occurred_at", "timestamp with time zone", nullable = true),
                 ),
             indexes = emptyList(),
-        )
+        ),
     )
     return viewModel
 }

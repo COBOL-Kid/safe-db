@@ -61,7 +61,7 @@ object LaunchProfileBootstrap {
         if (args.isEmpty()) return false
         if (args.size != 2 || args[0] != PROFILE_OPTION) {
             throw LaunchProfileException(
-                "Usage: safe-db $PROFILE_OPTION /absolute/path/to/profile.json"
+                "Usage: safe-db $PROFILE_OPTION /absolute/path/to/profile.json",
             )
         }
 
@@ -78,7 +78,7 @@ object LaunchProfileBootstrap {
             }
         if (profile.schemaVersion != 1) {
             throw LaunchProfileException(
-                "Unsupported launch profile schemaVersion ${profile.schemaVersion}"
+                "Unsupported launch profile schemaVersion ${profile.schemaVersion}",
             )
         }
         if (profile.trustStore.type != "PKCS12") {
@@ -119,7 +119,7 @@ object LaunchProfileBootstrap {
             "credentialStore" -> {
                 if (source.path != null || source.reference.isNullOrBlank()) {
                     throw LaunchProfileException(
-                        "credentialStore passwords require a non-blank reference and do not allow path"
+                        "credentialStore passwords require a non-blank reference and do not allow path",
                     )
                 }
                 val store =
@@ -128,7 +128,7 @@ object LaunchProfileBootstrap {
                 try {
                     store.getPassword(TRUST_STORE_CREDENTIAL_SERVICE, source.reference)
                         ?: throw LaunchProfileException(
-                            "Trust-store credential '${source.reference}' was not found in the platform credential store"
+                            "Trust-store credential '${source.reference}' was not found in the platform credential store",
                         )
                 } catch (error: LaunchProfileException) {
                     throw error
@@ -139,7 +139,7 @@ object LaunchProfileBootstrap {
             "file" -> {
                 if (source.reference != null || source.path.isNullOrBlank()) {
                     throw LaunchProfileException(
-                        "file passwords require path and do not allow reference"
+                        "file passwords require path and do not allow reference",
                     )
                 }
                 try {
@@ -150,7 +150,7 @@ object LaunchProfileBootstrap {
             }
             else ->
                 throw LaunchProfileException(
-                    "Unsupported trust-store password source '${source.source}'"
+                    "Unsupported trust-store password source '${source.source}'",
                 )
         }
 

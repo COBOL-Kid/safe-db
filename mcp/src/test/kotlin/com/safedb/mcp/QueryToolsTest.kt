@@ -1,13 +1,13 @@
 package com.safedb.mcp
 
 import com.safedb.adapter.ConnectionFailedException
-import com.safedb.model.ResultCell
-import com.safedb.model.ResultColumn
+import com.safedb.model.Dialect
 import com.safedb.model.SafeDbJson
 import com.safedb.model.Settings
 import com.safedb.model.TableRef
 import com.safedb.model.byteBudgetTruncationWarning
 import com.safedb.query.DEFAULT_LIMIT
+import com.safedb.query.LARGE_LIMIT_WARNING
 import com.safedb.query.QueryConfirmationCondition
 import com.safedb.query.QueryConfirmationReasonCode
 import com.safedb.query.QueryConfirmationRequirement
@@ -19,12 +19,11 @@ import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunResult
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -56,6 +55,9 @@ class QueryToolsTest {
             assertFalse(text.contains("localhost"))
             assertFalse(text.contains("should-not-leak"))
             val parsed = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+            assertNotNull(result.structuredContent)
+            assertEquals(parsed, result.structuredContent)
+            assertEquals("Postgres", parsed.getValue("dialect").jsonPrimitive.content)
             assertEquals(
                 "id",
                 parsed.columns()[0].jsonObject.getValue("name").jsonPrimitive.content,
@@ -66,6 +68,8 @@ class QueryToolsTest {
             )
             assertEquals("2", parsed.getValue("row_count").jsonPrimitive.content)
             assertFalse(parsed.containsKey("sample_capped"))
+            assertFalse(parsed.containsKey("sample_cap_reason"))
+            assertEquals("true", parsed.getValue("sample_unbounded").jsonPrimitive.content)
             assertFalse(parsed.containsKey("truncated"))
             assertFalse(parsed.containsKey("artifact_path"))
             assertFalse(parsed.containsKey("artifact_bytes"))
@@ -74,6 +78,10 @@ class QueryToolsTest {
             assertEquals("Allowed", risk.getValue("state").jsonPrimitive.content)
             assertEquals("Minimal", risk.getValue("severity").jsonPrimitive.content)
             assertEquals("Standard", risk.getValue("effective_gate").jsonPrimitive.content)
+            assertEquals(
+                emptyList<String>(),
+                risk.getValue("reasons").jsonArray.map { it.jsonPrimitive.content },
+            )
             val preview = parsed.getValue("preview").jsonArray
             assertEquals(2, preview.size)
             assertEquals("false", parsed.getValue("preview_truncated").jsonPrimitive.content)
@@ -94,6 +102,73 @@ class QueryToolsTest {
     }
 
     @Test
+    fun emptyUncappedSampleOmitsUnboundedFlagAndLargeLimitWarning() = runBlocking {
+        val service = queryService()
+        service.runQueryResult =
+            sampleMcpRunResult(rowCount = 0, warnings = listOf(LARGE_LIMIT_WARNING))
+        withTempMcpClient(service) { client ->
+            val parsed =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "sql" to "SELECT id FROM public.customers WHERE id = -1",
+                        ),
+                    )
+                    .json()
+            assertEquals("0", parsed.getValue("row_count").jsonPrimitive.content)
+            assertEquals(
+                "int",
+                parsed.columns()[0].jsonObject.getValue("data_type").jsonPrimitive.content,
+            )
+            assertFalse(parsed.containsKey("sample_unbounded"))
+            assertTrue(
+                parsed.getValue("warnings").jsonArray.none {
+                    it.jsonPrimitive.content == LARGE_LIMIT_WARNING
+                },
+            )
+        }
+        assertTrue(service.runQueryRequests.single().spec.uncapped)
+    }
+
+    @Test
+    fun allowedElevatedRiskIncludesScoringReasons() = runBlocking {
+        val service = queryService()
+        val reason =
+            RiskDecisionReason(
+                "NoEffectiveRestriction",
+                "No effective restriction applies to scan_events.",
+            )
+        service.runQueryResult =
+            QueryRunResult(
+                sampleMcpQueryResult(),
+                allowedMcpRisk(
+                    severity = QueryRiskSeverity.Elevated,
+                    score = 4,
+                    reasons = listOf(reason),
+                ),
+            )
+        withTempMcpClient(service) { client ->
+            val risk =
+                client
+                    .callTool(
+                        "run_query",
+                        mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                    )
+                    .json()
+                    .getValue("risk")
+                    .jsonObject
+            assertEquals("Allowed", risk.getValue("state").jsonPrimitive.content)
+            assertEquals("Elevated", risk.getValue("severity").jsonPrimitive.content)
+            assertEquals(
+                listOf(reason.message),
+                risk.getValue("reasons").jsonArray.map { it.jsonPrimitive.content },
+            )
+        }
+    }
+
+    @Test
     fun previewIsCappedWhileRowCountKeepsTheFetchedSize() = runBlocking {
         val service = queryService()
         service.runQueryResult =
@@ -111,17 +186,19 @@ class QueryToolsTest {
                     .json()
             assertEquals("50", parsed.getValue("row_count").jsonPrimitive.content)
             assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertEquals("sql_limit", parsed.getValue("sample_cap_reason").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("sample_unbounded"))
             assertFalse(parsed.containsKey("truncated"))
             assertTrue(
                 parsed.getValue("warnings").jsonArray.any {
                     it.jsonPrimitive.content == "engine warning"
-                }
+                },
             )
             assertTrue(
                 parsed.getValue("warnings").jsonArray.any {
                     it.jsonPrimitive.content.contains("paging does not get more table rows") &&
                         it.jsonPrimitive.content.contains("LIMIT 50")
-                }
+                },
             )
             assertEquals(PREVIEW_ROW_LIMIT, parsed.getValue("preview").jsonArray.size)
             assertEquals("true", parsed.getValue("preview_truncated").jsonPrimitive.content)
@@ -154,6 +231,8 @@ class QueryToolsTest {
                     )
                     .json()
             assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertEquals("byte_budget", parsed.getValue("sample_cap_reason").jsonPrimitive.content)
+            assertEquals("true", parsed.getValue("sample_unbounded").jsonPrimitive.content)
             val warnings = parsed.warningTexts()
             assertTrue(warnings.any { it == byteBudgetTruncationWarning() })
             assertTrue(warnings.any { "encoded-byte budget" in it })
@@ -186,6 +265,8 @@ class QueryToolsTest {
                     .json()
             val warnings = parsed.warningTexts()
             assertEquals("true", parsed.getValue("sample_capped").jsonPrimitive.content)
+            assertEquals("byte_budget", parsed.getValue("sample_cap_reason").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("sample_unbounded"))
             assertTrue(warnings.any { "encoded-byte budget" in it })
             assertTrue(warnings.none { "LIMIT 50" in it })
             assertTrue(warnings.none { it.contains("Raise LIMIT") })
@@ -253,8 +334,8 @@ class QueryToolsTest {
                 sampleMcpQuerySpec()
                     .copy(
                         tables =
-                            listOf(TableRef(schema = "public", name = "orders", alias = "orders"))
-                    )
+                            listOf(TableRef(schema = "public", name = "orders", alias = "orders")),
+                    ),
             )
         withTempMcpClient(service) { client ->
             val specOnly =
@@ -338,10 +419,14 @@ class QueryToolsTest {
             val mismatched = otherConnection.json()
             assertEquals("parse", mismatched.getValue("error").jsonPrimitive.content)
             assertTrue(
-                mismatched.getValue("message").jsonPrimitive.content.contains("default_schema")
+                mismatched.getValue("message").jsonPrimitive.content.contains("default_schema"),
             )
             assertTrue(
-                mismatched.getValue("message").jsonPrimitive.content.contains("list_tables.schema")
+                mismatched
+                    .getValue("message")
+                    .jsonPrimitive
+                    .content
+                    .contains("list_tables.tables[].schema"),
             )
             assertEquals(requestsAfterMatchingConnection, service.runQueryRequests.size)
         }
@@ -366,39 +451,10 @@ class QueryToolsTest {
 
             val unknown =
                 client.callTool("run_query", mapOf("connection_id" to "nope", "sql" to "SELECT 1"))
-            assertEquals(true, unknown.isError)
-            assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Connection not found",
-                unknown.json().getValue("message").jsonPrimitive.content,
-            )
+            assertError(unknown, "not_found", "Connection not found")
 
             val neither = client.callTool("run_query", mapOf("connection_id" to "c1"))
-            assertEquals(true, neither.isError)
-            assertEquals(
-                "invalid_arguments",
-                neither.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "sql is required",
-                neither.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val both =
-                client.callTool(
-                    "run_query",
-                    mapOf(
-                        "connection_id" to "c1",
-                        "sql" to "SELECT id FROM public.customers",
-                        "spec" to SafeDbJson.lenient.encodeToJsonElement(sampleMcpQuerySpec()),
-                    ),
-                )
-            assertEquals(true, both.isError)
-            assertEquals("invalid_arguments", both.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "unknown argument 'spec'",
-                both.json().getValue("message").jsonPrimitive.content,
-            )
+            assertError(neither, "invalid_arguments", "sql is required")
 
             val sqlOnly =
                 client.callTool(
@@ -518,11 +574,11 @@ class QueryToolsTest {
                                         mapOf(
                                             "reason_code" to JsonPrimitive("NotAReason"),
                                             "condition_key" to JsonPrimitive("key"),
-                                        )
-                                    )
-                                )
+                                        ),
+                                    ),
+                                ),
                             ),
-                    )
+                    ),
                 )
             val invalidCondition =
                 client.callTool(
@@ -625,7 +681,7 @@ class QueryToolsTest {
                         QueryConfirmationCondition(
                             QueryConfirmationReasonCode.PlanUnavailable,
                             "ExecutionFailure",
-                        )
+                        ),
                     ),
             )
         val requirement =
@@ -636,7 +692,7 @@ class QueryToolsTest {
                         RiskDecisionReason(
                             "plan_unavailable",
                             "Query plan assessment is unavailable: timeout.",
-                        )
+                        ),
                     ),
             )
         val evaluation =
@@ -649,12 +705,12 @@ class QueryToolsTest {
         service.runQueryHandler = { request ->
             if (request.confirmation == null) {
                 throw QueryFailureException(
-                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec)
+                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec),
                 )
             }
             if (request.confirmation != confirmation) {
                 throw QueryFailureException(
-                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec)
+                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec),
                 )
             }
             QueryRunResult(sampleMcpQueryResult(), allowedMcpRisk())
@@ -755,10 +811,17 @@ class QueryToolsTest {
 
     @Test
     fun successReceiptIncludesResultIdAndJsonlArtifact() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
+        val dataDir = Files.createTempDirectory("safedb-mcp-results")
+        val resultsDir = dataDir.resolve("results")
         try {
             val service = queryService()
-            withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir)) { client ->
+            withMcpClient(
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = resultsDir,
+                    exportsDir = dataDir.resolve("exports"),
+                ),
+            ) { client ->
                 val parsed =
                     client
                         .callTool(
@@ -787,360 +850,7 @@ class QueryToolsTest {
                 assertEquals(2, parsed.getValue("preview").jsonArray.size)
             }
         } finally {
-            resultsDir.toFile().deleteRecursively()
-        }
-    }
-
-    @Test
-    fun getResultRowsPagesWithCapAndSummarizeUsesStoredId() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
-        try {
-            val service = queryService()
-            service.runQueryResult = sampleMcpRunResult(rowCount = 60, truncated = true)
-            withMcpClient(createSafeDbMcpServer(service, resultsDir = resultsDir)) { client ->
-                val receipt =
-                    client
-                        .callTool(
-                            "run_query",
-                            mapOf(
-                                "connection_id" to "c1",
-                                "sql" to "SELECT id FROM public.customers LIMIT 60",
-                            ),
-                        )
-                        .json()
-                val resultId = receipt.getValue("result_id").jsonPrimitive.content
-                assertEquals(PREVIEW_ROW_LIMIT, receipt.getValue("preview").jsonArray.size)
-
-                val page = client.callTool("get_result_rows", mapOf("result_id" to resultId)).json()
-                assertEquals(resultId, page.getValue("result_id").jsonPrimitive.content)
-                assertEquals("0", page.getValue("offset").jsonPrimitive.content)
-                assertEquals("60", page.getValue("row_count").jsonPrimitive.content)
-                assertFalse(page.containsKey("sample_capped"))
-                assertFalse(page.containsKey("truncated"))
-                assertEquals(GET_RESULT_ROWS_MAX, page.getValue("rows").jsonArray.size)
-                assertEquals("true", page.getValue("page_truncated").jsonPrimitive.content)
-                assertEquals("50", page.getValue("next_offset").jsonPrimitive.content)
-                assertEquals(
-                    "1",
-                    page
-                        .getValue("rows")
-                        .jsonArray[0]
-                        .jsonObject
-                        .getValue("id")
-                        .jsonPrimitive
-                        .content,
-                )
-
-                val capped =
-                    client
-                        .callTool(
-                            "get_result_rows",
-                            mapOf("result_id" to resultId, "limit" to 100),
-                        )
-                        .json()
-                assertEquals(GET_RESULT_ROWS_MAX, capped.getValue("rows").jsonArray.size)
-
-                val tail =
-                    client
-                        .callTool(
-                            "get_result_rows",
-                            mapOf("result_id" to resultId, "offset" to 55, "limit" to 50),
-                        )
-                        .json()
-                assertEquals(5, tail.getValue("rows").jsonArray.size)
-                assertEquals("false", tail.getValue("page_truncated").jsonPrimitive.content)
-                assertFalse(tail.containsKey("next_offset"))
-                assertEquals(
-                    "56",
-                    tail
-                        .getValue("rows")
-                        .jsonArray[0]
-                        .jsonObject
-                        .getValue("id")
-                        .jsonPrimitive
-                        .content,
-                )
-
-                val summary =
-                    client.callTool("summarize_result", mapOf("result_id" to resultId)).json()
-                assertEquals(resultId, summary.getValue("result_id").jsonPrimitive.content)
-                assertEquals("60", summary.getValue("row_count").jsonPrimitive.content)
-                assertEquals("true", summary.getValue("sample_capped").jsonPrimitive.content)
-                assertFalse(summary.containsKey("truncated"))
-                val columns = summary.getValue("columns").jsonArray
-                assertEquals(2, columns.size)
-                val idCol = columns[0].jsonObject
-                assertEquals("id", idCol.getValue("name").jsonPrimitive.content)
-                assertEquals("0", idCol.getValue("null_count").jsonPrimitive.content)
-                assertEquals("1", idCol.getValue("min").jsonPrimitive.content)
-                assertEquals("60", idCol.getValue("max").jsonPrimitive.content)
-                assertEquals(DISTINCT_VALUE_LIMIT, idCol.getValue("distinct").jsonArray.size)
-                assertEquals("true", idCol.getValue("distinct_truncated").jsonPrimitive.content)
-            }
-        } finally {
-            resultsDir.toFile().deleteRecursively()
-        }
-    }
-
-    @Test
-    fun getResultRowsStopsAtTheByteBudgetAndReturnsNextOffset() = runBlocking {
-        val service = queryService()
-        val payload = "x".repeat(2_048)
-        val wideColumns =
-            (1..24).map { index -> ResultColumn("c${index.toString().padStart(2, '0')}", "text") }
-        val wideRows = List(50) { wideColumns.map { ResultCell.text(payload) } }
-        service.runQueryResult =
-            QueryRunResult(
-                sampleMcpQueryResult(rowCount = 50).let { sample ->
-                    sample.copy(
-                        columns = wideColumns,
-                        rows = wideRows,
-                    )
-                },
-                allowedMcpRisk(),
-            )
-        withTempMcpClient(service) { client ->
-            val receipt =
-                client
-                    .callTool(
-                        "run_query",
-                        mapOf(
-                            "connection_id" to "c1",
-                            "sql" to "SELECT id FROM public.customers LIMIT 50",
-                        ),
-                    )
-                    .json()
-            val preview = receipt.getValue("preview").jsonArray
-            assertTrue(preview.size <= PREVIEW_ROW_LIMIT)
-            assertEquals("true", receipt.getValue("preview_truncated").jsonPrimitive.content)
-            assertTrue(
-                preview
-                    .first()
-                    .jsonObject
-                    .getValue("c01")
-                    .jsonPrimitive
-                    .content
-                    .endsWith(MCP_CELL_TRUNCATION_MARKER)
-            )
-            val resultId = receipt.getValue("result_id").jsonPrimitive.content
-            val page = client.callTool("get_result_rows", mapOf("result_id" to resultId)).json()
-            assertTrue(page.getValue("rows").jsonArray.size < GET_RESULT_ROWS_MAX)
-            assertEquals("true", page.getValue("page_truncated").jsonPrimitive.content)
-            assertEquals(
-                page.getValue("rows").jsonArray.size.toString(),
-                page.getValue("next_offset").jsonPrimitive.content,
-            )
-        }
-    }
-
-    @Test
-    fun getResultRowsCoercesPagingArguments() = runBlocking {
-        val service = queryService()
-        service.runQueryResult = sampleMcpRunResult(rowCount = 3)
-        withTempMcpClient(service) { client ->
-            val receipt =
-                client
-                    .callTool(
-                        "run_query",
-                        mapOf(
-                            "connection_id" to "c1",
-                            "sql" to "SELECT id FROM public.customers LIMIT 3",
-                        ),
-                    )
-                    .json()
-            val resultId = receipt.getValue("result_id").jsonPrimitive.content
-
-            val clampedOffset =
-                client
-                    .callTool(
-                        "get_result_rows",
-                        mapOf("result_id" to resultId, "offset" to -7, "limit" to 2),
-                    )
-                    .json()
-            assertEquals("0", clampedOffset.getValue("offset").jsonPrimitive.content)
-            assertEquals(2, clampedOffset.getValue("rows").jsonArray.size)
-
-            val zeroLimit =
-                client.callTool(
-                    "get_result_rows",
-                    mapOf("result_id" to resultId, "limit" to 0),
-                )
-            assertEquals(true, zeroLimit.isError)
-            assertEquals(
-                "invalid_arguments",
-                zeroLimit.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "limit must be 1 or more",
-                zeroLimit.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val negativeLimit =
-                client.callTool(
-                    "get_result_rows",
-                    mapOf("result_id" to resultId, "limit" to -3),
-                )
-            assertEquals(true, negativeLimit.isError)
-            assertEquals(
-                "invalid_arguments",
-                negativeLimit.json().getValue("error").jsonPrimitive.content,
-            )
-
-            val numericStrings =
-                client.callTool(
-                    "get_result_rows",
-                    mapOf("result_id" to resultId, "offset" to "1", "limit" to "2"),
-                )
-            assertEquals(true, numericStrings.isError)
-            assertEquals(
-                "invalid_arguments",
-                numericStrings.json().getValue("error").jsonPrimitive.content,
-            )
-
-            val invalidValues =
-                client.callTool(
-                    "get_result_rows",
-                    mapOf(
-                        "result_id" to resultId,
-                        "offset" to JsonObject(emptyMap()),
-                        "limit" to "not-a-number",
-                    ),
-                )
-            assertEquals(true, invalidValues.isError)
-            assertEquals(
-                "invalid_arguments",
-                invalidValues.json().getValue("error").jsonPrimitive.content,
-            )
-        }
-    }
-
-    @Test
-    fun artifactWriteFailureStillReturnsPageableInMemoryResult() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
-        try {
-            val service = queryService()
-            val store =
-                ResultStore(
-                    resultsDir = resultsDir,
-                    onAfterJsonlWrite = { error("simulated artifact failure") },
-                )
-            withMcpClient(
-                createSafeDbMcpServer(
-                    service,
-                    resultsDir = resultsDir,
-                    resultStore = store,
-                )
-            ) { client ->
-                val receipt =
-                    client
-                        .callTool(
-                            "run_query",
-                            mapOf(
-                                "connection_id" to "c1",
-                                "sql" to "SELECT id FROM public.customers",
-                            ),
-                        )
-                        .json()
-                assertFalse(receipt.containsKey("artifact_path"))
-                assertFalse(receipt.containsKey("artifact_bytes"))
-                val resultId = receipt.getValue("result_id").jsonPrimitive.content
-
-                val page =
-                    client
-                        .callTool(
-                            "get_result_rows",
-                            mapOf("result_id" to resultId, "offset" to 1, "limit" to 1),
-                        )
-                        .json()
-                assertEquals(1, page.getValue("rows").jsonArray.size)
-                assertEquals(
-                    "2",
-                    page
-                        .getValue("rows")
-                        .jsonArray
-                        .single()
-                        .jsonObject
-                        .getValue("id")
-                        .jsonPrimitive
-                        .content,
-                )
-                Files.list(resultsDir).use { files -> assertEquals(0L, files.count()) }
-            }
-        } finally {
-            resultsDir.toFile().deleteRecursively()
-        }
-    }
-
-    @Test
-    fun unknownAndExpiredResultIsNotFound() = runBlocking {
-        val resultsDir = Files.createTempDirectory("safedb-mcp-results")
-        try {
-            val service = queryService()
-            val clock = mutableListOf(1_000L)
-            withMcpClient(
-                createSafeDbMcpServer(
-                    service,
-                    nowMs = { clock.single() },
-                    resultStoreTtlMs = 100,
-                    resultsDir = resultsDir,
-                )
-            ) { client ->
-                val missing = client.callTool("get_result_rows", emptyMap())
-                assertEquals(true, missing.isError)
-                assertEquals(
-                    "invalid_arguments",
-                    missing.json().getValue("error").jsonPrimitive.content,
-                )
-                assertEquals(
-                    "result_id is required",
-                    missing.json().getValue("message").jsonPrimitive.content,
-                )
-
-                val unknown = client.callTool("get_result_rows", mapOf("result_id" to "missing"))
-                assertEquals(true, unknown.isError)
-                assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
-                assertEquals(
-                    "Result not found",
-                    unknown.json().getValue("message").jsonPrimitive.content,
-                )
-
-                val receipt =
-                    client
-                        .callTool(
-                            "run_query",
-                            mapOf(
-                                "connection_id" to "c1",
-                                "sql" to "SELECT id, email FROM public.customers",
-                            ),
-                        )
-                        .json()
-                val resultId = receipt.getValue("result_id").jsonPrimitive.content
-                val live = client.callTool("get_result_rows", mapOf("result_id" to resultId))
-                assertFalse(live.isError == true)
-
-                clock[0] = 1_100
-                val expired = client.callTool("get_result_rows", mapOf("result_id" to resultId))
-                assertEquals(true, expired.isError)
-                assertEquals("not_found", expired.json().getValue("error").jsonPrimitive.content)
-                assertEquals(
-                    "Result not found",
-                    expired.json().getValue("message").jsonPrimitive.content,
-                )
-
-                val expiredSummary =
-                    client.callTool("summarize_result", mapOf("result_id" to resultId))
-                assertEquals(true, expiredSummary.isError)
-                assertEquals(
-                    "not_found",
-                    expiredSummary.json().getValue("error").jsonPrimitive.content,
-                )
-                assertEquals(
-                    "Result not found",
-                    expiredSummary.json().getValue("message").jsonPrimitive.content,
-                )
-            }
-        } finally {
-            resultsDir.toFile().deleteRecursively()
+            dataDir.toFile().deleteRecursively()
         }
     }
 
@@ -1198,20 +908,6 @@ class QueryToolsTest {
     }
 
     @Test
-    fun unknownToolReturnsJsonEnvelope() = runBlocking {
-        withTempMcpClient(queryService()) { client ->
-            val result = client.callTool("not_a_real_tool", emptyMap())
-            assertEquals(true, result.isError)
-            val body = result.json()
-            assertEquals("not_found", body.getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Unknown tool 'not_a_real_tool'",
-                body.getValue("message").jsonPrimitive.content,
-            )
-        }
-    }
-
-    @Test
     fun connectionFailuresUseTheConnectionErrorCode() = runBlocking {
         val service = queryService()
         service.schemaError = ConnectionFailedException("Could not reach db.example:5432")
@@ -1238,6 +934,7 @@ class QueryToolsTest {
     fun receiptOmitsNullArtifactKeys() {
         val receipt =
             QueryReceipt(
+                dialect = Dialect.Postgres,
                 columns = emptyList(),
                 rowCount = 0,
                 sampleCapped = false,
@@ -1252,28 +949,34 @@ class QueryToolsTest {
         assertFalse(omitted.contains("\"artifact_path\""))
         assertFalse(omitted.contains("\"artifact_bytes\""))
         assertFalse(omitted.contains("\"sample_capped\""))
+        assertFalse(omitted.contains("\"sample_cap_reason\""))
+        assertFalse(omitted.contains("\"sample_unbounded\""))
 
-        val capped = toolJson.encodeToString(receipt.copy(sampleCapped = true))
+        val capped =
+            toolJson.encodeToString(
+                receipt.copy(sampleCapped = true, sampleCapReason = "sql_limit"),
+            )
         assertTrue(capped.contains("\"sample_capped\""))
+        assertTrue(capped.contains("\"sample_cap_reason\":\"sql_limit\""))
         assertFalse(capped.contains("\"artifact_path\""))
         assertFalse(capped.contains("\"artifact_bytes\""))
     }
+
+    @Test
+    fun runQueryToolMetadataIsDocumented() = runBlocking {
+        withTempMcpClient(queryService()) { client ->
+            val tool = client.listTools().tools.single { it.name == "run_query" }
+            assertNull(tool.annotations)
+            assertEquals(listOf("connection_id", "sql"), tool.inputSchema.required)
+            assertFalse(tool.inputSchema.properties?.containsKey("spec") == true)
+            val description = tool.description.orEmpty()
+            assertTrue(description.contains("On error risk_gate"))
+            assertFalse(description.contains("change the gate"))
+            assertNotNull(tool.outputSchema)
+            assertTrue(tool.outputSchema?.properties?.containsKey("row_count") == true)
+        }
+    }
 }
-
-private fun queryService(): RecordingSafeDbService {
-    val service = RecordingSafeDbService()
-    service.connections += sampleMcpConnection()
-    service.passwords["c1"] = "should-not-leak"
-    service.schemas["c1"] = sampleMcpSchema()
-    service.settings = Settings(blockedSchemas = listOf("audit"))
-    service.runQueryResult = sampleMcpRunResult()
-    return service
-}
-
-private fun CallToolResult.text(): String = (content.single() as TextContent).text
-
-private fun CallToolResult.json(): JsonObject =
-    kotlinx.serialization.json.Json.parseToJsonElement(text()).jsonObject
 
 private fun JsonObject.columns() = getValue("columns").jsonArray
 

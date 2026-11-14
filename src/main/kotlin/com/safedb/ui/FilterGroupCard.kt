@@ -122,7 +122,7 @@ fun FilterGroupCard(
             }
             if (singleLeafPath != null) {
                 CompactFilterBuilderAction(
-                    onClick = { queryViewModel.removeFilterNode(singleLeafPath) }
+                    onClick = { queryViewModel.removeFilterNode(singleLeafPath) },
                 ) {
                     Icon(
                         Icons.Default.Close,

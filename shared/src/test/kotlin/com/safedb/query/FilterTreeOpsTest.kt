@@ -40,7 +40,7 @@ class FilterTreeOpsTest {
                             FilterGroup(
                                 id = "group",
                                 children = listOf(FilterNode.Leaf(filter("drop", "t1"))),
-                            )
+                            ),
                         ),
                     ),
             )
@@ -93,8 +93,8 @@ class FilterTreeOpsTest {
                             FilterGroup(
                                 id = "nested",
                                 children = listOf(FilterNode.Leaf(filter("leaf", "t0"))),
-                            )
-                        )
+                            ),
+                        ),
                     ),
             )
 
@@ -116,9 +116,9 @@ class FilterTreeOpsTest {
                                 column = "created_at",
                                 op = FilterOp.Eq,
                                 value = FilterValue.Single(FilterLiteral(LiteralKind.DateTime, "")),
-                            )
-                        )
-                    )
+                            ),
+                        ),
+                    ),
             )
         assertTrue(hasIncompleteFilterValues(empty))
         val filled =
@@ -133,11 +133,11 @@ class FilterTreeOpsTest {
                                 op = FilterOp.Eq,
                                 value =
                                     FilterValue.Single(
-                                        FilterLiteral(LiteralKind.DateTime, "2025-01-01")
+                                        FilterLiteral(LiteralKind.DateTime, "2025-01-01"),
                                     ),
-                            )
-                        )
-                    )
+                            ),
+                        ),
+                    ),
             )
         assertFalse(hasIncompleteFilterValues(filled))
         assertFalse(hasIncompleteFilterValues(FilterGroup.empty()))

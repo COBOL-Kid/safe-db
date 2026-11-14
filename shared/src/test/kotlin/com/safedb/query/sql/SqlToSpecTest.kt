@@ -94,7 +94,7 @@ class SqlToSpecTest {
         val mixed =
             spec(
                 "SELECT \"U\".id FROM users AS \"U\" JOIN categories u " +
-                    "ON users.category_id = u.id LIMIT 5"
+                    "ON users.category_id = u.id LIMIT 5",
             )
         assertEquals(listOf("U", "u"), mixed.tables.map { it.alias })
     }
@@ -106,7 +106,7 @@ class SqlToSpecTest {
 
         val folded =
             failure(
-                "SELECT U.id FROM users AS U JOIN categories u ON users.category_id = u.id LIMIT 5"
+                "SELECT U.id FROM users AS U JOIN categories u ON users.category_id = u.id LIMIT 5",
             )
         assertEquals(SqlIssueCode.DuplicateAlias, folded.code)
 
@@ -161,7 +161,7 @@ class SqlToSpecTest {
         when (val validated = validateQuery(parsed, schema, emptyList())) {
             is Outcome.Ok ->
                 assertTrue(
-                    validated.value.second.warnings.none { it.contains("No columns selected") }
+                    validated.value.second.warnings.none { it.contains("No columns selected") },
                 )
             is Outcome.Err ->
                 throw AssertionError("expected SELECT * to validate: ${validated.message}")
@@ -180,7 +180,7 @@ class SqlToSpecTest {
         val spec =
             spec(
                 "SELECT id FROM users WHERE created_at > '2024-01-01' AND active = true " +
-                    "AND id IN (1, 2) AND name LIKE 'a%'"
+                    "AND id IN (1, 2) AND name LIKE 'a%'",
             )
         val leaves = spec.filters.children.map { (it as FilterNode.Leaf).spec }
         assertEquals(LiteralKind.DateTime, leaves[0].singleLiteral().kind)
@@ -380,7 +380,7 @@ class SqlToSpecTest {
         val issue =
             failure(
                 "SELECT u.id FROM users u JOIN categories c " +
-                    "ON u.category_id = c.id AND u.id = u.category_id LIMIT 5"
+                    "ON u.category_id = c.id AND u.id = u.category_id LIMIT 5",
             )
         assertEquals(SqlIssueCode.Unsupported, issue.code)
     }
@@ -406,12 +406,6 @@ class SqlToSpecTest {
         assertEquals(GroupConnector.And, single.filters.connector)
         val leaf = assertIs<FilterNode.Leaf>(single.filters.children.single()).spec
         assertEquals(FilterOp.Eq, leaf.op)
-    }
-
-    @Test
-    fun reparsingIdenticalTextYieldsEqualSpecs() {
-        val sql = "SELECT id FROM users u WHERE (name = 'a' OR email = 'b') AND id > 1 ORDER BY id"
-        assertEquals(spec(sql), spec(sql))
     }
 
     @Test

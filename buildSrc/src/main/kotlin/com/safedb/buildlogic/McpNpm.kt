@@ -130,13 +130,13 @@ fun downloadVerified(artifact: TemurinArtifact, cacheDir: File): File {
         val response = client.send(request, HttpResponse.BodyHandlers.ofFile(tmp.toPath()))
         if (response.statusCode() !in 200..299) {
             throw GradleException(
-                "Download failed (${response.statusCode()}) for ${artifact.filename} from ${artifact.url}"
+                "Download failed (${response.statusCode()}) for ${artifact.filename} from ${artifact.url}",
             )
         }
         val actual = sha256(tmp)
         if (actual != artifact.sha256) {
             throw GradleException(
-                "SHA-256 mismatch for ${artifact.filename}: expected ${artifact.sha256}, got $actual"
+                "SHA-256 mismatch for ${artifact.filename}: expected ${artifact.sha256}, got $actual",
             )
         }
         Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
@@ -230,7 +230,7 @@ fun runJlink(
         }
     if (bundledJava == null) {
         throw GradleException(
-            "jlink did not produce a java executable under ${output.resolve("bin")}"
+            "jlink did not produce a java executable under ${output.resolve("bin")}",
         )
     }
 }
@@ -330,7 +330,7 @@ fun stampMetaPackage(
                 sourceDir.resolve("package.json").readText(),
                 version,
                 platforms,
-            )
+            ),
         )
 }
 

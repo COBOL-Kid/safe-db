@@ -7,7 +7,6 @@ import com.safedb.model.Dialect
 import com.safedb.model.FilterGroup
 import com.safedb.model.HistoryEntry
 import com.safedb.model.JoinSpec
-import com.safedb.model.QueryResult
 import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
@@ -227,8 +226,8 @@ class ViewModelsTest {
                             TableInfo("safedb_test", "customers", emptyList(), emptyList()),
                             TableInfo("safedb_test", "orders", emptyList(), emptyList()),
                             TableInfo("reporting", "events", emptyList(), emptyList()),
-                        )
-                )
+                        ),
+                ),
             )
             advanceUntilIdle()
 
@@ -460,7 +459,7 @@ class ViewModelsTest {
             viewModel.loadDefaultSchemaOptions("c2")
             runCurrent()
             second.complete(
-                Schema(listOf(TableInfo("current", "events", emptyList(), emptyList())))
+                Schema(listOf(TableInfo("current", "events", emptyList(), emptyList()))),
             )
             runCurrent()
             first.complete(Schema(listOf(TableInfo("stale", "events", emptyList(), emptyList()))))
@@ -657,8 +656,6 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
             transportSecurity = TransportSecurity(),
         )
 
-    override suspend fun testConnection(def: ConnectionDef, password: String?): String = "ok"
-
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef {
         createdConnections += def
         return def
@@ -678,8 +675,6 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         deletedIds.add(id)
     }
 
-    override suspend fun lockCredentials() = Unit
-
     override suspend fun getSchema(connectionId: String): Schema {
         schemaLoadCount += 1
         if (failSchemaLoad) error("schema load failed")
@@ -692,12 +687,9 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
                     TableInfo("safedb_test", "customers", emptyList(), emptyList()),
                     TableInfo("safedb_test", "orders", emptyList(), emptyList()),
                     TableInfo("reporting", "events", emptyList(), emptyList()),
-                )
+                ),
         )
     }
-
-    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) =
-        queryRunResult(QueryResult(emptyList(), emptyList(), 0, false, emptyList()))
 
     override suspend fun listSavedQueries(): List<SavedQuery> =
         if (deletedSavedIds.isEmpty()) {

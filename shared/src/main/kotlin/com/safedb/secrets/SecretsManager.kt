@@ -64,7 +64,7 @@ object SecretsManager {
             when (parseRequestedBackendFrom(envValue)) {
                 RequestedBackend.Disabled -> {
                     println(
-                        "WARN: $ENV_BACKEND=disabled: credentials are held in process memory only"
+                        "WARN: $ENV_BACKEND=disabled: credentials are held in process memory only",
                     )
                     DisabledMemoryStore()
                 }
@@ -93,30 +93,25 @@ object SecretsManager {
             } catch (error: Exception) {
                 return Result.failure(
                     IllegalStateException(
-                        "Could not read credentials (${unwrapCredentialError(error).message ?: error})."
-                    )
+                        "Could not read credentials (${unwrapCredentialError(error).message ?: error}).",
+                    ),
                 )
-            }
-                ?: return Result.failure(
-                    IllegalStateException(
-                        "Password not found for this connection. Delete and add the connection again to store the password."
-                    )
-                )
+            } ?: return Result.failure(IllegalStateException(passwordNotFoundMessage()))
         val record = runCatching {
             json.decodeFromString<BoundCredential>(raw)
         }
             .getOrElse {
                 return Result.failure(
                     IllegalStateException(
-                        "This credential predates endpoint binding. Delete and add the connection again before use."
-                    )
+                        "This credential predates endpoint binding. Delete and add the connection again before use.",
+                    ),
                 )
             }
         if (record.version != 1 || record.fingerprint != def.credentialFingerprint()) {
             return Result.failure(
                 IllegalStateException(
-                    "Stored credentials do not match this connection endpoint or transport configuration. Delete and add the connection again."
-                )
+                    "Stored credentials do not match this connection endpoint or transport configuration. Delete and add the connection again.",
+                ),
             )
         }
         CredentialSession.put(cacheKey, record.password)
@@ -138,6 +133,15 @@ object SecretsManager {
     }
 
     fun lockCredentials() = CredentialSession.lockCredentials()
+
+    fun passwordNotFoundMessage(): String =
+        if (activeLabel == "disabled") {
+            "Password not found for this connection because $ENV_BACKEND=disabled is " +
+                "overriding the persisted credential store. Unset $ENV_BACKEND so the " +
+                "saved password can be read; do not add the connection again."
+        } else {
+            "Password not found for this connection. Delete and add the connection again to store the password."
+        }
 
     fun formatSaveCredentialError(err: Throwable): String {
         val message = unwrapCredentialError(err).message ?: err.toString()

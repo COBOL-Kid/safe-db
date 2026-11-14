@@ -35,7 +35,7 @@ class ExploreTemplatesTest {
 
         val ready =
             assertIs<ExploreTemplateBuildResult.Ready>(
-                resolveExploreTemplate(ExploreBuiltinTemplateId.TrendOverTime, fields)
+                resolveExploreTemplate(ExploreBuiltinTemplateId.TrendOverTime, fields),
             )
         assertEquals(
             PivotGrouping.Date(DateGroupUnit.Month),
@@ -56,7 +56,7 @@ class ExploreTemplatesTest {
 
         val ready =
             assertIs<ExploreTemplateBuildResult.Ready>(
-                resolveExploreTemplate(ExploreBuiltinTemplateId.CompareCategories, sampleFields())
+                resolveExploreTemplate(ExploreBuiltinTemplateId.CompareCategories, sampleFields()),
             )
         assertEquals("status", ready.config.rowDimensions.single().column)
         assertEquals("region", ready.config.columnDimensions.single().column)
@@ -66,7 +66,7 @@ class ExploreTemplatesTest {
     fun topNTemplateAddsTopFilter() {
         val ready =
             assertIs<ExploreTemplateBuildResult.Ready>(
-                resolveExploreTemplate(ExploreBuiltinTemplateId.TopN, sampleFields())
+                resolveExploreTemplate(ExploreBuiltinTemplateId.TopN, sampleFields()),
             )
         val filter = ready.config.filters.single() as PivotFilter.Value
         assertEquals(ValueFilterOp.Top, filter.op)

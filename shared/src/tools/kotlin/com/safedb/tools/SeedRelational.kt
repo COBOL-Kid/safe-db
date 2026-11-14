@@ -79,7 +79,7 @@ private class SeedRelational(
         if (inspect.exitCode != 0) {
             throw RuntimeException(
                 "docker container '${settings.container}' not found; " +
-                    "start it with scripts/docker_test_databases.sh up"
+                    "start it with scripts/docker_test_databases.sh up",
             )
         }
     }
@@ -108,7 +108,7 @@ private class SeedRelational(
                 "bash",
                 "-c",
                 script,
-            )
+            ),
         )
     }
 
@@ -171,7 +171,7 @@ private class SeedRelational(
         val exitCode = process.waitFor()
         if (exitCode != 0) {
             throw RuntimeException(
-                stderr.trim().ifBlank { stdout.trim().ifBlank { "database client failed" } }
+                stderr.trim().ifBlank { stdout.trim().ifBlank { "database client failed" } },
             )
         }
         if (!captureOutput && stdout.isNotBlank()) print(stdout)
@@ -309,7 +309,7 @@ internal fun relationalSeedSettings(
                                 "SAFEDB_TEST_POSTGRES_PASSWORD",
                                 "SAFEDB_DOCKER_POSTGRES_PASSWORD",
                                 "postgres",
-                            )
+                            ),
                     ),
             )
         GeneratedSqlDialect.Mssql ->
@@ -328,7 +328,7 @@ internal fun relationalSeedSettings(
                                 "SAFEDB_TEST_MSSQL_PASSWORD",
                                 "SAFEDB_DOCKER_MSSQL_PASSWORD",
                                 "SafeDb_Ssl_Passw0rd!",
-                            )
+                            ),
                     ),
             )
         GeneratedSqlDialect.Oracle ->
@@ -424,6 +424,6 @@ private fun printRelationalUsage(dialect: GeneratedSqlDialect) {
           --reset-state     Wipe local safe-db connections and query history
           -h, --help        Show this help
         """
-            .trimIndent()
+            .trimIndent(),
     )
 }

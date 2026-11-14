@@ -25,21 +25,6 @@ object IntegrationFixtures {
         )
     }
 
-    fun ordersQuery(schema: Schema, limit: Int = 10): QuerySpec {
-        val table = requireSeededTable(schema, "orders", setOf("id", "status"))
-        return QuerySpec(
-            tables = listOf(TableRef(schema = table.schema, name = table.name, alias = "t0")),
-            columns =
-                listOf(
-                    ColumnSel(tableAlias = "t0", column = seededColumn(table, "id")),
-                    ColumnSel(tableAlias = "t0", column = seededColumn(table, "status")),
-                ),
-            joins = emptyList(),
-            filters = emptyFilters("integration-orders-filters"),
-            limit = limit,
-        )
-    }
-
     fun blockedSchemaQuery(): QuerySpec =
         QuerySpec(
             tables = listOf(TableRef(schema = "mysql", name = "user", alias = "t0")),

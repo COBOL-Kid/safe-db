@@ -14,7 +14,7 @@ private constructor(private val delegate: CredentialStore, val label: String) :
                     DesktopPlatform.Windows -> "Windows Credential Manager" to "windows"
                     DesktopPlatform.Linux ->
                         throw DesktopStoreUnavailableException(
-                            "OS credential store is not available on Linux"
+                            "OS credential store is not available on Linux",
                         )
                 }
             val delegate =

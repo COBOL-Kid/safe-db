@@ -222,7 +222,7 @@ class ExploreUiModelTest {
         assertEquals(ExploreSortTarget.Dimension("region"), pivotSortTarget(layout, 0))
         assertNull(pivotSortTarget(layout, 1))
         assertEquals("Revenue", pivotLeafLabel(layout, 1, "Running revenue"))
-        assertEquals("Row labels", pivotLeafLabel(layout, 0, "Region"))
+        assertEquals("Region", pivotLeafLabel(layout, 0, "Region"))
     }
 
     private fun buildField(name: String, type: String): ExploreFieldOption =

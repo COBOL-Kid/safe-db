@@ -1,6 +1,6 @@
 # safe-db
 
-Source for the [safe-db](https://www.safe-db.dev) 1.0.1 desktop app and MCP server: a Compose Desktop UI, a stdio MCP CLI, and a `:shared` query engine that introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
+Source for the [safe-db](https://www.safe-db.dev) 1.1.0 desktop app and MCP server: a Compose Desktop UI, a stdio MCP CLI, and a `:shared` query engine that introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
 
 Packaged desktop releases and the user guide live at [https://www.safe-db.dev](https://www.safe-db.dev). This repository is for building from source and changing the code.
 
@@ -12,7 +12,7 @@ The desktop app runs on macOS and Windows; [`Main.kt`](src/main/kotlin/com/safed
 | --- | --- |
 | Root (`src/`) | Compose Desktop UI, viewmodels, HTML/CSV/PNG export. Main class `com.safedb.MainKt`. |
 | [`:shared`](shared/) | Query engine, JDBC adapters, SQL parser, stores, secrets, launch profiles. Not a published library. |
-| [`:mcp`](mcp/) | Stdio MCP server CLI (`safe-db-mcp`), published as `@safe-db/mcp` with a bundled Temurin 25 jlink runtime. `setup` / `connections add` to save connections; tools for list/describe/query/page/summarize. See [docs/mcp.md](docs/mcp.md). |
+| [`:mcp`](mcp/) | Stdio MCP server CLI (`safe-db-mcp`), published as `@safe-db/mcp` with a bundled Temurin 25 jlink runtime. `setup` / `connections add` to save connections; tools for schema discovery, query assessment, execution, paging, in-memory analysis, and saved workspaces. See [docs/mcp.md](docs/mcp.md). |
 
 ## Contracts
 

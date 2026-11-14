@@ -191,11 +191,12 @@ private fun ColorSchemeSwatch(palette: ThemePalette, isDark: Boolean) {
         modifier =
             Modifier.size(width = 54.dp, height = 34.dp)
                 .background(colors.workspaceBackground, CardShape)
-                .border(1.dp, material.outline, CardShape)
+                .border(1.dp, material.outline, CardShape),
     ) {
         Box(
             modifier =
-                Modifier.size(width = 12.dp, height = 34.dp).background(colors.navigationBackground)
+                Modifier.size(width = 12.dp, height = 34.dp)
+                    .background(colors.navigationBackground),
         )
         Column(
             modifier = Modifier.weight(1f).padding(4.dp),
@@ -205,17 +206,17 @@ private fun ColorSchemeSwatch(palette: ThemePalette, isDark: Boolean) {
                 modifier =
                     Modifier.fillMaxWidth()
                         .height(6.dp)
-                        .background(colors.workspaceHeader, ChipShape)
+                        .background(colors.workspaceHeader, ChipShape),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 Box(
                     modifier =
-                        Modifier.weight(1f).height(12.dp).background(material.surface, ChipShape)
+                        Modifier.weight(1f).height(12.dp).background(material.surface, ChipShape),
                 )
                 Box(
                     modifier =
                         Modifier.size(width = 10.dp, height = 12.dp)
-                            .background(colors.actionPrimary, ChipShape)
+                            .background(colors.actionPrimary, ChipShape),
                 )
             }
         }

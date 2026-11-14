@@ -10,6 +10,14 @@ import kotlinx.serialization.json.JsonElement
 
 internal const val DISTINCT_VALUE_LIMIT = 8
 
+internal fun buildResultSummary(resultId: String, result: QueryResult): ResultSummary =
+    ResultSummary(
+        resultId = resultId,
+        rowCount = result.rowCount,
+        sampleCapped = result.truncated,
+        columns = summarizeColumns(result),
+    )
+
 @Serializable
 internal data class ResultSummary(
     @SerialName("result_id") val resultId: String,

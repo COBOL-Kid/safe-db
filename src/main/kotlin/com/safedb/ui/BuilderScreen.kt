@@ -188,7 +188,7 @@ internal fun BuilderScreen(
                     connectionId = activeConnection.id,
                     spec = queryViewModel.spec,
                     createdAt = Instant.now().epochSecond.toString(),
-                )
+                ),
             ) {
                 showSavePrompt = false
             }
@@ -214,8 +214,8 @@ internal fun BuilderScreen(
                         }
                     } else {
                         Modifier
-                    }
-                )
+                    },
+                ),
     ) {
         FlowRow(
             modifier =
@@ -444,7 +444,7 @@ internal fun BuilderScreen(
                     modifier =
                         Modifier.width(BuilderSchemaBrowserDividerWidth)
                             .fillMaxHeight()
-                            .background(MaterialTheme.colorScheme.outline)
+                            .background(MaterialTheme.colorScheme.outline),
                 )
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -475,11 +475,12 @@ internal fun BuilderScreen(
                     modifier =
                         Modifier.width(BuilderSchemaBrowserDividerWidth)
                             .fillMaxHeight()
-                            .background(MaterialTheme.colorScheme.outline)
+                            .background(MaterialTheme.colorScheme.outline),
                 )
 
                 BoxWithConstraints(
-                    modifier = Modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas)
+                    modifier =
+                        Modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas),
                 ) {
                     val maxWorkspaceHeight = maxHeight.value.coerceAtLeast(ResultsPaneMinHeight)
                     val maxNormalHeight =
@@ -506,7 +507,7 @@ internal fun BuilderScreen(
                             queryViewModel.hydrationWarning?.let { warning ->
                                 MessageBanner(text = warning, kind = BannerKind.WARNING) {
                                     TextButton(
-                                        onClick = { queryViewModel.dismissHydrationWarning() }
+                                        onClick = { queryViewModel.dismissHydrationWarning() },
                                     ) {
                                         Text("Dismiss")
                                     }
@@ -521,7 +522,7 @@ internal fun BuilderScreen(
                             }
 
                             BoxWithConstraints(
-                                modifier = Modifier.weight(1f).fillMaxWidth()
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
                             ) canvasWorkspace@{
                                 if (queryViewModel.canvasTables.isEmpty()) {
                                     Box(
@@ -559,7 +560,7 @@ internal fun BuilderScreen(
 
                         currentSample?.let { sample ->
                             Column(
-                                modifier = Modifier.fillMaxWidth().height(resultsPaneHeight.dp)
+                                modifier = Modifier.fillMaxWidth().height(resultsPaneHeight.dp),
                             ) {
                                 ResultsPaneResizeBar(
                                     mode = resultsPaneMode,
@@ -656,7 +657,7 @@ private fun ResultsPaneResizeBar(
             modifier =
                 Modifier.fillMaxWidth()
                     .height(ResultsPaneHandleHeight.dp)
-                    .padding(horizontal = 18.dp)
+                    .padding(horizontal = 18.dp),
         ) {
             val strokeWidth = 1.5.dp.toPx()
             val y = size.height / 2f

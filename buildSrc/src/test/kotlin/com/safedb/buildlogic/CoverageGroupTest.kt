@@ -81,7 +81,7 @@ class CoverageGroupTest {
                 append("<package name=\"$packageName\">")
                 append(
                     "<counter type=\"LINE\" covered=\"${counts.first}\" " +
-                        "missed=\"${counts.second}\"/>"
+                        "missed=\"${counts.second}\"/>",
                 )
                 append("</package>")
             }

@@ -107,7 +107,7 @@ internal fun visualizationValueRange(
 }
 
 private fun stackedValueSpans(
-    marks: List<VisualizationMark>
+    marks: List<VisualizationMark>,
 ): List<Triple<VisualizationMark, Double, Double>> {
     var positiveCumulative = 0.0
     var negativeCumulative = 0.0
@@ -368,7 +368,7 @@ private fun VisualizationLegend(preview: VisualizationPreview, modifier: Modifie
                 Box(
                     modifier =
                         Modifier.size(9.dp)
-                            .background(seriesPalette[index % seriesPalette.size], CircleShape)
+                            .background(seriesPalette[index % seriesPalette.size], CircleShape),
                 )
                 Text(
                     series.label,
@@ -489,7 +489,7 @@ private fun PlotChart(
                     textMeasurer
                         .measure(
                             compactNumber(
-                                range.start + (range.endInclusive - range.start) * tick / 4f
+                                range.start + (range.endInclusive - range.start) * tick / 4f,
                             ),
                             labelStyle,
                         )
@@ -550,7 +550,7 @@ private fun PlotChart(
                                 .firstOrNull { it.contains(offset) }
                                 ?.let { onMarkClick(it.markId) }
                         }
-                    }
+                    },
         ) {
             size = this.size
             val plot = geometry.plot

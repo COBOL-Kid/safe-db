@@ -73,7 +73,7 @@ class WindowsCredentialStoreTest {
         val result = SecretsManager.passwordForDefinition(def)
         assertTrue(result.isFailure)
         assertTrue(
-            result.exceptionOrNull()!!.message!!.contains("Password not found for this connection")
+            result.exceptionOrNull()!!.message!!.contains("Password not found for this connection"),
         )
     }
 

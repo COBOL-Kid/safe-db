@@ -124,9 +124,9 @@ internal fun WorksheetFilterDialog(
                             value = value,
                             secondValue = second.ifBlank { null },
                             includedKeys = members,
-                        )
+                        ),
                     )
-                }
+                },
             ) {
                 Text("Apply")
             }
@@ -201,7 +201,7 @@ internal fun WorksheetGroupDialog(
                             column,
                             label = displayLabel,
                             grouping = grouping,
-                        )
+                        ),
                     )
                 },
                 enabled =
@@ -239,7 +239,7 @@ internal fun CompactWorksheetInput(
             singleLine = true,
             textStyle =
                 MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 ),
             cursorBrush = SolidColor(SafeDbTheme.colors.actionPrimary),
             modifier =

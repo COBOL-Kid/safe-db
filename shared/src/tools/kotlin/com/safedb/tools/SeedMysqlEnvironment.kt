@@ -9,7 +9,7 @@ import java.nio.file.Path
 // Missing APPDATA is skippable (null). Unknown OS and Linux desktop-store unavailability still
 // throw here; safeDbAppDataDirForStateReset catches those and skips.
 internal fun safeDbAppDataDir(
-    environment: PlatformEnvironment = PlatformEnvironment.current()
+    environment: PlatformEnvironment = PlatformEnvironment.current(),
 ): Path? =
     try {
         DataDirectory.baseDir(environment).resolve(DataDirectory.APP_ID)
@@ -44,7 +44,7 @@ internal fun runningMysqlContainers(): List<String> =
                 "status=running",
                 "--format",
                 "{{.Names}}\t{{.Image}}",
-            )
+            ),
         )
         .stdout
         .lineSequence()
@@ -67,7 +67,7 @@ internal fun dockerEnvVar(container: String, key: String): String {
                 container,
                 "--format",
                 "{{range .Config.Env}}{{println .}}{{end}}",
-            )
+            ),
         )
     if (result.exitCode != 0) return ""
     return result.stdout

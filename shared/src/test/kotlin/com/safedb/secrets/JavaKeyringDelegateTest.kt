@@ -10,15 +10,15 @@ class JavaKeyringDelegateTest {
         assertTrue(isMissingCredentialError("Error code 1168"))
         assertTrue(isMissingCredentialError("Password not Found"))
         assertTrue(
-            isMissingCredentialError("No stored credentials match SafeDb account: missing-id")
+            isMissingCredentialError("No stored credentials match SafeDb account: missing-id"),
         )
         assertTrue(
-            isMissingCredentialError("The specified item could not be found in the keychain.")
+            isMissingCredentialError("The specified item could not be found in the keychain."),
         )
         assertTrue(
             isMissingCredentialError(
-                "No password to delete. No stored credentials match SafeDb account: missing-id"
-            )
+                "No password to delete. No stored credentials match SafeDb account: missing-id",
+            ),
         )
     }
 
@@ -31,14 +31,14 @@ class JavaKeyringDelegateTest {
         assertFalse(isMissingCredentialError("The specified keychain could not be found."))
         assertFalse(
             isMissingCredentialError(
-                "Failed to get credential. The specified item could not be found in the keychain."
-            )
+                "Failed to get credential. The specified item could not be found in the keychain.",
+            ),
         )
         assertFalse(isMissingCredentialError("Error code 11680"))
         assertFalse(
             isMissingCredentialError(
-                "No password to delete. Failed to get credential. keychain locked"
-            )
+                "No password to delete. Failed to get credential. keychain locked",
+            ),
         )
     }
 }

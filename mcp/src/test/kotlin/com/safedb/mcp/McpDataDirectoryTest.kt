@@ -30,7 +30,7 @@ class McpDataDirectoryTest {
                     "Windows 11",
                     "C:/Users/test",
                     appData = "C:/Users/test/AppData/Roaming",
-                )
+                ),
             ),
         )
     }
@@ -41,7 +41,7 @@ class McpDataDirectoryTest {
             val error =
                 assertFailsWith<DesktopStoreUnavailableException> {
                     McpDataDirectory.pathFor(
-                        McpEnvironment("Windows 11", "C:/Users/test", appData = appData)
+                        McpEnvironment("Windows 11", "C:/Users/test", appData = appData),
                     )
                 }
             assertEquals("APPDATA is not set", error.message)
@@ -67,13 +67,13 @@ class McpDataDirectoryTest {
         assertEquals(
             Path.of("/custom/data", McpDataDirectory.MCP_APP_ID),
             McpDataDirectory.pathFor(
-                McpEnvironment("Linux", "/home/test", xdgDataHome = "/custom/data")
+                McpEnvironment("Linux", "/home/test", xdgDataHome = "/custom/data"),
             ),
         )
         assertEquals(
             Path.of("/home/test/.local/share", McpDataDirectory.MCP_APP_ID),
             McpDataDirectory.pathFor(
-                McpEnvironment("linux-gnu", "/home/test", xdgDataHome = "   ")
+                McpEnvironment("linux-gnu", "/home/test", xdgDataHome = "   "),
             ),
         )
     }

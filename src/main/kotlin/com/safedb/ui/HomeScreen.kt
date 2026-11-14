@@ -95,7 +95,7 @@ fun HomeScreen(
             modifier =
                 Modifier.fillMaxWidth()
                     .widthIn(max = 896.dp)
-                    .padding(horizontal = 32.dp, vertical = 48.dp)
+                    .padding(horizontal = 32.dp, vertical = 48.dp),
         ) {
             Text("Welcome to Safe-DB", style = MaterialTheme.typography.headlineLarge)
             Text(
@@ -221,21 +221,21 @@ private fun QuickLinkCard(
                 SafeDbTheme.colors.actionPrimary
             } else {
                 MaterialTheme.colorScheme.outline
-            }
+            },
         )
     val cardColor by
         animateColorAsState(
             if (hovered) MaterialTheme.colorScheme.surfaceContainerLow
-            else MaterialTheme.colorScheme.surface
+            else MaterialTheme.colorScheme.surface,
         )
     val tileColor by
         animateColorAsState(
-            if (hovered) SafeDbTheme.colors.actionPrimary else SafeDbTheme.colors.accentContainer
+            if (hovered) SafeDbTheme.colors.actionPrimary else SafeDbTheme.colors.accentContainer,
         )
     val tileIconColor by
         animateColorAsState(
             if (hovered) SafeDbTheme.colors.onActionPrimary
-            else SafeDbTheme.colors.onAccentContainer
+            else SafeDbTheme.colors.onAccentContainer,
         )
 
     Surface(

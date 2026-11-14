@@ -149,7 +149,7 @@ fun MenuActionRow(
         }
         Column(
             modifier =
-                Modifier.weight(1f).padding(horizontal = if (leading != null) 10.dp else 0.dp)
+                Modifier.weight(1f).padding(horizontal = if (leading != null) 10.dp else 0.dp),
         ) {
             Text(
                 text = text,

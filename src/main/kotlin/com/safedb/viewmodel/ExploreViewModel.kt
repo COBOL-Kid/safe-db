@@ -55,7 +55,7 @@ class ExploreViewModel(
 
     var workspace by
         mutableStateOf(
-            initialWorkspace ?: ExploreWorkspaceState(pivot = initialConfig ?: defaultConfig)
+            initialWorkspace ?: ExploreWorkspaceState(pivot = initialConfig ?: defaultConfig),
         )
         private set
 
@@ -77,7 +77,7 @@ class ExploreViewModel(
 
     var visualizationPreview by
         mutableStateOf(
-            applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables)
+            applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables),
         )
         private set
 
@@ -318,7 +318,7 @@ class ExploreViewModel(
                         } else {
                             filter
                         }
-                    }
+                    },
             )
         }
     }

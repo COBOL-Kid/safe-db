@@ -80,7 +80,7 @@ private class SqlSpecBuilder(
                         leftColumn = leftRef.second.name,
                         rightAlias = rightRef.first,
                         rightColumn = rightRef.second.name,
-                    )
+                    ),
                 )
             }
         }
@@ -388,6 +388,7 @@ private class SqlSpecBuilder(
             column = column.name,
             op = predicate.op,
             value = value,
+            likeEscape = predicate.likeEscape,
         )
     }
 

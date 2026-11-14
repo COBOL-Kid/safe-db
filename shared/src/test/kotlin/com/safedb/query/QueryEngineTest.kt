@@ -55,7 +55,7 @@ class QueryEngineTest {
         val spec =
             sampleSpec()
                 .copy(
-                    tables = listOf(TableRef(schema = "pg_catalog", name = "users", alias = "t0"))
+                    tables = listOf(TableRef(schema = "pg_catalog", name = "users", alias = "t0")),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("blocked"))
@@ -116,7 +116,7 @@ class QueryEngineTest {
                                 leftColumn = "name",
                                 rightAlias = "t1",
                                 rightColumn = "id",
-                            )
+                            ),
                         ),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
@@ -138,7 +138,7 @@ class QueryEngineTest {
                                 leftColumn = "id",
                                 rightAlias = "t1",
                                 rightColumn = "id",
-                            )
+                            ),
                         ),
                 )
         val (_, outcome) = validate(spec, sampleSchema(), emptyList()).unwrap()
@@ -165,7 +165,7 @@ class QueryEngineTest {
                             referencedSchema = "public",
                             referencedTable = "orders",
                             referencedColumns = listOf("id", "store_id"),
-                        )
+                        ),
                     ),
             )
         val parent =
@@ -184,7 +184,7 @@ class QueryEngineTest {
                             listOf("id", "store_id"),
                             isPrimary = true,
                             isUnique = true,
-                        )
+                        ),
                     ),
             )
         val spec =
@@ -223,7 +223,7 @@ class QueryEngineTest {
                 .copy(
                     tables =
                         sampleSpec().tables +
-                            TableRef(schema = "public", name = "categories", alias = "t1")
+                            TableRef(schema = "public", name = "categories", alias = "t1"),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("connected by joins"))
@@ -264,6 +264,31 @@ class QueryEngineTest {
     }
 
     @Test
+    fun validateQueryRejectsLikeEscapeOnNonLikeOperator() {
+        val spec =
+            sampleSpec()
+                .copy(
+                    filters =
+                        sampleSpec()
+                            .filters
+                            .copy(
+                                children =
+                                    sampleSpec().filters.children +
+                                        FilterNode.Leaf(
+                                            leaf(
+                                                    FilterOp.Eq,
+                                                    FilterValue.Single(lit(LiteralKind.Int, "1")),
+                                                )
+                                                .copy(likeEscape = true),
+                                        ),
+                            ),
+                )
+        val err = validateQuery(spec, sampleSchema(), emptyList()).unwrapErr()
+        assertTrue(err.contains("likeEscape"))
+        assertTrue(err.contains("LIKE"))
+    }
+
+    @Test
     fun validateRejectsFilterMissingValue() {
         val spec =
             sampleSpec()
@@ -274,8 +299,8 @@ class QueryEngineTest {
                             .copy(
                                 children =
                                     sampleSpec().filters.children +
-                                        FilterNode.Leaf(leaf(FilterOp.Eq, null))
-                            )
+                                        FilterNode.Leaf(leaf(FilterOp.Eq, null)),
+                            ),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("requires a value"))
@@ -297,9 +322,9 @@ class QueryEngineTest {
                                                 "id",
                                                 FilterOp.Ilike,
                                                 FilterValue.Single(lit(LiteralKind.Text, "foo")),
-                                            )
-                                        )
-                            )
+                                            ),
+                                        ),
+                            ),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("not applicable"))
@@ -316,8 +341,8 @@ class QueryEngineTest {
                             .copy(
                                 children =
                                     sampleSpec().filters.children +
-                                        FilterNode.Leaf(leafOn("name", FilterOp.IsEmpty, null))
-                            )
+                                        FilterNode.Leaf(leafOn("name", FilterOp.IsEmpty, null)),
+                            ),
                 )
         val outcome = validate(spec, sampleSchema(), emptyList()).unwrap().second
         assertTrue(outcome.warnings.none { it.contains("not applicable") })
@@ -340,19 +365,19 @@ class QueryEngineTest {
                                                     "name",
                                                     FilterOp.Eq,
                                                     FilterValue.Single(
-                                                        lit(LiteralKind.Text, "Alice")
+                                                        lit(LiteralKind.Text, "Alice"),
                                                     ),
-                                                )
+                                                ),
                                             ),
                                             FilterNode.Leaf(
                                                 leafOn(
                                                     "name",
                                                     FilterOp.Like,
                                                     FilterValue.Single(lit(LiteralKind.Text, "A%")),
-                                                )
+                                                ),
                                             ),
-                                        )
-                            )
+                                        ),
+                            ),
                 )
         val outcome = validate(spec, sampleSchema(), emptyList()).unwrap().second
         val warnings = outcome.warnings.filter { it.contains("non-indexed field 'users.name'") }
@@ -453,15 +478,15 @@ class QueryEngineTest {
                                             column = "name",
                                             op = FilterOp.Contains,
                                             value = null,
-                                        )
-                                    )
-                                )
-                        )
+                                        ),
+                                    ),
+                                ),
+                        ),
                 )
         assertTrue(
             compileValidated(handValidated(missingValue), Dialect.Postgres)
                 .unwrapErr()
-                .contains("single text value")
+                .contains("single text value"),
         )
 
         val nonTextValue =
@@ -478,17 +503,17 @@ class QueryEngineTest {
                                             op = FilterOp.Contains,
                                             value =
                                                 FilterValue.Single(
-                                                    FilterLiteral(LiteralKind.Int, "1")
+                                                    FilterLiteral(LiteralKind.Int, "1"),
                                                 ),
-                                        )
-                                    )
-                                )
-                        )
+                                        ),
+                                    ),
+                                ),
+                        ),
                 )
         assertTrue(
             compileValidated(handValidated(nonTextValue), Dialect.Postgres)
                 .unwrapErr()
-                .contains("text value")
+                .contains("text value"),
         )
     }
 
@@ -527,9 +552,9 @@ class QueryEngineTest {
                                                 "id",
                                                 FilterOp.In,
                                                 FilterValue.ListValue(emptyList()),
-                                            )
-                                        )
-                            )
+                                            ),
+                                        ),
+                            ),
                 )
         val compiled = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap()
         assertTrue(compiled.sql.contains("1=0"))
@@ -551,9 +576,9 @@ class QueryEngineTest {
                                                 "id",
                                                 FilterOp.Between,
                                                 FilterValue.Single(lit(LiteralKind.Int, "5")),
-                                            )
-                                        )
-                            )
+                                            ),
+                                        ),
+                            ),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("range"))
@@ -575,9 +600,9 @@ class QueryEngineTest {
                                                 "id",
                                                 FilterOp.Eq,
                                                 FilterValue.Single(lit(LiteralKind.Int, "abc")),
-                                            )
-                                        )
-                            )
+                                            ),
+                                        ),
+                            ),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("not a valid integer"))
@@ -599,9 +624,9 @@ class QueryEngineTest {
                                                 "id",
                                                 FilterOp.Eq,
                                                 FilterValue.Single(lit(LiteralKind.Text, "123")),
-                                            )
-                                        )
-                            )
+                                            ),
+                                        ),
+                            ),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("expected Int"), "got: $err")
@@ -629,24 +654,24 @@ class QueryEngineTest {
                                                             "id",
                                                             FilterOp.Eq,
                                                             FilterValue.Single(
-                                                                lit(LiteralKind.Int, "1")
+                                                                lit(LiteralKind.Int, "1"),
                                                             ),
-                                                        )
+                                                        ),
                                                     ),
                                                     FilterNode.Leaf(
                                                         leafOn(
                                                             "id",
                                                             FilterOp.Eq,
                                                             FilterValue.Single(
-                                                                lit(LiteralKind.Int, "2")
+                                                                lit(LiteralKind.Int, "2"),
                                                             ),
-                                                        )
+                                                        ),
                                                     ),
                                                 ),
-                                        )
-                                    )
+                                        ),
+                                    ),
                                 ),
-                        )
+                        ),
                 )
         val outcome = validate(spec, sampleSchema(), emptyList()).unwrap().second
         assertTrue(outcome.warnings.isEmpty())
@@ -668,9 +693,9 @@ class QueryEngineTest {
                                                 id = "g-empty",
                                                 connector = GroupConnector.Or,
                                                 children = emptyList(),
-                                            )
-                                        )
-                            )
+                                            ),
+                                        ),
+                            ),
                 )
         val outcome = validate(spec, sampleSchema(), emptyList()).unwrap().second
         assertTrue(outcome.warnings.any { it.contains("no conditions") })
@@ -729,9 +754,13 @@ class QueryEngineTest {
                                 children =
                                     sampleSpec().filters.children +
                                         FilterNode.Leaf(
-                                            leafOn("id", FilterOp.In, FilterValue.ListValue(values))
-                                        )
-                            )
+                                            leafOn(
+                                                "id",
+                                                FilterOp.In,
+                                                FilterValue.ListValue(values),
+                                            ),
+                                        ),
+                            ),
                 )
         validate(spec, sampleSchema(), emptyList()).unwrap()
     }
@@ -749,24 +778,16 @@ class QueryEngineTest {
                                 children =
                                     sampleSpec().filters.children +
                                         FilterNode.Leaf(
-                                            leafOn("id", FilterOp.In, FilterValue.ListValue(values))
-                                        )
-                            )
+                                            leafOn(
+                                                "id",
+                                                FilterOp.In,
+                                                FilterValue.ListValue(values),
+                                            ),
+                                        ),
+                            ),
                 )
         val err = validate(spec, sampleSchema(), emptyList()).unwrapErr()
         assertTrue(err.contains("too many values"))
-    }
-
-    @Test
-    fun postgresCompilesQuotingPlaceholdersAndLimit() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.contains("SELECT \"t0\".\"id\""))
-        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""))
-        assertTrue(compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""))
-        assertTrue(compiled.sql.contains("\"t0\".\"name\" = \$1"))
-        assertTrue(compiled.sql.contains("\"t0\".\"deleted_at\" IS NULL"))
-        assertTrue(compiled.sql.endsWith("LIMIT 51"))
-        assertEquals(1, compiled.params.size)
     }
 
     @Test
@@ -774,25 +795,28 @@ class QueryEngineTest {
         val distinct = validatedQuery(sampleSpec().copy(distinct = true))
 
         assertTrue(
-            compileValidated(distinct, Dialect.Postgres).unwrap().sql.startsWith("SELECT DISTINCT ")
+            compileValidated(distinct, Dialect.Postgres)
+                .unwrap()
+                .sql
+                .startsWith("SELECT DISTINCT "),
         )
         assertTrue(
-            compileValidated(distinct, Dialect.MySql).unwrap().sql.startsWith("SELECT DISTINCT ")
+            compileValidated(distinct, Dialect.MySql).unwrap().sql.startsWith("SELECT DISTINCT "),
         )
         assertTrue(
-            compileValidated(distinct, Dialect.Oracle).unwrap().sql.startsWith("SELECT DISTINCT ")
+            compileValidated(distinct, Dialect.Oracle).unwrap().sql.startsWith("SELECT DISTINCT "),
         )
         assertTrue(
             compileValidated(distinct, Dialect.Mssql)
                 .unwrap()
                 .sql
-                .startsWith("SELECT DISTINCT TOP 101 ")
+                .startsWith("SELECT DISTINCT TOP 101 "),
         )
         assertFalse(
             compileValidated(validatedQuery(sampleSpec()), Dialect.Postgres)
                 .unwrap()
                 .sql
-                .startsWith("SELECT DISTINCT ")
+                .startsWith("SELECT DISTINCT "),
         )
     }
 
@@ -805,7 +829,7 @@ class QueryEngineTest {
                         listOf(
                             SortSpec("t0", "name", SortDirection.Desc),
                             SortSpec("t0", "id", SortDirection.Asc),
-                        )
+                        ),
                 )
 
         val sql = compileValidated(validatedQuery(spec), Dialect.Postgres).unwrap().sql
@@ -820,16 +844,16 @@ class QueryEngineTest {
         assertTrue(
             validate(unknownAlias, sampleSchema(), emptyList())
                 .unwrapErr()
-                .contains("unknown table alias")
+                .contains("unknown table alias"),
         )
 
         val duplicate =
             sampleSpec()
                 .copy(
-                    sorts = listOf(SortSpec("t0", "id"), SortSpec("t0", "id", SortDirection.Desc))
+                    sorts = listOf(SortSpec("t0", "id"), SortSpec("t0", "id", SortDirection.Desc)),
                 )
         assertTrue(
-            validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated")
+            validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated"),
         )
     }
 
@@ -845,7 +869,7 @@ class QueryEngineTest {
         assertTrue(
             validate(unselectedSort, sampleSchema(), emptyList())
                 .unwrapErr()
-                .contains("must be explicitly selected")
+                .contains("must be explicitly selected"),
         )
 
         val selectedSort =
@@ -886,7 +910,7 @@ class QueryEngineTest {
         assertTrue(
             validate(unknownAlias, sampleSchema(), emptyList())
                 .unwrapErr()
-                .contains("unknown table alias")
+                .contains("unknown table alias"),
         )
 
         val missingOutput =
@@ -894,14 +918,14 @@ class QueryEngineTest {
         assertTrue(
             validate(missingOutput, sampleSchema(), emptyList())
                 .unwrapErr()
-                .contains("explicitly selected")
+                .contains("explicitly selected"),
         )
 
         val ungroupedOutput = sampleSpec().copy(groups = listOf(GroupSpec("t0", "name")))
         assertTrue(
             validate(ungroupedOutput, sampleSchema(), emptyList())
                 .unwrapErr()
-                .contains("must appear in GROUP BY")
+                .contains("must appear in GROUP BY"),
         )
 
         val ungroupedSort =
@@ -911,13 +935,15 @@ class QueryEngineTest {
                     sorts = listOf(SortSpec("t0", "name")),
                 )
         assertTrue(
-            validate(ungroupedSort, sampleSchema(), emptyList()).unwrapErr().contains("Sort column")
+            validate(ungroupedSort, sampleSchema(), emptyList())
+                .unwrapErr()
+                .contains("Sort column"),
         )
 
         val duplicate =
             sampleSpec().copy(groups = listOf(GroupSpec("t0", "id"), GroupSpec("t0", "id")))
         assertTrue(
-            validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated")
+            validate(duplicate, sampleSchema(), emptyList()).unwrapErr().contains("duplicated"),
         )
     }
 
@@ -945,12 +971,12 @@ class QueryEngineTest {
         assertTrue(
             validate(grouped, schema, emptyList(), Dialect.Postgres)
                 .unwrapErr()
-                .contains("cannot be grouped by PostgreSQL")
+                .contains("cannot be grouped by PostgreSQL"),
         )
         assertTrue(
             validate(sorted, schema, emptyList(), Dialect.Postgres)
                 .unwrapErr()
-                .contains("cannot be sorted by PostgreSQL")
+                .contains("cannot be sorted by PostgreSQL"),
         )
         val notes =
             jsonColumn.copy(
@@ -969,7 +995,7 @@ class QueryEngineTest {
         assertTrue(
             validate(db2Grouped, db2Schema, emptyList(), Dialect.Db2)
                 .unwrapErr()
-                .contains("cannot be grouped by Db2")
+                .contains("cannot be grouped by Db2"),
         )
         assertTrue(supportsGroupingAndSorting("jsonb", Dialect.Postgres))
         assertFalse(supportsGroupingAndSorting("CLOB", Dialect.Oracle))
@@ -984,7 +1010,7 @@ class QueryEngineTest {
     fun olderSerializedQueryWithoutSortsOrGroupsUsesEmptyDefaults() {
         val decoded =
             com.safedb.model.SafeDbJson.lenient.decodeFromString<QuerySpec>(
-                """{"tables":[],"columns":[],"joins":[],"filters":{"children":[]},"limit":100}"""
+                """{"tables":[],"columns":[],"joins":[],"filters":{"children":[]},"limit":100}""",
             )
 
         assertTrue(decoded.sorts.isEmpty())
@@ -1006,7 +1032,7 @@ class QueryEngineTest {
     @Test
     fun uncappedCompilesWithoutRowLimitClause() {
         val spec = twoTableSpec().copy(limit = 50, uncapped = true)
-        for (dialect in listOf(Dialect.Postgres, Dialect.Mssql, Dialect.Oracle)) {
+        for (dialect in Dialect.entries) {
             val sql = compileValidated(validatedQuery(spec), dialect).unwrap().sql
             assertFalse(sql.contains("LIMIT"), sql)
             assertFalse(sql.contains("TOP "), sql)
@@ -1015,48 +1041,61 @@ class QueryEngineTest {
     }
 
     @Test
-    fun mysqlCompilesBackticksAndQuestionMarkParams() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.MySql).unwrap()
-        assertTrue(compiled.sql.contains("SELECT `t0`.`id`"))
-        assertTrue(compiled.sql.contains("`t0`.`name` = ?"))
-        assertTrue(compiled.sql.endsWith("LIMIT 51"))
-        assertEquals(1, compiled.params.size)
-    }
+    fun twoTableQueryCompilesExactSqlAcrossDialects() {
+        val validated = validatedQuery(twoTableSpec())
+        val expectedSql =
+            mapOf(
+                Dialect.Postgres to
+                    """
+                    SELECT "t0"."id" AS "t0__id"
+                    FROM "public"."products" AS "t0"
+                    INNER JOIN "public"."categories" AS "t1" ON "t0"."category_id" = "t1"."id"
+                    WHERE "t0"."name" = $1 AND "t0"."deleted_at" IS NULL
+                    LIMIT 51
+                    """
+                        .trimIndent(),
+                Dialect.MySql to
+                    """
+                    SELECT `t0`.`id` AS `t0__id`
+                    FROM `public`.`products` AS `t0`
+                    INNER JOIN `public`.`categories` AS `t1` ON `t0`.`category_id` = `t1`.`id`
+                    WHERE `t0`.`name` = ? AND `t0`.`deleted_at` IS NULL
+                    LIMIT 51
+                    """
+                        .trimIndent(),
+                Dialect.Mssql to
+                    """
+                    SELECT TOP 51 [t0].[id] AS [t0__id]
+                    FROM [public].[products] AS [t0]
+                    INNER JOIN [public].[categories] AS [t1] ON [t0].[category_id] = [t1].[id]
+                    WHERE [t0].[name] = @P1 AND [t0].[deleted_at] IS NULL
+                    """
+                        .trimIndent(),
+                Dialect.Oracle to
+                    """
+                    SELECT "t0"."id" AS "t0__id"
+                    FROM "public"."products" "t0"
+                    INNER JOIN "public"."categories" "t1" ON "t0"."category_id" = "t1"."id"
+                    WHERE "t0"."name" = :1 AND "t0"."deleted_at" IS NULL
+                    FETCH FIRST 51 ROWS ONLY
+                    """
+                        .trimIndent(),
+                Dialect.Db2 to
+                    """
+                    SELECT "t0"."id" AS "t0__id"
+                    FROM "public"."products" AS "t0"
+                    INNER JOIN "public"."categories" AS "t1" ON "t0"."category_id" = "t1"."id"
+                    WHERE "t0"."name" = ? AND "t0"."deleted_at" IS NULL
+                    FETCH FIRST 51 ROWS ONLY
+                    """
+                        .trimIndent(),
+            )
 
-    @Test
-    fun mssqlCompilesTopInsteadOfLimit() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Mssql).unwrap()
-        assertTrue(compiled.sql.contains("SELECT TOP 51 "))
-        assertTrue(compiled.sql.contains("[t0].[name] = @P1"))
-        assertFalse(compiled.sql.contains("LIMIT"))
-    }
-
-    @Test
-    fun oracleCompilesFetchFirst() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Oracle).unwrap()
-        assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"))
-        assertTrue(compiled.sql.contains(":1"))
-        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" \"t0\""))
-        assertTrue(compiled.sql.contains("INNER JOIN \"public\".\"categories\" \"t1\""))
-        assertTrue(compiled.sql.contains(" AS "))
-        assertFalse(compiled.sql.contains(" AS \"t0\""))
-        assertFalse(compiled.sql.contains(" AS \"t1\""))
-    }
-
-    @Test
-    fun db2CompilesFetchFirstWithQuestionMarkParams() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Db2).unwrap()
-        assertTrue(compiled.sql.contains("SELECT \"t0\".\"id\""), compiled.sql)
-        assertTrue(compiled.sql.contains("\"t0\".\"name\" = ?"), compiled.sql)
-        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""), compiled.sql)
-        assertTrue(
-            compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""),
-            compiled.sql,
-        )
-        assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"), compiled.sql)
-        assertFalse(compiled.sql.contains(":1"))
-        assertFalse(compiled.sql.contains("LIMIT"))
-        assertEquals(1, compiled.params.size)
+        for ((dialect, sql) in expectedSql) {
+            val compiled = compileValidated(validated, dialect).unwrap()
+            assertEquals(sql, compiled.sql)
+            assertEquals(1, compiled.params.size)
+        }
     }
 
     @Test
@@ -1113,9 +1152,9 @@ class QueryEngineTest {
                                                         op = FilterOp.Eq,
                                                         value =
                                                             FilterValue.Single(
-                                                                lit(LiteralKind.Int, "1")
+                                                                lit(LiteralKind.Int, "1"),
                                                             ),
-                                                    )
+                                                    ),
                                                 ),
                                                 FilterNode.Leaf(
                                                     FilterSpec(
@@ -1125,13 +1164,13 @@ class QueryEngineTest {
                                                         op = FilterOp.Eq,
                                                         value =
                                                             FilterValue.Single(
-                                                                lit(LiteralKind.Int, "2")
+                                                                lit(LiteralKind.Int, "2"),
                                                             ),
-                                                    )
+                                                    ),
                                                 ),
                                             ),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
                     ),
                 limit = 100,
@@ -1167,10 +1206,10 @@ class QueryEngineTest {
                                                     lit(LiteralKind.Int, "1"),
                                                     lit(LiteralKind.Int, "2"),
                                                     lit(LiteralKind.Int, "3"),
-                                                )
+                                                ),
                                             ),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
                     ),
                 limit = 100,
@@ -1205,10 +1244,10 @@ class QueryEngineTest {
                                                 listOf(
                                                     lit(LiteralKind.Int, "4"),
                                                     lit(LiteralKind.Int, "5"),
-                                                )
+                                                ),
                                             ),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
                     ),
                 limit = 100,
@@ -1242,8 +1281,8 @@ class QueryEngineTest {
                                                 lit(LiteralKind.Int, "10"),
                                                 lit(LiteralKind.Int, "100"),
                                             ),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
                     ),
                 limit = 100,
@@ -1269,7 +1308,7 @@ class QueryEngineTest {
                             rowCount = 3,
                             truncated = false,
                             warnings = listOf("adapter warning"),
-                        )
+                        ),
                     ),
             )
 
@@ -1299,7 +1338,7 @@ class QueryEngineTest {
                             rowCount = 3,
                             truncated = false,
                             warnings = listOf("adapter warning"),
-                        )
+                        ),
                     ),
             )
 
@@ -1331,7 +1370,7 @@ class QueryEngineTest {
                             rowCount = 3,
                             truncated = true,
                             warnings = listOf("adapter warning"),
-                        )
+                        ),
                     ),
             )
 
@@ -1468,7 +1507,7 @@ class QueryEngineTest {
         assertEquals(emptyList(), result.rows)
         assertEquals(
             listOf(
-                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated"
+                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated",
             ),
             result.warnings,
         )
@@ -1492,7 +1531,7 @@ class QueryEngineTest {
         assertEquals(listOf(kept), result.rows)
         assertEquals(
             listOf(
-                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated"
+                "Result exceeded ${com.safedb.model.MAX_RESULT_BYTES} encoded bytes and was truncated",
             ),
             result.warnings,
         )
@@ -1628,7 +1667,7 @@ class QueryEngineTest {
                                     supportsEquality = true,
                                     isUnique = true,
                                     isPrimary = true,
-                                )
+                                ),
                             ),
                     ),
                     TableInfo(
@@ -1693,7 +1732,7 @@ class QueryEngineTest {
                                 ),
                             ),
                     ),
-                )
+                ),
         )
 
     private fun validatedQuery(spec: QuerySpec, schema: Schema = sampleSchema()): ValidatedQuery =
@@ -1734,12 +1773,12 @@ class QueryEngineTest {
                                         op = op,
                                         value =
                                             FilterValue.Single(
-                                                FilterLiteral(LiteralKind.Text, value)
+                                                FilterLiteral(LiteralKind.Text, value),
                                             ),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
-                    )
+                    ),
             )
 
     private fun lit(kind: LiteralKind, text: String) = FilterLiteral(kind = kind, text = text)
@@ -1777,7 +1816,7 @@ class QueryEngineTest {
                         leftColumn = "category_id",
                         rightAlias = "t1",
                         rightColumn = "id",
-                    )
+                    ),
                 ),
             filters =
                 FilterGroup(
@@ -1792,7 +1831,7 @@ class QueryEngineTest {
                                     column = "name",
                                     op = FilterOp.Eq,
                                     value = FilterValue.Single(lit(LiteralKind.Text, "widget")),
-                                )
+                                ),
                             ),
                             FilterNode.Leaf(
                                 FilterSpec(
@@ -1800,7 +1839,7 @@ class QueryEngineTest {
                                     tableAlias = "t0",
                                     column = "deleted_at",
                                     op = FilterOp.IsNull,
-                                )
+                                ),
                             ),
                         ),
                 ),
@@ -1836,7 +1875,7 @@ class QueryEngineTest {
                     rowCount = 0,
                     truncated = false,
                     warnings = emptyList(),
-                )
+                ),
             ),
     ) : QueryRunner {
         var executeCalls = 0

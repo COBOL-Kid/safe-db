@@ -3,9 +3,6 @@ package com.safedb.viewmodel
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
-import com.safedb.model.ConnectionDef
-import com.safedb.model.Schema
-import com.safedb.model.Settings
 import com.safedb.service.FakeSafeDbServiceSupport
 import java.nio.file.Files
 import kotlin.io.path.readText
@@ -100,18 +97,4 @@ private class RecipeFakeService(private val fail: Boolean = false) : FakeSafeDbS
         recipes += imported
         return imported
     }
-
-    override suspend fun testConnection(def: ConnectionDef, password: String?) = "ok"
-
-    override suspend fun createConnection(def: ConnectionDef, password: String) = def
-
-    override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
-
-    override suspend fun deleteConnection(id: String) = Unit
-
-    override suspend fun getSchema(connectionId: String) = Schema(emptyList())
-
-    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) = error("unused")
-
-    override suspend fun getSettings() = Settings.default()
 }

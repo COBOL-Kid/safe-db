@@ -111,8 +111,8 @@ internal fun VisualizationConfigPanel(
             onSave = { updated ->
                 onConfigChange(
                     config.copy(
-                        filters = config.filters.map { if (it.id == updated.id) updated else it }
-                    )
+                        filters = config.filters.map { if (it.id == updated.id) updated else it },
+                    ),
                 )
                 editingFilter = null
             },
@@ -223,8 +223,8 @@ internal fun VisualizationConfigPanel(
                                 }
                             onConfigChange(
                                 config.copy(
-                                    x = VisualizationField(field.column, field.label, grouping)
-                                )
+                                    x = VisualizationField(field.column, field.label, grouping),
+                                ),
                             )
                         },
                     )
@@ -244,8 +244,8 @@ internal fun VisualizationConfigPanel(
                                         values =
                                             config.values.map {
                                                 if (it.alias == value.alias) updated else it
-                                            }
-                                    )
+                                            },
+                                    ),
                                 )
                             },
                             onRemove = {
@@ -268,7 +268,7 @@ internal fun VisualizationConfigPanel(
                                 config.copy(
                                     values = values,
                                     series = config.series.takeIf { values.size <= 1 },
-                                )
+                                ),
                             )
                         },
                     )
@@ -300,7 +300,7 @@ internal fun VisualizationConfigPanel(
                                 config.copy(
                                     series = VisualizationField(it.column, it.label),
                                     values = config.values.take(1),
-                                )
+                                ),
                             )
                         },
                     )
@@ -323,7 +323,7 @@ internal fun VisualizationConfigPanel(
                         incompatibleReason = { "Size needs a numeric field" },
                         onSelect = {
                             onConfigChange(
-                                config.copy(size = VisualizationField(it.column, it.label))
+                                config.copy(size = VisualizationField(it.column, it.label)),
                             )
                         },
                     )
@@ -363,8 +363,8 @@ internal fun VisualizationConfigPanel(
                                             id = UUID.randomUUID().toString(),
                                             column = field.column,
                                             label = field.label,
-                                        )
-                            )
+                                        ),
+                            ),
                         )
                     },
                 )
@@ -435,7 +435,7 @@ private fun VisualizationOptions(
                         config.x?.grouping == PivotGrouping.Date(unit),
                     ) {
                         onChange(
-                            config.copy(x = config.x?.copy(grouping = PivotGrouping.Date(unit)))
+                            config.copy(x = config.x?.copy(grouping = PivotGrouping.Date(unit))),
                         )
                     }
                 }
@@ -447,7 +447,7 @@ private fun VisualizationOptions(
                 value = current?.size.orEmpty(),
                 onValueChange = { value ->
                     onChange(
-                        config.copy(x = config.x?.copy(grouping = PivotGrouping.NumberBin(value)))
+                        config.copy(x = config.x?.copy(grouping = PivotGrouping.NumberBin(value))),
                     )
                 },
                 label = { Text("Bin size (blank = automatic)") },
@@ -487,13 +487,13 @@ private fun VisualizationOptions(
                                     config.values.map {
                                         if (it.alias == value.alias) {
                                             it.copy(
-                                                numberFormat = it.numberFormat.copy(kind = kind)
+                                                numberFormat = it.numberFormat.copy(kind = kind),
                                             )
                                         } else {
                                             it
                                         }
-                                    }
-                            )
+                                    },
+                            ),
                         )
                     }
                 }
@@ -510,13 +510,13 @@ private fun VisualizationOptions(
                                             if (it.alias == value.alias) {
                                                 it.copy(
                                                     numberFormat =
-                                                        it.numberFormat.copy(decimals = decimals)
+                                                        it.numberFormat.copy(decimals = decimals),
                                                 )
                                             } else {
                                                 it
                                             }
-                                        }
-                                )
+                                        },
+                                ),
                             )
                         }
                     },
@@ -677,8 +677,8 @@ private fun VisualizationValuePicker(
                             expanded = false
                             onSelect(
                                 VisualizationMeasure.countRows(
-                                    "count_${UUID.randomUUID().toString().take(8)}"
-                                )
+                                    "count_${UUID.randomUUID().toString().take(8)}",
+                                ),
                             )
                         },
                     )
@@ -714,7 +714,7 @@ private fun VisualizationValuePicker(
                                                     if (raw) field.label
                                                     else "${function.shortLabel} ${field.label}",
                                                 aggregate = !raw,
-                                            )
+                                            ),
                                         )
                                     }
                                 },

@@ -168,7 +168,7 @@ class SchemaMetadataTest {
                     "referenced_schema" to "billing",
                     "referenced_table" to "customers",
                     "referenced_column" to "id",
-                )
+                ),
             )
 
         assertEquals(MetadataTableKey("app", "orders"), row.table)
@@ -189,7 +189,7 @@ class SchemaMetadataTest {
                     "column_name" to "total",
                     "data_type" to "numeric",
                     "is_nullable" to "YES",
-                )
+                ),
             )
 
         assertEquals(MetadataTableKey("public", "orders"), informationSchema.table)

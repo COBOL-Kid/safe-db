@@ -128,7 +128,7 @@ private fun SlicerControl(
                                     else baseline + option.key
                                 if (next.isNotEmpty()) {
                                     onSelectionChange(
-                                        if (next.size == options.size) emptySet() else next
+                                        if (next.size == options.size) emptySet() else next,
                                     )
                                 }
                             },

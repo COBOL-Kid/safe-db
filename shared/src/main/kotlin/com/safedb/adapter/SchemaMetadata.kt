@@ -132,6 +132,6 @@ internal fun assembleSchema(
                 foreignKeyMetadata = foreignKeyCoverage,
                 tableSize = tableSizes[table] ?: TableSizeEstimate(),
             )
-        }
+        },
     )
 }

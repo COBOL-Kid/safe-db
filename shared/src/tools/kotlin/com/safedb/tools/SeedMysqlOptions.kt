@@ -124,7 +124,7 @@ internal fun printUsage(out: java.io.PrintStream) {
           SAFEDB_TEST_MYSQL_DOCKER    pin a container name
 
         """
-            .trimIndent()
+            .trimIndent(),
     )
 }
 

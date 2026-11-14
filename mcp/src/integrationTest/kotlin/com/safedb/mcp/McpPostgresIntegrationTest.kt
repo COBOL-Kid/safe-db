@@ -44,27 +44,33 @@ class McpPostgresIntegrationTest {
                     settingsStore = SettingsStore.new(dataDir),
                 )
             service.createConnection(connection, password)
-            val server = createSafeDbMcpServer(service, resultsDir = resultsDir)
+            val server =
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = resultsDir,
+                    exportsDir = dataDir.resolve("exports"),
+                )
 
             withIntegrationMcpClient(server) { client ->
                 val listed = client.callTool("list_tables", mapOf("connection_id" to connection.id))
                 assertNotEquals(true, listed.isError)
                 val listedText = listed.text()
                 assertPayloadIsPrivate(listedText, connection, password)
-                val tables = Json.parseToJsonElement(listedText).jsonArray
+                val tables =
+                    Json.parseToJsonElement(listedText).jsonObject.getValue("tables").jsonArray
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject
                         table.getValue("schema").jsonPrimitive.content == schema &&
                             table.getValue("name").jsonPrimitive.content == "customers"
-                    }
+                    },
                 )
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject
                         table.getValue("schema").jsonPrimitive.content == schema &&
                             table.getValue("name").jsonPrimitive.content == "orders"
-                    }
+                    },
                 )
 
                 val described =
@@ -164,7 +170,12 @@ class McpPostgresIntegrationTest {
                     settingsStore = SettingsStore.new(dataDir),
                 )
             service.createConnection(connection, password)
-            val server = createSafeDbMcpServer(service, resultsDir = dataDir.resolve("results"))
+            val server =
+                createSafeDbMcpServer(
+                    service,
+                    resultsDir = dataDir.resolve("results"),
+                    exportsDir = dataDir.resolve("exports"),
+                )
             withIntegrationMcpClient(server) { client ->
                 assertLiveQueryLimitAndTypedReads(
                     client,

@@ -57,7 +57,7 @@ fun parseConnectionString(input: String): ParsedConnection {
         looksLikeSqlServerKeyValue(raw) -> parseSqlServerKeyValue(raw)
         else ->
             throw ConnectionStringParseError(
-                "This connection string format is not recognized. Try the guided setup instead."
+                "This connection string format is not recognized. Try the guided setup instead.",
             )
     }
 }
@@ -254,7 +254,7 @@ private fun parseDb2Jdbc(raw: String): ParsedConnection {
             val eqIndex = segment.indexOf('=')
             if (eqIndex < 0) {
                 throw ConnectionStringParseError(
-                    "Db2 connection string has a malformed property '$segment'."
+                    "Db2 connection string has a malformed property '$segment'.",
                 )
             }
             segment.substring(0, eqIndex).trim() to segment.substring(eqIndex + 1)
@@ -313,7 +313,7 @@ private fun db2Transport(sslConnection: String?, host: String): MutableTransport
         sslConnection == null ->
             MutableTransport(
                 if (isLocalHost(host)) TransportSecurityMode.Disabled
-                else TransportSecurityMode.VerifyIdentity
+                else TransportSecurityMode.VerifyIdentity,
             )
         sslConnection.equals("true", ignoreCase = true) ->
             MutableTransport(TransportSecurityMode.VerifyIdentity)
@@ -356,7 +356,7 @@ private fun parseOracle(raw: String): ParsedConnection {
     rest = rest.removePrefix("@")
     if (matchesPrefix(rest, "^\\(description=")) {
         throw ConnectionStringParseError(
-            "Oracle TNS DESCRIPTION blocks are not supported. Use guided setup or paste an Easy Connect URL."
+            "Oracle TNS DESCRIPTION blocks are not supported. Use guided setup or paste an Easy Connect URL.",
         )
     }
 
@@ -445,7 +445,7 @@ private fun postgresTransport(sslmode: String?, host: String): MutableTransport 
         else ->
             MutableTransport(
                 if (isLocalHost(host)) TransportSecurityMode.Disabled
-                else TransportSecurityMode.VerifyIdentity
+                else TransportSecurityMode.VerifyIdentity,
             )
     }
 
@@ -458,7 +458,7 @@ private fun mysqlTransport(sslMode: String?, host: String): MutableTransport =
         else ->
             MutableTransport(
                 if (isLocalHost(host)) TransportSecurityMode.Disabled
-                else TransportSecurityMode.VerifyIdentity
+                else TransportSecurityMode.VerifyIdentity,
             )
     }
 
@@ -472,7 +472,7 @@ private fun sqlServerTransport(
     if (isTrue(encrypt)) return MutableTransport(TransportSecurityMode.VerifyIdentity)
     return MutableTransport(
         if (isLocalHost(host)) TransportSecurityMode.Disabled
-        else TransportSecurityMode.VerifyIdentity
+        else TransportSecurityMode.VerifyIdentity,
     )
 }
 
@@ -555,7 +555,7 @@ private fun extractDriverProperties(
 private fun sslCaWarnings(url: ParsedUrl): List<String> =
     if (paramValue(url, "ssl-ca") != null || paramValue(url, "ssl_ca") != null) {
         listOf(
-            "A CA path was included in the URL and was not imported. Configure custom trust through launch-profile JSON."
+            "A CA path was included in the URL and was not imported. Configure custom trust through launch-profile JSON.",
         )
     } else {
         emptyList()

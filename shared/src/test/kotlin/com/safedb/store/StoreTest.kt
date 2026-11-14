@@ -43,7 +43,7 @@ class StoreTest {
                         it.fileName
                             .toString()
                             .startsWith(
-                                "${original.fileName.toString().substringBeforeLast('.')}.unsupported-"
+                                "${original.fileName.toString().substringBeforeLast('.')}.unsupported-",
                             )
                     }
                     .count()
@@ -208,7 +208,7 @@ class StoreTest {
         val failure =
             assertFailsWith<IllegalArgumentException> {
                 store.saveQuery(
-                    SavedQuery("q1", "Hidden", "c1", sampleSpec(CURRENT_SCHEMA_VERSION + 1), "1")
+                    SavedQuery("q1", "Hidden", "c1", sampleSpec(CURRENT_SCHEMA_VERSION + 1), "1"),
                 )
             }
 
@@ -261,7 +261,7 @@ class StoreTest {
                                 column = "name",
                                 op = FilterOp.Eq,
                                 value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "Ada")),
-                            )
+                            ),
                         ),
                         FilterNode.Group(
                             FilterGroup(
@@ -280,9 +280,9 @@ class StoreTest {
                                                         listOf(
                                                             FilterLiteral(LiteralKind.Int, "1"),
                                                             FilterLiteral(LiteralKind.Int, "2"),
-                                                        )
+                                                        ),
                                                     ),
-                                            )
+                                            ),
                                         ),
                                         FilterNode.Leaf(
                                             FilterSpec(
@@ -295,10 +295,10 @@ class StoreTest {
                                                         FilterLiteral(LiteralKind.Int, "10"),
                                                         FilterLiteral(LiteralKind.Int, "20"),
                                                     ),
-                                            )
+                                            ),
                                         ),
                                     ),
-                            )
+                            ),
                         ),
                     ),
             )
@@ -331,7 +331,7 @@ class StoreTest {
                     rowCount = i,
                     warnings = emptyList(),
                     timestamp = i.toString(),
-                )
+                ),
             )
         }
         val history = store.listHistory()
@@ -345,7 +345,7 @@ class StoreTest {
         val dir = tempDir()
         val store = QueryStore.new(dir)
         store.addHistory(
-            HistoryEntry("h1", "c1", "Conn", sampleSpec(), 1, emptyList(), timestamp = "1")
+            HistoryEntry("h1", "c1", "Conn", sampleSpec(), 1, emptyList(), timestamp = "1"),
         )
         store.clearHistory()
         assertTrue(store.listHistory().isEmpty())
@@ -612,7 +612,7 @@ class StoreTest {
                     blockedSchemas = listOf("Audit", "audit"),
                     theme = "dark",
                     colorScheme = " SIGNAL-TEAL ",
-                )
+                ),
             )
         assertEquals(listOf("audit"), normalized.blockedSchemas)
         assertEquals("dark", normalized.theme)
@@ -623,7 +623,7 @@ class StoreTest {
     fun normalizeSettingsTrimsDefaultLocationAndClearsOrphanedSchema() {
         val normalized =
             normalizeSettings(
-                Settings(defaultConnectionId = " connection-1 ", defaultSchema = " Reporting ")
+                Settings(defaultConnectionId = " connection-1 ", defaultSchema = " Reporting "),
             )
         assertEquals("connection-1", normalized.defaultConnectionId)
         assertEquals("Reporting", normalized.defaultSchema)
@@ -644,8 +644,8 @@ class StoreTest {
                             "" to "ignored",
                             "connection-1" to " Reporting ",
                             "connection-3" to "   ",
-                        )
-                )
+                        ),
+                ),
             )
 
         assertEquals(

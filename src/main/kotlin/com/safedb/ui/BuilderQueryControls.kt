@@ -164,7 +164,7 @@ internal fun BuilderQueryChrome(
                             )
                             .clipToBounds()
                             .testTag("builder-filter-panel")
-                            .semantics { contentDescription = "Query filters" }
+                            .semantics { contentDescription = "Query filters" },
                 ) {
                     FilterGroupCard(
                         queryViewModel = queryViewModel,
@@ -428,15 +428,15 @@ internal fun QueryOptionsCard(
                                     add("Distinct rows: ${if (distinct) "on" else "off"}")
                                     add(
                                         groupingDescription.takeIf { groups.isNotEmpty() }
-                                            ?: "Grouping order: none"
+                                            ?: "Grouping order: none",
                                     )
                                     add(
                                         sortingDescription.takeIf { sorts.isNotEmpty() }
-                                            ?: "Sorting order: none"
+                                            ?: "Sorting order: none",
                                     )
                                     if (distinctSortConflicts.isNotEmpty()) {
                                         add(
-                                            "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}"
+                                            "Distinct rows cannot sort by unselected columns: ${distinctSortConflictLabels.joinToString()}",
                                         )
                                     }
                                 }
@@ -444,7 +444,7 @@ internal fun QueryOptionsCard(
                     }
                     .heightIn(max = QueryControlsMaxHeight)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             if (showHeading) {
                 Text(
@@ -755,7 +755,7 @@ private fun QueryOrderMoveAction(
                     onClick = { targetIndex?.let(onMove) },
                 )
                 .pointerHoverIcon(
-                    if (targetIndex != null) PointerIcon.Hand else PointerIcon.Default
+                    if (targetIndex != null) PointerIcon.Hand else PointerIcon.Default,
                 ),
         contentAlignment = Alignment.Center,
     ) {

@@ -88,6 +88,19 @@ class SecretsTest {
     }
 
     @Test
+    fun missingPasswordExplainsDisabledKeychainBackend() {
+        SecretsManager.initStore("disabled")
+        val result = SecretsManager.passwordForDefinition(connectionDef("missing-password"))
+        assertTrue(result.isFailure)
+        val message = result.exceptionOrNull()!!.message!!
+        assertTrue(message.contains("Password not found"))
+        assertTrue(message.contains("SAFEDB_KEYCHAIN_BACKEND=disabled"))
+        assertTrue(message.contains("Unset SAFEDB_KEYCHAIN_BACKEND"))
+        assertTrue(message.contains("do not add the connection again"))
+        assertFalse(message.contains("Delete and add the connection again"))
+    }
+
+    @Test
     fun linuxCannotSelectTheOsCredentialStore() {
         listOf("auto", "protected").forEach { backend ->
             val error =
@@ -168,7 +181,7 @@ class SecretsTest {
                 override fun deletePassword(service: String, account: String) = Unit
 
                 override fun vendor(): String = "throwing"
-            }
+            },
         )
 
         val result = SecretsManager.passwordForDefinition(connectionDef("conn-read-fail"))

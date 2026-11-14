@@ -74,14 +74,14 @@ object OracleAdapter {
             val blocked = blockedOwners.joinToString(",") { "'$it'" }
             val tables =
                 conn.metadataRows(
-                    "SELECT owner, table_name FROM all_tables WHERE owner NOT IN ($blocked) ORDER BY owner, table_name"
+                    "SELECT owner, table_name FROM all_tables WHERE owner NOT IN ($blocked) ORDER BY owner, table_name",
                 ) { rs ->
                     MetadataTableKey(readString(rs, "owner"), readString(rs, "table_name"))
                 }
             val columns =
                 conn.metadataRows(
                     "SELECT owner, table_name, column_name, data_type, nullable FROM all_tab_columns " +
-                        "WHERE owner NOT IN ($blocked) ORDER BY owner, table_name, column_id"
+                        "WHERE owner NOT IN ($blocked) ORDER BY owner, table_name, column_id",
                 ) { rs ->
                     columnRow(
                         rs,
@@ -108,7 +108,7 @@ object OracleAdapter {
                 WHERE aic.table_owner NOT IN ($blocked)
                 ORDER BY aic.table_owner, aic.table_name, ai.uniqueness DESC, aic.index_name, aic.column_position
                 """
-                        .trimIndent()
+                        .trimIndent(),
                 ) { rs ->
                     MetadataIndex(
                         MetadataTableKey(
@@ -156,7 +156,7 @@ object OracleAdapter {
                 WHERE child.constraint_type = 'R' AND child.owner NOT IN ($blocked)
                 ORDER BY child.owner, child.table_name, child.constraint_name, child_cols.position
                 """
-                        .trimIndent()
+                        .trimIndent(),
                 ) { rs ->
                     foreignKeyRow(rs)
                 }
@@ -212,7 +212,7 @@ object OracleAdapter {
                             SELECT id, parent_id, operation, options, object_owner, object_name, object_alias, cardinality, cost
                                                     FROM plan_table WHERE statement_id = ? ORDER BY id
                             """
-                                .trimIndent()
+                                .trimIndent(),
                         )
                         .use { ps ->
                             ps.setString(1, statementId)
@@ -240,7 +240,7 @@ object OracleAdapter {
                                                     rs.getObject(9)?.let {
                                                         (it as Number).toDouble()
                                                     },
-                                            )
+                                            ),
                                         )
                                     }
                                 }
