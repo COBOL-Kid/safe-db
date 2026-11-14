@@ -93,7 +93,7 @@ internal val BUILDER_LIMIT_CHOICES = listOf(DEFAULT_LIMIT, LARGE_LIMIT_WARNING_T
 
 internal fun builderLimitChoiceLabel(choice: Int): String = "%,d".format(choice)
 
-/** Null keeps the committed limit. Blank and zero are not a new cap. */
+// Null keeps the committed limit. Blank and zero are not a new cap.
 internal fun commitBuilderLimitDraft(text: String): Int? {
     val digits = text.filter { it.isDigit() }
     if (digits.isEmpty() || digits.all { it == '0' }) return null

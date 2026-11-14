@@ -327,8 +327,7 @@ private fun SqlWorkspace(
 
         Box(modifier = Modifier.fillMaxSize()) {
             // Render only the sample that still matches the editor's parsed spec. Showing raw
-            // results
-            // would leave the previous query's rows sitting under freshly edited SQL.
+            // results would leave the previous query's rows sitting under freshly edited SQL.
             when {
                 sqlViewModel.running ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

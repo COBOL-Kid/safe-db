@@ -147,7 +147,7 @@ internal fun coverageGroupForPackage(packageName: String): String {
     if (packageName == "com/safedb/mcp" || packageName.startsWith("com/safedb/mcp/")) {
         return "mcp"
     }
-    // platform lives in :shared; schema map geometry lives in the desktop module.
+    // Platform lives in :shared; schema map geometry lives in the desktop module.
     val desktopPrefixes =
         listOf("com/safedb/export", "com/safedb/viewmodel", "com/safedb/ui", "com/safedb/schema")
     val desktop =

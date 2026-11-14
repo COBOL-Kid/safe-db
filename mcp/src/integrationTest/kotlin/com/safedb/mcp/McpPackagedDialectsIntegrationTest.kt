@@ -16,14 +16,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
-/**
- * Packaged-JAR smoke across every supported dialect. Each case seeds one saved connection into an
- * isolated data dir, then drives the real stdio server and asserts schema discovery plus a small
- * query against the seeded shop tables.
- *
- * Cases skip when their engine is not reachable unless the matching SAFEDB_TEST_REQUIRE_* flag is
- * set, matching the rest of the integration suite.
- */
+// Packaged-JAR smoke across every supported dialect. Each case seeds one saved connection into an
+// isolated data dir, then drives the real stdio server and asserts schema discovery plus a small
+// query against the seeded shop tables.
+//
+// Cases skip when their engine is not reachable unless the matching SAFEDB_TEST_REQUIRE_* flag is
+// set, matching the rest of the integration suite.
 @Tag("integration")
 class McpPackagedDialectsIntegrationTest {
     @Test

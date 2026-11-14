@@ -36,10 +36,8 @@ class HistoryViewModel(private val service: SafeDbService, private val scope: Co
         }
     }
 
-    /**
-     * [onSettled] runs after the delete attempt settles, including failures, so the confirmation
-     * closes while the error banner remains visible.
-     */
+    // onSettled runs after the delete attempt settles, including failures, so the confirmation
+    // closes while the error banner remains visible.
     fun delete(id: String, onSettled: () -> Unit = {}) {
         scope.launch {
             capturingFailure(_error) {

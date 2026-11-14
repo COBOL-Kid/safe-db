@@ -58,8 +58,7 @@ internal data class ThemePaletteSpec(
     val scrim: Color,
     val series: List<Color>,
     // Material's primary slots follow the accent unless a palette needs different ones; Control
-    // Blue
-    // keeps a lighter dark primary so tinted icons stay readable.
+    // Blue keeps a lighter dark primary so tinted icons stay readable.
     val materialPrimary: Color = accent,
     val onMaterialPrimary: Color = onAccent,
     val materialPrimaryContainer: Color = accentContainer,

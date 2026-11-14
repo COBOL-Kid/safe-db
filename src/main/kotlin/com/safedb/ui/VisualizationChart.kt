@@ -70,8 +70,8 @@ internal data class VisualizationGeometry(
     val plot: Rect,
     val yMin: Double,
     val yMax: Double,
-    // xKey -> center along the category axis: x for vertical bars/line/scatter, y for
-    // horizontal bars
+    // xKey -> center along the category axis: x for vertical bars/line/scatter, y for horizontal
+    // bars.
     val categoryCenters: Map<String, Float> = emptyMap(),
 )
 

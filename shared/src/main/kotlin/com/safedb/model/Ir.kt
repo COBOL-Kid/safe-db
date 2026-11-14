@@ -334,7 +334,7 @@ internal class ResultRowBudget {
     private var resultTruncated = false
     private var cellTruncated = false
 
-    /** Returns false when [row] does not fit. The caller must not read another row. */
+    // False when the row does not fit. The caller must not read another row.
     fun accept(row: List<ResultCell>): Boolean {
         val rowBytes = rowJson.encodeToString(row).toByteArray(Charsets.UTF_8).size
         if (encodedBytes + rowBytes > MAX_RESULT_BYTES) {
