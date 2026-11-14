@@ -32,6 +32,8 @@ Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engin
 - Multi-dimension pivots no longer emit empty parent-group header rows with a null child and null measures, including when `show_subtotals` is false.
 - A mismatched destructive confirmation no longer replaces a still-valid outstanding token.
 - `filter_result_rows` documents that `members` takes `included_keys`, not `value`.
+- `runQueryCore` fails closed with `QueryError.RiskGate` (`risk_gate`) when risk assessment is still pending (`AssessmentPending`).
+- `LIKE` / `ILIKE` / `NOT LIKE ... ESCAPE '!'` round-trips through SQL parsing, `FilterSpec`, and `specToSql` / saved queries (and clears `likeEscape` when changing columns or operators in the Query Builder).
 
 ## 1.0.1
 
