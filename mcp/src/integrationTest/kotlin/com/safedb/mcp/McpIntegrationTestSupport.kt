@@ -541,6 +541,9 @@ internal fun assertPayloadIsPrivate(
     assertFalse(lower.contains("\"username\""))
     assertFalse(lower.contains("jdbc:mysql"))
     assertFalse(lower.contains("jdbc:postgresql"))
+    assertFalse(lower.contains("jdbc:sqlserver"))
+    assertFalse(lower.contains("jdbc:oracle"))
+    assertFalse(lower.contains("jdbc:db2"))
     assertFalse(payload.contains("${connection.host}:${connection.port}"))
     if (password.isNotEmpty()) {
         assertFalse(payload.contains(JsonPrimitive(password).toString()))

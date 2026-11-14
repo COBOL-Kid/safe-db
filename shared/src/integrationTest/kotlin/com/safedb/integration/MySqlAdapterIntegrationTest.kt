@@ -4,17 +4,26 @@ import com.safedb.adapter.Adapter
 import com.safedb.adapter.closeDataSource
 import com.safedb.adapter.createDataSource
 import com.safedb.model.BindValue
+import com.safedb.model.ColumnSel
 import com.safedb.model.CompiledQuery
 import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
 import com.safedb.model.ExplainResult
+import com.safedb.model.FilterGroup
+import com.safedb.model.GroupConnector
 import com.safedb.model.Outcome
-import com.safedb.model.ResultCell
+import com.safedb.model.PlanAccessMethod
+import com.safedb.model.QuerySpec
+import com.safedb.model.Settings
+import com.safedb.model.TableRef
+import com.safedb.query.QueryRiskSeverity
+import com.safedb.query.RiskSignalCode
+import com.safedb.query.assessValidatedQueryRisk
 import com.safedb.query.compileValidated
+import com.safedb.query.refineRiskWithPlan
 import com.safedb.query.sql.SqlTokenType
 import com.safedb.query.sql.mySqlBackslashEscapes
 import com.safedb.query.sql.tokenizeSql
-import com.safedb.query.validateQuery
 import com.safedb.secrets.CredentialSession
 import com.safedb.secrets.DisabledMemoryStore
 import com.safedb.secrets.SecretsManager
@@ -49,41 +58,90 @@ class MySqlAdapterIntegrationTest {
                 IntegrationFixtures.requireSeededTable(schema, "orders", setOf("id", "status"))
             IntegrationFixtures.requireSeededTable(schema, "customers", setOf("id", "email"))
             val customerForeignKey = orders.foreignKeys.single { it.name == "fk_orders_customer" }
-            assertEquals(listOf("customer_id"), customerForeignKey.columns)
-            assertEquals(IntegrationAssumptions.mysqlDatabase, customerForeignKey.referencedSchema)
-            assertEquals("customers", customerForeignKey.referencedTable)
-            assertEquals(listOf("id"), customerForeignKey.referencedColumns)
+            AdapterIntegrationAssertions.assertOrdersCustomerForeignKey(
+                customerForeignKey,
+                referencedSchema = IntegrationAssumptions.mysqlDatabase,
+            )
         } finally {
             adapter.close()
         }
     }
 
     @Test
-    fun mysqlAdapterExecutesSelectAndExplain() = runBlocking {
+    fun mysqlExplainsScanEventsAsElevatedLargeScan() = runBlocking {
         IntegrationAssumptions.assumeMysqlAvailable()
         val def = IntegrationAssumptions.mysqlConnectionDef()
         val adapter = Adapter.connect(def, IntegrationAssumptions.mysqlPassword)
         try {
             val schema = Adapter.introspectWithTimeout(adapter)
-            val spec = IntegrationFixtures.customersQuery(schema, limit = 5)
-            val validated =
-                when (val validation = validateQuery(spec, schema, emptyList())) {
-                    is Outcome.Ok -> validation.value.first
-                    is Outcome.Err -> error(validation.message)
+            val table =
+                IntegrationFixtures.requireSeededTable(
+                    schema,
+                    "scan_events",
+                    setOf("id"),
+                    expectedSchema = "safedb_lab",
+                )
+            assertTrue(
+                table.schema.equals("safedb_lab", ignoreCase = true),
+                "scan_events must come from safedb_lab, found ${table.schema}.${table.name}",
+            )
+            val spec =
+                QuerySpec(
+                    tables =
+                        listOf(TableRef(schema = table.schema, name = table.name, alias = "t0")),
+                    columns =
+                        listOf(
+                            ColumnSel(
+                                tableAlias = "t0",
+                                column = IntegrationFixtures.seededColumn(table, "id"),
+                            )
+                        ),
+                    joins = emptyList(),
+                    filters =
+                        FilterGroup(
+                            id = "integration-scan-events-filters",
+                            connector = GroupConnector.And,
+                            children = emptyList(),
+                        ),
+                    limit = 1,
+                    uncapped = true,
+                )
+            val assessed =
+                when (
+                    val result =
+                        assessValidatedQueryRisk(spec, schema, Settings.default(), def.dialect)
+                ) {
+                    is Outcome.Ok -> result.value
+                    is Outcome.Err -> error(result.message)
                 }
             val compiled =
-                when (val compilation = compileValidated(validated, def.dialect)) {
+                when (val compilation = compileValidated(assessed.validated, def.dialect)) {
                     is Outcome.Ok -> compilation.value
                     is Outcome.Err -> error(compilation.message)
                 }
+            // EXPLAIN only: do not execute, so the client never fetches the million rows.
             val explain = Adapter.explainWithTimeout(adapter, compiled)
             val plan = assertIs<ExplainResult.Available>(explain).plan
-            val access = plan.relations.first { it.alias == "t0" }
-            assertTrue(access.estimatedRows != null)
-            assertTrue(access.method != com.safedb.model.PlanAccessMethod.Unknown)
-            val result = adapter.executeQuery(compiled, timeoutMs = 10_000)
-            assertTrue(result.rowCount > 0)
-            assertTrue(result.columns.isNotEmpty())
+            assertTrue(
+                plan.relations.any { it.method != PlanAccessMethod.Unknown },
+                "expected a known access method for scan_events: $plan",
+            )
+            val staticAssessment =
+                requireNotNull(assessed.assessment) { "query risk gate is disabled" }
+            val refined =
+                refineRiskWithPlan(staticAssessment, plan, assessed.normalizedSpec, schema)
+            assertTrue(
+                refined.severity == QueryRiskSeverity.Elevated ||
+                    refined.severity == QueryRiskSeverity.High ||
+                    refined.severity == QueryRiskSeverity.VeryHigh,
+                "expected an Elevated-or-higher live scan_events classification, " +
+                    "got severity=${refined.severity} plan=$plan",
+            )
+            assertTrue(
+                refined.signals.any { it.code == RiskSignalCode.PlanConfirmedLargeScan },
+                "expected PlanConfirmedLargeScan for scan_events, " +
+                    "got signals=${refined.signals.map { it.code }} plan=$plan",
+            )
         } finally {
             adapter.close()
         }
@@ -118,10 +176,7 @@ class MySqlAdapterIntegrationTest {
                     ),
                     10_000,
                 )
-            assertTrue(result.rows.isNotEmpty())
-            assertIs<ResultCell.TextCell>(result.rows.first()[0])
-            assertTrue(result.rows.any { it[1] is ResultCell.Null })
-            assertIs<ResultCell.TextCell>(result.rows.first()[2])
+            AdapterIntegrationAssertions.assertDecodedOrdersRow(result)
 
             val empty =
                 adapter.executeQuery(
@@ -132,8 +187,7 @@ class MySqlAdapterIntegrationTest {
                     ),
                     10_000,
                 )
-            assertTrue(empty.rows.isEmpty())
-            assertEquals(listOf("t0__id", "t0__email"), empty.columns.map { it.name })
+            AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
         } finally {
             adapter.close()
         }

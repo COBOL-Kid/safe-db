@@ -4,14 +4,13 @@ import com.safedb.adapter.Adapter
 import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ExplainResult
-import com.safedb.model.ResultCell
+import com.safedb.model.PlanAccessMethod
 import com.safedb.secrets.CredentialSession
 import com.safedb.secrets.DisabledMemoryStore
 import com.safedb.secrets.SecretsManager
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
-import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -46,10 +45,13 @@ class OracleAdapterIntegrationTest {
                     expectedSchema = "SAFEDB",
                 )
             val foreignKey = orders.foreignKeys.single()
-            assertEquals(listOf("CUSTOMER_ID"), foreignKey.columns)
-            assertEquals("SAFEDB", foreignKey.referencedSchema)
-            assertEquals("CUSTOMERS", foreignKey.referencedTable)
-            assertEquals(listOf("ID"), foreignKey.referencedColumns)
+            AdapterIntegrationAssertions.assertOrdersCustomerForeignKey(
+                foreignKey,
+                referencedSchema = "SAFEDB",
+                columns = listOf("CUSTOMER_ID"),
+                referencedTable = "CUSTOMERS",
+                referencedColumns = listOf("ID"),
+            )
         } finally {
             adapter.close()
         }
@@ -82,13 +84,14 @@ class OracleAdapterIntegrationTest {
                         ),
                 )
             val result = adapter.executeQuery(compiled, 10_000)
-            assertTrue(result.rows.isNotEmpty())
-            assertIs<ResultCell.TextCell>(result.rows.first()[0])
-            assertTrue(result.rows.any { it[1] is ResultCell.Null })
-            assertIs<ResultCell.TextCell>(result.rows.first()[2])
+            AdapterIntegrationAssertions.assertDecodedOrdersRow(result)
             val explain = Adapter.explainWithTimeout(adapter, compiled)
             val plan = assertIs<ExplainResult.Available>(explain, "Expected a plan: $explain").plan
-            assertTrue(plan.relations.isNotEmpty())
+            assertTrue(
+                plan.relations.any {
+                    it.method != PlanAccessMethod.Unknown && it.estimatedRows != null
+                }
+            )
 
             val empty =
                 adapter.executeQuery(
@@ -99,8 +102,7 @@ class OracleAdapterIntegrationTest {
                     ),
                     10_000,
                 )
-            assertTrue(empty.rows.isEmpty())
-            assertEquals(listOf("t0__id", "t0__email"), empty.columns.map { it.name })
+            AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
         } finally {
             adapter.close()
         }

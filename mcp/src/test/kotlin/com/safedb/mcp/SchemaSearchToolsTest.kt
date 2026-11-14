@@ -1,6 +1,9 @@
 package com.safedb.mcp
 
+import com.safedb.model.ColumnInfo
 import com.safedb.model.ForeignKeyInfo
+import com.safedb.model.Schema
+import com.safedb.model.TableInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -66,24 +69,50 @@ class SchemaSearchToolsTest {
             assertEquals("true", limited.getValue("truncated").jsonPrimitive.content)
             assertEquals(1, limited.getValue("matches").jsonArray.size)
 
+            val matchCount = SEARCH_CATALOG_MAX_LIMIT + 11
+            val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
+            service.schemas["c1"] =
+                Schema(
+                    tables =
+                        (0 until matchCount).map { index ->
+                            TableInfo(
+                                schema = "public",
+                                name = "captable_$index",
+                                columns = columns,
+                                indexes = emptyList(),
+                            )
+                        }
+                )
             val capped =
                 client.callTool(
                     "search_catalog",
-                    mapOf("connection_id" to "c1", "query" to "public", "limit" to 500),
+                    mapOf(
+                        "connection_id" to "c1",
+                        "query" to "captable",
+                        "limit" to 500,
+                        "refresh" to true,
+                    ),
                 )
             assertFalse(capped.isError == true)
+            val cappedBody = capped.json()
+            assertEquals(50, SEARCH_CATALOG_MAX_LIMIT)
+            assertEquals(
+                SEARCH_CATALOG_MAX_LIMIT,
+                cappedBody.getValue("matches").jsonArray.size,
+            )
+            assertEquals("true", cappedBody.getValue("truncated").jsonPrimitive.content)
+            assertEquals(
+                matchCount.toString(),
+                cappedBody.getValue("match_count").jsonPrimitive.content,
+            )
+            assertTrue(matchCount > 50)
 
             val zero =
                 client.callTool(
                     "search_catalog",
                     mapOf("connection_id" to "c1", "query" to "public", "limit" to 0),
                 )
-            assertEquals(true, zero.isError)
-            assertEquals("invalid_arguments", zero.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "limit must be 1 or more",
-                zero.json().getValue("message").jsonPrimitive.content,
-            )
+            assertError(zero, "invalid_arguments", "limit must be 1 or more")
 
             val negative =
                 client.callTool(

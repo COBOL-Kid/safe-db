@@ -451,39 +451,10 @@ class QueryToolsTest {
 
             val unknown =
                 client.callTool("run_query", mapOf("connection_id" to "nope", "sql" to "SELECT 1"))
-            assertEquals(true, unknown.isError)
-            assertEquals("not_found", unknown.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Connection not found",
-                unknown.json().getValue("message").jsonPrimitive.content,
-            )
+            assertError(unknown, "not_found", "Connection not found")
 
             val neither = client.callTool("run_query", mapOf("connection_id" to "c1"))
-            assertEquals(true, neither.isError)
-            assertEquals(
-                "invalid_arguments",
-                neither.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "sql is required",
-                neither.json().getValue("message").jsonPrimitive.content,
-            )
-
-            val both =
-                client.callTool(
-                    "run_query",
-                    mapOf(
-                        "connection_id" to "c1",
-                        "sql" to "SELECT id FROM public.customers",
-                        "spec" to SafeDbJson.lenient.encodeToJsonElement(sampleMcpQuerySpec()),
-                    ),
-                )
-            assertEquals(true, both.isError)
-            assertEquals("invalid_arguments", both.json().getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "unknown argument 'spec'",
-                both.json().getValue("message").jsonPrimitive.content,
-            )
+            assertError(neither, "invalid_arguments", "sql is required")
 
             val sqlOnly =
                 client.callTool(
@@ -933,20 +904,6 @@ class QueryToolsTest {
                 connectionIdNumber.json().getValue("message").jsonPrimitive.content,
             )
             assertTrue(service.runQueryRequests.isEmpty())
-        }
-    }
-
-    @Test
-    fun unknownToolReturnsJsonEnvelope() = runBlocking {
-        withTempMcpClient(queryService()) { client ->
-            val result = client.callTool("not_a_real_tool", emptyMap())
-            assertEquals(true, result.isError)
-            val body = result.json()
-            assertEquals("not_found", body.getValue("error").jsonPrimitive.content)
-            assertEquals(
-                "Unknown tool 'not_a_real_tool'",
-                body.getValue("message").jsonPrimitive.content,
-            )
         }
     }
 

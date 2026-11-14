@@ -783,18 +783,6 @@ class QueryEngineTest {
     }
 
     @Test
-    fun postgresCompilesQuotingPlaceholdersAndLimit() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Postgres).unwrap()
-        assertTrue(compiled.sql.contains("SELECT \"t0\".\"id\""))
-        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""))
-        assertTrue(compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""))
-        assertTrue(compiled.sql.contains("\"t0\".\"name\" = \$1"))
-        assertTrue(compiled.sql.contains("\"t0\".\"deleted_at\" IS NULL"))
-        assertTrue(compiled.sql.endsWith("LIMIT 51"))
-        assertEquals(1, compiled.params.size)
-    }
-
-    @Test
     fun distinctCompilesInDialectCorrectKeywordOrder() {
         val distinct = validatedQuery(sampleSpec().copy(distinct = true))
 
@@ -1031,7 +1019,7 @@ class QueryEngineTest {
     @Test
     fun uncappedCompilesWithoutRowLimitClause() {
         val spec = twoTableSpec().copy(limit = 50, uncapped = true)
-        for (dialect in listOf(Dialect.Postgres, Dialect.Mssql, Dialect.Oracle)) {
+        for (dialect in Dialect.entries) {
             val sql = compileValidated(validatedQuery(spec), dialect).unwrap().sql
             assertFalse(sql.contains("LIMIT"), sql)
             assertFalse(sql.contains("TOP "), sql)
@@ -1040,48 +1028,61 @@ class QueryEngineTest {
     }
 
     @Test
-    fun mysqlCompilesBackticksAndQuestionMarkParams() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.MySql).unwrap()
-        assertTrue(compiled.sql.contains("SELECT `t0`.`id`"))
-        assertTrue(compiled.sql.contains("`t0`.`name` = ?"))
-        assertTrue(compiled.sql.endsWith("LIMIT 51"))
-        assertEquals(1, compiled.params.size)
-    }
+    fun twoTableQueryCompilesExactSqlAcrossDialects() {
+        val validated = validatedQuery(twoTableSpec())
+        val expectedSql =
+            mapOf(
+                Dialect.Postgres to
+                    """
+                    SELECT "t0"."id" AS "t0__id"
+                    FROM "public"."products" AS "t0"
+                    INNER JOIN "public"."categories" AS "t1" ON "t0"."category_id" = "t1"."id"
+                    WHERE "t0"."name" = $1 AND "t0"."deleted_at" IS NULL
+                    LIMIT 51
+                    """
+                        .trimIndent(),
+                Dialect.MySql to
+                    """
+                    SELECT `t0`.`id` AS `t0__id`
+                    FROM `public`.`products` AS `t0`
+                    INNER JOIN `public`.`categories` AS `t1` ON `t0`.`category_id` = `t1`.`id`
+                    WHERE `t0`.`name` = ? AND `t0`.`deleted_at` IS NULL
+                    LIMIT 51
+                    """
+                        .trimIndent(),
+                Dialect.Mssql to
+                    """
+                    SELECT TOP 51 [t0].[id] AS [t0__id]
+                    FROM [public].[products] AS [t0]
+                    INNER JOIN [public].[categories] AS [t1] ON [t0].[category_id] = [t1].[id]
+                    WHERE [t0].[name] = @P1 AND [t0].[deleted_at] IS NULL
+                    """
+                        .trimIndent(),
+                Dialect.Oracle to
+                    """
+                    SELECT "t0"."id" AS "t0__id"
+                    FROM "public"."products" "t0"
+                    INNER JOIN "public"."categories" "t1" ON "t0"."category_id" = "t1"."id"
+                    WHERE "t0"."name" = :1 AND "t0"."deleted_at" IS NULL
+                    FETCH FIRST 51 ROWS ONLY
+                    """
+                        .trimIndent(),
+                Dialect.Db2 to
+                    """
+                    SELECT "t0"."id" AS "t0__id"
+                    FROM "public"."products" AS "t0"
+                    INNER JOIN "public"."categories" AS "t1" ON "t0"."category_id" = "t1"."id"
+                    WHERE "t0"."name" = ? AND "t0"."deleted_at" IS NULL
+                    FETCH FIRST 51 ROWS ONLY
+                    """
+                        .trimIndent(),
+            )
 
-    @Test
-    fun mssqlCompilesTopInsteadOfLimit() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Mssql).unwrap()
-        assertTrue(compiled.sql.contains("SELECT TOP 51 "))
-        assertTrue(compiled.sql.contains("[t0].[name] = @P1"))
-        assertFalse(compiled.sql.contains("LIMIT"))
-    }
-
-    @Test
-    fun oracleCompilesFetchFirst() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Oracle).unwrap()
-        assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"))
-        assertTrue(compiled.sql.contains(":1"))
-        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" \"t0\""))
-        assertTrue(compiled.sql.contains("INNER JOIN \"public\".\"categories\" \"t1\""))
-        assertTrue(compiled.sql.contains(" AS "))
-        assertFalse(compiled.sql.contains(" AS \"t0\""))
-        assertFalse(compiled.sql.contains(" AS \"t1\""))
-    }
-
-    @Test
-    fun db2CompilesFetchFirstWithQuestionMarkParams() {
-        val compiled = compileValidated(validatedQuery(twoTableSpec()), Dialect.Db2).unwrap()
-        assertTrue(compiled.sql.contains("SELECT \"t0\".\"id\""), compiled.sql)
-        assertTrue(compiled.sql.contains("\"t0\".\"name\" = ?"), compiled.sql)
-        assertTrue(compiled.sql.contains("FROM \"public\".\"products\" AS \"t0\""), compiled.sql)
-        assertTrue(
-            compiled.sql.contains("INNER JOIN \"public\".\"categories\" AS \"t1\""),
-            compiled.sql,
-        )
-        assertTrue(compiled.sql.contains("FETCH FIRST 51 ROWS ONLY"), compiled.sql)
-        assertFalse(compiled.sql.contains(":1"))
-        assertFalse(compiled.sql.contains("LIMIT"))
-        assertEquals(1, compiled.params.size)
+        for ((dialect, sql) in expectedSql) {
+            val compiled = compileValidated(validated, dialect).unwrap()
+            assertEquals(sql, compiled.sql)
+            assertEquals(1, compiled.params.size)
+        }
     }
 
     @Test

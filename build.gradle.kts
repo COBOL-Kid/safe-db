@@ -104,15 +104,38 @@ tasks.named<KotlinCompile>("compileRenderKotlin") {
 
 qodana { resultsPath.set(layout.buildDirectory.dir("qodana/results").get().asFile.absolutePath) }
 
+// The Qodana IntelliJ engine cannot create its directory lock (a Unix domain socket) on a Windows
+// filesystem, which is where WSL checkouts under /mnt/c live. Keep the engine state on the Linux
+// side so `./gradlew qodanaScan` works from WSL.
+val qodanaStateDir =
+    providers.systemProperty("java.io.tmpdir").map {
+        "$it/qodana/safe-db-${rootDir.absolutePath.hashCode()}"
+    }
+
 tasks.qodanaScan {
     arguments.set(
-        listOf(
-            "--linter",
-            "qodana-jvm-community",
-            "--within-docker",
-            "false",
-            "--print-problems",
-        )
+        buildList {
+            addAll(
+                listOf(
+                    "--linter",
+                    "qodana-jvm-community",
+                    "--within-docker",
+                    "false",
+                    "--print-problems",
+                )
+            )
+            if (providers.environmentVariable("WSL_DISTRO_NAME").isPresent) {
+                val stateDir = qodanaStateDir.get()
+                addAll(
+                    listOf(
+                        "--property",
+                        "idea.config.path=$stateDir/config",
+                        "--property",
+                        "idea.system.path=$stateDir/system",
+                    )
+                )
+            }
+        }
     )
 }
 

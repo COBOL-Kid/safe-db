@@ -124,6 +124,15 @@ class McpCliConnectionsTest {
     }
 
     @Test
+    fun connectionsTestParsesOptionalId() {
+        assertEquals(McpCommand.ConnectionsTest(null), parseMcpArgs(arrayOf("connections", "test")))
+        assertEquals(
+            McpCommand.ConnectionsTest("c1"),
+            parseMcpArgs(arrayOf("connections", "test", "c1")),
+        )
+    }
+
+    @Test
     fun malformedConnectionsTestCommandsAreRejected() {
         val invalid =
             listOf(

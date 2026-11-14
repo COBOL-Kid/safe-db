@@ -3,11 +3,13 @@ package com.safedb.mcp
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.testsupport.IntegrationAssumptions
+import io.modelcontextprotocol.kotlin.sdk.client.Client
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -27,16 +29,32 @@ class McpPackagedDialectsIntegrationTest {
     @Test
     fun packagedJarQueriesMysql() = runBlocking {
         IntegrationAssumptions.assumeMysqlAvailable()
+        val connection =
+            IntegrationAssumptions.mysqlConnectionDef(
+                id = "mcp-packaged-mysql-dialect",
+                name = "MCP Packaged MySQL Dialect",
+            )
+        val password = IntegrationAssumptions.mysqlPassword
         assertPackagedDialect(
-            connection =
-                IntegrationAssumptions.mysqlConnectionDef(
-                    id = "mcp-packaged-mysql-dialect",
-                    name = "MCP Packaged MySQL Dialect",
-                ),
-            password = IntegrationAssumptions.mysqlPassword,
+            connection = connection,
+            password = password,
             defaultSchema = IntegrationAssumptions.mysqlDatabase,
             query = "SELECT id, email FROM customers LIMIT 3",
-        )
+        ) { client, receipt ->
+            val resultId = receipt.getValue("result_id").jsonPrimitive.content
+            val pageResult =
+                client.callTool(
+                    "get_result_rows",
+                    mapOf("result_id" to resultId, "offset" to 1, "limit" to 1),
+                )
+            assertNotEquals(true, pageResult.isError, pageResult.text())
+            val pageText = pageResult.text()
+            assertPayloadIsPrivate(pageText, connection, password)
+            val page = Json.parseToJsonElement(pageText).jsonObject
+            assertEquals(resultId, page.getValue("result_id").jsonPrimitive.content)
+            val rows = page.getValue("rows").jsonArray
+            assertTrue(rows.isNotEmpty(), "expected non-empty get_result_rows page: $pageText")
+        }
     }
 
     @Test
@@ -104,6 +122,7 @@ class McpPackagedDialectsIntegrationTest {
         password: String,
         defaultSchema: String,
         query: String,
+        afterQuery: (suspend (Client, JsonObject) -> Unit)? = null,
     ) {
         try {
             withPackagedMcpClient(
@@ -178,6 +197,7 @@ class McpPackagedDialectsIntegrationTest {
                 assertPayloadIsPrivate(queriedText, connection, password)
                 val receipt = Json.parseToJsonElement(queriedText).jsonObject
                 assertEquals("3", receipt.getValue("row_count").jsonPrimitive.content)
+                afterQuery?.invoke(client, receipt)
             }
         } finally {
             cleanupPackagedJarWindowsSecret(connection.id)

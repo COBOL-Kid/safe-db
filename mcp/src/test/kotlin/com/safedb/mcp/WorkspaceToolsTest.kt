@@ -8,8 +8,13 @@ import com.safedb.model.HistoryEntry
 import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Settings
+import com.safedb.query.QueryError
 import com.safedb.query.QueryExecutionConfirmation
+import com.safedb.query.QueryRiskSeverity
+import com.safedb.query.RiskDecisionReason
+import com.safedb.query.RiskGateState
 import com.safedb.query.specToSql
+import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -126,6 +131,33 @@ class WorkspaceToolsTest {
     }
 
     @Test
+    fun runSavedQueryRiskGateIsAStructuredToolError() = runBlocking {
+        val service = workspaceService()
+        service.savedQueries += savedQuery("q1", "Customers", "c1")
+        val evaluation =
+            allowedMcpRisk(
+                state = RiskGateState.Blocked,
+                severity = QueryRiskSeverity.High,
+                score = 80,
+                reasons =
+                    listOf(RiskDecisionReason("volume", "The query risk gate blocks this query.")),
+            )
+        service.runQueryError =
+            QueryFailureException(QueryError.RiskGate(evaluation, sampleMcpQuerySpec()))
+        withTempMcpClient(service) { client ->
+            val result = client.callTool("run_saved_query", mapOf("query_id" to "q1"))
+            assertEquals(true, result.isError)
+            val body = result.json()
+            assertEquals("risk_gate", body.getValue("error").jsonPrimitive.content)
+            assertTrue(body.getValue("message").jsonPrimitive.content.contains("risk gate"))
+            assertEquals(
+                "Blocked",
+                body.getValue("risk").jsonObject.getValue("state").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
     fun saveQueryValidatesAndPersistsTheNormalizedSpec() = runBlocking {
         val service = workspaceService()
         withTempMcpClient(service) { client ->
@@ -223,7 +255,17 @@ class WorkspaceToolsTest {
         service.savedQueries += savedQuery("q1", "Customers", "c1")
         withTempMcpClient(service) { client ->
             val pending = client.callTool("delete_saved_query", mapOf("query_id" to "q1"))
-            assertError(pending, "confirmation_required", pending.json().string("message"))
+            assertError(
+                pending,
+                "confirmation_required",
+                "Deleting saved query 'Customers' (q1) removes it from this MCP store. " +
+                    "Show the user, then retry with the returned confirmation object; do not " +
+                    "auto-confirm.",
+            )
+            assertEquals(
+                listOf("This deletes saved query Customers (q1)."),
+                pending.json().getValue("reasons").jsonArray.map { it.jsonPrimitive.content },
+            )
             assertEquals("q1", service.savedQueries.single().id)
             val confirmation = pending.json().getValue("confirmation")
 
@@ -264,7 +306,17 @@ class WorkspaceToolsTest {
                             Json.parseToJsonElement("""{"query_id":"q1","token":"invented"}"""),
                     ),
                 )
-            assertError(mismatched, "confirmation_required", mismatched.json().string("message"))
+            assertError(
+                mismatched,
+                "confirmation_required",
+                "Deleting saved query 'Customers' (q1) removes it from this MCP store. " +
+                    "Show the user, then retry with the returned confirmation object; do not " +
+                    "auto-confirm.",
+            )
+            assertEquals(
+                listOf("This deletes saved query Customers (q1)."),
+                mismatched.json().getValue("reasons").jsonArray.map { it.jsonPrimitive.content },
+            )
             assertEquals(first, mismatched.json().getValue("confirmation"))
 
             val malformed =

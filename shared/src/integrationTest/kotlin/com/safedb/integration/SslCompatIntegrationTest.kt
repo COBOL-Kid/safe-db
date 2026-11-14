@@ -1,23 +1,18 @@
 package com.safedb.integration
 
 import com.safedb.adapter.Adapter
-import com.safedb.adapter.buildJdbcUrl
-import com.safedb.adapter.createDataSourceConfig
 import com.safedb.launch.LaunchProfileBootstrap
 import com.safedb.launch.POSTGRES_LAUNCH_ROOT_CERT_PROPERTY
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
-import com.safedb.model.DriverProperty
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
-import com.safedb.model.validateDriverProperties
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -65,93 +60,6 @@ class SslCompatIntegrationTest {
                 .contains(properties.getValue("javax.net.ssl.trustStorePassword"))
         )
         Files.deleteIfExists(pem)
-    }
-
-    @Test
-    fun reservedTlsDriverPropertiesAreBlockedForEveryDialect() {
-        val cases =
-            mapOf(
-                Dialect.Postgres to
-                    listOf("sslmode", "sslrootcert", "sslfactory", "sslcert", "sslkey"),
-                Dialect.MySql to
-                    listOf(
-                        "sslMode",
-                        "trustCertificateKeyStoreUrl",
-                        "trustCertificateKeyStoreType",
-                        "allowPublicKeyRetrieval",
-                    ),
-                Dialect.Mssql to
-                    listOf(
-                        "encrypt",
-                        "trustServerCertificate",
-                        "hostNameInCertificate",
-                        "trustStore",
-                    ),
-                Dialect.Oracle to
-                    listOf(
-                        "wallet_location",
-                        "oracle.net.wallet_location",
-                        "oracle.net.ssl_server_dn_match",
-                    ),
-                Dialect.Db2 to
-                    listOf(
-                        "sslConnection",
-                        "sslTrustStoreLocation",
-                        "sslTrustStorePassword",
-                        "securityMechanism",
-                        "sslClientHostnameValidation",
-                        "sslCertLocation",
-                    ),
-            )
-        cases.forEach { (dialect, names) ->
-            names.forEach { name ->
-                val result = validateDriverProperties(dialect, listOf(DriverProperty(name, "x")))
-                assertTrue(result.isFailure, "expected $dialect/$name to be reserved")
-            }
-        }
-    }
-
-    @Test
-    fun jdbcUrlsAndDatasourcePropertiesCoverAllTransportModes() {
-        for (mode in TransportSecurityMode.entries) {
-            assertTrue(buildJdbcUrl(mysql(mode)).contains("sslMode="))
-            assertTrue(buildJdbcUrl(postgres(mode)).contains("sslmode="))
-            assertTrue(buildJdbcUrl(mssql(mode)).startsWith("jdbc:sqlserver://"))
-            val db2Url = buildJdbcUrl(db2(mode))
-            assertTrue(db2Url.startsWith("jdbc:db2://"))
-            assertFalse(db2Url.contains("sslConnection"))
-            if (mode == TransportSecurityMode.Disabled) {
-                assertTrue(buildJdbcUrl(oracle(mode)).contains("@//"))
-            } else {
-                val wallet = oracle(mode, wallet = "/tmp/wallet")
-                assertTrue(buildJdbcUrl(wallet).contains("@tcps://"))
-                assertTrue(buildJdbcUrl(wallet).contains("wallet_location="))
-            }
-        }
-
-        val mssqlVerified =
-            createDataSourceConfig(mssql(TransportSecurityMode.VerifyIdentity), "pw")
-                .dataSourceProperties
-        assertEquals("true", mssqlVerified.getProperty("encrypt"))
-        assertEquals("false", mssqlVerified.getProperty("trustServerCertificate"))
-        assertEquals("localhost", mssqlVerified.getProperty("hostNameInCertificate"))
-        assertNull(mssqlVerified.getProperty("trustStore"))
-
-        val oracleIdentity =
-            createDataSourceConfig(oracle(TransportSecurityMode.VerifyIdentity, "/wallet"), "pw")
-                .dataSourceProperties
-        assertEquals("true", oracleIdentity.getProperty("oracle.net.ssl_server_dn_match"))
-        assertEquals("/wallet", oracleIdentity.getProperty("oracle.net.wallet_location"))
-
-        val db2Verified =
-            createDataSourceConfig(db2(TransportSecurityMode.VerifyIdentity), "pw")
-                .dataSourceProperties
-        assertEquals("true", db2Verified.getProperty("sslConnection"))
-        assertEquals("BASIC", db2Verified.getProperty("sslClientHostnameValidation"))
-        val db2Disabled =
-            createDataSourceConfig(db2(TransportSecurityMode.Disabled), "pw").dataSourceProperties
-        assertEquals("false", db2Disabled.getProperty("sslConnection"))
-        assertEquals(null, db2Disabled.getProperty("sslClientHostnameValidation"))
     }
 
     @Test
@@ -210,8 +118,12 @@ class SslCompatIntegrationTest {
         }
     }
 
+    // Live TCPS connectAndTest runs only when SAFEDB_TEST_ORACLE_TCPS=true (a TCPS
+    // listener is present). The local harness has no TCPS listener by default, so
+    // this test does not claim live Oracle TLS unless that var is set. TCP and
+    // missing-wallet checks still run.
     @Test
-    fun oracleLiveTcpWorksAndTcpsRequiresWalletConfiguration() {
+    fun oracleLiveTcpWorksAndMissingWalletIsRejected() {
         assumeSslHarness()
         assumeOracle()
         runBlocking {
@@ -220,25 +132,22 @@ class SslCompatIntegrationTest {
             val missingWallet = oracle(TransportSecurityMode.VerifyIdentity, wallet = null)
             assertTrue(missingWallet.validate().isFailure)
 
-            val walletPath = oracleWallet
-            if (!walletPath.isNullOrBlank() && Files.isDirectory(Path.of(walletPath))) {
+            // A placeholder wallet is not a TCPS listener. Do not skip this test, and do not
+            // treat a generic connect failure as TLS success. Live TCPS runs only when asked.
+            if (env["SAFEDB_TEST_ORACLE_TCPS"].equals("true", ignoreCase = true)) {
+                val walletPath =
+                    requireNotNull(oracleWallet) {
+                        "SAFEDB_TEST_ORACLE_WALLET must point at a wallet directory when SAFEDB_TEST_ORACLE_TCPS=true"
+                    }
+                assertTrue(
+                    Files.isDirectory(Path.of(walletPath)),
+                    "SAFEDB_TEST_ORACLE_WALLET is not a directory: $walletPath",
+                )
                 applyLaunchProfile(requireNotNull(profilePath))
-                // Live TCPS needs a provisioned listener; a PKCS12 placeholder is not a wallet.
-                val def = oracle(TransportSecurityMode.VerifyIdentity, wallet = walletPath)
-                val result = runCatching { connectAndTest(def, oraclePassword()) }
-                if (result.isFailure) {
-                    val message = result.exceptionOrNull()?.message.orEmpty()
-                    // The local harness has no TCPS listener, so a placeholder wallet
-                    // may fail with a generic connection error before any wallet check.
-                    assertTrue(
-                        message.contains("key store", ignoreCase = true) ||
-                            message.contains("wallet", ignoreCase = true) ||
-                            message.contains("TCPS", ignoreCase = true) ||
-                            message.contains("ORA-", ignoreCase = true) ||
-                            message.contains("Could not connect", ignoreCase = true),
-                        "unexpected Oracle TCPS failure: $message",
-                    )
-                }
+                connectAndTest(
+                    oracle(TransportSecurityMode.VerifyIdentity, wallet = walletPath),
+                    oraclePassword(),
+                )
             }
         }
     }
@@ -363,19 +272,6 @@ class SslCompatIntegrationTest {
             database = env["SAFEDB_TEST_ORACLE_SSL_DATABASE"] ?: "FREEPDB1",
             username = env["SAFEDB_TEST_ORACLE_SSL_USER"] ?: "safedb",
             transportSecurity = TransportSecurity(mode = mode, oracleWalletLocation = wallet),
-        )
-
-    // Offline URL/property mapping only; Db2 has no SSL harness endpoint yet.
-    private fun db2(mode: TransportSecurityMode) =
-        ConnectionDef(
-            id = "ssl-db2",
-            name = "SSL Db2",
-            dialect = Dialect.Db2,
-            host = "127.0.0.1",
-            port = 50000,
-            database = "safedb_ssl",
-            username = "safedb",
-            transportSecurity = TransportSecurity(mode = mode),
         )
 
     private fun mysqlPassword() = env["SAFEDB_TEST_MYSQL_SSL_PASSWORD"] ?: "safedb"

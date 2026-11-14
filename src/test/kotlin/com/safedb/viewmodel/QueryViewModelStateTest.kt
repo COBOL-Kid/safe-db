@@ -3,7 +3,6 @@ package com.safedb.viewmodel
 import androidx.compose.ui.geometry.Offset
 import com.safedb.model.ColumnInfo
 import com.safedb.model.ColumnSel
-import com.safedb.model.ConnectionDef
 import com.safedb.model.FilterGroup
 import com.safedb.model.FilterLiteral
 import com.safedb.model.FilterNode
@@ -12,19 +11,33 @@ import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
 import com.safedb.model.GroupConnector
 import com.safedb.model.GroupSpec
-import com.safedb.model.HistoryEntry
 import com.safedb.model.JoinSpec
 import com.safedb.model.LiteralKind
 import com.safedb.model.QueryResult
+import com.safedb.model.QueryRiskGate
 import com.safedb.model.QuerySpec
-import com.safedb.model.SavedQuery
-import com.safedb.model.Schema
-import com.safedb.model.Settings
+import com.safedb.model.ResultColumn
 import com.safedb.model.SortDirection
 import com.safedb.model.SortSpec
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
+import com.safedb.query.QUERY_RISK_SCORE_VERSION
+import com.safedb.query.QueryConfirmationCondition
+import com.safedb.query.QueryConfirmationReasonCode
+import com.safedb.query.QueryConfirmationRequirement
+import com.safedb.query.QueryError
+import com.safedb.query.QueryExecutionConfirmation
+import com.safedb.query.QueryPlanStatus
+import com.safedb.query.QueryRiskAssessment
+import com.safedb.query.QueryRiskDecision
+import com.safedb.query.QueryRiskEvaluation
+import com.safedb.query.QueryRiskSeverity
+import com.safedb.query.RiskDecisionReason
+import com.safedb.query.RiskGateState
 import com.safedb.service.FakeSafeDbServiceSupport
+import com.safedb.service.QueryFailureException
+import com.safedb.service.QueryRunRequest
+import com.safedb.service.QueryRunResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -32,10 +45,13 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class QueryViewModelStateTest {
@@ -523,6 +539,397 @@ class QueryViewModelStateTest {
         assertNull(viewModel.currentSample("c1"))
     }
 
+    @Test
+    fun querySampleIsBoundToItsExecutedConnectionAndSpec() =
+        runTest(dispatcher) {
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(NoOpService(), scope)
+            query.addTable(sampleTable())
+
+            query.run("c1")
+            scope.advanceUntilIdle()
+
+            assertEquals("c1", query.currentSample("c1")?.connectionId)
+            assertNull(query.currentSample("c2"))
+
+            query.toggleColumn("t0", "name")
+
+            assertNull(query.currentSample("c1"))
+        }
+
+    @Test
+    fun queryViewModelKeepsCanvasResizeOutOfQuerySpec() =
+        runTest(dispatcher) {
+            val query = QueryViewModel(NoOpService(), TestScope(dispatcher))
+            query.addTable(sampleTable())
+
+            query.resizeTable("t0", width = 420f, height = 360f)
+
+            assertEquals(420f, query.canvasTables.single().width)
+            assertEquals(360f, query.canvasTables.single().height)
+            assertEquals(
+                listOf(TableRef(schema = "public", name = "users", alias = "t0")),
+                query.spec.tables,
+            )
+        }
+
+    @Test
+    fun queryViewModelRejectsDuplicateRunsBeforeCoroutineStarts() =
+        runTest(dispatcher) {
+            val service = RecordingQueryService()
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+
+            query.run("c1")
+            query.run("c1")
+            scope.advanceUntilIdle()
+
+            assertEquals(1, service.queryAttempts)
+            assertFalse(query.running)
+        }
+
+    @Test
+    fun queryViewModelIgnoresCompletionAfterClear() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service = RecordingQueryService(queryGate = gate, queryStarted = started)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+
+            query.run("c1")
+            assertTrue(query.running)
+            scope.runCurrent()
+            assertTrue(started.isCompleted)
+
+            query.clear()
+            assertTrue(query.running)
+            query.addTable(sampleTable())
+            query.run("c1")
+            scope.runCurrent()
+
+            assertEquals(1, service.queryAttempts)
+            assertFalse(query.canRun)
+            query.clear()
+            assertTrue(query.running)
+
+            gate.complete(Unit)
+            scope.advanceUntilIdle()
+
+            assertFalse(query.running)
+            assertNull(query.results)
+            assertNull(query.error)
+            assertEquals(0, query.tableCount)
+        }
+
+    @Test
+    fun queryViewModelDiscardsAssessmentAndResultAfterDraftFingerprintChanges() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service = RecordingQueryService(queryGate = gate, queryStarted = started)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+            var settled: Boolean? = null
+
+            query.run("c1") { settled = it }
+            scope.runCurrent()
+            assertTrue(started.isCompleted)
+
+            query.setLimit(50)
+            assertTrue(query.running)
+            assertFalse(query.canRun)
+            query.run("c1")
+            scope.runCurrent()
+
+            assertEquals(1, service.queryAttempts)
+            assertNull(settled)
+
+            gate.complete(Unit)
+            scope.advanceUntilIdle()
+
+            assertFalse(query.running)
+            assertEquals(false, settled)
+            assertNull(query.results)
+            assertNull(query.riskEvaluation)
+            assertEquals(50, query.limit)
+        }
+
+    @Test
+    fun queryViewModelKeepsRunOwnedUntilItSettlesButDropsItAfterConnectionSwitch() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service = RecordingQueryService(queryGate = gate, queryStarted = started)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+            var settled: Boolean? = null
+
+            query.run("c1") { settled = it }
+            scope.runCurrent()
+            assertTrue(started.isCompleted)
+
+            query.onActiveConnectionChanged("c2")
+
+            assertTrue(query.running)
+            assertFalse(query.canRun)
+            assertNull(query.currentSample("c1"))
+            assertNull(query.currentSample("c2"))
+            assertNull(query.riskEvaluationFor("c2"))
+
+            gate.complete(Unit)
+            scope.advanceUntilIdle()
+
+            assertFalse(query.running)
+            assertEquals(false, settled)
+            assertNull(query.results)
+            assertNull(query.riskEvaluation)
+            assertEquals(1, service.queryAttempts)
+        }
+
+    @Test
+    fun queryViewModelClearsSettledSampleAndAssessmentWhenConnectionChanges() =
+        runTest(dispatcher) {
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(NoOpService(), scope)
+            query.addTable(sampleTable())
+
+            query.run("c1")
+            scope.advanceUntilIdle()
+            assertNotNull(query.currentSample("c1"))
+            assertNotNull(query.riskEvaluationFor("c1"))
+
+            query.onActiveConnectionChanged("c2")
+
+            assertNull(query.results)
+            assertNull(query.currentSample("c1"))
+            assertNull(query.currentSample("c2"))
+            assertNull(query.riskEvaluationFor("c1"))
+            assertNull(query.riskEvaluationFor("c2"))
+        }
+
+    @Test
+    fun queryViewModelRetriesOnlyWithThePendingScopedConfirmation() =
+        runTest(dispatcher) {
+            val service = RecordingQueryService(confirmationRequired = true)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+            query.addTable(sampleTable())
+            var settled: Boolean? = null
+
+            query.run("c1") { settled = it }
+            scope.advanceUntilIdle()
+
+            assertEquals(service.requiredConfirmation, query.pendingConfirmation?.confirmation)
+            assertEquals(
+                listOf("Query plan assessment is unavailable."),
+                query.pendingConfirmationReasons,
+            )
+            assertEquals("Query plan assessment is unavailable.", query.pendingConfirmationReason)
+            assertNull(query.error)
+            assertFalse(query.canRun)
+            assertNull(settled)
+
+            query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+            assertEquals(service.requiredConfirmation, query.pendingConfirmation?.confirmation)
+            assertFalse(query.canRun)
+            query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+            assertEquals(service.requiredConfirmation, query.pendingConfirmation?.confirmation)
+
+            query.confirmPendingExecution("c1")
+            assertTrue(query.running)
+            scope.advanceUntilIdle()
+
+            assertEquals(2, service.queryAttempts)
+            assertEquals(service.requiredConfirmation, service.queryRequests.last().confirmation)
+            assertNull(query.pendingConfirmation)
+            assertNotNull(query.results)
+            assertEquals(true, settled)
+        }
+
+    @Test
+    fun queryViewModelDraftEditInvalidatesPendingConfirmation() =
+        runTest(dispatcher) {
+            val service = RecordingQueryService(confirmationRequired = true)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+            var settled: Boolean? = null
+
+            query.run("c1") { settled = it }
+            scope.advanceUntilIdle()
+            assertNotNull(query.pendingConfirmation)
+
+            query.setLimit(50)
+            query.confirmPendingExecution("c1")
+            scope.advanceUntilIdle()
+
+            assertNull(query.pendingConfirmation)
+            assertNull(query.error)
+            assertEquals(false, settled)
+            assertEquals(1, service.queryAttempts)
+            assertTrue(query.canRun)
+        }
+
+    @Test
+    fun queryViewModelCannotConfirmForAHiddenConnection() =
+        runTest(dispatcher) {
+            val service = RecordingQueryService(confirmationRequired = true)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+            var settled: Boolean? = null
+
+            query.run("c1") { settled = it }
+            scope.advanceUntilIdle()
+            assertNotNull(query.pendingConfirmation)
+
+            query.confirmPendingExecution("c2")
+            scope.advanceUntilIdle()
+
+            assertNull(query.pendingConfirmation)
+            // The abandoned request's evaluation goes too, or the header keeps demanding a
+            // confirmation whose dialog no longer exists (same rule as the SQL editor).
+            assertNull(query.riskEvaluation)
+            assertEquals(false, settled)
+            assertEquals(1, service.queryAttempts)
+            assertTrue(query.canRun)
+        }
+
+    @Test
+    fun queryViewModelClearsSettledRiskGateFailureWhenExecutableQueryChanges() =
+        runTest(dispatcher) {
+            val service = RecordingQueryService(riskGateFirstRun = true)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+
+            query.run("c1")
+            scope.advanceUntilIdle()
+
+            assertTrue(query.pendingRiskGate)
+            assertNotNull(query.error)
+            assertFalse(query.canRun)
+
+            query.run("c1")
+            scope.advanceUntilIdle()
+            assertEquals(1, service.queryAttempts)
+
+            query.resizeTable("t0", width = 420f, height = 360f)
+            assertTrue(query.pendingRiskGate)
+            assertNotNull(query.error)
+
+            query.moveTable("t0", x = 80f, y = 40f)
+            assertTrue(query.pendingRiskGate)
+            assertNotNull(query.error)
+
+            query.setLimit(50)
+
+            assertFalse(query.pendingRiskGate)
+            assertNull(query.error)
+            assertTrue(query.canRun)
+        }
+
+    @Test
+    fun queryViewModelClearsASettledRiskBlockOnlyWhenTheGateChanges() =
+        runTest(dispatcher) {
+            val service =
+                RecordingQueryService(
+                    riskGateFirstRun = true,
+                    successfulRiskGate = QueryRiskGate.Flexible,
+                )
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+
+            query.run("c1")
+            scope.advanceUntilIdle()
+
+            assertTrue(query.pendingRiskGate)
+            assertFalse(query.canRun)
+
+            query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+            assertTrue(query.pendingRiskGate)
+            assertFalse(query.canRun)
+
+            query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+
+            assertFalse(query.pendingRiskGate)
+            assertNull(query.error)
+            assertNull(query.riskEvaluation)
+            assertTrue(query.canRun)
+
+            query.run("c1")
+            scope.advanceUntilIdle()
+
+            assertEquals(2, service.queryAttempts)
+            assertNotNull(query.results)
+            assertEquals(QueryRiskGate.Flexible, query.riskEvaluation?.decision?.effectiveGate)
+            assertNotNull(query.currentSample("c1"))
+
+            query.onQueryRiskGateChanged(QueryRiskGate.Cautious)
+
+            assertNull(query.riskEvaluation)
+            assertNotNull(query.currentSample("c1"))
+            assertTrue(query.canRun)
+        }
+
+    @Test
+    fun queryViewModelDiscardsAnInFlightRiskDecisionAfterTheGateChanges() =
+        runTest(dispatcher) {
+            val runGate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service =
+                RecordingQueryService(
+                    riskGateFirstRun = true,
+                    queryGate = runGate,
+                    queryStarted = started,
+                )
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.onQueryRiskGateChanged(QueryRiskGate.Standard)
+            query.addTable(sampleTable())
+            var settled: Boolean? = null
+
+            query.run("c1") { settled = it }
+            scope.runCurrent()
+            assertTrue(started.isCompleted)
+
+            query.onQueryRiskGateChanged(QueryRiskGate.Flexible)
+
+            assertTrue(query.running)
+            assertFalse(query.canRun)
+
+            runGate.complete(Unit)
+            scope.advanceUntilIdle()
+
+            assertFalse(query.running)
+            assertFalse(query.pendingRiskGate)
+            assertNull(query.error)
+            assertNull(query.riskEvaluation)
+            assertNull(query.results)
+            assertTrue(query.canRun)
+            assertEquals(1, service.queryAttempts)
+            assertEquals(false, settled)
+        }
+
+    private fun sampleTable() =
+        TableInfo(
+            schema = "public",
+            name = "users",
+            columns =
+                listOf(
+                    ColumnInfo("id", "int", nullable = false, isIndexed = true),
+                    ColumnInfo("name", "varchar", nullable = false, isIndexed = false),
+                ),
+            indexes = emptyList(),
+        )
+
     private fun filter(id: String, alias: String, column: String) =
         FilterSpec(
             id = id,
@@ -545,34 +952,151 @@ class QueryViewModelStateTest {
 }
 
 private class NoOpService : FakeSafeDbServiceSupport() {
-    override suspend fun testConnection(def: ConnectionDef, password: String?) = "ok"
-
-    override suspend fun createConnection(def: ConnectionDef, password: String) = def
-
-    override suspend fun updateConnection(def: ConnectionDef, password: String?) = Unit
-
-    override suspend fun listConnections() = emptyList<ConnectionDef>()
-
-    override suspend fun deleteConnection(id: String) = Unit
-
-    override suspend fun lockCredentials() = Unit
-
-    override suspend fun getSchema(connectionId: String) = Schema(emptyList())
-
-    override suspend fun runQuery(request: com.safedb.service.QueryRunRequest) =
+    override suspend fun runQuery(request: QueryRunRequest) =
         queryRunResult(QueryResult(emptyList(), emptyList(), 0, false, emptyList()))
+}
 
-    override suspend fun listSavedQueries() = emptyList<SavedQuery>()
+private class RecordingQueryService(
+    private val riskGateFirstRun: Boolean = false,
+    private val confirmationRequired: Boolean = false,
+    private val queryGate: CompletableDeferred<Unit>? = null,
+    private val queryStarted: CompletableDeferred<Unit>? = null,
+    private val successfulRiskGate: QueryRiskGate = QueryRiskGate.Standard,
+) : FakeSafeDbServiceSupport() {
+    var queryAttempts = 0
+        private set
 
-    override suspend fun saveSavedQuery(query: SavedQuery) = Unit
+    val queryRequests = mutableListOf<QueryRunRequest>()
+    val requiredConfirmation =
+        QueryExecutionConfirmation(
+            connectionId = "c1",
+            connectionFingerprint = "connection-fingerprint",
+            queryFingerprint = "confirmable",
+            conditions =
+                setOf(
+                    QueryConfirmationCondition(
+                        QueryConfirmationReasonCode.PlanUnavailable,
+                        "TimedOut",
+                    )
+                ),
+        )
 
-    override suspend fun deleteSavedQuery(id: String) = Unit
-
-    override suspend fun listHistory() = emptyList<HistoryEntry>()
-
-    override suspend fun clearHistory() = Unit
-
-    override suspend fun getSettings() = Settings.default()
-
-    override suspend fun saveSettings(settings: Settings) = Unit
+    override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
+        queryAttempts += 1
+        queryRequests += request
+        queryStarted?.complete(Unit)
+        queryGate?.await()
+        if (riskGateFirstRun && queryAttempts == 1) {
+            val assessment =
+                QueryRiskAssessment(
+                    scoreVersion = QUERY_RISK_SCORE_VERSION,
+                    queryFingerprint = "blocked",
+                    score = 6,
+                    severity = QueryRiskSeverity.High,
+                    categoryScores = emptyMap(),
+                    signals = emptyList(),
+                    uncertainties = emptyList(),
+                )
+            val decision =
+                QueryRiskDecision(
+                    queryFingerprint = "blocked",
+                    state = RiskGateState.Blocked,
+                    effectiveGate = QueryRiskGate.Standard,
+                    blockingBand = QueryRiskSeverity.High,
+                    reasons =
+                        listOf(
+                            RiskDecisionReason(
+                                "risk_gate",
+                                "The query risk gate blocks this query.",
+                            )
+                        ),
+                )
+            throw QueryFailureException(
+                QueryError.RiskGate(
+                    evaluation =
+                        QueryRiskEvaluation(
+                            staticAssessment = assessment,
+                            finalAssessment = assessment,
+                            planStatus = QueryPlanStatus.Available,
+                            decision = decision,
+                        ),
+                    historySpec = request.spec,
+                )
+            )
+        }
+        if (confirmationRequired && request.confirmation != requiredConfirmation) {
+            val assessment =
+                QueryRiskAssessment(
+                    scoreVersion = QUERY_RISK_SCORE_VERSION,
+                    queryFingerprint = "confirmable",
+                    score = 0,
+                    severity = QueryRiskSeverity.Minimal,
+                    categoryScores = emptyMap(),
+                    signals = emptyList(),
+                    uncertainties = emptyList(),
+                )
+            val reason =
+                RiskDecisionReason(
+                    code = "plan_unavailable",
+                    message = "Query plan assessment is unavailable.",
+                )
+            val requirement = QueryConfirmationRequirement(requiredConfirmation, listOf(reason))
+            val decision =
+                QueryRiskDecision(
+                    queryFingerprint = "confirmable",
+                    state = RiskGateState.ConfirmationRequired,
+                    effectiveGate = QueryRiskGate.Standard,
+                    blockingBand = QueryRiskSeverity.High,
+                    reasons = listOf(reason),
+                )
+            throw QueryFailureException(
+                QueryError.ConfirmationRequired(
+                    evaluation =
+                        QueryRiskEvaluation(
+                            staticAssessment = assessment,
+                            finalAssessment = assessment,
+                            planStatus = QueryPlanStatus.Unavailable,
+                            decision = decision,
+                            confirmationRequirement = requirement,
+                        ),
+                    requirement = requirement,
+                    historySpec = request.spec,
+                )
+            )
+        }
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("name", "varchar")),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val assessment =
+            QueryRiskAssessment(
+                2,
+                "allowed",
+                0,
+                QueryRiskSeverity.Minimal,
+                emptyMap(),
+                emptyList(),
+                emptyList(),
+            )
+        return QueryRunResult(
+            result,
+            QueryRiskEvaluation(
+                staticAssessment = assessment,
+                finalAssessment = assessment,
+                planStatus = QueryPlanStatus.Available,
+                decision =
+                    QueryRiskDecision(
+                        "allowed",
+                        RiskGateState.Allowed,
+                        successfulRiskGate,
+                        QueryRiskSeverity.High,
+                        emptyList(),
+                    ),
+            ),
+        )
+    }
 }

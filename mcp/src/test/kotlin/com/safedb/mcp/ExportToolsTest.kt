@@ -76,8 +76,9 @@ class ExportToolsTest {
     @Test
     fun exportResultRejectsPathSeparatorsAndUnknownResults() = runBlocking {
         val service = exportService()
-        withExportClient(service) { client, resultsDir, _ ->
+        withExportClient(service) { client, resultsDir, exportsDir ->
             val resultId = storeExportResult(client)
+            val exportsBefore = directoryNames(exportsDir)
             listOf("../evil", "sub/evil", "..", ".", ".hidden", "a b.csv", """a\b.csv""").forEach {
                 filename ->
                 val result =
@@ -98,22 +99,23 @@ class ExportToolsTest {
             }
             assertFalse(Files.exists(resultsDir.resolve("evil.csv")))
             assertFalse(Files.exists(resultsDir.resolve("evil")))
+            assertFalse(Files.exists(exportsDir.resolve("evil")))
+            assertFalse(Files.exists(exportsDir.resolve("evil.csv")))
+            assertFalse(Files.exists(exportsDir.parent.resolve("evil")))
+            assertFalse(Files.exists(exportsDir.parent.resolve("evil.csv")))
+            assertFalse(Files.exists(exportsDir.resolve("sub").resolve("evil")))
+            assertFalse(Files.exists(exportsDir.resolve("sub").resolve("evil.csv")))
+            assertEquals(exportsBefore, directoryNames(exportsDir))
 
             val unknown = client.callTool("export_result", mapOf("result_id" to "missing"))
-            assertEquals(true, unknown.isError)
-            assertEquals("not_found", unknown.json().string("error"))
-            assertEquals("Result not found", unknown.json().string("message"))
+            assertError(unknown, "not_found", "Result not found")
 
             val unknownArgument =
                 client.callTool(
                     "export_result",
                     mapOf("result_id" to resultId, "bogus" to true),
                 )
-            assertEquals("invalid_arguments", unknownArgument.json().string("error"))
-            assertEquals(
-                "unknown argument 'bogus'",
-                unknownArgument.json().string("message"),
-            )
+            assertError(unknownArgument, "invalid_arguments", "unknown argument 'bogus'")
         }
     }
 
@@ -224,3 +226,12 @@ private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>):
     callTool(name, arguments).json()
 
 private fun JsonObject.string(name: String): String = getValue(name).jsonPrimitive.content
+
+private fun directoryNames(directory: Path): List<String> =
+    if (!Files.isDirectory(directory)) {
+        emptyList()
+    } else {
+        Files.newDirectoryStream(directory).use { stream ->
+            stream.map { it.fileName.toString() }.sorted()
+        }
+    }

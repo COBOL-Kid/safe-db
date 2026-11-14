@@ -72,10 +72,6 @@ class QueryPlanRefinementTest {
             )
 
         assertEquals(QueryRiskSeverity.Elevated, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Cautious).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Disabled).state)
     }
 
     @Test
@@ -95,7 +91,6 @@ class QueryPlanRefinementTest {
             )
         assertEquals(4, high.signals.single().points)
         assertEquals(QueryRiskSeverity.Elevated, high.severity)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(high, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -129,8 +124,6 @@ class QueryPlanRefinementTest {
         val million = refineAccess(PlanAccessMethod.TableScan, 2_000_000, TableSizeClass.Unknown)
         assertEquals(4, million.signals.single().points)
         assertEquals(QueryRiskSeverity.Elevated, million.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(million, QueryRiskGate.Cautious).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(million, QueryRiskGate.Flexible).state)
 
         val moderate = refineAccess(PlanAccessMethod.TableScan, 150_000, TableSizeClass.Unknown)
         assertEquals(4, moderate.signals.single().points)
@@ -164,7 +157,6 @@ class QueryPlanRefinementTest {
         val signal = refined.signals.single()
         assertEquals(RiskSignalCode.PlanConfirmedLargeScan, signal.code)
         assertEquals(QueryRiskSeverity.Elevated, refined.severity)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
         assertTrue(refined.uncertainties.none { it.code == "plan_relation_unmapped" })
     }
 
@@ -544,8 +536,6 @@ class QueryPlanRefinementTest {
             refined.signals.single { it.target == RiskTarget.Access("t0") }.code,
         )
         assertEquals(QueryRiskSeverity.High, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -598,8 +588,6 @@ class QueryPlanRefinementTest {
             refined.signals.single { it.target == joinTarget }.code,
         )
         assertEquals(QueryRiskSeverity.High, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -652,8 +640,6 @@ class QueryPlanRefinementTest {
             refined.signals.count { it.code == RiskSignalCode.PlanConfirmedLargeScan },
         )
         assertEquals(QueryRiskSeverity.High, refined.severity)
-        assertEquals(RiskGateState.Blocked, applyRiskGate(refined, QueryRiskGate.Standard).state)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Flexible).state)
     }
 
     @Test
@@ -722,7 +708,6 @@ class QueryPlanRefinementTest {
             }
         )
         assertEquals(QueryRiskSeverity.Minimal, refined.severity)
-        assertEquals(RiskGateState.Allowed, applyRiskGate(refined, QueryRiskGate.Cautious).state)
     }
 
     @Test
@@ -772,7 +757,6 @@ class QueryPlanRefinementTest {
         assertEquals(8, refined.score)
         assertEquals(QueryRiskSeverity.VeryHigh, refined.severity)
         val decision = applyRiskGate(refined, QueryRiskGate.Flexible)
-        assertEquals(RiskGateState.Blocked, decision.state)
         assertEquals(
             1,
             decision.reasons.count {

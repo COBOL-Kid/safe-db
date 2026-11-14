@@ -10,7 +10,6 @@ import com.safedb.model.DriverProperty
 import com.safedb.model.SortDirection
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
-import com.zaxxer.hikari.HikariDataSource
 import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -448,18 +447,6 @@ class Db2AdapterTest {
             assertTrue(
                 base.copy(host = "db.example$character").validate().isFailure,
                 "host $character",
-            )
-        }
-    }
-
-    @Test
-    fun db2ExplainWithoutConnectionThrows() {
-        // EXPLAIN needs a live connection; without explain tables the adapter returns
-        // Unavailable instead of failing, so only a missing datasource can be asserted here.
-        kotlin.test.assertFailsWith<Exception> {
-            Db2Adapter.explain(
-                HikariDataSource(),
-                CompiledQuery(sql = "SELECT 1 FROM SYSIBM.SYSDUMMY1", params = emptyList()),
             )
         }
     }

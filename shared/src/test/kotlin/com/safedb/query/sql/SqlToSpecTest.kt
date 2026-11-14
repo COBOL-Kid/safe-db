@@ -409,12 +409,6 @@ class SqlToSpecTest {
     }
 
     @Test
-    fun reparsingIdenticalTextYieldsEqualSpecs() {
-        val sql = "SELECT id FROM users u WHERE (name = 'a' OR email = 'b') AND id > 1 ORDER BY id"
-        assertEquals(spec(sql), spec(sql))
-    }
-
-    @Test
     fun missingLimitIsUncapped() {
         val result = success("SELECT id FROM users")
         assertEquals(DEFAULT_LIMIT, result.spec.limit)

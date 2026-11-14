@@ -130,6 +130,30 @@ class AssessQueryToolsTest {
     }
 
     @Test
+    fun assessQueryBlockedIsASuccessfulReceipt() = runBlocking {
+        val service = queryService()
+        service.assessQueryResult =
+            sampleMcpAssessment(risk = allowedMcpRisk(state = RiskGateState.Blocked))
+        withTempMcpClient(service) { client ->
+            val result =
+                client.callTool(
+                    "assess_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                )
+            assertTrue(result.isError != true)
+            val body = result.json()
+            assertEquals(
+                "Blocked",
+                body.getValue("risk").jsonObject.getValue("state").jsonPrimitive.content,
+            )
+            assertEquals("false", body.getValue("confirmation_required").jsonPrimitive.content)
+            assertFalse(body.containsKey("confirmation"))
+        }
+        assertTrue(service.runQueryRequests.isEmpty())
+        assertEquals(1, service.assessQueryRequests.size)
+    }
+
+    @Test
     fun assessQueryHandlesParseValidationAndArgumentErrors() = runBlocking {
         val service = queryService()
         withTempMcpClient(service) { client ->
@@ -156,15 +180,7 @@ class AssessQueryToolsTest {
                     "assess_query",
                     mapOf("connection_id" to "nope", "sql" to "SELECT 1"),
                 )
-            assertEquals(true, unknownConnection.isError)
-            assertEquals(
-                "not_found",
-                unknownConnection.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "Connection not found",
-                unknownConnection.json().getValue("message").jsonPrimitive.content,
-            )
+            assertError(unknownConnection, "not_found", "Connection not found")
 
             val parseFailure =
                 client.callTool(
@@ -183,15 +199,7 @@ class AssessQueryToolsTest {
                     "assess_query",
                     mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
                 )
-            assertEquals(true, validation.isError)
-            assertEquals(
-                "validation",
-                validation.json().getValue("error").jsonPrimitive.content,
-            )
-            assertEquals(
-                "Bad query.",
-                validation.json().getValue("message").jsonPrimitive.content,
-            )
+            assertError(validation, "validation", "Bad query.")
         }
         assertTrue(service.runQueryRequests.isEmpty())
     }
