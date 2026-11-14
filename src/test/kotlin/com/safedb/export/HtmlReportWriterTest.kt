@@ -237,7 +237,7 @@ class HtmlReportWriterTest {
             assertTrue(x >= 0.0 && x + assertNotNull(bar.w) <= chart.width)
             assertTrue(y >= 0.0 && y + assertNotNull(bar.h) <= chart.height)
         }
-        // pending counts 2 rows, shipped 1: the bar heights keep that 2:1 ratio.
+        // Pending counts 2 rows, shipped 1: the bar heights keep that 2:1 ratio.
         val heights = bars.map { assertNotNull(it.h) }.sortedDescending()
         assertTrue(abs(heights[0] - 2 * heights[1]) < 1.0)
         assertEquals(5, chart.valueTicks.size)

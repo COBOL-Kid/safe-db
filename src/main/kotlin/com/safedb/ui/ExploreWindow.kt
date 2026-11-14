@@ -434,8 +434,7 @@ private fun ExploreStaleSampleWarning(
 ) {
     if (!stale) return
     // Refresh pulls from whichever surface opened this window, so the instructions have to name it
-    // —
-    // telling a SQL-origin user to re-run in Builder never produces a sample and leaves Refresh
+    // — telling a SQL-origin user to re-run in Builder never produces a sample and leaves Refresh
     // off.
     val surface =
         when (origin) {

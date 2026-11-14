@@ -157,8 +157,7 @@ class AppViewModel(
     }
 
     // Spec-hash checks keep an Explore window from opening for a query other than the one the
-    // recipe
-    // asked for.
+    // recipe asked for.
     fun onQuerySettled(activeConnectionId: String?, connections: List<ConnectionDef>) {
         val pending = _pendingRecipeRun.value ?: return
         if (pending.connectionId != activeConnectionId) {

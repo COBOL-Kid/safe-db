@@ -54,7 +54,7 @@ internal sealed class SqlConditionAst {
 
 internal data class SqlSelectAst(
     val distinct: Boolean,
-    // null items means a bare `*` select list
+    // null items means a bare `*` select list.
     val items: List<SqlSelectItem>?,
     val from: SqlTableRefAst,
     val joins: List<SqlJoinAst>,

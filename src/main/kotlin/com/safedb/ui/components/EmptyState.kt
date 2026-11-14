@@ -15,7 +15,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/** @param subtitle Optional subtitle text; null or blank renders no subtitle line. */
+// A null or blank subtitle renders no subtitle line.
 @Composable
 fun EmptyState(
     icon: ImageVector,

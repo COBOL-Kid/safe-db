@@ -22,7 +22,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 // Real export path (ExploreViewModel.saveVisualizationHtml), so the marketing site records the
-// actual artifact. Output: /tmp/safedb-preview/report/explore-production-replica-chart.html
+// actual artifact. Output: /tmp/safedb-preview/report/explore-production-replica-chart.html.
 fun main() {
     val statuses = listOf("pending", "shipped", "delivered", "returned", "cancelled")
     // Deterministic sample: weights and prices vary per status so the chart has shape.
