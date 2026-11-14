@@ -226,8 +226,8 @@ class ViewModelsTest {
                             TableInfo("safedb_test", "customers", emptyList(), emptyList()),
                             TableInfo("safedb_test", "orders", emptyList(), emptyList()),
                             TableInfo("reporting", "events", emptyList(), emptyList()),
-                        )
-                )
+                        ),
+                ),
             )
             advanceUntilIdle()
 
@@ -459,7 +459,7 @@ class ViewModelsTest {
             viewModel.loadDefaultSchemaOptions("c2")
             runCurrent()
             second.complete(
-                Schema(listOf(TableInfo("current", "events", emptyList(), emptyList())))
+                Schema(listOf(TableInfo("current", "events", emptyList(), emptyList()))),
             )
             runCurrent()
             first.complete(Schema(listOf(TableInfo("stale", "events", emptyList(), emptyList()))))
@@ -687,7 +687,7 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
                     TableInfo("safedb_test", "customers", emptyList(), emptyList()),
                     TableInfo("safedb_test", "orders", emptyList(), emptyList()),
                     TableInfo("reporting", "events", emptyList(), emptyList()),
-                )
+                ),
         )
     }
 

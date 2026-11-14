@@ -23,8 +23,8 @@ class SqlEditorCompletionStateTest {
                                 ColumnInfo("email", "text", nullable = true),
                             ),
                         indexes = emptyList(),
-                    )
-                )
+                    ),
+                ),
         )
 
     private fun request(
@@ -47,7 +47,7 @@ class SqlEditorCompletionStateTest {
         assertFalse(shouldAutoOpenCompletion(request("SELECT 1."), typed = true))
         val dotText = "SELECT u. FROM users u"
         assertTrue(
-            shouldAutoOpenCompletion(request(dotText, caret = "SELECT u.".length), typed = true)
+            shouldAutoOpenCompletion(request(dotText, caret = "SELECT u.".length), typed = true),
         )
     }
 
@@ -56,7 +56,7 @@ class SqlEditorCompletionStateTest {
         assertTrue(shouldAutoOpenCompletion(request("SELECT id FROM "), typed = true))
         val selectGap = "SELECT  FROM users"
         assertTrue(
-            shouldAutoOpenCompletion(request(selectGap, caret = "SELECT ".length), typed = true)
+            shouldAutoOpenCompletion(request(selectGap, caret = "SELECT ".length), typed = true),
         )
         assertTrue(shouldAutoOpenCompletion(request("SELECT id FROM users WHERE "), typed = true))
     }
@@ -67,7 +67,7 @@ class SqlEditorCompletionStateTest {
         assertFalse(shouldAutoOpenCompletion(request("SELECT "), typed = true))
         assertFalse(shouldAutoOpenCompletion(request("SELECT id "), typed = true))
         assertFalse(
-            shouldAutoOpenCompletion(request("SELECT id FROM ", schema = null), typed = true)
+            shouldAutoOpenCompletion(request("SELECT id FROM ", schema = null), typed = true),
         )
         assertFalse(shouldAutoOpenCompletion(request("SELECT 'a '"), typed = true))
     }

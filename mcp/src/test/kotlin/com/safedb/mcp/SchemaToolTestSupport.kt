@@ -39,7 +39,7 @@ internal fun joinService(): RecordingSafeDbService {
                         kind = "btree",
                         isUnique = true,
                         isPrimary = true,
-                    )
+                    ),
                 ),
             foreignKeys =
                 listOf(
@@ -49,7 +49,7 @@ internal fun joinService(): RecordingSafeDbService {
                         referencedSchema = "public",
                         referencedTable = "orders",
                         referencedColumns = listOf("id"),
-                    )
+                    ),
                 ),
             tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Medium),
         )
@@ -82,7 +82,7 @@ internal fun joinService(): RecordingSafeDbService {
                         kind = "btree",
                         isUnique = true,
                         isPrimary = true,
-                    )
+                    ),
                 ),
             tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Medium),
         )
@@ -93,7 +93,7 @@ internal fun joinService(): RecordingSafeDbService {
                     columns =
                         table.columns.map {
                             if (it.name == "id") it.copy(joinEligible = true) else it
-                        }
+                        },
                 )
             } else {
                 table
@@ -129,7 +129,7 @@ internal fun db2Service(): RecordingSafeDbService {
                         columns = columns,
                         indexes = emptyList(),
                     ),
-                )
+                ),
         )
     return service
 }

@@ -76,7 +76,7 @@ fun SchemaBrowser(
 
     Column(modifier = modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
         ) {
             Row(
                 modifier = Modifier.padding(bottom = 6.dp),
@@ -206,7 +206,7 @@ fun SchemaBrowser(
                 singleLine = true,
                 textStyle =
                     MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 decorationBox = { innerTextField ->

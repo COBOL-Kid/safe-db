@@ -107,7 +107,7 @@ suspend fun assessQueryCore(
             is Outcome.Ok -> assessed.value
             is Outcome.Err ->
                 return QueryAssessmentOutcome.Failure(
-                    QueryCoreError(QueryError.Validation(assessed.message))
+                    QueryCoreError(QueryError.Validation(assessed.message)),
                 )
         }
 
@@ -119,7 +119,7 @@ suspend fun assessQueryCore(
                     QueryCoreError(
                         error = QueryError.Compilation(result.message, normalizedSpec),
                         warnings = warnings,
-                    )
+                    ),
                 )
         }
 
@@ -145,7 +145,7 @@ suspend fun assessQueryCore(
                         .copy(queryFingerprint = fingerprint),
             )
         return QueryAssessmentOutcome.Success(
-            QueryAssessment(normalizedSpec, columns, compiled, warnings, evaluation)
+            QueryAssessment(normalizedSpec, columns, compiled, warnings, evaluation),
         )
     }
 
@@ -196,7 +196,7 @@ suspend fun assessQueryCore(
         }
     if (baseEvaluation.decision.state != RiskGateState.Allowed) {
         return QueryAssessmentOutcome.Success(
-            QueryAssessment(normalizedSpec, columns, compiled, warnings, baseEvaluation)
+            QueryAssessment(normalizedSpec, columns, compiled, warnings, baseEvaluation),
         )
     }
 
@@ -210,7 +210,7 @@ suspend fun assessQueryCore(
                                 error = QueryError.Execution(disposition.message, normalizedSpec),
                                 warnings = warnings,
                                 riskEvaluation = baseEvaluation,
-                            )
+                            ),
                         )
                     is UnavailablePlanDisposition.Confirm -> disposition.requirement
                     UnavailablePlanDisposition.Proceed -> null
@@ -232,7 +232,7 @@ suspend fun assessQueryCore(
         }
 
     return QueryAssessmentOutcome.Success(
-        QueryAssessment(normalizedSpec, columns, compiled, warnings, evaluation)
+        QueryAssessment(normalizedSpec, columns, compiled, warnings, evaluation),
     )
 }
 
@@ -261,7 +261,7 @@ suspend fun runQueryCore(
                         error = QueryError.RiskGate(baseEvaluation, normalizedSpec),
                         warnings = warnings,
                         riskEvaluation = baseEvaluation,
-                    )
+                    ),
                 )
             RiskGateState.ConfirmationRequired -> {
                 val requirement =
@@ -288,7 +288,7 @@ suspend fun runQueryCore(
                                 ),
                             warnings = warnings,
                             riskEvaluation = baseEvaluation,
-                        )
+                        ),
                     )
                 }
             }
@@ -322,7 +322,7 @@ private fun unavailablePlanDisposition(
             UnavailablePlanDisposition.HardFail("Query plan assessment timed out")
         PlanUnavailableReason.ConnectionFailure ->
             UnavailablePlanDisposition.HardFail(
-                "Query plan assessment failed: ${explain.message.ifBlank { "connection error" }}"
+                "Query plan assessment failed: ${explain.message.ifBlank { "connection error" }}",
             )
         PlanUnavailableReason.ParseFailure -> UnavailablePlanDisposition.Proceed
         PlanUnavailableReason.PermissionDenied,
@@ -330,7 +330,7 @@ private fun unavailablePlanDisposition(
         PlanUnavailableReason.CleanupFailure,
         PlanUnavailableReason.ExecutionFailure ->
             UnavailablePlanDisposition.Confirm(
-                planUnavailableConfirmation(def, queryFingerprint, explain)
+                planUnavailableConfirmation(def, queryFingerprint, explain),
             )
     }
 
@@ -350,7 +350,7 @@ private fun planUnavailableConfirmation(
                         QueryConfirmationCondition(
                             QueryConfirmationReasonCode.PlanUnavailable,
                             explain.reasonCode.name,
-                        )
+                        ),
                     ),
             ),
         reasons =
@@ -359,7 +359,7 @@ private fun planUnavailableConfirmation(
                     code = "plan_unavailable",
                     message =
                         "Query plan assessment is unavailable: ${explain.message.ifBlank { "plan check failed" }}. Confirm to run with read-only, row-limit, and timeout safeguards.",
-                )
+                ),
             ),
     )
 
@@ -381,7 +381,7 @@ private fun optimizerCostConfirmation(
                         QueryConfirmationCondition(
                             QueryConfirmationReasonCode.OptimizerCostUnavailable,
                             def.dialect.name,
-                        )
+                        ),
                     ),
             ),
         reasons =
@@ -390,7 +390,7 @@ private fun optimizerCostConfirmation(
                     code = "optimizer_cost_unavailable",
                     message =
                         "The query plan did not provide a valid optimizer cost. Confirm to run with read-only, row-limit, and timeout safeguards.",
-                )
+                ),
             ),
     )
 }
@@ -417,7 +417,7 @@ private suspend fun executeCompiled(
                             ),
                         warnings = warnings,
                         riskEvaluation = evaluation,
-                    )
+                    ),
                 )
         }
 

@@ -211,7 +211,7 @@ fun TableCard(
                     modifier =
                         Modifier.fillMaxWidth()
                             .padding(horizontal = 4.dp, vertical = 3.dp)
-                            .verticalScroll(fieldScrollState)
+                            .verticalScroll(fieldScrollState),
                 ) {
                     val showColumnType = tableCardShowsColumnType(canvasTable.width)
                     for ((columnName, columnDataType, _, isIndexed, _, _) in table.columns) {
@@ -247,7 +247,7 @@ fun TableCard(
                                             )
                                         } else {
                                             Modifier
-                                        }
+                                        },
                                     )
                                     .onPointerEvent(PointerEventType.Enter) {
                                         hoveredColumn = columnName
@@ -259,7 +259,7 @@ fun TableCard(
                                         when {
                                             selected ->
                                                 SafeDbTheme.colors.accentContainer.copy(
-                                                    alpha = 0.72f
+                                                    alpha = 0.72f,
                                                 )
                                             joinTarget -> joinTargetColor.copy(alpha = 0.72f)
                                             else -> MaterialTheme.colorScheme.surface
@@ -289,7 +289,7 @@ fun TableCard(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 CompactSelectionIndicator(
-                                    if (selected) ToggleableState.On else ToggleableState.Off
+                                    if (selected) ToggleableState.On else ToggleableState.Off,
                                 )
                                 ColumnNameCell(
                                     columnName = columnName,
@@ -307,7 +307,7 @@ fun TableCard(
                                 ) {
                                     Box(
                                         modifier =
-                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp),
                                     ) {
                                         Box {
                                             ColumnActionButton(
@@ -345,7 +345,7 @@ fun TableCard(
                                     }
                                     Box(
                                         modifier =
-                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp),
                                     ) {
                                         if (columnHovered || group != null) {
                                             ColumnActionButton(
@@ -365,7 +365,7 @@ fun TableCard(
                                     }
                                     Box(
                                         modifier =
-                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp),
                                     ) {
                                         if (columnHovered || sort != null) {
                                             ColumnActionButton(
@@ -409,7 +409,7 @@ fun TableCard(
                                 } else {
                                     Box(
                                         modifier =
-                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp)
+                                            Modifier.size(TABLE_CARD_COLUMN_ACTION_SLOT_DP.dp),
                                     )
                                 }
                             }
@@ -449,7 +449,7 @@ fun TableCard(
                                         onResizeTable(dragAmount)
                                     },
                                 )
-                            }
+                            },
                 ) {
                     Canvas(modifier = Modifier.size(20.dp)) {
                         val stroke = 1.8.dp.toPx()
@@ -518,7 +518,7 @@ private fun ColumnNameCell(
                 TooltipBox(
                     positionProvider =
                         TooltipDefaults.rememberTooltipPositionProvider(
-                            TooltipAnchorPosition.Above
+                            TooltipAnchorPosition.Above,
                         ),
                     tooltip = { PlainTooltip { Text("$columnName ($columnDataType)") } },
                     state = rememberTooltipState(),

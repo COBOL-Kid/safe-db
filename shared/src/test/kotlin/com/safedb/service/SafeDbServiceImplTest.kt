@@ -318,7 +318,7 @@ class SafeDbServiceImplTest {
                         "c1",
                         sampleQuerySpec()
                             .copy(tables = listOf(TableRef("safedb_test", "missing", "t0"))),
-                    )
+                    ),
                 )
             }
 
@@ -475,10 +475,10 @@ class SafeDbServiceImplTest {
                                 alias = "t0",
                                 method = PlanAccessMethod.TableScan,
                                 estimatedRows = 150_000,
-                            )
+                            ),
                         ),
                     rawOptimizerCost = 1.0,
-                )
+                ),
             )
 
         val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
@@ -646,7 +646,7 @@ class SafeDbServiceImplTest {
                 rowCount = 1,
                 warnings = emptyList(),
                 timestamp = "1",
-            )
+            ),
         )
         val service =
             SafeDbServiceImpl(
@@ -669,7 +669,7 @@ class SafeDbServiceImplTest {
                     QueryRunRequest(
                         "c1",
                         sampleQuerySpec().copy(schemaVersion = CURRENT_SCHEMA_VERSION + 1),
-                    )
+                    ),
                 )
             }
 
@@ -704,7 +704,7 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
                                 isIndexed = true,
                                 joinEligible = true,
                                 category = ColumnCategory.Integer,
-                            )
+                            ),
                         ),
                     indexes =
                         listOf(
@@ -714,7 +714,7 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
                                 supportsEquality = true,
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                     tableSize =
                         TableSizeEstimate(
@@ -722,8 +722,8 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
                             coverage = MetadataCoverage.complete(),
                             confidence = EvidenceConfidence.High,
                         ),
-                )
-            )
+                ),
+            ),
     )
 
 private class StubRunner : QueryRunner {
@@ -740,7 +740,7 @@ private class StubRunner : QueryRunner {
                 rowCount = 1,
                 truncated = false,
                 warnings = emptyList(),
-            )
+            ),
         )
 }
 

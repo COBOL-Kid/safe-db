@@ -191,7 +191,7 @@ fun SettingsPanel(
                                                     candidateConnectionId = null
                                                     viewModel.clearDefaultSchemaOptions()
                                                     viewModel.clearDefaultLocation(
-                                                        onDefaultLocationCleared
+                                                        onDefaultLocationCleared,
                                                     )
                                                 },
                                             )
@@ -205,7 +205,7 @@ fun SettingsPanel(
                                                         databaseMenuOpen = false
                                                         candidateConnectionId = connection.id
                                                         viewModel.loadDefaultSchemaOptions(
-                                                            connection.id
+                                                            connection.id,
                                                         )
                                                     },
                                                 )

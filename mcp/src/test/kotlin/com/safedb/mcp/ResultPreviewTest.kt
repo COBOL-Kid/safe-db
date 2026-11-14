@@ -145,7 +145,7 @@ class ResultPreviewTest {
                 .getValue("c01")
                 .jsonPrimitive
                 .content
-                .endsWith(MCP_CELL_TRUNCATION_MARKER)
+                .endsWith(MCP_CELL_TRUNCATION_MARKER),
         )
     }
 }

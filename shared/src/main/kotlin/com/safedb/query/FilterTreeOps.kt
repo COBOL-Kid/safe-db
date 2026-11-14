@@ -41,7 +41,7 @@ fun addFilterGroup(
         return group.copy(
             children =
                 group.children +
-                    FilterNode.Group(FilterGroup(id = idFactory(), connector = connector))
+                    FilterNode.Group(FilterGroup(id = idFactory(), connector = connector)),
         )
     }
     val index = path.first()
@@ -72,7 +72,7 @@ fun removeFilterNode(group: FilterGroup, path: List<Int>): FilterGroup {
     if (index !in group.children.indices) return group
     if (path.size == 1) {
         return group.copy(
-            children = group.children.filterIndexed { childIndex, _ -> childIndex != index }
+            children = group.children.filterIndexed { childIndex, _ -> childIndex != index },
         )
     }
     val child = group.children[index] as? FilterNode.Group ?: return group
@@ -92,7 +92,7 @@ fun pruneFiltersForAlias(group: FilterGroup, alias: String): FilterGroup =
                         FilterNode.Group(pruned).takeIf { pruned.children.isNotEmpty() }
                     }
                 }
-            }
+            },
     )
 
 internal fun filterNodeId(node: FilterNode): String =
@@ -131,7 +131,7 @@ fun ensureFilterNodeIds(
                     is FilterNode.Leaf ->
                         FilterNode.Leaf(
                             child.spec.takeIf { it.id.isNotEmpty() }
-                                ?: child.spec.copy(id = idFactory())
+                                ?: child.spec.copy(id = idFactory()),
                         )
                     is FilterNode.Group ->
                         FilterNode.Group(ensureFilterNodeIds(child.group, idFactory))

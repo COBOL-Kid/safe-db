@@ -97,11 +97,11 @@ internal constructor(
                     val previous =
                         configStore.get(def.id)
                             ?: throw IllegalArgumentException(
-                                "A password is required for a new connection"
+                                "A password is required for a new connection",
                             )
                     if (previous.credentialFingerprint() != def.credentialFingerprint()) {
                         throw IllegalArgumentException(
-                            "Connection changes require the password to be re-entered before testing"
+                            "Connection changes require the password to be re-entered before testing",
                         )
                     }
                     SecretsManager.passwordForDefinition(previous).getOrThrow()
@@ -298,7 +298,7 @@ internal constructor(
                 password == null
         ) {
             throw IllegalArgumentException(
-                "Endpoint or transport changes require the password to be re-entered"
+                "Endpoint or transport changes require the password to be re-entered",
             )
         }
         if (previous == null && password == null) {
@@ -366,7 +366,7 @@ internal constructor(
                         riskEvaluation?.confirmationRequirement?.let {
                             riskEvaluation.confirmationAccepted
                         },
-                )
+                ),
             )
         }
     }

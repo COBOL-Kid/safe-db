@@ -59,7 +59,7 @@ internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching 
             }
         val childAliases =
             node.arrayValue("Plans").orEmpty().filterIsInstance<JsonObject>().flatMapTo(
-                linkedSetOf()
+                linkedSetOf(),
             ) {
                 visit(it, childOutputCap, childAccessCap)
             }

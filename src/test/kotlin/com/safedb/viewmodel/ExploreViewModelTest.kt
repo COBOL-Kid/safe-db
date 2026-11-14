@@ -180,9 +180,10 @@ class ExploreViewModelTest {
                     sampleSpec(),
                     sampleResult()
                         .copy(
-                            warnings = listOf("No columns selected — query will select all columns")
+                            warnings =
+                                listOf("No columns selected — query will select all columns"),
                         ),
-                )
+                ),
             )
         val options = viewModel.memberOptions("t0__status")
         assertEquals(listOf("pending", "shipped"), options.map { it.label })
@@ -246,8 +247,8 @@ class ExploreViewModelTest {
                             MeasureFn.Count,
                             label = "Share",
                             showAs = PivotShowAs(ShowAsMode.PercentGrandTotal),
-                        )
-                    )
+                        ),
+                    ),
             )
         }
         val path = createTempFile(suffix = ".csv")
@@ -291,7 +292,7 @@ class ExploreViewModelTest {
                 WorksheetColumnLayout(WorksheetValueRef.Column("t0__id"), visible = false),
                 WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false),
                 WorksheetColumnLayout(WorksheetValueRef.Column("t0__amount"), visible = false),
-            )
+            ),
         )
         val path = createTempFile(suffix = ".html")
 
@@ -339,7 +340,7 @@ class ExploreViewModelTest {
         viewModel.updateWorksheet {
             it.copy(
                 calculations =
-                    listOf(WorksheetCalculation.RowFormula("double", "Double", "[t0__amount] * 2"))
+                    listOf(WorksheetCalculation.RowFormula("double", "Double", "[t0__amount] * 2")),
             )
         }
         viewModel.updateWorksheetColumnLayout(
@@ -348,7 +349,7 @@ class ExploreViewModelTest {
                 WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false),
                 WorksheetColumnLayout(WorksheetValueRef.Column("t0__amount")),
                 WorksheetColumnLayout(WorksheetValueRef.Column("t0__id"), visible = false),
-            )
+            ),
         )
         val path = createTempFile(suffix = ".csv")
 
@@ -395,7 +396,7 @@ class ExploreViewModelTest {
                             label = "Revenue",
                             fn = WorksheetAggregateFn.Sum,
                             sourceColumn = "t0__amount",
-                        )
+                        ),
                     ),
                 columnLayout =
                     listOf(
@@ -483,7 +484,7 @@ class ExploreViewModelTest {
         assertTrue(viewModel.isDefaultWorksheet())
 
         viewModel.updateWorksheetColumnLayout(
-            listOf(WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false))
+            listOf(WorksheetColumnLayout(WorksheetValueRef.Column("t0__status"), visible = false)),
         )
         assertFalse(viewModel.isDefaultWorksheet())
 
@@ -599,7 +600,10 @@ class ExploreViewModelTest {
         assertEquals(null, viewModel.exportError)
         val bytes = Files.readAllBytes(path)
         assertTrue(
-            bytes.take(8).toByteArray().contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10))
+            bytes
+                .take(8)
+                .toByteArray()
+                .contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10)),
         )
         val image = Image.makeFromEncoded(bytes)
         assertEquals(1600, image.width)
@@ -623,7 +627,7 @@ class ExploreViewModelTest {
                                     MeasureFn.Sum,
                                     "t0__amount",
                                     "Amount",
-                                )
+                                ),
                             ),
                     )
                 }

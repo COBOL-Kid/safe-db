@@ -80,7 +80,7 @@ class RecipeStoreTest {
         assertTrue(
             Files.list(dir).use { files ->
                 files.anyMatch { it.fileName.toString().startsWith("explore_recipes.corrupt-") }
-            }
+            },
         )
     }
 
@@ -194,8 +194,8 @@ class RecipeStoreTest {
                             WorksheetColumnLayout(
                                 WorksheetValueRef.Column("amount"),
                                 visible = false,
-                            )
-                        )
+                            ),
+                        ),
                 ),
             requiredFields = listOf(RecipeField("amount", "Amount", "decimal")),
         )

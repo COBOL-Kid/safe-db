@@ -148,7 +148,7 @@ class ExportToolsTest {
                     service,
                     resultsDir = resultsDir,
                     exportsDir = exportsDir,
-                )
+                ),
             ) { client ->
                 val resultId = storeExportResult(client)
                 val receipt = client.callJson("export_result", mapOf("result_id" to resultId))
@@ -187,7 +187,7 @@ private suspend fun withExportClient(
                 service,
                 resultsDir = resultsDir,
                 exportsDir = exportsDir,
-            )
+            ),
         ) { client ->
             block(client, resultsDir, exportsDir)
         }

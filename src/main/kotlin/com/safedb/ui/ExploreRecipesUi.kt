@@ -251,7 +251,7 @@ private fun RunRecipeDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "${recipe.querySpec?.tables?.size ?: 0} table${if (recipe.querySpec?.tables?.size == 1) "" else "s"} · limit ${recipe.querySpec?.let { limitFieldText(it.limit, it.uncapped) }} · opens ${recipe.defaultMode.displayName()}"
+                    "${recipe.querySpec?.tables?.size ?: 0} table${if (recipe.querySpec?.tables?.size == 1) "" else "s"} · limit ${recipe.querySpec?.let { limitFieldText(it.limit, it.uncapped) }} · opens ${recipe.defaultMode.displayName()}",
                 )
                 RecipeLabel("Run on connection")
                 FlowRow(
@@ -397,7 +397,7 @@ private fun SaveRecipeDialog(
                                     visualization,
                                 ),
                             querySpec = explore.session.baseSpec.takeIf { includeQuery },
-                        )
+                        ),
                     )
                 },
                 enabled = name.isNotBlank() && included.isNotEmpty() && defaultMode in included,
@@ -456,7 +456,7 @@ internal fun RecipeLibraryDialog(
         onDeleteDismiss = { deleting = null },
         onRename = { recipe, name ->
             recipesViewModel.save(
-                recipe.copy(name = name, updatedAt = Instant.now().epochSecond.toString())
+                recipe.copy(name = name, updatedAt = Instant.now().epochSecond.toString()),
             )
             renaming = null
         },
@@ -534,7 +534,7 @@ internal fun RecipeLibraryDialog(
                             chooseRecipeFile(open = true)?.let {
                                 recipesViewModel.import(it.toPath())
                             }
-                        }
+                        },
                     ) {
                         Icon(
                             Icons.Default.FileUpload,
@@ -644,7 +644,7 @@ internal fun RecipeLibraryDialog(
                                         result.config,
                                         null,
                                     ),
-                            )
+                            ),
                         )
                         onDismiss()
                         return@PrimaryButton
@@ -672,7 +672,7 @@ internal fun RecipeLibraryDialog(
                                     null,
                                     result.config,
                                 ),
-                        )
+                        ),
                     )
                     onDismiss()
                 },

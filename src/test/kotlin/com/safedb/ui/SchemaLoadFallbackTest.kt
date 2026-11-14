@@ -45,7 +45,7 @@ class SchemaLoadFallbackTest {
                 selectedSchema = "public",
                 schemaOptions = options,
                 preferredSchemaWarning = null,
-            )
+            ),
         )
     }
 
@@ -57,7 +57,7 @@ class SchemaLoadFallbackTest {
                 selectedSchema = null,
                 schemaOptions = options,
                 preferredSchemaWarning = "Query schema \"reporting\" is unavailable.",
-            )
+            ),
         )
         assertNull(
             resolveSchemaFallback(
@@ -65,7 +65,7 @@ class SchemaLoadFallbackTest {
                 selectedSchema = null,
                 schemaOptions = emptyList(),
                 preferredSchemaWarning = null,
-            )
+            ),
         )
     }
 }

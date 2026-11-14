@@ -22,7 +22,7 @@ object MssqlAdapter {
                 conn.metadataRows(
                     "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES " +
                         "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN $excluded " +
-                        "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+                        "ORDER BY TABLE_SCHEMA, TABLE_NAME",
                 ) { rs ->
                     MetadataTableKey(readString(rs, "TABLE_SCHEMA"), readString(rs, "TABLE_NAME"))
                 }
@@ -30,7 +30,7 @@ object MssqlAdapter {
                 conn.metadataRows(
                     "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE " +
                         "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA NOT IN $excluded " +
-                        "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
+                        "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION",
                 ) { rs ->
                     columnRow(
                         rs,
@@ -56,7 +56,7 @@ object MssqlAdapter {
                 ORDER BY s.name, t.name, i.is_primary_key DESC, i.name,
                          ic.is_included_column, ic.key_ordinal, ic.index_column_id
                 """
-                        .trimIndent()
+                        .trimIndent(),
                 ) { rs ->
                     MetadataIndex(
                         MetadataTableKey(
@@ -103,7 +103,7 @@ object MssqlAdapter {
                 WHERE child_schema.name NOT IN $excluded
                 ORDER BY child_schema.name, child_table.name, fk.name, fkc.constraint_column_id
                 """
-                        .trimIndent()
+                        .trimIndent(),
                 ) { rs ->
                     foreignKeyRow(rs)
                 }

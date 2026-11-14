@@ -195,7 +195,7 @@ internal fun DimensionSettingsDialog(
                             showSubtotals = subtotals,
                             sortMode = sortMode,
                             sortMeasureAlias = sortMeasureAlias,
-                        )
+                        ),
                     )
                 },
                 enabled = label.isNotBlank() && validBin,
@@ -348,7 +348,7 @@ internal fun MeasureSettingsDialog(
                                     currencyCode =
                                         currencyCode.ifBlank { measure.numberFormat.currencyCode },
                                 ),
-                        )
+                        ),
                     )
                 },
                 enabled =
@@ -398,7 +398,7 @@ internal fun CalculatedMeasureDialog(
                     supportingText = {
                         Text(
                             validation
-                                ?: "Use +, −, ×, ÷, parentheses, and the measure tokens below."
+                                ?: "Use +, −, ×, ÷, parentheses, and the measure tokens below.",
                         )
                     },
                     isError = validation != null,
@@ -430,7 +430,7 @@ internal fun CalculatedMeasureDialog(
                             label = label.trim(),
                             formula = formula.trim(),
                             numberFormat = PivotNumberFormat(),
-                        )
+                        ),
                     )
                 },
                 enabled = label.isNotBlank() && formula.isNotBlank() && validation == null,
@@ -670,7 +670,7 @@ private fun FilterMemberList(
     )
     Column(
         modifier =
-            Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState())
+            Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
     ) {
         memberOptions.forEach { option ->
             Row(
@@ -682,7 +682,7 @@ private fun FilterMemberList(
                             else baseline + option.key
                         if (next.isNotEmpty()) {
                             onIncludedKeysChange(
-                                if (next.size == memberOptions.size) emptySet() else next
+                                if (next.size == memberOptions.size) emptySet() else next,
                             )
                         }
                     },

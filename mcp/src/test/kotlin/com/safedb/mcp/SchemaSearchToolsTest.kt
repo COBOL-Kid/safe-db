@@ -81,7 +81,7 @@ class SchemaSearchToolsTest {
                                 columns = columns,
                                 indexes = emptyList(),
                             )
-                        }
+                        },
                 )
             val capped =
                 client.callTool(
@@ -167,7 +167,7 @@ class SchemaSearchToolsTest {
                         } else {
                             table
                         }
-                    }
+                    },
             )
         withTempMcpClient(service) { client ->
             val byTarget =

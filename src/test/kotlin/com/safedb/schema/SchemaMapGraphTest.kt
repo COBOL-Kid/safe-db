@@ -29,7 +29,7 @@ class SchemaMapGraphTest {
                             indexes = listOf(primary("orders_pkey", "id")),
                             foreignKeys = listOf(foreignKey("orders_customer_fk", "customer_id")),
                         ),
-                    )
+                    ),
                 ),
                 "public",
             )
@@ -73,10 +73,10 @@ class SchemaMapGraphTest {
                                         "public",
                                         "customers",
                                         listOf("tenant_id", "id"),
-                                    )
+                                    ),
                                 ),
                         ),
-                    )
+                    ),
                 ),
                 "public",
             )
@@ -157,7 +157,7 @@ class SchemaMapGraphTest {
                     listOf("customer_id"),
                     isUnique = true,
                     isPartial = true,
-                )
+                ),
             ),
         )
         assertEquals(
@@ -168,7 +168,7 @@ class SchemaMapGraphTest {
                     listOf("customer_id"),
                     isUnique = true,
                     isPartial = null,
-                )
+                ),
             ),
         )
         assertEquals(
@@ -179,7 +179,7 @@ class SchemaMapGraphTest {
                     listOf("customer_id"),
                     isUnique = true,
                     isPrimary = true,
-                )
+                ),
             ),
         )
     }
@@ -198,7 +198,7 @@ class SchemaMapGraphTest {
                             "identity",
                             "users",
                             listOf("id"),
-                        )
+                        ),
                     ),
             )
         val second =
@@ -213,7 +213,7 @@ class SchemaMapGraphTest {
                             "identity",
                             "users",
                             listOf("email"),
-                        )
+                        ),
                     ),
             )
 
@@ -241,7 +241,7 @@ class SchemaMapGraphTest {
                                 "a.b",
                                 "c",
                                 listOf("id"),
-                            )
+                            ),
                         ),
                 )
                 .copy(schema = "a")
@@ -472,7 +472,7 @@ class SchemaMapGraphTest {
                             "public",
                             "categories",
                             listOf("id"),
-                        )
+                        ),
                     ),
             )
         val graph =
@@ -535,7 +535,7 @@ class SchemaMapGraphTest {
                             "identity",
                             "members",
                             listOf("account_id", "id"),
-                        )
+                        ),
                     ),
             )
 
@@ -563,7 +563,7 @@ class SchemaMapGraphTest {
                             "public",
                             "customers",
                             listOf("id"),
-                        )
+                        ),
                     ),
             )
 

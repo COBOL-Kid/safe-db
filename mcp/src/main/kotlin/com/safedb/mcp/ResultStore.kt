@@ -129,7 +129,7 @@ internal class ResultStore(
             .use { writer ->
                 for (row in result.rows) {
                     writer.append(
-                        toolJson.encodeToString(JsonElement.serializer(), flattenRow(names, row))
+                        toolJson.encodeToString(JsonElement.serializer(), flattenRow(names, row)),
                     )
                     writer.append('\n')
                 }

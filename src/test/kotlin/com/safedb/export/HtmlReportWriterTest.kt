@@ -466,7 +466,7 @@ class HtmlReportWriterTest {
                             "t0__amount",
                             "Amount",
                             aggregate = false,
-                        )
+                        ),
                     ),
             )
         val preview = applyVisualization(session.sample, config, session.baseSpec.tables)
@@ -519,7 +519,7 @@ class HtmlReportWriterTest {
                             expanded = true,
                             cells = listOf(WorksheetCell(ResultCell.integer(100))),
                             sourceRowIndex = 0,
-                        )
+                        ),
                     ),
                 hasRowLabels = false,
             )

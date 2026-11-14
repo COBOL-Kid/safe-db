@@ -75,19 +75,19 @@ internal fun validateLeaf(
     val col =
         table.columns.find { it.name == filter.column }
             ?: return Outcome.err(
-                "Filter column '${filter.tableAlias}.${filter.column}' does not exist"
+                "Filter column '${filter.tableAlias}.${filter.column}' does not exist",
             )
 
     val allowed = validOpsForColumn(col.dataType)
     if (!allowed.contains(filter.op)) {
         return Outcome.err(
-            "Operator '${opLabel(filter.op)}' is not applicable to column '${filter.tableAlias}.${filter.column}' (type: ${col.dataType})"
+            "Operator '${opLabel(filter.op)}' is not applicable to column '${filter.tableAlias}.${filter.column}' (type: ${col.dataType})",
         )
     }
 
     if (filter.likeEscape && filter.op !in setOf(FilterOp.Like, FilterOp.NotLike, FilterOp.Ilike)) {
         return Outcome.err(
-            "likeEscape is only valid with LIKE, NOT LIKE, or ILIKE (got '${opLabel(filter.op)}' on '${filter.tableAlias}.${filter.column}')"
+            "likeEscape is only valid with LIKE, NOT LIKE, or ILIKE (got '${opLabel(filter.op)}' on '${filter.tableAlias}.${filter.column}')",
         )
     }
 
@@ -103,7 +103,7 @@ internal fun validateLeaf(
         ValueKind.None -> {
             if (filter.value != null) {
                 Outcome.err(
-                    "Operator '${opLabel(filter.op)}' on '${filter.tableAlias}.${filter.column}' should not have a value"
+                    "Operator '${opLabel(filter.op)}' on '${filter.tableAlias}.${filter.column}' should not have a value",
                 )
             } else {
                 Outcome.ok(Unit)
@@ -113,12 +113,12 @@ internal fun validateLeaf(
             val value =
                 filter.value
                     ?: return Outcome.err(
-                        "Filter on '${filter.tableAlias}.${filter.column}' requires a value"
+                        "Filter on '${filter.tableAlias}.${filter.column}' requires a value",
                     )
             val lit =
                 expectSingle(value)
                     ?: return Outcome.err(
-                        "Filter on '${filter.tableAlias}.${filter.column}' expects a single value"
+                        "Filter on '${filter.tableAlias}.${filter.column}' expects a single value",
                     )
             validateLiteral(lit, col.dataType, filter.tableAlias, filter.column)
         }
@@ -126,16 +126,16 @@ internal fun validateLeaf(
             val value =
                 filter.value
                     ?: return Outcome.err(
-                        "Filter on '${filter.tableAlias}.${filter.column}' requires a value list"
+                        "Filter on '${filter.tableAlias}.${filter.column}' requires a value list",
                     )
             val list =
                 expectList(value)
                     ?: return Outcome.err(
-                        "Filter on '${filter.tableAlias}.${filter.column}' expects a list of values"
+                        "Filter on '${filter.tableAlias}.${filter.column}' expects a list of values",
                     )
             if (list.size > MAX_IN_LIST_SIZE) {
                 return Outcome.err(
-                    "Filter on '${filter.tableAlias}.${filter.column}' has too many values (max $MAX_IN_LIST_SIZE)"
+                    "Filter on '${filter.tableAlias}.${filter.column}' has too many values (max $MAX_IN_LIST_SIZE)",
                 )
             }
             for (lit in list) {
@@ -153,12 +153,12 @@ internal fun validateLeaf(
             val value =
                 filter.value
                     ?: return Outcome.err(
-                        "Filter on '${filter.tableAlias}.${filter.column}' requires a range (from/to)"
+                        "Filter on '${filter.tableAlias}.${filter.column}' requires a range (from/to)",
                     )
             val pair =
                 expectPair(value)
                     ?: return Outcome.err(
-                        "Filter on '${filter.tableAlias}.${filter.column}' expects a range (from/to)"
+                        "Filter on '${filter.tableAlias}.${filter.column}' expects a range (from/to)",
                     )
             when (
                 val fromResult =
@@ -204,14 +204,14 @@ internal fun validateLiteral(
     val expected = literalKindForColumn(dataType)
     if (lit.kind != expected) {
         return Outcome.err(
-            "Value for '$alias.$column' has type ${lit.kind}; expected $expected for column type $dataType"
+            "Value for '$alias.$column' has type ${lit.kind}; expected $expected for column type $dataType",
         )
     }
     return when (lit.kind) {
         LiteralKind.Text -> {
             if (lit.text.length > MAX_TEXT_LITERAL_LEN) {
                 Outcome.err(
-                    "Text value for '$alias.$column' exceeds maximum length of $MAX_TEXT_LITERAL_LEN characters"
+                    "Text value for '$alias.$column' exceeds maximum length of $MAX_TEXT_LITERAL_LEN characters",
                 )
             } else {
                 Outcome.ok(Unit)

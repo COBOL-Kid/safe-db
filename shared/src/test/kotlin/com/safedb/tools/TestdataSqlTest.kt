@@ -14,8 +14,8 @@ class TestdataSqlTest {
         assertTrue(sql.contains("DROP SCHEMA IF EXISTS analytics CASCADE"))
         assertTrue(
             sql.contains(
-                "DROP TABLE IF EXISTS order_items, inventory_log, orders, products, customers, categories CASCADE"
-            )
+                "DROP TABLE IF EXISTS order_items, inventory_log, orders, products, customers, categories CASCADE",
+            ),
         )
     }
 
@@ -45,7 +45,7 @@ class TestdataSqlTest {
         assertTrue(!init.contains("DROP VIEW CUSTOMER_ORDER_SUMMARY"))
         val seed =
             Files.readString(
-                root.resolve("shared/src/tools/kotlin/com/safedb/tools/SeedRelational.kt")
+                root.resolve("shared/src/tools/kotlin/com/safedb/tools/SeedRelational.kt"),
             )
         assertTrue(seed.contains("db2DropStatements("))
         assertTrue(seed.contains(DB2_DROP_STATEMENTS_RELATIVE))
@@ -67,22 +67,23 @@ class TestdataSqlTest {
         assertTrue(insertBlock(mysql, "wide_rows").contains("(n % 2 = 0)"))
         assertTrue(insertBlock(mysql, "scan_events").contains("(n % 2 = 0)"))
         assertTrue(
-            insertBlock(mssql, "wide_rows").contains("CASE WHEN n % 2 = 0 THEN 1 ELSE 0 END")
+            insertBlock(mssql, "wide_rows").contains("CASE WHEN n % 2 = 0 THEN 1 ELSE 0 END"),
         )
         assertTrue(
-            insertBlock(mssql, "scan_events").contains("CASE WHEN n % 2 = 0 THEN 1 ELSE 0 END")
+            insertBlock(mssql, "scan_events").contains("CASE WHEN n % 2 = 0 THEN 1 ELSE 0 END"),
         )
         assertTrue(
-            insertBlock(oracle, "wide_rows").contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END")
+            insertBlock(oracle, "wide_rows").contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END"),
         )
         assertTrue(
-            insertBlock(oracle, "scan_events").contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END")
+            insertBlock(oracle, "scan_events")
+                .contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END"),
         )
         assertTrue(
-            insertBlock(db2, "wide_rows").contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END")
+            insertBlock(db2, "wide_rows").contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END"),
         )
         assertTrue(
-            insertBlock(db2, "scan_events").contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END")
+            insertBlock(db2, "scan_events").contains("CASE WHEN MOD(n, 2) = 0 THEN 1 ELSE 0 END"),
         )
     }
 

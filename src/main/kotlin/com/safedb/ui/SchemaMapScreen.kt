@@ -299,7 +299,7 @@ private fun SchemaMapSearchField(query: String, enabled: Boolean, onQueryChange:
             singleLine = true,
             textStyle =
                 MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 ),
             decorationBox = { inner ->
                 Box {
@@ -529,11 +529,11 @@ private fun SchemaMapCanvas(
                                     viewModel.pan + dragAmount,
                                     horizontalScroll,
                                     verticalScroll,
-                                )
+                                ),
                             )
                         }
                     }
-                }
+                },
     ) {
         Box(
             modifier =
@@ -545,7 +545,7 @@ private fun SchemaMapCanvas(
                         translationX = viewModel.pan.x + renderOrigin.x * viewModel.zoom
                         translationY = viewModel.pan.y + renderOrigin.y * viewModel.zoom
                         transformOrigin = TransformOrigin(0f, 0f)
-                    }
+                    },
         ) {
             SchemaRelationships(
                 graph = graph,
@@ -914,7 +914,7 @@ private fun SchemaTableNode(
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
             ) {
                 if (!expanded && visibleColumns.isEmpty()) {
                     Text(
@@ -936,7 +936,7 @@ private fun SchemaTableNode(
                                             SafeDbTheme.colors.accentContainer.copy(alpha = 0.7f)
                                         } else {
                                             Color.Transparent
-                                        }
+                                        },
                                     )
                                     .padding(horizontal = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1176,10 +1176,10 @@ private fun RelationshipTooltipAnchor(
                     Modifier.size(if (hovered || focused) dotSize.dp * 1.8f else dotSize.dp)
                         .background(
                             SafeDbTheme.colors.actionPrimary.copy(
-                                alpha = if (hovered || focused) 1f else 0.7f
+                                alpha = if (hovered || focused) 1f else 0.7f,
                             ),
                             RoundedCornerShape(50),
-                        )
+                        ),
                 )
             }
         }

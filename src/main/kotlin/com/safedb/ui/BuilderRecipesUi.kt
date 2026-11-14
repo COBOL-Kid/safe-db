@@ -86,7 +86,7 @@ internal fun BuilderRecipeButton(
         onDeleteDismiss = { deleting = null },
         onRename = { recipe, name ->
             recipesViewModel.save(
-                recipe.copy(name = name, updatedAt = Instant.now().epochSecond.toString())
+                recipe.copy(name = name, updatedAt = Instant.now().epochSecond.toString()),
             )
             renaming = null
         },
@@ -151,7 +151,7 @@ internal fun BuilderRecipeButton(
                                                         )
                                                 }
                                             }
-                                        else Modifier
+                                        else Modifier,
                                     ),
                             shape = RoundedCornerShape(3.dp),
                             color =
@@ -167,7 +167,7 @@ internal fun BuilderRecipeButton(
                                 ),
                         ) {
                             Column(
-                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp)
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
                             ) {
                                 Text(item.name, fontWeight = FontWeight.SemiBold)
                                 Text(
@@ -180,7 +180,7 @@ internal fun BuilderRecipeButton(
                     }
                 }
                 androidx.compose.material3.HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant
+                    color = MaterialTheme.colorScheme.outlineVariant,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -194,7 +194,7 @@ internal fun BuilderRecipeButton(
                             chooseRecipeFile(open = true)?.let {
                                 recipesViewModel.import(it.toPath())
                             }
-                        }
+                        },
                     ) {
                         Icon(
                             Icons.Default.FileUpload,
@@ -223,7 +223,7 @@ internal fun BuilderRecipeButton(
                             Modifier.fillMaxWidth()
                                 .then(
                                     if (available) Modifier.clickable { selected = recipe }
-                                    else Modifier
+                                    else Modifier,
                                 ),
                         shape = RoundedCornerShape(3.dp),
                         color =

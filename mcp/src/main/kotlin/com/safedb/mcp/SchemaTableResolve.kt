@@ -15,7 +15,7 @@ internal fun resolveTableReference(
         val name = reference.substring(dot + 1).trim()
         if (schema.isEmpty() || name.isEmpty()) {
             return Arg.Err(
-                toolError(ERROR_INVALID_ARGUMENTS, "table names must be schema.table or table")
+                toolError(ERROR_INVALID_ARGUMENTS, "table names must be schema.table or table"),
             )
         }
         return resolveTable(schema, name, tables)
@@ -129,7 +129,8 @@ internal fun similarTableNames(
             RankedTable(table.qualifiedName(), tableNameDistance(bare, table.name))
         }
         .sortedWith(
-            compareBy<RankedTable> { it.distance }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+            compareBy<RankedTable> { it.distance }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name },
         )
         .map { it.name }
         .distinct()

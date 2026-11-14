@@ -36,19 +36,19 @@ class ExploreArgParsersTest {
     fun parseDimensionsRejectsMalformedShapes() {
         val notAString =
             assertIs<Arg.Err>(
-                parseDimensions(JsonArray(listOf(JsonPrimitive(5))), columns, "row_dimensions")
+                parseDimensions(JsonArray(listOf(JsonPrimitive(5))), columns, "row_dimensions"),
             )
         assertEquals("row_dimensions[0] must be a string or object", notAString.message())
 
         val missingColumn =
             assertIs<Arg.Err>(
-                parseDimensions(objects("""{"grouping":"exact"}"""), columns, "row_dimensions")
+                parseDimensions(objects("""{"grouping":"exact"}"""), columns, "row_dimensions"),
             )
         assertEquals("row_dimensions[0].column is required", missingColumn.message())
 
         val unknownColumn =
             assertIs<Arg.Err>(
-                parseDimensions(objects("""{"column":"nope"}"""), columns, "row_dimensions")
+                parseDimensions(objects("""{"column":"nope"}"""), columns, "row_dimensions"),
             )
         assertEquals(
             "Unknown column 'nope'. Known columns: amount, created, region",
@@ -61,7 +61,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"created","sort_mode":"random"}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals("Unknown sort_mode 'random'", badSortMode.message())
 
@@ -71,7 +71,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"amount","grouping":{"bin_start":"0"}}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals("grouping objects require bin_size", missingBinSize.message())
 
@@ -81,7 +81,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"amount","grouping":5}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals("grouping must be a string or object", badGrouping.message())
     }
@@ -95,13 +95,13 @@ class ExploreArgParsersTest {
                             listOf(
                                 JsonPrimitive("region"),
                                 Json.parseToJsonElement(
-                                    """{"column":"created","label":"Created","grouping":"month","sort_mode":"label_asc"}"""
+                                    """{"column":"created","label":"Created","grouping":"month","sort_mode":"label_asc"}""",
                                 ),
-                            )
+                            ),
                         ),
                         columns,
                         "row_dimensions",
-                    )
+                    ),
                 )
                 .value
 
@@ -118,11 +118,11 @@ class ExploreArgParsersTest {
             assertIs<Arg.Ok<List<PivotDimension>>>(
                     parseDimensions(
                         objects(
-                            """{"column":"amount","grouping":{"bin_size":"25","bin_start":"0"}}"""
+                            """{"column":"amount","grouping":{"bin_size":"25","bin_start":"0"}}""",
                         ),
                         columns,
                         "row_dimensions",
-                    )
+                    ),
                 )
                 .value
                 .single()
@@ -151,7 +151,7 @@ class ExploreArgParsersTest {
                 parseMeasures(
                     objects("""{"alias":"x","fn":"sum","source_column":"nope"}"""),
                     columns,
-                )
+                ),
             )
         assertEquals(
             "Unknown column 'nope'. Known columns: amount, created, region",
@@ -160,7 +160,7 @@ class ExploreArgParsersTest {
 
         val badShowAs =
             assertIs<Arg.Err>(
-                parseMeasures(objects("""{"alias":"x","fn":"count","show_as":5}"""), columns)
+                parseMeasures(objects("""{"alias":"x","fn":"count","show_as":5}"""), columns),
             )
         assertEquals("show_as must be a string", badShowAs.message())
 
@@ -169,7 +169,7 @@ class ExploreArgParsersTest {
                 parseMeasures(
                     objects("""{"alias":"x","fn":"count","show_as":"bogus"}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("Unknown show_as 'bogus'", unknownShowAs.message())
     }
@@ -184,7 +184,7 @@ class ExploreArgParsersTest {
                             """{"alias":"total","fn":"sum","source_column":"amount"}""",
                         ),
                         columns,
-                    )
+                    ),
                 )
                 .value
 
@@ -206,7 +206,7 @@ class ExploreArgParsersTest {
 
         val unknownColumn =
             assertIs<Arg.Err>(
-                parsePivotFilters(objects("""{"column":"nope","op":"equals"}"""), columns)
+                parsePivotFilters(objects("""{"column":"nope","op":"equals"}"""), columns),
             )
         assertEquals(
             "Unknown column 'nope'. Known columns: amount, created, region",
@@ -219,7 +219,7 @@ class ExploreArgParsersTest {
 
         val missingMeasureAlias =
             assertIs<Arg.Err>(
-                parsePivotFilters(objects("""{"column":"region","op":"gt"}"""), columns)
+                parsePivotFilters(objects("""{"column":"region","op":"gt"}"""), columns),
             )
         assertEquals("filters[0].measure_alias is required", missingMeasureAlias.message())
 
@@ -228,7 +228,7 @@ class ExploreArgParsersTest {
                 parsePivotFilters(
                     objects("""{"column":"region","op":"regex","measure_alias":"count"}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("Unknown filter op 'regex'", unknownOp.message())
     }
@@ -244,7 +244,7 @@ class ExploreArgParsersTest {
                             """{"column":"amount","op":"between","measure_alias":"count","value":"1","second_value":"10"}""",
                         ),
                         columns,
-                    )
+                    ),
                 )
                 .value
 
@@ -278,7 +278,7 @@ class ExploreArgParsersTest {
                 parseExploreSort(
                     jsonObject("""{"column":"region","direction":"sideways"}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("Unknown sort direction 'sideways'", badDirection.message())
     }
@@ -290,7 +290,7 @@ class ExploreArgParsersTest {
                     parseExploreSort(
                         jsonObject("""{"column":"region","direction":"desc"}"""),
                         columns,
-                    )
+                    ),
                 )
                 .value
         assertEquals(ExploreSortTarget.Dimension("region"), byColumn.target)
@@ -298,7 +298,7 @@ class ExploreArgParsersTest {
 
         val byMeasure =
             assertIs<Arg.Ok<ExploreSort>>(
-                    parseExploreSort(jsonObject("""{"measure_alias":"count"}"""), columns)
+                    parseExploreSort(jsonObject("""{"measure_alias":"count"}"""), columns),
                 )
                 .value
         assertEquals(ExploreSortTarget.Measure("count"), byMeasure.target)
@@ -317,7 +317,7 @@ class ExploreArgParsersTest {
 
         val unknownColumn =
             assertIs<Arg.Err>(
-                parseWorksheetFilters(objects("""{"column":"nope","op":"equals"}"""), columns)
+                parseWorksheetFilters(objects("""{"column":"nope","op":"equals"}"""), columns),
             )
         assertEquals(
             "Unknown column 'nope'. Known columns: amount, created, region",
@@ -330,7 +330,7 @@ class ExploreArgParsersTest {
 
         val unknownOp =
             assertIs<Arg.Err>(
-                parseWorksheetFilters(objects("""{"column":"region","op":"regex"}"""), columns)
+                parseWorksheetFilters(objects("""{"column":"region","op":"regex"}"""), columns),
             )
         assertEquals("Unknown filter op 'regex'", unknownOp.message())
     }
@@ -347,7 +347,7 @@ class ExploreArgParsersTest {
                             """{"column":"amount","op":"is_null"}""",
                         ),
                         columns,
-                    )
+                    ),
                 )
                 .value
 
@@ -383,7 +383,7 @@ class ExploreArgParsersTest {
                 parseWorksheetSorts(
                     objects("""{"column":"region","direction":"sideways"}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("Unknown sort direction 'sideways'", badDirection.message())
     }
@@ -398,7 +398,7 @@ class ExploreArgParsersTest {
                             """{"column":"amount","direction":"desc"}""",
                         ),
                         columns,
-                    )
+                    ),
                 )
                 .value
 
@@ -428,7 +428,7 @@ class ExploreArgParsersTest {
     fun parseColumnProjectionSupportsColumnNames() {
         val projection =
             assertIs<Arg.Ok<List<String>>>(
-                    parseColumnProjection(strings("amount", "region"), columns)
+                    parseColumnProjection(strings("amount", "region"), columns),
                 )
                 .value
 
@@ -443,7 +443,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"region","bogus":true}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals("unknown field 'row_dimensions[0].bogus'", unknownDimensionKey.message())
 
@@ -453,7 +453,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"amount","grouping":{"bin_size":"25","unit":"n"}}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals(
             "unknown field 'row_dimensions[0].grouping.unit'",
@@ -466,7 +466,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"region","show_subtotals":"true"}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals(
             "row_dimensions[0].show_subtotals must be a boolean",
@@ -479,7 +479,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"region","label":42}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals("row_dimensions[0].label must be a string", labelNumber.message())
 
@@ -489,7 +489,7 @@ class ExploreArgParsersTest {
                     objects("""{"column":"amount","grouping":{"bin_size":"25","bin_start":0}}"""),
                     columns,
                     "row_dimensions",
-                )
+                ),
             )
         assertEquals(
             "row_dimensions[0].grouping.bin_start must be a string",
@@ -498,13 +498,13 @@ class ExploreArgParsersTest {
 
         val unknownMeasureKey =
             assertIs<Arg.Err>(
-                parseMeasures(objects("""{"alias":"x","fn":"count","bogus":1}"""), columns)
+                parseMeasures(objects("""{"alias":"x","fn":"count","bogus":1}"""), columns),
             )
         assertEquals("unknown field 'measures[0].bogus'", unknownMeasureKey.message())
 
         val measureLabelNumber =
             assertIs<Arg.Err>(
-                parseMeasures(objects("""{"alias":"x","fn":"count","label":42}"""), columns)
+                parseMeasures(objects("""{"alias":"x","fn":"count","label":42}"""), columns),
             )
         assertEquals("measures[0].label must be a string", measureLabelNumber.message())
 
@@ -512,10 +512,10 @@ class ExploreArgParsersTest {
             assertIs<Arg.Err>(
                 parsePivotFilters(
                     objects(
-                        """{"column":"region","op":"top","measure_alias":"count","count":"5"}"""
+                        """{"column":"region","op":"top","measure_alias":"count","count":"5"}""",
                     ),
                     columns,
-                )
+                ),
             )
         assertEquals("filters[0].count must be an integer", countString.message())
 
@@ -524,7 +524,7 @@ class ExploreArgParsersTest {
                 parsePivotFilters(
                     objects("""{"column":"region","op":"members","included_keys":[1]}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("filters[0].included_keys[0] must be a string", includedKeysNumber.message())
 
@@ -533,7 +533,7 @@ class ExploreArgParsersTest {
                 parsePivotFilters(
                     objects("""{"column":"region","op":"members","value":"x"}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("unknown field 'filters[0].value'", extraMembersValue.message())
 
@@ -542,7 +542,7 @@ class ExploreArgParsersTest {
                 parsePivotFilters(
                     objects("""{"column":"region","op":"equals","count":5}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("unknown field 'filters[0].count'", extraLabelCount.message())
 
@@ -550,10 +550,10 @@ class ExploreArgParsersTest {
             assertIs<Arg.Err>(
                 parsePivotFilters(
                     objects(
-                        """{"column":"amount","op":"gt","measure_alias":"count","included_keys":[]}"""
+                        """{"column":"amount","op":"gt","measure_alias":"count","included_keys":[]}""",
                     ),
                     columns,
-                )
+                ),
             )
         assertEquals("unknown field 'filters[0].included_keys'", extraValueIncludedKeys.message())
 
@@ -562,7 +562,7 @@ class ExploreArgParsersTest {
                 parseExploreSort(
                     jsonObject("""{"column":"region","measure_alias":"count"}"""),
                     columns,
-                )
+                ),
             )
         assertEquals(
             "sort cannot include both column and measure_alias",
@@ -571,7 +571,7 @@ class ExploreArgParsersTest {
 
         val unknownSortKey =
             assertIs<Arg.Err>(
-                parseExploreSort(jsonObject("""{"column":"region","bogus":1}"""), columns)
+                parseExploreSort(jsonObject("""{"column":"region","bogus":1}"""), columns),
             )
         assertEquals("unknown field 'sort.bogus'", unknownSortKey.message())
 
@@ -580,13 +580,13 @@ class ExploreArgParsersTest {
                 parseWorksheetFilters(
                     objects("""{"column":"region","op":"eq","bogus":true}"""),
                     columns,
-                )
+                ),
             )
         assertEquals("unknown field 'filters[0].bogus'", unknownWorksheetFilterKey.message())
 
         val unknownWorksheetSortKey =
             assertIs<Arg.Err>(
-                parseWorksheetSorts(objects("""{"column":"region","bogus":1}"""), columns)
+                parseWorksheetSorts(objects("""{"column":"region","bogus":1}"""), columns),
             )
         assertEquals("unknown field 'sorts[0].bogus'", unknownWorksheetSortKey.message())
     }
@@ -603,7 +603,7 @@ class ExploreArgParsersTest {
                             put("sorts", JsonPrimitive("x"))
                             put("columns", JsonPrimitive("x"))
                         },
-                )
+                ),
             )
 
         for (name in listOf("filters", "sorts", "columns")) {

@@ -85,7 +85,7 @@ internal fun SqlEditor(
                         schema = schema,
                         defaultSchema = defaultSchema,
                         mySqlBackslashEscapes = backslashEscapes,
-                    )
+                    ),
                 )
             }
         }
@@ -107,7 +107,7 @@ internal fun SqlEditor(
         modifier =
             modifier
                 .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.small),
     ) {
         BasicTextField(
             value = value,
@@ -261,7 +261,7 @@ private fun CompletionList(
                                     SafeDbTheme.colors.accentContainer
                                 } else {
                                     MaterialTheme.colorScheme.surface
-                                }
+                                },
                             )
                             .clickable { onSelect(item) }
                             .padding(horizontal = 10.dp, vertical = 6.dp),

@@ -158,7 +158,7 @@ class BuilderChromeLayoutTest {
                                                 "2025-07-31 23:59:59",
                                             ),
                                         ),
-                                )
+                                ),
                             )
                         },
                     ) { scene ->
@@ -223,7 +223,7 @@ class BuilderChromeLayoutTest {
                         column = "full_name",
                         op = FilterOp.Eq,
                         value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "alice")),
-                    )
+                    ),
                 )
                 viewModel.query.setSorts(listOf(SortSpec("t0", "full_name", SortDirection.Asc)))
             },
@@ -419,9 +419,9 @@ private fun addCustomerFilters(viewModel: AppViewModel) {
                         FilterLiteral(LiteralKind.Text, "alice"),
                         FilterLiteral(LiteralKind.Text, "bob"),
                         FilterLiteral(LiteralKind.Text, "carol"),
-                    )
+                    ),
                 ),
-        )
+        ),
     )
     viewModel.query.addFilter(
         FilterSpec(
@@ -430,7 +430,7 @@ private fun addCustomerFilters(viewModel: AppViewModel) {
             column = "created_at",
             op = FilterOp.Gte,
             value = FilterValue.Single(FilterLiteral(LiteralKind.DateTime, "2025-07-03 09:12:00")),
-        )
+        ),
     )
 }
 
@@ -488,7 +488,7 @@ private fun addBetweenAndInFilters(viewModel: AppViewModel) {
                     FilterLiteral(LiteralKind.DateTime, "2025-07-01 00:00:00"),
                     FilterLiteral(LiteralKind.DateTime, "2025-07-31 23:59:59"),
                 ),
-        )
+        ),
     )
     viewModel.query.addFilter(
         FilterSpec(
@@ -505,9 +505,9 @@ private fun addBetweenAndInFilters(viewModel: AppViewModel) {
                         FilterLiteral(LiteralKind.Text, "cancelled"),
                         FilterLiteral(LiteralKind.Text, "held"),
                         FilterLiteral(LiteralKind.Text, "delivered"),
-                    )
+                    ),
                 ),
-        )
+        ),
     )
 }
 
@@ -638,7 +638,7 @@ private class BuilderChromeService(private val onRun: () -> Unit = {}) :
                     rowCount = 15,
                     truncated = false,
                     warnings = emptyList(),
-                )
+                ),
             )
             .also { onRun() }
 }

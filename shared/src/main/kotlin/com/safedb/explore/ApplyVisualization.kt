@@ -253,7 +253,7 @@ private class VisualizationPlanner(
                 measureAlias = measure.alias,
                 measureLabel = measure.label,
                 sourceRowIndices = records.map { it.index },
-            )
+            ),
         )
     }
 

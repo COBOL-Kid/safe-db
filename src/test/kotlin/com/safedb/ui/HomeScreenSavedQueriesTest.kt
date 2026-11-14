@@ -129,7 +129,7 @@ private class HomeScreenHarness(
         mutableListOf(
             SavedQuery("q1", "Pending orders", "c1", sampleQuerySpec(), "1"),
             SavedQuery("q2", "Revenue last 30 days", "c1", sampleQuerySpec(), "2"),
-        )
+        ),
 ) {
     val service = HomeScreenService(queries)
     val viewModel = AppViewModel(service, Dispatchers.Unconfined)

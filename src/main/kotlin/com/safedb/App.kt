@@ -168,7 +168,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                                             when (exploreOrigin) {
                                                 ExploreOrigin.Builder ->
                                                     viewModel.query.currentSample(
-                                                        originConnectionId
+                                                        originConnectionId,
                                                     )
                                                 ExploreOrigin.Sql ->
                                                     viewModel.sqlEditor.currentSample(

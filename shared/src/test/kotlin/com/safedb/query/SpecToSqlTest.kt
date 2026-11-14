@@ -145,16 +145,16 @@ class SpecToSqlTest {
                             "name",
                             FilterOp.ContainsIgnoreCase,
                             single(LiteralKind.Text, "abc"),
-                        )
+                        ),
                     ),
             )
         val spec = simpleSpec().copy(filters = filters)
 
         assertTrue(
-            specToSql(spec, Dialect.Postgres).unwrap().contains("c.name ILIKE '%abc%' ESCAPE '!'")
+            specToSql(spec, Dialect.Postgres).unwrap().contains("c.name ILIKE '%abc%' ESCAPE '!'"),
         )
         assertTrue(
-            specToSql(spec, Dialect.MySql).unwrap().contains("c.name LIKE '%abc%' ESCAPE '!'")
+            specToSql(spec, Dialect.MySql).unwrap().contains("c.name LIKE '%abc%' ESCAPE '!'"),
         )
     }
 
@@ -208,7 +208,7 @@ class SpecToSqlTest {
                             "created_on",
                             FilterOp.Between,
                             single(LiteralKind.Date, "2024-01-01"),
-                        )
+                        ),
                     ),
             )
         val wrongShapeFailure =
@@ -277,7 +277,7 @@ class SpecToSqlTest {
                             FilterOp.NotLike,
                             single(LiteralKind.Text, "%50!%!_!!%"),
                             likeEscape = true,
-                        )
+                        ),
                     ),
             )
         val notLikeSpec = simpleSpec().copy(filters = notLikeFilters)
@@ -306,7 +306,7 @@ class SpecToSqlTest {
                             FilterOp.Ilike,
                             single(LiteralKind.Text, "%50!%!_!!%"),
                             likeEscape = true,
-                        )
+                        ),
                     ),
             )
         val ilikeSpec = simpleSpec().copy(filters = ilikeFilters)
@@ -315,7 +315,7 @@ class SpecToSqlTest {
         assertTrue(ilikeSql.contains("ESCAPE '!'"))
         val parsedIlike =
             assertIs<SqlParseResult.Success>(
-                parseSqlToSpec(ilikeSql, Dialect.Postgres, schema(), null)
+                parseSqlToSpec(ilikeSql, Dialect.Postgres, schema(), null),
             )
         val ilikeLeaf = assertIs<FilterNode.Leaf>(parsedIlike.spec.filters.children.single())
         assertEquals(FilterOp.Ilike, ilikeLeaf.spec.op)
@@ -398,7 +398,7 @@ class SpecToSqlTest {
                     Dialect.Postgres,
                     schema(),
                     null,
-                )
+                ),
             )
 
         assertEquals(spec.copy(filters = parsed.spec.filters), parsed.spec)
@@ -415,7 +415,7 @@ class SpecToSqlTest {
                     Dialect.Postgres,
                     schema(),
                     null,
-                )
+                ),
             )
 
         assertEquals(
@@ -452,7 +452,7 @@ class SpecToSqlTest {
                     Dialect.Postgres,
                     schema(),
                     null,
-                )
+                ),
             )
 
         assertEquals(
@@ -561,7 +561,7 @@ class SpecToSqlTest {
                                                 single(LiteralKind.Bool, "false"),
                                             ),
                                         ),
-                                )
+                                ),
                             ),
                             leaf(
                                 "created_on",
@@ -609,7 +609,7 @@ private fun schema() =
                     indexMetadata = MetadataCoverage.complete(),
                     foreignKeyMetadata = MetadataCoverage.complete(),
                 ),
-            )
+            ),
     )
 
 private fun column(name: String, dataType: String) =
@@ -634,7 +634,7 @@ private fun leaf(
             op = op,
             value = value,
             likeEscape = likeEscape,
-        )
+        ),
     )
 
 private fun single(kind: LiteralKind, text: String): FilterValue =

@@ -38,7 +38,7 @@ fun assessValidatedQueryRisk(
                 } else {
                     assessStaticQueryRisk(validated, schema, dialect)
                 },
-        )
+        ),
     )
 }
 
@@ -60,7 +60,7 @@ fun evaluateQueryRisk(
             planStatus =
                 if (assessment == null) QueryPlanStatus.Disabled else QueryPlanStatus.NotRequested,
             decision = applyRiskGate(assessment, settings.queryRiskGate),
-        )
+        ),
     )
 }
 
@@ -88,7 +88,8 @@ fun applyRiskGate(
             .sortedWith(
                 // EvidenceConfidence declares High first, so ascending ordinal
                 // is descending confidence.
-                compareBy<RiskSignal> { it.confidence.ordinal }.thenByDescending(RiskSignal::points)
+                compareBy<RiskSignal> { it.confidence.ordinal }
+                    .thenByDescending(RiskSignal::points),
             )
             .map { signal -> RiskDecisionReason(signal.code.name, signalMessage(signal)) }
             .distinctBy(RiskDecisionReason::message)
@@ -99,7 +100,7 @@ fun applyRiskGate(
                         RiskDecisionReason(
                             "severity_gate",
                             "Query risk is ${assessment.severity.label}.",
-                        )
+                        ),
                     )
                 } else {
                     emptyList()

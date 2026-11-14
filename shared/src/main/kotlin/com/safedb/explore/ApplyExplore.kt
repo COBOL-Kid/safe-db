@@ -283,7 +283,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
     private fun buildRowSlices(root: AxisNode): List<RowSlice> {
         if (rowDimensions.isEmpty())
             return listOf(
-                RowSlice(root, "", PivotRowKind.Leaf, hasChildren = false, expanded = true)
+                RowSlice(root, "", PivotRowKind.Leaf, hasChildren = false, expanded = true),
             )
         val out = mutableListOf<RowSlice>()
         orderedChildren(root, rowDimensions.first()).forEach { flattenRowNode(it, out) }
@@ -689,7 +689,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     ResultColumn(
                         if (prefix.isEmpty()) measure.label else "$prefix ${measure.label}",
                         resultType(measure),
-                    )
+                    ),
                 )
             }
         }

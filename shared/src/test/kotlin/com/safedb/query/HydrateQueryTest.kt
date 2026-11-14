@@ -172,10 +172,10 @@ class HydrateQueryTest {
                                                 com.safedb.model.FilterLiteral(
                                                     LiteralKind.Text,
                                                     "%widget%",
-                                                )
+                                                ),
                                             ),
-                                    )
-                                )
+                                    ),
+                                ),
                             ),
                     ),
                 limit = 25,
@@ -236,11 +236,11 @@ class HydrateQueryTest {
                                                 com.safedb.model.FilterLiteral(
                                                     LiteralKind.Text,
                                                     "x",
-                                                )
+                                                ),
                                             ),
-                                    )
-                                )
-                            )
+                                    ),
+                                ),
+                            ),
                     ),
                 limit = DEFAULT_LIMIT,
                 sorts = listOf(SortSpec("saved_t0", "id"), SortSpec("saved_t2", "name")),
@@ -273,7 +273,7 @@ class HydrateQueryTest {
                     droppedFilters = true,
                     droppedSorts = 1,
                     droppedGroups = 1,
-                )
+                ),
             )
         assertTrue(message!!.contains("missing tables"))
         assertTrue(message.contains("2 selected columns"))

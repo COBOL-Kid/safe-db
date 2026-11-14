@@ -179,7 +179,7 @@ private val ordersTable =
                     nullable = false,
                     isIndexed = true,
                     joinEligible = true,
-                )
+                ),
             ),
         indexes = emptyList(),
     )

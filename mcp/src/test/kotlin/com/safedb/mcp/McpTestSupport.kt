@@ -346,7 +346,7 @@ internal fun sampleMcpSchema(): Schema =
                                 kind = "btree",
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                     tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Small),
                 ),
@@ -372,7 +372,7 @@ internal fun sampleMcpSchema(): Schema =
                                 kind = "btree",
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                     foreignKeys =
                         listOf(
@@ -382,7 +382,7 @@ internal fun sampleMcpSchema(): Schema =
                                 referencedSchema = "public",
                                 referencedTable = "customers",
                                 referencedColumns = listOf("id"),
-                            )
+                            ),
                         ),
                     tableSize = TableSizeEstimate(sizeClass = TableSizeClass.Medium),
                 ),
@@ -399,7 +399,7 @@ internal fun sampleMcpSchema(): Schema =
                     columns = listOf(ColumnInfo(name = "oid", dataType = "oid", nullable = false)),
                     indexes = emptyList(),
                 ),
-            )
+            ),
     )
 
 internal class BufferCliIo(

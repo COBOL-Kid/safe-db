@@ -19,7 +19,7 @@ internal fun objectProp(description: String? = null): JsonObject = typedProp("ob
 internal fun connectionIdProperty(optional: Boolean = false): JsonObject =
     stringProp(
         if (optional) "Optional connection id from list_connections"
-        else "Connection id from list_connections"
+        else "Connection id from list_connections",
     )
 
 internal fun sqlProperty(
@@ -27,21 +27,21 @@ internal fun sqlProperty(
         "A single SELECT. Result columns are named table__column. " +
             "No aggregates or functions, OFFSET, subqueries, CTEs, " +
             "UNION, LEFT/CROSS or comma joins, AS aliases, or " +
-            "leading NOT. Joins need indexed or FK columns."
+            "leading NOT. Joins need indexed or FK columns.",
 ): JsonObject = stringProp(description)
 
 internal fun defaultSchemaProperty(): JsonObject =
     stringProp(
         "Schema used when a table name has no schema prefix. Copy " +
             "list_tables.tables[].schema for this connection (MySQL: usually " +
-            "the database name). Omit when every table is already schema.table."
+            "the database name). Omit when every table is already schema.table.",
     )
 
 internal fun confirmationProperty(): JsonObject =
     objectProp(
         "Echo the confirmation object from a confirmation_required " +
             "error after showing the reasons to the user. Do not " +
-            "invent this object."
+            "invent this object.",
     )
 
 internal fun refreshProperty(): JsonObject =
@@ -59,7 +59,7 @@ internal fun boundedLimitProperty(
     intProp(
         "Max $noun to return (1–$maxLimit). Default $defaultLimit. Values over " +
             "$maxLimit cap at $maxLimit. 0 or negative is invalid_arguments." +
-            extraNote
+            extraNote,
     )
 
 internal fun objectOutputSchema(
@@ -79,7 +79,7 @@ internal fun queryReceiptOutputSchema(): ToolSchema =
                 "preview",
                 "preview_truncated",
                 "result_id",
-            )
+            ),
     ) {
         put("dialect", stringProp())
         put("columns", arrayProp())

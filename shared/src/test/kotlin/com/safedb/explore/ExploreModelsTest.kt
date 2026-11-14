@@ -46,7 +46,7 @@ class ExploreModelsTest {
                             "Month",
                             "placed-month",
                             PivotGrouping.Date(DateGroupUnit.Month),
-                        )
+                        ),
                     ),
                 columnDimensions = listOf(PivotDimension("status", id = "status")),
                 measures =
@@ -59,7 +59,7 @@ class ExploreModelsTest {
                             showAs = PivotShowAs(ShowAsMode.PercentGrandTotal),
                             numberFormat =
                                 PivotNumberFormat(NumberFormatKind.Percent, decimals = 1),
-                        )
+                        ),
                     ),
                 filters = listOf(PivotFilter.Members("f1", "status", "Status", setOf("shipped"))),
                 collapsedRowPaths = setOf("2026/07"),

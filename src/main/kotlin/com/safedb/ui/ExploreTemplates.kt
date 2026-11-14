@@ -100,13 +100,13 @@ private fun buildBreakdownTemplate(fields: List<ExploreFieldOption>): ExploreTem
     val dimension =
         firstDimensionField(fields)
             ?: return ExploreTemplateBuildResult.Unavailable(
-                "Needs at least one field in the sample."
+                "Needs at least one field in the sample.",
             )
     return ExploreTemplateBuildResult.Ready(
         ExploreConfig(
             rowDimensions = listOf(dimension.asDimension().withFreshId()),
             measures = listOf(PivotMeasure.countRows()),
-        )
+        ),
     )
 }
 
@@ -116,17 +116,17 @@ private fun firstNumericField(fields: List<ExploreFieldOption>): ExploreFieldOpt
     }
 
 private fun buildTrendOverTimeTemplate(
-    fields: List<ExploreFieldOption>
+    fields: List<ExploreFieldOption>,
 ): ExploreTemplateBuildResult {
     val temporal =
         fields.firstOrNull { it.category in TEMPORAL_CATEGORIES }
             ?: return ExploreTemplateBuildResult.Unavailable(
-                "Needs a date or datetime column in your sample."
+                "Needs a date or datetime column in your sample.",
             )
     val numeric =
         firstNumericField(fields)
             ?: return ExploreTemplateBuildResult.Unavailable(
-                "Needs a numeric column in your sample."
+                "Needs a numeric column in your sample.",
             )
     return ExploreTemplateBuildResult.Ready(
         ExploreConfig(
@@ -137,10 +137,10 @@ private fun buildTrendOverTimeTemplate(
                         .copy(
                             id = freshDimensionId(temporal.column),
                             grouping = PivotGrouping.Date(DateGroupUnit.Month),
-                        )
+                        ),
                 ),
             measures = listOf(measureFor(numeric, MeasureFn.Sum)),
-        )
+        ),
     )
 }
 
@@ -148,7 +148,7 @@ private fun buildTopNTemplate(fields: List<ExploreFieldOption>): ExploreTemplate
     val dimension =
         firstDimensionField(fields)
             ?: return ExploreTemplateBuildResult.Unavailable(
-                "Needs at least one field in the sample."
+                "Needs at least one field in the sample.",
             )
     val numeric = firstNumericField(fields)
     val measure = numeric?.let { measureFor(it, MeasureFn.Sum) } ?: PivotMeasure.countRows()
@@ -165,19 +165,19 @@ private fun buildTopNTemplate(fields: List<ExploreFieldOption>): ExploreTemplate
                         measureAlias = measure.alias,
                         op = ValueFilterOp.Top,
                         count = 10,
-                    )
+                    ),
                 ),
-        )
+        ),
     )
 }
 
 private fun buildCompareCategoriesTemplate(
-    fields: List<ExploreFieldOption>
+    fields: List<ExploreFieldOption>,
 ): ExploreTemplateBuildResult {
     val dimensions = dimensionFields(fields)
     if (dimensions.size < 2) {
         return ExploreTemplateBuildResult.Unavailable(
-            "Needs at least two groupable fields in your sample."
+            "Needs at least two groupable fields in your sample.",
         )
     }
     val row = dimensions[0]
@@ -189,7 +189,7 @@ private fun buildCompareCategoriesTemplate(
             rowDimensions = listOf(row.asDimension().withFreshId()),
             columnDimensions = listOf(column.asDimension().withFreshId()),
             measures = listOf(measure),
-        )
+        ),
     )
 }
 

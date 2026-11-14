@@ -26,7 +26,7 @@ internal fun parseSqlStatement(
     all.firstOrNull { it.type == SqlTokenType.Error }
         ?.let {
             return SqlStatementResult.Fail(
-                SqlIssue(SqlIssueCode.Syntax, it.error ?: "Invalid input", it.span)
+                SqlIssue(SqlIssueCode.Syntax, it.error ?: "Invalid input", it.span),
             )
         }
     val significant = all.filter {

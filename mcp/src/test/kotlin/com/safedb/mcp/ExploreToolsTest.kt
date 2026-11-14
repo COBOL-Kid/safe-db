@@ -71,24 +71,24 @@ class ExploreToolsTest {
                             "row_dimensions" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"created","label":"Created","grouping":"month","sort_mode":"label_asc"}"""
-                                    )
+                                        """{"column":"created","label":"Created","grouping":"month","sort_mode":"label_asc"}""",
+                                    ),
                                 ),
                             "measures" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"alias":"total","fn":"sum","source_column":"amount","label":"Total amount"}"""
-                                    )
+                                        """{"alias":"total","fn":"sum","source_column":"amount","label":"Total amount"}""",
+                                    ),
                                 ),
                             "filters" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"region","op":"contains","value":"east"}"""
-                                    )
+                                        """{"column":"region","op":"contains","value":"east"}""",
+                                    ),
                                 ),
                             "sort" to
                                 Json.parseToJsonElement(
-                                    """{"measure_alias":"total","direction":"desc"}"""
+                                    """{"measure_alias":"total","direction":"desc"}""",
                                 ),
                             "show_column_totals" to false,
                             "show_subtotals" to false,
@@ -124,8 +124,8 @@ class ExploreToolsTest {
                             "row_dimensions" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"amount","grouping":{"bin_size":"25","bin_start":"0"}}"""
-                                    )
+                                        """{"column":"amount","grouping":{"bin_size":"25","bin_start":"0"}}""",
+                                    ),
                                 ),
                             "measures" to
                                 listOf(Json.parseToJsonElement("""{"alias":"n","fn":"count"}""")),
@@ -206,14 +206,14 @@ class ExploreToolsTest {
                             "filters" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"region","op":"eq","value":"east"}"""
-                                    )
+                                        """{"column":"region","op":"eq","value":"east"}""",
+                                    ),
                                 ),
                             "sorts" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"amount","direction":"desc"}"""
-                                    )
+                                        """{"column":"amount","direction":"desc"}""",
+                                    ),
                                 ),
                             "columns" to listOf("amount", "region"),
                         ),
@@ -245,8 +245,8 @@ class ExploreToolsTest {
                             "filters" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"region","op":"members","included_keys":["east"]}"""
-                                    )
+                                        """{"column":"region","op":"members","included_keys":["east"]}""",
+                                    ),
                                 ),
                         ),
                     )
@@ -262,8 +262,8 @@ class ExploreToolsTest {
                             "filters" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"amount","op":"members","included_keys":["10"]}"""
-                                    )
+                                        """{"column":"amount","op":"members","included_keys":["10"]}""",
+                                    ),
                                 ),
                         ),
                     )
@@ -279,8 +279,8 @@ class ExploreToolsTest {
                             "filters" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"region","op":"members","included_keys":["TextCell:east"]}"""
-                                    )
+                                        """{"column":"region","op":"members","included_keys":["TextCell:east"]}""",
+                                    ),
                                 ),
                         ),
                     )
@@ -413,8 +413,8 @@ class ExploreToolsTest {
                             "filters" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"amount","op":"between","value":"5","second_value":"20"}"""
-                                    )
+                                        """{"column":"amount","op":"between","value":"5","second_value":"20"}""",
+                                    ),
                                 ),
                         ),
                     )
@@ -441,8 +441,8 @@ class ExploreToolsTest {
                             "filters" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"column":"amount","op":"is_null"}"""
-                                    )
+                                        """{"column":"amount","op":"is_null"}""",
+                                    ),
                                 ),
                         ),
                     )
@@ -490,8 +490,8 @@ class ExploreToolsTest {
                         "row_dimensions" to
                             listOf(
                                 Json.parseToJsonElement(
-                                    """{"column":"region","show_subtotals":"true"}"""
-                                )
+                                    """{"column":"region","show_subtotals":"true"}""",
+                                ),
                             ),
                     ),
                 )
@@ -509,8 +509,8 @@ class ExploreToolsTest {
                         "filters" to
                             listOf(
                                 Json.parseToJsonElement(
-                                    """{"column":"region","op":"members","included_keys":[1]}"""
-                                )
+                                    """{"column":"region","op":"members","included_keys":[1]}""",
+                                ),
                             ),
                     ),
                 )
@@ -732,7 +732,7 @@ class ExploreToolsTest {
                                     ),
                                 ),
                             indexes = emptyList(),
-                        )
+                        ),
             )
         val eventsResult =
             QueryResult(
@@ -773,7 +773,7 @@ class ExploreToolsTest {
                     ),
                 requiredFields =
                     listOf(
-                        RecipeField(column = "event_name", label = "event_name", dataType = "text")
+                        RecipeField(column = "event_name", label = "event_name", dataType = "text"),
                     ),
             )
         withTempMcpClient(service) { client ->
@@ -908,7 +908,7 @@ class ExploreToolsTest {
             assertTrue(
                 withoutSubtotalRows.none { row ->
                     text(row, "customers.id")?.endsWith(" total") == true
-                }
+                },
             )
             val withoutSubtotalsTotal = withoutSubtotalRows.first { row ->
                 text(row, "customers.id") == "Total"
@@ -945,7 +945,7 @@ class ExploreToolsTest {
                                     ),
                                 ),
                             indexes = emptyList(),
-                        )
+                        ),
             )
         val eventsResult =
             QueryResult(
@@ -1032,13 +1032,13 @@ class ExploreToolsTest {
                             "measures" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"alias":"total","fn":"sum","source_column":"big_events__amount"}"""
+                                        """{"alias":"total","fn":"sum","source_column":"big_events__amount"}""",
                                     ),
                                     Json.parseToJsonElement(
-                                        """{"alias":"avg_qty","fn":"avg","source_column":"big_events__qty"}"""
+                                        """{"alias":"avg_qty","fn":"avg","source_column":"big_events__qty"}""",
                                     ),
                                     Json.parseToJsonElement(
-                                        """{"alias":"buyers","fn":"count_distinct","source_column":"big_events__customer_id"}"""
+                                        """{"alias":"buyers","fn":"count_distinct","source_column":"big_events__customer_id"}""",
                                     ),
                                 ),
                             "show_column_totals" to false,
@@ -1083,8 +1083,8 @@ class ExploreToolsTest {
                             "measures" to
                                 listOf(
                                     Json.parseToJsonElement(
-                                        """{"alias":"max_id","fn":"max","source_column":"o__id"}"""
-                                    )
+                                        """{"alias":"max_id","fn":"max","source_column":"o__id"}""",
+                                    ),
                                 ),
                             "show_column_totals" to false,
                         ),

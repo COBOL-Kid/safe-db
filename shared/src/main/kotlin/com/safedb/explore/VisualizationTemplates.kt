@@ -57,7 +57,7 @@ fun suggestedVisualizationTemplates(
     visualizationTemplates(sample, tables)
         .filter { it.result is VisualizationTemplateBuildResult.Ready }
         .sortedWith(
-            compareByDescending<VisualizationTemplate> { it.score }.thenBy { it.id.ordinal }
+            compareByDescending<VisualizationTemplate> { it.score }.thenBy { it.id.ordinal },
         )
         .take(limit.coerceIn(3, 5))
 
@@ -93,7 +93,7 @@ private class VisualizationSampleProfile(sample: QueryResult, tables: List<Table
                             else -> 1
                         }
                     }
-                    .thenBy { if (it.cardinality in 2..50) 0 else 1 }
+                    .thenBy { if (it.cardinality in 2..50) 0 else 1 },
             )
 
     fun breakdown(): VisualizationTemplate {

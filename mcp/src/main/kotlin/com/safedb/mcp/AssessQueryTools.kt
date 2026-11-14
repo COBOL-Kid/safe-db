@@ -42,7 +42,7 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
                     "warnings",
                     "risk",
                     "confirmation_required",
-                )
+                ),
             ) {
                 put("dialect", stringProp())
                 put("columns", arrayProp())

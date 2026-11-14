@@ -213,7 +213,7 @@ fun validate(
 
     if (spec.schemaVersion != CURRENT_SCHEMA_VERSION) {
         return Outcome.err(
-            "Query schema version ${spec.schemaVersion} is unsupported; expected $CURRENT_SCHEMA_VERSION"
+            "Query schema version ${spec.schemaVersion} is unsupported; expected $CURRENT_SCHEMA_VERSION",
         )
     }
 
@@ -282,7 +282,7 @@ fun validate(
         if (dialect != null && !supportsGroupingAndSorting(groupColumn.dataType, dialect)) {
             return Outcome.err(
                 "Group column '$tableAlias.$column' has type '${groupColumn.dataType}', " +
-                    "which cannot be grouped by ${dialect.displayName()}"
+                    "which cannot be grouped by ${dialect.displayName()}",
             )
         }
         if (!groupedColumns.add(tableAlias to column)) {
@@ -304,7 +304,7 @@ fun validate(
         if (dialect != null && !supportsGroupingAndSorting(sortColumn.dataType, dialect)) {
             return Outcome.err(
                 "Sort column '$tableAlias.$column' has type '${sortColumn.dataType}', " +
-                    "which cannot be sorted by ${dialect.displayName()}"
+                    "which cannot be sorted by ${dialect.displayName()}",
             )
         }
         if (!sortedColumns.add(tableAlias to column)) {
@@ -327,7 +327,7 @@ fun validate(
         for ((tableAlias, column) in spec.columns) {
             if ((tableAlias to column) !in groupedColumns) {
                 return Outcome.err(
-                    "Selected output column '$tableAlias.$column' must appear in GROUP BY"
+                    "Selected output column '$tableAlias.$column' must appear in GROUP BY",
                 )
             }
         }
@@ -356,28 +356,28 @@ fun validate(
         val leftCol =
             leftTable.columns.find { it.name == join.leftColumn }
                 ?: return Outcome.err(
-                    "Join column '${join.leftAlias}.${join.leftColumn}' does not exist"
+                    "Join column '${join.leftAlias}.${join.leftColumn}' does not exist",
                 )
         val rightCol =
             rightTable.columns.find { it.name == join.rightColumn }
                 ?: return Outcome.err(
-                    "Join column '${join.rightAlias}.${join.rightColumn}' does not exist"
+                    "Join column '${join.rightAlias}.${join.rightColumn}' does not exist",
                 )
 
         val completeForeignKeyJoin = isPartOfCompleteForeignKey(schema, spec, join)
         if (!leftCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
-                "Join column '${join.leftAlias}.${join.leftColumn}' is not the leading key of an equality-capable index"
+                "Join column '${join.leftAlias}.${join.leftColumn}' is not the leading key of an equality-capable index",
             )
         }
         if (!rightCol.joinEligible && !completeForeignKeyJoin) {
             return Outcome.err(
-                "Join column '${join.rightAlias}.${join.rightColumn}' is not the leading key of an equality-capable index"
+                "Join column '${join.rightAlias}.${join.rightColumn}' is not the leading key of an equality-capable index",
             )
         }
         if (leftCol.category != rightCol.category) {
             return Outcome.err(
-                "Join columns '${join.leftAlias}.${join.leftColumn}' and '${join.rightAlias}.${join.rightColumn}' have incompatible types"
+                "Join columns '${join.leftAlias}.${join.leftColumn}' and '${join.rightAlias}.${join.rightColumn}' have incompatible types",
             )
         }
     }

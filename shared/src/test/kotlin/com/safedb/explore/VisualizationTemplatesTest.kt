@@ -20,7 +20,7 @@ class VisualizationTemplatesTest {
         assertTrue(templates.all { it.result is VisualizationTemplateBuildResult.Ready })
         val breakdown =
             assertIs<VisualizationTemplateBuildResult.Ready>(
-                templates.first { it.id == VisualizationTemplateId.Breakdown }.result
+                templates.first { it.id == VisualizationTemplateId.Breakdown }.result,
             )
         assertEquals("status", breakdown.config.x?.column)
     }
@@ -38,11 +38,11 @@ class VisualizationTemplatesTest {
         val templates = visualizationTemplates(textOnly)
 
         assertIs<VisualizationTemplateBuildResult.Unavailable>(
-            templates.first { it.id == VisualizationTemplateId.TrendOverTime }.result
+            templates.first { it.id == VisualizationTemplateId.TrendOverTime }.result,
         )
         val kpi =
             assertIs<VisualizationTemplateBuildResult.Ready>(
-                templates.first { it.id == VisualizationTemplateId.SingleValue }.result
+                templates.first { it.id == VisualizationTemplateId.SingleValue }.result,
             )
         assertEquals(MeasureFn.Count, kpi.config.values.single().fn)
     }

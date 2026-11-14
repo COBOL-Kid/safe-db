@@ -302,7 +302,7 @@ class SchemaToolsTest {
                     .getValue("message")
                     .jsonPrimitive
                     .content
-                    .startsWith("Table not found")
+                    .startsWith("Table not found"),
             )
             assertFalse(blocked.text().contains("blocked", ignoreCase = true))
 
@@ -319,7 +319,7 @@ class SchemaToolsTest {
                     .getValue("message")
                     .jsonPrimitive
                     .content
-                    .startsWith("Table not found")
+                    .startsWith("Table not found"),
             )
             assertFalse(catalog.text().contains("oid"))
             assertFalse(catalog.text().contains("pg_class"))
@@ -358,7 +358,7 @@ class SchemaToolsTest {
                             columns = columns,
                             indexes = emptyList(),
                         ),
-                    )
+                    ),
             )
         withTempMcpClient(service) { client ->
             val foo =
@@ -416,7 +416,7 @@ class SchemaToolsTest {
                         } else {
                             table
                         }
-                    }
+                    },
             )
         withTempMcpClient(service) { client ->
             val parsed =
@@ -434,7 +434,7 @@ class SchemaToolsTest {
             assertTrue(
                 foreignKeys.none {
                     it.jsonObject.getValue("referenced_schema").jsonPrimitive.content == "audit"
-                }
+                },
             )
             assertFalse(parsed.toString().contains("orders_events_fk"))
             assertFalse(parsed.toString().contains("audit"))
@@ -542,12 +542,12 @@ class SchemaToolsTest {
             assertEquals(true, tools.getValue("list_tables").annotations?.readOnlyHint)
             assertTrue(
                 tools.getValue("list_tables").outputSchema?.properties?.containsKey("tables") ==
-                    true
+                    true,
             )
             assertEquals(true, tools.getValue("describe_table").annotations?.readOnlyHint)
             assertTrue(
                 tools.getValue("describe_table").outputSchema?.properties?.containsKey("columns") ==
-                    true
+                    true,
             )
         }
     }

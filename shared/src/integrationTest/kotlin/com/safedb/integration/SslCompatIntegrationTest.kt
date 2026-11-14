@@ -47,7 +47,7 @@ class SslCompatIntegrationTest {
                 args = arrayOf("--launch-profile", profile.toString()),
                 credentialStoreFactory = { null },
                 propertySetter = properties::put,
-            )
+            ),
         )
         assertEquals("PKCS12", properties["javax.net.ssl.trustStoreType"])
         assertNotNull(properties["javax.net.ssl.trustStore"])
@@ -57,7 +57,7 @@ class SslCompatIntegrationTest {
         assertTrue(Files.readString(pem).contains("BEGIN CERTIFICATE"))
         assertFalse(
             Files.readString(profile)
-                .contains(properties.getValue("javax.net.ssl.trustStorePassword"))
+                .contains(properties.getValue("javax.net.ssl.trustStorePassword")),
         )
         Files.deleteIfExists(pem)
     }

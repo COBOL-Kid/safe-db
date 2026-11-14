@@ -152,7 +152,7 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
                     _settings.value.copy(
                         defaultConnectionId = normalizedConnectionId,
                         defaultSchema = normalizedSchema,
-                    )
+                    ),
                 )
             ) {
                 onSuccess()
@@ -186,7 +186,7 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
             _settings.value.copy(
                 lastSelectedSchemas =
                     _settings.value.lastSelectedSchemas +
-                        (normalizedConnectionId to normalizedSchema)
+                        (normalizedConnectionId to normalizedSchema),
             )
         }
     }
@@ -197,7 +197,7 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
             if (normalizedConnectionId !in _settings.value.lastSelectedSchemas)
                 return@mutateSchemaHistory null
             _settings.value.copy(
-                lastSelectedSchemas = _settings.value.lastSelectedSchemas - normalizedConnectionId
+                lastSelectedSchemas = _settings.value.lastSelectedSchemas - normalizedConnectionId,
             )
         }
     }
@@ -217,7 +217,7 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
                             if (clearsDefault) null else _settings.value.defaultConnectionId,
                         defaultSchema = if (clearsDefault) null else _settings.value.defaultSchema,
                         lastSelectedSchemas = _settings.value.lastSelectedSchemas - connectionId,
-                    )
+                    ),
                 )
             ) {
                 onSuccess()
@@ -236,7 +236,7 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
                         defaultSchema =
                             if (clearsDefaultSchema) null else _settings.value.defaultSchema,
                         lastSelectedSchemas = _settings.value.lastSelectedSchemas - connectionId,
-                    )
+                    ),
                 )
             ) {
                 if (clearsDefaultSchema) clearDefaultSchemaOptions()

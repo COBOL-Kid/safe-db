@@ -96,8 +96,8 @@ class HistoryScreenTest {
                 assertNotNull(scene.findExact("Delete history entry?"))
                 assertNotNull(
                     scene.findExact(
-                        "This query will be removed from history. This cannot be undone."
-                    )
+                        "This query will be removed from history. This cannot be undone.",
+                    ),
                 )
                 scene.click(scene.requireExact("Delete").boundsInRoot.center)
                 scene.settle()
@@ -284,7 +284,7 @@ class HistoryScreenTest {
                             ColumnInfo("email", "text", nullable = true),
                         ),
                     indexes = emptyList(),
-                )
+                ),
             )
             harness.viewModel.query.run("c1")
             withHistoryScreen(harness.viewModel) { scene ->
@@ -361,7 +361,7 @@ private class HistoryScreenService(private val entries: MutableList<HistoryEntry
                     rowCount = 3,
                     truncated = false,
                     warnings = emptyList(),
-                )
+                ),
             )
             .also {
                 entries.add(

@@ -89,14 +89,14 @@ class CanvasInteractionTest {
                     scene
                         .requireExact(joinActionDescription("customer_id", selectingTarget = false))
                         .boundsInRoot
-                        .center
+                        .center,
                 )
                 scene.render(100_000_000L)
                 scene.click(
                     scene
                         .requireExact(joinActionDescription("id", selectingTarget = true))
                         .boundsInRoot
-                        .center
+                        .center,
                 )
                 scene.render(200_000_000L)
             }
@@ -163,14 +163,14 @@ class CanvasInteractionTest {
                     scene
                         .requireExact(joinActionDescription("customer_id", selectingTarget = false))
                         .boundsInRoot
-                        .center
+                        .center,
                 )
                 scene.render(100_000_000L)
                 scene.click(
                     scene
                         .requireExact(joinActionDescription("id", selectingTarget = true))
                         .boundsInRoot
-                        .center
+                        .center,
                 )
                 scene.render(200_000_000L)
             }
@@ -189,7 +189,7 @@ class CanvasInteractionTest {
                 "customer_id",
                 referencedTable = "customers",
                 referencedColumn = "id",
-            )
+            ),
         )
         viewModel.addTable(indexedTable("customers", "id"))
         viewModel.moveTable("t1", 360f, 0f)
@@ -212,7 +212,7 @@ class CanvasInteractionTest {
                     tables[1],
                     "id",
                     allTables = tables,
-                )
+                ),
             )
         val segment =
             edge.points
@@ -262,7 +262,7 @@ class CanvasInteractionTest {
                 "order_id",
                 referencedTable = "orders",
                 referencedColumn = "id",
-            )
+            ),
         )
         viewModel.addTable(indexedTable("orders", "id"))
         viewModel.moveTable("t0", 15f, 5f)
@@ -287,7 +287,7 @@ class CanvasInteractionTest {
                     tables[1],
                     "id",
                     allTables = tables,
-                )
+                ),
             )
         val segment =
             edge.points
@@ -330,7 +330,7 @@ class CanvasInteractionTest {
                 "customer_id",
                 referencedTable = "customers",
                 referencedColumn = "id",
-            )
+            ),
         )
         viewModel.addTable(indexedTable("customers", "id"))
 
@@ -363,7 +363,7 @@ class CanvasInteractionTest {
                             tables[1],
                             "id",
                             allTables = tables,
-                        )
+                        ),
                     )
                 val segment =
                     edge.points
@@ -403,7 +403,7 @@ class CanvasInteractionTest {
                 "customer_id",
                 referencedTable = "customers",
                 referencedColumn = "id",
-            )
+            ),
         )
         viewModel.addTable(indexedTable("customers", "id"))
         viewModel.moveTable("t1", 360f, 0f)
@@ -426,7 +426,7 @@ class CanvasInteractionTest {
                     tables[1],
                     "id",
                     allTables = tables,
-                )
+                ),
             )
         val segment =
             edge.points
@@ -483,7 +483,7 @@ private fun suggestedJoinViewModel(): QueryViewModel =
                 "customer_id",
                 referencedTable = "customers",
                 referencedColumn = "id",
-            )
+            ),
         )
         addTable(indexedTable("customers", "id"))
     }
@@ -575,7 +575,7 @@ private fun indexedTable(
                     nullable = false,
                     isIndexed = true,
                     joinEligible = true,
-                )
+                ),
             ),
         indexes = emptyList(),
         foreignKeys =
@@ -587,7 +587,7 @@ private fun indexedTable(
                         referencedSchema = "public",
                         referencedTable = referencedTable,
                         referencedColumns = listOf(referencedColumn),
-                    )
+                    ),
                 )
             } else {
                 emptyList()

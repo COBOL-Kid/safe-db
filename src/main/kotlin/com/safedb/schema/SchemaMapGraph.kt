@@ -122,7 +122,7 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                     qualifiedLabel = qualifiedDisplayName(table.schema, table.name),
                     table = table,
                     columns = table.columns.map { column -> projectColumn(table, column) },
-                )
+                ),
             )
         }
         externalColumns.entries
@@ -134,7 +134,7 @@ internal fun buildSchemaMapGraph(schema: Schema, selectedSchema: String): Schema
                         label = externalLabels.getValue(id),
                         qualifiedLabel = externalLabels.getValue(id),
                         externalColumns = columns.toList(),
-                    )
+                    ),
                 )
             }
     }

@@ -49,33 +49,33 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                         put(
                             "row_dimensions",
                             arrayProp(
-                                "Row grouping fields. Each item is a column name or an object."
+                                "Row grouping fields. Each item is a column name or an object.",
                             ),
                         )
                         put(
                             "column_dimensions",
                             arrayProp(
-                                "Column grouping fields. Each item is a column name or an object."
+                                "Column grouping fields. Each item is a column name or an object.",
                             ),
                         )
                         put(
                             "measures",
                             arrayProp(
                                 "Measure objects with alias and fn, plus optional " +
-                                    "source_column, label, formula, and show_as."
+                                    "source_column, label, formula, and show_as.",
                             ),
                         )
                         put(
                             "filters",
                             arrayProp(
                                 "Pivot filter objects. members uses included_keys (not value); " +
-                                    "label/value comparisons use value."
+                                    "label/value comparisons use value.",
                             ),
                         )
                         put(
                             "sort",
                             objectProp(
-                                "Sort by column or measure_alias with direction asc or desc."
+                                "Sort by column or measure_alias with direction asc or desc.",
                             ),
                         )
                         put("show_row_totals", boolProp("Show a total column. Default true."))
@@ -99,7 +99,7 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                     "pivot_truncated",
                     "warnings",
                     "rows",
-                )
+                ),
             ) {
                 put("result_id", stringProp())
                 put("columns", arrayProp())
@@ -164,13 +164,13 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                                                             "greater_than_or_equal, " +
                                                             "less_than, less_than_or_equal, " +
                                                             "between, is_null, is_not_null, " +
-                                                            "or members"
+                                                            "or members",
                                                     ),
                                                 )
                                                 put(
                                                     "value",
                                                     stringProp(
-                                                        "Comparison value. Not used when op is members."
+                                                        "Comparison value. Not used when op is members.",
                                                     ),
                                                 )
                                                 put(
@@ -180,7 +180,7 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                                                 put(
                                                     "included_keys",
                                                     arrayProp(
-                                                        "Member keys to keep when op is members. Do not send value."
+                                                        "Member keys to keep when op is members. Do not send value.",
                                                     ),
                                                 )
                                             },
@@ -213,7 +213,7 @@ internal fun registerExploreTools(server: Server, resultStore: ResultStore) {
                     "page_truncated",
                     "warnings",
                     "rows",
-                )
+                ),
             ) {
                 put("result_id", stringProp())
                 put("offset", intProp())

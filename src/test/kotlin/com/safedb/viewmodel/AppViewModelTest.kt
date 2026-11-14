@@ -95,7 +95,7 @@ class AppViewModelTest {
                         listOf(
                             sampleTable(),
                             TableInfo("reporting", "orders", emptyList(), emptyList()),
-                        )
+                        ),
                 )
             val viewModel = AppViewModel(service, dispatcher)
             advanceUntilIdle()
@@ -106,7 +106,7 @@ class AppViewModelTest {
                             listOf(
                                 TableRef("reporting", "orders", "t0"),
                                 TableRef("public", "users", "t1"),
-                            )
+                            ),
                     )
 
             viewModel.restoreQueryForConnection("c1", spec)
@@ -801,7 +801,7 @@ private class FakeSafeDbService(
                     QueryConfirmationCondition(
                         QueryConfirmationReasonCode.PlanUnavailable,
                         "TimedOut",
-                    )
+                    ),
                 ),
         )
 
@@ -845,7 +845,7 @@ private class FakeSafeDbService(
                             RiskDecisionReason(
                                 "risk_gate",
                                 "The query risk gate blocks this query.",
-                            )
+                            ),
                         ),
                 )
             val error =

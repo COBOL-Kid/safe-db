@@ -214,7 +214,7 @@ private val ordersTable =
                     nullable = false,
                     isIndexed = true,
                     joinEligible = true,
-                )
+                ),
             ),
         indexes = emptyList(),
     )
@@ -244,7 +244,7 @@ private class CrossEditorBusyService : FakeSafeDbServiceSupport() {
                     QueryConfirmationCondition(
                         QueryConfirmationReasonCode.PlanUnavailable,
                         "TimedOut",
-                    )
+                    ),
                 ),
         )
 
@@ -280,7 +280,7 @@ private class CrossEditorBusyService : FakeSafeDbServiceSupport() {
                         ),
                     requirement = requirement,
                     historySpec = request.spec,
-                )
+                ),
             )
         }
         return QueryRunResult(

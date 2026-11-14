@@ -52,7 +52,7 @@ class ApplyVisualizationTest {
                                 "region",
                                 "Region",
                                 setOf("West"),
-                            )
+                            ),
                         ),
                     topN = 10,
                 ),
@@ -79,7 +79,7 @@ class ApplyVisualizationTest {
                                 "score",
                                 "Score",
                                 aggregate = false,
-                            )
+                            ),
                         ),
                     size = VisualizationField("amount"),
                 ),
@@ -124,7 +124,7 @@ class ApplyVisualizationTest {
                                 "Revenue",
                                 numberFormat =
                                     PivotNumberFormat(NumberFormatKind.Number, decimals = 0),
-                            )
+                            ),
                         ),
                 ),
             )

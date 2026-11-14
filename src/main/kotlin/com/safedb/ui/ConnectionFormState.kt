@@ -70,7 +70,7 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
             addAll(
                 original?.driverProperties.orEmpty().map {
                     DriverPropertyDraft(name = it.name, value = it.value)
-                }
+                },
             )
         }
 
@@ -115,12 +115,15 @@ class ConnectionFormState(val original: ConnectionDef? = null) {
             driverProperties.addAll(
                 parsed.driverProperties.map {
                     DriverPropertyDraft(name = it.name, value = it.value)
-                }
+                },
             )
             parseWarnings =
                 parsed.warnings +
                     listOfNotNull(
-                        transportCompatibilityWarning(parsed.dialect, parsed.transportSecurity.mode)
+                        transportCompatibilityWarning(
+                            parsed.dialect,
+                            parsed.transportSecurity.mode,
+                        ),
                     )
             connectionString = parsed.sanitizedInput
         } catch (error: ConnectionStringParseError) {

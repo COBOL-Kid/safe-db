@@ -74,7 +74,7 @@ abstract class VerifyCoverageRatchet : DefaultTask() {
         for (result in verifyCoverageFloors(report.readText(), coverageFloors.get())) {
             logger.lifecycle(
                 "${result.group} line coverage: %.2f%% (floor %d%%)"
-                    .format(result.percent, result.floor)
+                    .format(result.percent, result.floor),
             )
         }
     }
@@ -121,7 +121,7 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
             for (result in results) {
                 logger.lifecycle(
                     "${result.engine} integration discovery verified: " +
-                        "${result.discovered} executed tests"
+                        "${result.discovered} executed tests",
                 )
             }
         }
@@ -137,7 +137,7 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
         for (result in mcpResults) {
             logger.lifecycle(
                 "${result.engine} integration discovery verified: " +
-                    "${result.discovered} executed tests"
+                    "${result.discovered} executed tests",
             )
         }
     }

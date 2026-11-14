@@ -21,5 +21,5 @@ internal fun visibleTables(
         }
         .sortedWith(
             compareBy<TableInfo, String>(String.CASE_INSENSITIVE_ORDER) { it.schema }
-                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name },
         )

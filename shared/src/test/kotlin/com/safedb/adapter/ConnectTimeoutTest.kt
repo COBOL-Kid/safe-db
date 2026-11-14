@@ -77,7 +77,7 @@ class ConnectTimeoutTest {
                                 listOf(
                                     DriverProperty("connectTimeout", "0"),
                                     DriverProperty("socketTimeout", "0"),
-                                )
+                                ),
                         ),
                     "pw",
                 )

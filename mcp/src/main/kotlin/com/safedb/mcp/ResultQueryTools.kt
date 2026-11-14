@@ -45,7 +45,7 @@ internal fun registerResultQueryTools(server: Server, resultStore: ResultStore) 
             ),
         outputSchema =
             objectOutputSchema(
-                listOf("result_id", "offset", "row_count", "page_truncated", "rows")
+                listOf("result_id", "offset", "row_count", "page_truncated", "rows"),
             ) {
                 put("result_id", stringProp())
                 put("offset", intProp())

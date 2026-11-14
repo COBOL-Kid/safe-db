@@ -85,8 +85,8 @@ private fun remapFilterGroup(
                             child.spec.copy(
                                 tableAlias = tableAlias,
                                 value = normalizeFilterValue(child.spec.value, columnInfo.dataType),
-                            )
-                        )
+                            ),
+                        ),
                     )
                 }
             }
@@ -158,7 +158,7 @@ fun hydrateQueryFromSpec(
                 leftColumn = leftColumn,
                 rightAlias = rightAlias,
                 rightColumn = rightColumn,
-            )
+            ),
         )
     }
 
@@ -182,7 +182,7 @@ fun hydrateQueryFromSpec(
             } else {
                 sort.copy(tableAlias = newAlias)
             }
-        }
+        },
     )
 
     var droppedGroups = 0
@@ -196,7 +196,7 @@ fun hydrateQueryFromSpec(
             } else {
                 group.copy(tableAlias = newAlias)
             }
-        }
+        },
     )
 
     return HydrationWarnings(

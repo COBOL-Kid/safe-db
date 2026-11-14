@@ -94,7 +94,7 @@ class MySqlAdapterIntegrationTest {
                             ColumnSel(
                                 tableAlias = "t0",
                                 column = IntegrationFixtures.seededColumn(table, "id"),
-                            )
+                            ),
                         ),
                     joins = emptyList(),
                     filters =
@@ -225,8 +225,8 @@ class MySqlAdapterIntegrationTest {
                             DriverProperty(
                                 "sessionVariables",
                                 "sql_mode='STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES'",
-                            )
-                        )
+                            ),
+                        ),
                 )
         assertEquals(false, mySqlBackslashEscapes(pinned))
         val (pinnedMode, pinnedValue) = serverEvaluation(pinned)

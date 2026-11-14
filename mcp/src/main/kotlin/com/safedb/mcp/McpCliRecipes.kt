@@ -39,7 +39,7 @@ internal suspend fun listRecipes(service: SafeDbService, io: CliIo): Int {
         recipes.forEach { recipe ->
             io.print(
                 "${recipe.id}  ${recipe.name}  ${recipe.defaultMode}  " +
-                    "${recipe.requiredFields.size} fields  ${recipe.updatedAt}"
+                    "${recipe.requiredFields.size} fields  ${recipe.updatedAt}",
             )
         }
     }

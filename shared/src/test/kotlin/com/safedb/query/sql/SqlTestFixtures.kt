@@ -69,7 +69,7 @@ internal fun sqlTestSchema(): Schema =
                                 supportsEquality = true,
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                 ),
                 TableInfo(
@@ -88,8 +88,8 @@ internal fun sqlTestSchema(): Schema =
                                 supportsEquality = true,
                                 isUnique = true,
                                 isPrimary = true,
-                            )
+                            ),
                         ),
                 ),
-            )
+            ),
     )

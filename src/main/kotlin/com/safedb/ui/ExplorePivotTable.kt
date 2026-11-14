@@ -117,7 +117,7 @@ internal fun ExplorePivotTable(
                 modifier =
                     Modifier.fillMaxWidth()
                         .background(SafeDbTheme.colors.warningContainer.copy(alpha = 0.55f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 result.warnings.forEach { warning ->
                     Row(
@@ -155,7 +155,7 @@ internal fun ExplorePivotTable(
                     Modifier.fillMaxSize()
                         .padding(end = 8.dp, bottom = 8.dp)
                         .verticalScroll(verticalScroll)
-                        .horizontalScroll(horizontalScroll)
+                        .horizontalScroll(horizontalScroll),
             ) {
                 layout.columnHeaderRows.forEach { headerRow ->
                     PivotNestedHeaderRow(
@@ -181,7 +181,7 @@ internal fun ExplorePivotTable(
                         onDrill = onDrill,
                     )
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
                     )
                 }
             }
@@ -245,7 +245,7 @@ private fun PivotNestedHeaderRow(
                         .background(
                             if (header.isTotal)
                                 SafeDbTheme.colors.accentContainer.copy(alpha = 0.45f)
-                            else Color.Transparent
+                            else Color.Transparent,
                         )
                         .padding(horizontal = 10.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -310,12 +310,12 @@ private fun PivotLeafHeaderRow(
                                         onConfigChange(toggleExploreSort(config, target))
                                     }
                                     .pointerHoverIcon(PointerIcon.Hand)
-                            else Modifier
+                            else Modifier,
                         )
                         .padding(horizontal = 12.dp, vertical = 7.dp),
                 style =
                     DataMono.copy(
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                     ),
                 color =
                     if (active) SafeDbTheme.colors.actionPrimary
@@ -394,7 +394,7 @@ private fun PivotDataRow(
                                 fontWeight =
                                     if (emphasized || entry?.kind == PivotRowKind.Group)
                                         FontWeight.SemiBold
-                                    else FontWeight.Normal
+                                    else FontWeight.Normal,
                             ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -448,7 +448,7 @@ private fun PivotValueCell(
         modifier =
             Modifier.width(widthDp.dp).hoverable(interactionSource).pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { if (drillable) onDrill() })
-            }
+            },
     ) {
         Text(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),

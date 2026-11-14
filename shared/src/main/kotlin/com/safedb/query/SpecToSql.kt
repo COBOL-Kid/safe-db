@@ -51,7 +51,7 @@ fun specToSql(spec: QuerySpec, dialect: Dialect): Outcome<String> {
                 append(
                     spec.groups.joinToString(", ") {
                         renderColumn(it.tableAlias, it.column, dialect)
-                    }
+                    },
                 )
             }
             if (spec.sorts.isNotEmpty()) {
@@ -64,11 +64,11 @@ fun specToSql(spec: QuerySpec, dialect: Dialect): Outcome<String> {
                                 SortDirection.Desc -> "DESC"
                             }
                         "${renderColumn(sort.tableAlias, sort.column, dialect)} $direction"
-                    }
+                    },
                 )
             }
             append(rowLimitSuffix(dialect, rowLimit))
-        }
+        },
     )
 }
 

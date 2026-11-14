@@ -126,7 +126,7 @@ class QueryToolsTest {
             assertTrue(
                 parsed.getValue("warnings").jsonArray.none {
                     it.jsonPrimitive.content == LARGE_LIMIT_WARNING
-                }
+                },
             )
         }
         assertTrue(service.runQueryRequests.single().spec.uncapped)
@@ -192,13 +192,13 @@ class QueryToolsTest {
             assertTrue(
                 parsed.getValue("warnings").jsonArray.any {
                     it.jsonPrimitive.content == "engine warning"
-                }
+                },
             )
             assertTrue(
                 parsed.getValue("warnings").jsonArray.any {
                     it.jsonPrimitive.content.contains("paging does not get more table rows") &&
                         it.jsonPrimitive.content.contains("LIMIT 50")
-                }
+                },
             )
             assertEquals(PREVIEW_ROW_LIMIT, parsed.getValue("preview").jsonArray.size)
             assertEquals("true", parsed.getValue("preview_truncated").jsonPrimitive.content)
@@ -334,8 +334,8 @@ class QueryToolsTest {
                 sampleMcpQuerySpec()
                     .copy(
                         tables =
-                            listOf(TableRef(schema = "public", name = "orders", alias = "orders"))
-                    )
+                            listOf(TableRef(schema = "public", name = "orders", alias = "orders")),
+                    ),
             )
         withTempMcpClient(service) { client ->
             val specOnly =
@@ -419,14 +419,14 @@ class QueryToolsTest {
             val mismatched = otherConnection.json()
             assertEquals("parse", mismatched.getValue("error").jsonPrimitive.content)
             assertTrue(
-                mismatched.getValue("message").jsonPrimitive.content.contains("default_schema")
+                mismatched.getValue("message").jsonPrimitive.content.contains("default_schema"),
             )
             assertTrue(
                 mismatched
                     .getValue("message")
                     .jsonPrimitive
                     .content
-                    .contains("list_tables.tables[].schema")
+                    .contains("list_tables.tables[].schema"),
             )
             assertEquals(requestsAfterMatchingConnection, service.runQueryRequests.size)
         }
@@ -574,11 +574,11 @@ class QueryToolsTest {
                                         mapOf(
                                             "reason_code" to JsonPrimitive("NotAReason"),
                                             "condition_key" to JsonPrimitive("key"),
-                                        )
-                                    )
-                                )
+                                        ),
+                                    ),
+                                ),
                             ),
-                    )
+                    ),
                 )
             val invalidCondition =
                 client.callTool(
@@ -681,7 +681,7 @@ class QueryToolsTest {
                         QueryConfirmationCondition(
                             QueryConfirmationReasonCode.PlanUnavailable,
                             "ExecutionFailure",
-                        )
+                        ),
                     ),
             )
         val requirement =
@@ -692,7 +692,7 @@ class QueryToolsTest {
                         RiskDecisionReason(
                             "plan_unavailable",
                             "Query plan assessment is unavailable: timeout.",
-                        )
+                        ),
                     ),
             )
         val evaluation =
@@ -705,12 +705,12 @@ class QueryToolsTest {
         service.runQueryHandler = { request ->
             if (request.confirmation == null) {
                 throw QueryFailureException(
-                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec)
+                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec),
                 )
             }
             if (request.confirmation != confirmation) {
                 throw QueryFailureException(
-                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec)
+                    QueryError.ConfirmationRequired(evaluation, requirement, request.spec),
                 )
             }
             QueryRunResult(sampleMcpQueryResult(), allowedMcpRisk())
@@ -820,7 +820,7 @@ class QueryToolsTest {
                     service,
                     resultsDir = resultsDir,
                     exportsDir = dataDir.resolve("exports"),
-                )
+                ),
             ) { client ->
                 val parsed =
                     client
@@ -954,7 +954,7 @@ class QueryToolsTest {
 
         val capped =
             toolJson.encodeToString(
-                receipt.copy(sampleCapped = true, sampleCapReason = "sql_limit")
+                receipt.copy(sampleCapped = true, sampleCapReason = "sql_limit"),
             )
         assertTrue(capped.contains("\"sample_capped\""))
         assertTrue(capped.contains("\"sample_cap_reason\":\"sql_limit\""))

@@ -59,7 +59,7 @@ data class ExploreConfig(
                     firstDimension
                         ?.let {
                             listOf(
-                                PivotDimension(column = it.name, label = labels.getValue(it.name))
+                                PivotDimension(column = it.name, label = labels.getValue(it.name)),
                             )
                         }
                         .orEmpty(),

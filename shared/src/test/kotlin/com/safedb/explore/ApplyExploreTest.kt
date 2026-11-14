@@ -300,7 +300,7 @@ class ApplyExploreTest {
         assertTrue(
             preview.layout.rowEntries.any {
                 it.label == "East total" && it.kind == PivotRowKind.Subtotal && it.hasChildren
-            }
+            },
         )
 
         val eastPath = preview.layout.rowEntries.first { it.label == "East total" }.pathKey
@@ -343,7 +343,7 @@ class ApplyExploreTest {
 
         assertEquals(2, preview.layout.columnHeaderRows.size)
         assertTrue(
-            preview.layout.columnHeaderRows.first().any { it.label == "pending" && it.hasChildren }
+            preview.layout.columnHeaderRows.first().any { it.label == "pending" && it.hasChildren },
         )
         assertTrue(preview.layout.columnLeaves.any { it.labels.size == 2 })
     }
@@ -362,7 +362,7 @@ class ApplyExploreTest {
                                 id = "region",
                                 sortMode = DimensionSortMode.ValueDescending,
                                 sortMeasureAlias = "revenue",
-                            )
+                            ),
                         ),
                     measures = listOf(revenue),
                     showColumnTotals = false,
@@ -426,7 +426,7 @@ class ApplyExploreTest {
         assertTrue(
             preview.result.rows.none {
                 (it[0] as ResultCell.TextCell).value.text.endsWith(" total")
-            }
+            },
         )
         assertEquals(
             listOf(
@@ -484,7 +484,7 @@ class ApplyExploreTest {
         assertTrue(
             preview.layout.rowEntries.any {
                 it.label == "East total" && it.kind == PivotRowKind.Subtotal
-            }
+            },
         )
         assertTrue(preview.layout.rowEntries.none { it.kind == PivotRowKind.Group })
     }
@@ -505,7 +505,7 @@ class ApplyExploreTest {
                                 column = "t0__region",
                                 label = "Region",
                                 includedKeys = setOf("East"),
-                            )
+                            ),
                         ),
                 ),
             )
@@ -525,7 +525,7 @@ class ApplyExploreTest {
                                 column = "t0__region",
                                 label = "Region",
                                 includedKeys = setOf(pivotCellKey(ResultCell.text("East"))),
-                            )
+                            ),
                         ),
                 ),
             )
@@ -549,7 +549,7 @@ class ApplyExploreTest {
                                 "count",
                                 ValueFilterOp.Top,
                                 count = 1,
-                            )
+                            ),
                         ),
                 ),
             )
@@ -576,7 +576,7 @@ class ApplyExploreTest {
                                 "count",
                                 ValueFilterOp.Top,
                                 count = 1,
-                            )
+                            ),
                         ),
                 ),
             )
@@ -608,7 +608,7 @@ class ApplyExploreTest {
                                 measureAlias = "count",
                                 op = ValueFilterOp.Top,
                                 count = 1,
-                            )
+                            ),
                         ),
                 ),
             )
@@ -644,7 +644,7 @@ class ApplyExploreTest {
                                     "t0__region",
                                     id = "region",
                                     sortMode = DimensionSortMode.LabelDescending,
-                                )
+                                ),
                             ),
                         measures = listOf(revenue),
                         showColumnTotals = false,

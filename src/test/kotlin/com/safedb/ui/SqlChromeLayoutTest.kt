@@ -134,7 +134,7 @@ private fun withSqlChrome(
         viewModel.schema.load("c-pg", selection = selection) { loaded ->
             if (loaded) {
                 viewModel.sqlEditor.onTextChanged(
-                    TextFieldValue("SELECT id, full_name FROM customers LIMIT 5")
+                    TextFieldValue("SELECT id, full_name FROM customers LIMIT 5"),
                 )
             }
         }
@@ -187,7 +187,7 @@ private class SqlChromeService(private val onRun: () -> Unit = {}) : FakeSafeDbS
                     rowCount = 15,
                     truncated = false,
                     warnings = emptyList(),
-                )
+                ),
             )
             .also { onRun() }
 }

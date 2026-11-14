@@ -500,7 +500,7 @@ internal fun Sidebar(
     Row(modifier = Modifier.fillMaxHeight()) {
         Column(
             modifier =
-                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground)
+                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground),
         ) {
             SidebarHeader(
                 collapsed = layoutCollapsed,
@@ -555,11 +555,12 @@ private fun SidebarHeader(
                     .height(SidebarHeaderHeight)
                     .clickable(onClick = onToggleCollapsed)
                     .pointerHoverIcon(PointerIcon.Hand)
-                    .semantics { contentDescription = "Expand sidebar" }
+                    .semantics { contentDescription = "Expand sidebar" },
         ) {
             // Shared inset so the mark stays put when the header swaps layouts.
             Box(
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = SidebarHeaderInset)
+                modifier =
+                    Modifier.align(Alignment.CenterStart).padding(start = SidebarHeaderInset),
             ) {
                 LogoMark()
             }
@@ -678,7 +679,7 @@ private fun SidebarUtilities(
                             modifier =
                                 Modifier.size(7.dp)
                                     .clip(RoundedCornerShape(50))
-                                    .background(SafeDbTheme.colors.success)
+                                    .background(SafeDbTheme.colors.success),
                         )
                         // Single-line: during the width animation this slot can shrink to ~0 wide,
                         // and wrapped text would grow tall enough to squeeze the last nav rows
@@ -808,7 +809,7 @@ private fun NavButton(
                 selected -> c.navigationSelected
                 hovered -> c.navigationHover
                 else -> Color.Transparent
-            }
+            },
         )
     val content by
         animateColorAsState(
@@ -816,7 +817,7 @@ private fun NavButton(
                 selected -> c.actionPrimary
                 hovered -> c.onNavigation
                 else -> c.onNavigationMuted
-            }
+            },
         )
 
     // Fixed-width rail plus a full-size fade overlay so label show/hide cannot move icons.
@@ -827,7 +828,7 @@ private fun NavButton(
                 .background(background)
                 .hoverable(interactionSource)
                 .clickable(onClick = onClick)
-                .pointerHoverIcon(PointerIcon.Hand)
+                .pointerHoverIcon(PointerIcon.Hand),
     ) {
         Row(
             modifier =
@@ -841,7 +842,7 @@ private fun NavButton(
                 modifier =
                     Modifier.width(NavRailIndicatorWidth)
                         .fillMaxHeight()
-                        .background(if (selected) c.actionPrimary else Color.Transparent)
+                        .background(if (selected) c.actionPrimary else Color.Transparent),
             )
             Spacer(Modifier.width(NavRailIconStartGap))
             Icon(
@@ -899,7 +900,7 @@ private fun SidebarFade(
             animationSpec =
                 tween(
                     durationMillis =
-                        if (visible) SidebarUtilityFadeInMillis else SidebarUtilityFadeOutMillis
+                        if (visible) SidebarUtilityFadeInMillis else SidebarUtilityFadeOutMillis,
                 ),
             label = "sidebarUtilityOpacity",
         )

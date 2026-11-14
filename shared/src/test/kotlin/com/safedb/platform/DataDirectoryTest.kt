@@ -32,7 +32,7 @@ class DataDirectoryTest {
                     "Windows 11",
                     "C:/Users/test",
                     appData = "C:/Users/test/AppData/Roaming",
-                )
+                ),
             ),
         )
     }

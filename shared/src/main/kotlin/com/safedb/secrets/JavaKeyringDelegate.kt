@@ -57,7 +57,7 @@ internal fun createJavaKeyringDelegateOrNull(): CredentialStore? = runCatching {
 
 // Operational startup secrets must not use the fallback allowed for connection credentials.
 internal fun createStrictPlatformCredentialStoreOrNull(
-    platform: DesktopPlatform = DesktopPlatform.current()
+    platform: DesktopPlatform = DesktopPlatform.current(),
 ): CredentialStore? =
     when (platform) {
         DesktopPlatform.MacOs,

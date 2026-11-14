@@ -113,7 +113,7 @@ class ConnectionToolsTest {
             assertTrue(firstBody.getValue("message").jsonPrimitive.content.contains("Prod"))
             assertTrue(firstBody.getValue("message").jsonPrimitive.content.contains("shop"))
             assertFalse(
-                firstBody.getValue("message").jsonPrimitive.content.contains("should-not-leak")
+                firstBody.getValue("message").jsonPrimitive.content.contains("should-not-leak"),
             )
             assertFalse(firstBody.getValue("message").jsonPrimitive.content.contains("localhost"))
             val reasons = firstBody.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
@@ -133,7 +133,7 @@ class ConnectionToolsTest {
                                 mapOf(
                                     "connection_id" to JsonPrimitive("c1"),
                                     "token" to JsonPrimitive("invented"),
-                                )
+                                ),
                             ),
                     ),
                 )
@@ -197,7 +197,7 @@ class ConnectionToolsTest {
             val listedBody = listed.json()
             assertEquals("internal", listedBody.getValue("error").jsonPrimitive.content)
             assertTrue(
-                listedBody.getValue("message").jsonPrimitive.content.contains("store read failed")
+                listedBody.getValue("message").jsonPrimitive.content.contains("store read failed"),
             )
         }
 
@@ -219,7 +219,7 @@ class ConnectionToolsTest {
                 deletedBody.getValue("message").jsonPrimitive.content,
             )
             assertFalse(
-                deletedBody.getValue("message").jsonPrimitive.content.contains("should-not-leak")
+                deletedBody.getValue("message").jsonPrimitive.content.contains("should-not-leak"),
             )
             assertEquals(listOf("c1"), deleteService.connections.map { it.id })
         }

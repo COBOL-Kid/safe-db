@@ -51,7 +51,7 @@ class QueryRiskGatePlanShapeTest {
             refined.signals.any {
                 it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex ||
                     it.code == RiskSignalCode.PlanConfirmedJoinExpansion
-            }
+            },
         )
     }
 }
@@ -92,7 +92,7 @@ private fun scanEventsJoinSpec(limit: Int = 500, uncapped: Boolean = true) =
 
 private fun scanEventsSchema() =
     Schema(
-        listOf(largeTable("analytics", "scan_events", listOf(column("id"), column("customer_id"))))
+        listOf(largeTable("analytics", "scan_events", listOf(column("id"), column("customer_id")))),
     )
 
 private fun scanEventsJoinSchema(supportingFkIndex: Boolean = true) =
@@ -117,7 +117,7 @@ private fun scanEventsJoinSchema(supportingFkIndex: Boolean = true) =
                             "public",
                             "customers",
                             listOf("id"),
-                        )
+                        ),
                     ),
             ),
             table(
@@ -127,7 +127,7 @@ private fun scanEventsJoinSchema(supportingFkIndex: Boolean = true) =
                 indexes = listOf(primaryKey("customers")),
                 size = TableSizeClass.Small,
             ),
-        )
+        ),
     )
 
 private fun largeTable(

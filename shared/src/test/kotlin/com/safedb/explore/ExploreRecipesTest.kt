@@ -17,7 +17,7 @@ class ExploreRecipesTest {
                 listOf(
                     RecipeField("t0__amount", "Amount", "decimal", "orders"),
                     RecipeField("old__status", "Status", "varchar", "orders"),
-                )
+                ),
             )
         val mapping = resolveRecipeFields(recipe, sample(), spec())
 
@@ -198,7 +198,7 @@ class ExploreRecipesTest {
                                     MeasureFn.Sum,
                                     "old",
                                     aggregate = false,
-                                )
+                                ),
                             ),
                         series = VisualizationField("old_series"),
                         size = VisualizationField("old_size"),
@@ -232,7 +232,7 @@ class ExploreRecipesTest {
                             MeasureFn.Sum,
                             "t0__amount",
                             aggregate = false,
-                        )
+                        ),
                     ),
                 series = VisualizationField("t0__status"),
                 size = VisualizationField("t0__amount"),
@@ -260,8 +260,8 @@ class ExploreRecipesTest {
                             "Group",
                             "[sum] / [count]",
                             groupColumn = "t0__status",
-                        )
-                    )
+                        ),
+                    ),
             )
         val visualization = VisualizationConfig(x = VisualizationField("t0__status"))
 

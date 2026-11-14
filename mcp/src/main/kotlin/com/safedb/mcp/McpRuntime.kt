@@ -99,9 +99,9 @@ internal fun toolError(
                                 risk = risk,
                                 reasons = reasons,
                                 confirmation = confirmation,
-                            )
-                        )
-                )
+                            ),
+                        ),
+                ),
             ),
         isError = true,
     )
@@ -301,7 +301,7 @@ internal fun createSafeDbMcpServer(
                                     listChanged = false,
                                 ),
                             prompts = ServerCapabilities.Prompts(listChanged = false),
-                        )
+                        ),
                 ),
             instructions = MCP_SERVER_INSTRUCTIONS,
         )
@@ -427,7 +427,7 @@ private fun deleteConfirmationRequired(connection: ConnectionDef, token: String)
             "confirmation object; do not auto-confirm.",
         reasons =
             listOf(
-                "This deletes saved connection ${connection.name} (${connection.dialect.displayName()} / ${connection.database})."
+                "This deletes saved connection ${connection.name} (${connection.dialect.displayName()} / ${connection.database}).",
             ),
         confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
     )

@@ -76,7 +76,7 @@ class McpResourcesAndPromptsTest {
             assertTrue(
                 tables.none {
                     it.jsonObject.getValue("schema").jsonPrimitive.content == "pg_catalog"
-                }
+                },
             )
             val customers =
                 tables
@@ -176,15 +176,15 @@ class McpResourcesAndPromptsTest {
                         GetPromptRequestParams(
                             name = EXPLORE_DATABASE_PROMPT,
                             arguments = mapOf("connection_id" to "c1"),
-                        )
-                    )
+                        ),
+                    ),
                 )
             assertTrue(promptText(withConnection).contains("c1"))
             assertTrue(promptText(withConnection).contains("list_tables"))
 
             val withoutConnection =
                 client.getPrompt(
-                    GetPromptRequest(GetPromptRequestParams(name = EXPLORE_DATABASE_PROMPT))
+                    GetPromptRequest(GetPromptRequestParams(name = EXPLORE_DATABASE_PROMPT)),
                 )
             assertTrue(promptText(withoutConnection).contains("list_connections"))
 
@@ -194,15 +194,15 @@ class McpResourcesAndPromptsTest {
                         GetPromptRequestParams(
                             name = ANALYZE_RESULT_PROMPT,
                             arguments = mapOf("result_id" to "result-1"),
-                        )
-                    )
+                        ),
+                    ),
                 )
             assertTrue(promptText(analyzeResult).contains("result-1"))
             assertTrue(promptText(analyzeResult).contains("pivot_result"))
 
             val analyzeWithoutResult =
                 client.getPrompt(
-                    GetPromptRequest(GetPromptRequestParams(name = ANALYZE_RESULT_PROMPT))
+                    GetPromptRequest(GetPromptRequestParams(name = ANALYZE_RESULT_PROMPT)),
                 )
             assertTrue(promptText(analyzeWithoutResult).contains("run_query"))
         }
@@ -243,7 +243,7 @@ private fun db2ResourcesService(): RecordingSafeDbService {
                         columns = columns,
                         indexes = emptyList(),
                     ),
-                )
+                ),
         )
     return service
 }

@@ -100,7 +100,7 @@ internal fun resolveShadowJar(): Path {
             assertNotNull(
                 System.getProperty(SHADOW_JAR_PROPERTY),
                 "Missing -D$SHADOW_JAR_PROPERTY; run this test via :mcp:integrationTest",
-            )
+            ),
         )
     assertTrue(Files.isRegularFile(shadowJar), "Shadow JAR does not exist: $shadowJar")
     return shadowJar
@@ -127,7 +127,7 @@ internal fun isolatedMcpDataDir(tempRoot: Path, home: Path): Path =
             userHome = home.toString(),
             appData = tempRoot.resolve("appdata").toString(),
             xdgDataHome = tempRoot.resolve("xdg-data").toString(),
-        )
+        ),
     )
 
 internal fun configureIsolatedEnvironment(
@@ -240,7 +240,7 @@ internal fun runPackagedMcpProcess(args: List<String>): PackagedProcessResult {
                     add("-jar")
                     add(shadowJar.toAbsolutePath().toString())
                     addAll(args)
-                }
+                },
             )
         configureIsolatedEnvironment(processBuilder, tempRoot, home)
         process = processBuilder.start()
@@ -468,7 +468,7 @@ internal suspend fun assertLiveQueryLimitAndTypedReads(
     assertEquals("sql_limit", capped.getValue("sample_cap_reason").jsonPrimitive.content)
     assertFalse(capped.containsKey("sample_unbounded"))
     assertTrue(
-        capped.warnings().any { "LIMIT 2" in it && "paging does not get more table rows" in it }
+        capped.warnings().any { "LIMIT 2" in it && "paging does not get more table rows" in it },
     )
 
     // Above the old 10_000 cap. The whole fixture still fits, so the sample is not capped.

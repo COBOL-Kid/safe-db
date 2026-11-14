@@ -32,7 +32,7 @@ object PgAdapter {
                 conn.metadataRows(
                     "SELECT table_schema, table_name FROM information_schema.tables " +
                         "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN $excluded " +
-                        "ORDER BY table_schema, table_name"
+                        "ORDER BY table_schema, table_name",
                 ) { rs ->
                     MetadataTableKey(readString(rs, "table_schema"), readString(rs, "table_name"))
                 }
@@ -40,7 +40,7 @@ object PgAdapter {
                 conn.metadataRows(
                     "SELECT table_schema, table_name, column_name, data_type, is_nullable " +
                         "FROM information_schema.columns WHERE table_schema NOT IN $excluded " +
-                        "ORDER BY table_schema, table_name, ordinal_position"
+                        "ORDER BY table_schema, table_name, ordinal_position",
                 ) { rs ->
                     columnRow(rs)
                 }
@@ -65,7 +65,7 @@ object PgAdapter {
                 WHERE n.nspname NOT IN $excluded
                 ORDER BY n.nspname, t.relname, idx.indisprimary DESC, i.relname, key.ordinality
                 """
-                        .trimIndent()
+                        .trimIndent(),
                 ) { rs ->
                     val kind = readString(rs, "index_type")
                     MetadataIndex(
@@ -113,7 +113,7 @@ object PgAdapter {
                 WHERE con.contype = 'f' AND child_ns.nspname NOT IN $excluded
                 ORDER BY child_ns.nspname, child.relname, con.conname, child_key.ordinality
                 """
-                        .trimIndent()
+                        .trimIndent(),
                 ) { rs ->
                     foreignKeyRow(rs)
                 }

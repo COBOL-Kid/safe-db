@@ -68,11 +68,11 @@ class AssessQueryCoreTest {
                                         alias = "t0",
                                         method = PlanAccessMethod.TableScan,
                                         estimatedRows = 150_000,
-                                    )
+                                    ),
                                 ),
                             rawOptimizerCost = 1.0,
-                        )
-                    )
+                        ),
+                    ),
             )
         val settings = Settings.default().copy(queryRiskGate = QueryRiskGate.Cautious)
 
@@ -105,10 +105,10 @@ class AssessQueryCoreTest {
                                         alias = "t0",
                                         method = PlanAccessMethod.BoundedLookup,
                                         estimatedRows = 1,
-                                    )
-                                )
-                        )
-                    )
+                                    ),
+                                ),
+                        ),
+                    ),
             )
 
         val outcome = assessQueryCore(runner, connection(), spec(), schema(), Settings.default())
@@ -132,7 +132,8 @@ class AssessQueryCoreTest {
     fun disabledGateSkipsPlanAssessment() = runBlocking {
         val runner =
             StubRunner(
-                explainResult = ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout")
+                explainResult =
+                    ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout"),
             )
 
         val outcome =
@@ -168,7 +169,8 @@ class AssessQueryCoreTest {
     fun planTimeoutIsAHardFailure() = runBlocking {
         val runner =
             StubRunner(
-                explainResult = ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout")
+                explainResult =
+                    ExplainResult.Unavailable(PlanUnavailableReason.TimedOut, "timeout"),
             )
 
         val outcome = assessQueryCore(runner, connection(), spec(), schema(), Settings.default())
@@ -261,8 +263,8 @@ private fun schema(sizeClass: TableSizeClass = TableSizeClass.Medium) =
                             MetadataCoverage.complete(),
                             EvidenceConfidence.High,
                         ),
-                )
-            )
+                ),
+            ),
     )
 
 private fun sampleResult() =

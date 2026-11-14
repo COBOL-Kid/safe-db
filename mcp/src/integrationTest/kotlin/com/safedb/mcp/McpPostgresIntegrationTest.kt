@@ -63,14 +63,14 @@ class McpPostgresIntegrationTest {
                         val table = it.jsonObject
                         table.getValue("schema").jsonPrimitive.content == schema &&
                             table.getValue("name").jsonPrimitive.content == "customers"
-                    }
+                    },
                 )
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject
                         table.getValue("schema").jsonPrimitive.content == schema &&
                             table.getValue("name").jsonPrimitive.content == "orders"
-                    }
+                    },
                 )
 
                 val described =

@@ -62,14 +62,14 @@ class McpMySqlIntegrationTest {
                         val table = it.jsonObject
                         table.getValue("schema").jsonPrimitive.content == connection.database &&
                             table.getValue("name").jsonPrimitive.content == "customers"
-                    }
+                    },
                 )
                 assertNotNull(
                     tables.find {
                         val table = it.jsonObject
                         table.getValue("schema").jsonPrimitive.content == connection.database &&
                             table.getValue("name").jsonPrimitive.content == "orders"
-                    }
+                    },
                 )
 
                 val described =

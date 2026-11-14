@@ -64,7 +64,7 @@ object SecretsManager {
             when (parseRequestedBackendFrom(envValue)) {
                 RequestedBackend.Disabled -> {
                     println(
-                        "WARN: $ENV_BACKEND=disabled: credentials are held in process memory only"
+                        "WARN: $ENV_BACKEND=disabled: credentials are held in process memory only",
                     )
                     DisabledMemoryStore()
                 }
@@ -93,8 +93,8 @@ object SecretsManager {
             } catch (error: Exception) {
                 return Result.failure(
                     IllegalStateException(
-                        "Could not read credentials (${unwrapCredentialError(error).message ?: error})."
-                    )
+                        "Could not read credentials (${unwrapCredentialError(error).message ?: error}).",
+                    ),
                 )
             } ?: return Result.failure(IllegalStateException(passwordNotFoundMessage()))
         val record = runCatching {
@@ -103,15 +103,15 @@ object SecretsManager {
             .getOrElse {
                 return Result.failure(
                     IllegalStateException(
-                        "This credential predates endpoint binding. Delete and add the connection again before use."
-                    )
+                        "This credential predates endpoint binding. Delete and add the connection again before use.",
+                    ),
                 )
             }
         if (record.version != 1 || record.fingerprint != def.credentialFingerprint()) {
             return Result.failure(
                 IllegalStateException(
-                    "Stored credentials do not match this connection endpoint or transport configuration. Delete and add the connection again."
-                )
+                    "Stored credentials do not match this connection endpoint or transport configuration. Delete and add the connection again.",
+                ),
             )
         }
         CredentialSession.put(cacheKey, record.password)

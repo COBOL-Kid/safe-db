@@ -48,7 +48,7 @@ object Db2Adapter {
         val tables =
             conn.metadataRows(
                 "SELECT TABSCHEMA, TABNAME FROM SYSCAT.TABLES WHERE TYPE = 'T' " +
-                    "AND UPPER(TABSCHEMA) NOT IN $excludedSchemas ORDER BY TABSCHEMA, TABNAME"
+                    "AND UPPER(TABSCHEMA) NOT IN $excludedSchemas ORDER BY TABSCHEMA, TABNAME",
             ) { rs ->
                 MetadataTableKey(readString(rs, "TABSCHEMA"), readString(rs, "TABNAME"))
             }
@@ -56,7 +56,7 @@ object Db2Adapter {
             conn.metadataRows(
                 "SELECT TABSCHEMA, TABNAME, COLNAME, TYPENAME, NULLS FROM SYSCAT.COLUMNS " +
                     "WHERE UPPER(TABSCHEMA) NOT IN $excludedSchemas " +
-                    "ORDER BY TABSCHEMA, TABNAME, COLNO"
+                    "ORDER BY TABSCHEMA, TABNAME, COLNO",
             ) { rs ->
                 columnRow(
                     rs,
@@ -78,7 +78,7 @@ object Db2Adapter {
                 WHERE UPPER(I.TABSCHEMA) NOT IN $excludedSchemas
                 ORDER BY I.TABSCHEMA, I.TABNAME, I.INDNAME, C.COLSEQ
                 """
-                    .trimIndent()
+                    .trimIndent(),
             ) { rs ->
                 db2Index(
                     readString(rs, "TABSCHEMA"),
@@ -110,11 +110,11 @@ object Db2Adapter {
                         WHERE UPPER(R.TABSCHEMA) NOT IN $excludedSchemas
                         ORDER BY R.TABSCHEMA, R.TABNAME, R.CONSTNAME, CK.COLSEQ
                         """
-                            .trimIndent()
+                            .trimIndent(),
                     ) { rs ->
                         countedForeignKey(rs)
                     }
-                    .filterNotNull()
+                    .filterNotNull(),
             )
         val tableSizes =
             conn.tableSizes(
@@ -132,7 +132,7 @@ object Db2Adapter {
         val tables =
             conn.metadataRows(
                 "SELECT CREATOR, NAME FROM SYSIBM.SYSTABLES WHERE TYPE = 'T' " +
-                    "AND UPPER(CREATOR) NOT IN $excludedSchemas ORDER BY CREATOR, NAME"
+                    "AND UPPER(CREATOR) NOT IN $excludedSchemas ORDER BY CREATOR, NAME",
             ) { rs ->
                 MetadataTableKey(readString(rs, "CREATOR"), readString(rs, "NAME"))
             }
@@ -140,7 +140,7 @@ object Db2Adapter {
             conn.metadataRows(
                 "SELECT TBCREATOR, TBNAME, NAME, COLTYPE, NULLS FROM SYSIBM.SYSCOLUMNS " +
                     "WHERE UPPER(TBCREATOR) NOT IN $excludedSchemas " +
-                    "ORDER BY TBCREATOR, TBNAME, COLNO"
+                    "ORDER BY TBCREATOR, TBNAME, COLNO",
             ) { rs ->
                 columnRow(
                     rs,
@@ -161,7 +161,7 @@ object Db2Adapter {
                 WHERE UPPER(I.TBCREATOR) NOT IN $excludedSchemas
                 ORDER BY I.TBCREATOR, I.TBNAME, I.NAME, K.COLSEQ
                 """
-                    .trimIndent()
+                    .trimIndent(),
             ) { rs ->
                 db2Index(
                     readString(rs, "TBCREATOR"),
@@ -200,11 +200,11 @@ object Db2Adapter {
                         WHERE UPPER(R.CREATOR) NOT IN $excludedSchemas
                         ORDER BY R.CREATOR, R.TBNAME, R.RELNAME, F.COLSEQ
                         """
-                            .trimIndent()
+                            .trimIndent(),
                     ) { rs ->
                         countedForeignKey(rs)
                     }
-                    .filterNotNull()
+                    .filterNotNull(),
             )
         val tableSizes =
             conn.tableSizes(
@@ -492,12 +492,12 @@ object Db2Adapter {
         }
         val authTables =
             explainTablePresence(
-                "SELECT 1 FROM $quotedAuthId.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY"
+                "SELECT 1 FROM $quotedAuthId.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY",
             )
         val systoolsTables =
             if (authTables == ExplainTablePresence.Absent) {
                 explainTablePresence(
-                    "SELECT 1 FROM SYSTOOLS.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY"
+                    "SELECT 1 FROM SYSTOOLS.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY",
                 )
             } else {
                 null
@@ -571,7 +571,7 @@ object Db2Adapter {
     // Best-effort: older explain table sets may lack EXPLAIN_STATEMENT entirely.
     runCatching {
         prepareStatement(
-                "SELECT MAX(TOTAL_COST) FROM ${prefix}EXPLAIN_STATEMENT WHERE $LUW_KEY_PREDICATE"
+                "SELECT MAX(TOTAL_COST) FROM ${prefix}EXPLAIN_STATEMENT WHERE $LUW_KEY_PREDICATE",
             )
             .use { ps ->
                 ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
@@ -590,7 +590,7 @@ object Db2Adapter {
         val operators =
             prepareStatement(
                     "SELECT OPERATOR_ID, OPERATOR_TYPE, TOTAL_COST " +
-                        "FROM ${prefix}EXPLAIN_OPERATOR WHERE $LUW_KEY_PREDICATE ORDER BY OPERATOR_ID"
+                        "FROM ${prefix}EXPLAIN_OPERATOR WHERE $LUW_KEY_PREDICATE ORDER BY OPERATOR_ID",
                 )
                 .use { ps ->
                     ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
@@ -603,7 +603,7 @@ object Db2Adapter {
                                         (rs.getObject(1) as Number).toInt(),
                                         rs.getString(2).orEmpty(),
                                         (rs.getObject(3) as? Number)?.toDouble(),
-                                    )
+                                    ),
                                 )
                             }
                         }
@@ -615,7 +615,7 @@ object Db2Adapter {
         val objectTypes = mutableMapOf<Pair<String, String>, String>()
         prepareStatement(
                 "SELECT OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE " +
-                    "FROM ${prefix}EXPLAIN_OBJECT WHERE $LUW_KEY_PREDICATE"
+                    "FROM ${prefix}EXPLAIN_OBJECT WHERE $LUW_KEY_PREDICATE",
             )
             .use { ps ->
                 ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
@@ -637,7 +637,7 @@ object Db2Adapter {
         prepareStatement(
                 "SELECT SOURCE_TYPE, SOURCE_ID, TARGET_TYPE, TARGET_ID, STREAM_COUNT, " +
                     "OBJECT_SCHEMA, OBJECT_NAME FROM ${prefix}EXPLAIN_STREAM " +
-                    "WHERE $LUW_KEY_PREDICATE"
+                    "WHERE $LUW_KEY_PREDICATE",
             )
             .use { ps ->
                 ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
@@ -682,7 +682,7 @@ object Db2Adapter {
         val predicates =
             prepareStatement(
                     "SELECT OPERATOR_ID, PREDICATE_TEXT " +
-                        "FROM ${prefix}EXPLAIN_PREDICATE WHERE $LUW_KEY_PREDICATE"
+                        "FROM ${prefix}EXPLAIN_PREDICATE WHERE $LUW_KEY_PREDICATE",
                 )
                 .use { ps ->
                     ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
@@ -731,7 +731,7 @@ object Db2Adapter {
             prepareStatement(
                     "SELECT QBLOCKNO, PLANNO, MIXOPSEQ, METHOD, CREATOR, TNAME, ACCESSTYPE, " +
                         "MATCHCOLS, ACCESSCREATOR, ACCESSNAME " +
-                        "FROM $planTable WHERE QUERYNO = $queryNo ORDER BY QBLOCKNO, PLANNO, MIXOPSEQ"
+                        "FROM $planTable WHERE QUERYNO = $queryNo ORDER BY QBLOCKNO, PLANNO, MIXOPSEQ",
                 )
                 .use { ps ->
                     ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
@@ -750,7 +750,7 @@ object Db2Adapter {
                                         (rs.getObject(8) as? Number)?.toInt() ?: 0,
                                         rs.getString(9),
                                         rs.getString(10),
-                                    )
+                                    ),
                                 )
                             }
                         }
@@ -762,7 +762,7 @@ object Db2Adapter {
             prepareStatement(
                     "SELECT QBLOCKNO, PLANNO, MIXOPSEQ, SORTC_UNIQ, SORTC_JOIN, " +
                         "SORTC_ORDERBY, SORTC_GROUPBY, SORTN_JOIN " +
-                        "FROM $planTable WHERE QUERYNO = $queryNo"
+                        "FROM $planTable WHERE QUERYNO = $queryNo",
                 )
                 .use { ps ->
                     ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000

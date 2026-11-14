@@ -125,7 +125,7 @@ private fun ExploreConfig.mapColumnReferences(transform: (String) -> String): Ex
                             is ExploreSortTarget.Dimension ->
                                 target.copy(column = transform(target.column))
                             is ExploreSortTarget.Measure -> target
-                        }
+                        },
                 )
             },
     )
@@ -145,7 +145,7 @@ private fun WorksheetConfig.mapColumnReferences(transform: (String) -> String): 
                 when (calculation) {
                     is WorksheetCalculation.RowFormula ->
                         calculation.copy(
-                            formula = mapFormulaReferences(calculation.formula, transform)
+                            formula = mapFormulaReferences(calculation.formula, transform),
                         )
                     is WorksheetCalculation.Aggregate ->
                         calculation.copy(
@@ -165,7 +165,7 @@ private fun WorksheetConfig.mapColumnReferences(transform: (String) -> String): 
     )
 
 private fun VisualizationConfig.mapColumnReferences(
-    transform: (String) -> String
+    transform: (String) -> String,
 ): VisualizationConfig =
     copy(
         x = x?.copy(column = transform(x.column)),
@@ -184,7 +184,7 @@ private fun VisualizationConfig.mapColumnReferences(
     )
 
 private fun WorksheetValueRef.mapColumnReferences(
-    transform: (String) -> String
+    transform: (String) -> String,
 ): WorksheetValueRef =
     when (this) {
         is WorksheetValueRef.Column -> copy(column = transform(column))

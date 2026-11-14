@@ -83,7 +83,7 @@ internal class SchemaMapViewModel {
         if (viewport.width <= 0f || viewport.height <= 0f) return
         val center = nodeBounds.center
         this.viewport.updatePan(
-            Offset(viewport.width / 2f - center.x * zoom, viewport.height / 2f - center.y * zoom)
+            Offset(viewport.width / 2f - center.x * zoom, viewport.height / 2f - center.y * zoom),
         )
     }
 

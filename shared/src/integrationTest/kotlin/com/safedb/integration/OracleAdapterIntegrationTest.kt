@@ -90,7 +90,7 @@ class OracleAdapterIntegrationTest {
             assertTrue(
                 plan.relations.any {
                     it.method != PlanAccessMethod.Unknown && it.estimatedRows != null
-                }
+                },
             )
 
             val empty =

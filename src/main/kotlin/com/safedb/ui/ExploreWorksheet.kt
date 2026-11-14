@@ -129,7 +129,9 @@ internal fun ExploreWorksheet(
             sample = sample,
             onSave = { filter ->
                 onConfigChange(
-                    config.copy(filters = config.filters.filterNot { it.column == column } + filter)
+                    config.copy(
+                        filters = config.filters.filterNot { it.column == column } + filter,
+                    ),
                 )
                 editingFilter = null
             },
@@ -220,7 +222,7 @@ internal fun ExploreWorksheet(
                                     config.columnLayout.filterNot {
                                         it.ref == WorksheetValueRef.Calculation(calculation.id)
                                     },
-                            )
+                            ),
                         )
                         if (editingCalculation?.id == calculation.id) {
                             editingCalculation = null
@@ -248,7 +250,7 @@ internal fun ExploreWorksheet(
                                 addAll(preview.warnings)
                                 if (preview.calculationErrorCount > 0)
                                     add(
-                                        "${preview.calculationErrorCount} calculation error${if (preview.calculationErrorCount == 1) "" else "s"}"
+                                        "${preview.calculationErrorCount} calculation error${if (preview.calculationErrorCount == 1) "" else "s"}",
                                     )
                             }
                             .joinToString(" · "),
@@ -319,11 +321,11 @@ private fun WorksheetTable(
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     Column(
                         modifier =
-                            Modifier.fillMaxSize().horizontalScroll(scroll).width(tableWidth.dp)
+                            Modifier.fillMaxSize().horizontalScroll(scroll).width(tableWidth.dp),
                     ) {
                         Row(
                             modifier =
-                                Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow),
                         ) {
                             if (projection.hasRowLabels) {
                                 WorksheetGroupHeader()
@@ -355,7 +357,7 @@ private fun WorksheetTable(
                                                 resolvedColumns.toWorksheetColumnLayout(),
                                                 column.valueRef,
                                                 visible = false,
-                                            )
+                                            ),
                                         )
                                     },
                                     onMoveLeft = {
@@ -364,7 +366,7 @@ private fun WorksheetTable(
                                                 resolvedColumns.toWorksheetColumnLayout(),
                                                 visibleIndex,
                                                 visibleIndex - 1,
-                                            )
+                                            ),
                                         )
                                     },
                                     onMoveRight = {
@@ -373,7 +375,7 @@ private fun WorksheetTable(
                                                 resolvedColumns.toWorksheetColumnLayout(),
                                                 visibleIndex,
                                                 visibleIndex + 1,
-                                            )
+                                            ),
                                         )
                                     },
                                 )
@@ -400,11 +402,11 @@ private fun WorksheetTable(
                                         when {
                                             row.kind != WorksheetRowKind.Detail ->
                                                 MaterialTheme.colorScheme.primaryContainer.copy(
-                                                    alpha = 0.35f
+                                                    alpha = 0.35f,
                                                 )
                                             index % 2 == 1 ->
                                                 MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                                                    alpha = 0.55f
+                                                    alpha = 0.55f,
                                                 )
                                             else -> MaterialTheme.colorScheme.surface
                                         }
@@ -438,8 +440,8 @@ private fun WorksheetTable(
                                     HorizontalDivider(
                                         color =
                                             MaterialTheme.colorScheme.outlineVariant.copy(
-                                                alpha = 0.65f
-                                            )
+                                                alpha = 0.65f,
+                                            ),
                                     )
                                 }
                             }
@@ -465,7 +467,8 @@ private fun WorksheetTable(
 private fun WorksheetGroupHeader() {
     Column(
         modifier =
-            Modifier.width(WorksheetGroupColumnWidth.dp).padding(horizontal = 8.dp, vertical = 5.dp)
+            Modifier.width(WorksheetGroupColumnWidth.dp)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
     ) {
         Text("Group", style = DataMono.copy(fontWeight = FontWeight.Medium))
         Text(
@@ -487,7 +490,7 @@ private fun WorksheetGroupCell(row: WorksheetProjectedRow, onToggleGroup: (Strin
                         Modifier.clickable { onToggleGroup(row.pathKey) }
                     } else {
                         Modifier
-                    }
+                    },
                 )
                 .padding(horizontal = 10.dp),
         contentAlignment = Alignment.CenterStart,
@@ -567,7 +570,7 @@ private fun WorksheetColumnMenu(
                                 onLayoutChange(
                                     columns.map {
                                         WorksheetColumnLayout(it.column.valueRef, visible = true)
-                                    }
+                                    },
                                 )
                             },
                             enabled = hiddenCount > 0,
@@ -585,7 +588,7 @@ private fun WorksheetColumnMenu(
                                             column.valueRef,
                                             visibility[column.valueRef] ?: true,
                                         )
-                                    }
+                                    },
                                 )
                             },
                             enabled = currentRefs != naturalRefs,
@@ -675,7 +678,7 @@ private fun WorksheetColumnMenu(
                                                         visible
                                                     else it.visible,
                                                 )
-                                            }
+                                            },
                                         )
                                     },
                                     modifier = Modifier.size(34.dp),
@@ -701,7 +704,7 @@ private fun WorksheetColumnMenu(
                                                 columns.toWorksheetColumnLayout(),
                                                 index,
                                                 index - 1,
-                                            )
+                                            ),
                                         )
                                     },
                                     enabled = index > 0,
@@ -720,7 +723,7 @@ private fun WorksheetColumnMenu(
                                                 columns.toWorksheetColumnLayout(),
                                                 index,
                                                 index + 1,
-                                            )
+                                            ),
                                         )
                                     },
                                     enabled = index < columns.lastIndex,

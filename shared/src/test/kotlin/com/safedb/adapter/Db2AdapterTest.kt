@@ -51,7 +51,7 @@ class Db2AdapterTest {
                 connection(TransportSecurityMode.VerifyIdentity)
                     .copy(
                         driverProperties =
-                            listOf(DriverProperty("sslClientHostnameValidation", "OFF"))
+                            listOf(DriverProperty("sslClientHostnameValidation", "OFF")),
                     ),
                 "pw",
             )
@@ -99,19 +99,19 @@ class Db2AdapterTest {
             base
                 .copy(driverProperties = listOf(DriverProperty("currentSchema", "REPORTING")))
                 .validate()
-                .isSuccess
+                .isSuccess,
         )
         assertTrue(
             base
                 .copy(driverProperties = listOf(DriverProperty("currentSchema", "A;B")))
                 .validate()
-                .isFailure
+                .isFailure,
         )
         assertTrue(
             base
                 .copy(driverProperties = listOf(DriverProperty("bad;name", "x")))
                 .validate()
-                .isFailure
+                .isFailure,
         )
     }
 
@@ -283,10 +283,10 @@ class Db2AdapterTest {
         assertTrue(with(Db2Adapter) { SQLException("no", "42704", 0).isUndefinedObject() })
         assertTrue(with(Db2Adapter) { SQLException("no", "HY000", -204).isUndefinedObject() })
         assertTrue(
-            with(Db2Adapter) { SQLException("SQLCODE=-204", "HY000", 0).isUndefinedObject() }
+            with(Db2Adapter) { SQLException("SQLCODE=-204", "HY000", 0).isUndefinedObject() },
         )
         assertTrue(
-            with(Db2Adapter) { SQLException("undefined name", "HY000", 0).isUndefinedObject() }
+            with(Db2Adapter) { SQLException("undefined name", "HY000", 0).isUndefinedObject() },
         )
         assertFalse(with(Db2Adapter) { SQLException("other", "HY000", 0).isUndefinedObject() })
         assertFalse(with(Db2Adapter) { RuntimeException("undefined name").isUndefinedObject() })
@@ -423,7 +423,7 @@ class Db2AdapterTest {
                     Db2Adapter.CountedForeignKey(partial, 2),
                     Db2Adapter.CountedForeignKey(orderId, 2),
                     Db2Adapter.CountedForeignKey(lineNo, 2),
-                )
+                ),
             ),
         )
     }
@@ -433,7 +433,7 @@ class Db2AdapterTest {
         val base = connection(TransportSecurityMode.Disabled)
 
         assertTrue(
-            base.copy(database = "app:sslTrustStoreLocation=/tmp/store").validate().isFailure
+            base.copy(database = "app:sslTrustStoreLocation=/tmp/store").validate().isFailure,
         )
         assertTrue(base.copy(host = "db.example/app").validate().isFailure)
         assertTrue(base.copy(host = "::1").validate().isSuccess)

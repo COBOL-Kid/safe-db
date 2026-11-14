@@ -58,7 +58,7 @@ class RecipesViewModel(
                 capturingFailure(_error) {
                     val json = service.exportExploreRecipe(recipe)
                     withContext(ioDispatcher) { com.safedb.persist.atomicWrite(path, json) }
-                }
+                },
             )
         }
     }

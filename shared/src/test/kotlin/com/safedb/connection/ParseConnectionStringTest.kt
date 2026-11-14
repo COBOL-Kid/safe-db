@@ -16,7 +16,7 @@ class ParseConnectionStringTest {
     fun parsesPostgreSqlUriWithVerifyFull() {
         val parsed =
             parseConnectionString(
-                "postgresql://u:p%40ss@db.example.com:5432/app?sslmode=verify-full"
+                "postgresql://u:p%40ss@db.example.com:5432/app?sslmode=verify-full",
             )
 
         assertEquals(Dialect.Postgres, parsed.dialect)
@@ -34,7 +34,7 @@ class ParseConnectionStringTest {
     fun importsSafePostgresExtrasAndDropsSensitiveValuesFromSanitizedInput() {
         val parsed =
             parseConnectionString(
-                "postgresql://u:p@host/db?sslmode=verify-full&currentSchema=reporting&apiToken=do-not-store"
+                "postgresql://u:p@host/db?sslmode=verify-full&currentSchema=reporting&apiToken=do-not-store",
             )
 
         assertEquals(listOf(DriverProperty("currentSchema", "reporting")), parsed.driverProperties)
@@ -126,7 +126,7 @@ class ParseConnectionStringTest {
     fun importsSafeMySqlDriverProperties() {
         val parsed =
             parseConnectionString(
-                "jdbc:mysql://host:3306/db?sslMode=VERIFY_IDENTITY&serverTimezone=UTC"
+                "jdbc:mysql://host:3306/db?sslMode=VERIFY_IDENTITY&serverTimezone=UTC",
             )
 
         assertEquals(listOf(DriverProperty("serverTimezone", "UTC")), parsed.driverProperties)
@@ -138,7 +138,7 @@ class ParseConnectionStringTest {
 
         assertEquals(
             listOf(
-                "A CA path was included in the URL and was not imported. Configure custom trust through launch-profile JSON."
+                "A CA path was included in the URL and was not imported. Configure custom trust through launch-profile JSON.",
             ),
             parsed.warnings,
         )
@@ -155,7 +155,7 @@ class ParseConnectionStringTest {
     fun parsesSqlServerAdoNetStrings() {
         val parsed =
             parseConnectionString(
-                "Server=host,1433;Database=db;User ID=u;Password={p;semi};Encrypt=True;TrustServerCertificate=False"
+                "Server=host,1433;Database=db;User ID=u;Password={p;semi};Encrypt=True;TrustServerCertificate=False",
             )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
@@ -173,7 +173,7 @@ class ParseConnectionStringTest {
     fun parsesSqlServerAliasesAndDisabledEncryption() {
         val parsed =
             parseConnectionString(
-                "Data Source=tcp:db.example.com,1444;Initial Catalog=warehouse;UID=readonly;PWD=p;Encrypt=no"
+                "Data Source=tcp:db.example.com,1444;Initial Catalog=warehouse;UID=readonly;PWD=p;Encrypt=no",
             )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
@@ -189,7 +189,7 @@ class ParseConnectionStringTest {
     fun parsesSqlServerJdbcStrings() {
         val parsed =
             parseConnectionString(
-                "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;trustServerCertificate=true"
+                "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;trustServerCertificate=true",
             )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
@@ -206,7 +206,7 @@ class ParseConnectionStringTest {
         val parsed =
             parseConnectionString(
                 "jdbc:sqlserver://host:1433;databaseName=db;user=u;password=p;encrypt=true;" +
-                    "applicationName=Reporting;keyVaultProviderClientKey={do-not;store}"
+                    "applicationName=Reporting;keyVaultProviderClientKey={do-not;store}",
             )
 
         assertEquals(
@@ -222,7 +222,7 @@ class ParseConnectionStringTest {
     fun defaultsSqlServerJdbcLocalhostConnectionsWithoutEncryptToDisabledTransport() {
         val parsed =
             parseConnectionString(
-                "jdbc:sqlserver://localhost:1433;databaseName=db;user=u;password=p"
+                "jdbc:sqlserver://localhost:1433;databaseName=db;user=u;password=p",
             )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
@@ -245,7 +245,7 @@ class ParseConnectionStringTest {
     fun defaultsSqlServerRemoteConnectionsWithoutEncryptToVerifyIdentity() {
         val parsed =
             parseConnectionString(
-                "jdbc:sqlserver://db.example.com:1433;databaseName=db;user=u;password=p"
+                "jdbc:sqlserver://db.example.com:1433;databaseName=db;user=u;password=p",
             )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
@@ -258,7 +258,7 @@ class ParseConnectionStringTest {
     fun preservesExplicitEncryptTrueOnSqlServerLocalhostAsVerifyIdentity() {
         val parsed =
             parseConnectionString(
-                "Server=localhost,1433;Database=db;User ID=u;Password=p;Encrypt=True"
+                "Server=localhost,1433;Database=db;User ID=u;Password=p;Encrypt=True",
             )
 
         assertEquals(Dialect.Mssql, parsed.dialect)
@@ -271,7 +271,7 @@ class ParseConnectionStringTest {
     fun parsesOracleTcpsWithWalletLocation() {
         val parsed =
             parseConnectionString(
-                "jdbc:oracle:thin:@tcps:host:1521/svc?wallet_location=/path/to/wallet"
+                "jdbc:oracle:thin:@tcps:host:1521/svc?wallet_location=/path/to/wallet",
             )
 
         assertEquals(Dialect.Oracle, parsed.dialect)
@@ -287,7 +287,7 @@ class ParseConnectionStringTest {
     fun importsSafeOracleQueryProperties() {
         val parsed =
             parseConnectionString(
-                "jdbc:oracle:thin:@//host:1521/svc?defaultRowPrefetch=50&apiToken=do-not-store"
+                "jdbc:oracle:thin:@//host:1521/svc?defaultRowPrefetch=50&apiToken=do-not-store",
             )
 
         assertEquals(listOf(DriverProperty("defaultRowPrefetch", "50")), parsed.driverProperties)
@@ -423,7 +423,7 @@ class ParseConnectionStringTest {
     fun parsesOracleTcpsCredentialsWhenWalletLocationContainsAtSign() {
         val parsed =
             parseConnectionString(
-                "jdbc:oracle:thin:user/pass@tcps:host:1521/svc?wallet_location=/wallets/team@example"
+                "jdbc:oracle:thin:user/pass@tcps:host:1521/svc?wallet_location=/wallets/team@example",
             )
 
         assertEquals(Dialect.Oracle, parsed.dialect)
@@ -519,7 +519,7 @@ class ParseConnectionStringTest {
     fun db2JdbcImportsSafeExtrasAndDropsSensitiveValues() {
         val parsed =
             parseConnectionString(
-                "jdbc:db2://db.example.com:50000/app:sslConnection=true;currentSchema=REPORTING;apiToken=do-not-store;"
+                "jdbc:db2://db.example.com:50000/app:sslConnection=true;currentSchema=REPORTING;apiToken=do-not-store;",
             )
 
         assertEquals(Dialect.Db2, parsed.dialect)
@@ -533,7 +533,7 @@ class ParseConnectionStringTest {
     fun db2ImportDropsHostnameValidationProperty() {
         val parsed =
             parseConnectionString(
-                "jdbc:db2://db.example.com:50000/app:sslConnection=true;sslClientHostnameValidation=OFF;"
+                "jdbc:db2://db.example.com:50000/app:sslConnection=true;sslClientHostnameValidation=OFF;",
             )
 
         assertEquals(TransportSecurityMode.VerifyIdentity, parsed.transportSecurity.mode)
@@ -554,7 +554,7 @@ class ParseConnectionStringTest {
                     database = "app",
                     username = "readonly",
                     transportSecurity = TransportSecurity(TransportSecurityMode.Disabled),
-                )
+                ),
             )
 
         assertTrue(formatted.contains("jdbc:db2://[::1]:50000/app:"))
@@ -672,7 +672,7 @@ class ParseConnectionStringTest {
         val error =
             assertFailsWith<ConnectionStringParseError> {
                 parseConnectionString(
-                    "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcps)(HOST=host)(PORT=1521)))"
+                    "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcps)(HOST=host)(PORT=1521)))",
                 )
             }
         assertTrue(error.message!!.contains("Oracle TNS DESCRIPTION blocks are not supported"))

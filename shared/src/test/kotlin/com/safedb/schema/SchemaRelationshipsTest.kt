@@ -45,7 +45,7 @@ class SchemaRelationshipsTest {
                             listOf("customer_id"),
                             unique = true,
                             partial = null,
-                        )
+                        ),
                     ),
                 foreignKeys = listOf(foreignKey),
             )
@@ -95,7 +95,7 @@ class SchemaRelationshipsTest {
                             isUnique = true,
                             isPartial = false,
                             keys = listOf(IndexKey(column = "a"), IndexKey(expression = true)),
-                        )
+                        ),
                     ),
                 foreignKeys = listOf(foreignKey),
             )
@@ -110,7 +110,7 @@ class SchemaRelationshipsTest {
                             listOf("a", "b"),
                             unique = true,
                             partial = false,
-                        )
+                        ),
                     ),
                 foreignKeys = listOf(foreignKey),
             )
@@ -165,7 +165,7 @@ class SchemaRelationshipsTest {
                 columns = listOf(column("customer_id")),
                 foreignKeys =
                     listOf(
-                        foreignKey("alpha_fk", listOf("customer_id"), "customers", listOf("id"))
+                        foreignKey("alpha_fk", listOf("customer_id"), "customers", listOf("id")),
                     ),
             )
         val ignored = table(name = "unrelated", columns = listOf(column("id")))
@@ -211,7 +211,7 @@ class SchemaRelationshipsTest {
                             listOf("customer_id"),
                             "customers",
                             listOf("id"),
-                        )
+                        ),
                     ),
             )
         val archive =
@@ -294,7 +294,7 @@ class SchemaRelationshipsTest {
                 columns = listOf(column("id"), column("order_id")),
                 foreignKeys =
                     listOf(
-                        foreignKey("invoices_order_fk", listOf("order_id"), "orders", listOf("id"))
+                        foreignKey("invoices_order_fk", listOf("order_id"), "orders", listOf("id")),
                     ),
             )
         val visible = listOf(customers, orders, invoices)
@@ -339,7 +339,7 @@ class SchemaRelationshipsTest {
                             listOf("customer_id"),
                             "customers",
                             listOf("id"),
-                        )
+                        ),
                     ),
             )
         val balances =
@@ -382,7 +382,9 @@ class SchemaRelationshipsTest {
                 includeIndexedColumns = false,
             )
         assertTrue(
-            foreignKeyOnly.any { it.toTable == "orders" && it.kind == JoinCandidateKind.ForeignKey }
+            foreignKeyOnly.any {
+                it.toTable == "orders" && it.kind == JoinCandidateKind.ForeignKey
+            },
         )
         assertTrue(foreignKeyOnly.none { it.kind == JoinCandidateKind.IndexedColumns })
         assertTrue(foreignKeyOnly.none { it.toTable == "balances" })
@@ -403,7 +405,7 @@ class SchemaRelationshipsTest {
             foreignKeyOnlyPaths.single().steps.map { it.toTable },
         )
         assertTrue(
-            foreignKeyOnlyPaths.single().steps.all { it.kind == JoinCandidateKind.ForeignKey }
+            foreignKeyOnlyPaths.single().steps.all { it.kind == JoinCandidateKind.ForeignKey },
         )
     }
 
@@ -501,7 +503,7 @@ class SchemaRelationshipsTest {
                             listOf("customer_id"),
                             "customers",
                             listOf("id"),
-                        )
+                        ),
                     ),
             )
         val items =
@@ -510,7 +512,7 @@ class SchemaRelationshipsTest {
                 columns = listOf(column("id", primary = true), column("order_id")),
                 foreignKeys =
                     listOf(
-                        foreignKey("items_order_fk", listOf("order_id"), "orders", listOf("id"))
+                        foreignKey("items_order_fk", listOf("order_id"), "orders", listOf("id")),
                     ),
             )
         val tables = listOf(customers, orders, items)
@@ -524,7 +526,7 @@ class SchemaRelationshipsTest {
         assertTrue(paths.single().steps.all { it.kind == JoinCandidateKind.ForeignKey })
 
         assertTrue(
-            findJoinPaths(tables, "public", "customers", "public", "items", maxHops = 1).isEmpty()
+            findJoinPaths(tables, "public", "customers", "public", "items", maxHops = 1).isEmpty(),
         )
         assertTrue(findJoinPaths(tables, "public", "customers", "public", "customers").isEmpty())
     }
@@ -555,7 +557,7 @@ class SchemaRelationshipsTest {
         val paths = findJoinPaths(tables, "public", "a", "public", "c", maxHops = 3)
         assertEquals(listOf("b", "c"), paths.first().steps.map { it.toTable })
         assertTrue(
-            paths.all { path -> path.steps.map { it.toTable }.distinct().size == path.steps.size }
+            paths.all { path -> path.steps.map { it.toTable }.distinct().size == path.steps.size },
         )
     }
 

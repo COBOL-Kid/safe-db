@@ -98,7 +98,7 @@ fun incomingForeignKeysFor(
         .sortedWith(
             compareBy<IncomingForeignKey> { it.sourceSchema.lowercase() }
                 .thenBy { it.sourceTable.lowercase() }
-                .thenBy { it.name.lowercase() }
+                .thenBy { it.name.lowercase() },
         )
 
 data class CatalogTableMatch(
@@ -352,7 +352,7 @@ private fun indexedColumnEdges(
             compareBy<Map.Entry<Pair<String, String>, MutableList<JoinColumnPair>>> {
                     it.key.first.lowercase()
                 }
-                .thenBy { it.key.second.lowercase() }
+                .thenBy { it.key.second.lowercase() },
         )
         .map { (key, pairs) ->
             val (schema, name) = key
@@ -438,7 +438,7 @@ fun findJoinPaths(
             compareBy<JoinPath> { it.steps.size }
                 .thenBy { path ->
                     path.steps.joinToString("|") { "${it.toSchema}.${it.toTable}" }.lowercase()
-                }
+                },
         )
         .take(FIND_JOIN_PATHS_MAX_RESULTS)
 }
@@ -458,7 +458,7 @@ private fun orderedEdges(
                     }
                 }
                 .thenBy { it.toSchema.lowercase() }
-                .thenBy { it.toTable.lowercase() }
+                .thenBy { it.toTable.lowercase() },
         )
 
 private fun isCompleteForeignKey(foreignKey: ForeignKeyInfo): Boolean =

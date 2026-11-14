@@ -199,7 +199,7 @@ class QueryRiskTest {
 
         assertTrue(assessment.uncertainties.any { it.reasonCode == "permission_denied" })
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
     }
 
@@ -215,7 +215,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("notes", ColumnCategory.Text)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
@@ -257,13 +257,13 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("id"), column("notes", ColumnCategory.Text)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
         assertFalse(assessment.signals.any { it.code == RiskSignalCode.ScanProneTextPredicate })
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
         assertFalse(assessment.signals.any { it.code == RiskSignalCode.NoEffectiveRestriction })
     }
@@ -289,7 +289,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("id"), column("notes", ColumnCategory.Text)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
@@ -338,7 +338,7 @@ class QueryRiskTest {
 
         assertTrue(assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath })
         assertTrue(
-            assessment.signals.any { it.code == RiskSignalCode.OrBranchWithoutCompatiblePath }
+            assessment.signals.any { it.code == RiskSignalCode.OrBranchWithoutCompatiblePath },
         )
         assertTrue(assessment.signals.any { it.code == RiskSignalCode.ScanProneTextPredicate })
         assertEquals(QueryRiskSeverity.High, assessment.severity)
@@ -376,7 +376,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("notes", ColumnCategory.Text)),
                         indexes = listOf(fullText),
-                    )
+                    ),
                 ),
                 dialect = Dialect.MySql,
             )
@@ -416,12 +416,12 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("account_id"), column("created_at")),
                         indexes = listOf(index),
-                    )
+                    ),
                 ),
             )
 
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
     }
 
@@ -432,7 +432,7 @@ class QueryRiskTest {
                 columns = listOf(column("created_at", ColumnCategory.DateTime)),
                 indexes =
                     listOf(
-                        index("orders_created", listOf(IndexKey("created_at", SortDirection.Desc)))
+                        index("orders_created", listOf(IndexKey("created_at", SortDirection.Desc))),
                     ),
             )
         val descending =
@@ -497,7 +497,7 @@ class QueryRiskTest {
                         index(
                             "line_items_order",
                             listOf(IndexKey("order_id"), IndexKey("store_id")),
-                        )
+                        ),
                     ),
                 foreignKeys =
                     listOf(
@@ -507,7 +507,7 @@ class QueryRiskTest {
                             "public",
                             "orders",
                             listOf("id", "store_id"),
-                        )
+                        ),
                     ),
             )
         val parent =
@@ -520,7 +520,7 @@ class QueryRiskTest {
                             "orders_pk",
                             listOf(IndexKey("id"), IndexKey("store_id")),
                             unique = true,
-                        )
+                        ),
                     ),
             )
         val query =
@@ -544,7 +544,7 @@ class QueryRiskTest {
             assessment.signals.count { it.code == RiskSignalCode.AdditionalJoinedRelation },
         )
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex }
+            assessment.signals.any { it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex },
         )
     }
 
@@ -835,7 +835,7 @@ class QueryRiskTest {
                                 column("details", ColumnCategory.Text),
                             ),
                         indexes = listOf(specializedNotes),
-                    )
+                    ),
                 ),
             )
 
@@ -923,8 +923,8 @@ class QueryRiskTest {
                                     TableSizeClass.Small,
                                     MetadataCoverage.complete(),
                                     EvidenceConfidence.High,
-                                )
-                        )
+                                ),
+                        ),
                 ),
             )
         val unknown = assess(spec(), listOf(table().copy(tableSize = TableSizeEstimate())))
@@ -934,7 +934,7 @@ class QueryRiskTest {
             unknown.signals.any {
                 it.code == RiskSignalCode.NoEffectiveRestriction &&
                     it.confidence == EvidenceConfidence.Unknown
-            }
+            },
         )
         assertTrue(unknown.uncertainties.any { it.code == "table_size_unknown" })
     }
@@ -954,8 +954,8 @@ class QueryRiskTest {
                                             size,
                                             MetadataCoverage.complete(),
                                             confidence,
-                                        )
-                                )
+                                        ),
+                                ),
                         ),
                     )
                 assertEquals(
@@ -1005,7 +1005,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("payload", ColumnCategory.Binary)),
                         indexes = emptyList(),
-                    )
+                    ),
                 ),
             )
 
@@ -1041,7 +1041,7 @@ class QueryRiskTest {
                     table(
                         columns = listOf(column("name", ColumnCategory.Text)),
                         indexes = listOf(hashIndex),
-                    )
+                    ),
                 ),
             )
 
@@ -1068,14 +1068,14 @@ class QueryRiskTest {
                                 index(
                                     "orders_account_name",
                                     listOf(IndexKey("account_id"), IndexKey("name")),
-                                )
+                                ),
                             ),
-                    )
+                    ),
                 ),
             )
 
         assertFalse(
-            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath }
+            assessment.signals.any { it.code == RiskSignalCode.NoKnownCompatibleAccessPath },
         )
     }
 
@@ -1090,7 +1090,7 @@ class QueryRiskTest {
         assertTrue(
             refined.uncertainties.any {
                 it.code == "plan_unavailable" && it.reasonCode == "PermissionDenied"
-            }
+            },
         )
     }
 
@@ -1168,9 +1168,9 @@ private fun leaf(alias: String, column: String, op: FilterOp, value: String): Fi
                     FilterLiteral(
                         if (value.toLongOrNull() != null) LiteralKind.Int else LiteralKind.Text,
                         value,
-                    )
+                    ),
                 ),
-        )
+        ),
     )
 
 private fun listLeaf(alias: String, column: String, op: FilterOp): FilterNode.Leaf =
@@ -1181,7 +1181,7 @@ private fun listLeaf(alias: String, column: String, op: FilterOp): FilterNode.Le
             column = column,
             op = op,
             value = FilterValue.ListValue(emptyList()),
-        )
+        ),
     )
 
 private fun listLeafValues(alias: String, column: String, vararg values: String): FilterNode.Leaf =
@@ -1192,7 +1192,7 @@ private fun listLeafValues(alias: String, column: String, vararg values: String)
             column = column,
             op = FilterOp.In,
             value = FilterValue.ListValue(values.map { FilterLiteral(LiteralKind.Text, it) }),
-        )
+        ),
     )
 
 private fun table(

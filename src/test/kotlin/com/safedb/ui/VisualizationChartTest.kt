@@ -152,7 +152,9 @@ class VisualizationChartTest {
             )
 
         assertTrue(
-            geometry.points.values.all { it.y >= geometry.plot.top && it.y <= geometry.plot.bottom }
+            geometry.points.values.all {
+                it.y >= geometry.plot.top && it.y <= geometry.plot.bottom
+            },
         )
     }
 
@@ -226,7 +228,7 @@ class VisualizationChartTest {
             )
 
         assertTrue(
-            narrow.points.values.all { it.x >= narrow.plot.left && it.x <= narrow.plot.right }
+            narrow.points.values.all { it.x >= narrow.plot.left && it.x <= narrow.plot.right },
         )
         // xValue 4 (max) must not land left of xValue 1 (min).
         assertTrue(narrow.points.getValue("b-2").x >= narrow.points.getValue("a-1").x)
@@ -236,7 +238,7 @@ class VisualizationChartTest {
                     it.x <= tiny.plot.right &&
                     it.y >= tiny.plot.top &&
                     it.y <= tiny.plot.bottom
-            }
+            },
         )
     }
 
@@ -271,7 +273,7 @@ class VisualizationChartTest {
         assertTrue(
             geometry.regions.all {
                 it.bounds.left >= geometry.plot.left && it.bounds.right <= geometry.plot.right
-            }
+            },
         )
     }
 

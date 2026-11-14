@@ -40,7 +40,7 @@ class LaunchProfileTest {
         val properties = mutableMapOf<String, String>()
 
         assertTrue(
-            configure(arrayOf("--launch-profile", profile.toString()), properties = properties)
+            configure(arrayOf("--launch-profile", profile.toString()), properties = properties),
         )
         assertEquals(trustStore.toString(), properties["javax.net.ssl.trustStore"])
         assertEquals("PKCS12", properties["javax.net.ssl.trustStoreType"])
@@ -101,7 +101,7 @@ class LaunchProfileTest {
                     configure(arrayOf("--launch-profile", profile.toString()), store = null)
                 }
                 .message!!
-                .contains("unavailable")
+                .contains("unavailable"),
         )
         val emptyStore =
             object : CredentialStore {
@@ -118,7 +118,7 @@ class LaunchProfileTest {
                     configure(arrayOf("--launch-profile", profile.toString()), store = emptyStore)
                 }
                 .message!!
-                .contains("not found")
+                .contains("not found"),
         )
     }
 
@@ -130,7 +130,7 @@ class LaunchProfileTest {
         val unknownField =
             directory.resolve("unknown.json").apply {
                 writeText(
-                    """{"schemaVersion":1,"extra":true,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":{"source":"file","path":"x"}}}"""
+                    """{"schemaVersion":1,"extra":true,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":{"source":"file","path":"x"}}}""",
                 )
             }
         assertFailsWith<LaunchProfileException> {
@@ -158,7 +158,7 @@ class LaunchProfileTest {
         val profile =
             directory.resolve("profile.json").apply {
                 writeText(
-                    """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"relative.p12","password":{"source":"file","path":"relative.txt"}}}"""
+                    """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"relative.p12","password":{"source":"file","path":"relative.txt"}}}""",
                 )
             }
         assertFailsWith<LaunchProfileException> {
@@ -208,7 +208,7 @@ class LaunchProfileTest {
                     configure(arrayOf("--launch-profile", profile.toString()))
                 }
                 .message!!
-                .contains("UTF-8")
+                .contains("UTF-8"),
         )
     }
 
@@ -241,7 +241,7 @@ class LaunchProfileTest {
                     )
                 }
                 .message!!
-                .contains("no trusted certificates")
+                .contains("no trusted certificates"),
         )
         assertTrue(properties.isEmpty())
     }
@@ -260,7 +260,7 @@ class LaunchProfileTest {
     private fun writeProfile(directory: Path, trustStore: Path, password: String): Path =
         directory.resolve("profile-${System.nanoTime()}.json").apply {
             writeText(
-                """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":$password}}"""
+                """{"schemaVersion":1,"trustStore":{"type":"PKCS12","path":"${jsonPath(trustStore)}","password":$password}}""",
             )
         }
 
@@ -269,7 +269,7 @@ class LaunchProfileTest {
         if (withCertificate) {
             val bundled = KeyStore.getInstance(KeyStore.getDefaultType())
             Files.newInputStream(
-                    Path.of(System.getProperty("java.home"), "lib", "security", "cacerts")
+                    Path.of(System.getProperty("java.home"), "lib", "security", "cacerts"),
                 )
                 .use { bundled.load(it, "changeit".toCharArray()) }
             val alias = bundled.aliases().asSequence().first { bundled.getCertificate(it) != null }

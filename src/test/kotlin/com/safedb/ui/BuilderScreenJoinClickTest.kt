@@ -70,7 +70,7 @@ class BuilderScreenJoinClickTest {
                     tables[1],
                     "id",
                     allTables = tables,
-                )
+                ),
             )
         val segment =
             edge.points
@@ -150,7 +150,7 @@ class BuilderScreenJoinClickTest {
                     leftColumn = "customer_id",
                     rightAlias = "t1",
                     rightColumn = "id",
-                )
+                ),
             ),
             queryViewModel.joins.toList(),
         )
@@ -175,7 +175,7 @@ private fun builderTable(
                     nullable = false,
                     isIndexed = true,
                     joinEligible = true,
-                )
+                ),
             ),
         indexes = emptyList(),
         foreignKeys =
@@ -187,7 +187,7 @@ private fun builderTable(
                         referencedSchema = "public",
                         referencedTable = referencedTable,
                         referencedColumns = listOf(referencedColumn),
-                    )
+                    ),
                 )
             } else {
                 emptyList()

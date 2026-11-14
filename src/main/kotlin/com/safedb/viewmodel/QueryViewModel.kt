@@ -230,7 +230,7 @@ class QueryViewModel(
         val alias = "t${aliasCounter++}"
         val offset = canvasTables.size * 30f
         canvasTables.add(
-            CanvasTable(tableInfo = tableInfo, alias = alias, x = 40f + offset, y = offset)
+            CanvasTable(tableInfo = tableInfo, alias = alias, x = 40f + offset, y = offset),
         )
     }
 

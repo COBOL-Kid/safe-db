@@ -248,7 +248,7 @@ fun decodeQueryResult(
 }
 
 private fun resultColumnsFromMetadata(
-    meta: ResultSetMetaData
+    meta: ResultSetMetaData,
 ): List<com.safedb.model.ResultColumn>? {
     val count = meta.columnCount
     if (count <= 0) return null
@@ -508,7 +508,7 @@ private fun readBinary(rs: ResultSet, index: Int): ResultCell {
             BinaryValue(
                 base64 = Base64.getEncoder().encodeToString(clipped),
                 truncated = truncated,
-            )
+            ),
         )
     }
 }

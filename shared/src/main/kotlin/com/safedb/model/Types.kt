@@ -79,7 +79,7 @@ private val SENSITIVE_DRIVER_PROPERTY_NAMES =
     setOf(
         // Microsoft JDBC's deprecated Azure Key Vault client-secret property does not
         // contain a generic secret fragment.
-        "keyvaultproviderclientkey"
+        "keyvaultproviderclientkey",
     )
 
 private val COMMON_RESERVED_DRIVER_PROPERTIES =
@@ -154,7 +154,9 @@ fun isReservedDriverPropertyName(dialect: Dialect, name: String): Boolean {
 fun validateDriverProperties(dialect: Dialect, properties: List<DriverProperty>): Result<Unit> {
     if (properties.size > MAX_DRIVER_PROPERTIES) {
         return Result.failure(
-            IllegalArgumentException("At most $MAX_DRIVER_PROPERTIES driver parameters are allowed")
+            IllegalArgumentException(
+                "At most $MAX_DRIVER_PROPERTIES driver parameters are allowed",
+            ),
         )
     }
     val seen = mutableSetOf<String>()
@@ -165,53 +167,53 @@ fun validateDriverProperties(dialect: Dialect, properties: List<DriverProperty>)
         if (property.name != property.name.trim()) {
             return Result.failure(
                 IllegalArgumentException(
-                    "Driver parameter names cannot start or end with whitespace"
-                )
+                    "Driver parameter names cannot start or end with whitespace",
+                ),
             )
         }
         if (property.name.length > MAX_DRIVER_PROPERTY_NAME_LENGTH) {
             return Result.failure(
                 IllegalArgumentException(
-                    "Driver parameter names cannot exceed $MAX_DRIVER_PROPERTY_NAME_LENGTH characters"
-                )
+                    "Driver parameter names cannot exceed $MAX_DRIVER_PROPERTY_NAME_LENGTH characters",
+                ),
             )
         }
         if (property.value.length > MAX_DRIVER_PROPERTY_VALUE_LENGTH) {
             return Result.failure(
                 IllegalArgumentException(
-                    "Driver parameter values cannot exceed $MAX_DRIVER_PROPERTY_VALUE_LENGTH characters"
-                )
+                    "Driver parameter values cannot exceed $MAX_DRIVER_PROPERTY_VALUE_LENGTH characters",
+                ),
             )
         }
         if (property.name.any(Char::isISOControl) || property.value.any(Char::isISOControl)) {
             return Result.failure(
-                IllegalArgumentException("Driver parameters cannot contain control characters")
+                IllegalArgumentException("Driver parameters cannot contain control characters"),
             )
         }
         if (dialect == Dialect.Db2 && (';' in property.name || ';' in property.value)) {
             return Result.failure(
                 IllegalArgumentException(
-                    "Db2 driver parameters cannot contain ';'; the JDBC URL uses it as a separator"
-                )
+                    "Db2 driver parameters cannot contain ';'; the JDBC URL uses it as a separator",
+                ),
             )
         }
         if (isSensitiveDriverPropertyName(property.name)) {
             return Result.failure(
                 IllegalArgumentException(
-                    "Driver parameter '${property.name}' may contain a secret and cannot be saved"
-                )
+                    "Driver parameter '${property.name}' may contain a secret and cannot be saved",
+                ),
             )
         }
         if (isReservedDriverPropertyName(dialect, property.name)) {
             return Result.failure(
                 IllegalArgumentException(
-                    "Driver parameter '${property.name}' is managed by Safe-DB"
-                )
+                    "Driver parameter '${property.name}' is managed by Safe-DB",
+                ),
             )
         }
         if (!seen.add(property.name.lowercase())) {
             return Result.failure(
-                IllegalArgumentException("Driver parameter names must be unique (ignoring case)")
+                IllegalArgumentException("Driver parameter names must be unique (ignoring case)"),
             )
         }
     }
@@ -251,7 +253,7 @@ data class ConnectionDef(
                     driverProperties.sortedWith(
                         compareBy<DriverProperty> { it.name.lowercase() }
                             .thenBy { it.name }
-                            .thenBy { it.value }
+                            .thenBy { it.value },
                     )
                 Json.encodeToString(
                     DriverPropertyFingerprintMaterial.serializer(),
@@ -274,8 +276,8 @@ data class ConnectionDef(
         if (version != CURRENT_CONNECTION_VERSION) {
             return Result.failure(
                 IllegalArgumentException(
-                    "Unsupported connection version $version; expected $CURRENT_CONNECTION_VERSION"
-                )
+                    "Unsupported connection version $version; expected $CURRENT_CONNECTION_VERSION",
+                ),
             )
         }
         if (id.trim().isEmpty())
@@ -290,14 +292,14 @@ data class ConnectionDef(
         if (dialect == Dialect.Db2) {
             if (host.any { it in ";/?#@" }) {
                 return Result.failure(
-                    IllegalArgumentException("Host cannot contain ';', '/', '?', '#', or '@'")
+                    IllegalArgumentException("Host cannot contain ';', '/', '?', '#', or '@'"),
                 )
             }
             if (database.any { it in ":;/?#@" }) {
                 return Result.failure(
                     IllegalArgumentException(
-                        "Database cannot contain ':', ';', '/', '?', '#', or '@'"
-                    )
+                        "Database cannot contain ':', ';', '/', '?', '#', or '@'",
+                    ),
                 )
             }
         }
@@ -312,7 +314,7 @@ data class ConnectionDef(
                 transportSecurity.oracleWalletLocation.isNullOrBlank()
         ) {
             return Result.failure(
-                IllegalArgumentException("Verified Oracle TCPS requires an Oracle wallet location")
+                IllegalArgumentException("Verified Oracle TCPS requires an Oracle wallet location"),
             )
         }
         validateDriverProperties(dialect, driverProperties).getOrElse {

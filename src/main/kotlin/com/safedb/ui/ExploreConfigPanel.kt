@@ -96,7 +96,7 @@ internal fun ExploreConfigPanel(
                             config.columnDimensions.map {
                                 if (it.id == updated.id) updated else it
                             },
-                    )
+                    ),
                 )
                 editingDimension = null
             },
@@ -115,8 +115,8 @@ internal fun ExploreConfigPanel(
                 onConfigChange(
                     config.copy(
                         measures =
-                            config.measures.map { if (it.alias == updated.alias) updated else it }
-                    )
+                            config.measures.map { if (it.alias == updated.alias) updated else it },
+                    ),
                 )
                 editingMeasure = null
             },
@@ -141,8 +141,8 @@ internal fun ExploreConfigPanel(
             onSave = { updated ->
                 onConfigChange(
                     config.copy(
-                        filters = config.filters.map { if (it.id == updated.id) updated else it }
-                    )
+                        filters = config.filters.map { if (it.id == updated.id) updated else it },
+                    ),
                 )
                 editingFilter = null
             },
@@ -183,7 +183,7 @@ internal fun ExploreConfigPanel(
                         onClick = { editingDimension = dimension },
                         onRemove = {
                             onConfigChange(
-                                config.copy(rowDimensions = config.rowDimensions - dimension)
+                                config.copy(rowDimensions = config.rowDimensions - dimension),
                             )
                         },
                         onMoveUp =
@@ -192,8 +192,8 @@ internal fun ExploreConfigPanel(
                                     onConfigChange(
                                         config.copy(
                                             rowDimensions =
-                                                moveDimension(config.rowDimensions, dimension, -1)
-                                        )
+                                                moveDimension(config.rowDimensions, dimension, -1),
+                                        ),
                                     )
                                 }
                             } else {
@@ -205,8 +205,8 @@ internal fun ExploreConfigPanel(
                                     onConfigChange(
                                         config.copy(
                                             rowDimensions =
-                                                moveDimension(config.rowDimensions, dimension, 1)
-                                        )
+                                                moveDimension(config.rowDimensions, dimension, 1),
+                                        ),
                                     )
                                 }
                             } else {
@@ -221,7 +221,7 @@ internal fun ExploreConfigPanel(
                         val dimension =
                             field.asDimension().copy(id = "${field.column}:${UUID.randomUUID()}")
                         onConfigChange(
-                            config.copy(rowDimensions = config.rowDimensions + dimension)
+                            config.copy(rowDimensions = config.rowDimensions + dimension),
                         )
                     },
                 )
@@ -237,7 +237,7 @@ internal fun ExploreConfigPanel(
                         onClick = { editingDimension = dimension },
                         onRemove = {
                             onConfigChange(
-                                config.copy(columnDimensions = columnDimensions - dimension)
+                                config.copy(columnDimensions = columnDimensions - dimension),
                             )
                         },
                         onMoveUp =
@@ -246,8 +246,8 @@ internal fun ExploreConfigPanel(
                                     onConfigChange(
                                         config.copy(
                                             columnDimensions =
-                                                moveDimension(columnDimensions, dimension, -1)
-                                        )
+                                                moveDimension(columnDimensions, dimension, -1),
+                                        ),
                                     )
                                 }
                             } else {
@@ -259,8 +259,8 @@ internal fun ExploreConfigPanel(
                                     onConfigChange(
                                         config.copy(
                                             columnDimensions =
-                                                moveDimension(columnDimensions, dimension, 1)
-                                        )
+                                                moveDimension(columnDimensions, dimension, 1),
+                                        ),
                                     )
                                 }
                             } else {
@@ -334,8 +334,8 @@ internal fun ExploreConfigPanel(
                                             id = UUID.randomUUID().toString(),
                                             column = field.column,
                                             label = field.label,
-                                        )
-                            )
+                                        ),
+                            ),
                         )
                     },
                 )
@@ -401,10 +401,10 @@ internal fun ExploreConfigPanel(
                                                 SubtotalPosition.Top
                                             } else {
                                                 SubtotalPosition.Bottom
-                                            }
-                                    )
+                                            },
+                                    ),
                                 )
-                            }
+                            },
                         ) {
                             Text("Subtotals: ${config.subtotalPosition.name.lowercase()}")
                         }
@@ -501,8 +501,8 @@ private fun FieldChip(
                                     .pointerHoverIcon(PointerIcon.Hand)
                             } else {
                                 Modifier
-                            }
-                        )
+                            },
+                        ),
             ) {
                 Text(
                     label,
@@ -656,8 +656,8 @@ private fun MeasurePickerButton(
                                 expanded = false
                                 onSelect(
                                     PivotMeasure.countRows(
-                                        "count_${UUID.randomUUID().toString().take(8)}"
-                                    )
+                                        "count_${UUID.randomUUID().toString().take(8)}",
+                                    ),
                                 )
                             },
                         )
@@ -751,7 +751,7 @@ internal fun ExploreSearchField(
                 singleLine = true,
                 textStyle =
                     MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     ),
                 cursorBrush = SolidColor(SafeDbTheme.colors.actionPrimary),
                 decorationBox = { inner ->

@@ -63,10 +63,10 @@ class TypesTest {
                         TransportSecurity(
                             mode = TransportSecurityMode.VerifyIdentity,
                             oracleWalletLocation = "/wallet",
-                        )
+                        ),
                 )
                 .validate()
-                .isSuccess
+                .isSuccess,
         )
     }
 
@@ -94,7 +94,7 @@ class TypesTest {
                     driverProperties =
                         List(MAX_DRIVER_PROPERTIES + 1) { index ->
                             DriverProperty("param$index", "value")
-                        }
+                        },
                 )
                 .validate()
                 .getOrThrow()
@@ -134,7 +134,7 @@ class TypesTest {
                         listOf(
                             DriverProperty("currentSchema", "a"),
                             DriverProperty("CURRENTSCHEMA", "b"),
-                        )
+                        ),
                 )
                 .validate()
                 .getOrThrow()
@@ -143,7 +143,7 @@ class TypesTest {
             base
                 .copy(driverProperties = listOf(DriverProperty("currentSchema", "")))
                 .validate()
-                .isSuccess
+                .isSuccess,
         )
         assertTrue(
             base
@@ -153,7 +153,7 @@ class TypesTest {
                         listOf(DriverProperty("clientKey", "/certificates/client-key.pem")),
                 )
                 .validate()
-                .isSuccess
+                .isSuccess,
         )
     }
 
@@ -191,7 +191,7 @@ class TypesTest {
                     listOf(
                         DriverProperty("currentSchema", "reporting"),
                         DriverProperty("ApplicationName", "Safe-DB"),
-                    )
+                    ),
             )
         val reordered = first.copy(driverProperties = first.driverProperties.reversed())
         val changed =

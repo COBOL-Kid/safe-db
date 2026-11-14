@@ -105,8 +105,8 @@ class QueryPlanRefinementTest {
                                 table = "orders",
                                 alias = "t0",
                                 method = PlanAccessMethod.FullIndexScan,
-                            )
-                        )
+                            ),
+                        ),
                 ),
                 oneTableSpec(),
                 Schema(listOf(table("orders"))),
@@ -147,7 +147,7 @@ class QueryPlanRefinementTest {
                         listOf(
                             child("orders_2024_01", "t0_1", 80_000),
                             child("orders_2024_02", "t0_2", 80_000),
-                        )
+                        ),
                 ),
                 oneTableSpec(),
                 Schema(listOf(table("orders", TableSizeClass.Large, EvidenceConfidence.High))),
@@ -214,7 +214,11 @@ class QueryPlanRefinementTest {
                     joins = listOf(PlanJoinEvidence(setOf("t0_1", "t0_2", "t1"), 50)),
                     blockingOperations =
                         listOf(
-                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0_1", "t0_2"), 50)
+                            PlanBlockingOperation(
+                                PlanOperationKind.Sort,
+                                setOf("t0_1", "t0_2"),
+                                50,
+                            ),
                         ),
                 ),
                 twoTableSpec(),
@@ -251,7 +255,7 @@ class QueryPlanRefinementTest {
                         SignalBasis.StaticSchema,
                         EvidenceConfidence.Medium,
                         RiskTarget.Access("t0_1"),
-                    )
+                    ),
                 ),
                 emptyList(),
             )
@@ -266,8 +270,8 @@ class QueryPlanRefinementTest {
                                 alias = "t0_1",
                                 method = PlanAccessMethod.BoundedLookup,
                                 estimatedRows = 5,
-                            )
-                        )
+                            ),
+                        ),
                 ),
                 suffixedSpec,
                 Schema(listOf(table("orders"))),
@@ -346,7 +350,7 @@ class QueryPlanRefinementTest {
                         SignalBasis.StaticSchema,
                         EvidenceConfidence.High,
                         target,
-                    )
+                    ),
                 ),
                 emptyList(),
             )
@@ -362,8 +366,8 @@ class QueryPlanRefinementTest {
                                 method = PlanAccessMethod.BoundedRange,
                                 estimatedRows = 5,
                                 specializedTextEvidence = true,
-                            )
-                        )
+                            ),
+                        ),
                 ),
                 oneTableSpec(),
                 Schema(listOf(table("orders"))),
@@ -403,7 +407,7 @@ class QueryPlanRefinementTest {
                                 alias = "t0",
                                 method = PlanAccessMethod.Unknown,
                                 estimatedRows = 10,
-                            )
+                            ),
                         ),
                     blockingOperations =
                         listOf(PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0"), null)),
@@ -455,7 +459,7 @@ class QueryPlanRefinementTest {
                     joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 50)),
                     blockingOperations =
                         listOf(
-                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50)
+                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 50),
                         ),
                 ),
                 spec,
@@ -471,7 +475,11 @@ class QueryPlanRefinementTest {
                     joins = listOf(PlanJoinEvidence(setOf("t0", "t1"), 150_000)),
                     blockingOperations =
                         listOf(
-                            PlanBlockingOperation(PlanOperationKind.Sort, setOf("t0", "t1"), 25_000)
+                            PlanBlockingOperation(
+                                PlanOperationKind.Sort,
+                                setOf("t0", "t1"),
+                                25_000,
+                            ),
                         ),
                 ),
                 spec,
@@ -503,7 +511,7 @@ class QueryPlanRefinementTest {
                             1,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
-                        )
+                        ),
                     ),
                     emptyList(),
                 ),
@@ -553,7 +561,7 @@ class QueryPlanRefinementTest {
                             1,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
-                        )
+                        ),
                     ),
                     emptyList(),
                 ),
@@ -605,7 +613,7 @@ class QueryPlanRefinementTest {
                             1,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
-                        )
+                        ),
                     ),
                     emptyList(),
                 ),
@@ -705,7 +713,7 @@ class QueryPlanRefinementTest {
             refined.signals.any {
                 it.code == RiskSignalCode.ForeignKeyWithoutSupportingIndex ||
                     it.code == RiskSignalCode.JoinExpansionPossible
-            }
+            },
         )
         assertEquals(QueryRiskSeverity.Minimal, refined.severity)
     }
@@ -724,7 +732,7 @@ class QueryPlanRefinementTest {
                             1,
                             SignalBasis.StaticSchema,
                             EvidenceConfidence.High,
-                        )
+                        ),
                     ),
                     emptyList(),
                 ),
@@ -782,8 +790,8 @@ class QueryPlanRefinementTest {
                             alias = "t0",
                             method = method,
                             estimatedRows = rows,
-                        )
-                    )
+                        ),
+                    ),
             ),
             oneTableSpec(),
             Schema(listOf(table("orders", size, confidence))),
@@ -835,7 +843,7 @@ private fun table(
                     keys = listOf(IndexKey("id")),
                     capabilities = IndexCapabilities(equality = true, ordering = true),
                     isPartial = false,
-                )
+                ),
             ),
         indexMetadata = MetadataCoverage.complete(),
         foreignKeyMetadata = MetadataCoverage.complete(),

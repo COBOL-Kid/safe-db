@@ -37,7 +37,7 @@ internal fun registerExportTools(server: Server, resultStore: ResultStore, expor
                             "filename",
                             stringProp(
                                 "Optional simple filename without path separators. " +
-                                    "Defaults to <result_id>.csv."
+                                    "Defaults to <result_id>.csv.",
                             ),
                         )
                     },
@@ -118,7 +118,7 @@ private fun resolveExportFilename(resultId: String, filename: String?): Arg<Stri
             toolError(
                 ERROR_INVALID_ARGUMENTS,
                 "filename must be a simple file name without path separators",
-            )
+            ),
         )
     }
     return Arg.Ok(if (filename.endsWith(".csv", ignoreCase = true)) filename else "$filename.csv")

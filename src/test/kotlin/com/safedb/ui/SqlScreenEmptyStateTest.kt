@@ -55,12 +55,12 @@ class SqlScreenEmptyStateTest {
                 assertNotNull(scene.findExact("Choose a database to query"))
                 assertNotNull(scene.findExact("Open Connections"))
                 assertNull(
-                    scene.findExact("Select a saved connection to write a SELECT against it.")
+                    scene.findExact("Select a saved connection to write a SELECT against it."),
                 )
                 assertNull(
                     scene.findExact(
-                        "Write a SELECT; it runs through the same limits and risk checks"
-                    )
+                        "Write a SELECT; it runs through the same limits and risk checks",
+                    ),
                 )
             }
         } finally {

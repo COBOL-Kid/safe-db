@@ -43,7 +43,7 @@ class RecipeToolsTest {
                             label = "Region",
                             dataType = "text",
                             sourceTable = "customers",
-                        )
+                        ),
                     ),
             )
         service.exploreRecipes +=
@@ -91,7 +91,7 @@ class RecipeToolsTest {
                     ExploreConfig(
                         rowDimensions = listOf(PivotDimension("region")),
                         measures = listOf(PivotMeasure.countRows()),
-                    )
+                    ),
             )
         withTempMcpClient(service) { client ->
             val resultId = storeRecipeResult(client)
@@ -242,7 +242,7 @@ class RecipeToolsTest {
                                     alias = "total",
                                     fn = com.safedb.explore.MeasureFn.Sum,
                                     sourceColumn = "amount_total",
-                                )
+                                ),
                             ),
                     ),
             )

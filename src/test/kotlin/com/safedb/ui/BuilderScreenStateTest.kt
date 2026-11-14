@@ -434,12 +434,12 @@ class BuilderScreenStateTest {
                                 QueryConfirmationCondition(
                                     QueryConfirmationReasonCode.PlanUnavailable,
                                     "PermissionDenied",
-                                )
+                                ),
                             ),
                     ),
                 reasons =
                     listOf(
-                        RiskDecisionReason("plan_unavailable", "The query plan is unavailable.")
+                        RiskDecisionReason("plan_unavailable", "The query plan is unavailable."),
                     ),
             )
         val evaluation =

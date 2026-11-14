@@ -82,7 +82,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                     "indexes",
                     "foreign_keys",
                     "incoming_foreign_keys",
-                )
+                ),
             ) {
                 put("schema", stringProp())
                 put("name", stringProp())
@@ -116,7 +116,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                         put(
                             "query",
                             stringProp(
-                                "Case-insensitive substring to match against table metadata."
+                                "Case-insensitive substring to match against table metadata.",
                             ),
                         )
                         put("schema", stringProp("Optional schema filter"))
@@ -168,7 +168,7 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                         put(
                             "to_table",
                             stringProp(
-                                "Optional schema.table or table. Omit for direct neighbors."
+                                "Optional schema.table or table. Omit for direct neighbors.",
                             ),
                         )
                         put("default_schema", defaultSchemaProperty())
@@ -176,14 +176,14 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                             "max_hops",
                             intProp(
                                 "Maximum path length (1–$FIND_JOIN_PATHS_MAX_HOPS). " +
-                                    "Default $FIND_JOIN_PATHS_DEFAULT_HOPS."
+                                    "Default $FIND_JOIN_PATHS_DEFAULT_HOPS.",
                             ),
                         )
                         put(
                             "foreign_key_only",
                             boolProp(
                                 "If true, exclude indexed-column candidates and return only " +
-                                    "foreign-key edges. Default false."
+                                    "foreign-key edges. Default false.",
                             ),
                         )
                         put("refresh", refreshProperty())

@@ -53,7 +53,7 @@ class SafeDbServiceDb2IntegrationTest {
                         limit = 2,
                         expectedSchema = "DB2INST1",
                     ),
-                )
+                ),
             )
 
         assertEquals(2, result.queryResult.rowCount)

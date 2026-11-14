@@ -80,7 +80,7 @@ private class SqlSpecBuilder(
                         leftColumn = leftRef.second.name,
                         rightAlias = rightRef.first,
                         rightColumn = rightRef.second.name,
-                    )
+                    ),
                 )
             }
         }

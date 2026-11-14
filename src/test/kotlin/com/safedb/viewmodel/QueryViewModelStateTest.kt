@@ -183,14 +183,14 @@ class QueryViewModelStateTest {
         val viewModel = QueryViewModel(NoOpService(), TestScope(dispatcher))
         viewModel.addTable(table("orders", "id", "status", "created_at"))
         viewModel.setGroups(
-            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status"), GroupSpec("t0", "created_at"))
+            listOf(GroupSpec("t0", "id"), GroupSpec("t0", "status"), GroupSpec("t0", "created_at")),
         )
         viewModel.setSorts(
             listOf(
                 SortSpec("t0", "id"),
                 SortSpec("t0", "status", SortDirection.Desc),
                 SortSpec("t0", "created_at"),
-            )
+            ),
         )
 
         viewModel.moveGroup(2, 0)
@@ -977,7 +977,7 @@ private class RecordingQueryService(
                     QueryConfirmationCondition(
                         QueryConfirmationReasonCode.PlanUnavailable,
                         "TimedOut",
-                    )
+                    ),
                 ),
         )
 
@@ -1008,7 +1008,7 @@ private class RecordingQueryService(
                             RiskDecisionReason(
                                 "risk_gate",
                                 "The query risk gate blocks this query.",
-                            )
+                            ),
                         ),
                 )
             throw QueryFailureException(
@@ -1021,7 +1021,7 @@ private class RecordingQueryService(
                             decision = decision,
                         ),
                     historySpec = request.spec,
-                )
+                ),
             )
         }
         if (confirmationRequired && request.confirmation != requiredConfirmation) {
@@ -1061,7 +1061,7 @@ private class RecordingQueryService(
                         ),
                     requirement = requirement,
                     historySpec = request.spec,
-                )
+                ),
             )
         }
         val result =

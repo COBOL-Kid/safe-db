@@ -56,7 +56,7 @@ private val ORACLE_DISABLED =
 private val DB2_VERIFY_IDENTITY =
     VERIFY_IDENTITY.copy(
         description =
-            "Encrypts traffic with sslConnection, validates the certificate chain, and checks the database hostname (JCC BASIC) using the JVM truststore."
+            "Encrypts traffic with sslConnection, validates the certificate chain, and checks the database hostname (JCC BASIC) using the JVM truststore.",
     )
 
 internal fun transportOptionsFor(dialect: Dialect): List<TransportSecurityOption> =

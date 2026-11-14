@@ -101,7 +101,7 @@ internal suspend fun resolveSqlSpec(
                     toolError(
                         ERROR_PARSE,
                         parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
-                    )
+                    ),
                 )
             is SqlParseResult.Success -> parsed.spec
         }
@@ -142,7 +142,7 @@ internal fun parseConfirmation(request: CallToolRequest): Arg<QueryExecutionConf
                 connectionFingerprint = payload.connectionFingerprint,
                 queryFingerprint = payload.queryFingerprint,
                 conditions = conditions,
-            )
+            ),
         )
     } catch (_: IllegalArgumentException) {
         Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "confirmation is invalid"))

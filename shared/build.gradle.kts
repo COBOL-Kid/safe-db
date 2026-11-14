@@ -50,7 +50,7 @@ tools.compileClasspath += sourceSets.main.get().output
 tools.runtimeClasspath += sourceSets.main.get().output
 
 configurations[tools.implementationConfigurationName].extendsFrom(
-    configurations.implementation.get()
+    configurations.implementation.get(),
 )
 
 configurations[tools.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
@@ -64,11 +64,11 @@ integrationTest.runtimeClasspath +=
     sourceSets.main.get().output + sourceSets.testFixtures.get().output
 
 configurations[integrationTest.implementationConfigurationName].extendsFrom(
-    configurations.testImplementation.get()
+    configurations.testImplementation.get(),
 )
 
 configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(
-    configurations.testRuntimeOnly.get()
+    configurations.testRuntimeOnly.get(),
 )
 
 dependencies {

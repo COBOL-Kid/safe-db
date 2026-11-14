@@ -24,10 +24,10 @@ class CanvasGeometryTest {
             bounds.contains(
                 60f,
                 80f + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y + CANVAS_ROW_HEIGHT + 4f,
-            )
+            ),
         )
         assertFalse(
-            bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y - 1f)
+            bounds.contains(60f, 80f + CANVAS_HEADER_HEIGHT + CANVAS_FIELD_BODY_PADDING_Y - 1f),
         )
         assertFalse(
             bounds.contains(
@@ -37,7 +37,7 @@ class CanvasGeometryTest {
                     CANVAS_FIELD_BODY_PADDING_Y +
                     (CANVAS_ROW_HEIGHT * 2) +
                     2f,
-            )
+            ),
         )
     }
 
@@ -66,7 +66,7 @@ class CanvasGeometryTest {
                 y = emailY,
                 sourceAlias = "t0",
                 sourceColumn = "id",
-            )
+            ),
         )
         assertNull(
             indexedJoinTargetAt(
@@ -75,7 +75,7 @@ class CanvasGeometryTest {
                 y = columnY(left, "id"),
                 sourceAlias = "t0",
                 sourceColumn = "id",
-            )
+            ),
         )
     }
 
@@ -116,7 +116,7 @@ class CanvasGeometryTest {
                 y = unscrolledCol4Y,
                 sourceAlias = "t0",
                 sourceColumn = "id",
-            )
+            ),
         )
     }
 
@@ -166,7 +166,7 @@ class CanvasGeometryTest {
                     table.copy(fieldScrollOffset = CANVAS_ROW_HEIGHT * 4),
                     "col_0",
                     JoinPortSide.Left,
-                )
+                ),
             )
 
         assertEquals(JoinPortVisibility.HiddenBelow, below.visibility)
@@ -192,7 +192,7 @@ class CanvasGeometryTest {
 
         val edge =
             assertNotNull(
-                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target, blocker))
+                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target, blocker)),
             )
 
         assertEquals(tableRightX(source), edge.sourcePort.point.x)
@@ -212,7 +212,7 @@ class CanvasGeometryTest {
 
         val edge =
             assertNotNull(
-                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target))
+                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target)),
             )
 
         assertEquals(JoinPortSide.Right, edge.sourcePort.side)
@@ -232,7 +232,7 @@ class CanvasGeometryTest {
 
         val edge =
             assertNotNull(
-                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target))
+                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target)),
             )
 
         assertEquals(columnY(source, "id"), edge.sourcePort.point.y)
@@ -254,11 +254,18 @@ class CanvasGeometryTest {
                     "customer_id",
                     listOf(source, target),
                     laneIndex = 0,
-                )
+                ),
             )
         val second =
             assertNotNull(
-                routeJoinEdge(source, "org_id", target, "id", listOf(source, target), laneIndex = 1)
+                routeJoinEdge(
+                    source,
+                    "org_id",
+                    target,
+                    "id",
+                    listOf(source, target),
+                    laneIndex = 1,
+                ),
             )
 
         assertEquals(tableRightX(source) + JOIN_PORT_EXIT, first.points[1].x)
@@ -309,7 +316,7 @@ class CanvasGeometryTest {
             )
         val edge =
             assertNotNull(
-                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target))
+                routeJoinEdge(source, "id", target, "customer_id", listOf(source, target)),
             )
 
         val firstSegmentStart = edge.points.first()
@@ -323,7 +330,7 @@ class CanvasGeometryTest {
                 midX,
                 midY + 19f,
                 tolerance = JOIN_LINE_HIT_TOLERANCE * source.layoutScale,
-            )
+            ),
         )
         assertFalse(
             routedEdgeContainsPoint(
@@ -331,7 +338,7 @@ class CanvasGeometryTest {
                 midX,
                 midY + 21f,
                 tolerance = JOIN_LINE_HIT_TOLERANCE * source.layoutScale,
-            )
+            ),
         )
     }
 
@@ -357,7 +364,7 @@ class CanvasGeometryTest {
                             referencedSchema = "public",
                             referencedTable = "customers",
                             referencedColumns = listOf("id"),
-                        )
+                        ),
                     ),
             )
         val customers =
@@ -366,7 +373,12 @@ class CanvasGeometryTest {
                 name = "customers",
                 indexes =
                     listOf(
-                        IndexInfo("customers_pkey", listOf("id"), isPrimary = true, isUnique = true)
+                        IndexInfo(
+                            "customers_pkey",
+                            listOf("id"),
+                            isPrimary = true,
+                            isUnique = true,
+                        ),
                     ),
             )
 
@@ -377,7 +389,7 @@ class CanvasGeometryTest {
                 SuggestedRelationship(
                     name = "orders_customer_id_fkey",
                     joins = listOf(JoinSpec("t0", "customer_id", "t1", "id")),
-                )
+                ),
             ),
             suggestedRelationships(listOf(orders, customers), emptyList()),
         )
@@ -406,7 +418,7 @@ class CanvasGeometryTest {
                             referencedSchema = "public",
                             referencedTable = "customers",
                             referencedColumns = listOf("id"),
-                        )
+                        ),
                     ),
             )
         val customers = canvasTable(alias = "t1", name = "customers", indexes = emptyList())
@@ -416,7 +428,7 @@ class CanvasGeometryTest {
                 SuggestedRelationship(
                     name = "orders_customer_id_fkey",
                     joins = listOf(JoinSpec("t0", "customer_id", "t1", "id")),
-                )
+                ),
             ),
             suggestedRelationships(listOf(orders, customers), emptyList()),
         )
@@ -436,7 +448,7 @@ class CanvasGeometryTest {
                             referencedSchema = "public",
                             referencedTable = "customers",
                             referencedColumns = listOf("id"),
-                        )
+                        ),
                     ),
             )
         val customers =
@@ -445,7 +457,12 @@ class CanvasGeometryTest {
                 name = "customers",
                 indexes =
                     listOf(
-                        IndexInfo("customers_pkey", listOf("id"), isPrimary = true, isUnique = true)
+                        IndexInfo(
+                            "customers_pkey",
+                            listOf("id"),
+                            isPrimary = true,
+                            isUnique = true,
+                        ),
                     ),
             )
 
@@ -456,7 +473,7 @@ class CanvasGeometryTest {
                     leftColumn = "id",
                     rightAlias = "t0",
                     rightColumn = "customer_id",
-                )
+                ),
             )
 
         assertEquals(emptyList(), suggestedRelationships(listOf(orders, customers), joins))
@@ -481,7 +498,7 @@ class CanvasGeometryTest {
                             referencedSchema = "public",
                             referencedTable = "orders",
                             referencedColumns = listOf("id", "store_id"),
-                        )
+                        ),
                     ),
             )
         val orders =
@@ -505,7 +522,7 @@ class CanvasGeometryTest {
                         JoinSpec("t0", "order_id", "t1", "id"),
                         JoinSpec("t0", "store_id", "t1", "store_id"),
                     ),
-                )
+                ),
             ),
             suggestedRelationships(listOf(items, orders), emptyList()),
         )
@@ -519,7 +536,7 @@ class CanvasGeometryTest {
                         JoinSpec("t0", "order_id", "t1", "id"),
                         JoinSpec("t0", "store_id", "t1", "store_id"),
                     ),
-                )
+                ),
             ),
             suggestedRelationships(listOf(items, orders), partialJoin),
         )
@@ -562,7 +579,7 @@ class CanvasGeometryTest {
                 SuggestedRelationship(
                     "orders_sales_rep_fkey",
                     listOf(JoinSpec("t0", "customer_id", "t2", "id")),
-                )
+                ),
             ),
             suggestedRelationships(listOf(orders, customers, salesReps), emptyList()),
         )

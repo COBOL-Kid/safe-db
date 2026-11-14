@@ -58,7 +58,7 @@ private fun parseRiskGate(raw: String): QueryRiskGate =
         "disabled" -> QueryRiskGate.Disabled
         else ->
             throw McpCliUsageException(
-                "Unknown risk gate '$raw'; expected cautious, standard, flexible, or disabled"
+                "Unknown risk gate '$raw'; expected cautious, standard, flexible, or disabled",
             )
     }
 

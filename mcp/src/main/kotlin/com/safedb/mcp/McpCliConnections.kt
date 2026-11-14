@@ -47,7 +47,7 @@ internal fun parseAddFlags(args: List<String>): ConnectionAddFlags {
         val arg = args[index]
         if (arg == "--password" || arg.startsWith("--password=") || arg == "-p") {
             throw McpCliUsageException(
-                "Passwords cannot be passed on the command line; use --password-file or a prompt"
+                "Passwords cannot be passed on the command line; use --password-file or a prompt",
             )
         }
         val (nameAndValue, consumed) = splitFlag(args, index)
@@ -142,7 +142,7 @@ internal suspend fun testConnections(id: String?, service: SafeDbService, io: Cl
 }
 
 internal fun ephemeralPasswordStoreRequested(
-    envValue: String? = System.getenv(ENV_BACKEND)
+    envValue: String? = System.getenv(ENV_BACKEND),
 ): Boolean = SecretsManager.parseRequestedBackendFrom(envValue) == RequestedBackend.Disabled
 
 internal suspend fun addConnection(
@@ -157,7 +157,7 @@ internal suspend fun addConnection(
             "Refusing to save the connection: $ENV_BACKEND=disabled holds passwords in " +
                 "process memory only, so this connection could not authenticate after setup " +
                 "exits. Unset $ENV_BACKEND (Linux/macOS then uses the owner-only file store) " +
-                "and run setup again."
+                "and run setup again.",
         )
     }
     val dialect = parseDialect(requiredFlag(flags.dialect, "--dialect", "Dialect", tty, io))
@@ -257,7 +257,7 @@ private fun parseDialect(raw: String): Dialect =
         "db2" -> Dialect.Db2
         else ->
             throw McpCliUsageException(
-                "Unknown dialect '$raw'; expected postgres, mysql, mssql, oracle, or db2"
+                "Unknown dialect '$raw'; expected postgres, mysql, mssql, oracle, or db2",
             )
     }
 
@@ -282,7 +282,7 @@ private fun parseTransport(raw: String): TransportSecurityMode =
         "verify-identity" -> TransportSecurityMode.VerifyIdentity
         else ->
             throw McpCliUsageException(
-                "Unknown transport '$raw'; expected disabled, encrypt-only, verify-ca, or verify-identity"
+                "Unknown transport '$raw'; expected disabled, encrypt-only, verify-ca, or verify-identity",
             )
     }
 

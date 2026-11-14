@@ -210,7 +210,7 @@ private fun renderFilterLeaf(
                 withLikeEscape(
                     strategy.caseInsensitivePredicate(columnRef, operand, dialect),
                     filter,
-                )
+                ),
             )
         }
         FilterOp.In,
@@ -218,7 +218,7 @@ private fun renderFilterLeaf(
             val value =
                 filter.value
                     ?: return Outcome.err(
-                        "Filter on ${filter.tableAlias}.${filter.column} is missing its value"
+                        "Filter on ${filter.tableAlias}.${filter.column} is missing its value",
                     )
             val list =
                 when (value) {
@@ -242,7 +242,7 @@ private fun renderFilterLeaf(
             val value =
                 filter.value
                     ?: return Outcome.err(
-                        "Filter on ${filter.tableAlias}.${filter.column} is missing its value"
+                        "Filter on ${filter.tableAlias}.${filter.column} is missing its value",
                     )
             val (from, to) =
                 when (value) {
@@ -273,7 +273,7 @@ private fun singleLiteral(filter: FilterSpec, wrongShape: String): Outcome<Filte
     val value =
         filter.value
             ?: return Outcome.err(
-                "Filter on ${filter.tableAlias}.${filter.column} is missing its value"
+                "Filter on ${filter.tableAlias}.${filter.column} is missing its value",
             )
     return when (value) {
         is FilterValue.Single -> Outcome.ok(value.literal)

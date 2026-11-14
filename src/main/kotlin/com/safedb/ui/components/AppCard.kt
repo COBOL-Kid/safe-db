@@ -38,11 +38,11 @@ fun AppCard(
                 SafeDbTheme.colors.actionPrimary
             } else {
                 MaterialTheme.colorScheme.outline
-            }
+            },
         )
     val backgroundColor by
         animateColorAsState(
-            if (lifted) MaterialTheme.colorScheme.surfaceContainerLow else containerColor
+            if (lifted) MaterialTheme.colorScheme.surfaceContainerLow else containerColor,
         )
     val border = BorderStroke(1.dp, borderColor)
 

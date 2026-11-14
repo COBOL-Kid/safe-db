@@ -87,7 +87,7 @@ class WorkspaceToolsTest {
                         "query_id" to "q1",
                         "confirmation" to
                             Json.parseToJsonElement(
-                                """{"connection_id":"c1","connection_fingerprint":"cf","query_fingerprint":"qf","conditions":[]}"""
+                                """{"connection_id":"c1","connection_fingerprint":"cf","query_fingerprint":"qf","conditions":[]}""",
                             ),
                     ),
                 )
@@ -466,10 +466,10 @@ private fun malformedBetweenSpec(): QuerySpec =
                                     column = "id",
                                     op = FilterOp.Between,
                                     value = null,
-                                )
-                            )
+                                ),
+                            ),
                         ),
-                )
+                ),
         )
 
 private fun workspaceService(): RecordingSafeDbService {

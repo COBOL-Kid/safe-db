@@ -50,6 +50,15 @@ listOf(project(":shared"), project(":mcp")).forEach { subproject ->
 
 ktfmt { kotlinLangStyle() }
 
+// ktfmt 0.65 still pins Guava 33.5.0-jre, which is affected by GHSA-xxph-c9ww-hj94
+// (CVE-2026-102554). The formatter is a build-only tool, so force the patched release on its
+// isolated configuration rather than touching application dependencies.
+allprojects {
+    configurations
+        .matching { it.name == "ktfmt" }
+        .configureEach { resolutionStrategy.force("com.google.guava:guava:33.8.0-jre") }
+}
+
 // Dev-only headless renderers: compiled and run on demand, never packaged into the shipped app.
 val render = sourceSets.create("render")
 
@@ -58,7 +67,7 @@ render.compileClasspath += sourceSets.main.get().output
 render.runtimeClasspath += sourceSets.main.get().output
 
 configurations[render.implementationConfigurationName].extendsFrom(
-    configurations.implementation.get()
+    configurations.implementation.get(),
 )
 
 configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
@@ -98,7 +107,7 @@ tasks.named("jar") { dependsOn(extractMacSkikoNative) }
 
 tasks.named<KotlinCompile>("compileRenderKotlin") {
     friendPaths.from(
-        tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory }
+        tasks.named<KotlinCompile>("compileKotlin").flatMap { it.destinationDirectory },
     )
 }
 
@@ -122,7 +131,7 @@ tasks.qodanaScan {
                     "--within-docker",
                     "false",
                     "--print-problems",
-                )
+                ),
             )
             if (providers.environmentVariable("WSL_DISTRO_NAME").isPresent) {
                 val stateDir = qodanaStateDir.get()
@@ -132,10 +141,10 @@ tasks.qodanaScan {
                         "idea.config.path=$stateDir/config",
                         "--property",
                         "idea.system.path=$stateDir/system",
-                    )
+                    ),
                 )
             }
-        }
+        },
     )
 }
 
@@ -284,40 +293,40 @@ val verifyIntegrationTestDiscovery =
             "Ensures required JDBC and MCP integration suites executed instead of silently skipping."
         dependsOn(":shared:integrationTest", ":mcp:integrationTest")
         sharedResultsDirectory.set(
-            project(":shared").layout.buildDirectory.dir("test-results/integrationTest")
+            project(":shared").layout.buildDirectory.dir("test-results/integrationTest"),
         )
         mcpResultsDirectory.set(
-            project(":mcp").layout.buildDirectory.dir("test-results/integrationTest")
+            project(":mcp").layout.buildDirectory.dir("test-results/integrationTest"),
         )
         requireMysql.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_MYSQL")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requirePostgres.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_POSTGRES")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requireMssql.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_MSSQL")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requireOracle.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_ORACLE")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
         requireDb2.set(
             providers
                 .environmentVariable("SAFEDB_TEST_REQUIRE_DB2")
                 .map { it.equals("true", ignoreCase = true) }
-                .orElse(false)
+                .orElse(false),
         )
     }
 

@@ -225,7 +225,7 @@ private fun parseFieldMapping(objectArg: JsonObject?): Arg<Map<String, String>> 
         val primitive = element as? JsonPrimitive
         if (primitive == null || !primitive.isString || primitive.content.isBlank()) {
             return Arg.Err(
-                toolError(ERROR_INVALID_ARGUMENTS, "field_mapping values must be strings")
+                toolError(ERROR_INVALID_ARGUMENTS, "field_mapping values must be strings"),
             )
         }
         mapping[key] = primitive.content
@@ -258,7 +258,7 @@ private fun resolveRecipeMode(modeArg: String?, recipe: ExploreRecipe): Arg<Reci
                         toolError(
                             ERROR_VALIDATION,
                             "Recipe '${recipe.id}' has no pivot or worksheet configuration",
-                        )
+                        ),
                     )
             }
     }

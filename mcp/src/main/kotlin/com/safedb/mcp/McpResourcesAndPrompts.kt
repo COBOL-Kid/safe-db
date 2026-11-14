@@ -44,8 +44,8 @@ internal fun registerMcpResourcesAndPrompts(
                     jsonResource(
                         CONNECTIONS_RESOURCE_URI,
                         toolJson.encodeToString(service.listConnections().map { it.toSummary() }),
-                    )
-                )
+                    ),
+                ),
         )
     }
 
@@ -71,8 +71,8 @@ internal fun registerMcpResourcesAndPrompts(
                             connectionId,
                         ),
                         toolJson.encodeToString(TableListResult(tables.map { it.toSummary() })),
-                    )
-                )
+                    ),
+                ),
         )
     }
 
@@ -95,8 +95,8 @@ internal fun registerMcpResourcesAndPrompts(
                     jsonResource(
                         RESULT_SUMMARY_RESOURCE_TEMPLATE.replace("{result_id}", resultId),
                         toolJson.encodeToString(summary),
-                    )
-                )
+                    ),
+                ),
         )
     }
 
@@ -111,7 +111,7 @@ internal fun registerMcpResourcesAndPrompts(
                     name = "connection_id",
                     description = "Optional connection id from list_connections",
                     required = false,
-                )
+                ),
             ),
     ) { request ->
         userWorkflowPrompt(
@@ -144,7 +144,7 @@ internal fun registerMcpResourcesAndPrompts(
                     name = "result_id",
                     description = "result_id from a successful run_query receipt",
                     required = false,
-                )
+                ),
             ),
     ) { request ->
         userWorkflowPrompt(
@@ -188,9 +188,9 @@ private fun userWorkflowPrompt(
                                     append(missingPrefix)
                                 }
                                 append(body)
-                            }
+                            },
                     ),
-                )
+                ),
             ),
     )
 }

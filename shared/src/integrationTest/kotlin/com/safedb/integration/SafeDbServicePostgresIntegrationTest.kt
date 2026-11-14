@@ -49,7 +49,7 @@ class SafeDbServicePostgresIntegrationTest {
                         limit = 2,
                         expectedSchema = "public",
                     ),
-                )
+                ),
             )
 
         assertEquals(2, result.queryResult.rowCount)

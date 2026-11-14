@@ -27,7 +27,7 @@ class QueryResultToolsTest {
                     service,
                     resultsDir = resultsDir,
                     exportsDir = dataDir.resolve("exports"),
-                )
+                ),
             ) { client ->
                 val receipt =
                     client
@@ -151,7 +151,7 @@ class QueryResultToolsTest {
                     .getValue("c01")
                     .jsonPrimitive
                     .content
-                    .endsWith(MCP_CELL_TRUNCATION_MARKER)
+                    .endsWith(MCP_CELL_TRUNCATION_MARKER),
             )
             val resultId = receipt.getValue("result_id").jsonPrimitive.content
             val page = client.callTool("get_result_rows", mapOf("result_id" to resultId)).json()
@@ -262,7 +262,7 @@ class QueryResultToolsTest {
                     resultsDir = resultsDir,
                     exportsDir = dataDir.resolve("exports"),
                     resultStore = store,
-                )
+                ),
             ) { client ->
                 val receipt =
                     client
@@ -318,7 +318,7 @@ class QueryResultToolsTest {
                     resultStoreTtlMs = 100,
                     resultsDir = resultsDir,
                     exportsDir = dataDir.resolve("exports"),
-                )
+                ),
             ) { client ->
                 val missing = client.callTool("get_result_rows", emptyMap())
                 assertEquals(true, missing.isError)

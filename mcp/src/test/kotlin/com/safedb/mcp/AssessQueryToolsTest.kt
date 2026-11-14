@@ -85,7 +85,7 @@ class AssessQueryToolsTest {
                         QueryConfirmationCondition(
                             QueryConfirmationReasonCode.PlanUnavailable,
                             "ExecutionFailure",
-                        )
+                        ),
                     ),
             )
         val requirement =
@@ -96,7 +96,7 @@ class AssessQueryToolsTest {
                         RiskDecisionReason(
                             "plan_unavailable",
                             "Query plan assessment is unavailable: timeout.",
-                        )
+                        ),
                     ),
             )
         service.assessQueryResult =
@@ -107,7 +107,7 @@ class AssessQueryToolsTest {
                             planStatus = QueryPlanStatus.Unavailable,
                             reasons = requirement.reasons,
                         )
-                        .copy(confirmationRequirement = requirement)
+                        .copy(confirmationRequirement = requirement),
             )
         withTempMcpClient(service) { client ->
             val body =

@@ -226,7 +226,7 @@ fun ConnectionForm(
                                 form.saving -> "Saving..."
                                 form.isEditing -> "Save Changes"
                                 else -> "Save Connection"
-                            }
+                            },
                         )
                     }
                 }
@@ -518,7 +518,7 @@ private fun TransportSecurityDropdown(form: ConnectionFormState) {
                         text = {
                             Text(
                                 if (option.recommended) "${option.label} (recommended)"
-                                else option.label
+                                else option.label,
                             )
                         },
                         onClick = {
@@ -618,7 +618,7 @@ private fun ParameterDeleteButton(onClick: () -> Unit) {
 
 @Composable
 private fun ResponsiveFieldRow(
-    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth < 430.dp) {

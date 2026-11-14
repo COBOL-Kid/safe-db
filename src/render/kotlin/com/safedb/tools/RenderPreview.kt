@@ -186,7 +186,7 @@ private class FakeService(private val settings: Settings = Settings()) :
                                 referencedSchema = "public",
                                 referencedTable = "products",
                                 referencedColumns = listOf("id"),
-                            )
+                            ),
                         ),
                     ),
                     table(
@@ -302,10 +302,10 @@ private class FakeService(private val settings: Settings = Settings()) :
                                 referencedSchema = "public",
                                 referencedTable = "customers",
                                 referencedColumns = listOf("id"),
-                            )
+                            ),
                         ),
                     ),
-                )
+                ),
         )
 
     private val sampleSpec =
@@ -332,7 +332,7 @@ private class FakeService(private val settings: Settings = Settings()) :
     override suspend fun getSchema(connectionId: String) = schema
 
     override suspend fun runQuery(
-        request: com.safedb.service.QueryRunRequest
+        request: com.safedb.service.QueryRunRequest,
     ): com.safedb.service.QueryRunResult {
         val result =
             QueryResult(
@@ -352,7 +352,7 @@ private class FakeService(private val settings: Settings = Settings()) :
                             ResultCell.text(if (i % 3 == 0L) "shipped" else "pending"),
                             ResultCell.IntegerCell(1299 * i),
                             ResultCell.text(
-                                "2026-06-${"%02d".format((i % 28) + 1)} 14:${"%02d".format(i % 60)}"
+                                "2026-06-${"%02d".format((i % 28) + 1)} 14:${"%02d".format(i % 60)}",
                             ),
                         )
                     },
@@ -439,7 +439,7 @@ private fun renderScene(
     ImageComposeScene(width = width, height = height, density = Density(1f)) {
             SafeDbTheme(isDark = isDark, palette = palette) {
                 androidx.compose.material3.Surface(
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.background
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.background,
                 ) {
                     content()
                 }
@@ -477,7 +477,7 @@ internal fun render(
             Settings(
                 theme = if (isDark) "dark" else "light",
                 colorScheme = palette.id,
-            )
+            ),
         )
     val appState = AppState()
     val viewModel = AppViewModel(service)
@@ -676,7 +676,7 @@ private fun renderExplore(
                                     "Revenue",
                                     numberFormat =
                                         PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
-                                )
+                                ),
                             ),
                         title = "Revenue by order status",
                     )
@@ -693,7 +693,7 @@ private fun renderExplore(
                                     "Revenue",
                                     numberFormat =
                                         PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
-                                )
+                                ),
                             ),
                         barOrientation = com.safedb.explore.BarOrientation.Horizontal,
                         topN = 10,
@@ -717,7 +717,7 @@ private fun renderExplore(
                                     "Revenue",
                                     numberFormat =
                                         PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
-                                )
+                                ),
                             ),
                         sort = VisualizationSort(VisualizationSortTarget.Source, SortDir.Asc),
                         title = "Daily sampled revenue",
@@ -734,7 +734,7 @@ private fun renderExplore(
                                     "t0__total_cents",
                                     "Order value",
                                     aggregate = false,
-                                )
+                                ),
                             ),
                         series = VisualizationField("t0__status", "Status"),
                         size = VisualizationField("t0__total_cents", "Order value"),
@@ -752,7 +752,7 @@ private fun renderExplore(
                                     "Total revenue",
                                     numberFormat =
                                         PivotNumberFormat(NumberFormatKind.Currency, decimals = 0),
-                                )
+                                ),
                             ),
                         title = "Total sampled revenue",
                     )
@@ -810,7 +810,7 @@ private fun renderRecipeLibrary(name: String, isDark: Boolean) {
                 defaultMode = ExploreMode.Worksheet,
                 worksheet =
                     WorksheetConfig(
-                        groups = listOf(WorksheetGroup("status", "t0__status", "Status"))
+                        groups = listOf(WorksheetGroup("status", "t0__status", "Status")),
                     ),
                 requiredFields = listOf(RecipeField("t0__status", "Status", "varchar", "orders")),
             ),
@@ -883,7 +883,7 @@ fun main() {
                             GroupSpec("t0", "status"),
                             GroupSpec("t0", "id"),
                             GroupSpec("t0", "total_cents"),
-                        )
+                        ),
                     )
                     vm.query.setSort("t0", "status", SortDirection.Asc)
                     vm.query.setSort("t0", "total_cents", SortDirection.Desc)
@@ -893,7 +893,7 @@ fun main() {
                             column = "status",
                             op = FilterOp.Eq,
                             value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "pending")),
-                        )
+                        ),
                     )
                     vm.query.run("c1")
                 }
@@ -924,13 +924,13 @@ fun main() {
                             GroupSpec("t0", "status"),
                             GroupSpec("t0", "id"),
                             GroupSpec("t0", "total_cents"),
-                        )
+                        ),
                     )
                     vm.query.setSort("t0", "status", SortDirection.Asc)
                     vm.query.setSort("t0", "total_cents", SortDirection.Desc)
                     vm.query.setGroups(vm.query.groups + GroupSpec("t1", "created_at"))
                     vm.query.setSorts(
-                        vm.query.sorts + SortSpec("t1", "created_at", SortDirection.Desc)
+                        vm.query.sorts + SortSpec("t1", "created_at", SortDirection.Desc),
                     )
                     vm.query.setDistinct(true)
                     vm.query.addFilter(
@@ -939,7 +939,7 @@ fun main() {
                             column = "status",
                             op = FilterOp.Eq,
                             value = FilterValue.Single(FilterLiteral(LiteralKind.Text, "pending")),
-                        )
+                        ),
                     )
                     vm.query.run("c1")
                 }
@@ -1013,9 +1013,9 @@ fun main() {
                                         FilterLiteral(LiteralKind.Text, "alice"),
                                         FilterLiteral(LiteralKind.Text, "bob"),
                                         FilterLiteral(LiteralKind.Text, "carol"),
-                                    )
+                                    ),
                                 ),
-                        )
+                        ),
                     )
                     vm.query.addFilter(
                         FilterSpec(
@@ -1024,9 +1024,9 @@ fun main() {
                             op = FilterOp.Gte,
                             value =
                                 FilterValue.Single(
-                                    FilterLiteral(LiteralKind.DateTime, "2025-07-03 09:12:00")
+                                    FilterLiteral(LiteralKind.DateTime, "2025-07-03 09:12:00"),
                                 ),
-                        )
+                        ),
                     )
                 }
             }

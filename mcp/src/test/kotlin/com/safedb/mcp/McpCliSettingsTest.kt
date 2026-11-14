@@ -109,13 +109,13 @@ class McpCliSettingsTest {
         assertEquals(
             McpCommand.SettingsDefaultConnection("c1", "reporting"),
             parseMcpArgs(
-                arrayOf("settings", "default-connection", "c1", "--default-schema", "reporting")
+                arrayOf("settings", "default-connection", "c1", "--default-schema", "reporting"),
             ),
         )
         assertEquals(
             McpCommand.SettingsDefaultConnection("c1", "reporting"),
             parseMcpArgs(
-                arrayOf("settings", "default-connection", "c1", "--default-schema=reporting")
+                arrayOf("settings", "default-connection", "c1", "--default-schema=reporting"),
             ),
         )
 
@@ -132,7 +132,7 @@ class McpCliSettingsTest {
                         "c1",
                         "--default-schema",
                         "reporting",
-                    )
+                    ),
                 ),
                 service,
                 io,

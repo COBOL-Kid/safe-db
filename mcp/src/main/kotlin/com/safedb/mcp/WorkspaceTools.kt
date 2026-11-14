@@ -43,7 +43,7 @@ internal fun registerWorkspaceTools(
         inputSchema =
             ToolSchema(
                 properties =
-                    buildJsonObject { put("connection_id", connectionIdProperty(optional = true)) }
+                    buildJsonObject { put("connection_id", connectionIdProperty(optional = true)) },
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
@@ -61,7 +61,7 @@ internal fun registerWorkspaceTools(
                     service
                         .listSavedQueries()
                         .filter { connectionId == null || it.connectionId == connectionId }
-                        .map { it.toSummary(connectionsById) }
+                        .map { it.toSummary(connectionsById) },
                 )
             CallToolResult(content = listOf(TextContent(text = payload)))
         }
@@ -109,7 +109,7 @@ internal fun registerWorkspaceTools(
             ),
         outputSchema =
             objectOutputSchema(
-                listOf("id", "name", "connection_id", "sql", "tables", "created_at")
+                listOf("id", "name", "connection_id", "sql", "tables", "created_at"),
             ) {
                 put("id", stringProp())
                 put("name", stringProp())
@@ -164,7 +164,7 @@ internal fun registerWorkspaceTools(
                                 noun = "entries",
                             ),
                         )
-                    }
+                    },
             ),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
@@ -291,7 +291,7 @@ private suspend fun handleListQueryHistory(
                 .listHistory()
                 .filter { connectionId == null || it.connectionId == connectionId }
                 .take(limit)
-                .map { it.toSummary(connectionsById) }
+                .map { it.toSummary(connectionsById) },
         )
     return CallToolResult(content = listOf(TextContent(text = payload)))
 }
@@ -317,7 +317,7 @@ private fun SavedQuery.toSummary(connectionsById: Map<String, ConnectionDef>): S
     )
 
 private fun HistoryEntry.toSummary(
-    connectionsById: Map<String, ConnectionDef>
+    connectionsById: Map<String, ConnectionDef>,
 ): HistoryEntrySummary =
     HistoryEntrySummary(
         id = id,

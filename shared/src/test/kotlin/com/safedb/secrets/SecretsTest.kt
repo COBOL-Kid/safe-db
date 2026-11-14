@@ -181,7 +181,7 @@ class SecretsTest {
                 override fun deletePassword(service: String, account: String) = Unit
 
                 override fun vendor(): String = "throwing"
-            }
+            },
         )
 
         val result = SecretsManager.passwordForDefinition(connectionDef("conn-read-fail"))
