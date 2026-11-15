@@ -38,7 +38,7 @@ Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, va
 
 - Builder, SQL screen, and MCP `run_query` all produce a `QuerySpec`. Compilation binds parameters; typed SQL never reaches the database ([`SqlToSpec.kt`](shared/src/main/kotlin/com/safedb/query/sql/SqlToSpec.kt), [`Compile.kt`](shared/src/main/kotlin/com/safedb/query/Compile.kt)).
 - Hikari pools are size 1 and `isReadOnly = true` ([`JdbcHelpers.kt`](shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt)). Connect timeout is ~10s (driver connect/login/socket properties plus an interruptible deadline).
-- Row, `IN`-list, and query-timeout caps live in [`Validate.kt`](shared/src/main/kotlin/com/safedb/query/Validate.kt) and [`QueryCore.kt`](shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Risk-gate severity decides allow vs block; see [docs/query-engine.md](docs/query-engine.md).
+- Row and `IN`-list caps live in [`Validate.kt`](shared/src/main/kotlin/com/safedb/query/Validate.kt) and [`QueryCore.kt`](shared/src/main/kotlin/com/safedb/query/QueryCore.kt). The query timeout is the stored setting, 1–120 seconds with a 10-second default. Risk-gate severity decides allow vs block; see [docs/query-engine.md](docs/query-engine.md).
 
 ## Working in this repo
 

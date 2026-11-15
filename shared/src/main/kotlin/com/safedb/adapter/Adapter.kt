@@ -35,7 +35,10 @@ sealed class Adapter {
 
     abstract suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult
 
-    abstract suspend fun explain(compiled: CompiledQuery): ExplainResult
+    abstract suspend fun explain(
+        compiled: CompiledQuery,
+        timeoutMs: Int = DEFAULT_TIMEOUT_MS,
+    ): ExplainResult
 
     data class Postgres(val dataSource: HikariDataSource) : Adapter() {
         override suspend fun test(): String =
@@ -47,7 +50,7 @@ sealed class Adapter {
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
             withContext(Dispatchers.IO) { PgAdapter.executeQuery(dataSource, compiled, timeoutMs) }
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
             withContext(Dispatchers.IO) { PgAdapter.explain(dataSource, compiled) }
     }
 
@@ -63,7 +66,7 @@ sealed class Adapter {
                 MySqlAdapter.executeQuery(dataSource, compiled, timeoutMs)
             }
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
             withContext(Dispatchers.IO) { MySqlAdapter.explain(dataSource, compiled) }
     }
 
@@ -102,7 +105,7 @@ sealed class Adapter {
                 }
             }
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
             withContext(Dispatchers.IO) {
                 val explainDs = createDataSource(state.def, state.password)
                 try {
@@ -132,7 +135,7 @@ sealed class Adapter {
                 OracleAdapter.executeQuery(dataSource, compiled, timeoutMs)
             }
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
             withContext(Dispatchers.IO) { OracleAdapter.explain(dataSource, compiled) }
     }
 
@@ -146,8 +149,8 @@ sealed class Adapter {
         override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
             withContext(Dispatchers.IO) { Db2Adapter.executeQuery(dataSource, compiled, timeoutMs) }
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-            withContext(Dispatchers.IO) { Db2Adapter.explain(dataSource, compiled) }
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
+            withContext(Dispatchers.IO) { Db2Adapter.explain(dataSource, compiled, timeoutMs) }
     }
 
     companion object {
@@ -181,18 +184,11 @@ sealed class Adapter {
         suspend fun introspectWithTimeout(adapter: Adapter): Schema =
             withTimeout(INTROSPECTION_TIMEOUT_MS.milliseconds) { adapter.introspect() }
 
-        suspend fun explainWithTimeout(adapter: Adapter, compiled: CompiledQuery): ExplainResult =
-            try {
-                withTimeoutOrNull(DEFAULT_TIMEOUT_MS.milliseconds) { adapter.explain(compiled) }
-                    ?: ExplainResult.Unavailable(
-                        PlanUnavailableReason.TimedOut,
-                        "Query plan assessment timed out",
-                    )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                unavailablePlanFromError(error)
-            }
+        suspend fun explainWithTimeout(
+            adapter: Adapter,
+            compiled: CompiledQuery,
+            timeoutMs: Int = DEFAULT_TIMEOUT_MS,
+        ): ExplainResult = awaitExplain(timeoutMs) { adapter.explain(compiled, timeoutMs) }
     }
 
     fun close() {
@@ -205,6 +201,22 @@ sealed class Adapter {
         }
     }
 }
+
+internal suspend fun awaitExplain(
+    timeoutMs: Int = DEFAULT_TIMEOUT_MS,
+    block: suspend () -> ExplainResult,
+): ExplainResult =
+    try {
+        withTimeoutOrNull(timeoutMs.milliseconds) { block() }
+            ?: ExplainResult.Unavailable(
+                PlanUnavailableReason.TimedOut,
+                "Query plan assessment timed out",
+            )
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        unavailablePlanFromError(error)
+    }
 
 fun unavailablePlanFromError(error: Throwable): ExplainResult.Unavailable {
     val chain = generateSequence(error) { it.cause }.toList()

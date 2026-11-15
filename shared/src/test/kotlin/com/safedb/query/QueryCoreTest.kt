@@ -92,6 +92,33 @@ class QueryCoreTest {
     }
 
     @Test
+    fun queryExecutionUsesTheStoredQueryTimeout() = runBlocking {
+        val configured = StubRunner()
+        assertIs<QueryCoreOutcome.Success>(
+            runQueryCore(
+                configured,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default().copy(queryTimeoutSeconds = 30),
+            ),
+        )
+        assertEquals(listOf(30_000), configured.timeouts)
+
+        val defaulted = StubRunner()
+        assertIs<QueryCoreOutcome.Success>(
+            runQueryCore(
+                defaulted,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default(),
+            ),
+        )
+        assertEquals(listOf(10_000), defaulted.timeouts)
+    }
+
+    @Test
     fun disabledRiskModeSkipsExplainAndRunsWithoutConfirmation() = runBlocking {
         val runner =
             StubRunner(
@@ -702,6 +729,7 @@ class QueryCoreTest {
         var executeCalls = 0
         var explainCalls = 0
         val calls = mutableListOf<String>()
+        val timeouts = mutableListOf<Int>()
 
         override suspend fun explain(compiled: CompiledQuery): ExplainResult {
             explainCalls++
@@ -715,6 +743,7 @@ class QueryCoreTest {
         ): Outcome<QueryResult> {
             executeCalls++
             calls += "execute"
+            timeouts += timeoutMs
             return execute
         }
     }

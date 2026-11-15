@@ -25,6 +25,7 @@ import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.Schema
+import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
 import com.safedb.model.TableSizeClass
@@ -226,6 +227,34 @@ class SafeDbServiceImplTest {
         assertTrue(history.riskConfirmationCodes.isEmpty())
         assertNull(history.riskConfirmationAccepted)
         assertTrue("NoEffectiveRestriction" in history.riskSignalCodes)
+    }
+
+    @Test
+    fun runQueryUsesTheStoredQueryTimeout() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        val settingsStore = SettingsStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        settingsStore.save(Settings.default().copy(queryTimeoutSeconds = 30))
+        val runner = StubRunner()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = settingsStore,
+                querySessionFactory =
+                    QuerySessionFactory { _, _ ->
+                        QuerySession(schema = sampleSchema(), runner = runner)
+                    },
+            )
+
+        val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
+
+        assertEquals(1, result.queryResult.rowCount)
+        assertEquals(listOf(30_000), runner.timeouts)
     }
 
     @Test
@@ -727,13 +756,16 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
     )
 
 private class StubRunner : QueryRunner {
+    val timeouts = mutableListOf<Int>()
+
     override suspend fun explain(compiled: CompiledQuery): ExplainResult = availablePlan()
 
     override suspend fun executeQuery(
         compiled: CompiledQuery,
         timeoutMs: Int,
-    ): Outcome<QueryResult> =
-        Outcome.ok(
+    ): Outcome<QueryResult> {
+        timeouts += timeoutMs
+        return Outcome.ok(
             QueryResult(
                 columns = listOf(ResultColumn("id", "int")),
                 rows = listOf(listOf(ResultCell.integer(1))),
@@ -742,6 +774,7 @@ private class StubRunner : QueryRunner {
                 warnings = emptyList(),
             ),
         )
+    }
 }
 
 private class FailingRunner : QueryRunner {

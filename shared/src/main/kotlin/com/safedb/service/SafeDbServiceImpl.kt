@@ -1,6 +1,7 @@
 package com.safedb.service
 
 import com.safedb.adapter.Adapter
+import com.safedb.adapter.DEFAULT_TIMEOUT_MS
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
@@ -47,12 +48,14 @@ internal fun interface AdapterFactory {
 }
 
 private class TimeoutAwareAdapter(private val adapter: Adapter) : ConnectedAdapter {
+    var explainTimeoutMs: Int = DEFAULT_TIMEOUT_MS
+
     override suspend fun test(): String = adapter.test()
 
     override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
 
     override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-        Adapter.explainWithTimeout(adapter, compiled)
+        Adapter.explainWithTimeout(adapter, compiled, explainTimeoutMs)
 
     override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
         adapter.executeQuery(compiled, timeoutMs)
@@ -230,7 +233,8 @@ internal constructor(
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val settings = settingsStore.load()
         val session =
-            querySessionFactory?.open(def, password) ?: openDefaultQuerySession(def, password)
+            querySessionFactory?.open(def, password)
+                ?: openDefaultQuerySession(def, password, settings.queryTimeoutMs())
         return try {
             block(def, session, settings)
         } finally {
@@ -241,8 +245,12 @@ internal constructor(
     private suspend fun openDefaultQuerySession(
         def: ConnectionDef,
         password: String,
+        timeoutMs: Int,
     ): QuerySession {
         val adapter = adapterFactory.connect(def, password)
+        if (adapter is TimeoutAwareAdapter) {
+            adapter.explainTimeoutMs = timeoutMs
+        }
         val schema =
             try {
                 adapter.introspect()

@@ -301,6 +301,7 @@ suspend fun runQueryCore(
         warnings,
         normalizedSpec,
         evaluation,
+        settings,
     )
 }
 
@@ -403,9 +404,10 @@ private suspend fun executeCompiled(
     warnings: List<String>,
     normalizedSpec: QuerySpec,
     evaluation: QueryRiskEvaluation,
+    settings: Settings,
 ): QueryCoreOutcome {
     val result =
-        when (val execute = runner.executeQuery(compiled, DEFAULT_TIMEOUT_MS)) {
+        when (val execute = runner.executeQuery(compiled, settings.queryTimeoutMs())) {
             is Outcome.Ok -> execute.value
             is Outcome.Err ->
                 return QueryCoreOutcome.Failure(
