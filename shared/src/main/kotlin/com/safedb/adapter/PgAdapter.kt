@@ -155,20 +155,35 @@ object PgAdapter {
             result
         }
 
-    fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult {
+    fun explain(
+        dataSource: HikariDataSource,
+        compiled: CompiledQuery,
+        timeoutMs: Int,
+    ): ExplainResult {
         val explainSql = "EXPLAIN (FORMAT JSON) ${compiled.sql}"
         return dataSource.connection.use { conn ->
-            prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Postgres).use { ps ->
-                ps.executeQuery().use { rs ->
-                    rs.next()
-                    val planJson = rs.getString(1)
-                    parsePostgresPlan(planJson)?.let(ExplainResult::Available)
-                        ?: ExplainResult.Unavailable(
-                            com.safedb.model.PlanUnavailableReason.ParseFailure,
-                            "Could not normalize PostgreSQL JSON plan",
-                        )
-                }
+            // SET LOCAL only lasts for the current transaction, so autocommit must be off.
+            conn.autoCommit = false
+            conn.createStatement().use { stmt ->
+                stmt.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
+                stmt.execute("SET LOCAL statement_timeout = $timeoutMs")
             }
+            val result =
+                prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Postgres).use { ps
+                    ->
+                    ps.executeQuery().use { rs ->
+                        rs.next()
+                        val planJson = rs.getString(1)
+                        parsePostgresPlan(planJson)?.let(ExplainResult::Available)
+                            ?: ExplainResult.Unavailable(
+                                com.safedb.model.PlanUnavailableReason.ParseFailure,
+                                "Could not normalize PostgreSQL JSON plan",
+                            )
+                    }
+                }
+            // Close the cursor before commit so a budget stop does not drain unread rows.
+            conn.commit()
+            result
         }
     }
 }

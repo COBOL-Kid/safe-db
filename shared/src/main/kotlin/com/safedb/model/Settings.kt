@@ -29,8 +29,11 @@ data class Settings(
 
     fun isDark(): Boolean = theme == THEME_DARK
 
-    fun queryTimeoutMs(): Int =
-        queryTimeoutSeconds.coerceIn(MIN_QUERY_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS) * 1_000
+    fun clampedQueryTimeoutSeconds(): Int =
+        queryTimeoutSeconds.coerceIn(MIN_QUERY_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS)
+
+    // JDBC treats 0 as "no timeout", so the 1..120 clamp must survive normalization.
+    fun queryTimeoutMs(): Int = clampedQueryTimeoutSeconds() * 1_000
 
     companion object {
         const val THEME_DARK: String = "dark"
@@ -113,11 +116,7 @@ fun normalizeSettings(settings: Settings): Settings {
             }
             .sortedBy { it.first }
             .toMap(LinkedHashMap())
-    val queryTimeoutSeconds =
-        settings.queryTimeoutSeconds.coerceIn(
-            Settings.MIN_QUERY_TIMEOUT_SECONDS,
-            Settings.MAX_QUERY_TIMEOUT_SECONDS,
-        )
+    val queryTimeoutSeconds = settings.clampedQueryTimeoutSeconds()
 
     return settings.copy(
         blockedSchemas = blockedSchemas,

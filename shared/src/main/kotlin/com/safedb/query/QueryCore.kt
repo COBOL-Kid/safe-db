@@ -15,8 +15,6 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import kotlinx.coroutines.CancellationException
 
-const val DEFAULT_TIMEOUT_MS = 10_000
-
 data class QueryCoreError(
     val error: QueryError,
     val warnings: List<String> = emptyList(),
@@ -66,7 +64,7 @@ sealed class QueryError {
 }
 
 interface QueryRunner {
-    suspend fun explain(compiled: CompiledQuery): ExplainResult
+    suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult
 
     suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): Outcome<QueryResult>
 }
@@ -151,7 +149,7 @@ suspend fun assessQueryCore(
 
     val explain =
         try {
-            runner.explain(compiled)
+            runner.explain(compiled, settings.queryTimeoutMs())
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {

@@ -67,12 +67,13 @@ Numbers are the constants, not copy. Change the constant and update this page in
 | `MAX_RESULT_BYTES` | 10 MiB encoded | [`Ir.kt`](../shared/src/main/kotlin/com/safedb/model/Ir.kt) |
 | `MAX_IN_LIST_SIZE` | 1,000 values | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
 | `MAX_FILTER_DEPTH` | 5 | [`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt) |
-| `DEFAULT_TIMEOUT_MS` | 10s default query timeout | [`QueryCore.kt`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) |
+| `DEFAULT_QUERY_TIMEOUT_SECONDS` | 10s default query timeout (1–120 via `MIN_QUERY_TIMEOUT_SECONDS` / `MAX_QUERY_TIMEOUT_SECONDS`) | [`Settings.kt`](../shared/src/main/kotlin/com/safedb/model/Settings.kt) |
+| `DEFAULT_TIMEOUT_MS` | 10s adapter fallback for explain when no timeout is passed | [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) |
 | `CONNECT_TIMEOUT_MS` | 10s connect timeout (driver connect/login/socket properties plus an interruptible deadline) | [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) |
 
 A positive SQL limit is kept as given, up to the maximum value of a 32-bit integer. A larger whole number clamps to that maximum and remains a numeric cap. A capped spec limit of `0` becomes `DEFAULT_LIMIT`. An uncapped spec leaves the stored number as-is, including `0`; that number is ignored at compile time. Typed `LIMIT 0` is rejected. Omitting `LIMIT`, `TOP`, or `FETCH FIRST` is the same as the builder's ALL choice: `uncapped` is true, the stored numeric limit stays `DEFAULT_LIMIT`, and compiled SQL has no row-limit clause. The client reads with a statement fetch size (MySQL streams one row at a time; the other dialects use fetch size 128) and stops at `MAX_RESULT_BYTES`, then marks the sample truncated. The query timeout still applies. Large-limit guidance fires when the spec is uncapped or the numeric cap is above `LARGE_LIMIT_WARNING_THRESHOLD`.
 
-`DEFAULT_TIMEOUT_MS` remains the 10-second default. User query execution and the plan check before it use the stored query-timeout setting instead: whole seconds from 1 to 120, default 10. Connect and schema introspection keep their fixed limits and do not follow the setting.
+`Settings.DEFAULT_QUERY_TIMEOUT_SECONDS` is the 10-second default. User query execution and the plan check before it use the stored query-timeout setting instead: whole seconds from `MIN_QUERY_TIMEOUT_SECONDS` to `MAX_QUERY_TIMEOUT_SECONDS` (1 to 120). `DEFAULT_TIMEOUT_MS` in [`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) is only the adapter fallback when a caller does not pass a timeout. Connect and schema introspection keep their fixed limits and do not follow the setting.
 
 Hikari `maximumPoolSize` is 1 and `isReadOnly` is true ([`JdbcHelpers.kt`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt)).
 

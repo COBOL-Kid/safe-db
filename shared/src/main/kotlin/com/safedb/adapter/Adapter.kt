@@ -51,7 +51,7 @@ sealed class Adapter {
             withContext(Dispatchers.IO) { PgAdapter.executeQuery(dataSource, compiled, timeoutMs) }
 
         override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
-            withContext(Dispatchers.IO) { PgAdapter.explain(dataSource, compiled) }
+            withContext(Dispatchers.IO) { PgAdapter.explain(dataSource, compiled, timeoutMs) }
     }
 
     data class MySql(val dataSource: HikariDataSource) : Adapter() {
@@ -67,7 +67,7 @@ sealed class Adapter {
             }
 
         override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
-            withContext(Dispatchers.IO) { MySqlAdapter.explain(dataSource, compiled) }
+            withContext(Dispatchers.IO) { MySqlAdapter.explain(dataSource, compiled, timeoutMs) }
     }
 
     data class Mssql(val state: MssqlState) : Adapter() {
@@ -109,7 +109,7 @@ sealed class Adapter {
             withContext(Dispatchers.IO) {
                 val explainDs = createDataSource(state.def, state.password)
                 try {
-                    MssqlAdapter.explain(explainDs, compiled)
+                    MssqlAdapter.explain(explainDs, compiled, timeoutMs)
                 } finally {
                     closeDataSource(explainDs)
                 }
@@ -136,7 +136,7 @@ sealed class Adapter {
             }
 
         override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
-            withContext(Dispatchers.IO) { OracleAdapter.explain(dataSource, compiled) }
+            withContext(Dispatchers.IO) { OracleAdapter.explain(dataSource, compiled, timeoutMs) }
     }
 
     data class Db2(val dataSource: HikariDataSource) : Adapter() {

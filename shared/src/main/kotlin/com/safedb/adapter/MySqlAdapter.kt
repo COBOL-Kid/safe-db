@@ -138,19 +138,30 @@ object MySqlAdapter {
             }
         }
 
-    fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult {
+    fun explain(
+        dataSource: HikariDataSource,
+        compiled: CompiledQuery,
+        timeoutMs: Int,
+    ): ExplainResult {
         val explainSql = "EXPLAIN FORMAT=JSON ${compiled.sql}"
         return dataSource.connection.use { conn ->
-            prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.MySql).use { ps ->
-                ps.executeQuery().use { rs ->
-                    rs.next()
-                    val planJson = rs.getString(1)
-                    parseMySqlPlan(planJson, mysqlLimitFromSql(compiled.sql))
-                        ?.let(ExplainResult::Available)
-                        ?: ExplainResult.Unavailable(
-                            com.safedb.model.PlanUnavailableReason.ParseFailure,
-                            "Could not normalize MySQL JSON plan",
-                        )
+            conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = $timeoutMs") }
+            try {
+                prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.MySql).use { ps ->
+                    ps.executeQuery().use { rs ->
+                        rs.next()
+                        val planJson = rs.getString(1)
+                        parseMySqlPlan(planJson, mysqlLimitFromSql(compiled.sql))
+                            ?.let(ExplainResult::Available)
+                            ?: ExplainResult.Unavailable(
+                                com.safedb.model.PlanUnavailableReason.ParseFailure,
+                                "Could not normalize MySQL JSON plan",
+                            )
+                    }
+                }
+            } finally {
+                runCatching {
+                    conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = 0") }
                 }
             }
         }

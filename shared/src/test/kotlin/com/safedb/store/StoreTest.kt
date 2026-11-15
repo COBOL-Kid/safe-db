@@ -468,6 +468,7 @@ class StoreTest {
                 defaultSchema = "Reporting",
                 lastSelectedSchemas =
                     mapOf("connection-1" to "Operational", "connection-2" to "Analytics"),
+                queryTimeoutSeconds = 45,
             )
         store.save(saved)
         val loaded = store.load()
@@ -478,6 +479,11 @@ class StoreTest {
         assertEquals("connection-1", loaded.defaultConnectionId)
         assertEquals("Reporting", loaded.defaultSchema)
         assertEquals(saved.lastSelectedSchemas, loaded.lastSelectedSchemas)
+        assertEquals(45, loaded.queryTimeoutSeconds)
+        assertTrue(
+            Files.readString(dir.resolve("settings.json"))
+                .contains("\"query_timeout_seconds\": 45"),
+        )
     }
 
     @Test
@@ -558,38 +564,6 @@ class StoreTest {
             normalizeSettings(Settings(queryTimeoutSeconds = 200)).queryTimeoutSeconds,
         )
         assertEquals(30, normalizeSettings(Settings(queryTimeoutSeconds = 30)).queryTimeoutSeconds)
-    }
-
-    @Test
-    fun settingsStoreSaveRoundTripsQueryTimeoutWithOtherFields() {
-        val dir = tempDir()
-        val store = SettingsStore.new(dir)
-        val saved =
-            Settings(
-                blockedSchemas = listOf("pg_catalog", "information_schema"),
-                theme = "dark",
-                colorScheme = ThemePalette.Oxide.id,
-                queryRiskGate = QueryRiskGate.Flexible,
-                defaultConnectionId = "connection-1",
-                defaultSchema = "Reporting",
-                lastSelectedSchemas =
-                    mapOf("connection-1" to "Operational", "connection-2" to "Analytics"),
-                queryTimeoutSeconds = 45,
-            )
-        store.save(saved)
-        val loaded = store.load()
-        assertEquals(45, loaded.queryTimeoutSeconds)
-        assertEquals(saved.blockedSchemas, loaded.blockedSchemas)
-        assertEquals("dark", loaded.theme)
-        assertEquals(ThemePalette.Oxide.id, loaded.colorScheme)
-        assertEquals(QueryRiskGate.Flexible, loaded.queryRiskGate)
-        assertEquals("connection-1", loaded.defaultConnectionId)
-        assertEquals("Reporting", loaded.defaultSchema)
-        assertEquals(saved.lastSelectedSchemas, loaded.lastSelectedSchemas)
-        assertTrue(
-            Files.readString(dir.resolve("settings.json"))
-                .contains("\"query_timeout_seconds\": 45"),
-        )
     }
 
     @Test

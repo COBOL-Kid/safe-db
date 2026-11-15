@@ -282,7 +282,10 @@ class QueryCoreTest {
             object : QueryRunner {
                 var executeCalls = 0
 
-                override suspend fun explain(compiled: CompiledQuery): ExplainResult {
+                override suspend fun explain(
+                    compiled: CompiledQuery,
+                    timeoutMs: Int,
+                ): ExplainResult {
                     throw SQLException(dump)
                 }
 
@@ -677,8 +680,10 @@ class QueryCoreTest {
             object : QueryRunner {
                 var executeCalls = 0
 
-                override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-                    error("planner offline")
+                override suspend fun explain(
+                    compiled: CompiledQuery,
+                    timeoutMs: Int,
+                ): ExplainResult = error("planner offline")
 
                 override suspend fun executeQuery(
                     compiled: CompiledQuery,
@@ -731,7 +736,7 @@ class QueryCoreTest {
         val calls = mutableListOf<String>()
         val timeouts = mutableListOf<Int>()
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult {
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult {
             explainCalls++
             calls += "explain"
             return explainResult

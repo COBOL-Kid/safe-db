@@ -57,6 +57,13 @@ import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.DialogShape
 import com.safedb.viewmodel.SettingsViewModel
 
+internal fun parseQueryTimeoutSeconds(text: String): Int? {
+    val seconds = text.trim().toIntOrNull() ?: return null
+    return seconds.takeIf {
+        it in Settings.MIN_QUERY_TIMEOUT_SECONDS..Settings.MAX_QUERY_TIMEOUT_SECONDS
+    }
+}
+
 @Composable
 fun SettingsPanel(
     open: Boolean,
@@ -97,18 +104,20 @@ fun SettingsPanel(
     }
 
     LaunchedEffect(settings.queryTimeoutSeconds) {
-        timeoutDraft = settings.queryTimeoutSeconds.toString()
-        timeoutError = null
+        // Skip the reset while focused so an invalid draft survives an external seconds change.
+        if (!timeoutFocused) {
+            timeoutDraft = settings.queryTimeoutSeconds.toString()
+            timeoutError = null
+        }
     }
 
     fun commitTimeoutDraft() {
-        val seconds = timeoutDraft.trim().toIntOrNull()
-        if (
-            seconds == null ||
-                seconds < Settings.MIN_QUERY_TIMEOUT_SECONDS ||
-                seconds > Settings.MAX_QUERY_TIMEOUT_SECONDS
-        ) {
-            timeoutError = "Enter a whole number of seconds from 1 to 120."
+        val seconds = parseQueryTimeoutSeconds(timeoutDraft)
+        if (seconds == null) {
+            timeoutError =
+                "Enter a whole number of seconds from " +
+                    "${Settings.MIN_QUERY_TIMEOUT_SECONDS} to " +
+                    "${Settings.MAX_QUERY_TIMEOUT_SECONDS}."
             return
         }
         timeoutError = null

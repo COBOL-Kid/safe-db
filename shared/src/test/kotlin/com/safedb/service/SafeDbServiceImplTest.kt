@@ -230,7 +230,7 @@ class SafeDbServiceImplTest {
     }
 
     @Test
-    fun runQueryUsesTheStoredQueryTimeout() = runBlocking {
+    fun runQueryUsesTheStoredQueryTimeoutForPlanAndExecution() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
         val configStore = ConfigStore.new(dir)
@@ -239,22 +239,20 @@ class SafeDbServiceImplTest {
         configStore.save(sampleConnection())
         SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
         settingsStore.save(Settings.default().copy(queryTimeoutSeconds = 30))
-        val runner = StubRunner()
+        val adapter = FakeConnectedAdapter()
         val service =
             SafeDbServiceImpl(
                 configStore = configStore,
                 queryStore = queryStore,
                 settingsStore = settingsStore,
-                querySessionFactory =
-                    QuerySessionFactory { _, _ ->
-                        QuerySession(schema = sampleSchema(), runner = runner)
-                    },
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
             )
 
-        val result = service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
+        service.runQuery(QueryRunRequest("c1", sampleQuerySpec()))
 
-        assertEquals(1, result.queryResult.rowCount)
-        assertEquals(listOf(30_000), runner.timeouts)
+        assertEquals(listOf(30_000), adapter.explainTimeouts)
+        assertEquals(listOf(30_000), adapter.executeTimeouts)
     }
 
     @Test
@@ -758,7 +756,8 @@ private fun sampleSchema(sizeClass: TableSizeClass = TableSizeClass.Unknown) =
 private class StubRunner : QueryRunner {
     val timeouts = mutableListOf<Int>()
 
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult = availablePlan()
+    override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
+        availablePlan()
 
     override suspend fun executeQuery(
         compiled: CompiledQuery,
@@ -778,7 +777,8 @@ private class StubRunner : QueryRunner {
 }
 
 private class FailingRunner : QueryRunner {
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult = availablePlan()
+    override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
+        availablePlan()
 
     override suspend fun executeQuery(
         compiled: CompiledQuery,
@@ -789,7 +789,7 @@ private class FailingRunner : QueryRunner {
 private class UnavailablePlanRunner : QueryRunner {
     var executeCalls = 0
 
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult =
+    override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
         ExplainResult.Unavailable(PlanUnavailableReason.PermissionDenied, "planner denied")
 
     override suspend fun executeQuery(
@@ -811,6 +811,8 @@ private class FakeConnectedAdapter(
     var introspectionCount = 0
     var executeCount = 0
     var testFailure: Throwable? = null
+    val explainTimeouts = mutableListOf<Int>()
+    val executeTimeouts = mutableListOf<Int>()
 
     override suspend fun test(): String {
         testFailure?.let { throw it }
@@ -823,10 +825,14 @@ private class FakeConnectedAdapter(
         return schema
     }
 
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult = explainResult
+    override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult {
+        explainTimeouts += timeoutMs
+        return explainResult
+    }
 
     override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult {
         executeCount += 1
+        executeTimeouts += timeoutMs
         executionFailure?.let { throw it }
         return QueryResult(emptyList(), emptyList(), 0, false, emptyList())
     }
