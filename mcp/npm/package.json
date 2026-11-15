@@ -18,7 +18,7 @@
     "url": "git+https://github.com/COBOL-Kid/safe-db.git",
     "directory": "mcp/npm"
   },
-  "homepage": "https://www.safe-db.dev",
+  "homepage": "https://safe-db.dev",
   "bugs": {
     "url": "https://github.com/COBOL-Kid/safe-db/issues"
   },

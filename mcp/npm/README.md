@@ -1,6 +1,6 @@
 # @safe-db/mcp
 
-Stdio MCP server for [safe-db](https://www.safe-db.dev). Inspect schema and run a gated `SELECT` without installing Java. The matching platform package bundles a Temurin 25 jlink runtime.
+Stdio MCP server for [safe-db](https://safe-db.dev). Inspect schema and run a gated `SELECT` without installing Java. The matching platform package bundles a Temurin 25 jlink runtime.
 
 ```bash
 npx -y @safe-db/mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path

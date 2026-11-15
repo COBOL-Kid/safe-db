@@ -1,6 +1,6 @@
 # Query engine
 
-This is the contract for [`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) and dry-run [`assessQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Read it before changing the parser, validator, compiler, risk gate, or a JDBC adapter. The desktop UI and the MCP `run_query` tool both go through this pipeline. MCP receipts, paging, and credentials are in [mcp.md](mcp.md). User-facing product docs live at [https://www.safe-db.dev/docs](https://www.safe-db.dev/docs).
+This is the contract for [`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) and dry-run [`assessQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Read it before changing the parser, validator, compiler, risk gate, or a JDBC adapter. The desktop UI and the MCP `run_query` tool both go through this pipeline. MCP receipts, paging, and credentials are in [mcp.md](mcp.md). User-facing product docs live at [https://safe-db.dev/docs](https://safe-db.dev/docs).
 
 ## Pipeline
 
