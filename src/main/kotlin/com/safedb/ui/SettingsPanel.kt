@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
@@ -23,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,11 +37,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.loadAppVersion
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.Settings
 import com.safedb.ui.components.ColorSchemePicker
 import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.ModeToggle
@@ -70,6 +79,10 @@ fun SettingsPanel(
     var candidateConnectionId by remember { mutableStateOf<String?>(null) }
     var databaseMenuOpen by remember { mutableStateOf(false) }
     var schemaMenuOpen by remember { mutableStateOf(false) }
+    var timeoutDraft by remember { mutableStateOf(settings.queryTimeoutSeconds.toString()) }
+    var timeoutFocused by remember { mutableStateOf(false) }
+    var timeoutError by remember { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
 
     LaunchedEffect(Unit) {
         viewModel.clearSaveError()
@@ -81,6 +94,25 @@ fun SettingsPanel(
         } else {
             viewModel.clearDefaultSchemaOptions()
         }
+    }
+
+    LaunchedEffect(settings.queryTimeoutSeconds) {
+        timeoutDraft = settings.queryTimeoutSeconds.toString()
+        timeoutError = null
+    }
+
+    fun commitTimeoutDraft() {
+        val seconds = timeoutDraft.trim().toIntOrNull()
+        if (
+            seconds == null ||
+                seconds < Settings.MIN_QUERY_TIMEOUT_SECONDS ||
+                seconds > Settings.MAX_QUERY_TIMEOUT_SECONDS
+        ) {
+            timeoutError = "Enter a whole number of seconds from 1 to 120."
+            return
+        }
+        timeoutError = null
+        viewModel.setQueryTimeoutSeconds(seconds)
     }
 
     val candidateConnection = connections.firstOrNull { it.id == candidateConnectionId }
@@ -355,6 +387,53 @@ fun SettingsPanel(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
                         )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Column {
+                        Text("Query timeout", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Applies to the next query run and its plan check, in whole seconds from 1 to 120.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 3.dp, bottom = 8.dp),
+                        )
+                        OutlinedTextField(
+                            value = timeoutDraft,
+                            onValueChange = {
+                                timeoutDraft = it
+                                timeoutError = null
+                            },
+                            modifier =
+                                Modifier.width(120.dp).height(60.dp).onFocusChanged { state ->
+                                    if (timeoutFocused && !state.isFocused) {
+                                        commitTimeoutDraft()
+                                    }
+                                    timeoutFocused = state.isFocused
+                                },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            label = {
+                                Text("Seconds", style = MaterialTheme.typography.labelMedium)
+                            },
+                            isError = timeoutError != null,
+                            keyboardOptions =
+                                KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done,
+                                ),
+                            keyboardActions =
+                                KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        )
+                        timeoutError?.let { error ->
+                            Text(
+                                error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
                     }
                 }
                 if (settingsScrollState.maxValue > 0) {

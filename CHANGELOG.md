@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Settings query timeout is configurable from 1 to 120 seconds, default 10; it applies to the next desktop or MCP query run and its plan check; connect and schema introspection stay fixed; `safe-db-mcp settings` prints `query_timeout_seconds` and cannot change it.
+
 ## 1.1.0
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.0` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.0-all.jar`; npm packages are stamped 1.1.0 at assemble time.

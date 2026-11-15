@@ -320,6 +320,34 @@ class ViewModelsTest {
         }
 
     @Test
+    fun settingsViewModelPersistsOnlyAnInRangeQueryTimeout() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val scope = TestScope(dispatcher)
+            val viewModel = SettingsViewModel(service, scope)
+            viewModel.load()
+            advanceUntilIdle()
+            assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
+
+            viewModel.setQueryTimeoutSeconds(0)
+            viewModel.setQueryTimeoutSeconds(121)
+            advanceUntilIdle()
+            assertEquals(0, service.settingsSaveCount)
+            assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
+
+            viewModel.setQueryTimeoutSeconds(30)
+            advanceUntilIdle()
+            assertEquals(30, viewModel.settings.value.queryTimeoutSeconds)
+            assertEquals(30, service.savedSettings?.queryTimeoutSeconds)
+            assertEquals(1, service.settingsSaveCount)
+
+            viewModel.setQueryTimeoutSeconds(30)
+            advanceUntilIdle()
+            assertEquals(30, viewModel.settings.value.queryTimeoutSeconds)
+            assertEquals(1, service.settingsSaveCount)
+        }
+
+    @Test
     fun settingsViewModelSerializesMutationsWithoutLostUpdates() =
         runTest(dispatcher) {
             val service = RecordingSafeDbService()

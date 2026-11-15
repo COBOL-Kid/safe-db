@@ -89,6 +89,19 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
         }
     }
 
+    fun setQueryTimeoutSeconds(seconds: Int) {
+        mutateSettings {
+            if (seconds == _settings.value.queryTimeoutSeconds) return@mutateSettings
+            if (
+                seconds < Settings.MIN_QUERY_TIMEOUT_SECONDS ||
+                    seconds > Settings.MAX_QUERY_TIMEOUT_SECONDS
+            ) {
+                return@mutateSettings
+            }
+            save(_settings.value.copy(queryTimeoutSeconds = seconds))
+        }
+    }
+
     fun loadDefaultSchemaOptions(connectionId: String) {
         val generation = ++defaultSchemaRequestGeneration
         scope.launch {
