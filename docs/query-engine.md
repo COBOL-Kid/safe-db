@@ -1,6 +1,6 @@
 # Query engine
 
-This is the contract for [`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) and dry-run [`assessQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Read it before changing the parser, validator, compiler, risk gate, or a JDBC adapter. The desktop UI and the MCP `run_query` tool both go through this pipeline. MCP receipts, paging, and credentials are in [mcp.md](mcp.md). User-facing product docs live at [https://www.safe-db.dev/docs](https://www.safe-db.dev/docs).
+This is the contract for [`runQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt) and dry-run [`assessQueryCore`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Read it before changing the parser, validator, compiler, risk gate, or a JDBC adapter. The desktop UI and the MCP `run_query` tool both go through this pipeline. MCP receipts, paging, and credentials are in [mcp.md](mcp.md). User-facing product docs live at [https://safe-db.dev/docs](https://safe-db.dev/docs).
 
 ## Pipeline
 
@@ -28,7 +28,7 @@ flowchart TD
 
 ## Accepted SQL
 
-A single `SELECT`. Columns are real schema columns (or `table.*` / `SELECT *`), not expressions. `SELECT *` expands to the table's columns and does not warn "No columns selected". Compiled result columns are named `table__column`.
+`SELECT` only. Columns are real schema columns (or `table.*` / `SELECT *`), not expressions. `SELECT *` expands to the table's columns and does not warn "No columns selected". Compiled result columns are named `table__column`.
 
 - `INNER JOIN` on column equality only (`a.x = b.y`). Each join column must be the leading key of an equality-capable index, or the join must be a complete foreign key ([`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt)).
 - Filters, including nested groups, up to `MAX_FILTER_DEPTH`.

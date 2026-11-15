@@ -12,7 +12,7 @@ internal fun registerQueryTools(server: Server, service: SafeDbService, resultSt
     server.addTool(
         name = "run_query",
         description =
-            "Run one SELECT on a saved connection. Accepts filters, DISTINCT, GROUP BY of " +
+            "Run a SELECT on a saved connection. Accepts filters, DISTINCT, GROUP BY of " +
                 "selected columns, ORDER BY, LIMIT, and INNER JOIN on indexed or FK columns. " +
                 "Rejects aggregates and functions, OFFSET, subqueries, CTEs, UNION, " +
                 "LEFT/CROSS or comma joins, AS aliases, and leading NOT. Result columns are " +

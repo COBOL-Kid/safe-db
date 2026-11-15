@@ -24,7 +24,7 @@ internal fun connectionIdProperty(optional: Boolean = false): JsonObject =
 
 internal fun sqlProperty(
     description: String =
-        "A single SELECT. Result columns are named table__column. " +
+        "A SELECT. Result columns are named table__column. " +
             "No aggregates or functions, OFFSET, subqueries, CTEs, " +
             "UNION, LEFT/CROSS or comma joins, AS aliases, or " +
             "leading NOT. Joins need indexed or FK columns.",

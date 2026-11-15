@@ -1,8 +1,26 @@
-# safe-db
+# safe-db: Safe database access for people and agents
 
-Source for the [safe-db](https://www.safe-db.dev) 1.1.0 desktop app and MCP server: a Compose Desktop UI, a stdio MCP CLI, and a `:shared` query engine that introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
+<p align="center">
+  <img src="packaging/icons/icon-512.png" alt="safe-db" width="160">
+</p>
 
-Packaged desktop releases and the user guide live at [https://www.safe-db.dev](https://www.safe-db.dev). This repository is for building from source and changing the code.
+<p align="center">
+  <a href="https://github.com/COBOL-Kid/safe-db/releases"><img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-blue"></a>
+  <a href="LICENSE.txt"><img alt="Apache License 2.0" src="https://img.shields.io/badge/license-Apache%202.0-green"></a>
+  <a href="https://www.npmjs.com/package/@safe-db/mcp"><img alt="npm downloads per month" src="https://img.shields.io/npm/dm/%40safe-db/mcp?label=npm%20downloads"></a>
+</p>
+
+<p align="center">
+  <a href="https://safe-db.dev/docs">Docs</a> |
+  <a href="https://safe-db.dev/desktop">Desktop</a> |
+  <a href="https://safe-db.dev/mcp">MCP</a> |
+  <a href="https://safe-db.dev/downloads">Downloads</a> |
+  <a href="https://safe-db.dev">Website</a>
+</p>
+
+Read-only access to production databases, for people and for agents. The 1.1.0 desktop app and the MCP server share one query engine: it introspects PostgreSQL, MySQL, SQL Server, Oracle, and Db2, compiles a structured `QuerySpec` to bound-parameter SQL, and runs a time-boxed, row-capped `SELECT`.
+
+Packaged releases and the user guide are at [safe-db.dev](https://safe-db.dev). This repository is for building from source and changing the code.
 
 The desktop app runs on macOS and Windows; [`Main.kt`](src/main/kotlin/com/safedb/Main.kt) rejects other operating systems before Compose, JDBC, or app data initialize. The MCP server also runs on Linux and is packaged as `@safe-db/mcp` (`npx -y @safe-db/mcp`). Connections, tools, and result receipts: [docs/mcp.md](docs/mcp.md).
 
@@ -28,9 +46,8 @@ Read [docs/query-engine.md](docs/query-engine.md) before changing the parser, va
 | --- | --- |
 | `./gradlew run` | Start the desktop app. |
 | `./gradlew check` | PR gate: unit tests, discovery, Docker harness orchestration, Kover ratchets. |
-| `./gradlew packageDistributionForCurrentOS` | Unsigned DMG (macOS) or MSI (Windows). |
 
-Integration tests, Docker fixtures, and headless renders: [docs/testing.md](docs/testing.md). MCP server: [docs/mcp.md](docs/mcp.md). Managed PKCS12 launch profiles: [docs/trust-stores.md](docs/trust-stores.md).
+Integration tests, Docker fixtures, and headless renders: [docs/testing.md](docs/testing.md). MCP server: [docs/mcp.md](docs/mcp.md). Managed PKCS12 launch profiles: [docs/trust-stores.md](docs/trust-stores.md). Windows and macOS packages are built with Conveyor: [docs/packaging.md](docs/packaging.md).
 
 For local development or CI, `SAFEDB_KEYCHAIN_BACKEND=disabled` keeps connection credentials in memory instead of the OS store. Trust-store password lookup still uses the strict platform backend and never falls back to that in-memory store.
 

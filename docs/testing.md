@@ -39,7 +39,6 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 | `./gradlew :mcp:assembleNpmAllPlatforms` | jlink every platform into `mcp/build/npm-all/@safe-db/mcp` plus platform packages. Linux x64 only (cross-links with Temurin JMODs). |
 | `./gradlew :mcp:npmCliTest` | `node --test` for the npm CLI shim. Part of `check` when `node` is on `PATH`; skips otherwise. |
 | `./gradlew :mcp:npmPackagedTest` | Packaged MCP stdio/MySQL smoke against the current-OS jlink image. Not part of `check`. |
-| `./gradlew packageDistributionForCurrentOS` | Native unsigned DMG (macOS) or MSI (Windows). |
 | `./scripts/assert-conveyor-site.sh ./output` | Check Conveyor site version, AppInstaller URLs, MSIX signature presence, the Apple Silicon zip, and the appcast URL. |
 
 ## Integration tests
@@ -75,7 +74,7 @@ PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `S
 
 ## CI
 
-The repository owner applies the `ci:run` label to a pull request to run `check` and required static-MySQL integration. Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when labeled.
+Only the repository owner can apply the `ci:run` label. That label starts `check` and the required static-MySQL integration only when the owner applies it; the workflow ignores the label from anyone else. Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when the owner applies that same label.
 
 Dependency submission remains automatic for qualifying trusted `main` changes.
 

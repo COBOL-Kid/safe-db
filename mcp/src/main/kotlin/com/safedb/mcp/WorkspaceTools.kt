@@ -102,7 +102,7 @@ internal fun registerWorkspaceTools(
                     buildJsonObject {
                         put("connection_id", connectionIdProperty())
                         put("name", stringProp("Display name for the saved query"))
-                        put("sql", sqlProperty("A single SELECT accepted by run_query"))
+                        put("sql", sqlProperty("A SELECT accepted by run_query"))
                         put("default_schema", defaultSchemaProperty())
                     },
                 required = listOf("connection_id", "name", "sql"),
