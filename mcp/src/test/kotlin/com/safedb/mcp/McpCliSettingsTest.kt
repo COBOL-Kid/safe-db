@@ -26,6 +26,7 @@ class McpCliSettingsTest {
         )
         assertEquals(
             "query_risk_gate: Standard\n" +
+                "query_timeout_seconds: 10\n" +
                 "default_connection_id: (none)\n" +
                 "default_schema: (none)\n" +
                 "blocked_schemas: (none)\n",
@@ -37,6 +38,7 @@ class McpCliSettingsTest {
             Settings(
                 blockedSchemas = listOf("pg_catalog", "audit"),
                 queryRiskGate = QueryRiskGate.Flexible,
+                queryTimeoutSeconds = 45,
                 defaultConnectionId = "c1",
                 defaultSchema = "public",
             )
@@ -47,6 +49,7 @@ class McpCliSettingsTest {
         )
         assertEquals(
             "query_risk_gate: Flexible\n" +
+                "query_timeout_seconds: 45\n" +
                 "default_connection_id: c1\n" +
                 "default_schema: public\n" +
                 "blocked_schemas: pg_catalog, audit\n",
@@ -291,6 +294,7 @@ class McpCliSettingsTest {
                 arrayOf("settings", "unblock-schema"),
                 arrayOf("settings", "unblock-schema", "--flag"),
                 arrayOf("settings", "unblock-schema", " "),
+                arrayOf("settings", "timeout"),
                 arrayOf("settings", "unknown"),
             )
 

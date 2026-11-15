@@ -65,6 +65,7 @@ private fun parseRiskGate(raw: String): QueryRiskGate =
 internal suspend fun showSettings(service: SafeDbService, io: CliIo): Int {
     val settings = normalizeSettings(service.getSettings())
     io.print("query_risk_gate: ${settings.queryRiskGate}")
+    io.print("query_timeout_seconds: ${settings.queryTimeoutSeconds}")
     io.print("default_connection_id: ${settings.defaultConnectionId ?: "(none)"}")
     io.print("default_schema: ${settings.defaultSchema ?: "(none)"}")
     io.print("blocked_schemas: ${blockedSchemasText(settings.blockedSchemas)}")
