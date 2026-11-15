@@ -33,6 +33,12 @@ import kotlin.test.assertTrue
 class StoreTest {
     private fun tempDir() = Files.createTempDirectory("safedb-store-test")
 
+    private fun loadSettings(json: String): Settings {
+        val dir = tempDir()
+        Files.writeString(dir.resolve("settings.json"), json)
+        return SettingsStore.new(dir).load()
+    }
+
     private fun assertUnsupportedQuarantine(dir: java.nio.file.Path, original: java.nio.file.Path) {
         assertFalse(Files.exists(original))
         assertEquals(
@@ -472,6 +478,125 @@ class StoreTest {
         assertEquals("connection-1", loaded.defaultConnectionId)
         assertEquals("Reporting", loaded.defaultSchema)
         assertEquals(saved.lastSelectedSchemas, loaded.lastSelectedSchemas)
+    }
+
+    @Test
+    fun settingsStoreLoadsMissingQueryTimeoutAsDefault() {
+        val loaded = loadSettings("""{"theme":"dark"}""")
+
+        assertEquals(10, loaded.queryTimeoutSeconds)
+        assertEquals("dark", loaded.theme)
+    }
+
+    @Test
+    fun settingsStoreClampsReadableQueryTimeoutAndKeepsOtherFields() {
+        val zero = loadSettings("""{"query_timeout_seconds":0,"blocked_schemas":["audit"]}""")
+        assertEquals(1, zero.queryTimeoutSeconds)
+        assertEquals(listOf("audit"), zero.blockedSchemas)
+
+        assertEquals(120, loadSettings("""{"query_timeout_seconds":200}""").queryTimeoutSeconds)
+        assertEquals(1, loadSettings("""{"query_timeout_seconds":-4}""").queryTimeoutSeconds)
+    }
+
+    @Test
+    fun settingsStoreFallsBackToDefaultForUnreadableQueryTimeout() {
+        val unreadable = listOf("\"slow\"", "true", "null", "10.5", "[]", "{}")
+        for (token in unreadable) {
+            val loaded =
+                loadSettings(
+                    """
+                    {
+                      "query_timeout_seconds": $token,
+                      "theme": "dark",
+                      "blocked_schemas": ["audit"]
+                    }
+                    """
+                        .trimIndent(),
+                )
+
+            assertEquals(10, loaded.queryTimeoutSeconds, "token $token")
+            assertEquals("dark", loaded.theme, "token $token")
+            assertEquals(listOf("audit"), loaded.blockedSchemas, "token $token")
+        }
+    }
+
+    @Test
+    fun settingsStoreReadsIntegralQueryTimeoutNumbersAndWritesAnInteger() {
+        assertEquals(10, loadSettings("""{"query_timeout_seconds":10.0}""").queryTimeoutSeconds)
+        assertEquals(11, loadSettings("""{"query_timeout_seconds":11.0}""").queryTimeoutSeconds)
+        assertEquals(10, loadSettings("""{"query_timeout_seconds":1e1}""").queryTimeoutSeconds)
+
+        val dir = tempDir()
+        val store = SettingsStore.new(dir)
+        store.save(Settings(queryTimeoutSeconds = 10))
+        val persisted = Files.readString(dir.resolve("settings.json"))
+        assertTrue(persisted.contains("\"query_timeout_seconds\": 10"))
+        assertFalse(persisted.contains("\"query_timeout_seconds\": \"10\""))
+        assertFalse(persisted.contains("\"query_timeout_seconds\": 10.0"))
+        assertEquals(10, store.load().queryTimeoutSeconds)
+    }
+
+    @Test
+    fun settingsStoreClampsQueryTimeoutBeyondIntRange() {
+        assertEquals(
+            120,
+            loadSettings("""{"query_timeout_seconds":9999999999999999999999999999}""")
+                .queryTimeoutSeconds,
+        )
+        assertEquals(
+            1,
+            loadSettings("""{"query_timeout_seconds":-9999999999999999999999999999}""")
+                .queryTimeoutSeconds,
+        )
+    }
+
+    @Test
+    fun normalizeSettingsClampsQueryTimeout() {
+        assertEquals(1, normalizeSettings(Settings(queryTimeoutSeconds = 0)).queryTimeoutSeconds)
+        assertEquals(
+            120,
+            normalizeSettings(Settings(queryTimeoutSeconds = 200)).queryTimeoutSeconds,
+        )
+        assertEquals(30, normalizeSettings(Settings(queryTimeoutSeconds = 30)).queryTimeoutSeconds)
+    }
+
+    @Test
+    fun settingsStoreSaveRoundTripsQueryTimeoutWithOtherFields() {
+        val dir = tempDir()
+        val store = SettingsStore.new(dir)
+        val saved =
+            Settings(
+                blockedSchemas = listOf("pg_catalog", "information_schema"),
+                theme = "dark",
+                colorScheme = ThemePalette.Oxide.id,
+                queryRiskGate = QueryRiskGate.Flexible,
+                defaultConnectionId = "connection-1",
+                defaultSchema = "Reporting",
+                lastSelectedSchemas =
+                    mapOf("connection-1" to "Operational", "connection-2" to "Analytics"),
+                queryTimeoutSeconds = 45,
+            )
+        store.save(saved)
+        val loaded = store.load()
+        assertEquals(45, loaded.queryTimeoutSeconds)
+        assertEquals(saved.blockedSchemas, loaded.blockedSchemas)
+        assertEquals("dark", loaded.theme)
+        assertEquals(ThemePalette.Oxide.id, loaded.colorScheme)
+        assertEquals(QueryRiskGate.Flexible, loaded.queryRiskGate)
+        assertEquals("connection-1", loaded.defaultConnectionId)
+        assertEquals("Reporting", loaded.defaultSchema)
+        assertEquals(saved.lastSelectedSchemas, loaded.lastSelectedSchemas)
+        assertTrue(
+            Files.readString(dir.resolve("settings.json"))
+                .contains("\"query_timeout_seconds\": 45"),
+        )
+    }
+
+    @Test
+    fun queryTimeoutMsClampsAndNeverReturnsZero() {
+        assertEquals(30_000, Settings(queryTimeoutSeconds = 30).queryTimeoutMs())
+        assertEquals(1_000, Settings(queryTimeoutSeconds = 0).queryTimeoutMs())
+        assertEquals(120_000, Settings(queryTimeoutSeconds = 200).queryTimeoutMs())
     }
 
     @Test
