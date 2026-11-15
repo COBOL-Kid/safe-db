@@ -28,7 +28,7 @@ flowchart TD
 
 ## Accepted SQL
 
-A single `SELECT`. Columns are real schema columns (or `table.*` / `SELECT *`), not expressions. `SELECT *` expands to the table's columns and does not warn "No columns selected". Compiled result columns are named `table__column`.
+`SELECT` only. Columns are real schema columns (or `table.*` / `SELECT *`), not expressions. `SELECT *` expands to the table's columns and does not warn "No columns selected". Compiled result columns are named `table__column`.
 
 - `INNER JOIN` on column equality only (`a.x = b.y`). Each join column must be the leading key of an equality-capable index, or the join must be a complete foreign key ([`Validate.kt`](../shared/src/main/kotlin/com/safedb/query/Validate.kt)).
 - Filters, including nested groups, up to `MAX_FILTER_DEPTH`.

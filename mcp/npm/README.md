@@ -1,6 +1,6 @@
 # @safe-db/mcp
 
-Read-only MCP server for PostgreSQL, MySQL, SQL Server, Oracle, and Db2. Inspect schema and run one gated `SELECT` through the [safe-db](https://safe-db.dev) query engine. It bundles a Temurin jlink runtime, so the machine does not need Java.
+Read-only MCP server for PostgreSQL, MySQL, SQL Server, Oracle, and Db2. Inspect schema and run gated SELECT queries through the [safe-db](https://safe-db.dev) query engine. It bundles a Temurin jlink runtime, so the machine does not need Java.
 
 ```bash
 npx -y @safe-db/mcp setup --dialect mysql --database app --username readonly --password-file /absolute/path

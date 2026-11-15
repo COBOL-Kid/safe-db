@@ -7,7 +7,7 @@ internal object SqlMessages {
     fun notSelect(found: String) =
         "Only SELECT statements can run here — Safe-DB is read-only. (found ${sqlWord(found)})"
 
-    const val CTE = "WITH clauses (CTEs) aren't supported — write a single SELECT."
+    const val CTE = "WITH clauses (CTEs) aren't supported — write a SELECT."
     const val MULTIPLE_STATEMENTS = "Only one statement can run at a time."
     const val FUNCTIONS =
         "Functions and aggregates (COUNT, SUM, …) aren't supported here. Run the base query, then aggregate in Explore."

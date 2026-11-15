@@ -16,7 +16,7 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
     server.addTool(
         name = "assess_query",
         description =
-            "Assess one SELECT on a saved connection without running it. Parses the SQL exactly " +
+            "Assess a SELECT on a saved connection without running it. Parses the SQL exactly " +
                 "like run_query, resolves result columns, compiles the statement, and returns " +
                 "dialect, columns, compiled_sql, parameter_count, warnings, a slim risk " +
                 "summary, and confirmation_required with reasons when the risk gate would " +
@@ -27,7 +27,7 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
                 properties =
                     buildJsonObject {
                         put("connection_id", connectionIdProperty())
-                        put("sql", sqlProperty("A single SELECT to assess without executing."))
+                        put("sql", sqlProperty("A SELECT to assess without executing."))
                         put("default_schema", defaultSchemaProperty())
                     },
                 required = listOf("connection_id", "sql"),
