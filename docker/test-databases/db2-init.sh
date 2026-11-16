@@ -7,8 +7,12 @@ set -euo pipefail
 # scripts/docker_test_databases.sh, which execs this with -u db2inst1).
 INSTANCE_HOME="$(getent passwd db2inst1 | cut -d: -f6)"
 INSTANCE_HOME="${INSTANCE_HOME:-/home/db2inst1}"
+# Db2 12.1's db2profile reads unset variables such as CLASSPATH. nounset has to
+# be off for that source, or the seed exits before CONNECT.
+set +u
 # shellcheck disable=SC1091
 . "$INSTANCE_HOME/sqllib/db2profile"
+set -u
 
 # LUW database names are at most 8 characters and cannot contain "_".
 DBNAME="${DBNAME:-SAFEDB}"
