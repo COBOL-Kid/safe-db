@@ -55,7 +55,7 @@ services:
       start_period: 20s
 
   postgres:
-    image: postgres:17
+    image: postgres:18
     container_name: safedb-test-postgres
     restart: unless-stopped
     environment:
@@ -65,7 +65,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - /var/lib/postgresql/data
+      - /var/lib/postgresql
       - ${SAFEDB_SSL_ROOT:-./.docker/safedb-ssl}/servers/postgres:/safedb-certs:ro
       - ./docker/test-databases/postgres-entrypoint.sh:/usr/local/bin/safedb-postgres-entrypoint.sh:ro
       - ./docker/test-databases/postgres-init.sh:/docker-entrypoint-initdb.d/10-safedb-test.sh:ro
@@ -89,7 +89,7 @@ services:
       start_period: 90s
 
   mssql:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2025-latest
     platform: linux/amd64
     container_name: safedb-test-mssql
     restart: unless-stopped
@@ -112,7 +112,7 @@ services:
       start_period: 30s
 
   mssql-init:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2025-latest
     platform: linux/amd64
     container_name: safedb-test-mssql-init
     depends_on:
@@ -148,7 +148,7 @@ services:
       start_period: 180s
 
   db2:
-    image: icr.io/db2_community/db2:11.5.9.0
+    image: icr.io/db2_community/db2:12.1.5.0
     platform: linux/amd64
     container_name: safedb-test-db2
     privileged: true

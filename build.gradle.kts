@@ -25,7 +25,7 @@ kotlin { jvmToolchain(25) }
 
 dependencies {
     implementation(project(":shared"))
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
     implementation(compose.desktop.currentOs)
     "windowsAmd64"(libs.compose.desktop.windows.x64)
     "macAarch64"(libs.compose.desktop.macos.arm64)

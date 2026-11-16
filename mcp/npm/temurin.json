@@ -1,42 +1,42 @@
 {
-  "releaseName": "jdk-25.0.4.1+1",
+  "releaseName": "jdk-25.0.5+8",
   "jlinkJdk": {
-    "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz",
-    "sha256": "dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e",
-    "filename": "OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz"
+    "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz",
+    "sha256": "68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb",
+    "filename": "OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz"
   },
   "platforms": [
     {
       "npm": "darwin-arm64",
       "os": ["darwin"],
       "cpu": ["arm64"],
-      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jmods_aarch64_mac_hotspot_25.0.4.1_1.tar.gz",
-      "sha256": "182f3c09df135883f3800bfd5e1e5b65a2cd44172863be8e7db48bb3d8233bd9",
-      "filename": "OpenJDK25U-jmods_aarch64_mac_hotspot_25.0.4.1_1.tar.gz"
+      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jmods_aarch64_mac_hotspot_25.0.5_8.tar.gz",
+      "sha256": "7a6f29625e7df123f33ad8b0d2253fc2d786bad74fe34c1f36346ee676abed53",
+      "filename": "OpenJDK25U-jmods_aarch64_mac_hotspot_25.0.5_8.tar.gz"
     },
     {
       "npm": "linux-arm64",
       "os": ["linux"],
       "cpu": ["arm64"],
-      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jmods_aarch64_linux_hotspot_25.0.4.1_1.tar.gz",
-      "sha256": "ffd6173fa4cb625b1649f68d9ca260ca5319c312a45d1cd5781664253d249b81",
-      "filename": "OpenJDK25U-jmods_aarch64_linux_hotspot_25.0.4.1_1.tar.gz"
+      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jmods_aarch64_linux_hotspot_25.0.5_8.tar.gz",
+      "sha256": "882c60e7a9d6c0a81a4deaef47280e7c455fafb6ab2c26734021967ced37d7ca",
+      "filename": "OpenJDK25U-jmods_aarch64_linux_hotspot_25.0.5_8.tar.gz"
     },
     {
       "npm": "linux-x64",
       "os": ["linux"],
       "cpu": ["x64"],
-      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jmods_x64_linux_hotspot_25.0.4.1_1.tar.gz",
-      "sha256": "c51cb1900283b00e7f9b1db1c6e430cc168d43ed240f496eb34b4d5796fdb81d",
-      "filename": "OpenJDK25U-jmods_x64_linux_hotspot_25.0.4.1_1.tar.gz"
+      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jmods_x64_linux_hotspot_25.0.5_8.tar.gz",
+      "sha256": "7f29246c5da4e4b0b0737f22001c6369dfb6913630bea2c3f49127ce53c98a0c",
+      "filename": "OpenJDK25U-jmods_x64_linux_hotspot_25.0.5_8.tar.gz"
     },
     {
       "npm": "win32-x64",
       "os": ["win32"],
       "cpu": ["x64"],
-      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jmods_x64_windows_hotspot_25.0.4.1_1.zip",
-      "sha256": "c6b6b19ba9ab28bb4c15b936a7cef40dedcd99ab69f69109dcb0ffad805f0847",
-      "filename": "OpenJDK25U-jmods_x64_windows_hotspot_25.0.4.1_1.zip"
+      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jmods_x64_windows_hotspot_25.0.5_8.zip",
+      "sha256": "09a8df20d57da0f4807e219798f0e76c0a24c70dc23595115f8cf26c53fd2727",
+      "filename": "OpenJDK25U-jmods_x64_windows_hotspot_25.0.5_8.zip"
     }
   ]
 }
