@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.text.KeyboardActions
@@ -39,13 +37,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
@@ -77,7 +74,6 @@ import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.DialogShape
-import kotlinx.coroutines.launch
 import com.safedb.viewmodel.SettingsViewModel
 
 internal const val QUERY_TIMEOUT_RANGE_ERROR =
@@ -117,30 +113,34 @@ private fun Modifier.clearFocusOnPress(onPress: State<() -> Unit>): Modifier =
 private fun QueryTimeoutSection(
     seconds: Int,
     onCommitSeconds: (Int) -> Unit,
+    onRangeErrorVisible: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var timeoutDraft by remember { mutableStateOf(seconds.toString()) }
     var timeoutFocused by remember { mutableStateOf(false) }
     var timeoutError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
-    val bringIntoViewScope = rememberCoroutineScope()
+
+    fun setTimeoutError(message: String?) {
+        timeoutError = message
+        onRangeErrorVisible(message != null)
+    }
 
     LaunchedEffect(seconds) {
         // Skip the reset while focused so an invalid draft survives an external seconds change.
         if (!timeoutFocused) {
             timeoutDraft = seconds.toString()
-            timeoutError = null
+            setTimeoutError(null)
         }
     }
 
     fun commitTimeoutDraft() {
         val parsed = parseQueryTimeoutSeconds(timeoutDraft)
         if (parsed == null) {
-            timeoutError = QUERY_TIMEOUT_RANGE_ERROR
+            setTimeoutError(QUERY_TIMEOUT_RANGE_ERROR)
             return
         }
-        timeoutError = null
+        setTimeoutError(null)
         onCommitSeconds(parsed)
     }
 
@@ -156,7 +156,7 @@ private fun QueryTimeoutSection(
             value = timeoutDraft,
             onValueChange = {
                 timeoutDraft = it
-                timeoutError = null
+                setTimeoutError(null)
             },
             modifier =
                 Modifier.width(120.dp)
@@ -197,25 +197,12 @@ private fun QueryTimeoutSection(
         )
         val errorMessage = timeoutError
         if (errorMessage != null) {
-            val requested = remember(errorMessage) { booleanArrayOf(false) }
             Text(
                 errorMessage,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.labelSmall,
                 modifier =
-                    Modifier.fillMaxWidth()
-                        .padding(top = 6.dp)
-                        .bringIntoViewRequester(bringIntoViewRequester)
-                        .onGloballyPositioned { coordinates ->
-                            // A request before this line is measured is a no-op: its rect is empty.
-                            if (!requested[0] && coordinates.size.height > 0) {
-                                requested[0] = true
-                                bringIntoViewScope.launch {
-                                    bringIntoViewRequester.bringIntoView()
-                                }
-                            }
-                        }
-                        .testTag(QUERY_TIMEOUT_ERROR_TAG),
+                    Modifier.fillMaxWidth().padding(top = 6.dp).testTag(QUERY_TIMEOUT_ERROR_TAG),
             )
         }
     }
@@ -239,6 +226,7 @@ fun SettingsPanel(
     val schemaLoading by viewModel.defaultSchemaLoading.collectAsState()
     val schemaError by viewModel.defaultSchemaError.collectAsState()
     val settingsScrollState = rememberScrollState()
+    var rangeErrorVisible by remember { mutableStateOf(false) }
     val appVersion = remember { loadAppVersion() }
     var candidateConnectionId by remember { mutableStateOf<String?>(null) }
     var databaseMenuOpen by remember { mutableStateOf(false) }
@@ -254,6 +242,15 @@ fun SettingsPanel(
             viewModel.loadDefaultSchemaOptions(defaultConnectionId)
         } else {
             viewModel.clearDefaultSchemaOptions()
+        }
+    }
+
+    LaunchedEffect(rangeErrorVisible) {
+        if (!rangeErrorVisible) return@LaunchedEffect
+        // Wait one frame so the helper line is in the layout before scrolling it into view.
+        withFrameNanos {}
+        if (settingsScrollState.maxValue > 0) {
+            settingsScrollState.scrollTo(settingsScrollState.maxValue)
         }
     }
 
@@ -561,6 +558,7 @@ fun SettingsPanel(
                         QueryTimeoutSection(
                             seconds = settings.queryTimeoutSeconds,
                             onCommitSeconds = viewModel::setQueryTimeoutSeconds,
+                            onRangeErrorVisible = { rangeErrorVisible = it },
                         )
                     }
                     if (settingsScrollState.maxValue > 0) {

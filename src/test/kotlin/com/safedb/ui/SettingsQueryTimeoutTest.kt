@@ -109,7 +109,8 @@ class SettingsQueryTimeoutTest {
         withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
             scene.focusAndSetTimeout("abc")
             scene.click(scene.requireExact("Appearance").boundsInRoot.center)
-            scene.settleUntilTimeoutErrorPlaced()
+            scene.settle()
+            scene.settle()
             scene.assertTimeoutErrorVisible("abc")
             assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
             scene.focusAndSetTimeout("45")
@@ -161,7 +162,8 @@ private fun ImageComposeScene.focusAndSetTimeout(value: String) {
 private fun ImageComposeScene.commitTimeoutDraftByBlur(value: String) {
     focusAndSetTimeout(value)
     click(requireExact("Appearance").boundsInRoot.center)
-    settleUntilTimeoutErrorPlaced()
+    settle()
+    settle()
 }
 
 @OptIn(ExperimentalComposeUiApi::class, InternalComposeUiApi::class)
@@ -171,17 +173,6 @@ private fun ImageComposeScene.commitTimeoutDraftByEnter(value: String) {
     sendKeyEvent(KeyEvent(Key.Enter, KeyEventType.KeyUp))
     settle()
     settle()
-}
-
-private fun ImageComposeScene.settleUntilTimeoutErrorPlaced() {
-    // BringIntoView scrolls over later frames; two settles return before the line is placed.
-    repeat(24) {
-        val error = findByTag(QUERY_TIMEOUT_ERROR_TAG)
-        if (error != null && error.boundsInRoot.width > 1f && error.boundsInRoot.height > 1f) {
-            return
-        }
-        settle()
-    }
 }
 
 private fun ImageComposeScene.assertTimeoutErrorVisible(invalid: String) {
