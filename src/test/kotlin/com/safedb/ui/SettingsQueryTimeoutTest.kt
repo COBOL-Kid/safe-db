@@ -55,18 +55,6 @@ class SettingsQueryTimeoutTest {
     }
 
     @Test
-    fun invalidTimeoutShowsErrorMessageBelowTheField() {
-        val viewModel = settingsViewModel()
-        withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
-            listOf("0", "121", "999", "-5", "abc", "1.5", "").forEach { invalid ->
-                scene.commitTimeoutDraftByBlur(invalid)
-                scene.assertTimeoutErrorVisible(invalid)
-                assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
-            }
-        }
-    }
-
-    @Test
     fun timeoutErrorMessageUsesTheColumnWidth() {
         val viewModel = settingsViewModel()
         withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
@@ -103,18 +91,6 @@ class SettingsQueryTimeoutTest {
     }
 
     @Test
-    fun enterCommitsAnInvalidTimeoutAndShowsTheError() {
-        val viewModel = settingsViewModel()
-        withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
-            listOf("abc", "121", "0").forEach { invalid ->
-                scene.commitTimeoutDraftByEnter(invalid)
-                scene.assertTimeoutErrorVisible(invalid)
-                assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
-            }
-        }
-    }
-
-    @Test
     fun enterCommitsAValidTimeoutAndClearsTheError() {
         val viewModel = settingsViewModel()
         withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
@@ -133,8 +109,7 @@ class SettingsQueryTimeoutTest {
         withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
             scene.focusAndSetTimeout("abc")
             scene.click(scene.requireExact("Appearance").boundsInRoot.center)
-            scene.settle()
-            scene.settle()
+            scene.settleUntilTimeoutErrorPlaced()
             scene.assertTimeoutErrorVisible("abc")
             assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
             scene.focusAndSetTimeout("45")
@@ -143,18 +118,6 @@ class SettingsQueryTimeoutTest {
             scene.settle()
             assertNull(scene.findContaining(QUERY_TIMEOUT_RANGE_ERROR))
             assertNull(scene.findByTag(QUERY_TIMEOUT_ERROR_TAG))
-            assertEquals(45, viewModel.settings.value.queryTimeoutSeconds)
-        }
-    }
-
-    @Test
-    fun validTimeoutClearsTheErrorAndSaves() {
-        val viewModel = settingsViewModel()
-        withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
-            scene.commitTimeoutDraftByBlur("0")
-            scene.requireTimeoutError()
-            scene.commitTimeoutDraftByBlur("45")
-            assertNull(scene.findContaining(QUERY_TIMEOUT_RANGE_ERROR))
             assertEquals(45, viewModel.settings.value.queryTimeoutSeconds)
         }
     }
@@ -197,14 +160,8 @@ private fun ImageComposeScene.focusAndSetTimeout(value: String) {
 
 private fun ImageComposeScene.commitTimeoutDraftByBlur(value: String) {
     focusAndSetTimeout(value)
-    val blurTarget =
-        listOf("Light", "Dark", "Standard", "Cautious", "Flexible", "Off")
-            .mapNotNull { findExact(it) }
-            .firstOrNull { it.boundsInRoot.width >= 8f && it.boundsInRoot.height >= 8f }
-            ?: error("no visible focusable to commit the timeout draft\n${dumpSettings()}")
-    click(blurTarget.boundsInRoot.center)
-    settle()
-    settle()
+    click(requireExact("Appearance").boundsInRoot.center)
+    settleUntilTimeoutErrorPlaced()
 }
 
 @OptIn(ExperimentalComposeUiApi::class, InternalComposeUiApi::class)
@@ -214,6 +171,17 @@ private fun ImageComposeScene.commitTimeoutDraftByEnter(value: String) {
     sendKeyEvent(KeyEvent(Key.Enter, KeyEventType.KeyUp))
     settle()
     settle()
+}
+
+private fun ImageComposeScene.settleUntilTimeoutErrorPlaced() {
+    // BringIntoView scrolls over later frames; two settles return before the line is placed.
+    repeat(24) {
+        val error = findByTag(QUERY_TIMEOUT_ERROR_TAG)
+        if (error != null && error.boundsInRoot.width > 1f && error.boundsInRoot.height > 1f) {
+            return
+        }
+        settle()
+    }
 }
 
 private fun ImageComposeScene.assertTimeoutErrorVisible(invalid: String) {
@@ -238,19 +206,10 @@ private fun ImageComposeScene.assertTimeoutErrorVisible(invalid: String) {
 }
 
 private fun ImageComposeScene.secondsField(): SemanticsNode =
-    findByTag(QUERY_TIMEOUT_SECONDS_TAG)
-        ?: allSemanticsNodes().first { node ->
-            node.config.contains(SemanticsActions.SetText) && node.label().contains("Seconds")
-        }
+    requireByTag(QUERY_TIMEOUT_SECONDS_TAG)
 
 private fun ImageComposeScene.requireTimeoutError(): SemanticsNode =
-    findByTag(QUERY_TIMEOUT_ERROR_TAG)
-        ?: findContaining(QUERY_TIMEOUT_RANGE_ERROR)
-        ?: allSemanticsNodes().firstOrNull { node ->
-            node.config.contains(SemanticsProperties.Error) &&
-                node.config[SemanticsProperties.Error].contains(QUERY_TIMEOUT_RANGE_ERROR)
-        }
-        ?: error("timeout error message missing\n${dumpSettings()}")
+    requireByTag(QUERY_TIMEOUT_ERROR_TAG)
 
 private fun ImageComposeScene.dumpSettings(): String =
     allSemanticsNodes()

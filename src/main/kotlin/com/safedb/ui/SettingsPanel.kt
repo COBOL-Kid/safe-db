@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.text.KeyboardActions
@@ -37,12 +39,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
@@ -74,12 +77,11 @@ import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.ui.components.SelectablePill
 import com.safedb.ui.theme.DialogShape
+import kotlinx.coroutines.launch
 import com.safedb.viewmodel.SettingsViewModel
 
 internal const val QUERY_TIMEOUT_RANGE_ERROR =
     "Enter a whole number of seconds from ${Settings.MIN_QUERY_TIMEOUT_SECONDS} to ${Settings.MAX_QUERY_TIMEOUT_SECONDS}."
-
-internal const val SETTINGS_PANEL_SCROLL_TAG = "settings-panel-scroll"
 
 internal const val QUERY_TIMEOUT_SECONDS_TAG = "query-timeout-seconds"
 
@@ -112,6 +114,114 @@ private fun Modifier.clearFocusOnPress(onPress: State<() -> Unit>): Modifier =
     }
 
 @Composable
+private fun QueryTimeoutSection(
+    seconds: Int,
+    onCommitSeconds: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var timeoutDraft by remember { mutableStateOf(seconds.toString()) }
+    var timeoutFocused by remember { mutableStateOf(false) }
+    var timeoutError by remember { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val bringIntoViewScope = rememberCoroutineScope()
+
+    LaunchedEffect(seconds) {
+        // Skip the reset while focused so an invalid draft survives an external seconds change.
+        if (!timeoutFocused) {
+            timeoutDraft = seconds.toString()
+            timeoutError = null
+        }
+    }
+
+    fun commitTimeoutDraft() {
+        val parsed = parseQueryTimeoutSeconds(timeoutDraft)
+        if (parsed == null) {
+            timeoutError = QUERY_TIMEOUT_RANGE_ERROR
+            return
+        }
+        timeoutError = null
+        onCommitSeconds(parsed)
+    }
+
+    Column(modifier = modifier) {
+        Text("Query timeout", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Applies to the next query run and its plan check, in whole seconds from 1 to 120.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 3.dp, bottom = 8.dp),
+        )
+        OutlinedTextField(
+            value = timeoutDraft,
+            onValueChange = {
+                timeoutDraft = it
+                timeoutError = null
+            },
+            modifier =
+                Modifier.width(120.dp)
+                    .testTag(QUERY_TIMEOUT_SECONDS_TAG)
+                    .semantics { timeoutError?.let { error(it) } }
+                    .onPreviewKeyEvent { event ->
+                        // Desktop single-line fields do not run ImeAction.Done
+                        // for a physical Enter key.
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        if (event.key != Key.Enter && event.key != Key.NumPadEnter) {
+                            return@onPreviewKeyEvent false
+                        }
+                        commitTimeoutDraft()
+                        true
+                    }
+                    .onFocusChanged { state ->
+                        if (timeoutFocused && !state.isFocused) {
+                            commitTimeoutDraft()
+                        }
+                        timeoutFocused = state.isFocused
+                    },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium,
+            label = { Text("Seconds", style = MaterialTheme.typography.labelMedium) },
+            isError = timeoutError != null,
+            keyboardOptions =
+                KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+            keyboardActions =
+                KeyboardActions(
+                    onDone = {
+                        commitTimeoutDraft()
+                        focusManager.clearFocus(force = true)
+                    },
+                ),
+        )
+        val errorMessage = timeoutError
+        if (errorMessage != null) {
+            val requested = remember(errorMessage) { booleanArrayOf(false) }
+            Text(
+                errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelSmall,
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .bringIntoViewRequester(bringIntoViewRequester)
+                        .onGloballyPositioned { coordinates ->
+                            // A request before this line is measured is a no-op: its rect is empty.
+                            if (!requested[0] && coordinates.size.height > 0) {
+                                requested[0] = true
+                                bringIntoViewScope.launch {
+                                    bringIntoViewRequester.bringIntoView()
+                                }
+                            }
+                        }
+                        .testTag(QUERY_TIMEOUT_ERROR_TAG),
+            )
+        }
+    }
+}
+
+@Composable
 fun SettingsPanel(
     open: Boolean,
     viewModel: SettingsViewModel,
@@ -133,9 +243,6 @@ fun SettingsPanel(
     var candidateConnectionId by remember { mutableStateOf<String?>(null) }
     var databaseMenuOpen by remember { mutableStateOf(false) }
     var schemaMenuOpen by remember { mutableStateOf(false) }
-    var timeoutDraft by remember { mutableStateOf(settings.queryTimeoutSeconds.toString()) }
-    var timeoutFocused by remember { mutableStateOf(false) }
-    var timeoutError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
     LaunchedEffect(Unit) {
@@ -150,38 +257,8 @@ fun SettingsPanel(
         }
     }
 
-    LaunchedEffect(settings.queryTimeoutSeconds) {
-        // Skip the reset while focused so an invalid draft survives an external seconds change.
-        if (!timeoutFocused) {
-            timeoutDraft = settings.queryTimeoutSeconds.toString()
-            timeoutError = null
-        }
-    }
-
-    LaunchedEffect(timeoutError) {
-        if (timeoutError == null) return@LaunchedEffect
-        // Wait one frame so the helper line is in the layout before scrolling it into view.
-        withFrameNanos {}
-        if (settingsScrollState.maxValue > 0) {
-            settingsScrollState.scrollTo(settingsScrollState.maxValue)
-        }
-    }
-
-    fun commitTimeoutDraft() {
-        val seconds = parseQueryTimeoutSeconds(timeoutDraft)
-        if (seconds == null) {
-            timeoutError = QUERY_TIMEOUT_RANGE_ERROR
-            return
-        }
-        timeoutError = null
-        viewModel.setQueryTimeoutSeconds(seconds)
-    }
-
     val dismissFocusRequester = remember { FocusRequester() }
     val onDialogPress = rememberUpdatedState {
-        if (timeoutFocused) {
-            commitTimeoutDraft()
-        }
         // TextField captures focus, so clearFocus() without a new target is a no-op.
         dismissFocusRequester.requestFocus()
         focusManager.clearFocus(force = true)
@@ -238,7 +315,6 @@ fun SettingsPanel(
                     Column(
                         modifier =
                             Modifier.fillMaxWidth()
-                                .testTag(SETTINGS_PANEL_SCROLL_TAG)
                                 .padding(
                                     end = if (settingsScrollState.maxValue > 0) 12.dp else 0.dp,
                                 )
@@ -482,75 +558,10 @@ fun SettingsPanel(
                             )
                         }
 
-                        Column {
-                            Text("Query timeout", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "Applies to the next query run and its plan check, in whole seconds from 1 to 120.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 3.dp, bottom = 8.dp),
-                            )
-                            OutlinedTextField(
-                                value = timeoutDraft,
-                                onValueChange = {
-                                    timeoutDraft = it
-                                    timeoutError = null
-                                },
-                                modifier =
-                                    Modifier.width(120.dp)
-                                        .testTag(QUERY_TIMEOUT_SECONDS_TAG)
-                                        .semantics { timeoutError?.let { error(it) } }
-                                        .onPreviewKeyEvent { event ->
-                                            // Desktop single-line fields do not run ImeAction.Done
-                                            // for a physical Enter key.
-                                            if (event.type != KeyEventType.KeyDown)
-                                                return@onPreviewKeyEvent false
-                                            if (
-                                                event.key != Key.Enter &&
-                                                    event.key != Key.NumPadEnter
-                                            ) {
-                                                return@onPreviewKeyEvent false
-                                            }
-                                            commitTimeoutDraft()
-                                            true
-                                        }
-                                        .onFocusChanged { state ->
-                                            if (timeoutFocused && !state.isFocused) {
-                                                commitTimeoutDraft()
-                                            }
-                                            timeoutFocused = state.isFocused
-                                        },
-                                singleLine = true,
-                                textStyle = MaterialTheme.typography.bodyMedium,
-                                label = {
-                                    Text("Seconds", style = MaterialTheme.typography.labelMedium)
-                                },
-                                isError = timeoutError != null,
-                                keyboardOptions =
-                                    KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Done,
-                                    ),
-                                keyboardActions =
-                                    KeyboardActions(
-                                        onDone = {
-                                            commitTimeoutDraft()
-                                            focusManager.clearFocus(force = true)
-                                        },
-                                    ),
-                            )
-                            timeoutError?.let { errorMessage ->
-                                Text(
-                                    errorMessage,
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier =
-                                        Modifier.fillMaxWidth()
-                                            .padding(top = 6.dp)
-                                            .testTag(QUERY_TIMEOUT_ERROR_TAG),
-                                )
-                            }
-                        }
+                        QueryTimeoutSection(
+                            seconds = settings.queryTimeoutSeconds,
+                            onCommitSeconds = viewModel::setQueryTimeoutSeconds,
+                        )
                     }
                     if (settingsScrollState.maxValue > 0) {
                         VerticalScrollbar(

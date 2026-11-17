@@ -506,7 +506,7 @@ class StoreTest {
 
     @Test
     fun settingsStoreFallsBackToDefaultForUnreadableQueryTimeout() {
-        val unreadable = listOf("\"slow\"", "true", "null", "10.5", "[]", "{}")
+        val unreadable = listOf("\"slow\"", "true", "null", "11.5", "[]", "{}")
         for (token in unreadable) {
             val loaded =
                 loadSettings(

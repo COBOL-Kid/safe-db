@@ -5,6 +5,7 @@
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.1` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.1-all.jar`; npm packages are stamped 1.1.1 at assemble time.
 
 - Settings query timeout is configurable from 1 to 120 seconds, default 10; it applies to the next desktop or MCP query run and its plan check; connect and schema introspection stay fixed. `safe-db-mcp settings` prints `query_timeout_seconds`; `safe-db-mcp settings timeout <seconds>` writes it.
+- The sidebar shows a reachability indicator (Connected / Not connected), and a connection can be tested when no password is stored.
 - Updated the bundled Temurin 25 jlink runtime for `@safe-db/mcp` to `jdk-25.0.5+8` and updated runtime dependencies (`mssql-jdbc` 13.6.2, `kotlinx-serialization-json` 1.13.0) ([#112](https://github.com/COBOL-Kid/safe-db/pull/112)).
 - Refreshed README and documentation links to `safe-db.dev` and trimmed `"single SELECT"` wording from MCP tool descriptions and CTE error copy ([#110](https://github.com/COBOL-Kid/safe-db/pull/110)).
 

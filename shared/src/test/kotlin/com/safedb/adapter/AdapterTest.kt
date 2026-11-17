@@ -133,6 +133,13 @@ class AdapterTest {
     }
 
     @Test
+    fun jdbcQueryTimeoutNeverBecomesUnlimitedZero() {
+        assertEquals(1, jdbcQueryTimeoutSeconds(500))
+        assertEquals(1, jdbcQueryTimeoutSeconds(0))
+        assertEquals(30, jdbcQueryTimeoutSeconds(30_000))
+    }
+
+    @Test
     fun jdbcDecoderKeepsDecimalValuesAsText() {
         val cell = decodeJdbcValue(fakeResultSet(BigDecimal("1234567890.123456789")), 1, "DECIMAL")
 

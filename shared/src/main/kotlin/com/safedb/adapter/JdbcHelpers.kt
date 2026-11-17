@@ -32,6 +32,9 @@ const val CONNECT_TIMEOUT_MS = 10_000L
 const val INTROSPECTION_TIMEOUT_MS = 30_000L
 const val SERVICE_NAME = "safe-db"
 
+// JDBC treats a 0 timeout as unlimited, so sub-second budgets must round up to 1 second.
+fun jdbcQueryTimeoutSeconds(timeoutMs: Int): Int = (timeoutMs / 1000).coerceAtLeast(1)
+
 // 0 buffers the whole result (pgjdbc's default). A positive size is what opens a forward cursor.
 const val QUERY_FETCH_SIZE = 128
 

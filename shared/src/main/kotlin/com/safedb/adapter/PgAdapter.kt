@@ -9,6 +9,7 @@ import com.safedb.model.QueryResult
 import com.safedb.model.Schema
 import com.safedb.model.SortDirection
 import com.zaxxer.hikari.HikariDataSource
+import java.sql.Connection
 
 internal fun pgIndexCapabilities(kind: String): IndexCapabilities =
     IndexCapabilities(
@@ -133,26 +134,34 @@ object PgAdapter {
         }
     }
 
-    fun executeQuery(
-        dataSource: HikariDataSource,
-        compiled: CompiledQuery,
+    private fun <T> HikariDataSource.withReadOnlyStatementTimeout(
         timeoutMs: Int,
-    ): QueryResult =
-        dataSource.connection.use { conn ->
+        block: (Connection) -> T,
+    ): T =
+        connection.use { conn ->
+            // SET LOCAL only lasts for the current transaction, so autocommit must be off.
             conn.autoCommit = false
             conn.createStatement().use { stmt ->
                 stmt.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
                 stmt.execute("SET LOCAL statement_timeout = $timeoutMs")
             }
-            val result =
-                prepareStatement(conn, compiled, Dialect.Postgres).use { ps ->
-                    ps.executeQuery().use { rs ->
-                        decodeQueryResult(rs, compiled.sql, Dialect.Postgres)
-                    }
-                }
+            val result = block(conn)
             // Close the cursor before commit so a budget stop does not drain unread rows.
             conn.commit()
             result
+        }
+
+    fun executeQuery(
+        dataSource: HikariDataSource,
+        compiled: CompiledQuery,
+        timeoutMs: Int,
+    ): QueryResult =
+        dataSource.withReadOnlyStatementTimeout(timeoutMs) { conn ->
+            prepareStatement(conn, compiled, Dialect.Postgres).use { ps ->
+                ps.executeQuery().use { rs ->
+                    decodeQueryResult(rs, compiled.sql, Dialect.Postgres)
+                }
+            }
         }
 
     fun explain(
@@ -161,29 +170,18 @@ object PgAdapter {
         timeoutMs: Int,
     ): ExplainResult {
         val explainSql = "EXPLAIN (FORMAT JSON) ${compiled.sql}"
-        return dataSource.connection.use { conn ->
-            // SET LOCAL only lasts for the current transaction, so autocommit must be off.
-            conn.autoCommit = false
-            conn.createStatement().use { stmt ->
-                stmt.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
-                stmt.execute("SET LOCAL statement_timeout = $timeoutMs")
-            }
-            val result =
-                prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Postgres).use { ps
-                    ->
-                    ps.executeQuery().use { rs ->
-                        rs.next()
-                        val planJson = rs.getString(1)
-                        parsePostgresPlan(planJson)?.let(ExplainResult::Available)
-                            ?: ExplainResult.Unavailable(
-                                com.safedb.model.PlanUnavailableReason.ParseFailure,
-                                "Could not normalize PostgreSQL JSON plan",
-                            )
-                    }
+        return dataSource.withReadOnlyStatementTimeout(timeoutMs) { conn ->
+            prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Postgres).use { ps ->
+                ps.executeQuery().use { rs ->
+                    rs.next()
+                    val planJson = rs.getString(1)
+                    parsePostgresPlan(planJson)?.let(ExplainResult::Available)
+                        ?: ExplainResult.Unavailable(
+                            com.safedb.model.PlanUnavailableReason.ParseFailure,
+                            "Could not normalize PostgreSQL JSON plan",
+                        )
                 }
-            // Close the cursor before commit so a budget stop does not drain unread rows.
-            conn.commit()
-            result
+            }
         }
     }
 }

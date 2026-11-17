@@ -181,7 +181,7 @@ object OracleAdapter {
             try {
                 val result =
                     prepareStatement(conn, compiled, Dialect.Oracle).use { ps ->
-                        ps.queryTimeout = timeoutMs / 1000
+                        ps.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                         ps.executeQuery().use { rs ->
                             decodeQueryResult(rs, compiled.sql, Dialect.Oracle)
                         }
@@ -205,7 +205,7 @@ object OracleAdapter {
         return dataSource.connection.use { conn ->
             val explainSql = "EXPLAIN PLAN SET STATEMENT_ID = '$statementId' FOR ${compiled.sql}"
             prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Oracle).use { ps ->
-                ps.queryTimeout = timeoutMs / 1000
+                ps.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                 ps.execute()
             }
             var cleanupFailure: Throwable? = null
@@ -220,7 +220,7 @@ object OracleAdapter {
                                 .trimIndent(),
                         )
                         .use { ps ->
-                            ps.queryTimeout = timeoutMs / 1000
+                            ps.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                             ps.setString(1, statementId)
                             ps.executeQuery().use { rs ->
                                 buildList {
@@ -255,7 +255,7 @@ object OracleAdapter {
                 } finally {
                     runCatching {
                         conn.prepareStatement("DELETE FROM plan_table WHERE statement_id = ?").use {
-                            it.queryTimeout = timeoutMs / 1000
+                            it.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                             it.setString(1, statementId)
                             it.execute()
                         }
