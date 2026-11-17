@@ -8,13 +8,17 @@ import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.resolveQuerySchemaSelection
 import com.safedb.service.SafeDbService
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +52,11 @@ class AppViewModel(
 
     private val _initialLoading = MutableStateFlow(true)
     val initialLoading: StateFlow<Boolean> = _initialLoading.asStateFlow()
+
+    private var reachabilityGeneration = 0
+    private var reachabilityJob: Job? = null
+    private val _databaseReachable = MutableStateFlow(false)
+    val databaseReachable: StateFlow<Boolean> = _databaseReachable.asStateFlow()
 
     init {
         scope.launch {
@@ -86,6 +95,31 @@ class AppViewModel(
 
     fun lockCredentials() {
         scope.launch { service.lockCredentials() }
+    }
+
+    fun refreshDatabaseReachability(connection: ConnectionDef?) {
+        reachabilityJob?.cancel()
+        reachabilityJob = null
+        val generation = ++reachabilityGeneration
+        _databaseReachable.value = false
+        if (connection == null) return
+        reachabilityJob = scope.launch {
+            while (generation == reachabilityGeneration) {
+                val reachable =
+                    try {
+                        service.testConnection(connection, password = null)
+                        true
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        false
+                    }
+                if (generation != reachabilityGeneration) return@launch
+                // Repeat checks only publish the probe result; clearing first would flash red.
+                _databaseReachable.value = reachable
+                delay(ReachabilityPollInterval)
+            }
+        }
     }
 
     fun openExplore(
@@ -215,6 +249,8 @@ data class PendingRecipeRun(
     val connectionId: String,
     val specHash: String,
 )
+
+internal val ReachabilityPollInterval = 1.minutes
 
 private const val RECIPE_APPLY_BUSY_NOTICE =
     "The recipe is on the canvas but was not run because a query is already running or waiting for confirmation. Wait, then press Run."

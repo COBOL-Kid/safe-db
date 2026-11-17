@@ -25,6 +25,7 @@ class SidebarLogoPositionTest {
                         route = AppRoute.Home,
                         isDark = false,
                         collapsed = collapsed,
+                        connected = false,
                         onCollapsedChange = { collapsed = it },
                         onNavigate = {},
                         onOpenSettings = {},
