@@ -406,9 +406,7 @@ object Db2Adapter {
                 )
         val planTable = "$qualifier.PLAN_TABLE"
         val statementTable = "$qualifier.DSN_STATEMNT_TABLE"
-        when (
-            timed.explainTablePresence("SELECT 1 FROM $planTable FETCH FIRST 1 ROW ONLY")
-        ) {
+        when (timed.explainTablePresence("SELECT 1 FROM $planTable FETCH FIRST 1 ROW ONLY")) {
             ExplainTablePresence.Absent -> return missingZosPlanTable()
             ExplainTablePresence.Failed ->
                 return ExplainResult.Unavailable(
@@ -834,12 +832,11 @@ object Db2Adapter {
     ): Double? =
     // Best-effort: DSN tables are optional and may not exist for this creator.
     runCatching {
-        prepare("SELECT MAX(TOTAL_COST) FROM $statementTable WHERE QUERYNO = $queryNo")
-            .use { ps ->
-                ps.executeQuery().use { rs ->
-                    if (rs.next()) (rs.getObject(1) as? Number)?.toDouble() else null
-                }
+        prepare("SELECT MAX(TOTAL_COST) FROM $statementTable WHERE QUERYNO = $queryNo").use { ps ->
+            ps.executeQuery().use { rs ->
+                if (rs.next()) (rs.getObject(1) as? Number)?.toDouble() else null
             }
+        }
     }
         .getOrNull()
 
@@ -991,7 +988,7 @@ object Db2Adapter {
         val sectNo: Int,
     )
 
-    private fun java.sql.PreparedStatement.bindLuwKey(key: LuwExplainKey) {
+    private fun PreparedStatement.bindLuwKey(key: LuwExplainKey) {
         setString(1, key.requester)
         setTimestamp(2, key.explainTime)
         setString(3, key.sourceName)

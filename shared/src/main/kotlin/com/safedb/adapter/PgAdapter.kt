@@ -137,19 +137,18 @@ object PgAdapter {
     private fun <T> HikariDataSource.withReadOnlyStatementTimeout(
         timeoutMs: Int,
         block: (Connection) -> T,
-    ): T =
-        connection.use { conn ->
-            // SET LOCAL only lasts for the current transaction, so autocommit must be off.
-            conn.autoCommit = false
-            conn.createStatement().use { stmt ->
-                stmt.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
-                stmt.execute("SET LOCAL statement_timeout = $timeoutMs")
-            }
-            val result = block(conn)
-            // Close the cursor before commit so a budget stop does not drain unread rows.
-            conn.commit()
-            result
+    ): T = connection.use { conn ->
+        // SET LOCAL only lasts for the current transaction, so autocommit must be off.
+        conn.autoCommit = false
+        conn.createStatement().use { stmt ->
+            stmt.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
+            stmt.execute("SET LOCAL statement_timeout = $timeoutMs")
         }
+        val result = block(conn)
+        // Close the cursor before commit so a budget stop does not drain unread rows.
+        conn.commit()
+        result
+    }
 
     fun executeQuery(
         dataSource: HikariDataSource,

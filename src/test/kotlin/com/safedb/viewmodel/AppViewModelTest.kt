@@ -940,8 +940,10 @@ private class FakeSafeDbService(
     var locked = false
     var testConnectionCalls = 0
         private set
+
     var testConnectionPassword: String? = null
         private set
+
     var queryAttempts = 0
         private set
 

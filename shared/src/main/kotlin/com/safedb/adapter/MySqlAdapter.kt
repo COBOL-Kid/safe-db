@@ -112,24 +112,20 @@ object MySqlAdapter {
     private fun <T> HikariDataSource.withMaxExecutionTime(
         timeoutMs: Int,
         block: (Connection) -> T,
-    ): T =
-        connection.use { conn ->
-            conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = $timeoutMs") }
-            try {
-                block(conn)
-            } finally {
-                val restored =
-                    runCatching {
-                        conn.createStatement().use {
-                            it.execute("SET SESSION MAX_EXECUTION_TIME = 0")
-                        }
-                    }
-                // A pooled session that keeps a leftover timeout must not be handed out again.
-                if (restored.isFailure) {
-                    evictConnection(conn)
-                }
+    ): T = connection.use { conn ->
+        conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = $timeoutMs") }
+        try {
+            block(conn)
+        } finally {
+            val restored = runCatching {
+                conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = 0") }
+            }
+            // A pooled session that keeps a leftover timeout must not be handed out again.
+            if (restored.isFailure) {
+                evictConnection(conn)
             }
         }
+    }
 
     fun executeQuery(
         dataSource: HikariDataSource,
