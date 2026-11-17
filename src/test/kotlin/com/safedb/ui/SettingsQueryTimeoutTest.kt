@@ -1,6 +1,11 @@
 package com.safedb.ui
 
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -20,7 +25,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalComposeUiApi::class)
 class SettingsQueryTimeoutTest {
     @BeforeTest
     fun setUp() {
@@ -54,27 +59,91 @@ class SettingsQueryTimeoutTest {
         val viewModel = settingsViewModel()
         withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
             listOf("0", "121", "999", "-5", "abc", "1.5", "").forEach { invalid ->
-                scene.commitTimeoutDraft(invalid)
-                val error = scene.requireTimeoutError()
-                val field = scene.secondsField()
-                val close = scene.requireExact("Close")
-                assertTrue(
-                    error.isInsideWindow(850, 555),
-                    "error was not visible for '$invalid': error=${error.boundsInRoot} " +
-                        "field=${field.boundsInRoot} close=${close.boundsInRoot}\n${scene.dumpSettings()}",
-                )
-                assertTrue(
-                    field.label().contains(QUERY_TIMEOUT_RANGE_ERROR) ||
-                        error.label().contains(QUERY_TIMEOUT_RANGE_ERROR),
-                    "error message missing from the field for '$invalid': ${field.label()}",
-                )
-                assertTrue(
-                    field.boundsInRoot.bottom <= close.boundsInRoot.top + 0.5f,
-                    "timeout field ran into Close for '$invalid': field=${field.boundsInRoot} " +
-                        "close=${close.boundsInRoot}",
-                )
+                scene.commitTimeoutDraftByBlur(invalid)
+                scene.assertTimeoutErrorVisible(invalid)
                 assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
             }
+        }
+    }
+
+    @Test
+    fun timeoutErrorMessageUsesTheColumnWidth() {
+        val viewModel = settingsViewModel()
+        withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
+            scene.commitTimeoutDraftByBlur("121")
+            val field = scene.secondsField()
+            val message = scene.requireTimeoutError()
+            assertTrue(
+                message.boundsInRoot.width > field.boundsInRoot.width + 80f,
+                "error was constrained to the field width: message=${message.boundsInRoot} " +
+                    "field=${field.boundsInRoot}\n${scene.dumpSettings()}",
+            )
+            assertTrue(
+                message.boundsInRoot.height <= 40f,
+                "error wrapped onto too many lines: ${message.boundsInRoot}\n${scene.dumpSettings()}",
+            )
+            assertTrue(
+                message.boundsInRoot.top + 0.5f >= field.boundsInRoot.bottom - 8f,
+                "error was not below the field: message=${message.boundsInRoot} " +
+                    "field=${field.boundsInRoot}",
+            )
+            val fieldError =
+                if (field.config.contains(SemanticsProperties.Error)) {
+                    field.config[SemanticsProperties.Error]
+                } else {
+                    ""
+                }
+            assertTrue(
+                fieldError.contains(QUERY_TIMEOUT_RANGE_ERROR) ||
+                    field.label().contains(QUERY_TIMEOUT_RANGE_ERROR),
+                "field was not associated with the range error: error='$fieldError' " +
+                    "label='${field.label()}'",
+            )
+        }
+    }
+
+    @Test
+    fun enterCommitsAnInvalidTimeoutAndShowsTheError() {
+        val viewModel = settingsViewModel()
+        withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
+            listOf("abc", "121", "0").forEach { invalid ->
+                scene.commitTimeoutDraftByEnter(invalid)
+                scene.assertTimeoutErrorVisible(invalid)
+                assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
+            }
+        }
+    }
+
+    @Test
+    fun enterCommitsAValidTimeoutAndClearsTheError() {
+        val viewModel = settingsViewModel()
+        withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
+            scene.commitTimeoutDraftByEnter("0")
+            scene.requireTimeoutError()
+            scene.commitTimeoutDraftByEnter("45")
+            assertNull(scene.findContaining(QUERY_TIMEOUT_RANGE_ERROR))
+            assertNull(scene.findByTag(QUERY_TIMEOUT_ERROR_TAG))
+            assertEquals(45, viewModel.settings.value.queryTimeoutSeconds)
+        }
+    }
+
+    @Test
+    fun clickingTheDialogBodyCommitsTheTimeoutDraft() {
+        val viewModel = settingsViewModel()
+        withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
+            scene.focusAndSetTimeout("abc")
+            scene.click(scene.requireExact("Appearance").boundsInRoot.center)
+            scene.settle()
+            scene.settle()
+            scene.assertTimeoutErrorVisible("abc")
+            assertEquals(10, viewModel.settings.value.queryTimeoutSeconds)
+            scene.focusAndSetTimeout("45")
+            scene.click(scene.requireExact("Settings").boundsInRoot.center)
+            scene.settle()
+            scene.settle()
+            assertNull(scene.findContaining(QUERY_TIMEOUT_RANGE_ERROR))
+            assertNull(scene.findByTag(QUERY_TIMEOUT_ERROR_TAG))
+            assertEquals(45, viewModel.settings.value.queryTimeoutSeconds)
         }
     }
 
@@ -82,9 +151,9 @@ class SettingsQueryTimeoutTest {
     fun validTimeoutClearsTheErrorAndSaves() {
         val viewModel = settingsViewModel()
         withSettingsPanel(viewModel, width = 850, height = 555) { scene ->
-            scene.commitTimeoutDraft("0")
+            scene.commitTimeoutDraftByBlur("0")
             scene.requireTimeoutError()
-            scene.commitTimeoutDraft("45")
+            scene.commitTimeoutDraftByBlur("45")
             assertNull(scene.findContaining(QUERY_TIMEOUT_RANGE_ERROR))
             assertEquals(45, viewModel.settings.value.queryTimeoutSeconds)
         }
@@ -119,11 +188,15 @@ private fun withSettingsPanel(
     )
 }
 
-private fun ImageComposeScene.commitTimeoutDraft(value: String) {
+private fun ImageComposeScene.focusAndSetTimeout(value: String) {
     secondsField().config[SemanticsActions.RequestFocus].action!!.invoke()
     settle()
     secondsField().config[SemanticsActions.SetText].action!!.invoke(AnnotatedString(value))
     settle()
+}
+
+private fun ImageComposeScene.commitTimeoutDraftByBlur(value: String) {
+    focusAndSetTimeout(value)
     val blurTarget =
         listOf("Light", "Dark", "Standard", "Cautious", "Flexible", "Off")
             .mapNotNull { findExact(it) }
@@ -134,6 +207,36 @@ private fun ImageComposeScene.commitTimeoutDraft(value: String) {
     settle()
 }
 
+@OptIn(ExperimentalComposeUiApi::class, InternalComposeUiApi::class)
+private fun ImageComposeScene.commitTimeoutDraftByEnter(value: String) {
+    focusAndSetTimeout(value)
+    sendKeyEvent(KeyEvent(Key.Enter, KeyEventType.KeyDown))
+    sendKeyEvent(KeyEvent(Key.Enter, KeyEventType.KeyUp))
+    settle()
+    settle()
+}
+
+private fun ImageComposeScene.assertTimeoutErrorVisible(invalid: String) {
+    val error = requireTimeoutError()
+    val field = secondsField()
+    val close = requireExact("Close")
+    assertTrue(
+        error.isInsideWindow(850, 555),
+        "error was not visible for '$invalid': error=${error.boundsInRoot} " +
+            "field=${field.boundsInRoot} close=${close.boundsInRoot}\n${dumpSettings()}",
+    )
+    assertTrue(
+        field.label().contains(QUERY_TIMEOUT_RANGE_ERROR) ||
+            error.label().contains(QUERY_TIMEOUT_RANGE_ERROR),
+        "error message missing for '$invalid': field='${field.label()}' error='${error.label()}'",
+    )
+    assertTrue(
+        field.boundsInRoot.bottom <= close.boundsInRoot.top + 0.5f,
+        "timeout field ran into Close for '$invalid': field=${field.boundsInRoot} " +
+            "close=${close.boundsInRoot}",
+    )
+}
+
 private fun ImageComposeScene.secondsField(): SemanticsNode =
     findByTag(QUERY_TIMEOUT_SECONDS_TAG)
         ?: allSemanticsNodes().first { node ->
@@ -141,7 +244,8 @@ private fun ImageComposeScene.secondsField(): SemanticsNode =
         }
 
 private fun ImageComposeScene.requireTimeoutError(): SemanticsNode =
-    findContaining(QUERY_TIMEOUT_RANGE_ERROR)
+    findByTag(QUERY_TIMEOUT_ERROR_TAG)
+        ?: findContaining(QUERY_TIMEOUT_RANGE_ERROR)
         ?: allSemanticsNodes().firstOrNull { node ->
             node.config.contains(SemanticsProperties.Error) &&
                 node.config[SemanticsProperties.Error].contains(QUERY_TIMEOUT_RANGE_ERROR)

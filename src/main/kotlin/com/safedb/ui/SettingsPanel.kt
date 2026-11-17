@@ -1,6 +1,7 @@
 package com.safedb.ui
 
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,17 +32,31 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,12 +83,33 @@ internal const val SETTINGS_PANEL_SCROLL_TAG = "settings-panel-scroll"
 
 internal const val QUERY_TIMEOUT_SECONDS_TAG = "query-timeout-seconds"
 
+internal const val QUERY_TIMEOUT_ERROR_TAG = "query-timeout-error"
+
 internal fun parseQueryTimeoutSeconds(text: String): Int? {
     val seconds = text.trim().toIntOrNull() ?: return null
     return seconds.takeIf {
         it in Settings.MIN_QUERY_TIMEOUT_SECONDS..Settings.MAX_QUERY_TIMEOUT_SECONDS
     }
 }
+
+private fun Modifier.clearFocusOnPress(onPress: State<() -> Unit>): Modifier =
+    pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                // Final pass: clicks on the Seconds field or a pill are consumed and
+                // must not steal focus. Headings and empty dialog space stay unconsumed.
+                val event = awaitPointerEvent(PointerEventPass.Final)
+                val unconsumedRelease =
+                    event.type == PointerEventType.Release &&
+                        event.changes.any { change ->
+                            !change.isConsumed && change.previousPressed && !change.pressed
+                        }
+                if (unconsumedRelease) {
+                    onPress.value()
+                }
+            }
+        }
+    }
 
 @Composable
 fun SettingsPanel(
@@ -141,6 +177,19 @@ fun SettingsPanel(
         viewModel.setQueryTimeoutSeconds(seconds)
     }
 
+    val dismissFocusRequester = remember { FocusRequester() }
+    val onDialogPress =
+        rememberUpdatedState(
+            {
+                if (timeoutFocused) {
+                    commitTimeoutDraft()
+                }
+                // TextField captures focus, so clearFocus() without a new target is a no-op.
+                dismissFocusRequester.requestFocus()
+                focusManager.clearFocus(force = true)
+            },
+        )
+
     val candidateConnection = connections.firstOrNull { it.id == candidateConnectionId }
     val databaseLabel =
         when {
@@ -166,7 +215,11 @@ fun SettingsPanel(
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .focusRequester(dismissFocusRequester)
+                        .focusable()
+                        .clearFocusOnPress(onDialogPress),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -193,7 +246,8 @@ fun SettingsPanel(
                                     end = if (settingsScrollState.maxValue > 0) 12.dp else 0.dp,
                                 )
                                 .verticalScroll(settingsScrollState)
-                                .padding(bottom = 12.dp),
+                                .padding(bottom = 12.dp)
+                                .clearFocusOnPress(onDialogPress),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         loadError?.let { error ->
@@ -448,6 +502,21 @@ fun SettingsPanel(
                                 modifier =
                                     Modifier.width(120.dp)
                                         .testTag(QUERY_TIMEOUT_SECONDS_TAG)
+                                        .semantics { timeoutError?.let { error(it) } }
+                                        .onPreviewKeyEvent { event ->
+                                            // Desktop single-line fields do not run ImeAction.Done
+                                            // for a physical Enter key.
+                                            if (event.type != KeyEventType.KeyDown)
+                                                return@onPreviewKeyEvent false
+                                            if (
+                                                event.key != Key.Enter &&
+                                                    event.key != Key.NumPadEnter
+                                            ) {
+                                                return@onPreviewKeyEvent false
+                                            }
+                                            commitTimeoutDraft()
+                                            true
+                                        }
                                         .onFocusChanged { state ->
                                             if (timeoutFocused && !state.isFocused) {
                                                 commitTimeoutDraft()
@@ -460,23 +529,30 @@ fun SettingsPanel(
                                     Text("Seconds", style = MaterialTheme.typography.labelMedium)
                                 },
                                 isError = timeoutError != null,
-                                supportingText =
-                                    timeoutError?.let { error ->
-                                        {
-                                            Text(
-                                                error,
-                                                style = MaterialTheme.typography.labelSmall,
-                                            )
-                                        }
-                                    },
                                 keyboardOptions =
                                     KeyboardOptions(
                                         keyboardType = KeyboardType.Number,
                                         imeAction = ImeAction.Done,
                                     ),
                                 keyboardActions =
-                                    KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                    KeyboardActions(
+                                        onDone = {
+                                            commitTimeoutDraft()
+                                            focusManager.clearFocus(force = true)
+                                        },
+                                    ),
                             )
+                            timeoutError?.let { errorMessage ->
+                                Text(
+                                    errorMessage,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier =
+                                        Modifier.fillMaxWidth()
+                                            .padding(top = 6.dp)
+                                            .testTag(QUERY_TIMEOUT_ERROR_TAG),
+                                )
+                            }
                         }
                     }
                     if (settingsScrollState.maxValue > 0) {
