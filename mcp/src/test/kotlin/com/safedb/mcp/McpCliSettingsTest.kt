@@ -92,6 +92,61 @@ class McpCliSettingsTest {
     }
 
     @Test
+    fun settingsTimeoutParsesBoundsAndSaves() = runBlocking {
+        assertEquals(
+            McpCommand.SettingsQueryTimeout(1),
+            parseMcpArgs(arrayOf("settings", "timeout", "1")),
+        )
+        assertEquals(
+            McpCommand.SettingsQueryTimeout(120),
+            parseMcpArgs(arrayOf("settings", "timeout", "120")),
+        )
+        assertEquals(
+            McpCommand.SettingsQueryTimeout(45),
+            parseMcpArgs(arrayOf("settings", "timeout", " 45 ")),
+        )
+
+        val service = RecordingSafeDbService()
+        service.settings =
+            Settings(
+                blockedSchemas = listOf("audit"),
+                queryRiskGate = QueryRiskGate.Flexible,
+                defaultConnectionId = "c1",
+                defaultSchema = "public",
+            )
+        val io = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                parseMcpArgs(arrayOf("settings", "timeout", "45")),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals(45, service.settings.queryTimeoutSeconds)
+        assertEquals(QueryRiskGate.Flexible, service.settings.queryRiskGate)
+        assertEquals(listOf("audit"), service.settings.blockedSchemas)
+        assertEquals("c1", service.settings.defaultConnectionId)
+        assertEquals("public", service.settings.defaultSchema)
+        assertEquals("query_timeout_seconds: 45\n", io.stdout.toString())
+    }
+
+    @Test
+    fun settingsTimeoutRejectsOutOfRangeAndNonIntegers() {
+        listOf("0", "121", "-1", "10.5", "abc", " ", "1e1").forEach { raw ->
+            val error =
+                assertFailsWith<McpCliUsageException>("Expected rejection for '$raw'") {
+                    parseMcpArgs(arrayOf("settings", "timeout", raw))
+                }
+            assertEquals(
+                "Query timeout must be a whole number of seconds from 1 to 120",
+                error.message,
+            )
+        }
+    }
+
+    @Test
     fun settingsRiskGateRejectsUnknownGate() {
         val error =
             assertFailsWith<McpCliUsageException> {
@@ -295,6 +350,7 @@ class McpCliSettingsTest {
                 arrayOf("settings", "unblock-schema", "--flag"),
                 arrayOf("settings", "unblock-schema", " "),
                 arrayOf("settings", "timeout"),
+                arrayOf("settings", "timeout", "45", "extra"),
                 arrayOf("settings", "unknown"),
             )
 

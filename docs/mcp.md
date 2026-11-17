@@ -45,7 +45,7 @@ On Windows, `list_connections` is the same list the UI uses. On macOS, MCP conne
 
 `SAFEDB_KEYCHAIN_BACKEND` remains a store-selection switch (including `disabled` for in-process tests). It is not how users pass connection details. `setup` / `connections add` refuse to save a connection when it is `disabled`, because passwords would exist only in that process's memory. If `connections test` then fails because that override is set, unset `SAFEDB_KEYCHAIN_BACKEND` so the saved password can be read; do not add the connection again.
 
-`query_risk_gate`, `query_timeout_seconds`, and `blocked_schemas` come from `settings.json` in that same data directory (default gate `Standard`; default query timeout 10 seconds). `query_risk_gate` and `blocked_schemas` are configurable via `safe-db-mcp settings` or, on Windows, the desktop Settings screen; there is still no MCP tool to change them. `query_timeout_seconds` is written by the desktop Settings screen, and there is still no MCP command to change it. On Windows, MCP shares the desktop settings file, so a Settings change applies there too. On macOS and Linux, MCP has its own `settings.json` and stays at 10 seconds until that file changes.
+`query_risk_gate`, `query_timeout_seconds`, and `blocked_schemas` come from `settings.json` in that same data directory (default gate `Standard`; default query timeout 10 seconds). All three are configurable via `safe-db-mcp settings` or, on Windows, the desktop Settings screen; there is still no MCP tool to change them. On Windows, MCP shares the desktop settings file, so a Settings change applies there too. On macOS and Linux, MCP has its own `settings.json`.
 
 ## CLI
 
@@ -62,6 +62,7 @@ safe-db-mcp connections delete <id>
 safe-db-mcp connections test [<id>]
 safe-db-mcp settings
 safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>
+safe-db-mcp settings timeout <seconds>
 safe-db-mcp settings default-connection <id> [--default-schema <schema>]
 safe-db-mcp settings clear-default-connection
 safe-db-mcp settings block-schema <schema>
@@ -95,7 +96,7 @@ safe-db-mcp setup --dialect mysql --database app --username readonly --password-
 
 `connections test [<id>]` tests one saved connection, or every saved connection when `<id>` is omitted, with the same ~10s driver connect timeout as `setup`. It prints `OK` or `FAIL` per connection and never prints a password. If `SAFEDB_KEYCHAIN_BACKEND=disabled` is overriding the persisted store, the `FAIL` message says to unset that variable rather than add the connection again.
 
-`safe-db-mcp settings` with no subcommand is `settings show`. It prints `query_risk_gate`, `query_timeout_seconds`, `default_connection_id`, `default_schema`, and `blocked_schemas`. `risk-gate` writes the stored gate. `default-connection` also stores the optional `--default-schema`; `clear-default-connection` clears both. `block-schema` appends a schema and `unblock-schema` removes it.
+`safe-db-mcp settings` with no subcommand is `settings show`. It prints `query_risk_gate`, `query_timeout_seconds`, `default_connection_id`, `default_schema`, and `blocked_schemas`. `risk-gate` writes the stored gate. `timeout` writes `query_timeout_seconds` as a whole number from 1 to 120; connect and schema introspection stay on their fixed limits. `default-connection` also stores the optional `--default-schema`; `clear-default-connection` clears both. `block-schema` appends a schema and `unblock-schema` removes it.
 
 `recipes list` prints `id  name  defaultMode  N fields  updatedAt` per recipe, or `No recipes.` `recipes import` requires an absolute regular file (UTF-8, at most 1 MiB); the store validates and versions it, renames duplicates, and assigns a new id. `recipes export <recipe_id>` prints the recipe JSON to stdout. Recipes contain no credentials.
 

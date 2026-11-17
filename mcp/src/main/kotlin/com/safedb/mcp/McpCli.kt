@@ -16,6 +16,7 @@ internal const val MCP_USAGE =
        safe-db-mcp connections test [<id>]
        safe-db-mcp settings [show]
        safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>
+       safe-db-mcp settings timeout <seconds>
        safe-db-mcp settings default-connection <id> [--default-schema <schema>]
        safe-db-mcp settings clear-default-connection
        safe-db-mcp settings block-schema <schema>
@@ -59,6 +60,8 @@ internal sealed interface McpCommand {
     data object SettingsShow : McpCommand
 
     data class SettingsRiskGate(val gate: QueryRiskGate) : McpCommand
+
+    data class SettingsQueryTimeout(val seconds: Int) : McpCommand
 
     data class SettingsDefaultConnection(
         val connectionId: String,
@@ -150,6 +153,7 @@ internal suspend fun executeMcpCommand(
             is McpCommand.ConnectionsTest -> testConnections(command.id, service, io)
             McpCommand.SettingsShow -> showSettings(service, io)
             is McpCommand.SettingsRiskGate -> setRiskGate(command.gate, service, io)
+            is McpCommand.SettingsQueryTimeout -> setQueryTimeout(command.seconds, service, io)
             is McpCommand.SettingsDefaultConnection ->
                 setDefaultConnection(command.connectionId, command.defaultSchema, service, io)
             McpCommand.SettingsClearDefaultConnection -> clearDefaultConnection(service, io)
