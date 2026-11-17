@@ -178,17 +178,14 @@ fun SettingsPanel(
     }
 
     val dismissFocusRequester = remember { FocusRequester() }
-    val onDialogPress =
-        rememberUpdatedState(
-            {
-                if (timeoutFocused) {
-                    commitTimeoutDraft()
-                }
-                // TextField captures focus, so clearFocus() without a new target is a no-op.
-                dismissFocusRequester.requestFocus()
-                focusManager.clearFocus(force = true)
-            },
-        )
+    val onDialogPress = rememberUpdatedState {
+        if (timeoutFocused) {
+            commitTimeoutDraft()
+        }
+        // TextField captures focus, so clearFocus() without a new target is a no-op.
+        dismissFocusRequester.requestFocus()
+        focusManager.clearFocus(force = true)
+    }
 
     val candidateConnection = connections.firstOrNull { it.id == candidateConnectionId }
     val databaseLabel =
