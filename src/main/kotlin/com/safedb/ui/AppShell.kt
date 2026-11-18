@@ -9,6 +9,7 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -68,6 +69,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -765,6 +767,8 @@ private fun LogoMark() {
     }
 }
 
+internal const val SIDEBAR_STATUS_TAG = "sidebar-status"
+
 @Composable
 private fun SidebarStatusDot(connected: Boolean, dotSize: Dp) {
     Box(
@@ -773,8 +777,7 @@ private fun SidebarStatusDot(connected: Boolean, dotSize: Dp) {
                 .clip(RoundedCornerShape(50))
                 .background(
                     if (connected) SafeDbTheme.colors.success else MaterialTheme.colorScheme.error,
-                )
-                .semantics { contentDescription = statusLabel(connected) },
+                ),
     )
 }
 
@@ -785,13 +788,34 @@ private fun SidebarStatusTooltip(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    // Non-persistent TooltipState.dismiss() hides the popup but does not cancel the mutex
+    // job, so the second hover (the green "Connected" case after a red hover) never shows.
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    LaunchedEffect(hovered) {
+        if (hovered) {
+            tooltipState.show(MutatePriority.UserInput)
+        } else {
+            tooltipState.dismiss()
+        }
+    }
     TooltipBox(
         positionProvider =
             TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         tooltip = { PlainTooltip { Text(statusLabel(connected)) } },
-        state = rememberTooltipState(),
+        state = tooltipState,
+        enableUserInput = false,
     ) {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) { content() }
+        Box(
+            modifier =
+                modifier.hoverable(interactionSource).testTag(SIDEBAR_STATUS_TAG).semantics {
+                    contentDescription = statusLabel(connected)
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
     }
 }
 
