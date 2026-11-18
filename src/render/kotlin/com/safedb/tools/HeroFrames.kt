@@ -19,6 +19,8 @@ import com.safedb.viewmodel.AppViewModel
 // /tmp/safedb-preview/hero/frame-NN.png (dark, Control Blue). Frame NN applies the first NN build
 // steps; the last frame runs the query.
 private const val TOTAL_STEPS = 7
+private const val HERO_WIDTH = 1600
+private const val HERO_HEIGHT = 1040
 
 private fun applySteps(state: AppState, vm: AppViewModel, steps: Int) {
     val selection = SchemaSelectionIntent("public", SchemaSelectionSource.User)
@@ -63,7 +65,12 @@ private fun applySteps(state: AppState, vm: AppViewModel, steps: Int) {
 
 fun main() {
     for (step in 0 until TOTAL_STEPS) {
-        render(name = "hero/frame-%02d".format(step), isDark = true) { state, vm ->
+        render(
+            name = "hero/frame-%02d".format(step),
+            isDark = true,
+            width = HERO_WIDTH,
+            height = HERO_HEIGHT,
+        ) { state, vm ->
             applySteps(state, vm, step)
         }
     }
