@@ -531,6 +531,7 @@ private fun renderConnectionsForm(
                 route = AppRoute.Connections,
                 isDark = isDark,
                 collapsed = false,
+                connected = false,
                 onCollapsedChange = {},
                 onNavigate = {},
                 onOpenSettings = {},

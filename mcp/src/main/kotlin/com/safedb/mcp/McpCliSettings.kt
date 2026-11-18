@@ -12,6 +12,10 @@ internal fun parseSettingsCommand(args: Array<String>): McpCommand {
             if (args.size != 3) throw McpCliUsageException()
             McpCommand.SettingsRiskGate(parseRiskGate(args[2]))
         }
+        "timeout" -> {
+            if (args.size != 3) throw McpCliUsageException()
+            McpCommand.SettingsQueryTimeout(parseTimeoutSeconds(args[2]))
+        }
         "default-connection" -> parseDefaultConnection(args)
         "clear-default-connection" -> {
             if (args.size != 2) throw McpCliUsageException()
@@ -50,6 +54,21 @@ private fun parseDefaultConnection(args: Array<String>): McpCommand.SettingsDefa
     return McpCommand.SettingsDefaultConnection(args[2], defaultSchema)
 }
 
+private fun parseTimeoutSeconds(raw: String): Int {
+    val seconds = raw.trim().toIntOrNull()
+    if (
+        seconds == null ||
+            seconds < Settings.MIN_QUERY_TIMEOUT_SECONDS ||
+            seconds > Settings.MAX_QUERY_TIMEOUT_SECONDS
+    ) {
+        throw McpCliUsageException(
+            "Query timeout must be a whole number of seconds from " +
+                "${Settings.MIN_QUERY_TIMEOUT_SECONDS} to ${Settings.MAX_QUERY_TIMEOUT_SECONDS}",
+        )
+    }
+    return seconds
+}
+
 private fun parseRiskGate(raw: String): QueryRiskGate =
     when (raw.trim().lowercase()) {
         "cautious" -> QueryRiskGate.Cautious
@@ -65,9 +84,16 @@ private fun parseRiskGate(raw: String): QueryRiskGate =
 internal suspend fun showSettings(service: SafeDbService, io: CliIo): Int {
     val settings = normalizeSettings(service.getSettings())
     io.print("query_risk_gate: ${settings.queryRiskGate}")
+    io.print("query_timeout_seconds: ${settings.queryTimeoutSeconds}")
     io.print("default_connection_id: ${settings.defaultConnectionId ?: "(none)"}")
     io.print("default_schema: ${settings.defaultSchema ?: "(none)"}")
     io.print("blocked_schemas: ${blockedSchemasText(settings.blockedSchemas)}")
+    return 0
+}
+
+internal suspend fun setQueryTimeout(seconds: Int, service: SafeDbService, io: CliIo): Int {
+    val updated = updateSettings(service) { it.copy(queryTimeoutSeconds = seconds) }
+    io.print("query_timeout_seconds: ${updated.queryTimeoutSeconds}")
     return 0
 }
 

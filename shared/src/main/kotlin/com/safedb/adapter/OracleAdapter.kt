@@ -181,7 +181,7 @@ object OracleAdapter {
             try {
                 val result =
                     prepareStatement(conn, compiled, Dialect.Oracle).use { ps ->
-                        ps.queryTimeout = timeoutMs / 1000
+                        ps.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                         ps.executeQuery().use { rs ->
                             decodeQueryResult(rs, compiled.sql, Dialect.Oracle)
                         }
@@ -195,13 +195,18 @@ object OracleAdapter {
             }
         }
 
-    fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult {
+    fun explain(
+        dataSource: HikariDataSource,
+        compiled: CompiledQuery,
+        timeoutMs: Int,
+    ): ExplainResult {
         // PLAN_TABLE statement IDs remain limited to 30 bytes on supported Oracle versions.
         val statementId = "safedb_${UUID.randomUUID().toString().replace("-", "").take(23)}"
         return dataSource.connection.use { conn ->
             val explainSql = "EXPLAIN PLAN SET STATEMENT_ID = '$statementId' FOR ${compiled.sql}"
-            prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Oracle).use {
-                it.execute()
+            prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.Oracle).use { ps ->
+                ps.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
+                ps.execute()
             }
             var cleanupFailure: Throwable? = null
             val planRows =
@@ -215,6 +220,7 @@ object OracleAdapter {
                                 .trimIndent(),
                         )
                         .use { ps ->
+                            ps.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                             ps.setString(1, statementId)
                             ps.executeQuery().use { rs ->
                                 buildList {
@@ -249,6 +255,7 @@ object OracleAdapter {
                 } finally {
                     runCatching {
                         conn.prepareStatement("DELETE FROM plan_table WHERE statement_id = ?").use {
+                            it.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                             it.setString(1, statementId)
                             it.execute()
                         }

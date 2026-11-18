@@ -26,6 +26,7 @@ class McpCliSettingsTest {
         )
         assertEquals(
             "query_risk_gate: Standard\n" +
+                "query_timeout_seconds: 10\n" +
                 "default_connection_id: (none)\n" +
                 "default_schema: (none)\n" +
                 "blocked_schemas: (none)\n",
@@ -37,6 +38,7 @@ class McpCliSettingsTest {
             Settings(
                 blockedSchemas = listOf("pg_catalog", "audit"),
                 queryRiskGate = QueryRiskGate.Flexible,
+                queryTimeoutSeconds = 45,
                 defaultConnectionId = "c1",
                 defaultSchema = "public",
             )
@@ -47,6 +49,7 @@ class McpCliSettingsTest {
         )
         assertEquals(
             "query_risk_gate: Flexible\n" +
+                "query_timeout_seconds: 45\n" +
                 "default_connection_id: c1\n" +
                 "default_schema: public\n" +
                 "blocked_schemas: pg_catalog, audit\n",
@@ -86,6 +89,61 @@ class McpCliSettingsTest {
         )
         assertEquals(QueryRiskGate.Flexible, service.settings.queryRiskGate)
         assertEquals("query_risk_gate: Flexible\n", io.stdout.toString())
+    }
+
+    @Test
+    fun settingsTimeoutParsesBoundsAndSaves() = runBlocking {
+        assertEquals(
+            McpCommand.SettingsQueryTimeout(1),
+            parseMcpArgs(arrayOf("settings", "timeout", "1")),
+        )
+        assertEquals(
+            McpCommand.SettingsQueryTimeout(120),
+            parseMcpArgs(arrayOf("settings", "timeout", "120")),
+        )
+        assertEquals(
+            McpCommand.SettingsQueryTimeout(45),
+            parseMcpArgs(arrayOf("settings", "timeout", " 45 ")),
+        )
+
+        val service = RecordingSafeDbService()
+        service.settings =
+            Settings(
+                blockedSchemas = listOf("audit"),
+                queryRiskGate = QueryRiskGate.Flexible,
+                defaultConnectionId = "c1",
+                defaultSchema = "public",
+            )
+        val io = BufferCliIo()
+        assertEquals(
+            0,
+            executeMcpCommand(
+                parseMcpArgs(arrayOf("settings", "timeout", "45")),
+                service,
+                io,
+                tty = false,
+            ),
+        )
+        assertEquals(45, service.settings.queryTimeoutSeconds)
+        assertEquals(QueryRiskGate.Flexible, service.settings.queryRiskGate)
+        assertEquals(listOf("audit"), service.settings.blockedSchemas)
+        assertEquals("c1", service.settings.defaultConnectionId)
+        assertEquals("public", service.settings.defaultSchema)
+        assertEquals("query_timeout_seconds: 45\n", io.stdout.toString())
+    }
+
+    @Test
+    fun settingsTimeoutRejectsOutOfRangeAndNonIntegers() {
+        listOf("0", "121", "-1", "10.5", "abc", " ", "1e1").forEach { raw ->
+            val error =
+                assertFailsWith<McpCliUsageException>("Expected rejection for '$raw'") {
+                    parseMcpArgs(arrayOf("settings", "timeout", raw))
+                }
+            assertEquals(
+                "Query timeout must be a whole number of seconds from 1 to 120",
+                error.message,
+            )
+        }
     }
 
     @Test
@@ -291,6 +349,8 @@ class McpCliSettingsTest {
                 arrayOf("settings", "unblock-schema"),
                 arrayOf("settings", "unblock-schema", "--flag"),
                 arrayOf("settings", "unblock-schema", " "),
+                arrayOf("settings", "timeout"),
+                arrayOf("settings", "timeout", "45", "extra"),
                 arrayOf("settings", "unknown"),
             )
 

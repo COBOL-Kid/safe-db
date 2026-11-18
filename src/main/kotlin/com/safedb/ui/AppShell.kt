@@ -9,6 +9,7 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -40,10 +41,16 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.WbSunny
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +69,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -173,6 +181,11 @@ internal fun AppShellContent(
     val recipeApplyNotice by viewModel.recipeApplyNotice.collectAsState()
     val isDark = settings.isDark()
     val activeConnection = connections.firstOrNull { it.id == activeConnectionId }
+    val databaseReachable by viewModel.databaseReachable.collectAsState()
+    // Keyed on id plus credentials so a list reload of the same connection does not re-probe.
+    LaunchedEffect(activeConnection?.id, activeConnection?.credentialFingerprint()) {
+        viewModel.refreshDatabaseReachability(activeConnection)
+    }
     val rawSchemaHandlers =
         remember(settings, activeConnectionId) {
             connectionSchemaHandlers(appState, viewModel, settings, activeConnectionId)
@@ -261,6 +274,7 @@ internal fun AppShellContent(
             route = route,
             isDark = isDark,
             collapsed = sidebarCollapsed,
+            connected = databaseReachable,
             onCollapsedChange = onSidebarCollapsedChange,
             onNavigate = appState::navigate,
             onOpenSettings = appState::openSettings,
@@ -405,6 +419,7 @@ internal fun Sidebar(
     route: AppRoute,
     isDark: Boolean,
     collapsed: Boolean,
+    connected: Boolean,
     onCollapsedChange: (Boolean) -> Unit,
     onNavigate: (AppRoute) -> Unit,
     onOpenSettings: () -> Unit,
@@ -527,6 +542,7 @@ internal fun Sidebar(
             SidebarUtilities(
                 collapsed = layoutCollapsed,
                 isDark = isDark,
+                connected = connected,
                 statusVisible = revealStep >= SidebarRevealStatus,
                 settingsVisible = revealStep >= SidebarRevealSettings,
                 themeVisible = revealStep >= SidebarRevealTheme,
@@ -609,6 +625,7 @@ private fun SidebarHeader(
 private fun SidebarUtilities(
     collapsed: Boolean,
     isDark: Boolean,
+    connected: Boolean,
     statusVisible: Boolean,
     settingsVisible: Boolean,
     themeVisible: Boolean,
@@ -639,7 +656,12 @@ private fun SidebarUtilities(
                 visible = compactRevealStep >= SidebarCompactRevealStatus,
                 modifier = Modifier.size(32.dp),
             ) {
-                SidebarStatusIndicator()
+                SidebarStatusTooltip(
+                    connected = connected,
+                    modifier = Modifier.size(32.dp).clip(ChipShape),
+                ) {
+                    SidebarStatusDot(connected = connected, dotSize = 8.dp)
+                }
             }
             SidebarFade(
                 visible = compactRevealStep >= SidebarCompactRevealSettings,
@@ -670,36 +692,36 @@ private fun SidebarUtilities(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SidebarFade(visible = statusVisible, modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().padding(start = 4.dp),
+                    SidebarStatusTooltip(
+                        connected = connected,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Box(
-                            modifier =
-                                Modifier.size(7.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(SafeDbTheme.colors.success),
-                        )
-                        // Single-line: during the width animation this slot can shrink to ~0 wide,
-                        // and wrapped text would grow tall enough to squeeze the last nav rows
-                        // (Map/History icons visibly shift up).
-                        Column {
-                            Text(
-                                "Safe Read Mode",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Medium,
-                                color = c.onNavigation,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip,
-                            )
-                            Text(
-                                "No-lock · Indexed joins",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = c.onNavigationMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip,
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(start = 4.dp),
+                        ) {
+                            SidebarStatusDot(connected = connected, dotSize = 7.dp)
+                            // Single-line: during the width animation this slot can shrink to ~0
+                            // wide, and wrapped text would grow tall enough to squeeze the last
+                            // nav rows (Map/History icons visibly shift up).
+                            Column {
+                                Text(
+                                    "Safe Read Mode",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = c.onNavigation,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                )
+                                Text(
+                                    "No-lock · Indexed joins",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = c.onNavigationMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                )
+                            }
                         }
                     }
                 }
@@ -745,19 +767,60 @@ private fun LogoMark() {
     }
 }
 
+internal const val SIDEBAR_STATUS_TAG = "sidebar-status"
+
 @Composable
-private fun SidebarStatusIndicator() {
-    val c = SafeDbTheme.colors
+private fun SidebarStatusDot(connected: Boolean, dotSize: Dp) {
     Box(
         modifier =
-            Modifier.size(32.dp).clip(ChipShape).semantics {
-                contentDescription = "Safe Read Mode"
-            },
-        contentAlignment = Alignment.Center,
+            Modifier.size(dotSize)
+                .clip(RoundedCornerShape(50))
+                .background(
+                    if (connected) SafeDbTheme.colors.success else MaterialTheme.colorScheme.error,
+                ),
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SidebarStatusTooltip(
+    connected: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    // Non-persistent TooltipState.dismiss() hides the popup but does not cancel the mutex
+    // job, so the second hover (the green "Connected" case after a red hover) never shows.
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    LaunchedEffect(hovered) {
+        if (hovered) {
+            tooltipState.show(MutatePriority.UserInput)
+        } else {
+            tooltipState.dismiss()
+        }
+    }
+    TooltipBox(
+        positionProvider =
+            TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(statusLabel(connected)) } },
+        state = tooltipState,
+        enableUserInput = false,
     ) {
-        Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(c.success))
+        Box(
+            modifier =
+                modifier.hoverable(interactionSource).testTag(SIDEBAR_STATUS_TAG).semantics {
+                    contentDescription = statusLabel(connected)
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
     }
 }
+
+private fun statusLabel(connected: Boolean): String =
+    if (connected) "Connected" else "Not connected"
 
 @Composable
 private fun SidebarIconButton(

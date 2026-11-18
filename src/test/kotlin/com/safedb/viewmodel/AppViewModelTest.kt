@@ -45,6 +45,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -128,6 +129,160 @@ class AppViewModelTest {
             advanceUntilIdle()
 
             assertTrue(service.locked)
+        }
+
+    @Test
+    fun refreshDatabaseReachabilityClearsPreviousSuccessAndSkipsNullConnection() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                assertFalse(viewModel.databaseReachable.value)
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(1, service.testConnectionCalls)
+
+                viewModel.refreshDatabaseReachability(null)
+                advanceTimeBy(ReachabilityPollInterval)
+                runCurrent()
+
+                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(1, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun refreshDatabaseReachabilityBecomesTrueAfterSuccessfulProbe() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+
+                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(1, service.testConnectionCalls)
+                assertNull(service.testConnectionPassword)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun refreshDatabaseReachabilityStaysFalseAfterFailedProbe() =
+        runTest(dispatcher) {
+            val service =
+                FakeSafeDbService(
+                    testConnectionOutcome = Result.failure(IllegalStateException("denied")),
+                )
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+
+                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(1, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun refreshDatabaseReachabilityIgnoresResultFromReplacedConnection() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service =
+                FakeSafeDbService(
+                    testConnectionGate = gate,
+                    testConnectionStarted = started,
+                    testConnectionOutcome = Result.success("ok"),
+                )
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+                assertTrue(started.isCompleted)
+                assertFalse(viewModel.databaseReachable.value)
+
+                viewModel.refreshDatabaseReachability(null)
+                gate.complete(Unit)
+                advanceTimeBy(ReachabilityPollInterval)
+                runCurrent()
+
+                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(1, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun refreshDatabaseReachabilityPollsTheSameConnectionAgain() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(1, service.testConnectionCalls)
+
+                advanceTimeBy(ReachabilityPollInterval)
+                runCurrent()
+
+                assertEquals(2, service.testConnectionCalls)
+                assertTrue(viewModel.databaseReachable.value)
+                assertNull(service.testConnectionPassword)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun refreshDatabaseReachabilityStaysReachableUntilALaterFailedPollReturns() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(1, service.testConnectionCalls)
+
+                val gate = CompletableDeferred<Unit>()
+                service.testConnectionGate = gate
+                service.testConnectionOutcome = Result.failure(IllegalStateException("down"))
+
+                advanceTimeBy(ReachabilityPollInterval)
+                runCurrent()
+
+                assertEquals(2, service.testConnectionCalls)
+                assertTrue(viewModel.databaseReachable.value)
+
+                gate.complete(Unit)
+                runCurrent()
+
+                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(2, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
         }
 
     @Test
@@ -777,8 +932,18 @@ private class FakeSafeDbService(
     private val connectionsLoadGate: CompletableDeferred<Unit>? = null,
     private val successfulRiskGate: QueryRiskGate = QueryRiskGate.Standard,
     private val schemaTables: List<TableInfo> = listOf(sampleTable()),
+    var testConnectionGate: CompletableDeferred<Unit>? = null,
+    private val testConnectionStarted: CompletableDeferred<Unit>? = null,
+    var testConnectionOutcome: Result<String> =
+        Result.failure(UnsupportedOperationException("testConnection")),
 ) : FakeSafeDbServiceSupport() {
     var locked = false
+    var testConnectionCalls = 0
+        private set
+
+    var testConnectionPassword: String? = null
+        private set
+
     var queryAttempts = 0
         private set
 
@@ -812,6 +977,14 @@ private class FakeSafeDbService(
 
     override suspend fun lockCredentials() {
         locked = true
+    }
+
+    override suspend fun testConnection(def: ConnectionDef, password: String?): String {
+        testConnectionCalls += 1
+        testConnectionPassword = password
+        testConnectionStarted?.complete(Unit)
+        testConnectionGate?.await()
+        return testConnectionOutcome.getOrThrow()
     }
 
     override suspend fun getSchema(connectionId: String): Schema {

@@ -35,7 +35,7 @@ internal interface ConnectedAdapter {
 
     suspend fun introspect(): Schema
 
-    suspend fun explain(compiled: CompiledQuery): ExplainResult
+    suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult
 
     suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult
 
@@ -51,8 +51,8 @@ private class TimeoutAwareAdapter(private val adapter: Adapter) : ConnectedAdapt
 
     override suspend fun introspect(): Schema = Adapter.introspectWithTimeout(adapter)
 
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-        Adapter.explainWithTimeout(adapter, compiled)
+    override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
+        Adapter.explainWithTimeout(adapter, compiled, timeoutMs)
 
     override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
         adapter.executeQuery(compiled, timeoutMs)
@@ -372,8 +372,8 @@ internal constructor(
     }
 
     private class AdapterQueryRunner(private val adapter: ConnectedAdapter) : QueryRunner {
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-            adapter.explain(compiled)
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
+            adapter.explain(compiled, timeoutMs)
 
         override suspend fun executeQuery(
             compiled: CompiledQuery,

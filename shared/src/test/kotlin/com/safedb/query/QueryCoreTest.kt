@@ -92,6 +92,33 @@ class QueryCoreTest {
     }
 
     @Test
+    fun queryExecutionUsesTheStoredQueryTimeout() = runBlocking {
+        val configured = StubRunner()
+        assertIs<QueryCoreOutcome.Success>(
+            runQueryCore(
+                configured,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default().copy(queryTimeoutSeconds = 30),
+            ),
+        )
+        assertEquals(listOf(30_000), configured.timeouts)
+
+        val defaulted = StubRunner()
+        assertIs<QueryCoreOutcome.Success>(
+            runQueryCore(
+                defaulted,
+                sampleConnection(),
+                sampleSpec(),
+                sampleSchema(),
+                Settings.default(),
+            ),
+        )
+        assertEquals(listOf(10_000), defaulted.timeouts)
+    }
+
+    @Test
     fun disabledRiskModeSkipsExplainAndRunsWithoutConfirmation() = runBlocking {
         val runner =
             StubRunner(
@@ -255,7 +282,10 @@ class QueryCoreTest {
             object : QueryRunner {
                 var executeCalls = 0
 
-                override suspend fun explain(compiled: CompiledQuery): ExplainResult {
+                override suspend fun explain(
+                    compiled: CompiledQuery,
+                    timeoutMs: Int,
+                ): ExplainResult {
                     throw SQLException(dump)
                 }
 
@@ -650,8 +680,10 @@ class QueryCoreTest {
             object : QueryRunner {
                 var executeCalls = 0
 
-                override suspend fun explain(compiled: CompiledQuery): ExplainResult =
-                    error("planner offline")
+                override suspend fun explain(
+                    compiled: CompiledQuery,
+                    timeoutMs: Int,
+                ): ExplainResult = error("planner offline")
 
                 override suspend fun executeQuery(
                     compiled: CompiledQuery,
@@ -702,8 +734,9 @@ class QueryCoreTest {
         var executeCalls = 0
         var explainCalls = 0
         val calls = mutableListOf<String>()
+        val timeouts = mutableListOf<Int>()
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult {
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult {
             explainCalls++
             calls += "explain"
             return explainResult
@@ -715,6 +748,7 @@ class QueryCoreTest {
         ): Outcome<QueryResult> {
             executeCalls++
             calls += "execute"
+            timeouts += timeoutMs
             return execute
         }
     }

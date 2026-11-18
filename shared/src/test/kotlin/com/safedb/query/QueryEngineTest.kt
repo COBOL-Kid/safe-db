@@ -1880,7 +1880,8 @@ class QueryEngineTest {
     ) : QueryRunner {
         var executeCalls = 0
 
-        override suspend fun explain(compiled: CompiledQuery): ExplainResult = explainResult
+        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
+            explainResult
 
         override suspend fun executeQuery(
             compiled: CompiledQuery,

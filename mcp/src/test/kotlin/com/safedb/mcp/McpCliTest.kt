@@ -579,6 +579,7 @@ class McpCliTest {
                 "safe-db-mcp settings risk-gate <cautious|standard|flexible|disabled>",
             ),
         )
+        assertTrue(MCP_USAGE.contains("safe-db-mcp settings timeout <seconds>"))
         assertTrue(
             MCP_USAGE.contains(
                 "safe-db-mcp settings default-connection <id> [--default-schema <schema>]",

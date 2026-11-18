@@ -12,6 +12,7 @@ import com.safedb.model.Schema
 import com.safedb.model.SortDirection
 import com.zaxxer.hikari.HikariDataSource
 import java.sql.Connection
+import java.sql.PreparedStatement
 import java.sql.SQLException
 import kotlin.random.Random
 
@@ -277,7 +278,7 @@ object Db2Adapter {
             try {
                 val result =
                     prepareStatement(conn, compiled, Dialect.Db2).use { ps ->
-                        ps.queryTimeout = timeoutMs / 1000
+                        ps.queryTimeout = jdbcQueryTimeoutSeconds(timeoutMs)
                         ps.executeQuery().use { rs ->
                             decodeQueryResult(rs, compiled.sql, Dialect.Db2)
                         }
@@ -291,24 +292,47 @@ object Db2Adapter {
             }
         }
 
-    fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult =
+    private class TimedJdbc(
+        private val conn: Connection,
+        private val timeoutSeconds: Int,
+    ) {
+        fun prepare(sql: String): PreparedStatement =
+            conn.prepareStatement(sql).also { it.queryTimeout = timeoutSeconds }
+
+        fun statement(): java.sql.Statement =
+            conn.createStatement().also { it.queryTimeout = timeoutSeconds }
+    }
+
+    fun explain(
+        dataSource: HikariDataSource,
+        compiled: CompiledQuery,
+        timeoutMs: Int = DEFAULT_TIMEOUT_MS,
+    ): ExplainResult =
         dataSource.connection.use { conn ->
+            val timed = TimedJdbc(conn, jdbcQueryTimeoutSeconds(timeoutMs))
             conn.isReadOnly = true
             // SYSCAT exists on LUW; z/OS exposes only SYSIBM, so the introspection probe
             // doubles as the EXPLAIN platform selector.
-            if (conn.syscatAvailable()) explainLuw(conn, compiled) else explainZos(conn, compiled)
+            if (conn.syscatAvailable()) {
+                explainLuw(timed, compiled)
+            } else {
+                explainZos(timed, compiled)
+            }
         }
 
-    private fun explainLuw(conn: Connection, compiled: CompiledQuery): ExplainResult {
+    private fun explainLuw(
+        timed: TimedJdbc,
+        compiled: CompiledQuery,
+    ): ExplainResult {
         val queryNo = Random.nextInt(100_000, Int.MAX_VALUE)
         try {
-            conn.executeExplainPlan(compiled, queryNo)
+            timed.executeExplainPlan(compiled, queryNo)
         } catch (e: SQLException) {
             if (e.isUndefinedObject()) return missingLuwExplainTables()
             throw e
         }
         val prefix =
-            when (val resolved = conn.resolveLuwExplainPrefix()) {
+            when (val resolved = timed.resolveLuwExplainPrefix()) {
                 // EXPLAIN PLAN already wrote these rows, so a failed probe returns without deleting
                 // them.
                 LuwExplainPrefix.Unreadable -> return explainTablesUnreadable()
@@ -318,7 +342,7 @@ object Db2Adapter {
         var cleanupFailure: Throwable? = null
         var statementCost: Double? = null
         val explainKey = runCatching {
-            conn.queryLuwExplainKey(prefix, queryNo)
+            timed.queryLuwExplainKey(prefix, queryNo)
         }
             .getOrElse {
                 cleanupFailure = it
@@ -329,13 +353,13 @@ object Db2Adapter {
                 if (explainKey == null) {
                     emptyList()
                 } else {
-                    statementCost = conn.queryLuwStatementCost(prefix, explainKey)
-                    conn.queryLuwExplainRows(prefix, explainKey)
+                    statementCost = timed.queryLuwStatementCost(prefix, explainKey)
+                    timed.queryLuwExplainRows(prefix, explainKey)
                 }
             } finally {
                 // Mirror OracleAdapter: a failed cleanup discards the plan evidence.
                 // Delete even when the key lookup failed, so an inserted QUERYNO does not remain.
-                conn.deleteLuwExplain(prefix, queryNo, explainKey).onFailure {
+                timed.deleteLuwExplain(prefix, queryNo, explainKey).onFailure {
                     if (cleanupFailure == null && !it.isUndefinedObject()) cleanupFailure = it
                 }
             }
@@ -358,10 +382,13 @@ object Db2Adapter {
             )
     }
 
-    private fun explainZos(conn: Connection, compiled: CompiledQuery): ExplainResult {
+    private fun explainZos(
+        timed: TimedJdbc,
+        compiled: CompiledQuery,
+    ): ExplainResult {
         val sqlId =
             try {
-                conn.currentSqlId()
+                timed.currentSqlId()
             } catch (_: SQLException) {
                 null
             }
@@ -379,7 +406,7 @@ object Db2Adapter {
                 )
         val planTable = "$qualifier.PLAN_TABLE"
         val statementTable = "$qualifier.DSN_STATEMNT_TABLE"
-        when (conn.explainTablePresence("SELECT 1 FROM $planTable FETCH FIRST 1 ROW ONLY")) {
+        when (timed.explainTablePresence("SELECT 1 FROM $planTable FETCH FIRST 1 ROW ONLY")) {
             ExplainTablePresence.Absent -> return missingZosPlanTable()
             ExplainTablePresence.Failed ->
                 return ExplainResult.Unavailable(
@@ -390,7 +417,7 @@ object Db2Adapter {
         }
         val queryNo = Random.nextInt(100_000, Int.MAX_VALUE)
         try {
-            conn.executeExplainPlan(compiled, queryNo)
+            timed.executeExplainPlan(compiled, queryNo)
         } catch (e: SQLException) {
             if (e.isUndefinedObject()) return missingZosPlanTable()
             throw e
@@ -399,14 +426,12 @@ object Db2Adapter {
             var cleanupFailure: Throwable? = null
             val explained =
                 try {
-                    val statementCost = conn.queryZosStatementCost(statementTable, queryNo)
-                    statementCost to conn.queryZosPlanRows(planTable, queryNo)
+                    val statementCost = timed.queryZosStatementCost(statementTable, queryNo)
+                    statementCost to timed.queryZosPlanRows(planTable, queryNo)
                 } finally {
                     // Mirror OracleAdapter: a failed cleanup discards the plan evidence.
                     runCatching {
-                        conn.prepareStatement("DELETE FROM $planTable WHERE QUERYNO = ?").use { ps
-                            ->
-                            ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+                        timed.prepare("DELETE FROM $planTable WHERE QUERYNO = ?").use { ps ->
                             ps.setInt(1, queryNo)
                             ps.execute()
                         }
@@ -414,13 +439,10 @@ object Db2Adapter {
                         .onFailure { if (!it.isUndefinedObject()) cleanupFailure = it }
                     // DSN tables are optional, so their cleanup is best-effort.
                     runCatching {
-                        conn
-                            .prepareStatement("DELETE FROM $statementTable WHERE QUERYNO = ?")
-                            .use { ps ->
-                                ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                                ps.setInt(1, queryNo)
-                                ps.execute()
-                            }
+                        timed.prepare("DELETE FROM $statementTable WHERE QUERYNO = ?").use { ps ->
+                            ps.setInt(1, queryNo)
+                            ps.execute()
+                        }
                     }
                 }
             val (statementCost, explainRows) = explained
@@ -449,9 +471,11 @@ object Db2Adapter {
     // JCC 12 reports no JDBC parameters for EXPLAIN PLAN (getParameterCount is 0). Binding
     // the statement's markers throws ERRORCODE=-4461. The markers stay in the text, and Db2
     // still explains them.
-    private fun Connection.executeExplainPlan(compiled: CompiledQuery, queryNo: Int) {
-        prepareStatement("EXPLAIN PLAN SET QUERYNO = $queryNo FOR ${compiled.sql}").use { ps ->
-            ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+    private fun TimedJdbc.executeExplainPlan(
+        compiled: CompiledQuery,
+        queryNo: Int,
+    ) {
+        prepare("EXPLAIN PLAN SET QUERYNO = $queryNo FOR ${compiled.sql}").use { ps ->
             ps.execute()
         }
     }
@@ -480,7 +504,7 @@ object Db2Adapter {
     // EXPLAIN writes under the session authorization ID, then SYSTOOLS. CURRENT SCHEMA does not
     // choose the tables, so currentSchema must not be the probe. SYSTOOLS is probed only after
     // the authorization-id tables are confirmed absent.
-    private fun Connection.resolveLuwExplainPrefix(): LuwExplainPrefix {
+    private fun TimedJdbc.resolveLuwExplainPrefix(): LuwExplainPrefix {
         val quotedAuthId =
             try {
                 sessionAuthId()?.let(::quoteDb2Ident)
@@ -505,17 +529,18 @@ object Db2Adapter {
         return selectLuwExplainPrefix(quotedAuthId, authTables, systoolsTables)
     }
 
-    private fun Connection.sessionAuthId(): String? =
-        createStatement().use { stmt ->
-            stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+    private fun TimedJdbc.sessionAuthId(): String? =
+        statement().use { stmt ->
             stmt.executeQuery("SELECT SESSION_USER FROM SYSIBM.SYSDUMMY1").use { rs ->
                 if (rs.next()) rs.getString(1)?.trim()?.takeIf(String::isNotEmpty) else null
             }
         }
 
-    private fun Connection.queryLuwExplainKey(prefix: String, queryNo: Int): LuwExplainKey? =
-        prepareStatement(luwExplainKeySql(prefix)).use { ps ->
-            ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+    private fun TimedJdbc.queryLuwExplainKey(
+        prefix: String,
+        queryNo: Int,
+    ): LuwExplainKey? =
+        prepare(luwExplainKeySql(prefix)).use { ps ->
             ps.setInt(1, queryNo)
             ps.executeQuery().use { rs ->
                 if (!rs.next() || rs.getTimestamp(2) == null) return null
@@ -536,13 +561,12 @@ object Db2Adapter {
     // section columns live on EXPLAIN_STATEMENT. Child explain tables reference that statement,
     // which references the instance ON DELETE CASCADE in EXPLAIN.DDL, so one instance delete
     // removes the plan. The unkeyed form is the fallback when the section key was not loaded.
-    private fun Connection.deleteLuwExplain(
+    private fun TimedJdbc.deleteLuwExplain(
         prefix: String,
         queryNo: Int,
         key: LuwExplainKey?,
     ): Result<Unit> = runCatching {
-        prepareStatement(luwExplainDeleteSql(prefix, key != null)).use { ps ->
-            ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+        prepare(luwExplainDeleteSql(prefix, key != null)).use { ps ->
             if (key != null) {
                 ps.setString(1, key.requester)
                 ps.setTimestamp(2, key.explainTime)
@@ -556,25 +580,24 @@ object Db2Adapter {
         }
     }
 
-    private fun Connection.explainTablePresence(sql: String): ExplainTablePresence =
+    private fun TimedJdbc.explainTablePresence(sql: String): ExplainTablePresence =
         try {
-            createStatement().use { stmt ->
-                stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                stmt.executeQuery(sql).use {}
-            }
+            statement().use { stmt -> stmt.executeQuery(sql).use {} }
             ExplainTablePresence.Present
         } catch (e: SQLException) {
             if (e.isUndefinedObject()) ExplainTablePresence.Absent else ExplainTablePresence.Failed
         }
 
-    private fun Connection.queryLuwStatementCost(prefix: String, key: LuwExplainKey): Double? =
+    private fun TimedJdbc.queryLuwStatementCost(
+        prefix: String,
+        key: LuwExplainKey,
+    ): Double? =
     // Best-effort: older explain table sets may lack EXPLAIN_STATEMENT entirely.
     runCatching {
-        prepareStatement(
+        prepare(
                 "SELECT MAX(TOTAL_COST) FROM ${prefix}EXPLAIN_STATEMENT WHERE $LUW_KEY_PREDICATE",
             )
             .use { ps ->
-                ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                 ps.bindLuwKey(key)
                 ps.executeQuery().use { rs ->
                     if (rs.next()) (rs.getObject(1) as? Number)?.toDouble() else null
@@ -583,17 +606,16 @@ object Db2Adapter {
     }
         .getOrNull()
 
-    private fun Connection.queryLuwExplainRows(
+    private fun TimedJdbc.queryLuwExplainRows(
         prefix: String,
         key: LuwExplainKey,
     ): List<Db2LuwExplainRow> {
         val operators =
-            prepareStatement(
+            prepare(
                     "SELECT OPERATOR_ID, OPERATOR_TYPE, TOTAL_COST " +
                         "FROM ${prefix}EXPLAIN_OPERATOR WHERE $LUW_KEY_PREDICATE ORDER BY OPERATOR_ID",
                 )
                 .use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                     ps.bindLuwKey(key)
                     ps.executeQuery().use { rs ->
                         buildList {
@@ -613,12 +635,11 @@ object Db2Adapter {
         // EXPLAIN_OBJECT identifies the object, not the operator. EXPLAIN_STREAM carries the
         // operator id: a data object flows from SOURCE_TYPE 'D' (SOURCE_ID -1) to TARGET_ID.
         val objectTypes = mutableMapOf<Pair<String, String>, String>()
-        prepareStatement(
+        prepare(
                 "SELECT OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE " +
                     "FROM ${prefix}EXPLAIN_OBJECT WHERE $LUW_KEY_PREDICATE",
             )
             .use { ps ->
-                ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                 ps.bindLuwKey(key)
                 ps.executeQuery().use { rs ->
                     while (rs.next()) {
@@ -634,13 +655,12 @@ object Db2Adapter {
         val parents = mutableMapOf<Int, Int>()
         val producedRows = mutableMapOf<Int, Long>()
         val objectRefs = mutableListOf<LuwObjectRef>()
-        prepareStatement(
+        prepare(
                 "SELECT SOURCE_TYPE, SOURCE_ID, TARGET_TYPE, TARGET_ID, STREAM_COUNT, " +
                     "OBJECT_SCHEMA, OBJECT_NAME FROM ${prefix}EXPLAIN_STREAM " +
                     "WHERE $LUW_KEY_PREDICATE",
             )
             .use { ps ->
-                ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                 ps.bindLuwKey(key)
                 ps.executeQuery().use { rs ->
                     while (rs.next()) {
@@ -680,12 +700,11 @@ object Db2Adapter {
             }
         val objects = objectRefs.groupBy(LuwObjectRef::operatorId)
         val predicates =
-            prepareStatement(
+            prepare(
                     "SELECT OPERATOR_ID, PREDICATE_TEXT " +
                         "FROM ${prefix}EXPLAIN_PREDICATE WHERE $LUW_KEY_PREDICATE",
                 )
                 .use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                     ps.bindLuwKey(key)
                     ps.executeQuery().use { rs ->
                         buildList {
@@ -715,26 +734,24 @@ object Db2Adapter {
         }
     }
 
-    private fun Connection.currentSqlId(): String? =
-        createStatement().use { stmt ->
-            stmt.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
+    private fun TimedJdbc.currentSqlId(): String? =
+        statement().use { stmt ->
             stmt.executeQuery("SELECT CURRENT SQLID FROM SYSIBM.SYSDUMMY1").use { rs ->
                 if (rs.next()) rs.getString(1)?.trim()?.takeIf(String::isNotBlank) else null
             }
         }
 
-    private fun Connection.queryZosPlanRows(
+    private fun TimedJdbc.queryZosPlanRows(
         planTable: String,
         queryNo: Int,
     ): List<Db2ZosPlanRow> {
         val rows =
-            prepareStatement(
+            prepare(
                     "SELECT QBLOCKNO, PLANNO, MIXOPSEQ, METHOD, CREATOR, TNAME, ACCESSTYPE, " +
                         "MATCHCOLS, ACCESSCREATOR, ACCESSNAME " +
                         "FROM $planTable WHERE QUERYNO = $queryNo ORDER BY QBLOCKNO, PLANNO, MIXOPSEQ",
                 )
                 .use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                     ps.executeQuery().use { rs ->
                         buildList {
                             while (rs.next()) {
@@ -759,13 +776,12 @@ object Db2Adapter {
         if (rows.isEmpty()) return emptyList()
         // Sort flags vary across PLAN_TABLE formats, so they stay out of the core read.
         val sorts = runCatching {
-            prepareStatement(
+            prepare(
                     "SELECT QBLOCKNO, PLANNO, MIXOPSEQ, SORTC_UNIQ, SORTC_JOIN, " +
                         "SORTC_ORDERBY, SORTC_GROUPBY, SORTN_JOIN " +
                         "FROM $planTable WHERE QUERYNO = $queryNo",
                 )
                 .use { ps ->
-                    ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
                     ps.executeQuery().use { rs ->
                         buildMap {
                             while (rs.next()) {
@@ -810,19 +826,17 @@ object Db2Adapter {
         }
     }
 
-    private fun Connection.queryZosStatementCost(
+    private fun TimedJdbc.queryZosStatementCost(
         statementTable: String,
         queryNo: Int,
     ): Double? =
     // Best-effort: DSN tables are optional and may not exist for this creator.
     runCatching {
-        prepareStatement("SELECT MAX(TOTAL_COST) FROM $statementTable WHERE QUERYNO = $queryNo")
-            .use { ps ->
-                ps.queryTimeout = DEFAULT_TIMEOUT_MS / 1000
-                ps.executeQuery().use { rs ->
-                    if (rs.next()) (rs.getObject(1) as? Number)?.toDouble() else null
-                }
+        prepare("SELECT MAX(TOTAL_COST) FROM $statementTable WHERE QUERYNO = $queryNo").use { ps ->
+            ps.executeQuery().use { rs ->
+                if (rs.next()) (rs.getObject(1) as? Number)?.toDouble() else null
             }
+        }
     }
         .getOrNull()
 
@@ -974,7 +988,7 @@ object Db2Adapter {
         val sectNo: Int,
     )
 
-    private fun java.sql.PreparedStatement.bindLuwKey(key: LuwExplainKey) {
+    private fun PreparedStatement.bindLuwKey(key: LuwExplainKey) {
         setString(1, key.requester)
         setTimestamp(2, key.explainTime)
         setString(3, key.sourceName)

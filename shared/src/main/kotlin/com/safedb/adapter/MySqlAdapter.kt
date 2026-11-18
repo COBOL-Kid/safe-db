@@ -9,6 +9,7 @@ import com.safedb.model.QueryResult
 import com.safedb.model.Schema
 import com.safedb.model.SortDirection
 import com.zaxxer.hikari.HikariDataSource
+import java.sql.Connection
 
 internal fun mysqlIndexCapabilities(kind: String): IndexCapabilities =
     IndexCapabilities(
@@ -108,39 +109,52 @@ object MySqlAdapter {
         }
     }
 
+    private fun <T> HikariDataSource.withMaxExecutionTime(
+        timeoutMs: Int,
+        block: (Connection) -> T,
+    ): T = connection.use { conn ->
+        conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = $timeoutMs") }
+        try {
+            block(conn)
+        } finally {
+            val restored = runCatching {
+                conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = 0") }
+            }
+            // A pooled session that keeps a leftover timeout must not be handed out again.
+            if (restored.isFailure) {
+                evictConnection(conn)
+            }
+        }
+    }
+
     fun executeQuery(
         dataSource: HikariDataSource,
         compiled: CompiledQuery,
         timeoutMs: Int,
     ): QueryResult =
-        dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.execute("SET SESSION MAX_EXECUTION_TIME = $timeoutMs")
+        dataSource.withMaxExecutionTime(timeoutMs) { conn ->
+            conn.autoCommit = false
+            conn.createStatement().use {
+                it.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
             }
-            try {
-                conn.autoCommit = false
-                conn.createStatement().use {
-                    it.execute("SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED")
-                }
-                val result =
-                    prepareStatement(conn, compiled, Dialect.MySql).use { ps ->
-                        ps.executeQuery().use { rs ->
-                            decodeQueryResult(rs, compiled.sql, Dialect.MySql)
-                        }
+            val result =
+                prepareStatement(conn, compiled, Dialect.MySql).use { ps ->
+                    ps.executeQuery().use { rs ->
+                        decodeQueryResult(rs, compiled.sql, Dialect.MySql)
                     }
-                // Close the cursor before commit, and before the finally block clears the timeout.
-                conn.commit()
-                result
-            } finally {
-                runCatching {
-                    conn.createStatement().use { it.execute("SET SESSION MAX_EXECUTION_TIME = 0") }
                 }
-            }
+            // Close the cursor before commit, and before the finally block clears the timeout.
+            conn.commit()
+            result
         }
 
-    fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult {
+    fun explain(
+        dataSource: HikariDataSource,
+        compiled: CompiledQuery,
+        timeoutMs: Int,
+    ): ExplainResult {
         val explainSql = "EXPLAIN FORMAT=JSON ${compiled.sql}"
-        return dataSource.connection.use { conn ->
+        return dataSource.withMaxExecutionTime(timeoutMs) { conn ->
             prepareStatement(conn, compiled.copy(sql = explainSql), Dialect.MySql).use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next()

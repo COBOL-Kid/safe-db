@@ -256,6 +256,19 @@ class Db2AdapterJdbcTest {
     }
 
     @Test
+    fun db2ExplainUsesTheProvidedStatementTimeout() {
+        val defaultJdbc = script(luwExplain())
+        assertIs<ExplainResult.Available>(explain(defaultJdbc))
+        assertTrue(defaultJdbc.timeouts.isNotEmpty())
+        assertEquals(listOf(10), defaultJdbc.timeouts.distinct())
+
+        val extendedJdbc = script(luwExplain())
+        assertIs<ExplainResult.Available>(explain(extendedJdbc, timeoutMs = 30_000))
+        assertEquals(listOf(30), extendedJdbc.timeouts.distinct())
+        assertTrue(extendedJdbc.timeouts.none { it == 10 })
+    }
+
+    @Test
     fun db2ExplainLuwReportsMissingExplainTables() {
         val result = explain(script(luwExplain(explainPlan = undefined())))
 
@@ -484,10 +497,14 @@ class Db2AdapterJdbcTest {
         assertEquals(null, plan.rawOptimizerCost)
     }
 
-    private fun explain(jdbc: ScriptedDb2): ExplainResult =
+    private fun explain(
+        jdbc: ScriptedDb2,
+        timeoutMs: Int = DEFAULT_TIMEOUT_MS,
+    ): ExplainResult =
         Db2Adapter.explain(
             jdbc.dataSource(),
             CompiledQuery("SELECT \"ID\" FROM \"APP\".\"ORDERS\"", emptyList()),
+            timeoutMs,
         )
 
     private fun assertUnavailable(

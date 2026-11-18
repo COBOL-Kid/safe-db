@@ -52,6 +52,22 @@ class AssessQueryCoreTest {
         assertEquals(RiskGateState.Allowed, assessment.riskEvaluation.decision.state)
         assertEquals(1, runner.explainCalls)
         assertEquals(0, runner.executeCalls)
+        assertEquals(listOf(10_000), runner.explainTimeouts)
+    }
+
+    @Test
+    fun explainUsesTheConfiguredQueryTimeout() = runBlocking {
+        val runner = StubRunner()
+
+        assessQueryCore(
+            runner,
+            connection(),
+            spec(),
+            schema(),
+            Settings.default().copy(queryTimeoutSeconds = 30),
+        )
+
+        assertEquals(listOf(30_000), runner.explainTimeouts)
     }
 
     @Test
@@ -191,9 +207,11 @@ private class StubRunner(
 ) : QueryRunner {
     var explainCalls = 0
     var executeCalls = 0
+    val explainTimeouts = mutableListOf<Int>()
 
-    override suspend fun explain(compiled: CompiledQuery): ExplainResult {
+    override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult {
         explainCalls += 1
+        explainTimeouts += timeoutMs
         return explainResult
     }
 

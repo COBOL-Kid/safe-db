@@ -162,51 +162,57 @@ object MssqlAdapter {
             queryResult ?: error("query did not produce a result")
         }
 
-    fun explain(dataSource: HikariDataSource, compiled: CompiledQuery): ExplainResult =
+    fun explain(
+        dataSource: HikariDataSource,
+        compiled: CompiledQuery,
+        timeoutMs: Int,
+    ): ExplainResult =
         dataSource.connection.use { conn ->
-            conn.createStatement().use { it.execute("SET SHOWPLAN_XML ON") }
-            var showplanRestored = false
-            val xml =
-                try {
-                    conn.createStatement().use { stmt ->
-                        buildString {
-                            var hasResult = stmt.execute(mssqlShowplanSql(compiled))
-                            while (hasResult || stmt.updateCount != -1) {
-                                if (hasResult) {
-                                    stmt.resultSet.use { rs ->
-                                        while (rs.next()) {
-                                            append(readString(rs, 1))
+            withQueryTimeout(conn, timeoutMs) { timedConn ->
+                timedConn.createStatement().use { it.execute("SET SHOWPLAN_XML ON") }
+                var showplanRestored = false
+                val xml =
+                    try {
+                        timedConn.createStatement().use { stmt ->
+                            buildString {
+                                var hasResult = stmt.execute(mssqlShowplanSql(compiled))
+                                while (hasResult || stmt.updateCount != -1) {
+                                    if (hasResult) {
+                                        stmt.resultSet.use { rs ->
+                                            while (rs.next()) {
+                                                append(readString(rs, 1))
+                                            }
                                         }
                                     }
+                                    hasResult = stmt.moreResults
                                 }
-                                hasResult = stmt.moreResults
+                            }
+                        }
+                    } finally {
+                        repeat(3) {
+                            if (!showplanRestored) {
+                                showplanRestored =
+                                    runCatching {
+                                        timedConn.createStatement().use {
+                                            it.execute("SET SHOWPLAN_XML OFF")
+                                        }
+                                    }
+                                        .isSuccess
                             }
                         }
                     }
-                } finally {
-                    repeat(3) {
-                        if (!showplanRestored) {
-                            showplanRestored =
-                                runCatching {
-                                    conn.createStatement().use {
-                                        it.execute("SET SHOWPLAN_XML OFF")
-                                    }
-                                }
-                                    .isSuccess
-                        }
-                    }
+                if (!showplanRestored) {
+                    return@withQueryTimeout ExplainResult.Unavailable(
+                        com.safedb.model.PlanUnavailableReason.CleanupFailure,
+                        "SQL Server plan session could not restore SHOWPLAN_XML OFF; the dedicated connection was discarded",
+                    )
                 }
-            if (!showplanRestored) {
-                return@use ExplainResult.Unavailable(
-                    com.safedb.model.PlanUnavailableReason.CleanupFailure,
-                    "SQL Server plan session could not restore SHOWPLAN_XML OFF; the dedicated connection was discarded",
-                )
+                parseSqlServerPlan(xml)?.let(ExplainResult::Available)
+                    ?: ExplainResult.Unavailable(
+                        com.safedb.model.PlanUnavailableReason.ParseFailure,
+                        "Could not normalize SQL Server SHOWPLAN XML",
+                    )
             }
-            parseSqlServerPlan(xml)?.let(ExplainResult::Available)
-                ?: ExplainResult.Unavailable(
-                    com.safedb.model.PlanUnavailableReason.ParseFailure,
-                    "Could not normalize SQL Server SHOWPLAN XML",
-                )
         }
 }
 

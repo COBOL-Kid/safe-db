@@ -245,7 +245,7 @@ internal fun ConnectionsScreenContent(
                         items(connections, key = { it.id }) { connection ->
                             ConnectionCard(
                                 connection = connection,
-                                isActive = connection.id == activeConnectionId,
+                                isSelected = connection.id == activeConnectionId,
                                 isDefault = connection.id == defaultConnectionId,
                                 onEdit = { onEditingConnectionChange(connection) },
                                 onDelete = { pendingDelete = connection },
@@ -261,7 +261,7 @@ internal fun ConnectionsScreenContent(
 @Composable
 private fun ConnectionCard(
     connection: ConnectionDef,
-    isActive: Boolean = false,
+    isSelected: Boolean = false,
     isDefault: Boolean = false,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -304,13 +304,13 @@ private fun ConnectionCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (isActive || isDefault) {
+                        if (isSelected || isDefault) {
                             Row(
                                 modifier = Modifier.padding(top = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                if (isActive) {
-                                    StatusChip("Active", StatusChipKind.SUCCESS)
+                                if (isSelected) {
+                                    StatusChip("Selected", StatusChipKind.NEUTRAL)
                                 }
                                 if (isDefault) {
                                     StatusChip("Default", StatusChipKind.INFO)

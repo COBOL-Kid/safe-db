@@ -5,6 +5,11 @@ import com.safedb.model.CompiledQuery
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
 import com.safedb.model.DriverProperty
+import com.safedb.model.ExplainResult
+import com.safedb.model.NormalizedQueryPlan
+import com.safedb.model.PlanAccessMethod
+import com.safedb.model.PlanRelationAccess
+import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.ResultCell
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
@@ -26,6 +31,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.runBlocking
 
 class AdapterTest {
     @Test
@@ -69,6 +76,43 @@ class AdapterTest {
     }
 
     @Test
+    fun awaitExplainTimesOutAtTheSuppliedDeadline() = runBlocking {
+        val startedAt = System.nanoTime()
+        val result = awaitExplain(timeoutMs = 50) { awaitCancellation() }
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+
+        assertEquals(
+            ExplainResult.Unavailable(
+                PlanUnavailableReason.TimedOut,
+                "Query plan assessment timed out",
+            ),
+            result,
+        )
+        assertTrue(elapsedMs < 1_000, "timed out after ${elapsedMs}ms")
+    }
+
+    @Test
+    fun awaitExplainReturnsTheAvailablePlan() = runBlocking {
+        val plan =
+            ExplainResult.Available(
+                NormalizedQueryPlan(
+                    relations =
+                        listOf(
+                            PlanRelationAccess(
+                                table = "users",
+                                alias = "t0",
+                                method = PlanAccessMethod.BoundedLookup,
+                                estimatedRows = 1,
+                            ),
+                        ),
+                    rawOptimizerCost = 1.0,
+                ),
+            )
+
+        assertEquals(plan, awaitExplain { plan })
+    }
+
+    @Test
     fun mysqlDisabledTransportAllowsPublicKeyRetrievalForLocalAuth() {
         val url = buildJdbcUrl(mysqlConnection(TransportSecurityMode.Disabled))
 
@@ -86,6 +130,13 @@ class AdapterTest {
             "jdbc:mysql://localhost:3306/safedb_test?sslMode=VERIFY_IDENTITY",
             url,
         )
+    }
+
+    @Test
+    fun jdbcQueryTimeoutNeverBecomesUnlimitedZero() {
+        assertEquals(1, jdbcQueryTimeoutSeconds(500))
+        assertEquals(1, jdbcQueryTimeoutSeconds(0))
+        assertEquals(30, jdbcQueryTimeoutSeconds(30_000))
     }
 
     @Test
