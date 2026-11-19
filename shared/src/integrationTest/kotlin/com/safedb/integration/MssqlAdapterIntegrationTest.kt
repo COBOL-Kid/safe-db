@@ -1,6 +1,7 @@
 package com.safedb.integration
 
 import com.safedb.adapter.Adapter
+import com.safedb.adapter.QueryTimedOutException
 import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ExplainResult
@@ -128,10 +129,9 @@ class MssqlAdapterIntegrationTest {
                 )
             val startedAt = System.nanoTime()
             val failure = assertFailsWith<Exception> { adapter.executeQuery(heavy, 1_000) }
-            AdapterIntegrationAssertions.assertExecutionTimeout(
-                elapsedMs = (System.nanoTime() - startedAt) / 1_000_000,
-                error = failure,
-            )
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertIs<QueryTimedOutException>(failure)
+            AdapterIntegrationAssertions.assertExecutionTimeout(elapsedMs, failure)
         } finally {
             adapter.close()
         }

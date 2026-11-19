@@ -4,7 +4,6 @@ import com.safedb.adapter.QueryTimedOutException
 import com.safedb.model.ForeignKeyInfo
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
-import java.sql.SQLException
 import java.sql.SQLTimeoutException
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -36,10 +35,7 @@ internal object AdapterIntegrationAssertions {
             chain.any { it is QueryTimedOutException || it is SQLTimeoutException } ||
                 "timed out" in texts ||
                 "timeout" in texts ||
-                "cancel" in texts ||
-                // SQL Server's budget is a socket read deadline; mssql-jdbc answers it by
-                // closing the connection instead of reporting a timeout message.
-                (error is SQLException && "connection is closed" in texts)
+                "cancel" in texts
         assertTrue(
             timedOut,
             "expected the 1s query budget to cancel execution, got: " +
