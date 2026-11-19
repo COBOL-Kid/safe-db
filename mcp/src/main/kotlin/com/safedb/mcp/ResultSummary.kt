@@ -1,8 +1,9 @@
 package com.safedb.mcp
 
-import com.safedb.explore.isNumericDataType
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
+import com.safedb.model.classifyColumn
+import com.safedb.model.isNumeric
 import java.math.BigDecimal
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
@@ -96,11 +97,14 @@ private fun columnMinMax(
         }
         allText -> {
             val texts = cells.filterIsInstance<ResultCell.TextCell>()
-            val decimals = texts.map { it.value.text.trim().toBigDecimalOrNull() }
-            if (isNumericDataType(dataType) && decimals.none { it == null }) {
-                val numeric = texts.zip(decimals.requireNoNulls())
-                flattenCell(numeric.minBy { it.second }.first) to
-                    flattenCell(numeric.maxBy { it.second }.first)
+            if (classifyColumn(dataType).isNumeric()) {
+                // Unparseable values are skipped like float NaN rather than ordered as strings.
+                val numeric = texts.mapNotNull { cell ->
+                    cell.value.text.trim().toBigDecimalOrNull()?.let { it to cell }
+                }
+                if (numeric.isEmpty()) return null to null
+                flattenCell(numeric.minBy { it.first }.second) to
+                    flattenCell(numeric.maxBy { it.first }.second)
             } else {
                 flattenCell(texts.minBy { it.value.text }) to
                     flattenCell(texts.maxBy { it.value.text })

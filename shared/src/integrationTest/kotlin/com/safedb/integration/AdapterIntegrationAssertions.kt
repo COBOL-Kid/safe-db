@@ -6,6 +6,7 @@ import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import java.sql.SQLTimeoutException
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -24,18 +25,20 @@ internal object AdapterIntegrationAssertions {
         assertEquals(listOf("t0__id", "t0__email"), result.columns.map { it.name })
     }
 
-    fun assertExecutionTimeout(elapsedMs: Long, error: Throwable) {
+    inline fun assertExecutionTimeout(block: () -> Unit) {
+        val startedAt = System.nanoTime()
+        val failure = assertFailsWith<Exception>(block = block)
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
         assertTrue(
             elapsedMs in 800..5_000,
             "expected the 1s query budget to stop execution within 1-5s; stopped after ${elapsedMs}ms",
         )
-        val chain = generateSequence(error) { it.cause }.toList()
+        val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
         val texts = chain.mapNotNull { it.message }.joinToString(" ").lowercase()
         val timedOut =
             chain.any { it is QueryTimedOutException || it is SQLTimeoutException } ||
                 "timed out" in texts ||
-                "timeout" in texts ||
-                "cancel" in texts
+                "timeout" in texts
         assertTrue(
             timedOut,
             "expected the 1s query budget to cancel execution, got: " +

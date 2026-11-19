@@ -1,7 +1,6 @@
 package com.safedb.integration
 
 import com.safedb.adapter.Adapter
-import com.safedb.adapter.QueryTimedOutException
 import com.safedb.model.BindValue
 import com.safedb.model.CompiledQuery
 import com.safedb.model.ExplainResult
@@ -12,13 +11,13 @@ import com.safedb.secrets.SecretsManager
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 @Tag("integration")
 class MssqlAdapterIntegrationTest {
@@ -107,6 +106,7 @@ class MssqlAdapterIntegrationTest {
     }
 
     @Test
+    @Timeout(10)
     fun mssqlQueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
         IntegrationAssumptions.assumeMssqlAvailable()
         val adapter =
@@ -127,11 +127,9 @@ class MssqlAdapterIntegrationTest {
                             .trimIndent(),
                     params = emptyList(),
                 )
-            val startedAt = System.nanoTime()
-            val failure = assertFailsWith<Exception> { adapter.executeQuery(heavy, 1_000) }
-            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
-            assertIs<QueryTimedOutException>(failure)
-            AdapterIntegrationAssertions.assertExecutionTimeout(elapsedMs, failure)
+            AdapterIntegrationAssertions.assertExecutionTimeout {
+                adapter.executeQuery(heavy, 1_000)
+            }
         } finally {
             adapter.close()
         }

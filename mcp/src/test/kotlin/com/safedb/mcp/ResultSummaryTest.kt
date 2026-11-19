@@ -174,6 +174,21 @@ class ResultSummaryTest {
     }
 
     @Test
+    fun numericTextColumnSkipsUnparseableValues() {
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("amount", "decimal")),
+                rows = listOf("25.68", "N/A", "501.23").map { listOf(ResultCell.text(it)) },
+                rowCount = 3,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val column = summarizeColumns(result).single()
+        assertEquals(JsonPrimitive("25.68"), column.min)
+        assertEquals(JsonPrimitive("501.23"), column.max)
+    }
+
+    @Test
     fun digitStringVarcharColumnStaysLexicographic() {
         val result =
             QueryResult(

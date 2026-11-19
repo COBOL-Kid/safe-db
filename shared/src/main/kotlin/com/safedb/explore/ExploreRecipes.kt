@@ -197,7 +197,7 @@ private fun mapFormulaReferences(formula: String, transform: (String) -> String)
         "[${transform(reference)}]"
     }
 
-fun isNumericDataType(raw: String): Boolean =
+private fun isNumericDataType(raw: String): Boolean =
     listOf("int", "decimal", "numeric", "number", "real", "double", "float", "money")
         .any(raw.lowercase()::contains)
 

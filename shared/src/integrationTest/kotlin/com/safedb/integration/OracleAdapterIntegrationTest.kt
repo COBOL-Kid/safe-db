@@ -11,13 +11,13 @@ import com.safedb.secrets.SecretsManager
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 @Tag("integration")
 class OracleAdapterIntegrationTest {
@@ -110,6 +110,7 @@ class OracleAdapterIntegrationTest {
     }
 
     @Test
+    @Timeout(10)
     fun oracleQueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
         IntegrationAssumptions.assumeOracleAvailable()
         val adapter =
@@ -130,12 +131,9 @@ class OracleAdapterIntegrationTest {
                             .trimIndent(),
                     params = emptyList(),
                 )
-            val startedAt = System.nanoTime()
-            val failure = assertFailsWith<Exception> { adapter.executeQuery(heavy, 1_000) }
-            AdapterIntegrationAssertions.assertExecutionTimeout(
-                elapsedMs = (System.nanoTime() - startedAt) / 1_000_000,
-                error = failure,
-            )
+            AdapterIntegrationAssertions.assertExecutionTimeout {
+                adapter.executeQuery(heavy, 1_000)
+            }
         } finally {
             adapter.close()
         }
