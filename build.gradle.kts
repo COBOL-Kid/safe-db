@@ -19,7 +19,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "1.1.1"
+version = "1.1.2"
 
 kotlin { jvmToolchain(25) }
 
@@ -214,7 +214,7 @@ compose.desktop {
             appResourcesRootDir.set(layout.projectDirectory.dir("packaging/resources"))
             packageName = "safe-db"
             // The macOS jpackage tool rejects installer versions whose major component is zero.
-            packageVersion = "1.1.1"
+            packageVersion = "1.1.2"
             vendor = "safe-db"
             description = "Safely explore production databases"
         }
@@ -233,8 +233,8 @@ val verifyUnitTestDiscovery =
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
         minimumDesktopTests.set(387)
-        minimumSharedTests.set(727)
-        minimumMcpTests.set(229)
+        minimumSharedTests.set(730)
+        minimumMcpTests.set(236)
     }
 
 val verifyCoverageRatchet =

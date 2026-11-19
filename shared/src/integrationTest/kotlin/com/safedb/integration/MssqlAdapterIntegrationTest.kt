@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 @Tag("integration")
 class MssqlAdapterIntegrationTest {
@@ -99,6 +100,36 @@ class MssqlAdapterIntegrationTest {
                     10_000,
                 )
             AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    fun mssqlQueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
+        IntegrationAssumptions.assumeMssqlAvailable()
+        val adapter =
+            Adapter.connect(
+                IntegrationAssumptions.mssqlConnectionDef(),
+                IntegrationAssumptions.mssqlPassword,
+            )
+        try {
+            // A 20k x 20k self-join aggregate takes well over the 1s budget on a full run.
+            val heavy =
+                CompiledQuery(
+                    sql =
+                        """
+                        SELECT SUM([a].[amount] * [b].[amount])
+                        FROM (SELECT TOP 20000 [amount] FROM [analytics].[scan_events] ORDER BY [id]) AS [a]
+                        CROSS JOIN (SELECT TOP 20000 [amount] FROM [analytics].[scan_events] ORDER BY [id]) AS [b]
+                        """
+                            .trimIndent(),
+                    params = emptyList(),
+                )
+            AdapterIntegrationAssertions.assertExecutionTimeout {
+                adapter.executeQuery(heavy, 1_000)
+            }
         } finally {
             adapter.close()
         }

@@ -1,6 +1,11 @@
 package com.safedb.mcp
 
 import com.safedb.model.Dialect
+import com.safedb.model.HistoryEntry
+import com.safedb.model.SavedQuery
+import com.safedb.store.ConfigStore
+import com.safedb.store.QueryStore
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -94,6 +99,67 @@ class ConnectionToolsTest {
     }
 
     @Test
+    fun deleteConnectionRemovesItsSavedQueriesAndHistory() = runBlocking {
+        val dataDir = Files.createTempDirectory("safedb-mcp-delete")
+        try {
+            val configStore = ConfigStore.new(dataDir)
+            configStore.save(sampleMcpConnection(id = "c1", name = "Prod"))
+            configStore.save(sampleMcpConnection(id = "c2", name = "Dev"))
+            val queryStore = QueryStore.new(dataDir)
+            queryStore.saveQuery(SavedQuery("q1", "One", "c1", sampleMcpQuerySpec(), "1"))
+            queryStore.saveQuery(SavedQuery("q2", "Two", "c2", sampleMcpQuerySpec(), "1"))
+            queryStore.addHistory(
+                HistoryEntry(
+                    "h1",
+                    "c1",
+                    "Prod",
+                    sampleMcpQuerySpec(),
+                    1,
+                    emptyList(),
+                    timestamp = "1",
+                ),
+            )
+            queryStore.addHistory(
+                HistoryEntry(
+                    "h2",
+                    "c2",
+                    "Dev",
+                    sampleMcpQuerySpec(),
+                    1,
+                    emptyList(),
+                    timestamp = "2",
+                ),
+            )
+            val service = createMcpService(dataDir)
+
+            withTempMcpClient(service) { client ->
+                val pending = client.callTool("delete_connection", mapOf("connection_id" to "c1"))
+                val pendingBody = pending.json()
+                assertTrue(
+                    pendingBody.getValue("reasons").jsonArray.any {
+                        it.jsonPrimitive.content.contains("saved queries and query history")
+                    },
+                )
+                val deleted =
+                    client.callTool(
+                        "delete_connection",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "confirmation" to pendingBody.getValue("confirmation").jsonObject,
+                        ),
+                    )
+                assertFalse(deleted.isError == true)
+            }
+
+            assertEquals(listOf("c2"), service.listConnections().map { it.id })
+            assertEquals(listOf("q2"), service.listSavedQueries().map { it.id })
+            assertEquals(listOf("h2"), service.listHistory().map { it.id })
+        } finally {
+            dataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun deleteRequiresEchoedConfirmation() = runBlocking {
         val service = RecordingSafeDbService()
         service.connections +=
@@ -117,7 +183,13 @@ class ConnectionToolsTest {
             )
             assertFalse(firstBody.getValue("message").jsonPrimitive.content.contains("localhost"))
             val reasons = firstBody.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
-            assertEquals(listOf("This deletes saved connection Prod (MySQL / shop)."), reasons)
+            assertEquals(
+                listOf(
+                    "This deletes saved connection Prod (MySQL / shop).",
+                    "It also deletes this connection's saved queries and query history.",
+                ),
+                reasons,
+            )
             val confirmation = firstBody.getValue("confirmation").jsonObject
             assertEquals("c1", confirmation.getValue("connection_id").jsonPrimitive.content)
             assertTrue(confirmation.getValue("token").jsonPrimitive.content.isNotBlank())

@@ -197,11 +197,14 @@ private fun mapFormulaReferences(formula: String, transform: (String) -> String)
         "[${transform(reference)}]"
     }
 
+private fun isNumericDataType(raw: String): Boolean =
+    listOf("int", "decimal", "numeric", "number", "real", "double", "float", "money")
+        .any(raw.lowercase()::contains)
+
 private fun dataTypeFamily(raw: String): String {
     val type = raw.lowercase()
     return when {
-        listOf("int", "decimal", "numeric", "number", "real", "double", "float", "money")
-            .any(type::contains) -> "number"
+        isNumericDataType(raw) -> "number"
         listOf("date", "time").any(type::contains) -> "temporal"
         listOf("bool", "bit").any(type::contains) -> "boolean"
         listOf("binary", "blob", "byte", "varbinary").any(type::contains) -> "binary"

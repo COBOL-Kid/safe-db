@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 @Tag("integration")
 class OracleAdapterIntegrationTest {
@@ -103,6 +104,36 @@ class OracleAdapterIntegrationTest {
                     10_000,
                 )
             AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    fun oracleQueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
+        IntegrationAssumptions.assumeOracleAvailable()
+        val adapter =
+            Adapter.connect(
+                IntegrationAssumptions.oracleConnectionDef(),
+                IntegrationAssumptions.oraclePassword,
+            )
+        try {
+            // A 20k x 20k self-join aggregate takes well over the 1s budget on a full run.
+            val heavy =
+                CompiledQuery(
+                    sql =
+                        """
+                        SELECT SUM("a"."AMOUNT" * "b"."AMOUNT")
+                        FROM (SELECT "AMOUNT" FROM "SAFEDB"."SCAN_EVENTS" WHERE "ID" <= 20000) "a"
+                        CROSS JOIN (SELECT "AMOUNT" FROM "SAFEDB"."SCAN_EVENTS" WHERE "ID" <= 20000) "b"
+                        """
+                            .trimIndent(),
+                    params = emptyList(),
+                )
+            AdapterIntegrationAssertions.assertExecutionTimeout {
+                adapter.executeQuery(heavy, 1_000)
+            }
         } finally {
             adapter.close()
         }

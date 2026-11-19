@@ -88,6 +88,19 @@ private constructor(
         }
     }
 
+    fun deleteForConnection(connectionId: String) {
+        lock.withLock {
+            val saved =
+                readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
+                    .filterNot { it.connectionId == connectionId }
+            writeJsonList(savedPath, saved, SavedQuery.serializer())
+            val history =
+                readValid(historyPath, HistoryEntry.serializer()) { it.spec.schemaVersion }
+                    .filterNot { it.connectionId == connectionId }
+            writeJsonList(historyPath, history, HistoryEntry.serializer())
+        }
+    }
+
     private fun requireCurrentSchema(schemaVersion: Int) {
         require(schemaVersion == CURRENT_SCHEMA_VERSION) {
             "Unsupported query schema version $schemaVersion; expected $CURRENT_SCHEMA_VERSION"

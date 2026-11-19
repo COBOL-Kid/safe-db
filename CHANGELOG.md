@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- SQL Server queries with bound parameters read their optimizer cost from the `SELECT` statement, not the leading `DECLARE` assignment, so they no longer always require confirmation with "The query plan did not provide a valid optimizer cost".
+- SQL Server query timeouts surface as "Query timed out after …ms" instead of "Connection is closed".
+- `summarize_result` min/max compares integer, decimal, and numeric-typed text columns (including Oracle `NUMBER`, `float`, and `money`) numerically instead of lexicographically; values that are not numbers are skipped, like float `NaN`.
+- MCP `delete_connection` and `safe-db-mcp connections delete` also delete the connection's saved queries and query history. The tool's confirmation reasons say so. The desktop app is unchanged.
+- Connection failures caused by a TLS handshake error now hint to check the transport setting.
+- Expected `-32002` resource-not-found errors no longer print SDK stack traces on stderr.
+
 ## 1.1.1
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.1` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.1-all.jar`; npm packages are stamped 1.1.1 at assemble time.

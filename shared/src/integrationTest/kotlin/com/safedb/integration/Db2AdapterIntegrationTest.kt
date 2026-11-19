@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
 // Db2 LUW runs in Docker via icr.io/db2_community/db2 (privileged, linux/amd64, no TLS by
 // default); seed it with scripts/docker_test_databases.sh up. Db2 on z/OS additionally needs
@@ -106,6 +107,36 @@ class Db2AdapterIntegrationTest {
                     10_000,
                 )
             AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    fun db2QueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
+        IntegrationAssumptions.assumeDb2Available()
+        val adapter =
+            Adapter.connect(
+                IntegrationAssumptions.db2ConnectionDef(),
+                IntegrationAssumptions.db2Password,
+            )
+        try {
+            // A 20k x 20k self-join aggregate takes well over the 1s budget on a full run.
+            val heavy =
+                CompiledQuery(
+                    sql =
+                        """
+                        SELECT SUM("a"."AMOUNT" * "b"."AMOUNT")
+                        FROM (SELECT "AMOUNT" FROM "ANALYTICS"."SCAN_EVENTS" WHERE "ID" <= 20000) "a"
+                        CROSS JOIN (SELECT "AMOUNT" FROM "ANALYTICS"."SCAN_EVENTS" WHERE "ID" <= 20000) "b"
+                        """
+                            .trimIndent(),
+                    params = emptyList(),
+                )
+            AdapterIntegrationAssertions.assertExecutionTimeout {
+                adapter.executeQuery(heavy, 1_000)
+            }
         } finally {
             adapter.close()
         }
