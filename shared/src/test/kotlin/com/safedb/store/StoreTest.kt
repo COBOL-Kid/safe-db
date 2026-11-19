@@ -253,6 +253,27 @@ class StoreTest {
     }
 
     @Test
+    fun queryStoreDeletesSavedQueriesAndHistoryForConnection() {
+        val dir = tempDir()
+        val store = QueryStore.new(dir)
+        store.saveQuery(SavedQuery("q1", "Users", "c1", sampleSpec(), "1"))
+        store.saveQuery(SavedQuery("q2", "Orders", "c2", sampleSpec(), "1"))
+        store.addHistory(
+            HistoryEntry("h1", "c1", "Conn one", sampleSpec(), 1, emptyList(), timestamp = "1"),
+        )
+        store.addHistory(
+            HistoryEntry("h2", "c2", "Conn two", sampleSpec(), 1, emptyList(), timestamp = "2"),
+        )
+
+        store.deleteForConnection("c1")
+
+        assertEquals(listOf("q2"), store.listSaved().map { it.id })
+        assertEquals(listOf("h2"), store.listHistory().map { it.id })
+        assertFalse(Files.readString(dir.resolve("saved_queries.json")).contains("\"q1\""))
+        assertFalse(Files.readString(dir.resolve("query_history.json")).contains("\"h1\""))
+    }
+
+    @Test
     fun queryStoreRoundTripsNestedFilterValueVariants() {
         val filters =
             FilterGroup(

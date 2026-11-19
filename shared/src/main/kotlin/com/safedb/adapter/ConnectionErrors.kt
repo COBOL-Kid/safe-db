@@ -2,6 +2,7 @@ package com.safedb.adapter
 
 import com.safedb.model.ConnectionDef
 import java.sql.SQLException
+import javax.net.ssl.SSLException
 
 class ConnectionFailedException(message: String, cause: Throwable? = null) :
     IllegalStateException(message, cause)
@@ -9,12 +10,35 @@ class ConnectionFailedException(message: String, cause: Throwable? = null) :
 fun formatConnectionFailure(error: Throwable, def: ConnectionDef): String {
     val chain = generateSequence(error) { it.cause }.toList()
     val texts = chain.mapNotNull { it.message }.joinToString("\n")
-    return if (isAuthenticationFailure(chain, texts)) {
-        "Authentication failed for user ${def.username}"
-    } else {
-        "Could not connect to ${def.host}:${def.port}"
+    return when {
+        isAuthenticationFailure(chain, texts) -> "Authentication failed for user ${def.username}"
+        isTlsHandshakeFailure(chain, texts) ->
+            "Could not connect to ${def.host}:${def.port} " +
+                "(TLS handshake failed; check the transport setting)"
+        else -> "Could not connect to ${def.host}:${def.port}"
     }
 }
+
+private fun isTlsHandshakeFailure(chain: List<Throwable>, texts: String): Boolean {
+    val connectionFailure = chain.any {
+        it is SQLException && it.sqlState?.uppercase()?.startsWith("08") == true
+    }
+    if (!connectionFailure) return false
+    if (chain.any { it is SSLException }) return true
+    val lower = texts.lowercase()
+    return TLS_MESSAGE_FRAGMENTS.any { it in lower }
+}
+
+private val TLS_MESSAGE_FRAGMENTS =
+    listOf(
+        "does not support ssl",
+        "ssl handshake",
+        "ssl error",
+        "ssl connection",
+        "ssl encryption",
+        "secure sockets layer",
+        "unrecognized ssl",
+    )
 
 private fun isAuthenticationFailure(chain: List<Throwable>, texts: String): Boolean {
     for (error in chain) {

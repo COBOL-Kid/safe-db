@@ -54,6 +54,8 @@ User-facing reasons live in [`SqlMessages.kt`](../shared/src/main/kotlin/com/saf
 - National string literals (`N'…'`)
 - Comparing two columns in a predicate
 
+The validator then rejects tables in system/catalog schemas and in `blocked_schemas` from settings (`Schema 'x' is blocked`). This applies to the desktop risk preview and execution and to MCP `run_query` and `assess_query`.
+
 Aggregates belong in Explore, on the sample already fetched.
 
 ## Limits

@@ -257,13 +257,31 @@ internal fun createMcpRuntime(
     return createMcpService(dataDir)
 }
 
-internal fun createMcpService(dataDir: Path): SafeDbService =
-    SafeDbServiceImpl(
-        configStore = ConfigStore.new(dataDir),
-        queryStore = QueryStore.new(dataDir),
-        settingsStore = SettingsStore.new(dataDir),
-        recipeStore = RecipeStore.new(dataDir),
+internal fun createMcpService(dataDir: Path): SafeDbService {
+    val queryStore = QueryStore.new(dataDir)
+    return McpConnectionDeleteService(
+        delegate =
+            SafeDbServiceImpl(
+                configStore = ConfigStore.new(dataDir),
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dataDir),
+                recipeStore = RecipeStore.new(dataDir),
+            ),
+        queryStore = queryStore,
     )
+}
+
+// The desktop app keeps saved queries and history after a connection is removed; MCP and
+// the CLI delete them so run_saved_query cannot report not_found for a deleted connection.
+private class McpConnectionDeleteService(
+    private val delegate: SafeDbService,
+    private val queryStore: QueryStore,
+) : SafeDbService by delegate {
+    override suspend fun deleteConnection(id: String) {
+        delegate.deleteConnection(id)
+        queryStore.deleteForConnection(id)
+    }
+}
 
 internal fun createSafeDbMcpServer(
     service: SafeDbService,
@@ -423,11 +441,12 @@ private fun deleteConfirmationRequired(connection: ConnectionDef, token: String)
     return toolError(
         ERROR_CONFIRMATION_REQUIRED,
         "Deleting connection '${connection.name}' (${connection.dialect.displayName()}, ${connection.database}) " +
-            "removes it from this MCP store. Show the user, then retry with the returned " +
-            "confirmation object; do not auto-confirm.",
+            "removes it from this MCP store along with its saved queries and query history. " +
+            "Show the user, then retry with the returned confirmation object; do not auto-confirm.",
         reasons =
             listOf(
                 "This deletes saved connection ${connection.name} (${connection.dialect.displayName()} / ${connection.database}).",
+                "It also deletes this connection's saved queries and query history.",
             ),
         confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
     )

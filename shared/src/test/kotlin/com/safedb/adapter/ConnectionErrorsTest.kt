@@ -6,6 +6,7 @@ import com.zaxxer.hikari.pool.HikariPool
 import java.net.ConnectException
 import java.net.UnknownHostException
 import java.sql.SQLException
+import javax.net.ssl.SSLHandshakeException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -66,6 +67,19 @@ class ConnectionErrorsTest {
             formatConnectionFailure(hikari, sampleConnection(host = "db.example", port = 1521))
         assertEquals("Could not connect to db.example:1521", message)
         assertFalse(message.contains("initialize pool"))
+    }
+
+    @Test
+    fun tlsHandshakeFailuresPointAtTheTransportSetting() {
+        val handshake = SSLHandshakeException("Unsupported or unrecognized SSL message")
+        val cause = SQLException("The connection attempt failed.", "08001", handshake)
+        val hikari = HikariPool.PoolInitializationException(cause)
+
+        assertEquals(
+            "Could not connect to localhost:5433 " +
+                "(TLS handshake failed; check the transport setting)",
+            formatConnectionFailure(hikari, sampleConnection(host = "localhost", port = 5433)),
+        )
     }
 
     @Test
