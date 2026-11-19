@@ -1,5 +1,6 @@
 package com.safedb.mcp
 
+import com.safedb.explore.isNumericDataType
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 import java.math.BigDecimal
@@ -60,7 +61,7 @@ internal fun summarizeColumns(result: QueryResult): List<ColumnSummary> =
                 else -> comparable += cell
             }
         }
-        val (min, max) = columnMinMax(comparable)
+        val (min, max) = columnMinMax(column.dataType, comparable)
         ColumnSummary(
             name = column.name,
             dataType = column.dataType,
@@ -72,7 +73,10 @@ internal fun summarizeColumns(result: QueryResult): List<ColumnSummary> =
         )
     }
 
-private fun columnMinMax(cells: List<ResultCell>): Pair<JsonElement?, JsonElement?> {
+private fun columnMinMax(
+    dataType: String,
+    cells: List<ResultCell>,
+): Pair<JsonElement?, JsonElement?> {
     if (cells.isEmpty()) return null to null
     val allNumeric = cells.all { it is ResultCell.IntegerCell || it is ResultCell.FloatCell }
     val allText = cells.all { it is ResultCell.TextCell }
@@ -92,7 +96,15 @@ private fun columnMinMax(cells: List<ResultCell>): Pair<JsonElement?, JsonElemen
         }
         allText -> {
             val texts = cells.filterIsInstance<ResultCell.TextCell>()
-            flattenCell(texts.minBy { it.value.text }) to flattenCell(texts.maxBy { it.value.text })
+            val decimals = texts.map { it.value.text.trim().toBigDecimalOrNull() }
+            if (isNumericDataType(dataType) && decimals.none { it == null }) {
+                val numeric = texts.zip(decimals.requireNoNulls())
+                flattenCell(numeric.minBy { it.second }.first) to
+                    flattenCell(numeric.maxBy { it.second }.first)
+            } else {
+                flattenCell(texts.minBy { it.value.text }) to
+                    flattenCell(texts.maxBy { it.value.text })
+            }
         }
         allBool -> {
             val flags = cells.filterIsInstance<ResultCell.BoolCell>()
