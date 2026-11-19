@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.2
+
+Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.2` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.2-all.jar`; npm packages are stamped 1.1.2 at assemble time.
 
 - SQL Server queries with bound parameters read their optimizer cost from the `SELECT` statement, not the leading `DECLARE` assignment, so they no longer always require confirmation with "The query plan did not provide a valid optimizer cost".
 - SQL Server query timeouts surface as "Query timed out after …ms" instead of "Connection is closed".
