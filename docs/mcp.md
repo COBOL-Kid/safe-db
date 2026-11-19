@@ -45,7 +45,7 @@ On Windows, `list_connections` is the same list the UI uses. On macOS, MCP conne
 
 `SAFEDB_KEYCHAIN_BACKEND` remains a store-selection switch (including `disabled` for in-process tests). It is not how users pass connection details. `setup` / `connections add` refuse to save a connection when it is `disabled`, because passwords would exist only in that process's memory. If `connections test` then fails because that override is set, unset `SAFEDB_KEYCHAIN_BACKEND` so the saved password can be read; do not add the connection again.
 
-`query_risk_gate`, `query_timeout_seconds`, and `blocked_schemas` come from `settings.json` in that same data directory (default gate `Standard`; default query timeout 10 seconds). All three are configurable via `safe-db-mcp settings` or, on Windows, the desktop Settings screen; there is still no MCP tool to change them. `blocked_schemas` hides those schemas from the catalog tools and resources, and also makes `run_query`, `run_saved_query`, and `assess_query` reject SQL that names one (`validation`, `Schema 'x' is blocked`). On Windows, MCP shares the desktop settings file, so a Settings change applies there too. On macOS and Linux, MCP has its own `settings.json`.
+`query_risk_gate`, `query_timeout_seconds`, and `blocked_schemas` come from `settings.json` in that same data directory (default gate `Standard`; default query timeout 10 seconds). All three are configurable via `safe-db-mcp settings` or, on Windows, the desktop Settings screen; there is still no MCP tool to change them. `blocked_schemas` hides those schemas from the catalog tools and resources, and also makes `run_query`, `run_saved_query`, `assess_query`, and `save_query` reject SQL that names one (`validation`, `Schema 'x' is blocked`). On Windows, MCP shares the desktop settings file, so a Settings change applies there too. On macOS and Linux, MCP has its own `settings.json`.
 
 ## CLI
 
@@ -122,7 +122,7 @@ Progressive catalog, then a gated query. Do not expect the full [`Schema`](../sh
 | `filter_result_rows` | Filter, sort, project, and page the in-memory sample by `result_id` using the `:shared` worksheet engine. `filters` support comparison ops incl. `between`, `is_null`, and `members`; `members` takes `included_keys` (not `value`) using the actual cell values (`"view"`, `"1"`); internal keys such as `TextCell:view` still match. Other ops use `value` and optional `second_value`. `sorts` accept `column` and `asc`/`desc`; `columns` limits the projection. Use receipt column names verbatim (dialect casing); an unknown column reports the known columns. `offset` defaults to 0 and `limit` defaults to and caps at 50. `matched_row_count` is after filtering; `sample_row_count` is the stored sample size. Unknown or expired → `not_found`. `readOnlyHint`. |
 | `export_result` | Write the in-memory sample for a `result_id` to an owner-only CSV under `{dataDir}/exports/`. Files persist across in-memory sample expiry/eviction and MCP restarts. Optional simple `filename` (letters, digits, dot, underscore, dash; `.csv` appended when missing). Returns `result_id`, `file_path`, `row_count`, `bytes`, and `sample_capped`. Unknown or expired → `not_found`. |
 | `list_saved_queries` | Saved queries from the MCP store as `id`, `name`, `connection_id`, `sql`, `tables`, and `created_at`. Optional `connection_id` filter. `readOnlyHint`. |
-| `run_saved_query` | Run a saved query by `query_id` on its saved connection. Accepts the same confirmation object as `run_query` and returns a `run_query`-style receipt (including `dialect` and the sample-cap fields) with `result_id`. Unknown `query_id` → `not_found`. |
+| `run_saved_query` | Run a saved query by `query_id` on its saved connection. Accepts the same confirmation object as `run_query` and returns a `run_query`-style receipt (including `dialect` and the sample-cap fields) with `result_id`. Tables in system/catalog or `blocked_schemas` schemas fail `validation` (`Schema 'x' is blocked`). Unknown `query_id` → `not_found`. |
 | `save_query` | Validate and save a `SELECT` for a connection with `name`, `sql`, and optional `default_schema`. Rejects the same SQL as `run_query`. Returns the saved query summary. |
 | `delete_saved_query` | Delete a saved query by `query_id`. First call returns `confirmation_required`; show the reasons, then retry with the returned confirmation object. Do not auto-confirm or invent the object. `destructiveHint`. |
 | `list_recipes` | List Explore recipes from the MCP store as `id`, `name`, `description`, `default_mode`, `required_fields`, and `updated_at`. `readOnlyHint`. |
@@ -257,7 +257,7 @@ Every tool error is JSON `{error, message, warnings}` with `isError=true`. Extra
 | `validation` / `compilation` / `execution` | Same meanings as [`QueryError`](../shared/src/main/kotlin/com/safedb/query/QueryCore.kt). Plan-check timeout or connection/I/O failure is `execution` with a short message (no driver dump), not a confirm prompt. |
 | `risk_gate` | Includes a slim `risk` summary. Rewrite the query. Do not retry the same query. |
 | `confirmation_required` | Includes `reasons` and a `confirmation` object. Show the reasons to the user, then retry the same tool (`run_query`, `run_saved_query`, `delete_connection`, or `delete_saved_query`) with that object. Do not auto-confirm. Do not invent the object. Confirmations are bound to the SQL and connection; tampered objects are rejected. A plan-check timeout is not this error. Failure to parse a MySQL `EXPLAIN FORMAT=JSON` plan (including Impossible WHERE / no matching const row) is not this error: the query runs under static risk. |
-| `connection` | Auth failure or the host could not be reached (including connect timeout). |
+| `connection` | Auth failure, a TLS handshake failure (the message says to check the transport setting), or the host could not be reached (including connect timeout). |
 | `internal` | Unexpected store or runtime failure. |
 
 ## Result store
@@ -270,7 +270,7 @@ On put it also writes `{dataDir}/results/{result_id}.jsonl` for LRU accounting: 
 
 `get_result_rows` pages the in-memory sample, not the file. A page stops at 50 rows or about 32 KiB, whichever comes first. Long cell values are truncated with `…[truncated]`. `page_truncated` is true when more of the in-memory sample remains; `next_offset` is then the offset to request next (omitted on the last page). It does not echo `sample_capped`. `summarize_result` reports per-column `null_count`, min/max (int/float numeric, decimal/numeric-typed text columns compared numerically with unparseable values skipped like float `NaN`, other text lexicographic, bool; omitted for binary and when there are no comparable values), and up to 8 distinct flattened values (`distinct_truncated` if more). `summarize_result` echoes `sample_capped` (omitted when false) from the original query.
 
-## Not in 1.1.1
+## Not in 1.1.2
 
 - Sharing macOS Keychain items with the signed desktop app
 - MCP tools that add or update a connection

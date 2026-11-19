@@ -2,13 +2,12 @@
 
 ## Unreleased
 
-- SQL Server queries with bound parameters read their optimizer cost from the `SELECT` statement, so they no longer always require confirmation with "The query plan did not provide a valid optimizer cost".
-- SQL Server query timeouts surface as "Query timed out" instead of "Connection is closed".
-- `summarize_result` min/max compares decimal and numeric-typed text columns (including Oracle `NUMBER`) numerically instead of lexicographically; values that are not numbers are skipped, like float `NaN`.
-- MCP `delete_connection` and `safe-db-mcp connections delete` also delete the connection's saved queries and query history; the confirmation reasons say so. The desktop app is unchanged.
+- SQL Server queries with bound parameters read their optimizer cost from the `SELECT` statement, not the leading `DECLARE` assignment, so they no longer always require confirmation with "The query plan did not provide a valid optimizer cost".
+- SQL Server query timeouts surface as "Query timed out after …ms" instead of "Connection is closed".
+- `summarize_result` min/max compares integer, decimal, and numeric-typed text columns (including Oracle `NUMBER`, `float`, and `money`) numerically instead of lexicographically; values that are not numbers are skipped, like float `NaN`.
+- MCP `delete_connection` and `safe-db-mcp connections delete` also delete the connection's saved queries and query history. The tool's confirmation reasons say so. The desktop app is unchanged.
 - Connection failures caused by a TLS handshake error now hint to check the transport setting.
 - Expected `-32002` resource-not-found errors no longer print SDK stack traces on stderr.
-- Documented that `blocked_schemas` also rejects `run_query`, `run_saved_query`, and `assess_query`, that connection names may repeat, that Db2 `size_class` is `Unknown` without catalog statistics, and that Oracle `NUMBER` values are JSON strings.
 
 ## 1.1.1
 
