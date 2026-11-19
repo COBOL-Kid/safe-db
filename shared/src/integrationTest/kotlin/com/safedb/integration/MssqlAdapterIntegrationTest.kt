@@ -11,6 +11,7 @@ import com.safedb.secrets.SecretsManager
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -99,6 +100,38 @@ class MssqlAdapterIntegrationTest {
                     10_000,
                 )
             AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun mssqlQueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
+        IntegrationAssumptions.assumeMssqlAvailable()
+        val adapter =
+            Adapter.connect(
+                IntegrationAssumptions.mssqlConnectionDef(),
+                IntegrationAssumptions.mssqlPassword,
+            )
+        try {
+            // A 20k x 20k self-join aggregate takes well over the 1s budget on a full run.
+            val heavy =
+                CompiledQuery(
+                    sql =
+                        """
+                        SELECT SUM([a].[amount] * [b].[amount])
+                        FROM (SELECT TOP 20000 [amount] FROM [analytics].[scan_events] ORDER BY [id]) AS [a]
+                        CROSS JOIN (SELECT TOP 20000 [amount] FROM [analytics].[scan_events] ORDER BY [id]) AS [b]
+                        """
+                            .trimIndent(),
+                    params = emptyList(),
+                )
+            val startedAt = System.nanoTime()
+            val failure = assertFailsWith<Exception> { adapter.executeQuery(heavy, 1_000) }
+            AdapterIntegrationAssertions.assertExecutionTimeout(
+                elapsedMs = (System.nanoTime() - startedAt) / 1_000_000,
+                error = failure,
+            )
         } finally {
             adapter.close()
         }

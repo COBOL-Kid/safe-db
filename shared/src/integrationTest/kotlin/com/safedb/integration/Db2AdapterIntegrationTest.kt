@@ -11,6 +11,7 @@ import com.safedb.secrets.SecretsManager
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -106,6 +107,38 @@ class Db2AdapterIntegrationTest {
                     10_000,
                 )
             AdapterIntegrationAssertions.assertEmptyCustomerLookupMetadata(empty)
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
+    fun db2QueryExecutionStopsAtTheConfiguredBudget() = runBlocking {
+        IntegrationAssumptions.assumeDb2Available()
+        val adapter =
+            Adapter.connect(
+                IntegrationAssumptions.db2ConnectionDef(),
+                IntegrationAssumptions.db2Password,
+            )
+        try {
+            // A 20k x 20k self-join aggregate takes well over the 1s budget on a full run.
+            val heavy =
+                CompiledQuery(
+                    sql =
+                        """
+                        SELECT SUM("a"."AMOUNT" * "b"."AMOUNT")
+                        FROM (SELECT "AMOUNT" FROM "ANALYTICS"."SCAN_EVENTS" WHERE "ID" <= 20000) "a"
+                        CROSS JOIN (SELECT "AMOUNT" FROM "ANALYTICS"."SCAN_EVENTS" WHERE "ID" <= 20000) "b"
+                        """
+                            .trimIndent(),
+                    params = emptyList(),
+                )
+            val startedAt = System.nanoTime()
+            val failure = assertFailsWith<Exception> { adapter.executeQuery(heavy, 1_000) }
+            AdapterIntegrationAssertions.assertExecutionTimeout(
+                elapsedMs = (System.nanoTime() - startedAt) / 1_000_000,
+                error = failure,
+            )
         } finally {
             adapter.close()
         }

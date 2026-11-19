@@ -54,6 +54,21 @@ class ResultStoreTest {
     }
 
     @Test
+    fun defaultTtlKeepsResultsForThirtyMinutes() = runBlocking {
+        withTempResults { dir ->
+            val clock = mutableListOf(1_000L)
+            val store = ResultStore(dir, nowMs = { clock.single() })
+            val stored = store.put(sampleMcpQueryResult())
+            val path = Path.of(stored.artifactPath!!)
+            clock[0] += 1_799_999
+            assertNotNull(store.get(stored.resultId))
+            clock[0] += 1
+            assertNull(store.get(stored.resultId))
+            assertFalse(Files.exists(path))
+        }
+    }
+
+    @Test
     fun lastNEvictionDeletesJsonlAndHonorsAccessOrder() = runBlocking {
         withTempResults { dir ->
             val store = ResultStore(dir, nowMs = { 1_000L }, maxEntries = 2)

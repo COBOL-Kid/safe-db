@@ -53,6 +53,30 @@ class SchemaCacheTest {
     }
 
     @Test
+    fun defaultTtlKeepsEntriesForFiveMinutes() = runBlocking {
+        val clock = mutableListOf(1_000L)
+        val loads = mutableListOf<String>()
+        val first = sampleMcpSchema()
+        val second = Schema(emptyList())
+        val schemas = ArrayDeque(listOf(first, second))
+        val cache =
+            SchemaCache(
+                load = { id ->
+                    loads += id
+                    schemas.removeFirst()
+                },
+                nowMs = { clock.single() },
+            )
+
+        assertSame(first, cache.get("c1"))
+        clock[0] += 299_999
+        assertSame(first, cache.get("c1"))
+        clock[0] += 1
+        assertSame(second, cache.get("c1"))
+        assertEquals(listOf("c1", "c1"), loads)
+    }
+
+    @Test
     fun refreshBypassesValidEntry() = runBlocking {
         val loads = mutableListOf<String>()
         val first = sampleMcpSchema()
