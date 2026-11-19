@@ -155,8 +155,31 @@ jobs:
             ls -l
             exit 1
           fi
-          npm publish "${darwin[0]}" --access public --provenance
-          npm publish "${linux_arm[0]}" --access public --provenance
-          npm publish "${linux_x64[0]}" --access public --provenance
-          npm publish "${win[0]}" --access public --provenance
-          npm publish "${meta[0]}" --access public --provenance
+          # Safe to re-run: versions already on the registry are skipped. The check also
+          # runs after a failed attempt because a transient provenance (Sigstore) error
+          # can leave the package published or let a retry succeed.
+          publish_tarball() {
+            local tarball="$1" spec attempt
+            spec="$(tar -xOzf "$tarball" package/package.json | node -e 'const p=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(`${p.name}@${p.version}`)')"
+            for attempt in 1 2 3; do
+              if npm view "$spec" version >/dev/null 2>&1; then
+                echo "$spec is already published; skipping"
+                return 0
+              fi
+              if npm publish "$tarball" --access public --provenance; then
+                return 0
+              fi
+              echo "Publishing $spec failed (attempt $attempt of 3)" >&2
+              sleep $((attempt * 15))
+            done
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "$spec is published despite the reported failure"
+              return 0
+            fi
+            return 1
+          }
+          publish_tarball "${darwin[0]}"
+          publish_tarball "${linux_arm[0]}"
+          publish_tarball "${linux_x64[0]}"
+          publish_tarball "${win[0]}"
+          publish_tarball "${meta[0]}"
