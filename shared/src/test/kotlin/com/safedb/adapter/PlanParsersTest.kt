@@ -275,6 +275,18 @@ class PlanParsersTest {
     }
 
     @Test
+    fun sqlServerCostSkipsLeadingCostlessAssignStatements() {
+        val plan =
+            parseSqlServerPlan(
+                """<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan"><BatchSequence><Batch><Statements><StmtSimple StatementType="ASSIGN"><QueryPlan/></StmtSimple><StmtSimple StatementType="SELECT" StatementSubTreeCost="7.25"><QueryPlan><RelOp PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="5"><IndexScan><Object Schema="[dbo]" Table="[orders]" Alias="[t0]"/><SeekPredicates><SeekPredicateNew><SeekKeys><Prefix ScanType="EQ"/></SeekKeys></SeekPredicateNew></SeekPredicates></IndexScan></RelOp></QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>""",
+            )
+
+        assertNotNull(plan)
+        assertEquals(7.25, plan.rawOptimizerCost)
+        assertEquals("orders", plan.relations.single().table)
+    }
+
+    @Test
     fun sqlServerRebindsScaleInnerLoopRowEstimates() {
         val plan =
             parseSqlServerPlan(

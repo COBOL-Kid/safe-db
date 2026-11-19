@@ -529,8 +529,21 @@ internal fun parseSqlServerPlan(raw: String): NormalizedQueryPlan? = runCatching
             }
         if (kind != null) operations += PlanBlockingOperation(kind, aliases, rows)
     }
-    val statement = document.getElementsByTagNameNS("*", "StmtSimple").item(0) as? Element
-    val cost = statement?.getAttribute("StatementSubTreeCost")?.toDoubleOrNull()
+    val statements = document.getElementsByTagNameNS("*", "StmtSimple")
+    // Bound parameters are sent as DECLARE batches, so the first StmtSimple is a cost-less ASSIGN.
+    var firstCost: Double? = null
+    var selectCost: Double? = null
+    for (index in 0 until statements.length) {
+        val statement = statements.item(index) as? Element ?: continue
+        val statementCost =
+            statement.getAttribute("StatementSubTreeCost").toDoubleOrNull() ?: continue
+        if (firstCost == null) firstCost = statementCost
+        if (statement.getAttribute("StatementType").equals("SELECT", ignoreCase = true)) {
+            selectCost = statementCost
+            break
+        }
+    }
+    val cost = selectCost ?: firstCost
     if (relations.isEmpty() && joins.isEmpty() && operations.isEmpty()) return null
     NormalizedQueryPlan(relations.distinct(), joins.distinct(), operations.distinct(), cost)
 }
