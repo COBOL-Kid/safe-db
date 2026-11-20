@@ -13,6 +13,7 @@
 - `safe-db-mcp connections delete` says when the saved queries and query history it removed live in the shared store used by the desktop app.
 - SQL Server queries run with JDBC `autoCommit = false` at `READ_UNCOMMITTED`, restore `LOCK_TIMEOUT` to `-1` afterward. JDBC query, socket, and lock timeouts (error 1222) are reported as "Query timed out after …ms".
 - The desktop sidebar shows "Checking connection…" while it probes a newly selected connection instead of flashing Not connected, and skips reachability probes while the app window is inactive.
+- SQL Editor and Query Builder say "Running query" while a run is in progress with Risk gate Off, instead of "Assessing query risk".
 
 ## 1.1.2
 

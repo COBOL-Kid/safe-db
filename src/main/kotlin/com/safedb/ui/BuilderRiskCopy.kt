@@ -43,6 +43,7 @@ internal fun queryRiskIndicatorText(
     val runEnabledLabel = if (runAvailable) "Run enabled" else "Run unavailable"
     return when {
         validationError != null -> "Query validation: $validationError"
+        running && gate == QueryRiskGate.Disabled -> "Running query · Run unavailable"
         running -> "Assessing query risk · Run unavailable"
         evaluation?.decision?.state == RiskGateState.ConfirmationRequired ->
             "Query plan safeguard: Confirmation required · Run unavailable"

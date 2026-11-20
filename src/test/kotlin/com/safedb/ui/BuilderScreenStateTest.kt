@@ -358,12 +358,20 @@ class BuilderScreenStateTest {
             queryRiskIndicatorText(assessment, null, true, QueryRiskGate.Standard),
         )
         assertEquals(
+            "Running query · Run unavailable",
+            queryRiskIndicatorText(assessment, null, true, QueryRiskGate.Disabled),
+        )
+        assertEquals(
             "Preliminary query risk: High concern · gate applies on run",
             queryRiskIndicatorText(assessment, null, false, QueryRiskGate.Standard),
         )
         assertEquals(
             "Query risk: Not required · Run enabled",
             queryRiskIndicatorText(null, null, false, QueryRiskGate.Disabled),
+        )
+        assertEquals(
+            "Running query · Run unavailable",
+            queryRiskIndicatorText(null, null, true, QueryRiskGate.Disabled),
         )
     }
 
