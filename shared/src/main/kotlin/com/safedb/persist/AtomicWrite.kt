@@ -9,6 +9,25 @@ import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermission
 import java.util.EnumSet
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
+private val jvmFileLocks = ConcurrentHashMap<Path, ReentrantLock>()
+
+// Serialize in-JVM threads on a ReentrantLock before FileChannel.lock() to avoid
+// OverlappingFileLockException, and lock a sibling file because ATOMIC_MOVE replaces the target.
+fun <T> withFileLock(lockPath: Path, block: () -> T): T {
+    val normalizedPath = lockPath.toAbsolutePath().normalize()
+    normalizedPath.parent?.let(::ensurePrivateDir)
+    val jvmLock = jvmFileLocks.computeIfAbsent(normalizedPath) { ReentrantLock() }
+    return jvmLock.withLock {
+        FileChannel.open(normalizedPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use {
+            channel ->
+            channel.lock().use { block() }
+        }
+    }
+}
 
 fun ensurePrivateDir(path: Path) {
     Files.createDirectories(path)

@@ -689,6 +689,60 @@ class ApplyWorksheetTest {
         assertEquals(emptyList(), preview.warnings)
     }
 
+    @Test
+    fun textFiltersAndMissingColumnsPreserveNullAndCaseInsensitiveSemantics() {
+        val textFiltered =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    filters =
+                        listOf(
+                            WorksheetFilter(
+                                "f-contains",
+                                "name",
+                                op = WorksheetFilterOp.Contains,
+                                value = "RAV",
+                            ),
+                            WorksheetFilter(
+                                "f-starts",
+                                "region",
+                                op = WorksheetFilterOp.StartsWith,
+                                value = "ea",
+                            ),
+                            WorksheetFilter(
+                                "f-ends",
+                                "day",
+                                op = WorksheetFilterOp.EndsWith,
+                                value = "-02",
+                            ),
+                            WorksheetFilter(
+                                "f-not-null",
+                                "discount",
+                                op = WorksheetFilterOp.IsNotNull,
+                            ),
+                        ),
+                ),
+            )
+        assertEquals(listOf("Bravo"), textFiltered.detailValues("name"))
+
+        val missingNull =
+            applyWorksheet(
+                sample(),
+                WorksheetConfig(
+                    filters =
+                        listOf(
+                            WorksheetFilter("f-missing", "missing", op = WorksheetFilterOp.IsNull),
+                            WorksheetFilter(
+                                "f-discount-null",
+                                "discount",
+                                op = WorksheetFilterOp.IsNull,
+                            ),
+                        ),
+                ),
+            )
+        assertEquals(listOf("Cyan"), missingNull.detailValues("name"))
+    }
+
     private fun WorksheetPreview.detailValues(column: String): List<String> {
         val index = columns.indexOfFirst { it.sourceColumn == column }
         return rows

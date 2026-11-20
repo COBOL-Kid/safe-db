@@ -5,6 +5,7 @@ import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -18,11 +19,15 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -41,6 +48,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -132,17 +144,9 @@ fun Canvas(
     var horizontalScrollbarBounds by remember { mutableStateOf<Rect?>(null) }
     var verticalScrollbarBounds by remember { mutableStateOf<Rect?>(null) }
     val fieldScrollStates = remember { mutableStateMapOf<String, ScrollState>() }
+    val canvasFocusRequester = remember { FocusRequester() }
     val density = LocalDensity.current
     val requestedContentTopInsetPx = with(density) { contentTopInset.toPx() }
-
-    val aliases = queryViewModel.canvasTables.map { it.alias }.toSet()
-    fieldScrollStates.keys
-        .toList()
-        .filter { it !in aliases }
-        .forEach { fieldScrollStates.remove(it) }
-    for ((_, alias, _, _, _, _) in queryViewModel.canvasTables) {
-        fieldScrollStates.getOrPut(alias) { ScrollState(0) }
-    }
 
     fun canvasTableLike(table: CanvasTable): CanvasTableLike =
         with(density) {
@@ -158,8 +162,10 @@ fun Canvas(
             )
         }
 
-    fun canvasTablesLike(): List<CanvasTableLike> =
-        queryViewModel.canvasTables.map(::canvasTableLike)
+    val tablesLike by
+        remember(density, queryViewModel) {
+            derivedStateOf { queryViewModel.canvasTables.map(::canvasTableLike) }
+        }
 
     fun addJoin(source: DragJoinState, targetAlias: String, targetColumn: String) {
         if (targetAlias == source.sourceAlias && targetColumn == source.sourceColumn) return
@@ -176,7 +182,7 @@ fun Canvas(
     fun completeJoin(source: DragJoinState) {
         val target =
             indexedJoinTargetAt(
-                tables = canvasTablesLike(),
+                tables = tablesLike,
                 x = source.mouseX,
                 y = source.mouseY,
                 sourceAlias = source.sourceAlias,
@@ -188,7 +194,8 @@ fun Canvas(
     }
 
     fun startJoin(canvasTable: CanvasTable, column: String) {
-        val like = canvasTableLike(canvasTable)
+        val like =
+            tablesLike.firstOrNull { it.alias == canvasTable.alias } ?: canvasTableLike(canvasTable)
         val port = columnJoinPort(like, column, JoinPortSide.Right)
         gesture =
             CanvasGesture.JoinDrag(
@@ -199,6 +206,7 @@ fun Canvas(
                     mouseY = port?.point?.y ?: columnY(like, column),
                 ),
             )
+        canvasFocusRequester.requestFocus()
     }
 
     fun endGesture() {
@@ -207,65 +215,62 @@ fun Canvas(
     }
 
     val dragJoin = (gesture as? CanvasGesture.JoinDrag)?.state
+    LaunchedEffect(dragJoin != null) { if (dragJoin != null) canvasFocusRequester.requestFocus() }
 
-    fun routedJoinLines(): List<ClickableJoinLine> {
-        val tablesLike = canvasTablesLike()
-        val existingLines =
-            queryViewModel.joins.mapIndexedNotNull { index, join ->
-                val left =
-                    queryViewModel.canvasTables.find { it.alias == join.leftAlias }
-                        ?: return@mapIndexedNotNull null
-                val right =
-                    queryViewModel.canvasTables.find { it.alias == join.rightAlias }
-                        ?: return@mapIndexedNotNull null
-                routeJoinEdge(
-                        canvasTableLike(left),
-                        join.leftColumn,
-                        canvasTableLike(right),
-                        join.rightColumn,
-                        allTables = tablesLike,
-                        laneIndex = index,
-                    )
-                    ?.let { edge -> ClickableJoinLine.Existing(join, edge) }
-            }
-        val relationships = suggestedRelationships(tablesLike, queryViewModel.joins)
-        val suggestedLines =
-            relationships
-                .flatMap { relationship ->
-                    relationship.joins
-                        .filterNot { suggested ->
-                            queryViewModel.joins.any { it.matchesJoin(suggested) }
-                        }
-                        .map { relationship to it }
-                }
-                .mapIndexedNotNull { index, (relationship, suggested) ->
-                    val foreign =
-                        queryViewModel.canvasTables.find { it.alias == suggested.leftAlias }
-                            ?: return@mapIndexedNotNull null
-                    val referenced =
-                        queryViewModel.canvasTables.find { it.alias == suggested.rightAlias }
-                            ?: return@mapIndexedNotNull null
+    val joinLines by
+        remember(density, queryViewModel) {
+            derivedStateOf {
+                val currentTables = tablesLike
+                val tablesByAlias = currentTables.associateBy { it.alias }
+                val joins = queryViewModel.joins
+                val existingLines = joins.mapIndexedNotNull { index, join ->
+                    val left = tablesByAlias[join.leftAlias] ?: return@mapIndexedNotNull null
+                    val right = tablesByAlias[join.rightAlias] ?: return@mapIndexedNotNull null
                     routeJoinEdge(
-                            canvasTableLike(foreign),
-                            suggested.leftColumn,
-                            canvasTableLike(referenced),
-                            suggested.rightColumn,
-                            allTables = tablesLike,
+                            left,
+                            join.leftColumn,
+                            right,
+                            join.rightColumn,
+                            allTables = currentTables,
                             laneIndex = index,
                         )
-                        ?.let { edge -> ClickableJoinLine.Suggested(relationship.joins, edge) }
+                        ?.let { edge -> ClickableJoinLine.Existing(join, edge) }
                 }
-        return existingLines + suggestedLines
-    }
-
-    val joinLines = routedJoinLines()
+                val relationships = suggestedRelationships(currentTables, joins)
+                val suggestedLines =
+                    relationships
+                        .flatMap { relationship ->
+                            relationship.joins
+                                .filterNot { suggested -> joins.any { it.matchesJoin(suggested) } }
+                                .map { relationship to it }
+                        }
+                        .mapIndexedNotNull { index, (relationship, suggested) ->
+                            val foreign =
+                                tablesByAlias[suggested.leftAlias] ?: return@mapIndexedNotNull null
+                            val referenced =
+                                tablesByAlias[suggested.rightAlias] ?: return@mapIndexedNotNull null
+                            routeJoinEdge(
+                                    foreign,
+                                    suggested.leftColumn,
+                                    referenced,
+                                    suggested.rightColumn,
+                                    allTables = currentTables,
+                                    laneIndex = index,
+                                )
+                                ?.let { edge ->
+                                    ClickableJoinLine.Suggested(relationship.joins, edge)
+                                }
+                        }
+                existingLines + suggestedLines
+            }
+        }
 
     fun joinLineAt(offset: Offset): ClickableJoinLine? {
         if (gesture != null) return null
 
-        val tablesLike = canvasTablesLike()
+        val currentTables = tablesLike
         val point = CanvasPoint(offset.x, offset.y)
-        if (tablesLike.any { tableBounds(it).contains(point) }) return null
+        if (currentTables.any { tableBounds(it).contains(point) }) return null
 
         val tolerance = JOIN_LINE_HIT_TOLERANCE * density.density
         val existingHit =
@@ -286,7 +291,7 @@ fun Canvas(
         rememberUpdatedState<(Offset) -> ClickableJoinLine?> { offset -> joinLineAt(offset) }
     val currentCanvasTableHitHandler by
         rememberUpdatedState<(CanvasPoint) -> Boolean> { point ->
-            canvasTablesLike().any { tableBounds(it).contains(point) }
+            tablesLike.any { tableBounds(it).contains(point) }
         }
     val currentScrollbarHitTester by
         rememberUpdatedState<(Offset) -> Boolean> { position ->
@@ -294,8 +299,12 @@ fun Canvas(
                 verticalScrollbarBounds?.contains(position) == true
         }
 
-    val routedEdges = joinLines.map(ClickableJoinLine::edge)
-    val contentBounds = builderCanvasContentBounds(canvasTablesLike(), routedEdges)
+    val contentBounds by
+        remember(density, queryViewModel) {
+            derivedStateOf {
+                builderCanvasContentBounds(tablesLike, joinLines.map(ClickableJoinLine::edge))
+            }
+        }
     val canvasPaddingPx = with(density) { 36.dp.toPx() }
     val minimumWidthPx = with(density) { CANVAS_MIN_WIDTH_DP.dp.toPx() }
     val minimumHeightPx = with(density) { CANVAS_MIN_HEIGHT_DP.dp.toPx() }
@@ -369,7 +378,26 @@ fun Canvas(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(SafeDbTheme.colors.workspaceCanvas)) {
+    Column(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(SafeDbTheme.colors.workspaceCanvas)
+                .focusRequester(canvasFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    if (
+                        event.type == KeyEventType.KeyDown &&
+                            event.key == Key.Escape &&
+                            gesture is CanvasGesture.JoinDrag
+                    ) {
+                        gesture = null
+                        true
+                    } else {
+                        false
+                    }
+                },
+    ) {
         Box(
             modifier =
                 Modifier.weight(1f)
@@ -469,6 +497,27 @@ fun Canvas(
                                         queryViewModel.removeJoin(pressedJoinLine.join)
                                     is ClickableJoinLine.Suggested ->
                                         pressedJoinLine.joins.forEach(queryViewModel::addJoin)
+                                }
+                            } else if (
+                                gesture is CanvasGesture.JoinDrag &&
+                                    !currentCanvasTableHitHandler(worldPosition)
+                            ) {
+                                val slop = viewConfiguration.touchSlop
+                                var movedPastSlop = false
+                                var released = false
+                                while (!released) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change =
+                                        event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if ((change.position - down.position).getDistance() > slop) {
+                                        movedPastSlop = true
+                                    }
+                                    if (change.changedToUpIgnoreConsumed() || !change.pressed) {
+                                        released = true
+                                    }
+                                }
+                                if (!movedPastSlop && gesture is CanvasGesture.JoinDrag) {
+                                    gesture = null
                                 }
                             }
                         }
@@ -637,81 +686,95 @@ fun Canvas(
                 }
 
                 for (canvasTable in queryViewModel.canvasTables) {
-                    TableCard(
-                        canvasTable = canvasTable,
-                        queryViewModel = queryViewModel,
-                        fieldScrollState = fieldScrollStates.getValue(canvasTable.alias),
-                        joinDragActive = dragJoin != null,
-                        highlightJoinTargets = dragJoin?.let { it.sourceAlias to it.sourceColumn },
-                        onStartDrag = { gesture = CanvasGesture.TableMove(canvasTable.alias) },
-                        onDragTable = { delta ->
-                            val active = gesture as? CanvasGesture.TableMove
-                            if (active?.alias == canvasTable.alias) {
-                                val current =
-                                    queryViewModel.canvasTables.find {
-                                        it.alias == canvasTable.alias
-                                    }
-                                if (current != null) {
-                                    queryViewModel.moveTable(
-                                        canvasTable.alias,
-                                        current.x + delta.x,
-                                        current.y + delta.y,
-                                    )
+                    key(canvasTable.alias) {
+                        val fieldScrollState = rememberScrollState()
+                        DisposableEffect(canvasTable.alias, fieldScrollState) {
+                            fieldScrollStates[canvasTable.alias] = fieldScrollState
+                            onDispose {
+                                if (fieldScrollStates[canvasTable.alias] === fieldScrollState) {
+                                    fieldScrollStates.remove(canvasTable.alias)
                                 }
                             }
-                        },
-                        onStartJoin = { column -> startJoin(canvasTable, column) },
-                        onDragJoin = { delta ->
-                            val active = gesture as? CanvasGesture.JoinDrag
-                            if (active?.state?.sourceAlias == canvasTable.alias) {
-                                gesture =
-                                    CanvasGesture.JoinDrag(
-                                        active.state.copy(
-                                            mouseX = active.state.mouseX + delta.x,
-                                            mouseY = active.state.mouseY + delta.y,
-                                        ),
-                                    )
-                            }
-                        },
-                        onJoinClick = { column ->
-                            if (dragJoin == null) {
-                                startJoin(canvasTable, column)
-                            } else {
-                                addJoin(dragJoin, canvasTable.alias, column)
-                                gesture = null
-                            }
-                        },
-                        onJoinTargetClick = { targetAlias, targetColumn ->
-                            val source = dragJoin ?: return@TableCard
-                            addJoin(source, targetAlias, targetColumn)
-                            gesture = null
-                        },
-                        onStartResize = { gesture = CanvasGesture.TableResize(canvasTable.alias) },
-                        onResizeTable = { delta ->
-                            val active = gesture as? CanvasGesture.TableResize
-                            if (active?.alias == canvasTable.alias) {
-                                val current =
-                                    queryViewModel.canvasTables.find {
-                                        it.alias == canvasTable.alias
+                        }
+                        TableCard(
+                            canvasTable = canvasTable,
+                            queryViewModel = queryViewModel,
+                            fieldScrollState = fieldScrollState,
+                            joinDragActive = dragJoin != null,
+                            highlightJoinTargets =
+                                dragJoin?.let { it.sourceAlias to it.sourceColumn },
+                            onStartDrag = { gesture = CanvasGesture.TableMove(canvasTable.alias) },
+                            onDragTable = { delta ->
+                                val active = gesture as? CanvasGesture.TableMove
+                                if (active?.alias == canvasTable.alias) {
+                                    val current =
+                                        queryViewModel.canvasTables.find {
+                                            it.alias == canvasTable.alias
+                                        }
+                                    if (current != null) {
+                                        queryViewModel.moveTable(
+                                            canvasTable.alias,
+                                            current.x + delta.x,
+                                            current.y + delta.y,
+                                        )
                                     }
-                                if (current != null) {
-                                    queryViewModel.resizeTable(
-                                        canvasTable.alias,
-                                        current.width + delta.x,
-                                        current.height + delta.y,
-                                    )
                                 }
-                            }
-                        },
-                        onEndGesture = { endGesture() },
-                        modifier =
-                            Modifier.offset {
-                                IntOffset(
-                                    (canvasTable.x - renderOrigin.x).roundToInt(),
-                                    (canvasTable.y - renderOrigin.y).roundToInt(),
-                                )
                             },
-                    )
+                            onStartJoin = { column -> startJoin(canvasTable, column) },
+                            onDragJoin = { delta ->
+                                val active = gesture as? CanvasGesture.JoinDrag
+                                if (active?.state?.sourceAlias == canvasTable.alias) {
+                                    gesture =
+                                        CanvasGesture.JoinDrag(
+                                            active.state.copy(
+                                                mouseX = active.state.mouseX + delta.x,
+                                                mouseY = active.state.mouseY + delta.y,
+                                            ),
+                                        )
+                                }
+                            },
+                            onJoinClick = { column ->
+                                if (dragJoin == null) {
+                                    startJoin(canvasTable, column)
+                                } else {
+                                    addJoin(dragJoin, canvasTable.alias, column)
+                                    gesture = null
+                                }
+                            },
+                            onJoinTargetClick = { targetAlias, targetColumn ->
+                                val source = dragJoin ?: return@TableCard
+                                addJoin(source, targetAlias, targetColumn)
+                                gesture = null
+                            },
+                            onStartResize = {
+                                gesture = CanvasGesture.TableResize(canvasTable.alias)
+                            },
+                            onResizeTable = { delta ->
+                                val active = gesture as? CanvasGesture.TableResize
+                                if (active?.alias == canvasTable.alias) {
+                                    val current =
+                                        queryViewModel.canvasTables.find {
+                                            it.alias == canvasTable.alias
+                                        }
+                                    if (current != null) {
+                                        queryViewModel.resizeTable(
+                                            canvasTable.alias,
+                                            current.width + delta.x,
+                                            current.height + delta.y,
+                                        )
+                                    }
+                                }
+                            },
+                            onEndGesture = { endGesture() },
+                            modifier =
+                                Modifier.offset {
+                                    IntOffset(
+                                        (canvasTable.x - renderOrigin.x).roundToInt(),
+                                        (canvasTable.y - renderOrigin.y).roundToInt(),
+                                    )
+                                },
+                        )
+                    }
                 }
             }
 

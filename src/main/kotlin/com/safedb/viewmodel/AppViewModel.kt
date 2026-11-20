@@ -6,6 +6,7 @@ import com.safedb.explore.exploreSpecHash
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
+import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.resolveQuerySchemaSelection
 import com.safedb.service.SafeDbService
 import kotlin.time.Duration.Companion.minutes
@@ -32,13 +33,18 @@ class AppViewModel(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     val connections = ConnectionsViewModel(service, scope)
-    val settings = SettingsViewModel(service, scope)
+    val schema = SchemaViewModel(service, scope)
+    val settings =
+        SettingsViewModel(
+            service,
+            scope,
+            cachedSchema = { id -> schema.schema.takeIf { schema.loadedConnectionId == id } },
+        )
     val savedQueries = SavedQueriesViewModel(service, scope)
     val history = HistoryViewModel(service, scope)
     val recipes = RecipesViewModel(service, scope, ioDispatcher)
     val query = QueryViewModel(service, scope, onRunFinished = history::refresh)
     val sqlEditor = SqlEditorViewModel(service, scope, onRunFinished = history::refresh)
-    val schema = SchemaViewModel(service, scope)
     internal val schemaMap = SchemaMapViewModel()
 
     private val _explore = MutableStateFlow<ExploreViewModel?>(null)
@@ -55,8 +61,11 @@ class AppViewModel(
 
     private var reachabilityGeneration = 0
     private var reachabilityJob: Job? = null
-    private val _databaseReachable = MutableStateFlow(false)
-    val databaseReachable: StateFlow<Boolean> = _databaseReachable.asStateFlow()
+    private var activeReachabilityConnection: ConnectionDef? = null
+    private var windowActive = true
+    private var probeSkippedWhileInactive = false
+    private val _databaseReachability = MutableStateFlow(DatabaseReachability.Disconnected)
+    val databaseReachability: StateFlow<DatabaseReachability> = _databaseReachability.asStateFlow()
 
     init {
         scope.launch {
@@ -97,14 +106,42 @@ class AppViewModel(
         scope.launch { service.lockCredentials() }
     }
 
+    fun setWindowActive(active: Boolean) {
+        if (windowActive == active) return
+        windowActive = active
+        val connection = activeReachabilityConnection
+        if (active && connection != null && probeSkippedWhileInactive) {
+            probeSkippedWhileInactive = false
+            launchReachabilityLoop(connection)
+        }
+    }
+
     fun refreshDatabaseReachability(connection: ConnectionDef?) {
         reachabilityJob?.cancel()
         reachabilityJob = null
+        activeReachabilityConnection = connection
+        probeSkippedWhileInactive = false
+        if (connection == null) {
+            ++reachabilityGeneration
+            _databaseReachability.value = DatabaseReachability.Disconnected
+            return
+        }
+        // Enter Checking on connection switch instead of flashing Disconnected before probing.
+        _databaseReachability.value = DatabaseReachability.Checking
+        launchReachabilityLoop(connection)
+    }
+
+    private fun launchReachabilityLoop(connection: ConnectionDef) {
+        reachabilityJob?.cancel()
         val generation = ++reachabilityGeneration
-        _databaseReachable.value = false
-        if (connection == null) return
         reachabilityJob = scope.launch {
             while (generation == reachabilityGeneration) {
+                if (!windowActive) {
+                    probeSkippedWhileInactive = true
+                    delay(ReachabilityPollInterval)
+                    continue
+                }
+                probeSkippedWhileInactive = false
                 val reachable =
                     try {
                         service.testConnection(connection, password = null)
@@ -116,7 +153,12 @@ class AppViewModel(
                     }
                 if (generation != reachabilityGeneration) return@launch
                 // Repeat checks only publish the probe result; clearing first would flash red.
-                _databaseReachable.value = reachable
+                _databaseReachability.value =
+                    if (reachable) {
+                        DatabaseReachability.Connected
+                    } else {
+                        DatabaseReachability.Disconnected
+                    }
                 delay(ReachabilityPollInterval)
             }
         }
@@ -149,11 +191,74 @@ class AppViewModel(
         _exploreOrigin.value = ExploreOrigin.Builder
         _explore.value =
             ExploreViewModel(
-                    createExploreSession(connection, spec, sample),
-                    computationScope = scope,
-                    ioDispatcher = ioDispatcher,
-                )
-                .also { it.requestRecipe(recipe) }
+                createExploreSession(connection, spec, sample),
+                computationScope = scope,
+                ioDispatcher = ioDispatcher,
+                initialRecipe = recipe,
+            )
+    }
+
+    internal fun exploreOriginContext(
+        activeConnectionId: String?,
+        sqlSpec: QuerySpec?,
+        connections: List<ConnectionDef> = this.connections.connections.value,
+        origin: ExploreOrigin = _exploreOrigin.value,
+    ): ExploreOriginContext {
+        val current = _explore.value
+        val currentSpec =
+            when (origin) {
+                ExploreOrigin.Builder -> query.spec
+                ExploreOrigin.Sql -> sqlSpec
+            }
+        val originSample =
+            when (origin) {
+                ExploreOrigin.Builder -> query.currentSample(activeConnectionId)
+                ExploreOrigin.Sql -> sqlEditor.currentSample(activeConnectionId, sqlSpec)
+            }
+        val sampleRefreshEnabled =
+            current != null &&
+                activeConnectionId == current.session.connectionId &&
+                originSample != null &&
+                connections.any { it.id == activeConnectionId }
+        return ExploreOriginContext(
+            currentSpec = currentSpec,
+            sampleRefreshEnabled = sampleRefreshEnabled,
+        )
+    }
+
+    fun refreshActiveExploreSample(
+        activeConnectionId: String?,
+        sqlSpec: QuerySpec?,
+        connections: List<ConnectionDef> = this.connections.connections.value,
+    ) {
+        val current = _explore.value ?: return
+        if (activeConnectionId != current.session.connectionId) return
+        val connection = connections.firstOrNull { it.id == activeConnectionId } ?: return
+        val latestSample =
+            when (_exploreOrigin.value) {
+                ExploreOrigin.Builder -> query.currentSample(activeConnectionId)
+                ExploreOrigin.Sql -> sqlEditor.currentSample(activeConnectionId, sqlSpec)
+            } ?: return
+        refreshExploreSample(connection, latestSample.spec, latestSample.result)
+    }
+
+    internal fun runRecipeFromExplore(
+        connection: ConnectionDef,
+        recipe: ExploreRecipe,
+        onSelectConnection: (SchemaSelectionIntent) -> Unit,
+        onRestored: () -> Unit = {},
+    ) {
+        val selection =
+            recipe.querySpec?.let(::resolveQuerySchemaSelection)
+                ?: resolveConnectionSchemaSelection(connection.id, settings.settings.value)
+        onSelectConnection(selection)
+        closeExplore()
+        runRecipe(connection, recipe) {
+            // Builder reads VM confirmation after navigate.
+            if (recipe.querySpec != null) {
+                onRestored()
+            }
+        }
     }
 
     fun runRecipe(
@@ -239,10 +344,21 @@ class AppViewModel(
     }
 }
 
+enum class DatabaseReachability {
+    Disconnected,
+    Checking,
+    Connected,
+}
+
 enum class ExploreOrigin {
     Builder,
     Sql,
 }
+
+internal data class ExploreOriginContext(
+    val currentSpec: QuerySpec?,
+    val sampleRefreshEnabled: Boolean,
+)
 
 data class PendingRecipeRun(
     val recipe: ExploreRecipe,

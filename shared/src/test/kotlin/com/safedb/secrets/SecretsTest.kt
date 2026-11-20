@@ -10,6 +10,9 @@ import com.safedb.platform.DesktopPlatform
 import com.safedb.platform.DesktopStoreUnavailableException
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -222,5 +225,38 @@ class SecretsTest {
         )
 
         assertEquals("stored-secret", SecretsManager.passwordForDefinition(def).getOrThrow())
+    }
+
+    @Test
+    fun disabledMemoryStoreHandlesConcurrentWritesReadsAndDeletes() {
+        val memoryStore = DisabledMemoryStore()
+        val threads = 8
+        val iterations = 50
+        val pool = Executors.newFixedThreadPool(threads)
+        val ready = CountDownLatch(threads)
+        val start = CountDownLatch(1)
+        try {
+            val futures =
+                (0 until threads).map { threadIndex ->
+                    pool.submit {
+                        ready.countDown()
+                        assertTrue(start.await(5, TimeUnit.SECONDS))
+                        repeat(iterations) { step ->
+                            val account = "acc-$threadIndex-$step"
+                            memoryStore.setPassword(SERVICE_NAME, account, "pw-$step")
+                            assertEquals("pw-$step", memoryStore.getPassword(SERVICE_NAME, account))
+                            if (step % 2 == 0) {
+                                memoryStore.deletePassword(SERVICE_NAME, account)
+                                assertNull(memoryStore.getPassword(SERVICE_NAME, account))
+                            }
+                        }
+                    }
+                }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            start.countDown()
+            futures.forEach { it.get(10, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdownNow()
+        }
     }
 }

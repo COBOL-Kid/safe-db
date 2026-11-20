@@ -1,13 +1,21 @@
 package com.safedb.mcp
 
 import com.safedb.adapter.ConnectionFailedException
+import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
+import com.safedb.model.HistoryEntry
+import com.safedb.model.QuerySpec
+import com.safedb.model.SavedQuery
+import com.safedb.model.Schema
+import com.safedb.model.Settings
 import com.safedb.model.displayName
 import com.safedb.platform.DesktopPlatform
+import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.secrets.ENV_BACKEND
 import com.safedb.secrets.RequestedBackend
 import com.safedb.secrets.SecretsManager
+import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
 import com.safedb.service.SafeDbServiceImpl
 import com.safedb.store.ConfigStore
@@ -28,11 +36,15 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.nio.file.Path
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -118,10 +130,24 @@ internal inline fun <T> Arg<T>.getOrElse(onErr: (CallToolResult) -> Nothing): T 
         is Arg.Err -> onErr(result)
     }
 
-internal fun requireKnownArguments(request: CallToolRequest, vararg allowed: String): Arg<Unit> {
-    val extra = request.arguments?.keys.orEmpty().filter { it !in allowed }.sorted()
+internal const val LIST_DEFAULT_LIMIT = 100
+internal const val LIST_MAX_LIMIT = 200
+
+internal fun storeLabel(sharesDesktopStore: Boolean): String =
+    if (sharesDesktopStore) "the shared safe-db store (also used by the desktop app)"
+    else "this MCP store"
+
+internal fun requireKnownArguments(request: CallToolRequest, vararg allowed: String): Arg<Unit> =
+    requireKnownKeys(request.arguments?.keys.orEmpty(), allowed) { "unknown argument '$it'" }
+
+internal fun requireKnownKeys(
+    keys: Set<String>,
+    allowed: Array<out String>,
+    messageForExtra: (String) -> String,
+): Arg<Unit> {
+    val extra = keys.filter { it !in allowed }.sorted()
     if (extra.isEmpty()) return Arg.Ok(Unit)
-    return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "unknown argument '${extra.first()}'"))
+    return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, messageForExtra(extra.first())))
 }
 
 internal fun requiredString(request: CallToolRequest, name: String): Arg<String> {
@@ -150,26 +176,81 @@ internal fun optionalString(request: CallToolRequest, name: String): Arg<String?
     return Arg.Ok(primitive.content.trim().takeIf { it.isNotEmpty() })
 }
 
-internal fun optionalBoolean(request: CallToolRequest, name: String): Arg<Boolean?> {
-    val element = request.arguments?.get(name) ?: return Arg.Ok(null)
-    if (element is JsonNull) return Arg.Ok(null)
+internal fun optionalBoolean(request: CallToolRequest, name: String): Arg<Boolean?> =
+    decodeOptionalBoolean(request.arguments?.get(name), name)
+
+internal fun optionalInt(request: CallToolRequest, name: String): Arg<Int?> =
+    decodeOptionalInt(request.arguments?.get(name), name)
+
+internal fun decodeOptionalBoolean(element: JsonElement?, label: String): Arg<Boolean?> {
+    if (element == null || element is JsonNull) return Arg.Ok(null)
     val primitive = element as? JsonPrimitive
     val value = primitive?.takeIf { !it.isString }?.booleanOrNull
     if (value == null) {
-        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be a boolean"))
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$label must be a boolean"))
     }
     return Arg.Ok(value)
 }
 
-internal fun optionalInt(request: CallToolRequest, name: String): Arg<Int?> {
-    val element = request.arguments?.get(name) ?: return Arg.Ok(null)
-    if (element is JsonNull) return Arg.Ok(null)
+internal fun decodeOptionalInt(element: JsonElement?, label: String): Arg<Int?> {
+    if (element == null || element is JsonNull) return Arg.Ok(null)
     val primitive = element as? JsonPrimitive
     val value = primitive?.takeIf { !it.isString }?.intOrNull
     if (value == null) {
-        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$name must be an integer"))
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "$label must be an integer"))
     }
     return Arg.Ok(value)
+}
+
+internal data class ListPageParams(val offset: Int, val limit: Int)
+
+internal data class ListPage<T>(
+    val items: List<T>,
+    val totalCount: Int,
+    val truncated: Boolean,
+    val nextOffset: Int?,
+)
+
+internal fun parseListPageParams(request: CallToolRequest): Arg<ListPageParams> {
+    val offsetArg =
+        optionalInt(request, "offset").getOrElse {
+            return Arg.Err(it)
+        }
+    if (offsetArg != null && offsetArg < 0) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "offset must be 0 or more"))
+    }
+    val limitArg =
+        optionalInt(request, "limit").getOrElse {
+            return Arg.Err(it)
+        }
+    if (limitArg != null && limitArg <= 0) {
+        return Arg.Err(toolError(ERROR_INVALID_ARGUMENTS, "limit must be 1 or more"))
+    }
+    return Arg.Ok(
+        ListPageParams(
+            offset = offsetArg ?: 0,
+            limit = (limitArg ?: LIST_DEFAULT_LIMIT).coerceAtMost(LIST_MAX_LIMIT),
+        ),
+    )
+}
+
+internal fun <T> paginateList(items: List<T>, offset: Int, limit: Int): ListPage<T> {
+    val totalCount = items.size
+    val page =
+        if (offset >= totalCount) {
+            emptyList()
+        } else {
+            items.subList(offset, (offset + limit).coerceAtMost(totalCount)).toList()
+        }
+    val endOffset = offset + page.size
+    val truncated = endOffset < totalCount
+    val nextOffset = if (truncated) endOffset else null
+    return ListPage(
+        items = page,
+        totalCount = totalCount,
+        truncated = truncated,
+        nextOffset = nextOffset,
+    )
 }
 
 internal fun optionalObject(request: CallToolRequest, name: String): Arg<JsonObject?> {
@@ -201,7 +282,8 @@ internal suspend fun runMcpTool(
     } catch (error: ConnectionFailedException) {
         toolError(ERROR_CONNECTION, error.message ?: fallback)
     } catch (error: Exception) {
-        toolError(ERROR_INTERNAL, error.message ?: fallback)
+        System.err.println("[safe-db-mcp] $fallback (${error::class.simpleName})")
+        toolError(ERROR_INTERNAL, fallback)
     }
 
 internal suspend fun Server.createSafeDbSession(transport: Transport): ServerSession {
@@ -216,7 +298,16 @@ internal fun Server.installSafeDbToolDispatch(session: ServerSession) {
         if (registered == null) {
             toolError(ERROR_NOT_FOUND, "Unknown tool '${request.name}'")
         } else {
-            registered.handler(clientConnection(session.sessionId), request)
+            try {
+                registered.handler(clientConnection(session.sessionId), request)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                System.err.println(
+                    "[safe-db-mcp] Tool '${request.name}' failed (${error::class.simpleName})",
+                )
+                toolError(ERROR_INTERNAL, "Tool '${request.name}' failed")
+            }
         }
     }
 }
@@ -257,9 +348,12 @@ internal fun createMcpRuntime(
     return createMcpService(dataDir)
 }
 
-internal fun createMcpService(dataDir: Path): SafeDbService {
+internal fun createMcpService(
+    dataDir: Path,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+): SafeDbService {
     val queryStore = QueryStore.new(dataDir)
-    return McpConnectionDeleteService(
+    return DispatchingMcpSafeDbService(
         delegate =
             SafeDbServiceImpl(
                 configStore = ConfigStore.new(dataDir),
@@ -268,19 +362,94 @@ internal fun createMcpService(dataDir: Path): SafeDbService {
                 recipeStore = RecipeStore.new(dataDir),
             ),
         queryStore = queryStore,
+        ioDispatcher = ioDispatcher,
     )
 }
 
 // The desktop app keeps saved queries and history after a connection is removed; MCP and
 // the CLI delete them so run_saved_query cannot report not_found for a deleted connection.
-private class McpConnectionDeleteService(
+// All service/store operations are dispatched onto ioDispatcher so file I/O avoids the SDK context.
+private class DispatchingMcpSafeDbService(
     private val delegate: SafeDbService,
     private val queryStore: QueryStore,
-) : SafeDbService by delegate {
-    override suspend fun deleteConnection(id: String) {
+    private val ioDispatcher: CoroutineDispatcher,
+) : SafeDbService {
+    override suspend fun testConnection(def: ConnectionDef, password: String?) = onIo {
+        delegate.testConnection(def, password)
+    }
+
+    override suspend fun createConnection(def: ConnectionDef, password: String) = onIo {
+        delegate.createConnection(def, password)
+    }
+
+    override suspend fun updateConnection(def: ConnectionDef, password: String?) = onIo {
+        delegate.updateConnection(def, password)
+    }
+
+    override suspend fun listConnections(): List<ConnectionDef> = onIo(delegate::listConnections)
+
+    override suspend fun deleteConnection(id: String) = onIo {
         delegate.deleteConnection(id)
         queryStore.deleteForConnection(id)
     }
+
+    override suspend fun lockCredentials() = onIo(delegate::lockCredentials)
+
+    override suspend fun getSchema(connectionId: String): Schema = onIo {
+        delegate.getSchema(connectionId)
+    }
+
+    override suspend fun runQuery(request: QueryRunRequest) = onIo { delegate.runQuery(request) }
+
+    override suspend fun runQueryWithSchema(
+        connectionId: String,
+        confirmation: QueryExecutionConfirmation?,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ) = onIo { delegate.runQueryWithSchema(connectionId, confirmation, resolveSpec) }
+
+    override suspend fun assessQuery(request: QueryRunRequest) = onIo {
+        delegate.assessQuery(request)
+    }
+
+    override suspend fun assessQueryWithSchema(
+        connectionId: String,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ) = onIo { delegate.assessQueryWithSchema(connectionId, resolveSpec) }
+
+    override suspend fun listSavedQueries(): List<SavedQuery> = onIo(delegate::listSavedQueries)
+
+    override suspend fun saveSavedQuery(query: SavedQuery) = onIo { delegate.saveSavedQuery(query) }
+
+    override suspend fun deleteSavedQuery(id: String) = onIo { delegate.deleteSavedQuery(id) }
+
+    override suspend fun listExploreRecipes(): List<ExploreRecipe> =
+        onIo(delegate::listExploreRecipes)
+
+    override suspend fun saveExploreRecipe(recipe: ExploreRecipe) = onIo {
+        delegate.saveExploreRecipe(recipe)
+    }
+
+    override suspend fun deleteExploreRecipe(id: String) = onIo { delegate.deleteExploreRecipe(id) }
+
+    override suspend fun importExploreRecipe(json: String, nowEpochSec: String) = onIo {
+        delegate.importExploreRecipe(json, nowEpochSec)
+    }
+
+    override suspend fun exportExploreRecipe(recipe: ExploreRecipe) = onIo {
+        delegate.exportExploreRecipe(recipe)
+    }
+
+    override suspend fun listHistory(): List<HistoryEntry> = onIo(delegate::listHistory)
+
+    override suspend fun clearHistory() = onIo(delegate::clearHistory)
+
+    override suspend fun deleteHistoryEntry(id: String) = onIo { delegate.deleteHistoryEntry(id) }
+
+    override suspend fun getSettings(): Settings = onIo(delegate::getSettings)
+
+    override suspend fun saveSettings(settings: Settings) = onIo { delegate.saveSettings(settings) }
+
+    private suspend fun <T> onIo(block: suspend () -> T): T = withContext(ioDispatcher) { block() }
 }
 
 internal fun createSafeDbMcpServer(
@@ -293,6 +462,7 @@ internal fun createSafeDbMcpServer(
     resultStoreMaxEntries: Int = RESULT_STORE_MAX_ENTRIES,
     resultStoreMaxBytes: Long = RESULT_STORE_MAX_BYTES,
     resultStore: ResultStore? = null,
+    sharesDesktopStore: Boolean = McpDataDirectory.sharesDesktopStore(),
 ): Server {
     val schemaCache =
         SchemaCache(load = service::getSchema, nowMs = nowMs, ttlMs = schemaCacheTtlMs)
@@ -323,14 +493,14 @@ internal fun createSafeDbMcpServer(
                 ),
             instructions = MCP_SERVER_INSTRUCTIONS,
         )
-    registerConnectionTools(server, service, schemaCache)
+    registerConnectionTools(server, service, schemaCache, sharesDesktopStore)
     registerSchemaTools(server, service, schemaCache)
     registerQueryTools(server, service, store)
     registerAssessQueryTools(server, service)
     registerResultQueryTools(server, store)
     registerExploreTools(server, store)
-    registerRecipeTools(server, service, store)
-    registerWorkspaceTools(server, service, store, nowMs)
+    registerRecipeTools(server, service, store, sharesDesktopStore)
+    registerWorkspaceTools(server, service, store, nowMs, sharesDesktopStore)
     registerExportTools(server, store, exportsDir)
     registerMcpResourcesAndPrompts(server, service, schemaCache, store)
     return server
@@ -340,31 +510,72 @@ internal fun registerConnectionTools(
     server: Server,
     service: SafeDbService,
     schemaCache: SchemaCache,
+    sharesDesktopStore: Boolean = false,
 ) {
     val deleteTokens = IssuedTokens()
     server.addTool(
         name = "list_connections",
         description =
             "List saved database connections as id, name, dialect, and database. " +
-                "Passwords and connection URLs are not returned. Add connections with " +
+                "Passwords and connection URLs are not returned. Supports optional offset and " +
+                "limit (default $LIST_DEFAULT_LIMIT, max $LIST_MAX_LIMIT). Returns an object " +
+                "{connections, total_count, truncated, next_offset?}. Add connections with " +
                 "`safe-db-mcp setup` or `safe-db-mcp connections add`; do not pass a password " +
                 "or URL to any tool.",
-        inputSchema = ToolSchema(properties = buildJsonObject {}),
+        inputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put("offset", offsetProperty())
+                        put(
+                            "limit",
+                            boundedLimitProperty(
+                                defaultLimit = LIST_DEFAULT_LIMIT,
+                                maxLimit = LIST_MAX_LIMIT,
+                                noun = "connections",
+                            ),
+                        )
+                    },
+            ),
+        outputSchema =
+            objectOutputSchema(listOf("connections", "total_count", "truncated")) {
+                put("connections", arrayProp())
+                put("total_count", intProp())
+                put("truncated", boolProp())
+                put("next_offset", intProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_connections failed") {
-            requireKnownArguments(request).getOrElse {
+            requireKnownArguments(request, "offset", "limit").getOrElse {
                 return@runMcpTool it
             }
-            val payload = toolJson.encodeToString(service.listConnections().map { it.toSummary() })
-            CallToolResult(content = listOf(TextContent(text = payload)))
+            val pageParams =
+                parseListPageParams(request).getOrElse {
+                    return@runMcpTool it
+                }
+            val page =
+                paginateList(
+                    service.listConnections().map { it.toSummary() },
+                    pageParams.offset,
+                    pageParams.limit,
+                )
+            objectToolResult(
+                ConnectionListResult(
+                    connections = page.items,
+                    totalCount = page.totalCount,
+                    truncated = page.truncated,
+                    nextOffset = page.nextOffset,
+                ),
+            )
         }
     }
 
     server.addTool(
         name = "delete_connection",
         description =
-            "Delete a saved connection by id from list_connections. First call returns " +
+            "Delete a saved connection by id from list_connections (along with its saved queries " +
+                "and query history) from ${storeLabel(sharesDesktopStore)}. First call returns " +
                 "confirmation_required; show the reasons to the user, then retry with the " +
                 "returned confirmation object. Do not auto-confirm. Do not invent the object. " +
                 "Does not accept a password. Add connections with `safe-db-mcp setup` or " +
@@ -381,9 +592,19 @@ internal fun registerConnectionTools(
         outputSchema = objectOutputSchema(listOf("deleted")) { put("deleted", stringProp()) },
         toolAnnotations = ToolAnnotations(destructiveHint = true),
     ) { request ->
-        handleDeleteConnection(service, schemaCache, deleteTokens, request)
+        runMcpTool("delete_connection failed") {
+            handleDeleteConnection(service, schemaCache, deleteTokens, request, sharesDesktopStore)
+        }
     }
 }
+
+@Serializable
+internal data class ConnectionListResult(
+    val connections: List<ConnectionSummary>,
+    @SerialName("total_count") val totalCount: Int,
+    val truncated: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
+)
 
 @Serializable
 internal data class ConnectionSummary(
@@ -409,6 +630,7 @@ private suspend fun handleDeleteConnection(
     schemaCache: SchemaCache,
     tokens: IssuedTokens,
     request: CallToolRequest,
+    sharesDesktopStore: Boolean,
 ): CallToolResult {
     requireKnownArguments(request, "connection_id", "confirmation").getOrElse {
         return it
@@ -427,8 +649,10 @@ private suspend fun handleDeleteConnection(
         serializer = McpDeleteConfirmation.serializer(),
         confirmedId = { it.connectionId },
         tokenOf = { it.token },
-        confirmationRequired = { token -> deleteConfirmationRequired(connection, token) },
-        failureMessage = "delete failed",
+        confirmationRequired = { token ->
+            deleteConfirmationRequired(connection, token, sharesDesktopStore)
+        },
+        failureMessage = "delete_connection failed",
         afterConfirmed = { schemaCache.invalidate(id) },
     ) {
         service.deleteConnection(id)
@@ -436,18 +660,34 @@ private suspend fun handleDeleteConnection(
     }
 }
 
-private fun deleteConfirmationRequired(connection: ConnectionDef, token: String): CallToolResult {
+private fun deleteConfirmationRequired(
+    connection: ConnectionDef,
+    token: String,
+    sharesDesktopStore: Boolean,
+): CallToolResult {
     val confirmation = McpDeleteConfirmation(connection.id, token)
+    val reasons =
+        if (sharesDesktopStore) {
+            listOf(
+                "This deletes saved connection ${connection.name} " +
+                    "(${connection.dialect.displayName()} / ${connection.database}) " +
+                    "from the shared safe-db store used by the desktop app as well.",
+                "It also deletes this connection's saved queries and query history " +
+                    "from the shared safe-db store used by the desktop app.",
+            )
+        } else {
+            listOf(
+                "This deletes saved connection ${connection.name} " +
+                    "(${connection.dialect.displayName()} / ${connection.database}).",
+                "It also deletes this connection's saved queries and query history.",
+            )
+        }
     return toolError(
         ERROR_CONFIRMATION_REQUIRED,
         "Deleting connection '${connection.name}' (${connection.dialect.displayName()}, ${connection.database}) " +
-            "removes it from this MCP store along with its saved queries and query history. " +
+            "removes it from ${storeLabel(sharesDesktopStore)} along with its saved queries and query history. " +
             "Show the user, then retry with the returned confirmation object; do not auto-confirm.",
-        reasons =
-            listOf(
-                "This deletes saved connection ${connection.name} (${connection.dialect.displayName()} / ${connection.database}).",
-                "It also deletes this connection's saved queries and query history.",
-            ),
+        reasons = reasons,
         confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
     )
 }

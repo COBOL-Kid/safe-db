@@ -2,7 +2,6 @@ package com.safedb.mcp
 
 import com.safedb.query.RiskGateState
 import com.safedb.service.QueryFailureException
-import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
@@ -20,8 +19,10 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
                 "like run_query, resolves result columns, compiles the statement, and returns " +
                 "dialect, columns, compiled_sql, parameter_count, warnings, a slim risk " +
                 "summary, and confirmation_required with reasons when the risk gate would " +
-                "require confirmation. Unknown extra arguments are invalid_arguments. The " +
-                "result includes JSON text and structuredContent with the same object.",
+                "require confirmation. Note: unless the risk gate is Disabled, Oracle and Db2 " +
+                "EXPLAIN write and delete plan-table rows during assessment. Unknown extra " +
+                "arguments are invalid_arguments. The result includes JSON text and " +
+                "structuredContent with the same object.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -53,7 +54,7 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
                 put("confirmation_required", boolProp())
                 put("reasons", arrayProp())
             },
-        toolAnnotations = ToolAnnotations(readOnlyHint = true),
+        toolAnnotations = ToolAnnotations(readOnlyHint = false),
     ) { request ->
         runMcpTool("assess_query failed") { handleAssessQuery(service, request) }
     }
@@ -66,13 +67,25 @@ private suspend fun handleAssessQuery(
     requireKnownArguments(request, "connection_id", "sql", "default_schema").getOrElse {
         return it
     }
-    val resolved =
-        resolveSqlSpec(service, request).getOrElse {
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return it
+        }
+    val sql =
+        requiredString(request, "sql").getOrElse {
+            return it
+        }
+    val defaultSchemaArg =
+        optionalString(request, "default_schema").getOrElse {
             return it
         }
 
     return try {
-        val assessment = service.assessQuery(QueryRunRequest(resolved.connectionId, resolved.spec))
+        val resolved =
+            service.assessQueryWithSchema(connectionId) { connection, schema, settings ->
+                parseSqlSpecOrThrow(sql, defaultSchemaArg, connection, schema, settings)
+            }
+        val assessment = resolved.assessment
         val risk = assessment.riskEvaluation
         val receipt =
             QueryAssessmentReceipt(
@@ -92,7 +105,15 @@ private suspend fun handleAssessQuery(
         objectToolResult(receipt)
     } catch (error: CancellationException) {
         throw error
+    } catch (error: SqlSpecResolutionException) {
+        toolError(error.errorCode, error.message)
     } catch (error: QueryFailureException) {
         mapQueryFailure(error)
+    } catch (error: IllegalArgumentException) {
+        if (error.message == "Connection not found") {
+            toolError(ERROR_NOT_FOUND, "Connection not found")
+        } else {
+            throw error
+        }
     }
 }

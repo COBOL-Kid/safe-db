@@ -17,7 +17,6 @@ import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.EncodeDefault
@@ -31,23 +30,62 @@ internal fun registerRecipeTools(
     server: Server,
     service: SafeDbService,
     resultStore: ResultStore,
+    sharesDesktopStore: Boolean = false,
 ) {
     server.addTool(
         name = "list_recipes",
         description =
-            "List Explore recipes saved in this MCP store as id, name, description, " +
-                "default_mode, required_fields, and updated_at. Apply one to a fetched result " +
-                "with apply_recipe.",
-        inputSchema = ToolSchema(properties = buildJsonObject {}),
+            "List Explore recipes saved in ${storeLabel(sharesDesktopStore)} as id, name, " +
+                "description, default_mode, required_fields, and updated_at. Supports optional " +
+                "offset and limit (default $LIST_DEFAULT_LIMIT, max $LIST_MAX_LIMIT). Returns " +
+                "an object {recipes, total_count, truncated, next_offset?}. Apply one to a " +
+                "fetched result with apply_recipe.",
+        inputSchema =
+            ToolSchema(
+                properties =
+                    buildJsonObject {
+                        put("offset", offsetProperty())
+                        put(
+                            "limit",
+                            boundedLimitProperty(
+                                defaultLimit = LIST_DEFAULT_LIMIT,
+                                maxLimit = LIST_MAX_LIMIT,
+                                noun = "recipes",
+                            ),
+                        )
+                    },
+            ),
+        outputSchema =
+            objectOutputSchema(listOf("recipes", "total_count", "truncated")) {
+                put("recipes", arrayProp())
+                put("total_count", intProp())
+                put("truncated", boolProp())
+                put("next_offset", intProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_recipes failed") {
-            requireKnownArguments(request).getOrElse {
+            requireKnownArguments(request, "offset", "limit").getOrElse {
                 return@runMcpTool it
             }
-            val payload =
-                toolJson.encodeToString(service.listExploreRecipes().map { it.toSummary() })
-            CallToolResult(content = listOf(TextContent(text = payload)))
+            val pageParams =
+                parseListPageParams(request).getOrElse {
+                    return@runMcpTool it
+                }
+            val page =
+                paginateList(
+                    service.listExploreRecipes().map { it.toSummary() },
+                    pageParams.offset,
+                    pageParams.limit,
+                )
+            objectToolResult(
+                RecipeListResult(
+                    recipes = page.items,
+                    totalCount = page.totalCount,
+                    truncated = page.truncated,
+                    nextOffset = page.nextOffset,
+                ),
+            )
         }
     }
 
@@ -281,6 +319,14 @@ private fun RecipeField.toSummary(): RecipeFieldSummary =
         dataType = dataType,
         sourceTable = sourceTable,
     )
+
+@Serializable
+internal data class RecipeListResult(
+    val recipes: List<RecipeSummary>,
+    @SerialName("total_count") val totalCount: Int,
+    val truncated: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
+)
 
 @Serializable
 internal data class RecipeSummary(

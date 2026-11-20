@@ -611,6 +611,72 @@ class ExploreArgParsersTest {
             assertEquals("$name must be an array", error.message())
         }
     }
+
+    @Test
+    fun exploreArgParsersPreserveLeadingAndTrailingWhitespace() {
+        val paddedColumns = setOf(" region ", " amount ")
+        val pivotFilters =
+            assertIs<Arg.Ok<List<PivotFilter>>>(
+                    parsePivotFilters(
+                        objects(
+                            """{"column":" region ","op":"members","included_keys":[" east ","  "]}""",
+                            """{"column":" region ","op":"equals","value":"  east  "}""",
+                            """{"column":" amount ","op":"between","measure_alias":"count","value":" 1 ","second_value":" 10 "}""",
+                        ),
+                        paddedColumns,
+                    ),
+                )
+                .value
+        val members = assertIs<PivotFilter.Members>(pivotFilters[0])
+        assertEquals(" region ", members.column)
+        assertEquals(setOf(" east ", "  "), members.includedKeys)
+        val label = assertIs<PivotFilter.Label>(pivotFilters[1])
+        assertEquals("  east  ", label.value)
+        val valueFilter = assertIs<PivotFilter.Value>(pivotFilters[2])
+        assertEquals(" 1 ", valueFilter.value)
+        assertEquals(" 10 ", valueFilter.secondValue)
+
+        val worksheetFilters =
+            assertIs<Arg.Ok<List<WorksheetFilter>>>(
+                    parseWorksheetFilters(
+                        objects(
+                            """{"column":" region ","op":"members","included_keys":[" east "]}""",
+                            """{"column":" region ","op":"eq","value":" east ","second_value":" west "}""",
+                        ),
+                        paddedColumns,
+                    ),
+                )
+                .value
+        assertEquals(" region ", worksheetFilters[0].column)
+        assertEquals(setOf(" east "), worksheetFilters[0].includedKeys)
+        assertEquals(" east ", worksheetFilters[1].value)
+        assertEquals(" west ", worksheetFilters[1].secondValue)
+
+        val dimensions =
+            assertIs<Arg.Ok<List<PivotDimension>>>(
+                    parseDimensions(
+                        JsonArray(listOf(JsonPrimitive(" region "))),
+                        paddedColumns,
+                        "row_dimensions",
+                    ),
+                )
+                .value
+        assertEquals(listOf(" region "), dimensions.map { it.column })
+
+        val projection =
+            assertIs<Arg.Ok<List<String>>>(
+                    parseColumnProjection(strings(" region ", " amount "), paddedColumns),
+                )
+                .value
+        assertEquals(listOf(" region ", " amount "), projection)
+
+        val sorts =
+            assertIs<Arg.Ok<List<WorksheetSort>>>(
+                    parseWorksheetSorts(objects("""{"column":" region "}"""), paddedColumns),
+                )
+                .value
+        assertEquals(WorksheetValueRef.Column(" region "), sorts.single().target)
+    }
 }
 
 private fun objects(vararg values: String): JsonArray =

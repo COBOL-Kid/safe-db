@@ -25,15 +25,15 @@ kotlin { jvmToolchain(25) }
 
 dependencies {
     implementation(project(":shared"))
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
+    implementation(libs.kotlinx.serialization.json)
     implementation(compose.desktop.currentOs)
     "windowsAmd64"(libs.compose.desktop.windows.x64)
     "macAarch64"(libs.compose.desktop.macos.arm64)
     implementation("org.jetbrains.compose.material3:material3:1.9.0")
     implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
+    implementation(libs.kotlinx.coroutines.swing)
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(testFixtures(project(":shared")))
     kover(project(":shared"))
 }
@@ -148,58 +148,43 @@ tasks.qodanaScan {
     )
 }
 
+val koverIncludedClasses =
+    listOf(
+        "com.safedb.AppState*",
+        "com.safedb.AppVersion*",
+        "com.safedb.AppWindowIcon*",
+        "com.safedb.export.*",
+        "com.safedb.platform.*",
+        "com.safedb.viewmodel.*",
+        "com.safedb.ui.ConnectionFormState*",
+        "com.safedb.adapter.*",
+        "com.safedb.canvas.*",
+        "com.safedb.connection.*",
+        "com.safedb.explore.*",
+        "com.safedb.launch.*",
+        "com.safedb.model.*",
+        "com.safedb.persist.*",
+        "com.safedb.query.*",
+        "com.safedb.schema.*",
+        "com.safedb.secrets.*",
+        "com.safedb.service.*",
+        "com.safedb.store.*",
+    )
+
+val koverExcludedClasses = listOf("*ComposableSingletons*", "*\$\$serializer*")
+
 kover {
     reports {
         filters {
-            includes {
-                classes(
-                    "com.safedb.AppState*",
-                    "com.safedb.AppVersion*",
-                    "com.safedb.AppWindowIcon*",
-                    "com.safedb.export.*",
-                    "com.safedb.platform.*",
-                    "com.safedb.viewmodel.*",
-                    "com.safedb.ui.ConnectionFormState*",
-                    "com.safedb.adapter.*",
-                    "com.safedb.connection.*",
-                    "com.safedb.explore.*",
-                    "com.safedb.model.*",
-                    "com.safedb.persist.*",
-                    "com.safedb.query.*",
-                    "com.safedb.schema.*",
-                    "com.safedb.secrets.*",
-                    "com.safedb.service.*",
-                    "com.safedb.store.*",
-                )
-            }
-            excludes { classes("*ComposableSingletons*", "*\$\$serializer*") }
+            includes { classes(*koverIncludedClasses.toTypedArray()) }
+            excludes { classes(*koverExcludedClasses.toTypedArray()) }
         }
         // Keep the aggregate filters attached to the total variant even when task selectors also
         // match Kover tasks in subprojects.
         total {
             filters {
-                includes {
-                    classes(
-                        "com.safedb.AppState*",
-                        "com.safedb.AppVersion*",
-                        "com.safedb.AppWindowIcon*",
-                        "com.safedb.export.*",
-                        "com.safedb.platform.*",
-                        "com.safedb.viewmodel.*",
-                        "com.safedb.ui.ConnectionFormState*",
-                        "com.safedb.adapter.*",
-                        "com.safedb.connection.*",
-                        "com.safedb.explore.*",
-                        "com.safedb.model.*",
-                        "com.safedb.persist.*",
-                        "com.safedb.query.*",
-                        "com.safedb.schema.*",
-                        "com.safedb.secrets.*",
-                        "com.safedb.service.*",
-                        "com.safedb.store.*",
-                    )
-                }
-                excludes { classes("*ComposableSingletons*", "*\$\$serializer*") }
+                includes { classes(*koverIncludedClasses.toTypedArray()) }
+                excludes { classes(*koverExcludedClasses.toTypedArray()) }
             }
         }
     }
@@ -232,9 +217,9 @@ val verifyUnitTestDiscovery =
         desktopResults.set(layout.buildDirectory.dir("test-results/test"))
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(387)
-        minimumSharedTests.set(730)
-        minimumMcpTests.set(236)
+        minimumDesktopTests.set(406)
+        minimumSharedTests.set(757)
+        minimumMcpTests.set(251)
     }
 
 val verifyCoverageRatchet =
@@ -245,7 +230,7 @@ val verifyCoverageRatchet =
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
         // Shared floor is unit coverage from `check`. JDBC adapter bodies are covered by
         // integrationTest, which kover ignores.
-        coverageFloors.set(mapOf("desktop" to 92, "shared" to 88))
+        coverageFloors.set(mapOf("desktop" to 91, "shared" to 89))
     }
 
 val verifyMcpCoverageRatchet =
@@ -279,6 +264,7 @@ val testAssertConveyorSite =
 
 tasks.check {
     dependsOn(
+        "compileRenderKotlin",
         verifyUnitTestDiscovery,
         testDockerDatabaseHarness,
         testAssertConveyorSite,

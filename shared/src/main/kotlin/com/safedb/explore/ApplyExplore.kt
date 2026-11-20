@@ -12,19 +12,34 @@ fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResu
 }
 
 private class PivotEngine(private val sample: QueryResult, private val config: ExploreConfig) {
-    private val indexes =
-        sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
+    private val sampleIndex = SampleIndex(sample)
     private val warnings = linkedSetOf<String>()
-    private val rowDimensions = config.rowDimensions.filterKnown(indexes, warnings, "row")
-    private val columnDimensions = config.columnDimensions.filterKnown(indexes, warnings, "column")
+    private val rowDimensions =
+        config.rowDimensions.filterKnown(sampleIndex.indexes, warnings, "row")
+    private val columnDimensions =
+        config.columnDimensions.filterKnown(sampleIndex.indexes, warnings, "column")
     private val measures =
         config.measures
             .ifEmpty { listOf(PivotMeasure.countRows()) }
-            .filterValid(indexes, warnings)
+            .filterValid(sampleIndex.indexes, warnings)
             .ifEmpty { listOf(PivotMeasure.countRows()) }
-    private val allRows = BitSet(sample.rows.size).apply { set(0, sample.rows.size) }
-    private var activeRows: BitSet = allRows
+
+    // Cache keys must remain unmutated BitSet clones so HashMap hashes/equality never drift;
+    // activeRows is only updated through updateActiveRows/retainActiveRows, which replace it
+    // with a fresh BitSet and clear aggregateCache so no entry can alias a mutated mask or
+    // outlive a filter stage.
+    private var activeRows: BitSet = BitSet(sample.rows.size).apply { set(0, sample.rows.size) }
     private val aggregateCache = mutableMapOf<BitSet, Map<String, ResultCell>>()
+
+    private fun updateActiveRows(newRows: BitSet) {
+        activeRows = newRows.clone() as BitSet
+        aggregateCache.clear()
+    }
+
+    private fun retainActiveRows(mask: BitSet) {
+        activeRows = intersect(activeRows, mask)
+        aggregateCache.clear()
+    }
 
     fun apply(): ExplorePreviewResult {
         var records =
@@ -37,14 +52,13 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     columnBuckets = columnDimensions.map { bucketFor(row, it) },
                 )
             }
-        var filteredRows = BitSet(sample.rows.size).apply { records.forEach { set(it.index) } }
-        activeRows = filteredRows
+        updateActiveRows(BitSet(sample.rows.size).apply { records.forEach { set(it.index) } })
         val axisColumns = (rowDimensions + columnDimensions).mapTo(mutableSetOf()) { it.column }
         config.filters
             .filterIsInstance<PivotFilter.Value>()
             .filter { it.column !in axisColumns }
             .forEach { filter ->
-                val columnIndex = indexes[filter.column] ?: return@forEach
+                val columnIndex = sampleIndex.columnIndex(filter.column) ?: return@forEach
                 val groupedRows = linkedMapOf<String, BitSet>()
                 records.forEach { record ->
                     val key = pivotCellKey(record.row.getOrNull(columnIndex))
@@ -72,24 +86,22 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                     }
                 val retainedRows = BitSet(sample.rows.size)
                 retainedKeys.forEach { key -> groupedRows[key]?.let(retainedRows::or) }
-                activeRows.and(retainedRows)
-                aggregateCache.clear()
+                retainActiveRows(retainedRows)
                 records = records.filter { activeRows[it.index] }
             }
-        filteredRows = activeRows.clone() as BitSet
-        var rowRoot = buildTree(records, rowDimensions, filteredRows) { it.rowBuckets }
-        var columnRoot = buildTree(records, columnDimensions, filteredRows) { it.columnBuckets }
+        var rowRoot = buildTree(records, rowDimensions, activeRows) { it.rowBuckets }
+        var columnRoot = buildTree(records, columnDimensions, activeRows) { it.columnBuckets }
         var rawRowSlices = buildRowSlices(rowRoot)
         if (config.filters.any { it is PivotFilter.Value }) {
             val retained = BitSet(sample.rows.size)
             rawRowSlices
                 .filter { it.kind !in setOf(PivotRowKind.Group, PivotRowKind.GrandTotal) }
                 .forEach { retained.or(it.node.rows) }
-            activeRows = retained
-            aggregateCache.clear()
-            val retainedRecords = records.filter { retained[it.index] }
-            rowRoot = buildTree(retainedRecords, rowDimensions, retained) { it.rowBuckets }
-            columnRoot = buildTree(retainedRecords, columnDimensions, retained) { it.columnBuckets }
+            updateActiveRows(retained)
+            val retainedRecords = records.filter { activeRows[it.index] }
+            rowRoot = buildTree(retainedRecords, rowDimensions, activeRows) { it.rowBuckets }
+            columnRoot =
+                buildTree(retainedRecords, columnDimensions, activeRows) { it.columnBuckets }
             rawRowSlices = buildRowSlices(rowRoot)
         }
         var rawColumnSlices = buildColumnSlices(columnRoot)
@@ -102,8 +114,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
             rawColumnSlices
                 .filterNot { it.isGrandTotal || it.isSubtotal }
                 .forEach { retainedColumns.or(it.node.rows) }
-            activeRows.and(retainedColumns)
-            aggregateCache.clear()
+            retainActiveRows(retainedColumns)
             val retainedRecords = records.filter { activeRows[it.index] }
             rowRoot = buildTree(retainedRecords, rowDimensions, activeRows) { it.rowBuckets }
             columnRoot =
@@ -206,31 +217,10 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
     }
 
     private fun passesSourceFilters(row: List<ResultCell>): Boolean =
-        config.filters.all { filter ->
-            when (filter) {
-                is PivotFilter.Members -> {
-                    if (filter.includedKeys.isEmpty()) true
-                    else {
-                        val cell = indexes[filter.column]?.let(row::getOrNull)
-                        pivotCellMatches(cell, filter.includedKeys)
-                    }
-                }
-                is PivotFilter.Label -> {
-                    val text =
-                        indexes[filter.column]?.let(row::getOrNull)?.let(::cellText).orEmpty()
-                    when (filter.op) {
-                        LabelFilterOp.Equals -> text.equals(filter.value, ignoreCase = true)
-                        LabelFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)
-                        LabelFilterOp.StartsWith -> text.startsWith(filter.value, ignoreCase = true)
-                        LabelFilterOp.EndsWith -> text.endsWith(filter.value, ignoreCase = true)
-                    }
-                }
-                is PivotFilter.Value -> true
-            }
-        }
+        passesPivotFilters(row, config.filters, sampleIndex)
 
     private fun bucketFor(row: List<ResultCell>, dimension: PivotDimension): ExploreBucket {
-        val cell = row.getOrNull(indexes.getValue(dimension.column))
+        val cell = sampleIndex.cellOrNull(row, dimension.column)
         if (cell == null || cell is ResultCell.Null) {
             return ExploreBucket(
                 "<null>",
@@ -484,7 +474,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
         measure: PivotMeasure,
     ): ResultCell {
         val raw = aggregateValues(rowNode.rows, columnNode.rows)[measure.alias] ?: ResultCell.Null
-        val rawDecimal = raw.toDecimalOrNull()
+        val rawDecimal = resultCellDecimal(raw)
         if (measure.showAs.mode == ShowAsMode.Value || rawDecimal == null) return raw
         val denominator: BigDecimal?
         val value =
@@ -602,12 +592,13 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
     }
 
     private fun aggregateDecimal(rows: BitSet, columns: BitSet, alias: String): BigDecimal =
-        aggregateValues(rows, columns)[alias]?.toDecimalOrNull() ?: BigDecimal.ZERO
+        resultCellDecimal(aggregateValues(rows, columns)[alias]) ?: BigDecimal.ZERO
 
     private fun aggregateValues(rowBits: BitSet, columnBits: BitSet): Map<String, ResultCell> {
         val matching = intersect(rowBits, columnBits)
-        val cacheKey = matching.clone() as BitSet
-        return aggregateCache.getOrPut(cacheKey) {
+        // intersect() returns a fresh unmutated BitSet clone that is never modified after
+        // lookup/put.
+        return aggregateCache.getOrPut(matching) {
             val rowIndexes = matching.toIndexList()
             val resolved = linkedMapOf<String, ResultCell>()
             val resolving = mutableSetOf<String>()
@@ -631,7 +622,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
                                 warnings += "${measure.label}: unknown measure '$alias'"
                                 null
                             } else {
-                                resolve(dependency).toDecimalOrNull()
+                                resultCellDecimal(resolve(dependency))
                             }
                         }
                         val result = evaluatePivotFormula(measure.formula, values)
@@ -648,7 +639,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
     }
 
     private fun computeMeasure(rowIndexes: List<Int>, measure: PivotMeasure): ResultCell {
-        val index = measure.sourceColumn?.let(indexes::get)
+        val index = measure.sourceColumn?.let(sampleIndex::columnIndex)
         if (index == null) {
             if (measure.fn == MeasureFn.Count)
                 return ResultCell.IntegerCell(rowIndexes.size.toLong())
@@ -726,7 +717,7 @@ private class PivotEngine(private val sample: QueryResult, private val config: E
 
     private fun formatPivotCell(cell: ResultCell, measure: PivotMeasure): String {
         if (cell is ResultCell.Null) return ""
-        val decimal = cell.toDecimalOrNull() ?: return cellText(cell)
+        val decimal = resultCellDecimal(cell) ?: return resultCellText(cell)
         val configured = measure.numberFormat
         val kind =
             if (
@@ -745,7 +736,7 @@ fun pivotCellKey(cell: ResultCell?): String =
     when (cell) {
         null,
         is ResultCell.Null -> "<null>"
-        else -> "${cell::class.simpleName}:${cellText(cell)}"
+        else -> "${cell::class.simpleName}:${resultCellText(cell)}"
     }
 
 fun pivotCellMatches(cell: ResultCell?, includedKeys: Set<String>): Boolean {
@@ -755,7 +746,7 @@ fun pivotCellMatches(cell: ResultCell?, includedKeys: Set<String>): Boolean {
         when (cell) {
             null,
             is ResultCell.Null -> "<null>"
-            else -> cellText(cell)
+            else -> resultCellText(cell)
         }
     return text in includedKeys
 }

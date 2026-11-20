@@ -56,6 +56,38 @@ internal suspend fun executeConfirmedQuery(
     }
 }
 
+internal class SqlSpecResolutionException(
+    val errorCode: String,
+    override val message: String,
+) : RuntimeException(message)
+
+internal fun parseSqlSpecOrThrow(
+    sql: String,
+    defaultSchemaArg: String?,
+    connection: ConnectionDef,
+    schema: Schema,
+    settings: Settings,
+): QuerySpec {
+    val defaultSchema = defaultSchemaArg ?: settingsDefaultSchema(settings, connection.id)
+    return when (
+        val parsed =
+            parseSqlToSpec(
+                sql,
+                connection.dialect,
+                schema,
+                defaultSchema,
+                mySqlBackslashEscapes(connection),
+            )
+    ) {
+        is SqlParseResult.Failure ->
+            throw SqlSpecResolutionException(
+                ERROR_PARSE,
+                parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
+            )
+        is SqlParseResult.Success -> parsed.spec
+    }
+}
+
 internal data class ResolvedSql(
     val connectionId: String,
     val connection: ConnectionDef,
@@ -76,34 +108,20 @@ internal suspend fun resolveSqlSpec(
         requiredString(request, "sql").getOrElse {
             return Arg.Err(it)
         }
+    val defaultSchemaArg =
+        optionalString(request, "default_schema").getOrElse {
+            return Arg.Err(it)
+        }
     val connection =
         service.listConnections().find { it.id == connectionId }
             ?: return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
     val schema = service.getSchema(connection.id)
     val settings = service.getSettings()
-    val defaultSchema =
-        optionalString(request, "default_schema").getOrElse {
-            return Arg.Err(it)
-        } ?: settingsDefaultSchema(settings, connection.id)
     val spec =
-        when (
-            val parsed =
-                parseSqlToSpec(
-                    sql,
-                    connection.dialect,
-                    schema,
-                    defaultSchema,
-                    mySqlBackslashEscapes(connection),
-                )
-        ) {
-            is SqlParseResult.Failure ->
-                return Arg.Err(
-                    toolError(
-                        ERROR_PARSE,
-                        parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
-                    ),
-                )
-            is SqlParseResult.Success -> parsed.spec
+        try {
+            parseSqlSpecOrThrow(sql, defaultSchemaArg, connection, schema, settings)
+        } catch (error: SqlSpecResolutionException) {
+            return Arg.Err(toolError(error.errorCode, error.message))
         }
     return Arg.Ok(ResolvedSql(connectionId, connection, spec, schema, settings))
 }

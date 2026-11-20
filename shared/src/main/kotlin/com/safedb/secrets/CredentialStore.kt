@@ -1,5 +1,7 @@
 package com.safedb.secrets
 
+import java.util.concurrent.ConcurrentHashMap
+
 interface CredentialStore {
     fun setPassword(service: String, account: String, password: String)
 
@@ -11,7 +13,7 @@ interface CredentialStore {
 }
 
 class DisabledMemoryStore : CredentialStore {
-    private val data = mutableMapOf<Pair<String, String>, String>()
+    private val data = ConcurrentHashMap<Pair<String, String>, String>()
 
     override fun setPassword(service: String, account: String, password: String) {
         data[service to account] = password

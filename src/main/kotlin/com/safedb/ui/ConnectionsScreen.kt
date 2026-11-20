@@ -193,10 +193,8 @@ internal fun ConnectionsScreenContent(
                     ConnectionForm(
                         connectionsViewModel = viewModel,
                         existingConnection = editingConnection,
-                        onSaved = { saved, credentialMaterialChanged ->
-                            if (editingConnection != null && credentialMaterialChanged) {
-                                onConnectionChanged(saved.id)
-                            }
+                        onConnectionChanged = onConnectionChanged,
+                        onSaved = { _, _ ->
                             onShowConnectionFormChange(false)
                             onEditingConnectionChange(null)
                             onSaved()

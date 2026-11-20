@@ -5,13 +5,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
+import com.safedb.explore.ExplorePivotLayout
+import com.safedb.explore.ExplorePreviewResult
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.ExploreSession
 import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.PivotFilter
 import com.safedb.explore.VisualizationConfig
+import com.safedb.explore.VisualizationPreview
 import com.safedb.explore.WorksheetColumnLayout
 import com.safedb.explore.WorksheetConfig
+import com.safedb.explore.WorksheetPreview
 import com.safedb.explore.applyExplore
 import com.safedb.explore.applyVisualization
 import com.safedb.explore.applyWorksheet
@@ -50,6 +54,7 @@ class ExploreViewModel(
     private val computationScope: CoroutineScope? = null,
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    initialRecipe: ExploreRecipe? = null,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
@@ -68,17 +73,13 @@ class ExploreViewModel(
     val visualizationConfig: VisualizationConfig
         get() = workspace.visualization
 
-    var preview by mutableStateOf(applyExplore(session.sample, workspace.pivot))
+    var preview by mutableStateOf(emptyExplorePreview())
         private set
 
-    var worksheetPreview by
-        mutableStateOf(applyWorksheet(session.sample, workspace.worksheet, session.baseSpec.tables))
+    var worksheetPreview by mutableStateOf(emptyWorksheetPreview())
         private set
 
-    var visualizationPreview by
-        mutableStateOf(
-            applyVisualization(session.sample, workspace.visualization, session.baseSpec.tables),
-        )
+    var visualizationPreview by mutableStateOf(emptyVisualizationPreview())
         private set
 
     private var loadingModes by mutableStateOf(emptySet<ExploreMode>())
@@ -139,6 +140,16 @@ class ExploreViewModel(
 
     var exporting by mutableStateOf(false)
         private set
+
+    init {
+        dirtyModes += ExploreMode.entries
+        if (initialRecipe != null) {
+            requestRecipe(initialRecipe, debounceMs = 0L)
+        }
+        if (initialRecipe == null || pendingRecipe != null) {
+            refreshMode(workspace.activeMode, debounceMs = 0L)
+        }
+    }
 
     fun updateConfig(block: (ExploreConfig) -> ExploreConfig) {
         workspace = workspace.copy(pivot = block(workspace.pivot))
@@ -205,6 +216,10 @@ class ExploreViewModel(
     }
 
     fun applyRecipe(recipe: ExploreRecipe) {
+        applyRecipe(recipe, debounceMs = PREVIEW_DEBOUNCE_MS)
+    }
+
+    private fun applyRecipe(recipe: ExploreRecipe, debounceMs: Long) {
         val worksheetWasReplaced =
             recipe.worksheet?.let { replacement -> replacement != workspace.worksheet } == true
         workspace =
@@ -216,16 +231,20 @@ class ExploreViewModel(
             )
         if (worksheetWasReplaced) worksheetConfigReplacementRevision += 1
         dirtyModes += setOf(ExploreMode.Pivot, ExploreMode.Worksheet, ExploreMode.Visualization)
-        refreshMode(workspace.activeMode)
+        refreshMode(workspace.activeMode, debounceMs = debounceMs)
         appliedRecipeId = recipe.id
         appliedRecipeBaseline = workspace.recipeSnapshot()
         clearExportMessages()
     }
 
     fun requestRecipe(recipe: ExploreRecipe) {
+        requestRecipe(recipe, debounceMs = PREVIEW_DEBOUNCE_MS)
+    }
+
+    private fun requestRecipe(recipe: ExploreRecipe, debounceMs: Long) {
         val mapping = resolveRecipeFields(recipe, session.sample, session.baseSpec)
         if (mapping.unresolved.isEmpty()) {
-            applyRecipe(remapRecipe(recipe, mapping.resolved))
+            applyRecipe(remapRecipe(recipe, mapping.resolved), debounceMs = debounceMs)
         } else {
             pendingRecipe = recipe
         }
@@ -285,12 +304,12 @@ class ExploreViewModel(
         }
     }
 
-    private fun refreshMode(mode: ExploreMode) {
+    private fun refreshMode(mode: ExploreMode, debounceMs: Long = PREVIEW_DEBOUNCE_MS) {
         dirtyModes += mode
         if (workspace.activeMode != mode) return
         val task = previewTasks.getValue(mode)
         val scope = computationScope
-        if (scope == null) task.computeNow() else task.schedule(scope)
+        if (scope == null) task.computeNow() else task.schedule(scope, debounceMs)
     }
 
     private fun settle(mode: ExploreMode) {
@@ -484,17 +503,22 @@ class ExploreViewModel(
     }
 
     private fun executeExport(successMessage: String, block: () -> Unit) {
+        if (exporting) return
+        exporting = true
+        exportError = null
+        exportMessage = null
         val scope = computationScope
         if (scope == null) {
             completeExport(runCatching(block), successMessage)
             return
         }
         scope.launch {
-            exporting = true
-            exportError = null
-            exportMessage = null
-            val outcome = withContext(ioDispatcher) { runCatching(block) }
-            completeExport(outcome, successMessage)
+            try {
+                val outcome = withContext(ioDispatcher) { runCatching(block) }
+                completeExport(outcome, successMessage)
+            } finally {
+                exporting = false
+            }
         }
     }
 
@@ -530,13 +554,13 @@ class ExploreViewModel(
             settle(mode)
         }
 
-        fun schedule(scope: CoroutineScope) {
+        fun schedule(scope: CoroutineScope, debounceMs: Long = PREVIEW_DEBOUNCE_MS) {
             val scheduledGeneration = ++generation
             job?.cancel()
             loadingModes = loadingModes + mode
             previewErrors = previewErrors - mode
             job = scope.launch {
-                delay(PREVIEW_DEBOUNCE_MS.milliseconds)
+                if (debounceMs > 0L) delay(debounceMs.milliseconds)
                 val outcome = runCatching { withContext(computeDispatcher) { compute() } }
                 // A newer schedule superseded this one, so its result is stale.
                 if (scheduledGeneration != generation) return@launch
@@ -574,5 +598,31 @@ private fun memberLabel(cell: ResultCell?): String =
         is ResultCell.TextCell -> cell.value.text
         is ResultCell.BinaryCell -> cell.value.base64
     }
+
+private fun emptyExplorePreview(): ExplorePreviewResult =
+    ExplorePreviewResult(
+        result =
+            QueryResult(
+                columns = emptyList(),
+                rows = emptyList(),
+                rowCount = 0,
+                truncated = false,
+                warnings = emptyList(),
+            ),
+        warnings = emptyList(),
+        layout =
+            ExplorePivotLayout(
+                rowDimensions = emptyList(),
+                columnDimension = null,
+                measures = emptyList(),
+                columnGroups = emptyList(),
+                hasGrandTotalRow = false,
+            ),
+    )
+
+private fun emptyWorksheetPreview(): WorksheetPreview =
+    WorksheetPreview(columns = emptyList(), rows = emptyList())
+
+private fun emptyVisualizationPreview(): VisualizationPreview = VisualizationPreview()
 
 private const val PREVIEW_DEBOUNCE_MS = 75L

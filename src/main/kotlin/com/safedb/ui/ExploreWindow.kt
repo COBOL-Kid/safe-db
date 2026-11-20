@@ -91,16 +91,18 @@ fun ExploreWindowContent(
     var pivotRailVisible by remember { mutableStateOf(true) }
     var worksheetRailVisible by remember { mutableStateOf(true) }
     var visualizationRailVisible by remember { mutableStateOf(true) }
+    val appWindow = LocalAppWindow.current
 
     drillResult?.let { result ->
         ExploreDrillDialog(
             result = result,
             onExport = {
-                chooseExportFile("explore-details", "csv")?.let {
+                chooseExportFile("explore-details", "csv", parent = appWindow)?.let {
                     viewModel.saveResultCsv(result, it)
                 }
             },
             onDismiss = { drillResult = null },
+            exporting = viewModel.exporting,
         )
     }
 
@@ -212,11 +214,19 @@ fun ExploreWindowContent(
                                 viewModel,
                                 enabled = !viewModel.isLoading(ExploreMode.Pivot),
                                 onExportHtml = {
-                                    chooseExportFile(session.connectionLabel, "html")
+                                    chooseExportFile(
+                                            session.connectionLabel,
+                                            "html",
+                                            parent = appWindow,
+                                        )
                                         ?.let(viewModel::savePreviewHtml)
                                 },
                             ) {
-                                chooseExportFile(session.connectionLabel, "csv")
+                                chooseExportFile(
+                                        session.connectionLabel,
+                                        "csv",
+                                        parent = appWindow,
+                                    )
                                     ?.let(viewModel::savePreviewCsv)
                             }
                         }
@@ -240,11 +250,19 @@ fun ExploreWindowContent(
                                     !viewModel.isLoading(ExploreMode.Worksheet) &&
                                         viewModel.hasVisibleWorksheetColumns(),
                                 onExportHtml = {
-                                    chooseExportFile("${session.connectionLabel}-worksheet", "html")
+                                    chooseExportFile(
+                                            "${session.connectionLabel}-worksheet",
+                                            "html",
+                                            parent = appWindow,
+                                        )
                                         ?.let(viewModel::saveWorksheetHtml)
                                 },
                             ) {
-                                chooseExportFile("${session.connectionLabel}-worksheet", "csv")
+                                chooseExportFile(
+                                        "${session.connectionLabel}-worksheet",
+                                        "csv",
+                                        parent = appWindow,
+                                    )
                                     ?.let(viewModel::saveWorksheetCsv)
                             }
                         },
@@ -308,18 +326,27 @@ fun ExploreWindowContent(
                                         viewModel.visualizationPreview.ready &&
                                             !viewModel.isLoading(ExploreMode.Visualization),
                                     onExportHtml = {
-                                        chooseExportFile("${session.connectionLabel}-chart", "html")
+                                        chooseExportFile(
+                                                "${session.connectionLabel}-chart",
+                                                "html",
+                                                parent = appWindow,
+                                            )
                                             ?.let(viewModel::saveVisualizationHtml)
                                     },
                                     onExportCsv = {
                                         chooseExportFile(
                                                 "${session.connectionLabel}-chart-data",
                                                 "csv",
+                                                parent = appWindow,
                                             )
                                             ?.let(viewModel::saveVisualizationCsv)
                                     },
                                     onExportPng = {
-                                        chooseExportFile("${session.connectionLabel}-chart", "png")
+                                        chooseExportFile(
+                                                "${session.connectionLabel}-chart",
+                                                "png",
+                                                parent = appWindow,
+                                            )
                                             ?.let {
                                                 viewModel.saveVisualizationPng(
                                                     it,
@@ -560,7 +587,11 @@ private fun VisualizationExportBar(
     }
 }
 
-private fun chooseExportFile(connectionLabel: String, extension: String): java.nio.file.Path? {
+private fun chooseExportFile(
+    connectionLabel: String,
+    extension: String,
+    parent: java.awt.Component? = null,
+): java.nio.file.Path? {
     val safeName =
         connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty {
             "explore"
@@ -570,7 +601,7 @@ private fun chooseExportFile(connectionLabel: String, extension: String): java.n
             selectedFile = File("explore-$safeName.$extension")
             dialogTitle = "Export Explore ${extension.uppercase()}"
         }
-    val result = chooser.showSaveDialog(null)
+    val result = chooser.showSaveDialog(parent)
     if (result != JFileChooser.APPROVE_OPTION) return null
     val file = chooser.selectedFile
     return if (file.extension.equals(extension, ignoreCase = true)) file.toPath()

@@ -106,10 +106,21 @@ internal suspend fun listConnections(service: SafeDbService, io: CliIo): Int {
     return 0
 }
 
-internal suspend fun deleteConnection(id: String, service: SafeDbService, io: CliIo): Int {
+internal suspend fun deleteConnection(
+    id: String,
+    service: SafeDbService,
+    io: CliIo,
+    sharesDesktopStore: Boolean = McpDataDirectory.sharesDesktopStore(),
+): Int {
     if (requireConnection(service, id, io) == null) return 1
     service.deleteConnection(id)
-    io.print("Deleted $id")
+    if (sharesDesktopStore) {
+        io.print(
+            "Deleted $id (and its saved queries and query history from the shared safe-db store used by the desktop app)",
+        )
+    } else {
+        io.print("Deleted $id")
+    }
     return 0
 }
 

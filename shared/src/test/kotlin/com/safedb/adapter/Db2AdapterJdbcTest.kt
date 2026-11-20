@@ -294,6 +294,7 @@ class Db2AdapterJdbcTest {
             PlanUnavailableReason.ExecutionFailure,
             "could not be read",
         )
+        assertTrue(jdbc.sql.none { it.contains("EXPLAIN PLAN") })
         assertTrue(jdbc.sql.none { it.startsWith("DELETE ") })
     }
 
@@ -312,6 +313,7 @@ class Db2AdapterJdbcTest {
             PlanUnavailableReason.UnsupportedShape,
             "SYSINSTALLOBJECTS",
         )
+        assertTrue(jdbc.sql.none { it.contains("EXPLAIN PLAN") })
         assertTrue(jdbc.sql.none { it.startsWith("DELETE ") })
         assertTrue(jdbc.sql.any { it.contains("FROM SYSTOOLS.EXPLAIN_INSTANCE") })
     }

@@ -1,14 +1,14 @@
 # Commands and verification
 
-`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, test discovery, Docker harness orchestration, and Kover ratchets.
+`./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, `compileRenderKotlin`, test discovery, Docker harness orchestration, and Kover ratchets.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 387 desktop, 730 shared, and 236 MCP tests, with 92% desktop, 88% shared, and 93% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 406 desktop, 757 shared, and 251 MCP tests, with 91% desktop, 89% shared, and 93% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report. The root Kover allowlist includes `com.safedb.launch.*` and `com.safedb.canvas.*`, and attributes split packages by source file (`CsvWriter.kt` in `com.safedb.export` and `SchemaRelationships.kt` in `com.safedb.schema` count under `:shared`, while desktop files in those packages count under desktop).
 
 | Command | Use |
 | --- | --- |
 | `./gradlew help` | Validate root Gradle configuration after build logic changes. |
 | `./gradlew run` | Start the graphical desktop app on macOS or Windows. |
-| `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, discovery, Docker harness orchestration, and Kover ratchets. |
+| `./gradlew check` | Fast gate: desktop, shared, and mcp unit tests, `compileRenderKotlin`, discovery, Docker harness orchestration, and Kover ratchets. |
 | `./gradlew ktfmtCheck` | Kotlin format check (`ktfmtFormat` to rewrite). Included in `check`. |
 | `./gradlew qodanaScan` | JVM Community Qodana pass (`qodana.yaml`). Local static analysis; not labeled CI. |
 | `./gradlew check koverXmlReport koverVerify --rerun-tasks --no-build-cache` | Fresh unit-coverage proof for broad Kotlin/build changes. Shared and MCP kover both ignore `integrationTest`. |
@@ -74,7 +74,7 @@ PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `S
 
 ## CI
 
-Only the repository owner can apply the `ci:run` label. That label starts `check` and the required static-MySQL integration only when the owner applies it; the workflow ignores the label from anyone else. Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when the owner applies that same label.
+Pushes to `main` run `./gradlew check` automatically without running Docker integration tests. On pull requests, only the repository owner can apply the `ci:run` label; that label starts both `check` and the required static-MySQL integration only when the owner applies it (the workflow ignores the label from anyone else). Remove and reapply the label after new commits to rerun. Workflow-only pull requests run workflow lint when the owner applies that same label.
 
 Dependency submission remains automatic for qualifying trusted `main` changes.
 

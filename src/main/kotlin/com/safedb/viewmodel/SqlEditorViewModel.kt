@@ -34,6 +34,9 @@ class SqlEditorViewModel(
     val error: String?
         get() = runController.error
 
+    val discardedRunNotice: String?
+        get() = runController.discardedRunNotice
+
     val pendingRiskGate: Boolean
         get() = runController.pendingRiskGate
 
@@ -49,7 +52,7 @@ class SqlEditorViewModel(
     fun onTextChanged(value: TextFieldValue) {
         val edited = value.text != text.text
         text = value
-        if (edited) runController.invalidateSettledRunFailure()
+        if (edited) runController.invalidateForEdit()
     }
 
     // A Run callback captured before a recomposition can carry a spec for text the editor no longer
@@ -87,6 +90,10 @@ class SqlEditorViewModel(
         runController.invalidateSettledRunFailure()
     }
 
+    fun dismissDiscardedRunNotice() {
+        runController.dismissDiscardedRunNotice()
+    }
+
     // Skip the first observation so composing SQL does not wipe a live gate as null → current spec.
     fun onParsedSpecChanged(spec: QuerySpec?) {
         if (!observedParsedSpec) {
@@ -96,7 +103,7 @@ class SqlEditorViewModel(
         }
         if (lastParsedSpec == spec) return
         lastParsedSpec = spec
-        runController.invalidateSettledRunFailure()
+        runController.invalidateForEdit()
     }
 
     fun pendingConfirmationFor(

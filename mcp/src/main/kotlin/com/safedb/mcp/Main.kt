@@ -42,6 +42,7 @@ fun main(args: Array<String>) {
                         service,
                         resultsDir = dataDir.resolve("results"),
                         exportsDir = dataDir.resolve("exports"),
+                        sharesDesktopStore = McpDataDirectory.sharesDesktopStore(),
                     ),
                     stdout,
                 )

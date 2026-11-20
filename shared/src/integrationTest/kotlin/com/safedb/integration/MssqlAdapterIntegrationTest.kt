@@ -11,6 +11,7 @@ import com.safedb.secrets.SecretsManager
 import com.safedb.testsupport.IntegrationAssumptions
 import com.safedb.testsupport.IntegrationFixtures
 import java.time.LocalDateTime
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -82,6 +83,15 @@ class MssqlAdapterIntegrationTest {
                 )
             val result = adapter.executeQuery(compiled, 10_000)
             AdapterIntegrationAssertions.assertDecodedOrdersRow(result)
+            val dataSource = assertIs<Adapter.Mssql>(adapter).state.dataSource!!
+            dataSource.connection.use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("SELECT @@TRANCOUNT").use { rs ->
+                        assertTrue(rs.next())
+                        assertEquals(0, rs.getInt(1))
+                    }
+                }
+            }
             val explain = Adapter.explainWithTimeout(adapter, compiled)
             val plan = assertIs<ExplainResult.Available>(explain, "Expected a plan: $explain").plan
             assertTrue(

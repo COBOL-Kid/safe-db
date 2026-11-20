@@ -43,6 +43,7 @@ data class HydrationWarnings(
     val droppedFilters: Boolean = false,
     val droppedSorts: Int = 0,
     val droppedGroups: Int = 0,
+    val allFiltersDropped: Boolean = false,
 )
 
 private fun schemaKey(schema: String, name: String): String = "$schema$COLUMN_KEY_SEP$name"
@@ -164,7 +165,9 @@ fun hydrateQueryFromSpec(
 
     val originalFilterLeaves = countFilterLeaves(spec.filters)
     val remappedFilters = remapFilterGroup(spec.filters, aliasMap, tableByNewAlias)
-    val droppedFilters = countFilterLeaves(remappedFilters) < originalFilterLeaves
+    val remainingFilterLeaves = countFilterLeaves(remappedFilters)
+    val droppedFilters = remainingFilterLeaves < originalFilterLeaves
+    val allFiltersDropped = originalFilterLeaves > 0 && remainingFilterLeaves == 0
     target.setFilters(remappedFilters)
 
     target.setConnectorOverrides(spec.connectorOverrides)
@@ -206,6 +209,7 @@ fun hydrateQueryFromSpec(
         droppedFilters = droppedFilters,
         droppedSorts = droppedSorts,
         droppedGroups = droppedGroups,
+        allFiltersDropped = allFiltersDropped,
     )
 }
 
@@ -222,8 +226,10 @@ fun formatHydrationWarning(warnings: HydrationWarnings): String? {
         val count = warnings.droppedJoins
         parts.add("$count join${if (count != 1) "s" else ""} could not be restored")
     }
-    if (warnings.droppedFilters) {
-        parts.add("some filters were dropped")
+    when {
+        warnings.allFiltersDropped ->
+            parts.add("all filters were dropped (query is now unfiltered)")
+        warnings.droppedFilters -> parts.add("some filters were dropped")
     }
     if (warnings.droppedSorts > 0) {
         val count = warnings.droppedSorts

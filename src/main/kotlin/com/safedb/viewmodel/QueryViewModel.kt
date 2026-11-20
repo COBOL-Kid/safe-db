@@ -145,6 +145,9 @@ class QueryViewModel(
     val error: String?
         get() = runController.error
 
+    val discardedRunNotice: String?
+        get() = runController.discardedRunNotice
+
     val riskEvaluation: QueryRiskEvaluation?
         get() = runController.riskEvaluation
 
@@ -339,7 +342,7 @@ class QueryViewModel(
         val filter =
             defaultFilterForColumn(tableAlias, columnName, dataType).let { default ->
                 if (op == default.op) default
-                else default.copy(op = op, value = defaultValueFor(op, dataType))
+                else default.copy(op = op, value = buildFilterValue(op, dataType))
             }
         addFilter(filter)
         requestedFilterFocusIdState = filter.id.takeIf { hasTextValueInput(op, dataType) }
@@ -620,11 +623,15 @@ class QueryViewModel(
     }
 
     fun dismissError() {
-        invalidateSettledRunFailure()
+        runController.invalidateSettledRunFailure()
+    }
+
+    fun dismissDiscardedRunNotice() {
+        runController.dismissDiscardedRunNotice()
     }
 
     private fun invalidateSettledRunFailure() {
-        runController.invalidateSettledRunFailure()
+        runController.invalidateForEdit()
     }
 
     fun restoreFromSpec(spec: QuerySpec, schemaTables: List<TableInfo>) {
@@ -639,7 +646,7 @@ class QueryViewModel(
             dataType: String,
         ): FilterSpec {
             val op = FilterOp.Eq
-            val value = defaultValueFor(op, dataType)
+            val value = buildFilterValue(op, dataType)
             return FilterSpec(
                 id = newNodeId(),
                 tableAlias = tableAlias,
@@ -651,13 +658,33 @@ class QueryViewModel(
     }
 }
 
-private fun defaultValueFor(op: FilterOp, dataType: String): FilterValue? {
+internal fun buildFilterValue(
+    op: FilterOp,
+    dataType: String,
+    existing: FilterValue? = null,
+): FilterValue? {
     val kind = literalKindForColumn(dataType)
     return when (op.valueKind()) {
         ValueKind.None -> null
-        ValueKind.Single -> FilterValue.Single(FilterLiteral(kind, ""))
-        ValueKind.List -> FilterValue.ListValue(listOf(FilterLiteral(kind, "")))
-        ValueKind.Pair -> FilterValue.Pair(FilterLiteral(kind, ""), FilterLiteral(kind, ""))
+        ValueKind.Single -> {
+            val text = (existing as? FilterValue.Single)?.literal?.text.orEmpty()
+            FilterValue.Single(FilterLiteral(kind, text))
+        }
+        ValueKind.List -> {
+            val items =
+                (existing as? FilterValue.ListValue)
+                    ?.literals
+                    ?.map { FilterLiteral(kind, it.text) }
+                    .orEmpty()
+            FilterValue.ListValue(items.ifEmpty { listOf(FilterLiteral(kind, "")) })
+        }
+        ValueKind.Pair -> {
+            val pair = existing as? FilterValue.Pair
+            FilterValue.Pair(
+                FilterLiteral(kind, pair?.first?.text.orEmpty()),
+                FilterLiteral(kind, pair?.second?.text.orEmpty()),
+            )
+        }
     }
 }
 

@@ -146,4 +146,17 @@ class McpCliConnectionsTest {
             }
         }
     }
+
+    @Test
+    fun cliDeleteConnectionWarnsAboutDesktopStoreOnlyWhenShared() = runBlocking {
+        val localService = RecordingSafeDbService().apply { connections += sampleMcpConnection() }
+        val localIo = BufferCliIo()
+        assertEquals(0, deleteConnection("c1", localService, localIo, sharesDesktopStore = false))
+        assertEquals("Deleted c1\n", localIo.stdout.toString())
+
+        val sharedService = RecordingSafeDbService().apply { connections += sampleMcpConnection() }
+        val sharedIo = BufferCliIo()
+        assertEquals(0, deleteConnection("c1", sharedService, sharedIo, sharesDesktopStore = true))
+        assertTrue(sharedIo.stdout.toString().contains("desktop app"))
+    }
 }

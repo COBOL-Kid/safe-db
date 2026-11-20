@@ -13,6 +13,7 @@ import com.safedb.model.PlanUnavailableReason
 import com.safedb.model.ResultCell
 import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
+import com.zaxxer.hikari.HikariDataSource
 import java.io.InputStream
 import java.io.Reader
 import java.lang.reflect.Proxy
@@ -22,11 +23,15 @@ import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.ResultSetMetaData
+import java.sql.SQLException
+import java.sql.SQLTimeoutException
+import java.sql.Statement
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -110,6 +115,236 @@ class AdapterTest {
             )
 
         assertEquals(plan, awaitExplain { plan })
+    }
+
+    @Test
+    fun explainWithTimeoutGivesServerDeadlineAnOuterMargin() = runBlocking {
+        val executedStatements = mutableListOf<String>()
+        val planJson =
+            """[{"Plan":{"Node Type":"Seq Scan","Relation Name":"users","Alias":"t0","Plan Rows":1,"Total Cost":1.0}}]"""
+        val stmt =
+            Proxy.newProxyInstance(
+                Statement::class.java.classLoader,
+                arrayOf(Statement::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "execute" -> {
+                        executedStatements += args!!.first() as String
+                        false
+                    }
+                    "close" -> null
+                    "toString" -> "FakeStatement"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as Statement
+        val rs =
+            Proxy.newProxyInstance(
+                ResultSet::class.java.classLoader,
+                arrayOf(ResultSet::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "next" -> true
+                    "getString" -> planJson
+                    "close" -> null
+                    "toString" -> "FakePlanResultSet"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as ResultSet
+        val ps =
+            Proxy.newProxyInstance(
+                PreparedStatement::class.java.classLoader,
+                arrayOf(PreparedStatement::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "setFetchSize" -> null
+                    "executeQuery" -> {
+                        Thread.sleep(120)
+                        rs
+                    }
+                    "close" -> null
+                    "toString" -> "FakePreparedStatement"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as PreparedStatement
+        val conn =
+            Proxy.newProxyInstance(
+                Connection::class.java.classLoader,
+                arrayOf(Connection::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "setAutoCommit",
+                    "commit",
+                    "close" -> null
+                    "createStatement" -> stmt
+                    "prepareStatement" -> ps
+                    "toString" -> "FakeConnection"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as Connection
+        val ds = FakeClosableDataSource(conn)
+
+        val result =
+            Adapter.explainWithTimeout(
+                Adapter.Postgres(ds),
+                CompiledQuery("SELECT 1", emptyList()),
+                timeoutMs = 50,
+            )
+
+        assertIs<ExplainResult.Available>(result)
+        assertTrue("SET LOCAL statement_timeout = 50" in executedStatements)
+        assertTrue(EXPLAIN_OUTER_TIMEOUT_MARGIN_MS > 0)
+    }
+
+    @Test
+    fun mssqlCloseLockedPreventsLazyPoolCreationAfterClose() = runBlocking {
+        val conn =
+            Proxy.newProxyInstance(
+                Connection::class.java.classLoader,
+                arrayOf(Connection::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "toString" -> "UnusedConnection"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as Connection
+        val ds = FakeClosableDataSource(conn)
+        val state =
+            MssqlState(ds, connection(Dialect.Mssql, 1433, TransportSecurityMode.Disabled), "pw")
+        val adapter = Adapter.Mssql(state)
+
+        adapter.close()
+
+        assertEquals(1, ds.closeCalls)
+        assertNull(state.dataSource)
+        assertEquals(
+            "SQL Server adapter is closed",
+            assertFailsWith<IllegalStateException> { adapter.test() }.message,
+        )
+        assertEquals(
+            "SQL Server adapter is closed",
+            assertFailsWith<IllegalStateException> { adapter.introspect() }.message,
+        )
+        assertEquals(
+            "SQL Server adapter is closed",
+            assertFailsWith<IllegalStateException> {
+                    adapter.executeQuery(CompiledQuery("SELECT 1", emptyList()), 1_000)
+                }
+                .message,
+        )
+        assertEquals(
+            "SQL Server adapter is closed",
+            assertFailsWith<IllegalStateException> {
+                    adapter.explain(CompiledQuery("SELECT 1", emptyList()), 1_000)
+                }
+                .message,
+        )
+        assertNull(state.dataSource)
+    }
+
+    @Test
+    fun mssqlTimeoutInExecuteQueryAndExplainClosesAndNullsDataSourceLazily() = runBlocking {
+        fun timeoutDs(failOnStatementExecute: Boolean): FakeClosableDataSource {
+            val stmt =
+                Proxy.newProxyInstance(
+                    Statement::class.java.classLoader,
+                    arrayOf(Statement::class.java),
+                ) { _, method, args ->
+                    when (method.name) {
+                        "execute" -> {
+                            val sql = args?.first() as String
+                            if (failOnStatementExecute && sql.contains("SELECT 1")) {
+                                throw SQLTimeoutException("plan timeout")
+                            }
+                            false
+                        }
+                        "close" -> null
+                        "toString" -> "TimeoutStmt"
+                        else -> throw UnsupportedOperationException(method.name)
+                    }
+                } as Statement
+            val ps =
+                Proxy.newProxyInstance(
+                    PreparedStatement::class.java.classLoader,
+                    arrayOf(PreparedStatement::class.java),
+                ) { _, method, _ ->
+                    when (method.name) {
+                        "setFetchSize" -> null
+                        "executeQuery" -> throw SQLTimeoutException("query timeout")
+                        "close" -> null
+                        "toString" -> "TimeoutPs"
+                        else -> throw UnsupportedOperationException(method.name)
+                    }
+                } as PreparedStatement
+            val conn =
+                Proxy.newProxyInstance(
+                    Connection::class.java.classLoader,
+                    arrayOf(Connection::class.java),
+                ) { _, method, _ ->
+                    when (method.name) {
+                        "getNetworkTimeout" -> 0
+                        "isClosed" -> false
+                        "setNetworkTimeout",
+                        "setAutoCommit",
+                        "setTransactionIsolation",
+                        "rollback",
+                        "close" -> null
+                        "createStatement" -> stmt
+                        "prepareStatement" -> ps
+                        "toString" -> "TimeoutConn"
+                        else -> throw UnsupportedOperationException(method.name)
+                    }
+                } as Connection
+            return FakeClosableDataSource(conn)
+        }
+
+        val def = connection(Dialect.Mssql, 1433, TransportSecurityMode.Disabled)
+
+        val execDs = timeoutDs(failOnStatementExecute = false)
+        val execState = MssqlState(execDs, def, "pw")
+        val execAdapter = Adapter.Mssql(execState)
+        assertFailsWith<QueryTimedOutException> {
+            execAdapter.executeQuery(CompiledQuery("SELECT 1", emptyList()), 1_000)
+        }
+        assertEquals(1, execDs.closeCalls)
+        assertNull(execState.dataSource)
+
+        val explainDs = timeoutDs(failOnStatementExecute = true)
+        val explainState = MssqlState(explainDs, def, "pw")
+        val explainAdapter = Adapter.Mssql(explainState)
+        assertFailsWith<QueryTimedOutException> {
+            explainAdapter.explain(CompiledQuery("SELECT 1", emptyList()), 1_000)
+        }
+        assertEquals(1, explainDs.getConnectionCalls)
+        assertEquals(1, explainDs.closeCalls)
+        assertNull(explainState.dataSource)
+    }
+
+    @Test
+    fun withQueryTimeoutRestoreFailureDoesNotMaskPrimaryException() {
+        val conn =
+            Proxy.newProxyInstance(
+                Connection::class.java.classLoader,
+                arrayOf(Connection::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "getNetworkTimeout" -> 0
+                    "setNetworkTimeout" -> {
+                        val ms = args!![1] as Int
+                        if (ms == 0) throw SQLException("restore failed")
+                        null
+                    }
+                    "isClosed" -> throw SQLException("isClosed failed")
+                    "toString" -> "FailingRestoreConn"
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as Connection
+
+        val error =
+            assertFailsWith<IllegalStateException> {
+                withQueryTimeout(conn, 500) { throw IllegalStateException("primary error") }
+            }
+
+        assertEquals("primary error", error.message)
     }
 
     @Test
@@ -810,6 +1045,20 @@ private class BoundedSourceReader(private val data: String) : Reader() {
     }
 
     override fun close() {}
+}
+
+private class FakeClosableDataSource(private val connection: Connection) : HikariDataSource() {
+    var closeCalls = 0
+    var getConnectionCalls = 0
+
+    override fun getConnection(): Connection {
+        getConnectionCalls += 1
+        return connection
+    }
+
+    override fun close() {
+        closeCalls += 1
+    }
 }
 
 private class BoundedSourceStream(private val data: ByteArray) : InputStream() {

@@ -918,6 +918,52 @@ class QueryViewModelStateTest {
             assertEquals(false, settled)
         }
 
+    @Test
+    fun queryViewModelSetsDiscardedRunNoticeOnlyWhenEditingInFlightRun() =
+        runTest(dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            val service = RecordingQueryService(queryGate = gate, queryStarted = started)
+            val scope = TestScope(dispatcher)
+            val query = QueryViewModel(service, scope)
+            query.addTable(sampleTable())
+
+            // Editing when idle must not set discardedRunNotice.
+            query.setLimit(250)
+            assertNull(query.discardedRunNotice)
+
+            query.run("c1")
+            scope.runCurrent()
+            assertTrue(started.isCompleted)
+            assertTrue(query.running)
+
+            // dismissError() while running must not set discardedRunNotice.
+            query.dismissError()
+            assertNull(query.discardedRunNotice)
+
+            // Editing while running sets discardedRunNotice.
+            query.setLimit(50)
+            assertNotNull(query.discardedRunNotice)
+
+            // Dismissing clears it.
+            query.dismissDiscardedRunNotice()
+            assertNull(query.discardedRunNotice)
+
+            // Another edit while still running sets it again.
+            query.toggleColumn("t0", "id")
+            assertNotNull(query.discardedRunNotice)
+
+            gate.complete(Unit)
+            scope.advanceUntilIdle()
+            assertFalse(query.running)
+            assertNotNull(query.discardedRunNotice)
+
+            // Starting a new run clears discardedRunNotice.
+            query.run("c1")
+            assertNull(query.discardedRunNotice)
+            scope.advanceUntilIdle()
+        }
+
     private fun sampleTable() =
         TableInfo(
             schema = "public",

@@ -3,9 +3,11 @@ package com.safedb.viewmodel
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ConnectionDef
 import com.safedb.model.HistoryEntry
+import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
+import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
 import kotlinx.coroutines.CoroutineDispatcher
@@ -39,9 +41,20 @@ internal class DispatchingSafeDbService(
 
     override suspend fun runQuery(request: QueryRunRequest) = onIo { delegate.runQuery(request) }
 
+    override suspend fun runQueryWithSchema(
+        connectionId: String,
+        confirmation: QueryExecutionConfirmation?,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ) = onIo { delegate.runQueryWithSchema(connectionId, confirmation, resolveSpec) }
+
     override suspend fun assessQuery(request: QueryRunRequest) = onIo {
         delegate.assessQuery(request)
     }
+
+    override suspend fun assessQueryWithSchema(
+        connectionId: String,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ) = onIo { delegate.assessQueryWithSchema(connectionId, resolveSpec) }
 
     override suspend fun listSavedQueries(): List<SavedQuery> = onIo(delegate::listSavedQueries)
 

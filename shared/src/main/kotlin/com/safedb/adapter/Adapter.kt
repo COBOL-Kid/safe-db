@@ -26,52 +26,71 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
+const val EXPLAIN_OUTER_TIMEOUT_MARGIN_MS = 1_000
+
 class MssqlState(var dataSource: HikariDataSource?, val def: ConnectionDef, val password: String)
 
-sealed class Adapter {
-    abstract suspend fun test(): String
+private class PooledOps(
+    val dataSource: HikariDataSource,
+    val test: (HikariDataSource) -> String,
+    val introspect: (HikariDataSource) -> Schema,
+    val executeQuery: (HikariDataSource, CompiledQuery, Int) -> QueryResult,
+    val explain: (HikariDataSource, CompiledQuery, Int) -> ExplainResult,
+)
 
-    abstract suspend fun introspect(): Schema
+sealed class Adapter private constructor(private val pooled: PooledOps? = null) {
+    open suspend fun test(): String =
+        withContext(Dispatchers.IO) {
+            val ops = checkNotNull(pooled)
+            ops.test(ops.dataSource)
+        }
 
-    abstract suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult
+    open suspend fun introspect(): Schema =
+        withContext(Dispatchers.IO) {
+            val ops = checkNotNull(pooled)
+            ops.introspect(ops.dataSource)
+        }
 
-    abstract suspend fun explain(
+    open suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
+        withContext(Dispatchers.IO) {
+            val ops = checkNotNull(pooled)
+            ops.executeQuery(ops.dataSource, compiled, timeoutMs)
+        }
+
+    open suspend fun explain(
         compiled: CompiledQuery,
         timeoutMs: Int = DEFAULT_TIMEOUT_MS,
-    ): ExplainResult
+    ): ExplainResult =
+        withContext(Dispatchers.IO) {
+            val ops = checkNotNull(pooled)
+            ops.explain(ops.dataSource, compiled, timeoutMs)
+        }
 
-    data class Postgres(val dataSource: HikariDataSource) : Adapter() {
-        override suspend fun test(): String =
-            withContext(Dispatchers.IO) { PgAdapter.test(dataSource) }
+    data class Postgres(val dataSource: HikariDataSource) :
+        Adapter(
+            PooledOps(
+                dataSource,
+                PgAdapter::test,
+                PgAdapter::introspect,
+                PgAdapter::executeQuery,
+                PgAdapter::explain,
+            ),
+        )
 
-        override suspend fun introspect(): Schema =
-            withContext(Dispatchers.IO) { PgAdapter.introspect(dataSource) }
-
-        override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-            withContext(Dispatchers.IO) { PgAdapter.executeQuery(dataSource, compiled, timeoutMs) }
-
-        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
-            withContext(Dispatchers.IO) { PgAdapter.explain(dataSource, compiled, timeoutMs) }
-    }
-
-    data class MySql(val dataSource: HikariDataSource) : Adapter() {
-        override suspend fun test(): String =
-            withContext(Dispatchers.IO) { MySqlAdapter.test(dataSource) }
-
-        override suspend fun introspect(): Schema =
-            withContext(Dispatchers.IO) { MySqlAdapter.introspect(dataSource) }
-
-        override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-            withContext(Dispatchers.IO) {
-                MySqlAdapter.executeQuery(dataSource, compiled, timeoutMs)
-            }
-
-        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
-            withContext(Dispatchers.IO) { MySqlAdapter.explain(dataSource, compiled, timeoutMs) }
-    }
+    data class MySql(val dataSource: HikariDataSource) :
+        Adapter(
+            PooledOps(
+                dataSource,
+                MySqlAdapter::test,
+                MySqlAdapter::introspect,
+                MySqlAdapter::executeQuery,
+                MySqlAdapter::explain,
+            ),
+        )
 
     data class Mssql(val state: MssqlState) : Adapter() {
         private val lock = ReentrantLock()
+        private var closed = false
 
         override suspend fun test(): String =
             withContext(Dispatchers.IO) {
@@ -96,10 +115,7 @@ sealed class Adapter {
                     try {
                         MssqlAdapter.executeQuery(ds, compiled, timeoutMs)
                     } catch (e: QueryTimedOutException) {
-                        state.dataSource?.let(::closeDataSource)
-                        state.dataSource = null
-                        runCatching { createDataSource(state.def, state.password) }
-                            .onSuccess { state.dataSource = it }
+                        recycleDataSource()
                         throw e
                     }
                 }
@@ -107,15 +123,35 @@ sealed class Adapter {
 
         override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
             withContext(Dispatchers.IO) {
-                val explainDs = createDataSource(state.def, state.password)
-                try {
-                    MssqlAdapter.explain(explainDs, compiled, timeoutMs)
-                } finally {
-                    closeDataSource(explainDs)
+                lock.withLock {
+                    val ds = ensureDataSource()
+                    try {
+                        MssqlAdapter.explain(ds, compiled, timeoutMs)
+                    } catch (e: QueryTimedOutException) {
+                        recycleDataSource()
+                        throw e
+                    }
                 }
             }
 
+        override fun close() {
+            closeLocked()
+        }
+
+        internal fun closeLocked() {
+            lock.withLock {
+                closed = true
+                recycleDataSource()
+            }
+        }
+
+        private fun recycleDataSource() {
+            state.dataSource?.let(::closeDataSource)
+            state.dataSource = null
+        }
+
         private fun ensureDataSource(): HikariDataSource {
+            if (closed) throw IllegalStateException("SQL Server adapter is closed")
             if (state.dataSource == null) {
                 state.dataSource = createDataSource(state.def, state.password)
             }
@@ -123,35 +159,27 @@ sealed class Adapter {
         }
     }
 
-    data class Oracle(val dataSource: HikariDataSource) : Adapter() {
-        override suspend fun test(): String =
-            withContext(Dispatchers.IO) { OracleAdapter.test(dataSource) }
+    data class Oracle(val dataSource: HikariDataSource) :
+        Adapter(
+            PooledOps(
+                dataSource,
+                OracleAdapter::test,
+                OracleAdapter::introspect,
+                OracleAdapter::executeQuery,
+                OracleAdapter::explain,
+            ),
+        )
 
-        override suspend fun introspect(): Schema =
-            withContext(Dispatchers.IO) { OracleAdapter.introspect(dataSource) }
-
-        override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-            withContext(Dispatchers.IO) {
-                OracleAdapter.executeQuery(dataSource, compiled, timeoutMs)
-            }
-
-        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
-            withContext(Dispatchers.IO) { OracleAdapter.explain(dataSource, compiled, timeoutMs) }
-    }
-
-    data class Db2(val dataSource: HikariDataSource) : Adapter() {
-        override suspend fun test(): String =
-            withContext(Dispatchers.IO) { Db2Adapter.test(dataSource) }
-
-        override suspend fun introspect(): Schema =
-            withContext(Dispatchers.IO) { Db2Adapter.introspect(dataSource) }
-
-        override suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-            withContext(Dispatchers.IO) { Db2Adapter.executeQuery(dataSource, compiled, timeoutMs) }
-
-        override suspend fun explain(compiled: CompiledQuery, timeoutMs: Int): ExplainResult =
-            withContext(Dispatchers.IO) { Db2Adapter.explain(dataSource, compiled, timeoutMs) }
-    }
+    data class Db2(val dataSource: HikariDataSource) :
+        Adapter(
+            PooledOps(
+                dataSource,
+                Db2Adapter::test,
+                Db2Adapter::introspect,
+                Db2Adapter::executeQuery,
+                Db2Adapter::explain,
+            ),
+        )
 
     companion object {
         suspend fun connect(def: ConnectionDef, password: String): Adapter {
@@ -188,17 +216,17 @@ sealed class Adapter {
             adapter: Adapter,
             compiled: CompiledQuery,
             timeoutMs: Int = DEFAULT_TIMEOUT_MS,
-        ): ExplainResult = awaitExplain(timeoutMs) { adapter.explain(compiled, timeoutMs) }
+        ): ExplainResult {
+            val outerTimeoutMs =
+                (timeoutMs.toLong() + EXPLAIN_OUTER_TIMEOUT_MARGIN_MS)
+                    .coerceIn(0L, Int.MAX_VALUE.toLong())
+                    .toInt()
+            return awaitExplain(outerTimeoutMs) { adapter.explain(compiled, timeoutMs) }
+        }
     }
 
-    fun close() {
-        when (this) {
-            is Postgres -> closeDataSource(dataSource)
-            is MySql -> closeDataSource(dataSource)
-            is Mssql -> state.dataSource?.let(::closeDataSource)
-            is Oracle -> closeDataSource(dataSource)
-            is Db2 -> closeDataSource(dataSource)
-        }
+    open fun close() {
+        pooled?.let { closeDataSource(it.dataSource) }
     }
 }
 
@@ -224,6 +252,7 @@ fun unavailablePlanFromError(error: Throwable): ExplainResult.Unavailable {
     val reason =
         when {
             isPlanPermissionDenied(texts) -> PlanUnavailableReason.PermissionDenied
+            isServerPlanTimeout(chain, texts) -> PlanUnavailableReason.TimedOut
             isPlanConnectivityFailure(chain, texts) -> PlanUnavailableReason.ConnectionFailure
             else -> PlanUnavailableReason.ExecutionFailure
         }

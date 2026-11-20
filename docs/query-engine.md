@@ -93,9 +93,11 @@ Postgres `EXPLAIN` row estimates account for a `Limit` node that can stop early 
 | --- | --- | --- |
 | PostgreSQL | `SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED` | Verified TLS keeps pgjdbc trust and client certificates unless a launch profile is set. |
 | MySQL | `SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED` | JVM trust, or a launch-profile PKCS12 store. |
-| SQL Server | `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED` and `SET LOCK_TIMEOUT`; no `SET TRANSACTION READ ONLY` | JVM trust, or a launch-profile PKCS12 store. |
+| SQL Server | JDBC `autoCommit = false`, isolation `READ_UNCOMMITTED`, `SET LOCK_TIMEOUT` (restored to `-1` in `finally`); no `BEGIN TRANSACTION` or `SET TRANSACTION READ ONLY` | JVM trust, or a launch-profile PKCS12 store. |
 | Oracle | `SET TRANSACTION READ ONLY` | Verified TCPS uses an Oracle wallet. A generic PKCS12 launch profile is not a substitute. |
 | Db2 | No session SQL. JDBC `autoCommit = false`, `isReadOnly = true`, and isolation `READ UNCOMMITTED` | JVM trust, no wallet. `sslConnection` is a connection property, not part of the connect URL. |
+
+Oracle and Db2 `EXPLAIN` (`EXPLAIN PLAN`) insert rows into database plan tables (`plan_table` on Oracle; `EXPLAIN_INSTANCE` / `EXPLAIN_*` on Db2 LUW or `PLAN_TABLE` on Db2 z/OS) and delete those rows afterward, discarding plan evidence (`CleanupFailure`) if cleanup fails. Setting the risk gate to `Disabled` skips `EXPLAIN` entirely and avoids those plan-table writes. SQL Server uses `SET SHOWPLAN_XML ON` (restored to `OFF` afterward) and does not write a plan table.
 
 A pasted Db2 connection string is not the connect URL. [`formatConnectionString`](../shared/src/main/kotlin/com/safedb/connection/ParseConnectionString.kt) keeps `sslConnection=true` or `sslConnection=false` on that string so the transport mode round-trips. [`buildDb2Url`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) omits `sslConnection`. JCC 12 rejects `Driver.connect` when the property is in both the URL and the `Properties` object (`ERRORCODE=-4461`). [`applyDb2Ssl`](../shared/src/main/kotlin/com/safedb/adapter/JdbcHelpers.kt) sets it as a connection property after any pasted driver properties: `false` when transport is disabled, `true` otherwise, plus `sslClientHostnameValidation=BASIC` when SSL is on. Encrypt-only and verify-ca are not distinct from verify-identity on JCC.
 

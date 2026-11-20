@@ -62,6 +62,9 @@ internal fun boundedLimitProperty(
             extraNote,
     )
 
+internal fun offsetProperty(): JsonObject =
+    intProp("0-based item offset for pagination. Default 0. Negative is invalid_arguments.")
+
 internal fun objectOutputSchema(
     required: List<String>,
     properties: JsonObjectBuilder.() -> Unit,

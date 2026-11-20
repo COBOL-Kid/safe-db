@@ -290,7 +290,9 @@ internal fun buildResultTableColumns(
     val maxLengths = IntArray(labels.size) { labels[it].length }
     val hasConcrete = BooleanArray(labels.size)
     val allNumeric = BooleanArray(labels.size) { true }
-    result.rows.forEach { row ->
+    val sampleRowCount = minOf(result.rows.size, RESULT_TABLE_WIDTH_SAMPLE_ROWS)
+    for (rowIndex in 0 until sampleRowCount) {
+        val row = result.rows[rowIndex]
         labels.indices.forEach { index ->
             val cell = row.getOrNull(index)
             maxLengths[index] = maxOf(maxLengths[index], formatCell(cell).length)
@@ -382,6 +384,7 @@ internal fun resultColumnWidthDp(label: String, cells: List<ResultCell?>): Int {
     )
 }
 
+internal const val RESULT_TABLE_WIDTH_SAMPLE_ROWS = 250
 private const val RESULT_TABLE_SCROLLBAR_GUTTER_DP = 8
 private const val RESULT_TABLE_CHAR_WIDTH_DP = 9
 private const val RESULT_TABLE_HORIZONTAL_PADDING_DP = 32

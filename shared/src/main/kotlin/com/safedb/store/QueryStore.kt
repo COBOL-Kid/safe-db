@@ -5,16 +5,15 @@ import com.safedb.model.HistoryEntry
 import com.safedb.model.SafeDbJson
 import com.safedb.model.SavedQuery
 import com.safedb.persist.ensurePrivateDir
+import com.safedb.persist.withFileLock
 import java.nio.file.Path
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import kotlinx.serialization.KSerializer
 
 class QueryStore
 private constructor(
     private val savedPath: Path,
     private val historyPath: Path,
-    private val lock: ReentrantLock = ReentrantLock(),
+    private val lockPath: Path,
     private val maxHistory: Int = 100,
 ) {
     companion object {
@@ -23,18 +22,20 @@ private constructor(
             return QueryStore(
                 savedPath = dataDir.resolve("saved_queries.json"),
                 historyPath = dataDir.resolve("query_history.json"),
+                lockPath = dataDir.resolve("queries.lock"),
                 maxHistory = maxHistory,
             )
         }
     }
 
-    fun listSaved(): List<SavedQuery> = lock.withLock {
-        readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
-    }
+    fun listSaved(): List<SavedQuery> =
+        withFileLock(lockPath) {
+            readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
+        }
 
     fun saveQuery(query: SavedQuery) {
         requireCurrentSchema(query.spec.schemaVersion)
-        lock.withLock {
+        withFileLock(lockPath) {
             val queries =
                 readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
                     .toMutableList()
@@ -49,7 +50,7 @@ private constructor(
     }
 
     fun deleteSaved(id: String) {
-        lock.withLock {
+        withFileLock(lockPath) {
             val queries =
                 readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
                     .filterNot { it.id == id }
@@ -57,13 +58,14 @@ private constructor(
         }
     }
 
-    fun listHistory(): List<HistoryEntry> = lock.withLock {
-        readValid(historyPath, HistoryEntry.serializer()) { it.spec.schemaVersion }
-    }
+    fun listHistory(): List<HistoryEntry> =
+        withFileLock(lockPath) {
+            readValid(historyPath, HistoryEntry.serializer()) { it.spec.schemaVersion }
+        }
 
     fun addHistory(entry: HistoryEntry) {
         requireCurrentSchema(entry.spec.schemaVersion)
-        lock.withLock {
+        withFileLock(lockPath) {
             val history =
                 readValid(historyPath, HistoryEntry.serializer()) { it.spec.schemaVersion }
                     .toMutableList()
@@ -76,11 +78,13 @@ private constructor(
     }
 
     fun clearHistory() {
-        lock.withLock { writeJsonList(historyPath, emptyList(), HistoryEntry.serializer()) }
+        withFileLock(lockPath) {
+            writeJsonList(historyPath, emptyList(), HistoryEntry.serializer())
+        }
     }
 
     fun deleteHistory(id: String) {
-        lock.withLock {
+        withFileLock(lockPath) {
             val history =
                 readValid(historyPath, HistoryEntry.serializer()) { it.spec.schemaVersion }
                     .filterNot { it.id == id }
@@ -89,7 +93,7 @@ private constructor(
     }
 
     fun deleteForConnection(connectionId: String) {
-        lock.withLock {
+        withFileLock(lockPath) {
             val saved =
                 readValid(savedPath, SavedQuery.serializer()) { it.spec.schemaVersion }
                     .filterNot { it.connectionId == connectionId }

@@ -256,10 +256,73 @@ class HydrateQueryTest {
         assertEquals(2, warnings.droppedTables.size)
         assertEquals(2, warnings.droppedJoins)
         assertTrue(warnings.droppedFilters)
+        assertTrue(warnings.allFiltersDropped)
         assertEquals(1, warnings.droppedSorts)
         assertEquals(listOf(SortSpec("t0", "name")), target.sorts)
         assertEquals(1, warnings.droppedGroups)
         assertEquals(listOf(GroupSpec("t0", "name")), target.groups)
+
+        val formatted = formatHydrationWarning(warnings)!!
+        assertTrue(formatted.contains("2 joins could not be restored"))
+        assertTrue(formatted.contains("all filters were dropped (query is now unfiltered)"))
+    }
+
+    @Test
+    fun partialFilterDropKeepsSomeFiltersWarningDistinctFromAllFiltersDropped() {
+        val target = TestHydrationTarget()
+        val spec =
+            QuerySpec(
+                tables = listOf(TableRef("safedb_test", "products", "saved_t0")),
+                columns = listOf(com.safedb.model.ColumnSel("saved_t0", "name")),
+                joins = listOf(JoinSpec("saved_t0", "id", "saved_missing", "id")),
+                filters =
+                    FilterGroup(
+                        children =
+                            listOf(
+                                FilterNode.Leaf(
+                                    FilterSpec(
+                                        tableAlias = "saved_t0",
+                                        column = "name",
+                                        op = FilterOp.Eq,
+                                        value =
+                                            FilterValue.Single(
+                                                com.safedb.model.FilterLiteral(
+                                                    LiteralKind.Text,
+                                                    "widget",
+                                                ),
+                                            ),
+                                    ),
+                                ),
+                                FilterNode.Leaf(
+                                    FilterSpec(
+                                        tableAlias = "saved_t0",
+                                        column = "removed_col",
+                                        op = FilterOp.Eq,
+                                        value =
+                                            FilterValue.Single(
+                                                com.safedb.model.FilterLiteral(
+                                                    LiteralKind.Text,
+                                                    "x",
+                                                ),
+                                            ),
+                                    ),
+                                ),
+                            ),
+                    ),
+                limit = DEFAULT_LIMIT,
+            )
+
+        val warnings = hydrateQueryFromSpec(spec, listOf(products), target)
+
+        assertEquals(1, target.filters.children.size)
+        assertEquals(1, warnings.droppedJoins)
+        assertTrue(warnings.droppedFilters)
+        assertFalse(warnings.allFiltersDropped)
+
+        val formatted = formatHydrationWarning(warnings)!!
+        assertTrue(formatted.contains("1 join could not be restored"))
+        assertTrue(formatted.contains("some filters were dropped"))
+        assertFalse(formatted.contains("all filters were dropped"))
     }
 
     @Test
@@ -281,5 +344,14 @@ class HydrateQueryTest {
         assertTrue(message.contains("some filters were dropped"))
         assertTrue(message.contains("1 sort"))
         assertTrue(message.contains("1 group"))
+
+        val allDroppedMessage =
+            formatHydrationWarning(
+                HydrationWarnings(droppedFilters = true, allFiltersDropped = true),
+            )
+        assertTrue(
+            allDroppedMessage!!.contains("all filters were dropped (query is now unfiltered)"),
+        )
+        assertFalse(allDroppedMessage.contains("some filters were dropped"))
     }
 }

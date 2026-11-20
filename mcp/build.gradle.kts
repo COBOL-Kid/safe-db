@@ -42,13 +42,14 @@ kover {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(libs.kotlinx.serialization.json)
     implementation("io.modelcontextprotocol:kotlin-sdk-server:0.16.0")
     implementation("org.slf4j:slf4j-simple:2.0.20")
 
     testImplementation(kotlin("test"))
     testImplementation(testFixtures(project(":shared")))
     testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.16.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 val integrationTest = sourceSets.create("integrationTest")
@@ -75,15 +76,9 @@ dependencies {
         integrationTest.implementationConfigurationName,
         "io.modelcontextprotocol:kotlin-sdk-client:0.16.0",
     )
-    add(
-        integrationTest.implementationConfigurationName,
-        "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0",
-    )
-    add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:6.1.3")
-    add(
-        integrationTest.runtimeOnlyConfigurationName,
-        "org.junit.platform:junit-platform-launcher:6.1.3",
-    )
+    add(integrationTest.implementationConfigurationName, libs.kotlinx.coroutines.test)
+    add(integrationTest.implementationConfigurationName, libs.junit.jupiter)
+    add(integrationTest.runtimeOnlyConfigurationName, libs.junit.platform.launcher)
 }
 
 val generateMcpVersion =

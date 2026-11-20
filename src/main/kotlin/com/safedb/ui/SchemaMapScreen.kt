@@ -57,6 +57,7 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -555,70 +556,78 @@ private fun SchemaMapCanvas(
             )
 
             graph.relationships.forEach { relationship ->
-                val geometry = renderRelationshipGeometry.getValue(relationship.id)
-                val midpoint = geometry.anchor
-                val targetSize = 24f / viewModel.zoom
-                RelationshipTooltipAnchor(
-                    relationship = relationship,
-                    targetSize = targetSize,
-                    dotSize = 5f / viewModel.zoom,
-                    modifier =
-                        Modifier.offset {
-                                IntOffset(
-                                    with(density) { (midpoint.x - targetSize / 2f).dp.roundToPx() },
-                                    with(density) { (midpoint.y - targetSize / 2f).dp.roundToPx() },
-                                )
-                            }
-                            .zIndex(2f),
-                )
+                key(relationship.id) {
+                    val geometry = renderRelationshipGeometry.getValue(relationship.id)
+                    val midpoint = geometry.anchor
+                    val targetSize = 24f / viewModel.zoom
+                    RelationshipTooltipAnchor(
+                        relationship = relationship,
+                        targetSize = targetSize,
+                        dotSize = 5f / viewModel.zoom,
+                        modifier =
+                            Modifier.offset {
+                                    IntOffset(
+                                        with(density) {
+                                            (midpoint.x - targetSize / 2f).dp.roundToPx()
+                                        },
+                                        with(density) {
+                                            (midpoint.y - targetSize / 2f).dp.roundToPx()
+                                        },
+                                    )
+                                }
+                                .zIndex(2f),
+                    )
+                }
             }
 
             graph.nodes.forEach { node ->
-                val point = renderPositions.getValue(node.id)
-                val size = nodeSizes.getValue(node.id)
-                val highlighted = viewModel.query.isBlank() || node.id in search.nodeIds
-                if (node.isExternal) {
-                    ExternalSchemaNode(
-                        node = node,
-                        highlighted = highlighted,
-                        modifier =
-                            Modifier.offset {
-                                    IntOffset(
-                                        with(density) { point.x.dp.roundToPx() },
-                                        with(density) { point.y.dp.roundToPx() },
-                                    )
-                                }
-                                .width(size.width.dp)
-                                .height(size.height.dp)
-                                .zIndex(if (highlighted) 3f else 1f),
-                    )
-                } else {
-                    SchemaTableNode(
-                        node = node,
-                        expanded = viewModel.isExpanded(node.id),
-                        highlighted = highlighted,
-                        matchingColumns = search.columnsByNode[node.id].orEmpty().toSet(),
-                        onToggleExpanded = { viewModel.toggleExpanded(node.id) },
-                        onMove = { screenDelta ->
-                            viewModel.moveNode(
-                                node.id,
-                                Offset(
-                                    screenDelta.x / density.density,
-                                    screenDelta.y / density.density,
-                                ),
-                            )
-                        },
-                        modifier =
-                            Modifier.offset {
-                                    IntOffset(
-                                        with(density) { point.x.dp.roundToPx() },
-                                        with(density) { point.y.dp.roundToPx() },
-                                    )
-                                }
-                                .width(size.width.dp)
-                                .height(size.height.dp)
-                                .zIndex(if (highlighted) 4f else 2f),
-                    )
+                key(node.id) {
+                    val point = renderPositions.getValue(node.id)
+                    val size = nodeSizes.getValue(node.id)
+                    val highlighted = viewModel.query.isBlank() || node.id in search.nodeIds
+                    if (node.isExternal) {
+                        ExternalSchemaNode(
+                            node = node,
+                            highlighted = highlighted,
+                            modifier =
+                                Modifier.offset {
+                                        IntOffset(
+                                            with(density) { point.x.dp.roundToPx() },
+                                            with(density) { point.y.dp.roundToPx() },
+                                        )
+                                    }
+                                    .width(size.width.dp)
+                                    .height(size.height.dp)
+                                    .zIndex(if (highlighted) 3f else 1f),
+                        )
+                    } else {
+                        SchemaTableNode(
+                            node = node,
+                            expanded = viewModel.isExpanded(node.id),
+                            highlighted = highlighted,
+                            matchingColumns = search.columnsByNode[node.id].orEmpty().toSet(),
+                            onToggleExpanded = { viewModel.toggleExpanded(node.id) },
+                            onMove = { screenDelta ->
+                                viewModel.moveNode(
+                                    node.id,
+                                    Offset(
+                                        screenDelta.x / density.density,
+                                        screenDelta.y / density.density,
+                                    ),
+                                )
+                            },
+                            modifier =
+                                Modifier.offset {
+                                        IntOffset(
+                                            with(density) { point.x.dp.roundToPx() },
+                                            with(density) { point.y.dp.roundToPx() },
+                                        )
+                                    }
+                                    .width(size.width.dp)
+                                    .height(size.height.dp)
+                                    .zIndex(if (highlighted) 4f else 2f),
+                        )
+                    }
                 }
             }
         }

@@ -449,7 +449,8 @@ sealed class ResultCell {
 
 @Serializable data class BinaryValue(val base64: String, val truncated: Boolean)
 
-data class CompiledQuery(val sql: String, val params: List<BindValue>)
+@ConsistentCopyVisibility
+data class CompiledQuery internal constructor(val sql: String, val params: List<BindValue>)
 
 internal object FilterNodeSerializer : KSerializer<FilterNode> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("FilterNode")

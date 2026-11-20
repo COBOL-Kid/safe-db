@@ -65,6 +65,8 @@ class AssessQueryToolsTest {
             assertFalse(body.containsKey("reasons"))
         }
         assertTrue(service.runQueryRequests.isEmpty())
+        assertEquals(listOf("c1"), service.schemaCalls)
+        assertEquals(1, service.assessQueryWithSchemaCalls)
         assertEquals(1, service.assessQueryRequests.size)
         assertEquals(
             "customers",
@@ -232,7 +234,9 @@ class AssessQueryToolsTest {
     fun assessQueryToolMetadataIsDocumented() = runBlocking {
         withTempMcpClient(queryService()) { client ->
             val tool = client.listTools().tools.single { it.name == "assess_query" }
-            assertEquals(true, tool.annotations?.readOnlyHint)
+            assertEquals(false, tool.annotations?.readOnlyHint)
+            assertTrue(tool.description.orEmpty().contains("Oracle and Db2"))
+            assertTrue(tool.description.orEmpty().contains("plan-table"))
             assertTrue(tool.outputSchema?.properties?.containsKey("compiled_sql") == true)
         }
     }

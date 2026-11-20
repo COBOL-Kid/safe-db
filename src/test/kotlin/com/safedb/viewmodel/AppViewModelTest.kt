@@ -138,18 +138,24 @@ class AppViewModelTest {
             val viewModel = AppViewModel(service, dispatcher)
             try {
                 advanceUntilIdle()
-                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
 
                 viewModel.refreshDatabaseReachability(testConnection())
                 runCurrent()
-                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
                 assertEquals(1, service.testConnectionCalls)
 
                 viewModel.refreshDatabaseReachability(null)
                 advanceTimeBy(ReachabilityPollInterval)
                 runCurrent()
 
-                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
                 assertEquals(1, service.testConnectionCalls)
             } finally {
                 viewModel.close()
@@ -157,7 +163,7 @@ class AppViewModelTest {
         }
 
     @Test
-    fun refreshDatabaseReachabilityBecomesTrueAfterSuccessfulProbe() =
+    fun refreshDatabaseReachabilityBecomesConnectedAfterSuccessfulProbe() =
         runTest(dispatcher) {
             val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
             val viewModel = AppViewModel(service, dispatcher)
@@ -167,7 +173,7 @@ class AppViewModelTest {
                 viewModel.refreshDatabaseReachability(testConnection())
                 runCurrent()
 
-                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
                 assertEquals(1, service.testConnectionCalls)
                 assertNull(service.testConnectionPassword)
             } finally {
@@ -176,7 +182,7 @@ class AppViewModelTest {
         }
 
     @Test
-    fun refreshDatabaseReachabilityStaysFalseAfterFailedProbe() =
+    fun refreshDatabaseReachabilityBecomesDisconnectedAfterFailedProbe() =
         runTest(dispatcher) {
             val service =
                 FakeSafeDbService(
@@ -189,8 +195,45 @@ class AppViewModelTest {
                 viewModel.refreshDatabaseReachability(testConnection())
                 runCurrent()
 
-                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
                 assertEquals(1, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun refreshDatabaseReachabilityEntersCheckingOnConnectionSwitchBeforeResolving() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+
+                val gate = CompletableDeferred<Unit>()
+                service.testConnectionGate = gate
+                service.testConnectionOutcome = Result.failure(IllegalStateException("unreachable"))
+
+                viewModel.refreshDatabaseReachability(testConnection().copy(id = "c2"))
+                assertEquals(DatabaseReachability.Checking, viewModel.databaseReachability.value)
+
+                runCurrent()
+                assertEquals(DatabaseReachability.Checking, viewModel.databaseReachability.value)
+                assertEquals(2, service.testConnectionCalls)
+
+                gate.complete(Unit)
+                runCurrent()
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
             } finally {
                 viewModel.close()
             }
@@ -214,14 +257,17 @@ class AppViewModelTest {
                 viewModel.refreshDatabaseReachability(testConnection())
                 runCurrent()
                 assertTrue(started.isCompleted)
-                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(DatabaseReachability.Checking, viewModel.databaseReachability.value)
 
                 viewModel.refreshDatabaseReachability(null)
                 gate.complete(Unit)
                 advanceTimeBy(ReachabilityPollInterval)
                 runCurrent()
 
-                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
                 assertEquals(1, service.testConnectionCalls)
             } finally {
                 viewModel.close()
@@ -229,7 +275,7 @@ class AppViewModelTest {
         }
 
     @Test
-    fun refreshDatabaseReachabilityPollsTheSameConnectionAgain() =
+    fun refreshDatabaseReachabilityPollsTheSameConnectionAgainWithoutFlashing() =
         runTest(dispatcher) {
             val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
             val viewModel = AppViewModel(service, dispatcher)
@@ -238,22 +284,28 @@ class AppViewModelTest {
 
                 viewModel.refreshDatabaseReachability(testConnection())
                 runCurrent()
-                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
                 assertEquals(1, service.testConnectionCalls)
 
+                val gate = CompletableDeferred<Unit>()
+                service.testConnectionGate = gate
                 advanceTimeBy(ReachabilityPollInterval)
                 runCurrent()
 
                 assertEquals(2, service.testConnectionCalls)
-                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
                 assertNull(service.testConnectionPassword)
+
+                gate.complete(Unit)
+                runCurrent()
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
             } finally {
                 viewModel.close()
             }
         }
 
     @Test
-    fun refreshDatabaseReachabilityStaysReachableUntilALaterFailedPollReturns() =
+    fun refreshDatabaseReachabilityStaysConnectedUntilALaterFailedPollReturns() =
         runTest(dispatcher) {
             val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
             val viewModel = AppViewModel(service, dispatcher)
@@ -262,7 +314,7 @@ class AppViewModelTest {
 
                 viewModel.refreshDatabaseReachability(testConnection())
                 runCurrent()
-                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
                 assertEquals(1, service.testConnectionCalls)
 
                 val gate = CompletableDeferred<Unit>()
@@ -273,13 +325,78 @@ class AppViewModelTest {
                 runCurrent()
 
                 assertEquals(2, service.testConnectionCalls)
-                assertTrue(viewModel.databaseReachable.value)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
 
                 gate.complete(Unit)
                 runCurrent()
 
-                assertFalse(viewModel.databaseReachable.value)
+                assertEquals(
+                    DatabaseReachability.Disconnected,
+                    viewModel.databaseReachability.value,
+                )
                 assertEquals(2, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun inactiveWindowSkipsReachabilityProbesAndResumesOnReactivation() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+                assertEquals(1, service.testConnectionCalls)
+
+                viewModel.setWindowActive(false)
+                viewModel.setWindowActive(false)
+                advanceTimeBy(ReachabilityPollInterval)
+                runCurrent()
+
+                assertEquals(1, service.testConnectionCalls)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+
+                viewModel.setWindowActive(true)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+                runCurrent()
+
+                assertEquals(2, service.testConnectionCalls)
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+
+                // Redundant activation does not trigger an extra probe.
+                viewModel.setWindowActive(true)
+                runCurrent()
+                assertEquals(2, service.testConnectionCalls)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun connectionSwitchWhileWindowInactiveStaysCheckingUntilWindowActivates() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+
+                viewModel.setWindowActive(false)
+                viewModel.refreshDatabaseReachability(testConnection())
+                runCurrent()
+
+                assertEquals(DatabaseReachability.Checking, viewModel.databaseReachability.value)
+                assertEquals(0, service.testConnectionCalls)
+
+                viewModel.setWindowActive(true)
+                runCurrent()
+
+                assertEquals(DatabaseReachability.Connected, viewModel.databaseReachability.value)
+                assertEquals(1, service.testConnectionCalls)
             } finally {
                 viewModel.close()
             }
@@ -906,6 +1023,134 @@ class AppViewModelTest {
 
                 assertEquals(2, service.queryAttempts)
                 assertNotNull(viewModel.sqlEditor.results)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun exploreOriginContextAndRefreshActiveSampleHandleBuilderAndSqlOrigins() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                val connections = listOf(connection)
+
+                assertFalse(
+                    viewModel.exploreOriginContext("c1", null, connections).sampleRefreshEnabled,
+                )
+
+                viewModel.query.addTable(sampleTable())
+                viewModel.query.run("c1")
+                advanceUntilIdle()
+                val builderSample = viewModel.query.currentSample("c1")!!
+
+                viewModel.openExplore(connection, builderSample.spec, builderSample.result)
+                val builderContext =
+                    viewModel.exploreOriginContext("c1", null, connections, ExploreOrigin.Builder)
+                assertTrue(builderContext.sampleRefreshEnabled)
+                assertEquals(builderSample.spec, builderContext.currentSpec)
+
+                viewModel.query.setLimit(40)
+                viewModel.query.run("c1")
+                advanceUntilIdle()
+                viewModel.refreshActiveExploreSample("c1", null, connections)
+                assertEquals(40, viewModel.explore.value?.session?.builderLimit)
+
+                assertFalse(
+                    viewModel.exploreOriginContext("c2", null, connections).sampleRefreshEnabled,
+                )
+                viewModel.refreshActiveExploreSample("c2", null, connections)
+                assertEquals(40, viewModel.explore.value?.session?.builderLimit)
+
+                val sqlSpec = sampleSpec().copy(limit = 15)
+                viewModel.sqlEditor.run("c1", sqlSpec, viewModel.sqlEditor.text.text)
+                advanceUntilIdle()
+                val sqlSample = viewModel.sqlEditor.currentSample("c1", sqlSpec)!!
+                viewModel.openExplore(connection, sqlSpec, sqlSample.result, ExploreOrigin.Sql)
+
+                val sqlContext =
+                    viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
+                assertTrue(sqlContext.sampleRefreshEnabled)
+                assertEquals(sqlSpec, sqlContext.currentSpec)
+
+                val updatedSqlSpec = sampleSpec().copy(limit = 30)
+                viewModel.sqlEditor.run("c1", updatedSqlSpec, viewModel.sqlEditor.text.text)
+                advanceUntilIdle()
+                viewModel.refreshActiveExploreSample("c1", updatedSqlSpec, connections)
+                assertEquals(30, viewModel.explore.value?.session?.builderLimit)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun runRecipeFromExploreSelectsConnectionClosesExploreAndNavigates() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                val sample =
+                    QueryResult(
+                        columns = listOf(ResultColumn("t0__status", "varchar")),
+                        rows = listOf(listOf(ResultCell.text("pending"))),
+                        rowCount = 1,
+                        truncated = false,
+                        warnings = emptyList(),
+                    )
+                viewModel.openExplore(connection, sampleSpec(), sample)
+                assertNotNull(viewModel.explore.value)
+
+                var selectedSchema: String? = null
+                var navigated = false
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-from-explore",
+                        name = "From explore",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+
+                viewModel.runRecipeFromExplore(
+                    connection = connection,
+                    recipe = recipe,
+                    onSelectConnection = { selectedSchema = it.schema },
+                    onRestored = { navigated = true },
+                )
+                assertNull(viewModel.explore.value)
+                assertEquals("public", selectedSchema)
+
+                advanceUntilIdle()
+                assertTrue(navigated)
+                assertEquals("r-from-explore", viewModel.pendingRecipeRun.value?.recipe?.id)
+            } finally {
+                viewModel.close()
+            }
+        }
+
+    @Test
+    fun settingsLoadDefaultSchemaOptionsReusesSchemaLoadedInAppViewModel() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                viewModel.schema.load("c1")
+                advanceUntilIdle()
+                assertEquals(1, service.schemaLoadCount)
+
+                viewModel.settings.loadDefaultSchemaOptions("c1")
+                advanceUntilIdle()
+
+                assertEquals(listOf("public"), viewModel.settings.defaultSchemaOptions.value)
+                assertEquals(1, service.schemaLoadCount)
             } finally {
                 viewModel.close()
             }

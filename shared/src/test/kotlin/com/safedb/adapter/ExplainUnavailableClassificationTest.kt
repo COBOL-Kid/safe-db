@@ -70,6 +70,38 @@ class ExplainUnavailableClassificationTest {
     }
 
     @Test
+    fun mysqlMaxExecutionTimeErrorsAreClassifiedAsTimedOut() {
+        val byCode =
+            unavailablePlanFromError(
+                SQLException("Query execution was interrupted", "HY000", 3024),
+            )
+        assertEquals(PlanUnavailableReason.TimedOut, byCode.reasonCode)
+
+        val byMessage =
+            unavailablePlanFromError(
+                SQLException(
+                    "Query execution was interrupted, maximum statement execution time exceeded",
+                ),
+            )
+        assertEquals(PlanUnavailableReason.TimedOut, byMessage.reasonCode)
+    }
+
+    @Test
+    fun postgresStatementTimeoutErrorsAreClassifiedAsTimedOut() {
+        val bySqlState = unavailablePlanFromError(SQLException("canceling query", "57014", 0))
+        assertEquals(PlanUnavailableReason.TimedOut, bySqlState.reasonCode)
+
+        val byMessage =
+            unavailablePlanFromError(
+                SQLException(
+                    "wrapper",
+                    SQLException("ERROR: canceling statement due to statement timeout"),
+                ),
+            )
+        assertEquals(PlanUnavailableReason.TimedOut, byMessage.reasonCode)
+    }
+
+    @Test
     fun plannerBugsStayExecutionFailures() {
         val unavailable = unavailablePlanFromError(IllegalStateException("planner offline"))
 

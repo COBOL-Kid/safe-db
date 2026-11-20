@@ -67,8 +67,6 @@ internal fun ratio(numerator: BigDecimal, denominator: BigDecimal?): BigDecimal?
         ?.takeUnless { it.compareTo(BigDecimal.ZERO) == 0 }
         ?.let { numerator.divide(it, 10, RoundingMode.HALF_UP).stripTrailingZeros() }
 
-internal fun ResultCell.toDecimalOrNull(): BigDecimal? = resultCellDecimal(this)
-
 internal fun BigDecimal.toPivotResultCell(): ResultCell {
     val normalized = stripTrailingZeros()
     return runCatching { ResultCell.IntegerCell(normalized.longValueExact()) }
@@ -76,10 +74,10 @@ internal fun BigDecimal.toPivotResultCell(): ResultCell {
 }
 
 internal fun comparePivotCells(left: ResultCell, right: ResultCell): Int {
-    val leftDecimal = left.toDecimalOrNull()
-    val rightDecimal = right.toDecimalOrNull()
+    val leftDecimal = resultCellDecimal(left)
+    val rightDecimal = resultCellDecimal(right)
     if (leftDecimal != null && rightDecimal != null) return leftDecimal.compareTo(rightDecimal)
-    return cellText(left).compareTo(cellText(right))
+    return resultCellText(left).compareTo(resultCellText(right))
 }
 
 internal fun cellText(cell: ResultCell): String = resultCellText(cell)

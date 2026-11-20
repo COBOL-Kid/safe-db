@@ -806,6 +806,118 @@ class ApplyExploreTest {
         assertTrue(preview.result.warnings.any { it.contains("visible column groups") })
     }
 
+    @Test
+    fun labelAndMissingColumnFiltersHandleNullAndCaseInsensitiveMatches() {
+        val count = PivotMeasure("count", MeasureFn.Count, label = "Orders")
+        val labelFiltered =
+            applyExplore(
+                sampleResult(),
+                ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("t0__customer", id = "customer")),
+                    measures = listOf(count),
+                    filters =
+                        listOf(
+                            PivotFilter.Label(
+                                "f-region",
+                                "t0__region",
+                                "Region",
+                                LabelFilterOp.StartsWith,
+                                "ea",
+                            ),
+                            PivotFilter.Label(
+                                "f-status",
+                                "t0__status",
+                                "Status",
+                                LabelFilterOp.EndsWith,
+                                "ING",
+                            ),
+                        ),
+                    showColumnTotals = false,
+                ),
+            )
+        assertEquals(listOf("Ada"), labelFiltered.layout.rowEntries.map { it.label })
+        assertEquals(ResultCell.IntegerCell(2), labelFiltered.result.rows.single()[1])
+
+        val missingColumn =
+            applyExplore(
+                sampleResult(),
+                ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("t0__region", id = "region")),
+                    measures = listOf(count),
+                    filters =
+                        listOf(
+                            PivotFilter.Members(
+                                "f-missing",
+                                "missing_col",
+                                "Missing",
+                                setOf("East"),
+                            ),
+                        ),
+                    showColumnTotals = false,
+                ),
+            )
+        assertTrue(missingColumn.result.rows.isEmpty())
+    }
+
+    @Test
+    fun chainedTopNFiltersRecomputeGrandTotalsAndPercentagesWithoutStaleCache() {
+        val revenue = PivotMeasure("revenue", MeasureFn.Sum, "t0__amount", "Revenue")
+        val share =
+            revenue.copy(
+                alias = "share",
+                label = "Share",
+                showAs = PivotShowAs(ShowAsMode.PercentGrandTotal),
+            )
+        val preview =
+            applyExplore(
+                sampleResult(),
+                ExploreConfig(
+                    rowDimensions = listOf(PivotDimension("t0__region", id = "region")),
+                    columnDimensions = listOf(PivotDimension("t0__status", id = "status")),
+                    measures = listOf(revenue, share),
+                    filters =
+                        listOf(
+                            PivotFilter.Value(
+                                "f-customer",
+                                "t0__customer",
+                                "Customer",
+                                "revenue",
+                                ValueFilterOp.Top,
+                                count = 3,
+                            ),
+                            PivotFilter.Value(
+                                "f-region",
+                                "t0__region",
+                                "Region",
+                                "revenue",
+                                ValueFilterOp.Top,
+                                count = 1,
+                            ),
+                            PivotFilter.Value(
+                                "f-status",
+                                "t0__status",
+                                "Status",
+                                "revenue",
+                                ValueFilterOp.Top,
+                                count = 1,
+                            ),
+                        ),
+                ),
+            )
+
+        assertEquals(listOf("West", "Total"), preview.layout.rowEntries.map { it.label })
+        assertEquals(
+            listOf("pending", "Total"),
+            preview.layout.columnLeaves.map { it.labels.last() },
+        )
+        val westRow = preview.result.rows.first()
+        val totalRow = preview.result.rows.last()
+        assertEquals(ResultCell.IntegerCell(300), westRow[1])
+        assertEquals(ResultCell.IntegerCell(1), westRow[2])
+        assertEquals(ResultCell.IntegerCell(300), totalRow[1])
+        assertEquals(ResultCell.IntegerCell(300), totalRow[3])
+    }
+
     private fun twoDimensionRegionStatusPivot(showSubtotals: Boolean): ExplorePreviewResult =
         applyExplore(
             sampleResult(),

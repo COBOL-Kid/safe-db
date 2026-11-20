@@ -47,6 +47,9 @@ internal class QueryRunController(
     var error by mutableStateOf<String?>(null)
         private set
 
+    var discardedRunNotice by mutableStateOf<String?>(null)
+        private set
+
     var riskEvaluation by mutableStateOf<QueryRiskEvaluation?>(null)
         private set
 
@@ -75,6 +78,7 @@ internal class QueryRunController(
         activeRun = run
         running = true
         error = null
+        discardedRunNotice = null
         results = null
         resultConnectionId = null
         resultSpec = null
@@ -188,6 +192,7 @@ internal class QueryRunController(
         riskEvaluationConnectionId = null
         riskEvaluationSpec = null
         error = null
+        discardedRunNotice = null
         clearPendingConfirmation(settle = true)
     }
 
@@ -245,6 +250,17 @@ internal class QueryRunController(
             connectionId == riskEvaluationConnectionId &&
             spec == riskEvaluationSpec
 
+    fun dismissDiscardedRunNotice() {
+        discardedRunNotice = null
+    }
+
+    fun invalidateForEdit() {
+        if (running) {
+            discardedRunNotice = DISCARDED_RUN_NOTICE
+        }
+        invalidateSettledRunFailure()
+    }
+
     fun invalidateSettledRunFailure() {
         if (running) {
             runGeneration += 1
@@ -270,6 +286,7 @@ internal class QueryRunController(
         resultConnectionId = null
         resultSpec = null
         error = null
+        discardedRunNotice = null
         riskEvaluation = null
         riskEvaluationConnectionId = null
         riskEvaluationSpec = null
@@ -285,3 +302,6 @@ internal class QueryRunController(
         if (settle) onSettled?.invoke(false)
     }
 }
+
+private const val DISCARDED_RUN_NOTICE =
+    "Query edited while a run was in progress; the in-flight result will be discarded."

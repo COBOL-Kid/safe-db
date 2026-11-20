@@ -1,10 +1,12 @@
 package com.safedb.viewmodel
 
 import com.safedb.explore.ChartType
+import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.ExploreSort
 import com.safedb.explore.ExploreSortTarget
+import com.safedb.explore.ExploreWorkspaceState
 import com.safedb.explore.MeasureFn
 import com.safedb.explore.PivotDimension
 import com.safedb.explore.PivotFilter
@@ -41,6 +43,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -608,6 +611,149 @@ class ExploreViewModelTest {
         val image = Image.makeFromEncoded(bytes)
         assertEquals(1600, image.width)
         assertEquals(900, image.height)
+    }
+
+    @Test
+    fun initialComputationOnlyComputesActiveMode() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val asyncWorksheetVm =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), sampleResult()),
+                initialWorkspace =
+                    ExploreWorkspaceState(
+                        pivot = ExploreConfig(),
+                        activeMode = ExploreMode.Worksheet,
+                    ),
+                computationScope = this,
+                computeDispatcher = dispatcher,
+            )
+
+        assertTrue(asyncWorksheetVm.isLoading(ExploreMode.Worksheet))
+        assertFalse(asyncWorksheetVm.isLoading(ExploreMode.Pivot))
+        assertFalse(asyncWorksheetVm.isLoading(ExploreMode.Visualization))
+        assertTrue(asyncWorksheetVm.worksheetPreview.columns.isEmpty())
+
+        runCurrent()
+
+        assertFalse(asyncWorksheetVm.isLoading(ExploreMode.Worksheet))
+        assertTrue(asyncWorksheetVm.worksheetPreview.columns.isNotEmpty())
+        assertTrue(asyncWorksheetVm.preview.result.columns.isEmpty())
+        assertFalse(asyncWorksheetVm.visualizationPreview.ready)
+
+        val syncVizVm =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), sampleResult()),
+                initialWorkspace =
+                    ExploreWorkspaceState(
+                        pivot = ExploreConfig(),
+                        activeMode = ExploreMode.Visualization,
+                        visualization =
+                            VisualizationConfig(
+                                chartType = ChartType.Kpi,
+                                values =
+                                    listOf(
+                                        VisualizationMeasure(
+                                            "amount",
+                                            MeasureFn.Sum,
+                                            "t0__amount",
+                                            "Amount",
+                                        ),
+                                    ),
+                            ),
+                    ),
+            )
+
+        assertTrue(syncVizVm.visualizationPreview.ready)
+        assertTrue(syncVizVm.preview.result.columns.isEmpty())
+        assertTrue(syncVizVm.worksheetPreview.columns.isEmpty())
+
+        syncVizVm.selectMode(ExploreMode.Pivot)
+        assertTrue(syncVizVm.preview.result.columns.isNotEmpty())
+    }
+
+    @Test
+    fun initialRecipeSkipsDefaultPreviewPass() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val resolvedRecipe =
+            ExploreRecipe(
+                id = "r-init",
+                name = "Worksheet",
+                createdAt = "1",
+                updatedAt = "1",
+                defaultMode = ExploreMode.Worksheet,
+                worksheet = WorksheetConfig(groups = listOf(WorksheetGroup("g", "t0__status"))),
+                requiredFields = listOf(RecipeField("t0__status", "status", "varchar", "orders")),
+            )
+
+        val resolvedVm =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), sampleResult()),
+                computationScope = this,
+                computeDispatcher = dispatcher,
+                initialRecipe = resolvedRecipe,
+            )
+
+        assertTrue(resolvedVm.isLoading(ExploreMode.Worksheet))
+        assertFalse(resolvedVm.isLoading(ExploreMode.Pivot))
+        assertEquals(ExploreMode.Worksheet, resolvedVm.workspace.activeMode)
+
+        runCurrent()
+
+        assertFalse(resolvedVm.isLoading(ExploreMode.Worksheet))
+        assertEquals("r-init", resolvedVm.appliedRecipeId)
+        assertTrue(resolvedVm.worksheetPreview.rows.isNotEmpty())
+        assertTrue(resolvedVm.preview.result.columns.isEmpty())
+
+        val unresolvedRecipe =
+            ExploreRecipe(
+                id = "r-map",
+                name = "Mapped",
+                createdAt = "1",
+                updatedAt = "1",
+                defaultMode = ExploreMode.Worksheet,
+                worksheet = WorksheetConfig(groups = listOf(WorksheetGroup("g", "old_status"))),
+                requiredFields = listOf(RecipeField("old_status", "Unknown status", "varchar")),
+            )
+
+        val unresolvedVm =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), sampleResult()),
+                computationScope = this,
+                computeDispatcher = dispatcher,
+                initialRecipe = unresolvedRecipe,
+            )
+
+        assertEquals("r-map", unresolvedVm.pendingRecipe?.id)
+        assertTrue(unresolvedVm.isLoading(ExploreMode.Pivot))
+        runCurrent()
+        assertTrue(unresolvedVm.preview.result.columns.isNotEmpty())
+    }
+
+    @Test
+    fun executeExportIgnoresReentrantCallsWhileExportIsInFlight() = runTest {
+        val computeDispatcher = StandardTestDispatcher(testScheduler)
+        val ioDispatcher = StandardTestDispatcher(testScheduler)
+        val viewModel =
+            ExploreViewModel(
+                createExploreSession(connection(), sampleSpec(), sampleResult()),
+                computationScope = this,
+                computeDispatcher = computeDispatcher,
+                ioDispatcher = ioDispatcher,
+            )
+        runCurrent()
+
+        val firstPath = createTempFile(suffix = ".csv")
+        val secondPath = createTempFile(suffix = ".csv")
+
+        viewModel.savePreviewCsv(firstPath)
+        assertTrue(viewModel.exporting)
+
+        viewModel.savePreviewCsv(secondPath)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.exporting)
+        assertTrue(Files.size(firstPath) > 0L)
+        assertEquals(0L, Files.size(secondPath))
     }
 
     private fun ExploreViewModel.reconfigure(mode: ExploreMode) {

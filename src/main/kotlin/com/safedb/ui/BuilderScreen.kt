@@ -520,6 +520,15 @@ internal fun BuilderScreen(
                                     }
                                 }
                             }
+                            queryViewModel.discardedRunNotice?.let { notice ->
+                                MessageBanner(text = notice, kind = BannerKind.INFO) {
+                                    TextButton(
+                                        onClick = queryViewModel::dismissDiscardedRunNotice,
+                                    ) {
+                                        Text("Dismiss")
+                                    }
+                                }
+                            }
 
                             BoxWithConstraints(
                                 modifier = Modifier.weight(1f).fillMaxWidth(),

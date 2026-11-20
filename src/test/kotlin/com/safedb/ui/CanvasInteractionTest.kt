@@ -3,7 +3,11 @@ package com.safedb.ui
 import androidx.compose.foundation.ScrollState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -472,6 +476,89 @@ class CanvasInteractionTest {
 
         assertEquals(1, viewModel.joins.size)
         assertEquals(Offset.Zero, viewModel.canvasViewport.pan)
+    }
+
+    @OptIn(InternalComposeUiApi::class)
+    @Test
+    fun escapeCancelsArmedClickToJoin() {
+        val viewModel =
+            QueryViewModel(CanvasInteractionService, CoroutineScope(Dispatchers.Unconfined))
+        viewModel.addTable(indexedTable("orders", "customer_id"))
+        viewModel.addTable(indexedTable("customers", "id"))
+        viewModel.moveTable("t1", 360f, 0f)
+
+        ImageComposeScene(width = 800, height = 500, density = Density(1f)) {
+                SafeDbTheme(isDark = false) { Canvas(viewModel) }
+            }
+            .use { scene ->
+                scene.render(0L)
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("customer_id", selectingTarget = false))
+                        .boundsInRoot
+                        .center,
+                )
+                scene.render(100_000_000L)
+                scene.requireExact(joinActionDescription("id", selectingTarget = true))
+
+                scene.sendKeyEvent(KeyEvent(Key.Escape, KeyEventType.KeyDown))
+                scene.sendKeyEvent(KeyEvent(Key.Escape, KeyEventType.KeyUp))
+                scene.render(200_000_000L)
+
+                scene.requireExact(joinActionDescription("id", selectingTarget = false))
+            }
+
+        assertTrue(viewModel.joins.isEmpty())
+    }
+
+    @Test
+    fun clickingEmptyCanvasCancelsArmedClickToJoinWhileClickingTargetCompletesIt() {
+        val viewModel =
+            QueryViewModel(CanvasInteractionService, CoroutineScope(Dispatchers.Unconfined))
+        viewModel.addTable(indexedTable("orders", "customer_id"))
+        viewModel.addTable(indexedTable("customers", "id"))
+        viewModel.moveTable("t1", 360f, 0f)
+
+        ImageComposeScene(width = 800, height = 500, density = Density(1f)) {
+                SafeDbTheme(isDark = false) { Canvas(viewModel) }
+            }
+            .use { scene ->
+                scene.render(0L)
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("customer_id", selectingTarget = false))
+                        .boundsInRoot
+                        .center,
+                )
+                scene.render(100_000_000L)
+                scene.requireExact(joinActionDescription("id", selectingTarget = true))
+
+                // Click empty canvas space well below both tables.
+                scene.click(700f, 380f)
+                scene.render(200_000_000L)
+                scene.requireExact(joinActionDescription("id", selectingTarget = false))
+                assertTrue(viewModel.joins.isEmpty())
+
+                // Re-arm and click target column to verify target click still completes join.
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("customer_id", selectingTarget = false))
+                        .boundsInRoot
+                        .center,
+                )
+                scene.render(300_000_000L)
+                scene.click(
+                    scene
+                        .requireExact(joinActionDescription("id", selectingTarget = true))
+                        .boundsInRoot
+                        .center,
+                )
+                scene.render(400_000_000L)
+            }
+
+        assertEquals(1, viewModel.joins.size)
+        assertEquals("customer_id", viewModel.joins.single().leftColumn)
+        assertEquals("id", viewModel.joins.single().rightColumn)
     }
 }
 

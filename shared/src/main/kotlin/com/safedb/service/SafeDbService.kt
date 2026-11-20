@@ -22,6 +22,12 @@ data class QueryRunRequest(
 
 data class QueryRunResult(val queryResult: QueryResult, val riskEvaluation: QueryRiskEvaluation)
 
+data class ResolvedQueryRun(
+    val connection: ConnectionDef,
+    val spec: QuerySpec,
+    val result: QueryRunResult,
+)
+
 data class QueryAssessmentResult(
     val normalizedSpec: QuerySpec,
     val columns: List<ResultColumn>,
@@ -29,6 +35,12 @@ data class QueryAssessmentResult(
     val parameterCount: Int,
     val warnings: List<String>,
     val riskEvaluation: QueryRiskEvaluation,
+)
+
+data class ResolvedQueryAssessment(
+    val connection: ConnectionDef,
+    val spec: QuerySpec,
+    val assessment: QueryAssessmentResult,
 )
 
 class QueryFailureException(val queryError: QueryError, val warnings: List<String> = emptyList()) :
@@ -54,7 +66,18 @@ interface SafeDbService {
 
     suspend fun runQuery(request: QueryRunRequest): QueryRunResult
 
+    suspend fun runQueryWithSchema(
+        connectionId: String,
+        confirmation: QueryExecutionConfirmation? = null,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryRun
+
     suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult
+
+    suspend fun assessQueryWithSchema(
+        connectionId: String,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryAssessment
 
     suspend fun listSavedQueries(): List<SavedQuery>
 

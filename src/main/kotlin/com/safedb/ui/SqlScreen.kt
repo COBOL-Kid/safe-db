@@ -310,6 +310,13 @@ private fun SqlWorkspace(
                     SecondaryButton(onClick = sqlViewModel::dismissError) { Text("Dismiss") }
                 }
             }
+            sqlViewModel.discardedRunNotice?.let { notice ->
+                MessageBanner(text = notice, kind = BannerKind.INFO) {
+                    SecondaryButton(onClick = sqlViewModel::dismissDiscardedRunNotice) {
+                        Text("Dismiss")
+                    }
+                }
+            }
             planSafeguardBannerText(finalRiskEvaluation)?.let { bannerText ->
                 MessageBanner(
                     text = bannerText,

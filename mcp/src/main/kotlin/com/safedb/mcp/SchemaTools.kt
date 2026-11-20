@@ -26,13 +26,14 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
         description =
             "List visible tables for a saved connection as schema, name, qualified_name, " +
                 "size_class, and column_count. Uses a cached catalog (5 minute TTL); pass " +
-                "refresh=true to introspect again. Honor blocked_schemas: blocked and system " +
-                "catalogs are omitted, and Db2 omits EXPLAIN_* and ADVISE_* catalog tables. Use " +
-                "describe_table for columns (including " +
-                "join_eligible), indexes, foreign keys, and incoming_foreign_keys of one " +
-                "table. Do not expect the full catalog in one payload. The result is an object " +
-                "{tables: [...]} (not a top-level array); it includes JSON text and " +
-                "structuredContent with the same object. " +
+                "refresh=true to introspect again. Supports optional offset and limit (default " +
+                "$LIST_DEFAULT_LIMIT, max $LIST_MAX_LIMIT). Honor blocked_schemas: blocked and " +
+                "system catalogs are omitted, and Db2 omits EXPLAIN_* and ADVISE_* catalog " +
+                "tables. Use describe_table for columns (including join_eligible), indexes, " +
+                "foreign keys, and incoming_foreign_keys of one table. Do not expect the full " +
+                "catalog in one payload. The result is an object " +
+                "{tables, total_count, truncated, next_offset?} (not a top-level array); it " +
+                "includes JSON text and structuredContent with the same object. " +
                 "Add connections with `safe-db-mcp setup` or `safe-db-mcp connections add`.",
         inputSchema =
             ToolSchema(
@@ -40,10 +41,25 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                     buildJsonObject {
                         put("connection_id", connectionIdProperty())
                         put("refresh", refreshProperty())
+                        put("offset", offsetProperty())
+                        put(
+                            "limit",
+                            boundedLimitProperty(
+                                defaultLimit = LIST_DEFAULT_LIMIT,
+                                maxLimit = LIST_MAX_LIMIT,
+                                noun = "tables",
+                            ),
+                        )
                     },
                 required = listOf("connection_id"),
             ),
-        outputSchema = objectOutputSchema(listOf("tables")) { put("tables", arrayProp()) },
+        outputSchema =
+            objectOutputSchema(listOf("tables", "total_count", "truncated")) {
+                put("tables", arrayProp())
+                put("total_count", intProp())
+                put("truncated", boolProp())
+                put("next_offset", intProp())
+            },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_tables failed") { handleListTables(service, cache, request) }
@@ -149,7 +165,9 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
         description =
             "Find join relationships for a visible table from the cached catalog. Without " +
                 "to_table, returns direct neighbors with foreign_key or indexed_columns edges, " +
-                "column pairs, an on_clause, and FK cardinality and optionality. Pass " +
+                "column pairs, an on_clause, and FK cardinality and optionality, paged with " +
+                "optional offset and limit (default $LIST_DEFAULT_LIMIT, max $LIST_MAX_LIMIT) " +
+                "and returning total_count, truncated, and next_offset?. Pass " +
                 "foreign_key_only=true to exclude indexed-column candidates. With to_table, " +
                 "returns up to $FIND_JOIN_PATHS_MAX_RESULTS paths of at most max_hops (default " +
                 "$FIND_JOIN_PATHS_DEFAULT_HOPS, max $FIND_JOIN_PATHS_MAX_HOPS). Copy from_table and " +
@@ -186,6 +204,16 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                                     "foreign-key edges. Default false.",
                             ),
                         )
+                        put("offset", offsetProperty())
+                        put(
+                            "limit",
+                            boundedLimitProperty(
+                                defaultLimit = LIST_DEFAULT_LIMIT,
+                                maxLimit = LIST_MAX_LIMIT,
+                                noun = "neighbors",
+                                extraNote = " Applies when to_table is omitted.",
+                            ),
+                        )
                         put("refresh", refreshProperty())
                     },
                 required = listOf("connection_id", "from_table"),
@@ -195,6 +223,9 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                 put("from_table", stringProp())
                 put("to_table", stringProp())
                 put("neighbors", arrayProp())
+                put("total_count", intProp())
+                put("truncated", boolProp())
+                put("next_offset", intProp())
                 put("paths", arrayProp())
             },
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
@@ -208,7 +239,7 @@ private suspend fun handleListTables(
     cache: SchemaCache,
     request: CallToolRequest,
 ): CallToolResult {
-    requireKnownArguments(request, "connection_id", "refresh").getOrElse {
+    requireKnownArguments(request, "connection_id", "refresh", "offset", "limit").getOrElse {
         return it
     }
     val connectionId =
@@ -219,11 +250,23 @@ private suspend fun handleListTables(
         optionalBoolean(request, "refresh").getOrElse {
             return it
         } == true
+    val pageParams =
+        parseListPageParams(request).getOrElse {
+            return it
+        }
     val tables =
         visibleCatalog(service, cache, connectionId, refresh).getOrElse {
             return it
         }
-    return objectToolResult(TableListResult(tables.map { it.toSummary() }))
+    val page = paginateList(tables.map { it.toSummary() }, pageParams.offset, pageParams.limit)
+    return objectToolResult(
+        TableListResult(
+            tables = page.items,
+            totalCount = page.totalCount,
+            truncated = page.truncated,
+            nextOffset = page.nextOffset,
+        ),
+    )
 }
 
 private suspend fun handleDescribeTable(
@@ -326,6 +369,8 @@ private suspend fun handleFindJoinPaths(
             "default_schema",
             "max_hops",
             "foreign_key_only",
+            "offset",
+            "limit",
             "refresh",
         )
         .getOrElse {
@@ -359,6 +404,10 @@ private suspend fun handleFindJoinPaths(
         optionalBoolean(request, "foreign_key_only").getOrElse {
             return it
         } == true
+    val pageParams =
+        parseListPageParams(request).getOrElse {
+            return it
+        }
     if (maxHopsArg != null && maxHopsArg !in 1..FIND_JOIN_PATHS_MAX_HOPS) {
         return toolError(
             ERROR_INVALID_ARGUMENTS,
@@ -385,10 +434,19 @@ private suspend fun handleFindJoinPaths(
                 fromTable.name,
                 includeIndexedColumns = !foreignKeyOnly,
             )
+        val page =
+            paginateList(
+                edges.map { it.toStepSummary() },
+                pageParams.offset,
+                pageParams.limit,
+            )
         val result =
             JoinPathsResult(
                 fromTable = fromTable.qualifiedName(),
-                neighbors = edges.map { it.toStepSummary() },
+                neighbors = page.items,
+                totalCount = page.totalCount,
+                truncated = page.truncated,
+                nextOffset = page.nextOffset,
             )
         return objectToolResult(result)
     }

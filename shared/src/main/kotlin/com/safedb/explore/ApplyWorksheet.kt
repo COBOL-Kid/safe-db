@@ -17,8 +17,7 @@ private class WorksheetEngine(
     private val config: WorksheetConfig,
     private val tables: List<TableRef>,
 ) {
-    private val indexes =
-        sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
+    private val sampleIndex = SampleIndex(sample)
     private val warnings = linkedSetOf<String>()
     private var errorCount = 0
 
@@ -52,7 +51,7 @@ private class WorksheetEngine(
                         records = records,
                         groupColumn = null,
                         groupValues = emptyMap(),
-                        sourceIndexes = indexes,
+                        sampleIndex = sampleIndex,
                     )
                     .also(::applyGroupCalculations)
         }
@@ -103,10 +102,10 @@ private class WorksheetEngine(
 
     private fun validateConfiguration() {
         config.groups
-            .filter { it.column !in indexes }
+            .filter { it.column !in sampleIndex }
             .forEach { warnings += "Unknown group field ${it.label}" }
         config.filters
-            .filter { it.column !in indexes }
+            .filter { it.column !in sampleIndex }
             .forEach { warnings += "Unknown filter field ${it.label}" }
         val calculationIds = config.calculations.mapTo(mutableSetOf()) { it.id }
         val duplicates =
@@ -115,7 +114,9 @@ private class WorksheetEngine(
         config.sorts.forEach { sort ->
             when (val target = sort.target) {
                 is WorksheetValueRef.Column ->
-                    if (target.column !in indexes) warnings += "Unknown sort field ${target.column}"
+                    if (target.column !in sampleIndex) {
+                        warnings += "Unknown sort field ${target.column}"
+                    }
                 is WorksheetValueRef.Calculation ->
                     if (target.id !in calculationIds)
                         warnings += "Unknown sort calculation ${target.id}"
@@ -161,13 +162,15 @@ private class WorksheetEngine(
             val text = resultCellText(cell)
             val comparison = compareTextOrNumber(text, filter.value)
             when (filter.op) {
-                WorksheetFilterOp.Members ->
-                    filter.includedKeys.isEmpty() || pivotCellMatches(cell, filter.includedKeys)
+                WorksheetFilterOp.Members -> matchesMembers(cell, filter.includedKeys)
                 WorksheetFilterOp.Equals -> filterEquals(cell, text, filter.value)
                 WorksheetFilterOp.NotEquals -> !filterEquals(cell, text, filter.value)
-                WorksheetFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)
-                WorksheetFilterOp.StartsWith -> text.startsWith(filter.value, ignoreCase = true)
-                WorksheetFilterOp.EndsWith -> text.endsWith(filter.value, ignoreCase = true)
+                WorksheetFilterOp.Contains ->
+                    matchesLabelOp(text, LabelFilterOp.Contains, filter.value)
+                WorksheetFilterOp.StartsWith ->
+                    matchesLabelOp(text, LabelFilterOp.StartsWith, filter.value)
+                WorksheetFilterOp.EndsWith ->
+                    matchesLabelOp(text, LabelFilterOp.EndsWith, filter.value)
                 WorksheetFilterOp.GreaterThan -> comparison > 0
                 WorksheetFilterOp.GreaterThanOrEqual -> comparison >= 0
                 WorksheetFilterOp.LessThan -> comparison < 0
@@ -184,9 +187,9 @@ private class WorksheetEngine(
             calculation ->
             val values = buildMap {
                 sample.columns.forEach { column ->
-                    put(column.name, record.source(column.name).decimalOrNull())
+                    put(column.name, resultCellDecimal(record.source(column.name)))
                 }
-                record.calculations.forEach { (id, cell) -> put(id, cell.value.decimalOrNull()) }
+                record.calculations.forEach { (id, cell) -> put(id, resultCellDecimal(cell.value)) }
             }
             val result = evaluatePivotFormula(calculation.formula, values)
             record.calculations[calculation.id] =
@@ -272,7 +275,7 @@ private class WorksheetEngine(
                         records = bucketRecords,
                         groupColumn = group.column,
                         groupValues = groupValues,
-                        sourceIndexes = indexes,
+                        sampleIndex = sampleIndex,
                     )
                     .also(::applyGroupCalculations)
             if (!collapsed) appendGroups(out, bucketRecords, depth + 1, path, groupValues)
@@ -294,7 +297,7 @@ private class WorksheetEngine(
                 records = records,
                 groupColumn = groupColumn,
                 groupValues = emptyMap(),
-                sourceIndexes = indexes,
+                sampleIndex = sampleIndex,
             )
         applyGroupCalculations(entry)
         return entry.calculations[calculationId]?.value ?: ResultCell.Null
@@ -311,7 +314,7 @@ private class WorksheetEngine(
                 record = record,
                 groupColumn = null,
                 groupValues = groupValues,
-                sourceIndexes = indexes,
+                sampleIndex = sampleIndex,
             )
             .also { entry -> entry.calculations.putAll(record.calculations) }
 
@@ -334,7 +337,8 @@ private class WorksheetEngine(
                             calculation.groupColumn == entry.groupColumn ||
                             entry.kind == WorksheetRowKind.GrandTotal
                     ) {
-                        val values = entry.calculations.mapValues { it.value.value.decimalOrNull() }
+                        val values =
+                            entry.calculations.mapValues { resultCellDecimal(it.value.value) }
                         val result = evaluatePivotFormula(calculation.formula, values)
                         entry.calculations[calculation.id] =
                             if (result.error != null) {
@@ -370,9 +374,9 @@ private class WorksheetEngine(
             WorksheetAggregateFn.CountDistinct ->
                 ResultCell.IntegerCell(concrete.map(::pivotCellKey).distinct().size.toLong())
             WorksheetAggregateFn.Sum ->
-                concrete.mapNotNull { it.decimalOrNull() }.sumDecimals().toResultCell()
+                concrete.mapNotNull(::resultCellDecimal).sumDecimals().toResultCell()
             WorksheetAggregateFn.Average -> {
-                val values = concrete.mapNotNull { it.decimalOrNull() }
+                val values = concrete.mapNotNull(::resultCellDecimal)
                 if (values.isEmpty()) ResultCell.Null
                 else
                     values
@@ -413,7 +417,7 @@ private class WorksheetEngine(
         entries: List<MutableWorksheetEntry>,
         calculation: WorksheetCalculation.Window,
     ) {
-        val values = entries.map { it.value(calculation.source).decimalOrNull() }
+        val values = entries.map { resultCellDecimal(it.value(calculation.source)) }
         val total = values.filterNotNull().sumDecimals()
         var running = BigDecimal.ZERO
         var runningCount = 0
@@ -497,8 +501,7 @@ private class WorksheetEngine(
             is PivotGrouping.NumberBin -> bucket.ordinal?.let(ResultCell::FloatCell) ?: cell
         }
 
-    private fun WorksheetRecord.source(column: String): ResultCell =
-        indexes[column]?.let(row::getOrNull) ?: ResultCell.Null
+    private fun WorksheetRecord.source(column: String): ResultCell = sampleIndex.cell(row, column)
 
     private fun WorksheetRecord.value(ref: WorksheetValueRef): ResultCell =
         when (ref) {
@@ -523,7 +526,7 @@ private data class MutableWorksheetEntry(
     val record: WorksheetRecord? = null,
     val groupColumn: String?,
     val groupValues: Map<String, String>,
-    val sourceIndexes: Map<String, Int>,
+    val sampleIndex: SampleIndex,
     val calculations: MutableMap<String, WorksheetCell> = linkedMapOf(),
 ) {
     fun cellFor(column: WorksheetDisplayColumn): WorksheetCell {
@@ -532,8 +535,9 @@ private data class MutableWorksheetEntry(
         }
         val source = column.sourceColumn ?: return WorksheetCell()
         if (kind == WorksheetRowKind.Detail) {
-            val index = sourceIndex(source)
-            return WorksheetCell(index?.let { record?.row?.getOrNull(it) } ?: ResultCell.Null)
+            return WorksheetCell(
+                record?.let { sampleIndex.cell(it.row, source) } ?: ResultCell.Null,
+            )
         }
         return WorksheetCell()
     }
@@ -541,16 +545,14 @@ private data class MutableWorksheetEntry(
     fun value(ref: WorksheetValueRef): ResultCell =
         when (ref) {
             is WorksheetValueRef.Column ->
-                sourceIndex(ref.column)?.let { record?.row?.getOrNull(it) } ?: ResultCell.Null
+                record?.let { sampleIndex.cell(it.row, ref.column) } ?: ResultCell.Null
             is WorksheetValueRef.Calculation -> calculations[ref.id]?.value ?: ResultCell.Null
         }
 
     fun partitionValue(column: String): String =
         groupValues[column]
-            ?: sourceIndex(column)?.let { record?.row?.getOrNull(it) }?.let(::pivotCellKey)
+            ?: record?.let { sampleIndex.cellOrNull(it.row, column) }?.let(::pivotCellKey)
             ?: ""
-
-    private fun sourceIndex(column: String): Int? = sourceIndexes[column]
 }
 
 private data class GroupBucket(val key: String, val label: String, val sortValue: ResultCell)
@@ -563,8 +565,6 @@ private val ORDERED_WINDOWS =
         WorksheetWindowFn.DifferenceFromPrevious,
     )
 
-private fun ResultCell?.decimalOrNull(): BigDecimal? = resultCellDecimal(this)
-
 private fun BigDecimal?.toResultCell(): ResultCell =
     this?.let { ResultCell.FloatCell(it.toDouble()) } ?: ResultCell.Null
 
@@ -574,8 +574,8 @@ private fun compareCells(left: ResultCell?, right: ResultCell?): Int {
     if (left == null || left is ResultCell.Null)
         return if (right == null || right is ResultCell.Null) 0 else -1
     if (right == null || right is ResultCell.Null) return 1
-    val leftNumber = left.decimalOrNull()
-    val rightNumber = right.decimalOrNull()
+    val leftNumber = resultCellDecimal(left)
+    val rightNumber = resultCellDecimal(right)
     return if (leftNumber != null && rightNumber != null) leftNumber.compareTo(rightNumber)
     else resultCellText(left).compareTo(resultCellText(right), ignoreCase = true)
 }
@@ -590,7 +590,7 @@ private fun compareTextOrNumber(left: String, right: String): Int {
 private fun filterEquals(cell: ResultCell, text: String, expected: String): Boolean {
     val numeric = cell is ResultCell.IntegerCell || cell is ResultCell.FloatCell
     if (numeric) {
-        val left = cell.decimalOrNull()
+        val left = resultCellDecimal(cell)
         val right = expected.toBigDecimalOrNull()
         if (left != null && right != null) return left.compareTo(right) == 0
     }

@@ -143,4 +143,36 @@ class ResultsTableLayoutTest {
             buildResultTableColumns(result, availableWidthDp = 10).map { it.widthDp },
         )
     }
+
+    @Test
+    fun columnWidthSamplingStopsAtSampleCap() {
+        val scannedIndices = mutableSetOf<Int>()
+        val rows =
+            object : AbstractList<List<ResultCell>>() {
+                override val size: Int = RESULT_TABLE_WIDTH_SAMPLE_ROWS + 5
+
+                override fun get(index: Int): List<ResultCell> {
+                    scannedIndices += index
+                    return if (index < RESULT_TABLE_WIDTH_SAMPLE_ROWS) {
+                        listOf(ResultCell.IntegerCell(1), ResultCell.text("ab"))
+                    } else {
+                        listOf(ResultCell.IntegerCell(999_999), ResultCell.text("x".repeat(500)))
+                    }
+                }
+            }
+        val result =
+            QueryResult(
+                columns = listOf(ResultColumn("id", "int"), ResultColumn("note", "text")),
+                rows = rows,
+                rowCount = rows.size,
+                truncated = false,
+                warnings = emptyList(),
+            )
+
+        val columns = buildResultTableColumns(result)
+
+        assertEquals(RESULT_TABLE_WIDTH_SAMPLE_ROWS, scannedIndices.size)
+        assertTrue(scannedIndices.all { it < RESULT_TABLE_WIDTH_SAMPLE_ROWS })
+        assertEquals(listOf(72, 72), columns.map { it.widthDp })
+    }
 }

@@ -3,9 +3,11 @@ package com.safedb.service
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ConnectionDef
 import com.safedb.model.HistoryEntry
+import com.safedb.model.QuerySpec
 import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
+import com.safedb.query.QueryExecutionConfirmation
 
 open class FakeSafeDbServiceSupport : SafeDbService {
     override suspend fun testConnection(def: ConnectionDef, password: String?): String {
@@ -36,8 +38,37 @@ open class FakeSafeDbServiceSupport : SafeDbService {
         throw UnsupportedOperationException("runQuery")
     }
 
+    override suspend fun runQueryWithSchema(
+        connectionId: String,
+        confirmation: QueryExecutionConfirmation?,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryRun {
+        val connection =
+            listConnections().find { it.id == connectionId }
+                ?: throw IllegalArgumentException("Connection not found")
+        val schema = getSchema(connectionId)
+        val settings = getSettings()
+        val spec = resolveSpec(connection, schema, settings)
+        val result = runQuery(QueryRunRequest(connectionId, spec, confirmation))
+        return ResolvedQueryRun(connection, spec, result)
+    }
+
     override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult {
         throw UnsupportedOperationException("assessQuery")
+    }
+
+    override suspend fun assessQueryWithSchema(
+        connectionId: String,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryAssessment {
+        val connection =
+            listConnections().find { it.id == connectionId }
+                ?: throw IllegalArgumentException("Connection not found")
+        val schema = getSchema(connectionId)
+        val settings = getSettings()
+        val spec = resolveSpec(connection, schema, settings)
+        val assessment = assessQuery(QueryRunRequest(connectionId, spec))
+        return ResolvedQueryAssessment(connection, spec, assessment)
     }
 
     override suspend fun listSavedQueries(): List<SavedQuery> = emptyList()

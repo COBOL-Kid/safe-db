@@ -120,6 +120,117 @@ class ViewModelsTest {
         }
 
     @Test
+    fun saveConnectionRefreshesAndNotifiesChangesOnViewModelScope() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val vmScope = TestScope(dispatcher)
+            val viewModel = ConnectionsViewModel(service, vmScope)
+            val gate = CompletableDeferred<Unit>()
+            service.updateConnectionGate = gate
+
+            val edited =
+                ConnectionDef(
+                    id = "c1",
+                    name = "Updated",
+                    dialect = Dialect.MySql,
+                    host = "db.internal",
+                    port = 3306,
+                    database = "db",
+                    username = "user",
+                )
+
+            val changedIds = mutableListOf<String>()
+            var formMounted = true
+            var formOutcome: Result<ConnectionDef>? = null
+            viewModel.saveConnection(
+                def = edited,
+                password = "new-secret",
+                editing = true,
+                credentialMaterialChanged = true,
+                onConnectionChanged = { changedIds += it },
+                onComplete = { result -> if (formMounted) formOutcome = result },
+            )
+            runCurrent()
+            // Simulate navigating away from ConnectionForm mid-save.
+            formMounted = false
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(listOf(edited), service.updatedConnections)
+            assertEquals(listOf("c1"), changedIds)
+            assertEquals(1, service.connectionListCalls)
+            assertEquals(1, viewModel.connections.value.size)
+            assertNull(formOutcome)
+
+            // Non-credential edits do not invalidate schemas/active connection; create skips it
+            // too.
+            changedIds.clear()
+            var createResult: Result<ConnectionDef>? = null
+            val created = edited.copy(id = "c2", name = "Created")
+            viewModel.saveConnection(
+                def = created,
+                password = "secret",
+                editing = false,
+                credentialMaterialChanged = true,
+                onConnectionChanged = { changedIds += it },
+                onComplete = { createResult = it },
+            )
+            advanceUntilIdle()
+
+            assertEquals(listOf(created), service.createdConnections)
+            assertTrue(changedIds.isEmpty())
+            assertEquals(Result.success(created), createResult)
+            assertEquals(2, service.connectionListCalls)
+
+            var noCredChangeResult: Result<ConnectionDef>? = null
+            viewModel.saveConnection(
+                def = edited.copy(name = "Renamed"),
+                password = null,
+                editing = true,
+                credentialMaterialChanged = false,
+                onConnectionChanged = { changedIds += it },
+                onComplete = { noCredChangeResult = it },
+            )
+            advanceUntilIdle()
+            assertTrue(changedIds.isEmpty())
+            assertTrue(noCredChangeResult?.isSuccess == true)
+        }
+
+    @Test
+    fun saveConnectionSurfacesErrorsWithoutRefreshingOrInvalidating() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService().apply { failConnectionSave = true }
+            val viewModel = ConnectionsViewModel(service, TestScope(dispatcher))
+            val def =
+                ConnectionDef(
+                    id = "c1",
+                    name = "Broken",
+                    dialect = Dialect.Postgres,
+                    host = "localhost",
+                    port = 5432,
+                    database = "db",
+                    username = "user",
+                )
+
+            val changedIds = mutableListOf<String>()
+            var outcome: Result<ConnectionDef>? = null
+            viewModel.saveConnection(
+                def = def,
+                password = "secret",
+                editing = true,
+                credentialMaterialChanged = true,
+                onConnectionChanged = { changedIds += it },
+                onComplete = { outcome = it },
+            )
+            advanceUntilIdle()
+
+            assertTrue(outcome?.isFailure == true)
+            assertEquals("connection save failed", outcome.exceptionOrNull()?.message)
+            assertTrue(changedIds.isEmpty())
+            assertEquals(0, service.connectionListCalls)
+        }
+
+    @Test
     fun schemaViewModelLoadsAndFiltersTables() =
         runTest(dispatcher) {
             val service = RecordingSafeDbService()
@@ -649,6 +760,51 @@ class ViewModelsTest {
             assertEquals("light", viewModel.settings.value.theme)
             assertEquals("settings save failed", viewModel.saveError.value)
         }
+
+    @Test
+    fun settingsLoadDefaultSchemaOptionsReusesCachedSchemaAndFallsBackWhenAbsent() =
+        runTest(dispatcher) {
+            val service = RecordingSafeDbService()
+            val cachedById = mutableMapOf<String, Schema>()
+            cachedById["c1"] =
+                Schema(
+                    tables =
+                        listOf(
+                            TableInfo("zeta", "t1", emptyList(), emptyList()),
+                            TableInfo("alpha", "t2", emptyList(), emptyList()),
+                            TableInfo("alpha", "t3", emptyList(), emptyList()),
+                        ),
+                )
+            cachedById["c-empty"] = Schema(tables = emptyList())
+            val viewModel =
+                SettingsViewModel(service, TestScope(dispatcher), cachedSchema = cachedById::get)
+            viewModel.load()
+            advanceUntilIdle()
+
+            viewModel.loadDefaultSchemaOptions("c1")
+            assertEquals(listOf("alpha", "zeta"), viewModel.defaultSchemaOptions.value)
+            assertFalse(viewModel.defaultSchemaLoading.value)
+            assertNull(viewModel.defaultSchemaError.value)
+            assertEquals(0, service.schemaLoadCount)
+
+            var saved = false
+            viewModel.saveDefaultLocation("c1", "alpha") { saved = true }
+            advanceUntilIdle()
+            assertTrue(saved)
+
+            viewModel.loadDefaultSchemaOptions("c-empty")
+            assertTrue(viewModel.defaultSchemaOptions.value.isEmpty())
+            assertEquals(
+                "No schemas containing visible tables were found.",
+                viewModel.defaultSchemaError.value,
+            )
+            assertEquals(0, service.schemaLoadCount)
+
+            viewModel.loadDefaultSchemaOptions("c2")
+            advanceUntilIdle()
+            assertEquals(listOf("reporting", "safedb_test"), viewModel.defaultSchemaOptions.value)
+            assertEquals(1, service.schemaLoadCount)
+        }
 }
 
 private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
@@ -663,9 +819,11 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     var failSettingsSave = false
     var failSchemaLoad = false
     var failConnectionList = false
+    var failConnectionSave = false
     var connectionListCalls = 0
     val createdConnections = mutableListOf<ConnectionDef>()
     val updatedConnections = mutableListOf<ConnectionDef>()
+    var updateConnectionGate: CompletableDeferred<Unit>? = null
     var schemaLoadCount = 0
     val schemaResponses = mutableMapOf<String, CompletableDeferred<Schema>>()
     var settingsSaveCount = 0
@@ -685,11 +843,14 @@ private class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         )
 
     override suspend fun createConnection(def: ConnectionDef, password: String): ConnectionDef {
+        if (failConnectionSave) error("connection save failed")
         createdConnections += def
         return def
     }
 
     override suspend fun updateConnection(def: ConnectionDef, password: String?) {
+        if (failConnectionSave) error("connection save failed")
+        updateConnectionGate?.await()
         updatedConnections += def
     }
 

@@ -92,6 +92,7 @@ class QueryToolsTest {
             )
         }
         assertEquals(listOf("c1"), service.schemaCalls)
+        assertEquals(1, service.runQueryWithSchemaCalls)
         assertEquals(1, service.runQueryRequests.size)
         val spec = service.runQueryRequests.single().spec
         assertEquals("customers", spec.tables.single().name)
@@ -300,9 +301,10 @@ class QueryToolsTest {
             assertEquals(true, schemaFailure.isError)
             assertEquals("internal", schemaFailure.json().getValue("error").jsonPrimitive.content)
             assertEquals(
-                "catalog unavailable",
+                "run_query failed",
                 schemaFailure.json().getValue("message").jsonPrimitive.content,
             )
+            assertFalse(schemaFailure.text().contains("catalog unavailable"))
             assertTrue(service.runQueryRequests.isEmpty())
 
             service.schemaError = null
@@ -318,9 +320,10 @@ class QueryToolsTest {
                 executionFailure.json().getValue("error").jsonPrimitive.content,
             )
             assertEquals(
-                "unexpected executor failure",
+                "run_query failed",
                 executionFailure.json().getValue("message").jsonPrimitive.content,
             )
+            assertFalse(executionFailure.text().contains("unexpected executor failure"))
         }
         assertEquals(2, service.schemaCalls.size)
         assertEquals(1, service.runQueryRequests.size)

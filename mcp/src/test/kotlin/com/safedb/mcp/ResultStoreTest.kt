@@ -196,6 +196,30 @@ class ResultStoreTest {
             }
         }
     }
+
+    @Test
+    fun failedJsonlPutsStillEvictEldestUnderMaxBytesWhileKeepingSingleOversizeEntry() =
+        runBlocking {
+            withTempResults { dir ->
+                val store =
+                    ResultStore(
+                        dir,
+                        nowMs = { 1_000L },
+                        maxBytes = 20,
+                        onAfterJsonlWrite = { error("simulated artifact failure") },
+                    )
+                val first = store.put(sampleMcpQueryResult(rowCount = 2))
+                assertNull(first.artifactPath)
+                assertNull(first.artifactBytes)
+                assertNotNull(store.get(first.resultId))
+
+                val second = store.put(sampleMcpQueryResult(rowCount = 1))
+                assertNull(second.artifactPath)
+                assertNull(second.artifactBytes)
+                assertNull(store.get(first.resultId))
+                assertNotNull(store.get(second.resultId))
+            }
+        }
 }
 
 private suspend fun withTempResults(block: suspend (Path) -> Unit) {

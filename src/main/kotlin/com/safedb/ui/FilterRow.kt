@@ -39,7 +39,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.safedb.model.FilterLiteral
-import com.safedb.model.FilterOp
 import com.safedb.model.FilterSpec
 import com.safedb.model.FilterValue
 import com.safedb.model.LiteralKind
@@ -53,6 +52,7 @@ import com.safedb.ui.components.MenuActionRow
 import com.safedb.ui.components.SafeDropdownMenu
 import com.safedb.ui.components.ScrollableMenuColumn
 import com.safedb.viewmodel.QueryViewModel
+import com.safedb.viewmodel.buildFilterValue
 
 @Composable
 fun FilterRow(
@@ -116,7 +116,7 @@ fun FilterRow(
                             tableAlias = alias,
                             column = firstCol.name,
                             op = op,
-                            value = rebuildValue(op, firstCol.dataType, filter.value),
+                            value = buildFilterValue(op, firstCol.dataType, filter.value),
                             likeEscape = false,
                         ),
                     )
@@ -136,7 +136,7 @@ fun FilterRow(
                         filter.copy(
                             column = colName,
                             op = op,
-                            value = rebuildValue(op, col.dataType, filter.value),
+                            value = buildFilterValue(op, col.dataType, filter.value),
                             likeEscape = false,
                         ),
                     )
@@ -153,7 +153,7 @@ fun FilterRow(
                     update(
                         filter.copy(
                             op = op,
-                            value = rebuildValue(op, dataType, filter.value),
+                            value = buildFilterValue(op, dataType, filter.value),
                             likeEscape = false,
                         ),
                     )
@@ -461,33 +461,6 @@ private fun CompactIconButton(
     ) {
         content()
     }
-}
-
-private fun rebuildValue(op: FilterOp, dataType: String, oldValue: FilterValue?): FilterValue? {
-    val kind = literalKindForColumn(dataType)
-    return when (op.valueKind()) {
-        ValueKind.None -> null
-        ValueKind.Single -> FilterValue.Single(FilterLiteral(kind, extractSingleText(oldValue)))
-        ValueKind.List -> {
-            val items = extractList(oldValue)
-            FilterValue.ListValue(items.ifEmpty { listOf(FilterLiteral(kind, "")) })
-        }
-        ValueKind.Pair -> {
-            val (from, to) = extractPair(oldValue)
-            FilterValue.Pair(FilterLiteral(kind, from), FilterLiteral(kind, to))
-        }
-    }
-}
-
-private fun extractSingleText(value: FilterValue?): String =
-    (value as? FilterValue.Single)?.literal?.text.orEmpty()
-
-private fun extractList(value: FilterValue?): List<FilterLiteral> =
-    (value as? FilterValue.ListValue)?.literals.orEmpty()
-
-private fun extractPair(value: FilterValue?): Pair<String, String> {
-    val pair = value as? FilterValue.Pair
-    return pair?.first?.text.orEmpty() to pair?.second?.text.orEmpty()
 }
 
 // Space-separated timestamps such as "2025-07-03 09:12:00" are 19 characters.

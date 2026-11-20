@@ -8,13 +8,15 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [labeled]
 
 jobs:
   test:
-    # Repository owner applies ci:run to request the full CI gate for a pull request.
-    if: github.event.label.name == 'ci:run' && github.actor == github.repository_owner
+    # Run automatically on pushes to main, and on PRs when the repository owner applies ci:run.
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.label.name == 'ci:run' && github.actor == github.repository_owner)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -49,7 +51,7 @@ jobs:
 
   integration:
     # ci:run is owner-applied, including for pull requests from forks.
-    if: github.event.label.name == 'ci:run' && github.actor == github.repository_owner
+    if: github.event_name == 'pull_request' && github.event.label.name == 'ci:run' && github.actor == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

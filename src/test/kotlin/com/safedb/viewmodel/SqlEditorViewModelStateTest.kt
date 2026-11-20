@@ -500,6 +500,63 @@ class SqlEditorViewModelStateTest {
         assertTrue(viewModel.pendingRiskGate)
         assertFalse(viewModel.occupiesQuerySlot)
     }
+
+    @Test
+    fun editingWhileRunIsInFlightSetsDiscardedRunNoticeAndClearsOnDismissOrNewRun() {
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val scope = TestScope(dispatcher)
+        val spec = sampleSpec()
+        val viewModel =
+            SqlEditorViewModel(
+                service =
+                    object : SqlStubService() {
+                        override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
+                            started.complete(Unit)
+                            gate.await()
+                            return queryRunResult(sampleResult())
+                        }
+                    },
+                scope = scope,
+            )
+
+        // Editing while idle does not set discardedRunNotice.
+        viewModel.onTextChanged(TextFieldValue("SELECT id FROM users"))
+        assertNull(viewModel.discardedRunNotice)
+
+        viewModel.run("c1", spec, viewModel.text.text)
+        scope.runCurrent()
+        assertTrue(started.isCompleted)
+        assertTrue(viewModel.running)
+
+        // dismissError() and dismissPendingConfirmation() while running do not set it.
+        viewModel.dismissError()
+        viewModel.dismissPendingConfirmation()
+        assertNull(viewModel.discardedRunNotice)
+
+        // Editing while running sets discardedRunNotice.
+        viewModel.onTextChanged(TextFieldValue("SELECT id FROM users LIMIT 5"))
+        assertNotNull(viewModel.discardedRunNotice)
+
+        // Dismissing clears it.
+        viewModel.dismissDiscardedRunNotice()
+        assertNull(viewModel.discardedRunNotice)
+
+        // A spec change while still running also sets it.
+        viewModel.onParsedSpecChanged(spec)
+        viewModel.onParsedSpecChanged(spec.copy(limit = 5))
+        assertNotNull(viewModel.discardedRunNotice)
+
+        gate.complete(Unit)
+        scope.advanceUntilIdle()
+        assertFalse(viewModel.running)
+        assertNotNull(viewModel.discardedRunNotice)
+
+        // Starting a new run clears discardedRunNotice.
+        viewModel.run("c1", spec.copy(limit = 5), viewModel.text.text)
+        assertNull(viewModel.discardedRunNotice)
+        scope.advanceUntilIdle()
+    }
 }
 
 private open class SqlStubService : FakeSafeDbServiceSupport() {

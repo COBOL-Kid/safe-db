@@ -24,6 +24,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextResourceContents
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -57,8 +58,12 @@ class McpResourcesAndPromptsTest {
     fun readsConnectionsAndConnectionTables() = runBlocking {
         val service = resourcesService()
         withTempMcpClient(service) { client ->
-            val connections =
-                Json.parseToJsonElement(client.readText(CONNECTIONS_RESOURCE_URI)).jsonArray
+            val connectionsEnvelope =
+                Json.parseToJsonElement(client.readText(CONNECTIONS_RESOURCE_URI)).jsonObject
+            assertEquals("1", connectionsEnvelope.getValue("total_count").jsonPrimitive.content)
+            assertEquals("false", connectionsEnvelope.getValue("truncated").jsonPrimitive.content)
+            assertFalse(connectionsEnvelope.containsKey("next_offset"))
+            val connections = connectionsEnvelope.getValue("connections").jsonArray
             assertEquals(1, connections.size)
             val connection = connections.single().jsonObject
             assertEquals("c1", connection.getValue("id").jsonPrimitive.content)
@@ -66,11 +71,13 @@ class McpResourcesAndPromptsTest {
             assertEquals("Postgres", connection.getValue("dialect").jsonPrimitive.content)
             assertEquals("app", connection.getValue("database").jsonPrimitive.content)
 
-            val tables =
+            val tablesEnvelope =
                 Json.parseToJsonElement(client.readText("safedb://connections/c1/tables"))
                     .jsonObject
-                    .getValue("tables")
-                    .jsonArray
+            assertEquals("3", tablesEnvelope.getValue("total_count").jsonPrimitive.content)
+            assertEquals("false", tablesEnvelope.getValue("truncated").jsonPrimitive.content)
+            assertFalse(tablesEnvelope.containsKey("next_offset"))
+            val tables = tablesEnvelope.getValue("tables").jsonArray
             val names = tables.map { it.jsonObject.getValue("name").jsonPrimitive.content }
             assertEquals(listOf("events", "customers", "orders"), names)
             assertTrue(
@@ -205,6 +212,49 @@ class McpResourcesAndPromptsTest {
                     GetPromptRequest(GetPromptRequestParams(name = ANALYZE_RESULT_PROMPT)),
                 )
             assertTrue(promptText(analyzeWithoutResult).contains("run_query"))
+        }
+    }
+
+    @Test
+    fun connectionsAndTablesResourcesCapAtListMaxLimit() = runBlocking {
+        val service = RecordingSafeDbService()
+        repeat(LIST_MAX_LIMIT + 5) { index ->
+            service.connections += sampleMcpConnection(id = "c$index", name = "Conn $index")
+        }
+        val columns = listOf(ColumnInfo(name = "id", dataType = "int", nullable = false))
+        service.schemas["c0"] =
+            Schema(
+                tables =
+                    (1..(LIST_MAX_LIMIT + 5)).map { index ->
+                        TableInfo(
+                            schema = "public",
+                            name = "table_$index",
+                            columns = columns,
+                            indexes = emptyList(),
+                        )
+                    },
+            )
+        withTempMcpClient(service) { client ->
+            val connections =
+                Json.parseToJsonElement(client.readText(CONNECTIONS_RESOURCE_URI)).jsonObject
+            assertEquals(LIST_MAX_LIMIT, connections.getValue("connections").jsonArray.size)
+            assertEquals(
+                (LIST_MAX_LIMIT + 5).toString(),
+                connections.getValue("total_count").jsonPrimitive.content,
+            )
+            assertEquals("true", connections.getValue("truncated").jsonPrimitive.content)
+            assertFalse(connections.containsKey("next_offset"))
+
+            val tables =
+                Json.parseToJsonElement(client.readText("safedb://connections/c0/tables"))
+                    .jsonObject
+            assertEquals(LIST_MAX_LIMIT, tables.getValue("tables").jsonArray.size)
+            assertEquals(
+                (LIST_MAX_LIMIT + 5).toString(),
+                tables.getValue("total_count").jsonPrimitive.content,
+            )
+            assertEquals("true", tables.getValue("truncated").jsonPrimitive.content)
+            assertFalse(tables.containsKey("next_offset"))
         }
     }
 }

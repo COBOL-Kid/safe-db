@@ -432,6 +432,7 @@ internal fun RecipeLibraryDialog(
     var deleting by remember { mutableStateOf<ExploreRecipe?>(null) }
     var renaming by remember { mutableStateOf<ExploreRecipe?>(null) }
     var renameValue by remember { mutableStateOf("") }
+    val appWindow = LocalAppWindow.current
 
     pendingMapping?.let { recipe ->
         RecipeMappingDialog(
@@ -531,7 +532,7 @@ internal fun RecipeLibraryDialog(
                     )
                     TextButton(
                         onClick = {
-                            chooseRecipeFile(open = true)?.let {
+                            chooseRecipeFile(open = true, parent = appWindow)?.let {
                                 recipesViewModel.import(it.toPath())
                             }
                         },
@@ -594,7 +595,11 @@ internal fun RecipeLibraryDialog(
                             }
                             IconButton(
                                 onClick = {
-                                    chooseRecipeFile(open = false, suggestedName = recipe.name)
+                                    chooseRecipeFile(
+                                            open = false,
+                                            suggestedName = recipe.name,
+                                            parent = appWindow,
+                                        )
                                         ?.let { recipesViewModel.export(recipe, it.toPath()) }
                                 },
                                 modifier = Modifier.size(30.dp),

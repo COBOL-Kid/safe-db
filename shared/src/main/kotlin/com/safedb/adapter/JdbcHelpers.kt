@@ -574,6 +574,6 @@ fun <T> withQueryTimeout(connection: Connection, timeoutMs: Int, block: (Connect
     } finally {
         // A socket timeout makes the driver close the connection; restoring on it would throw
         // "Connection is closed" and mask the timeout error.
-        if (!connection.isClosed) connection.setNetworkTimeout({ _ -> }, previous)
+        runCatching { if (!connection.isClosed) connection.setNetworkTimeout({ _ -> }, previous) }
     }
 }
