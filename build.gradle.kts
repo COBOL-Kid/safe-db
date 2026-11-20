@@ -19,7 +19,7 @@ plugins {
 
 group = "com.safedb"
 
-version = "1.1.2"
+version = "1.1.3"
 
 kotlin { jvmToolchain(25) }
 
@@ -199,7 +199,7 @@ compose.desktop {
             appResourcesRootDir.set(layout.projectDirectory.dir("packaging/resources"))
             packageName = "safe-db"
             // The macOS jpackage tool rejects installer versions whose major component is zero.
-            packageVersion = "1.1.2"
+            packageVersion = "1.1.3"
             vendor = "safe-db"
             description = "Safely explore production databases"
         }

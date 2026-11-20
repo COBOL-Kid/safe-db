@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.3
+
+Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.3` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.3-all.jar`; npm packages are stamped 1.1.3 at assemble time.
 
 - SQL Server `SET SHOWPLAN_XML ON` is restored to `OFF` even when enabling SHOWPLAN fails. If that restore fails, the pooled connection is evicted instead of being returned with SHOWPLAN left on.
 - SQL Server lock timeout (error 1222) is still reported as "Query timed out after …ms", but it no longer closes the whole connection pool. The pool is recycled only for a dead connection (a JDBC driver timeout, a socket timeout, or a closed connection).
