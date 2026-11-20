@@ -168,6 +168,10 @@ private suspend fun handleApplyRecipe(
             is Arg.Ok -> parsed.value
             is Arg.Err -> return parsed.result
         }
+    // The shared resolver silently falls back to auto-matching for an unknown key or column.
+    validateFieldMapping(manualMapping, recipe, entry.result)?.let {
+        return it
+    }
     val mapping =
         resolveRecipeFields(
             recipe,
@@ -269,6 +273,32 @@ private fun parseFieldMapping(objectArg: JsonObject?): Arg<Map<String, String>> 
         mapping[key] = primitive.content
     }
     return Arg.Ok(mapping)
+}
+
+private fun validateFieldMapping(
+    mapping: Map<String, String>,
+    recipe: ExploreRecipe,
+    result: QueryResult,
+): CallToolResult? {
+    val required = recipe.requiredFields.map { it.column }
+    val known = result.columns.map { it.name }
+    for ((key, value) in mapping) {
+        if (key !in required) {
+            return toolError(
+                ERROR_INVALID_ARGUMENTS,
+                "Unknown field_mapping key '$key'. Recipe required fields: " +
+                    required.sorted().take(8).joinToString(", "),
+            )
+        }
+        if (value !in known) {
+            return toolError(
+                ERROR_INVALID_ARGUMENTS,
+                "Unknown column '$value'. Known columns: " +
+                    known.sorted().take(8).joinToString(", "),
+            )
+        }
+    }
+    return null
 }
 
 private enum class RecipeTargetMode {

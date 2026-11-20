@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- MCP `list_connections`, `list_saved_queries`, and `list_recipes` now return objects (`{connections|saved_queries|recipes: [...], total_count, truncated, next_offset?}`) instead of top-level arrays, and publish `outputSchema` (19 object tools; `list_query_history` stays a text-only array). Clients that read these results as arrays must read the named field instead.
+- MCP `list_connections`, `list_tables`, `find_join_paths` (without `to_table`), `list_saved_queries`, and `list_recipes` accept optional `offset` and `limit` (default 100, cap 200) and report `total_count`, `truncated`, and `next_offset`. The `safedb://connections` and `safedb://connections/{connection_id}/tables` resources return at most 200 entries with `total_count` and `truncated`.
+- MCP `apply_recipe` rejects a `field_mapping` key that is not a recipe required field, or a value that is not a result column, with `invalid_arguments` instead of silently falling back to auto-matching. A type-incompatible mapping still falls back, and Oracle/Db2 recipes saved from lowercase columns need `field_mapping` because auto-matching compares column names case-sensitively.
+- MCP `assess_query` reports `readOnlyHint: false` and says so in its description: unless the risk gate is `Disabled`, Oracle and Db2 `EXPLAIN` write and delete plan-table rows.
+- Unexpected MCP tool failures return a generic `Tool '<name>' failed` message with no internal details; the error class is logged on stderr.
+- MCP `pivot_result` and `filter_result_rows` filter values and `included_keys` keep leading and trailing whitespace instead of trimming it.
+- A result whose JSONL cache file fails to write still counts toward the result store's 32 MiB cap, using an estimated in-memory size.
+- Saved connections, saved queries, query history, and recipes are guarded by cross-process file locks (`*.lock` files in the data directory), not just in-process locks, so separate processes sharing a store serialize their reads and writes.
+- `safe-db-mcp connections delete` says when the saved queries and query history it removed live in the shared store used by the desktop app.
+- SQL Server queries run with JDBC `autoCommit = false` at `READ_UNCOMMITTED`, restore `LOCK_TIMEOUT` to `-1` afterward. JDBC query, socket, and lock timeouts (error 1222) are reported as "Query timed out after …ms".
+- The desktop sidebar shows "Checking connection…" while it probes a newly selected connection instead of flashing Not connected, and skips reachability probes while the app window is inactive.
+
 ## 1.1.2
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.2` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.2-all.jar`; npm packages are stamped 1.1.2 at assemble time.

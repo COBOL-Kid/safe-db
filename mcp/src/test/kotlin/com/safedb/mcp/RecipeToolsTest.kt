@@ -275,6 +275,38 @@ class RecipeToolsTest {
             assertEquals("4", mapped.string("row_count"))
             assertTrue(mapped.getValue("rows").jsonArray.isNotEmpty())
 
+            val unknownKey =
+                client.callTool(
+                    "apply_recipe",
+                    mapOf(
+                        "result_id" to resultId,
+                        "recipe_id" to "r1",
+                        "field_mapping" to Json.parseToJsonElement("""{"nope":"amount"}"""),
+                    ),
+                )
+            assertError(
+                unknownKey,
+                "invalid_arguments",
+                "Unknown field_mapping key 'nope'. Recipe required fields: amount_total",
+            )
+
+            val unknownColumn =
+                client.callTool(
+                    "apply_recipe",
+                    mapOf(
+                        "result_id" to resultId,
+                        "recipe_id" to "r1",
+                        "field_mapping" to Json.parseToJsonElement("""{"amount_total":"nope"}"""),
+                    ),
+                )
+            assertTrue(unknownColumn.isError == true)
+            assertTrue(
+                unknownColumn
+                    .json()
+                    .string("message")
+                    .startsWith("Unknown column 'nope'. Known columns: "),
+            )
+
             val invalidValue =
                 client.callTool(
                     "apply_recipe",

@@ -54,7 +54,7 @@ User-facing reasons live in [`SqlMessages.kt`](../shared/src/main/kotlin/com/saf
 - National string literals (`N'…'`)
 - Comparing two columns in a predicate
 
-The validator then rejects tables in system/catalog schemas and in `blocked_schemas` from settings (`Schema 'x' is blocked`). This applies to the desktop risk preview and execution and to MCP `run_query`, `run_saved_query`, and `assess_query`. `save_query` rejects the same SQL before saving.
+The validator then rejects tables in system/catalog schemas and in `blocked_schemas` from settings (`Schema 'x' is blocked`). This applies to the desktop risk preview and execution and to MCP `run_query`, `run_saved_query`, and `assess_query`. `save_query` rejects the same SQL before saving. For typed SQL, introspection omits system/catalog schemas, so naming one (`information_schema`, `sys`, `SYSCAT`) fails earlier at parse (`Schema 'x' not found.`); only `blocked_schemas` entries, which stay in the introspected catalog, reach the validator and report `Schema 'x' is blocked`.
 
 Aggregates belong in Explore, on the sample already fetched.
 
