@@ -51,20 +51,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
     }
     DisposableEffect(viewModel, mainWindow) {
         republishWindowActivity()
-        val listener =
-            object : WindowAdapter() {
-                override fun windowActivated(e: WindowEvent?) {
-                    republishWindowActivity()
-                }
-
-                override fun windowDeactivated(e: WindowEvent?) {
-                    republishWindowActivity()
-                }
-
-                override fun windowIconified(e: WindowEvent?) {
-                    republishWindowActivity()
-                }
-            }
+        val listener = windowActivityListener(republishWindowActivity)
         mainWindow.addWindowListener(listener)
         onDispose { mainWindow.removeWindowListener(listener) }
     }
@@ -170,20 +157,7 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                     val exploreWindow = window
                     exploreWindowRef.value = exploreWindow
                     republishWindowActivity()
-                    val listener =
-                        object : WindowAdapter() {
-                            override fun windowActivated(e: WindowEvent?) {
-                                republishWindowActivity()
-                            }
-
-                            override fun windowDeactivated(e: WindowEvent?) {
-                                republishWindowActivity()
-                            }
-
-                            override fun windowIconified(e: WindowEvent?) {
-                                republishWindowActivity()
-                            }
-                        }
+                    val listener = windowActivityListener(republishWindowActivity)
                     exploreWindow.addWindowListener(listener)
                     onDispose {
                         exploreWindow.removeWindowListener(listener)
@@ -239,6 +213,21 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
         }
     }
 }
+
+private fun windowActivityListener(onChange: () -> Unit): WindowAdapter =
+    object : WindowAdapter() {
+        override fun windowActivated(e: WindowEvent?) {
+            onChange()
+        }
+
+        override fun windowDeactivated(e: WindowEvent?) {
+            onChange()
+        }
+
+        override fun windowIconified(e: WindowEvent?) {
+            onChange()
+        }
+    }
 
 fun runApp(appState: AppState, service: SafeDbService) = application {
     val windowState =

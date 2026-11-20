@@ -18,6 +18,7 @@ import java.io.InputStream
 import java.io.Reader
 import java.lang.reflect.Proxy
 import java.math.BigDecimal
+import java.net.SocketTimeoutException
 import java.nio.file.Files
 import java.sql.Connection
 import java.sql.PreparedStatement
@@ -35,6 +36,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
@@ -243,7 +245,7 @@ class AdapterTest {
 
     @Test
     fun mssqlTimeoutInExecuteQueryAndExplainClosesAndNullsDataSourceLazily() = runBlocking {
-        fun timeoutDs(failOnStatementExecute: Boolean): FakeClosableDataSource {
+        fun timeoutDs(failure: Exception, failOnStatementExecute: Boolean): FakeClosableDataSource {
             val stmt =
                 Proxy.newProxyInstance(
                     Statement::class.java.classLoader,
@@ -253,7 +255,7 @@ class AdapterTest {
                         "execute" -> {
                             val sql = args?.first() as String
                             if (failOnStatementExecute && sql.contains("SELECT 1")) {
-                                throw SQLTimeoutException("plan timeout")
+                                throw failure
                             }
                             false
                         }
@@ -269,7 +271,7 @@ class AdapterTest {
                 ) { _, method, _ ->
                     when (method.name) {
                         "setFetchSize" -> null
-                        "executeQuery" -> throw SQLTimeoutException("query timeout")
+                        "executeQuery" -> if (failOnStatementExecute) null else throw failure
                         "close" -> null
                         "toString" -> "TimeoutPs"
                         else -> throw UnsupportedOperationException(method.name)
@@ -298,25 +300,51 @@ class AdapterTest {
         }
 
         val def = connection(Dialect.Mssql, 1433, TransportSecurityMode.Disabled)
+        val lockTimeout = SQLException("Lock request time out period exceeded.", "HY000", 1222)
 
-        val execDs = timeoutDs(failOnStatementExecute = false)
-        val execState = MssqlState(execDs, def, "pw")
-        val execAdapter = Adapter.Mssql(execState)
-        assertFailsWith<QueryTimedOutException> {
-            execAdapter.executeQuery(CompiledQuery("SELECT 1", emptyList()), 1_000)
+        suspend fun assertPoolClosed(failure: Exception, failOnStatementExecute: Boolean) {
+            val ds = timeoutDs(failure, failOnStatementExecute)
+            val state = MssqlState(ds, def, "pw")
+            val adapter = Adapter.Mssql(state)
+            val error =
+                assertFailsWith<QueryTimedOutException> {
+                    if (failOnStatementExecute) {
+                        adapter.explain(CompiledQuery("SELECT 1", emptyList()), 1_000)
+                    } else {
+                        adapter.executeQuery(CompiledQuery("SELECT 1", emptyList()), 1_000)
+                    }
+                }
+            assertTrue(error.recyclePool)
+            if (failOnStatementExecute) assertEquals(1, ds.getConnectionCalls)
+            assertEquals(1, ds.closeCalls)
+            assertNull(state.dataSource)
         }
-        assertEquals(1, execDs.closeCalls)
-        assertNull(execState.dataSource)
 
-        val explainDs = timeoutDs(failOnStatementExecute = true)
-        val explainState = MssqlState(explainDs, def, "pw")
-        val explainAdapter = Adapter.Mssql(explainState)
-        assertFailsWith<QueryTimedOutException> {
-            explainAdapter.explain(CompiledQuery("SELECT 1", emptyList()), 1_000)
+        assertPoolClosed(SQLTimeoutException("query timeout"), failOnStatementExecute = false)
+        assertPoolClosed(SQLTimeoutException("plan timeout"), failOnStatementExecute = true)
+        assertPoolClosed(SocketTimeoutException("query socket"), failOnStatementExecute = false)
+        assertPoolClosed(SocketTimeoutException("plan socket"), failOnStatementExecute = true)
+
+        suspend fun assertPoolKept(failOnStatementExecute: Boolean) {
+            val ds = timeoutDs(lockTimeout, failOnStatementExecute)
+            val state = MssqlState(ds, def, "pw")
+            val adapter = Adapter.Mssql(state)
+            val error =
+                assertFailsWith<QueryTimedOutException> {
+                    if (failOnStatementExecute) {
+                        adapter.explain(CompiledQuery("SELECT 1", emptyList()), 1_000)
+                    } else {
+                        adapter.executeQuery(CompiledQuery("SELECT 1", emptyList()), 1_000)
+                    }
+                }
+            assertFalse(error.recyclePool)
+            assertSame(lockTimeout, error.cause)
+            assertEquals(0, ds.closeCalls)
+            assertEquals(ds, state.dataSource)
         }
-        assertEquals(1, explainDs.getConnectionCalls)
-        assertEquals(1, explainDs.closeCalls)
-        assertNull(explainState.dataSource)
+
+        assertPoolKept(failOnStatementExecute = false)
+        assertPoolKept(failOnStatementExecute = true)
     }
 
     @Test

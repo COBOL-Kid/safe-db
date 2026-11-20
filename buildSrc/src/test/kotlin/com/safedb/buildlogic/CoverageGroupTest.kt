@@ -127,24 +127,48 @@ class CoverageGroupTest {
     }
 
     @Test
-    fun coverageRatchetFallsBackToPackageLevelForSplitPackagesWithoutSourceFiles() {
-        val results =
-            verifyCoverageFloors(
-                report =
-                    coverageReport(
-                        "com/safedb/export" to (9 to 1),
-                        "com/safedb/query" to (9 to 1),
-                    ),
-                floors = mapOf("desktop" to 90, "shared" to 85),
-            )
+    fun coverageRatchetFailsWhenSplitPackageHasNoSourceFiles() {
+        val failure =
+            assertFailsWith<IllegalStateException> {
+                verifyCoverageFloors(
+                    report =
+                        coverageReport(
+                            "com/safedb/export" to (9 to 1),
+                            "com/safedb/query" to (9 to 1),
+                        ),
+                    floors = mapOf("desktop" to 90, "shared" to 85),
+                )
+            }
 
-        assertEquals(
-            listOf(
-                CoverageRatchetResult("desktop", 9, 1, 90),
-                CoverageRatchetResult("shared", 9, 1, 85),
-            ),
-            results,
-        )
+        assertTrue(failure.message!!.contains("com/safedb/export"))
+        assertTrue(failure.message!!.contains("sourcefile"))
+    }
+
+    @Test
+    fun coverageRatchetFailsWhenSplitPackageContainsUnknownSourceFile() {
+        val report = buildString {
+            append("<report>")
+            append("<package name=\"com/safedb/export\">")
+            append("<sourcefile name=\"NewExport.kt\">")
+            append("<counter type=\"LINE\" covered=\"9\" missed=\"1\"/>")
+            append("</sourcefile>")
+            append("<counter type=\"LINE\" covered=\"9\" missed=\"1\"/>")
+            append("</package>")
+            append("<package name=\"com/safedb/query\">")
+            append("<counter type=\"LINE\" covered=\"9\" missed=\"1\"/>")
+            append("</package>")
+            append("</report>")
+        }
+
+        val failure =
+            assertFailsWith<IllegalStateException> {
+                verifyCoverageFloors(
+                    report = report,
+                    floors = mapOf("desktop" to 90, "shared" to 85),
+                )
+            }
+
+        assertTrue(failure.message!!.contains("NewExport.kt"))
     }
 
     @Test

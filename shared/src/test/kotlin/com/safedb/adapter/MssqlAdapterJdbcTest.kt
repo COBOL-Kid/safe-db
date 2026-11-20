@@ -18,7 +18,9 @@ import java.sql.Statement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class MssqlAdapterJdbcTest {
@@ -92,12 +94,8 @@ class MssqlAdapterJdbcTest {
 
     @Test
     fun mssqlExecuteQueryMapsLockTimeoutErrorCode1222ToQueryTimedOutException() {
-        val jdbc =
-            script(
-                onQuery = {
-                    throw SQLException("Lock request time out period exceeded.", "HY000", 1222)
-                },
-            )
+        val failure = SQLException("Lock request time out period exceeded.", "HY000", 1222)
+        val jdbc = script(onQuery = { throw failure })
 
         val error =
             assertFailsWith<QueryTimedOutException> {
@@ -109,6 +107,8 @@ class MssqlAdapterJdbcTest {
             }
 
         assertEquals(1_250, error.timeoutMs)
+        assertSame(failure, error.cause)
+        assertFalse(error.recyclePool)
         assertTrue("rollback" in jdbc.events)
         assertTrue("exec:SET LOCK_TIMEOUT -1" in jdbc.events)
     }
@@ -133,6 +133,12 @@ class MssqlAdapterJdbcTest {
                     )
                 }
             assertEquals(1_500, error.timeoutMs)
+            assertSame(failure, error.cause)
+            val deadConnection =
+                failure is SQLTimeoutException ||
+                    generateSequence<Throwable>(failure) { it.cause }
+                        .any { it is SocketTimeoutException }
+            assertEquals(deadConnection, error.recyclePool)
         }
     }
 
@@ -246,6 +252,36 @@ class MssqlAdapterJdbcTest {
         assertEquals(2_000, error.timeoutMs)
         assertEquals(1, ds.evicted.size)
         assertEquals(3, jdbc.events.count { it == "exec:SET SHOWPLAN_XML OFF" })
+    }
+
+    @Test
+    fun mssqlExplainEvictsConnectionWhenShowplanOnFailsAndOffCannotRestore() {
+        val jdbc =
+            script(
+                onExecute = { sql ->
+                    when (sql) {
+                        "SET SHOWPLAN_XML ON" -> throw SQLException("cannot enable showplan")
+                        "SET SHOWPLAN_XML OFF" -> throw SQLException("cannot restore")
+                        else -> error("unexpected execute: $sql")
+                    }
+                },
+            )
+        val ds = jdbc.dataSource()
+
+        val error =
+            assertFailsWith<SQLException> {
+                MssqlAdapter.explain(
+                    ds,
+                    CompiledQuery("SELECT [id] FROM [dbo].[orders]", emptyList()),
+                    4_000,
+                )
+            }
+
+        assertFalse(error is QueryTimedOutException)
+        assertEquals("cannot enable showplan", error.message)
+        assertEquals(1, ds.evicted.size)
+        assertEquals(3, jdbc.events.count { it == "exec:SET SHOWPLAN_XML OFF" })
+        assertTrue(jdbc.events.none { it.contains("SELECT [id] FROM [dbo].[orders]") })
     }
 }
 

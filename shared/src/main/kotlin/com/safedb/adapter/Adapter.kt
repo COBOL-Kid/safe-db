@@ -30,63 +30,98 @@ const val EXPLAIN_OUTER_TIMEOUT_MARGIN_MS = 1_000
 
 class MssqlState(var dataSource: HikariDataSource?, val def: ConnectionDef, val password: String)
 
-private class PooledOps(
-    val dataSource: HikariDataSource,
-    val test: (HikariDataSource) -> String,
-    val introspect: (HikariDataSource) -> Schema,
-    val executeQuery: (HikariDataSource, CompiledQuery, Int) -> QueryResult,
-    val explain: (HikariDataSource, CompiledQuery, Int) -> ExplainResult,
-)
+sealed class Adapter {
+    abstract suspend fun test(): String
 
-sealed class Adapter private constructor(private val pooled: PooledOps? = null) {
-    open suspend fun test(): String =
-        withContext(Dispatchers.IO) {
-            val ops = checkNotNull(pooled)
-            ops.test(ops.dataSource)
-        }
+    abstract suspend fun introspect(): Schema
 
-    open suspend fun introspect(): Schema =
-        withContext(Dispatchers.IO) {
-            val ops = checkNotNull(pooled)
-            ops.introspect(ops.dataSource)
-        }
+    abstract suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult
 
-    open suspend fun executeQuery(compiled: CompiledQuery, timeoutMs: Int): QueryResult =
-        withContext(Dispatchers.IO) {
-            val ops = checkNotNull(pooled)
-            ops.executeQuery(ops.dataSource, compiled, timeoutMs)
-        }
-
-    open suspend fun explain(
+    abstract suspend fun explain(
         compiled: CompiledQuery,
         timeoutMs: Int = DEFAULT_TIMEOUT_MS,
-    ): ExplainResult =
-        withContext(Dispatchers.IO) {
-            val ops = checkNotNull(pooled)
-            ops.explain(ops.dataSource, compiled, timeoutMs)
+    ): ExplainResult
+
+    abstract fun close()
+
+    // Nested so Adapter stays sealed; cannot be private because public dialect types extend it.
+    abstract class PooledAdapter(private val dataSource: HikariDataSource) : Adapter() {
+        protected abstract fun test(dataSource: HikariDataSource): String
+
+        protected abstract fun introspect(dataSource: HikariDataSource): Schema
+
+        protected abstract fun executeQuery(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): QueryResult
+
+        protected abstract fun explain(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): ExplainResult
+
+        final override suspend fun test(): String = withContext(Dispatchers.IO) { test(dataSource) }
+
+        final override suspend fun introspect(): Schema =
+            withContext(Dispatchers.IO) { introspect(dataSource) }
+
+        final override suspend fun executeQuery(
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): QueryResult =
+            withContext(Dispatchers.IO) { executeQuery(dataSource, compiled, timeoutMs) }
+
+        final override suspend fun explain(
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): ExplainResult = withContext(Dispatchers.IO) { explain(dataSource, compiled, timeoutMs) }
+
+        final override fun close() {
+            closeDataSource(dataSource)
         }
+    }
 
-    data class Postgres(val dataSource: HikariDataSource) :
-        Adapter(
-            PooledOps(
-                dataSource,
-                PgAdapter::test,
-                PgAdapter::introspect,
-                PgAdapter::executeQuery,
-                PgAdapter::explain,
-            ),
-        )
+    data class Postgres(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
+        protected override fun test(dataSource: HikariDataSource): String =
+            PgAdapter.test(dataSource)
 
-    data class MySql(val dataSource: HikariDataSource) :
-        Adapter(
-            PooledOps(
-                dataSource,
-                MySqlAdapter::test,
-                MySqlAdapter::introspect,
-                MySqlAdapter::executeQuery,
-                MySqlAdapter::explain,
-            ),
-        )
+        protected override fun introspect(dataSource: HikariDataSource): Schema =
+            PgAdapter.introspect(dataSource)
+
+        protected override fun executeQuery(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): QueryResult = PgAdapter.executeQuery(dataSource, compiled, timeoutMs)
+
+        protected override fun explain(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): ExplainResult = PgAdapter.explain(dataSource, compiled, timeoutMs)
+    }
+
+    data class MySql(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
+        protected override fun test(dataSource: HikariDataSource): String =
+            MySqlAdapter.test(dataSource)
+
+        protected override fun introspect(dataSource: HikariDataSource): Schema =
+            MySqlAdapter.introspect(dataSource)
+
+        protected override fun executeQuery(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): QueryResult = MySqlAdapter.executeQuery(dataSource, compiled, timeoutMs)
+
+        protected override fun explain(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): ExplainResult = MySqlAdapter.explain(dataSource, compiled, timeoutMs)
+    }
 
     data class Mssql(val state: MssqlState) : Adapter() {
         private val lock = ReentrantLock()
@@ -115,7 +150,7 @@ sealed class Adapter private constructor(private val pooled: PooledOps? = null) 
                     try {
                         MssqlAdapter.executeQuery(ds, compiled, timeoutMs)
                     } catch (e: QueryTimedOutException) {
-                        recycleDataSource()
+                        if (e.recyclePool) recycleDataSource()
                         throw e
                     }
                 }
@@ -128,7 +163,7 @@ sealed class Adapter private constructor(private val pooled: PooledOps? = null) 
                     try {
                         MssqlAdapter.explain(ds, compiled, timeoutMs)
                     } catch (e: QueryTimedOutException) {
-                        recycleDataSource()
+                        if (e.recyclePool) recycleDataSource()
                         throw e
                     }
                 }
@@ -159,27 +194,45 @@ sealed class Adapter private constructor(private val pooled: PooledOps? = null) 
         }
     }
 
-    data class Oracle(val dataSource: HikariDataSource) :
-        Adapter(
-            PooledOps(
-                dataSource,
-                OracleAdapter::test,
-                OracleAdapter::introspect,
-                OracleAdapter::executeQuery,
-                OracleAdapter::explain,
-            ),
-        )
+    data class Oracle(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
+        protected override fun test(dataSource: HikariDataSource): String =
+            OracleAdapter.test(dataSource)
 
-    data class Db2(val dataSource: HikariDataSource) :
-        Adapter(
-            PooledOps(
-                dataSource,
-                Db2Adapter::test,
-                Db2Adapter::introspect,
-                Db2Adapter::executeQuery,
-                Db2Adapter::explain,
-            ),
-        )
+        protected override fun introspect(dataSource: HikariDataSource): Schema =
+            OracleAdapter.introspect(dataSource)
+
+        protected override fun executeQuery(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): QueryResult = OracleAdapter.executeQuery(dataSource, compiled, timeoutMs)
+
+        protected override fun explain(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): ExplainResult = OracleAdapter.explain(dataSource, compiled, timeoutMs)
+    }
+
+    data class Db2(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
+        protected override fun test(dataSource: HikariDataSource): String =
+            Db2Adapter.test(dataSource)
+
+        protected override fun introspect(dataSource: HikariDataSource): Schema =
+            Db2Adapter.introspect(dataSource)
+
+        protected override fun executeQuery(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): QueryResult = Db2Adapter.executeQuery(dataSource, compiled, timeoutMs)
+
+        protected override fun explain(
+            dataSource: HikariDataSource,
+            compiled: CompiledQuery,
+            timeoutMs: Int,
+        ): ExplainResult = Db2Adapter.explain(dataSource, compiled, timeoutMs)
+    }
 
     companion object {
         suspend fun connect(def: ConnectionDef, password: String): Adapter {
@@ -223,10 +276,6 @@ sealed class Adapter private constructor(private val pooled: PooledOps? = null) 
                     .toInt()
             return awaitExplain(outerTimeoutMs) { adapter.explain(compiled, timeoutMs) }
         }
-    }
-
-    open fun close() {
-        pooled?.let { closeDataSource(it.dataSource) }
     }
 }
 

@@ -55,6 +55,8 @@ data class ResolvedQueryAssessment(
 class QueryFailureException(val queryError: QueryError, val warnings: List<String> = emptyList()) :
     IllegalArgumentException(queryError.message)
 
+class ConnectionNotFoundException : IllegalArgumentException("Connection not found")
+
 internal fun QueryFailureException(coreError: QueryCoreError): QueryFailureException =
     QueryFailureException(coreError.error, coreError.warnings)
 

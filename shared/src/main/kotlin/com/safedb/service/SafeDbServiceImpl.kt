@@ -123,7 +123,7 @@ internal constructor(
 
     override suspend fun updateConnection(def: ConnectionDef, password: String?) {
         if (configStore.get(def.id) == null) {
-            throw IllegalArgumentException("Connection not found")
+            throw ConnectionNotFoundException()
         }
         persistConnection(def, password)
     }
@@ -146,8 +146,7 @@ internal constructor(
     }
 
     override suspend fun getSchema(connectionId: String): Schema {
-        val def =
-            configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val def = configStore.get(connectionId) ?: throw ConnectionNotFoundException()
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val adapter = adapterFactory.connect(def, password)
         return try {
@@ -275,8 +274,7 @@ internal constructor(
         connectionId: String,
         block: suspend (def: ConnectionDef, session: QuerySession, settings: Settings) -> T,
     ): T {
-        val def =
-            configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val def = configStore.get(connectionId) ?: throw ConnectionNotFoundException()
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val settings = settingsStore.load()
         val session =

@@ -64,7 +64,6 @@ class AppViewModel(
     private var reachabilityJob: Job? = null
     private var activeReachabilityConnection: ConnectionDef? = null
     private var windowActive = true
-    private var probeSkippedWhileInactive = false
     private val _databaseReachability = MutableStateFlow(DatabaseReachability.Disconnected)
     val databaseReachability: StateFlow<DatabaseReachability> = _databaseReachability.asStateFlow()
 
@@ -110,18 +109,20 @@ class AppViewModel(
     fun setWindowActive(active: Boolean) {
         if (windowActive == active) return
         windowActive = active
-        val connection = activeReachabilityConnection
-        if (active && connection != null && probeSkippedWhileInactive) {
-            probeSkippedWhileInactive = false
-            launchReachabilityLoop(connection)
+        if (!active) {
+            reachabilityJob?.cancel()
+            reachabilityJob = null
+            // Drop an in-flight probe so deactivation keeps the last Connected/Checking value.
+            ++reachabilityGeneration
+            return
         }
+        activeReachabilityConnection?.let(::launchReachabilityLoop)
     }
 
     fun refreshDatabaseReachability(connection: ConnectionDef?) {
         reachabilityJob?.cancel()
         reachabilityJob = null
         activeReachabilityConnection = connection
-        probeSkippedWhileInactive = false
         if (connection == null) {
             ++reachabilityGeneration
             _databaseReachability.value = DatabaseReachability.Disconnected
@@ -129,6 +130,10 @@ class AppViewModel(
         }
         // Enter Checking on connection switch instead of flashing Disconnected before probing.
         _databaseReachability.value = DatabaseReachability.Checking
+        if (!windowActive) {
+            ++reachabilityGeneration
+            return
+        }
         launchReachabilityLoop(connection)
     }
 
@@ -137,12 +142,6 @@ class AppViewModel(
         val generation = ++reachabilityGeneration
         reachabilityJob = scope.launch {
             while (generation == reachabilityGeneration) {
-                if (!windowActive) {
-                    probeSkippedWhileInactive = true
-                    delay(ReachabilityPollInterval)
-                    continue
-                }
-                probeSkippedWhileInactive = false
                 val reachable =
                     try {
                         service.testConnection(connection, password = null)

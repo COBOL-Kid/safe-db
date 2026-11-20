@@ -8,7 +8,9 @@ import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.ENV_BACKEND
 import com.safedb.secrets.RequestedBackend
 import com.safedb.secrets.SecretsManager
+import com.safedb.service.ConnectionNotFoundException
 import com.safedb.service.DispatchingSafeDbService
+import com.safedb.service.QueryFailureException
 import com.safedb.service.SafeDbService
 import com.safedb.service.SafeDbServiceImpl
 import com.safedb.store.ConfigStore
@@ -271,8 +273,14 @@ internal suspend fun runMcpTool(
         block()
     } catch (error: CancellationException) {
         throw error
+    } catch (error: ToolFailure) {
+        error.result
     } catch (error: ConnectionFailedException) {
         toolError(ERROR_CONNECTION, error.message ?: fallback)
+    } catch (error: QueryFailureException) {
+        mapSqlToolFailure(error)
+    } catch (error: ConnectionNotFoundException) {
+        mapSqlToolFailure(error)
     } catch (error: Exception) {
         System.err.println("[safe-db-mcp] $fallback (${error::class.simpleName})")
         toolError(ERROR_INTERNAL, fallback)
@@ -456,13 +464,7 @@ internal fun registerConnectionTools(
                         )
                     },
             ),
-        outputSchema =
-            objectOutputSchema(listOf("connections", "total_count", "truncated")) {
-                put("connections", arrayProp())
-                put("total_count", intProp())
-                put("truncated", boolProp())
-                put("next_offset", intProp())
-            },
+        outputSchema = pagedListOutputSchema("connections"),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_connections failed") {

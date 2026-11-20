@@ -17,6 +17,7 @@ import com.safedb.query.QueryPlanStatus
 import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
+import com.safedb.service.ConnectionNotFoundException
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunResult
 import java.nio.file.Files
@@ -327,6 +328,21 @@ class QueryToolsTest {
         }
         assertEquals(2, service.schemaCalls.size)
         assertEquals(1, service.runQueryRequests.size)
+    }
+
+    @Test
+    fun connectionNotFoundFromRunQueryWithSchemaIsNotFound() = runBlocking {
+        val service = queryService()
+        service.runQueryWithSchemaError = ConnectionNotFoundException()
+        withTempMcpClient(service) { client ->
+            val missing =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                )
+            assertError(missing, "not_found", "Connection not found")
+        }
+        assertTrue(service.runQueryRequests.isEmpty())
     }
 
     @Test

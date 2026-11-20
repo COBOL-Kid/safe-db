@@ -20,6 +20,7 @@ import com.safedb.query.sql.SqlIssueCode
 import com.safedb.query.sql.SqlParseResult
 import com.safedb.query.sql.mySqlBackslashEscapes
 import com.safedb.query.sql.parseSqlToSpec
+import com.safedb.service.ConnectionNotFoundException
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.QueryRunResult
@@ -259,12 +260,7 @@ internal fun mapSqlToolFailure(error: Exception): CallToolResult =
         is CancellationException -> throw error
         is ToolFailure -> error.result
         is QueryFailureException -> mapQueryFailure(error)
-        is IllegalArgumentException ->
-            if (error.message == "Connection not found") {
-                toolError(ERROR_NOT_FOUND, "Connection not found")
-            } else {
-                throw error
-            }
+        is ConnectionNotFoundException -> toolError(ERROR_NOT_FOUND, "Connection not found")
         else -> throw error
     }
 

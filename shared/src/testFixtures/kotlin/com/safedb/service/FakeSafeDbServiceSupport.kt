@@ -44,8 +44,7 @@ open class FakeSafeDbServiceSupport : SafeDbService {
         resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
     ): ResolvedQueryRun {
         val connection =
-            listConnections().find { it.id == connectionId }
-                ?: throw IllegalArgumentException("Connection not found")
+            listConnections().find { it.id == connectionId } ?: throw ConnectionNotFoundException()
         val schema = getSchema(connectionId)
         val settings = getSettings()
         val spec = resolveSpec(connection, schema, settings)
@@ -62,8 +61,7 @@ open class FakeSafeDbServiceSupport : SafeDbService {
         resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
     ): ResolvedQueryAssessment {
         val connection =
-            listConnections().find { it.id == connectionId }
-                ?: throw IllegalArgumentException("Connection not found")
+            listConnections().find { it.id == connectionId } ?: throw ConnectionNotFoundException()
         val schema = getSchema(connectionId)
         val settings = getSettings()
         val spec = resolveSpec(connection, schema, settings)

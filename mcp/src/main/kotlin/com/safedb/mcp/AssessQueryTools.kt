@@ -70,32 +70,28 @@ private suspend fun handleAssessQuery(
             return it
         }
 
-    return try {
-        val resolved =
-            service.assessQueryWithSchema(args.connectionId) { connection, schema, settings ->
-                parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
-                    throw ToolFailure(it)
-                }
+    val resolved =
+        service.assessQueryWithSchema(args.connectionId) { connection, schema, settings ->
+            parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
+                throw ToolFailure(it)
             }
-        val assessment = resolved.assessment
-        val risk = assessment.riskEvaluation
-        val receipt =
-            QueryAssessmentReceipt(
-                dialect = resolved.connection.dialect,
-                columns = assessment.columns,
-                compiledSql = assessment.compiledSql,
-                parameterCount = assessment.parameterCount,
-                warnings = assessment.warnings,
-                risk = riskSummary(risk),
-                confirmationRequired = risk.decision.state == RiskGateState.ConfirmationRequired,
-                reasons =
-                    risk.confirmationRequirement
-                        ?.reasons
-                        ?.map { it.message }
-                        ?.takeIf { it.isNotEmpty() },
-            )
-        objectToolResult(receipt)
-    } catch (error: Exception) {
-        mapSqlToolFailure(error)
-    }
+        }
+    val assessment = resolved.assessment
+    val risk = assessment.riskEvaluation
+    val receipt =
+        QueryAssessmentReceipt(
+            dialect = resolved.connection.dialect,
+            columns = assessment.columns,
+            compiledSql = assessment.compiledSql,
+            parameterCount = assessment.parameterCount,
+            warnings = assessment.warnings,
+            risk = riskSummary(risk),
+            confirmationRequired = risk.decision.state == RiskGateState.ConfirmationRequired,
+            reasons =
+                risk.confirmationRequirement
+                    ?.reasons
+                    ?.map { it.message }
+                    ?.takeIf { it.isNotEmpty() },
+        )
+    return objectToolResult(receipt)
 }

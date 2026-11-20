@@ -65,18 +65,14 @@ private suspend fun handleRunQuery(
         parseConfirmation(request).getOrElse {
             return it
         }
-    return try {
-        val resolved =
-            service.runQueryWithSchema(
-                args.connectionId,
-                confirmation,
-            ) { connection, schema, settings ->
-                parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
-                    throw ToolFailure(it)
-                }
+    val resolved =
+        service.runQueryWithSchema(
+            args.connectionId,
+            confirmation,
+        ) { connection, schema, settings ->
+            parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
+                throw ToolFailure(it)
             }
-        successReceipt(resolved.result, resultStore, resolved.spec, resolved.connection)
-    } catch (error: Exception) {
-        mapSqlToolFailure(error)
-    }
+        }
+    return successReceipt(resolved.result, resultStore, resolved.spec, resolved.connection)
 }

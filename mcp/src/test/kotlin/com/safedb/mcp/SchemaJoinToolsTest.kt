@@ -4,6 +4,7 @@ import com.safedb.model.Settings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonArray
@@ -98,6 +99,32 @@ class SchemaJoinToolsTest {
                     )
                     .json()
             assertTrue(tooShort.getValue("paths").jsonArray.isEmpty())
+        }
+    }
+
+    @Test
+    fun findJoinPathsWithToTableIgnoresInvalidOffset() = runBlocking {
+        val service = joinService()
+        withTempMcpClient(service) { client ->
+            val result =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "from_table" to "public.customers",
+                        "to_table" to "public.items",
+                        "offset" to -1,
+                    ),
+                )
+            assertNotEquals(true, result.isError)
+            val parsed = result.json()
+            assertEquals("public.customers", parsed.getValue("from_table").jsonPrimitive.content)
+            assertEquals("public.items", parsed.getValue("to_table").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("neighbors"))
+            assertFalse(parsed.containsKey("total_count"))
+            assertFalse(parsed.containsKey("truncated"))
+            assertFalse(parsed.containsKey("next_offset"))
+            assertTrue(parsed.getValue("paths").jsonArray.isNotEmpty())
         }
     }
 

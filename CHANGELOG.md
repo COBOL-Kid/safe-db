@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+- SQL Server `SET SHOWPLAN_XML ON` is restored to `OFF` even when enabling SHOWPLAN fails. If that restore fails, the pooled connection is evicted instead of being returned with SHOWPLAN left on.
+- SQL Server lock timeout (error 1222) is still reported as "Query timed out after …ms", but it no longer closes the whole connection pool. The pool is recycled only for a dead connection (a JDBC driver timeout, a socket timeout, or a closed connection).
 - MCP `list_connections`, `list_saved_queries`, and `list_recipes` now return objects (`{connections|saved_queries|recipes: [...], total_count, truncated, next_offset?}`) instead of top-level arrays, and publish `outputSchema` (19 object tools; `list_query_history` stays a text-only array). Clients that read these results as arrays must read the named field instead.
 - MCP `list_connections`, `list_tables`, `find_join_paths` (without `to_table`), `list_saved_queries`, and `list_recipes` accept optional `offset` and `limit` (default 100, cap 200) and report `total_count`, `truncated`, and `next_offset`. The `safedb://connections` and `safedb://connections/{connection_id}/tables` resources return at most 200 entries with `total_count` and `truncated`.
+- MCP `find_join_paths` ignores `offset` and `limit` when `to_table` is set, including invalid values, and still returns `{from_table, to_table, paths}`. Those arguments still page neighbors and reject invalid values when `to_table` is omitted.
 - MCP `apply_recipe` rejects a `field_mapping` key that is not a recipe required field, or a value that is not a result column, with `invalid_arguments` instead of silently falling back to auto-matching. A type-incompatible mapping still falls back, and Oracle/Db2 recipes saved from lowercase columns need `field_mapping` because auto-matching compares column names case-sensitively.
 - MCP `assess_query` reports `readOnlyHint: false` and says so in its description: unless the risk gate is `Disabled`, Oracle and Db2 `EXPLAIN` write and delete plan-table rows.
 - Unexpected MCP tool failures return a generic `Tool '<name>' failed` message with no internal details; the error class is logged on stderr.

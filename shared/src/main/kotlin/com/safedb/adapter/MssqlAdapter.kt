@@ -139,31 +139,40 @@ object MssqlAdapter {
                 timedConn.autoCommit = false
                 // Let Hikari track DIRTY_BIT_ISOLATION and reset isolation on pool return.
                 timedConn.transactionIsolation = Connection.TRANSACTION_READ_UNCOMMITTED
-                try {
-                    timedConn.createStatement().use { it.execute("SET LOCK_TIMEOUT $timeoutMs") }
-                    val result =
-                        prepareStatement(timedConn, compiled, Dialect.Mssql).use { ps ->
-                            ps.executeQuery().use { rs ->
-                                decodeQueryResult(rs, compiled.sql, Dialect.Mssql)
+                var timeoutError: Exception? = null
+                val result =
+                    try {
+                        timedConn.createStatement().use {
+                            it.execute("SET LOCK_TIMEOUT $timeoutMs")
+                        }
+                        val rows =
+                            prepareStatement(timedConn, compiled, Dialect.Mssql).use { ps ->
+                                ps.executeQuery().use { rs ->
+                                    decodeQueryResult(rs, compiled.sql, Dialect.Mssql)
+                                }
+                            }
+                        timedConn.commit()
+                        rows
+                    } catch (e: Exception) {
+                        runCatching { timedConn.rollback() }
+                        if (!isMssqlTimeout(e)) throw e
+                        timeoutError = e
+                        null
+                    } finally {
+                        val restored = runCatching {
+                            if (!timedConn.isClosed) {
+                                timedConn.createStatement().use {
+                                    it.execute("SET LOCK_TIMEOUT -1")
+                                }
                             }
                         }
-                    timedConn.commit()
-                    result
-                } catch (e: Exception) {
-                    runCatching { timedConn.rollback() }
-                    if (isMssqlTimeout(e)) throw QueryTimedOutException(timeoutMs)
-                    throw e
-                } finally {
-                    val restored = runCatching {
-                        if (!timedConn.isClosed) {
-                            timedConn.createStatement().use { it.execute("SET LOCK_TIMEOUT -1") }
+                        // A session whose lock timeout could not be reset must not be pooled again.
+                        if (restored.isFailure) {
+                            runCatching { dataSource.evictConnection(timedConn) }
                         }
                     }
-                    // A session whose lock timeout could not be reset must not be pooled again.
-                    if (restored.isFailure) {
-                        runCatching { dataSource.evictConnection(timedConn) }
-                    }
-                }
+                timeoutError?.let { throw mssqlQueryTimedOut(timeoutMs, it, timedConn) }
+                checkNotNull(result)
             }
         }
 
@@ -174,57 +183,60 @@ object MssqlAdapter {
     ): ExplainResult =
         dataSource.connection.use { conn ->
             withQueryTimeout(conn, timeoutMs) { timedConn ->
-                try {
-                    timedConn.createStatement().use { it.execute("SET SHOWPLAN_XML ON") }
-                    var showplanRestored = false
-                    val xml =
-                        try {
-                            timedConn.createStatement().use { stmt ->
-                                buildString {
-                                    var hasResult = stmt.execute(mssqlShowplanSql(compiled))
-                                    while (hasResult || stmt.updateCount != -1) {
-                                        if (hasResult) {
-                                            stmt.resultSet.use { rs ->
-                                                while (rs.next()) {
-                                                    append(readString(rs, 1))
-                                                }
+                var showplanRestored = false
+                var timeoutError: Exception? = null
+                val xml =
+                    try {
+                        // ON shares this finally with OFF so a failed ON cannot return SHOWPLAN on.
+                        timedConn.createStatement().use { it.execute("SET SHOWPLAN_XML ON") }
+                        timedConn.createStatement().use { stmt ->
+                            buildString {
+                                var hasResult = stmt.execute(mssqlShowplanSql(compiled))
+                                while (hasResult || stmt.updateCount != -1) {
+                                    if (hasResult) {
+                                        stmt.resultSet.use { rs ->
+                                            while (rs.next()) {
+                                                append(readString(rs, 1))
                                             }
                                         }
-                                        hasResult = stmt.moreResults
                                     }
+                                    hasResult = stmt.moreResults
                                 }
-                            }
-                        } finally {
-                            repeat(3) {
-                                if (!showplanRestored) {
-                                    showplanRestored =
-                                        runCatching {
-                                            timedConn.createStatement().use {
-                                                it.execute("SET SHOWPLAN_XML OFF")
-                                            }
-                                        }
-                                            .isSuccess
-                                }
-                            }
-                            if (!showplanRestored) {
-                                runCatching { dataSource.evictConnection(timedConn) }
                             }
                         }
-                    if (!showplanRestored) {
-                        return@withQueryTimeout ExplainResult.Unavailable(
-                            com.safedb.model.PlanUnavailableReason.CleanupFailure,
-                            "SQL Server plan session could not restore SHOWPLAN_XML OFF; the dedicated connection was discarded",
-                        )
+                    } catch (e: Exception) {
+                        if (!isMssqlTimeout(e)) throw e
+                        timeoutError = e
+                        null
+                    } finally {
+                        repeat(3) {
+                            if (!showplanRestored) {
+                                showplanRestored =
+                                    runCatching {
+                                        timedConn.createStatement().use {
+                                            it.execute("SET SHOWPLAN_XML OFF")
+                                        }
+                                    }
+                                        .isSuccess
+                            }
+                        }
+                        if (!showplanRestored) {
+                            runCatching { dataSource.evictConnection(timedConn) }
+                        }
                     }
-                    parseSqlServerPlan(xml)?.let(ExplainResult::Available)
-                        ?: ExplainResult.Unavailable(
-                            com.safedb.model.PlanUnavailableReason.ParseFailure,
-                            "Could not normalize SQL Server SHOWPLAN XML",
-                        )
-                } catch (e: Exception) {
-                    if (isMssqlTimeout(e)) throw QueryTimedOutException(timeoutMs)
-                    throw e
+                val timedOut = timeoutError
+                if (timedOut != null) throw mssqlQueryTimedOut(timeoutMs, timedOut, timedConn)
+                if (!showplanRestored) {
+                    return@withQueryTimeout ExplainResult.Unavailable(
+                        com.safedb.model.PlanUnavailableReason.CleanupFailure,
+                        "SQL Server plan session could not restore SHOWPLAN_XML OFF; the pooled connection was discarded",
+                    )
                 }
+                parseSqlServerPlan(checkNotNull(xml))?.let(ExplainResult::Available)
+                    ?: ExplainResult.Unavailable(
+                        com.safedb.model.PlanUnavailableReason.ParseFailure,
+                        "Could not normalize SQL Server SHOWPLAN XML",
+                    )
             }
         }
 }
@@ -237,6 +249,20 @@ internal fun isMssqlTimeout(error: Throwable): Boolean =
                 (cause is SQLException && cause.errorCode == 1222) ||
                 cause.message?.contains("timed out", ignoreCase = true) == true
         }
+
+private fun mssqlQueryTimedOut(
+    timeoutMs: Int,
+    error: Throwable,
+    connection: Connection,
+): QueryTimedOutException {
+    // isClosed can throw after a dead socket; that is still a dead connection.
+    val closed = runCatching { connection.isClosed }.getOrDefault(true)
+    val deadConnection =
+        closed ||
+            generateSequence(error) { it.cause }
+                .any { cause -> cause is SQLTimeoutException || cause is SocketTimeoutException }
+    return QueryTimedOutException(timeoutMs, error, deadConnection)
+}
 
 internal fun mssqlShowplanSql(compiled: CompiledQuery): String = buildString {
     // The JDBC prepared-statement RPC does not surface SHOWPLAN's result set. Keep values typed

@@ -144,10 +144,19 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
     }
 }
 
+// Filename allowlist for split packages. Unknown names fail the ratchet;
+// never attribute these packages from the package-level LINE counter.
 private val sharedSourceFilesBySplitPackage =
     mapOf(
         "com/safedb/export" to setOf("CsvWriter.kt"),
         "com/safedb/schema" to setOf("SchemaRelationships.kt"),
+    )
+
+private val desktopSourceFilesBySplitPackage =
+    mapOf(
+        "com/safedb/export" to
+            setOf("HtmlReportAssets.kt", "HtmlReportWriter.kt", "VisualizationPngExporter.kt"),
+        "com/safedb/schema" to setOf("SchemaMapGeometry.kt", "SchemaMapGraph.kt"),
     )
 
 internal fun coverageGroupForPackage(packageName: String): String {
@@ -167,10 +176,20 @@ internal fun coverageGroupForPackage(packageName: String): String {
 
 internal fun coverageGroupForSourceFile(packageName: String, sourceFileName: String): String {
     val sharedFiles = sharedSourceFilesBySplitPackage[packageName]
-    if (sharedFiles != null && sourceFileName in sharedFiles) {
+    val desktopFiles = desktopSourceFilesBySplitPackage[packageName]
+    if (sharedFiles == null && desktopFiles == null) {
+        return coverageGroupForPackage(packageName)
+    }
+    if (sourceFileName in sharedFiles.orEmpty()) {
         return "shared"
     }
-    return coverageGroupForPackage(packageName)
+    if (sourceFileName in desktopFiles.orEmpty()) {
+        return "desktop"
+    }
+    error(
+        "Unknown split-package sourcefile $sourceFileName in $packageName " +
+            "fails the coverage ratchet",
+    )
 }
 
 internal data class CoverageRatchetResult(
@@ -197,9 +216,13 @@ internal fun verifyCoverageFloors(
         val packageNode = packages.item(index)
         val packageName = packageNode.attributes.getNamedItem("name").nodeValue
         if (
-            packageName in sharedSourceFilesBySplitPackage &&
-                accumulateSplitPackageSourceFiles(packageNode, packageName, totals)
+            packageName in sharedSourceFilesBySplitPackage ||
+                packageName in desktopSourceFilesBySplitPackage
         ) {
+            check(accumulateSplitPackageSourceFiles(packageNode, packageName, totals)) {
+                "Split package $packageName has no <sourcefile> nodes; " +
+                    "refusing to count its package-level LINE counter"
+            }
             continue
         }
         val group = coverageGroupForPackage(packageName)
@@ -226,22 +249,23 @@ private fun accumulateSplitPackageSourceFiles(
     packageName: String,
     totals: Map<String, IntArray>,
 ): Boolean {
-    var attributedAny = false
+    var sawSourceFile = false
     val children = packageNode.childNodes
     for (childIndex in 0 until children.length) {
         val child = children.item(childIndex)
         if (child.nodeName != "sourcefile") continue
-        val sourceFileName = child.attributes.getNamedItem("name")?.nodeValue ?: continue
+        sawSourceFile = true
+        val sourceFileName =
+            child.attributes?.getNamedItem("name")?.nodeValue
+                ?: error("Split package $packageName has a <sourcefile> without a name")
         val group = coverageGroupForSourceFile(packageName, sourceFileName)
         val counts =
             checkNotNull(totals[group]) {
                 "Kover report contains $group lines, but no coverage floor is configured"
             }
-        if (addDirectLineCounters(child, counts)) {
-            attributedAny = true
-        }
+        addDirectLineCounters(child, counts)
     }
-    return attributedAny
+    return sawSourceFile
 }
 
 private fun addDirectLineCounters(node: Node, counts: IntArray): Boolean {

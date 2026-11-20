@@ -33,6 +33,7 @@ import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
+import com.safedb.service.ConnectionNotFoundException
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.service.QueryAssessmentResult
 import com.safedb.service.QueryRunRequest
@@ -94,6 +95,7 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     var schemaError: Exception? = null
     val runQueryRequests = mutableListOf<QueryRunRequest>()
     var runQueryWithSchemaCalls = 0
+    var runQueryWithSchemaError: Exception? = null
     var runQueryResult: QueryRunResult? = null
     var runQueryError: Exception? = null
     var runQueryHandler: ((QueryRunRequest) -> QueryRunResult)? = null
@@ -130,9 +132,9 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         schemaCalls += connectionId
         schemaError?.let { throw it }
         if (connections.none { it.id == connectionId }) {
-            throw IllegalArgumentException("Connection not found")
+            throw ConnectionNotFoundException()
         }
-        return schemas[connectionId] ?: throw IllegalArgumentException("Connection not found")
+        return schemas[connectionId] ?: throw ConnectionNotFoundException()
     }
 
     override suspend fun getSettings(): Settings = settings
@@ -156,6 +158,7 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
     ): ResolvedQueryRun {
         runQueryWithSchemaCalls++
+        runQueryWithSchemaError?.let { throw it }
         return super.runQueryWithSchema(connectionId, confirmation, resolveSpec)
     }
 

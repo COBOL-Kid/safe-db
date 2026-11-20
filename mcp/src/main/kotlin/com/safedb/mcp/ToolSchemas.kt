@@ -65,6 +65,26 @@ internal fun boundedLimitProperty(
 internal fun offsetProperty(): JsonObject =
     intProp("0-based item offset for pagination. Default 0. Negative is invalid_arguments.")
 
+internal fun JsonObjectBuilder.putOffsetAndLimit(noun: String) {
+    put("offset", offsetProperty())
+    put(
+        "limit",
+        boundedLimitProperty(
+            defaultLimit = LIST_DEFAULT_LIMIT,
+            maxLimit = LIST_MAX_LIMIT,
+            noun = noun,
+        ),
+    )
+}
+
+internal fun pagedListOutputSchema(itemsKey: String): ToolSchema =
+    objectOutputSchema(listOf(itemsKey, "total_count", "truncated")) {
+        put(itemsKey, arrayProp())
+        put("total_count", intProp())
+        put("truncated", boolProp())
+        put("next_offset", intProp())
+    }
+
 internal fun objectOutputSchema(
     required: List<String>,
     properties: JsonObjectBuilder.() -> Unit,

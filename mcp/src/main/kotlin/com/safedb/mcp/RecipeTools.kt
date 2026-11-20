@@ -42,26 +42,9 @@ internal fun registerRecipeTools(
                 "fetched result with apply_recipe.",
         inputSchema =
             ToolSchema(
-                properties =
-                    buildJsonObject {
-                        put("offset", offsetProperty())
-                        put(
-                            "limit",
-                            boundedLimitProperty(
-                                defaultLimit = LIST_DEFAULT_LIMIT,
-                                maxLimit = LIST_MAX_LIMIT,
-                                noun = "recipes",
-                            ),
-                        )
-                    },
+                properties = buildJsonObject { putOffsetAndLimit("recipes") },
             ),
-        outputSchema =
-            objectOutputSchema(listOf("recipes", "total_count", "truncated")) {
-                put("recipes", arrayProp())
-                put("total_count", intProp())
-                put("truncated", boolProp())
-                put("next_offset", intProp())
-            },
+        outputSchema = pagedListOutputSchema("recipes"),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_recipes failed") {

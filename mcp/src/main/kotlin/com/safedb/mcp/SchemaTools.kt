@@ -41,25 +41,11 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                     buildJsonObject {
                         put("connection_id", connectionIdProperty())
                         put("refresh", refreshProperty())
-                        put("offset", offsetProperty())
-                        put(
-                            "limit",
-                            boundedLimitProperty(
-                                defaultLimit = LIST_DEFAULT_LIMIT,
-                                maxLimit = LIST_MAX_LIMIT,
-                                noun = "tables",
-                            ),
-                        )
+                        putOffsetAndLimit("tables")
                     },
                 required = listOf("connection_id"),
             ),
-        outputSchema =
-            objectOutputSchema(listOf("tables", "total_count", "truncated")) {
-                put("tables", arrayProp())
-                put("total_count", intProp())
-                put("truncated", boolProp())
-                put("next_offset", intProp())
-            },
+        outputSchema = pagedListOutputSchema("tables"),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_tables failed") { handleListTables(service, cache, request) }
@@ -167,7 +153,9 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                 "to_table, returns direct neighbors with foreign_key or indexed_columns edges, " +
                 "column pairs, an on_clause, and FK cardinality and optionality, paged with " +
                 "optional offset and limit (default $LIST_DEFAULT_LIMIT, max $LIST_MAX_LIMIT) " +
-                "and returning total_count, truncated, and next_offset?. Pass " +
+                "and returning total_count, truncated, and next_offset?. offset and limit " +
+                "apply only when to_table is omitted; with to_table they are ignored, " +
+                "including invalid values. Pass " +
                 "foreign_key_only=true to exclude indexed-column candidates. With to_table, " +
                 "returns up to $FIND_JOIN_PATHS_MAX_RESULTS paths of at most max_hops (default " +
                 "$FIND_JOIN_PATHS_DEFAULT_HOPS, max $FIND_JOIN_PATHS_MAX_HOPS). Copy from_table and " +
@@ -211,7 +199,9 @@ internal fun registerSchemaTools(server: Server, service: SafeDbService, cache: 
                                 defaultLimit = LIST_DEFAULT_LIMIT,
                                 maxLimit = LIST_MAX_LIMIT,
                                 noun = "neighbors",
-                                extraNote = " Applies when to_table is omitted.",
+                                extraNote =
+                                    " Applies only when to_table is omitted; ignored when " +
+                                        "to_table is set.",
                             ),
                         )
                         put("refresh", refreshProperty())
@@ -388,6 +378,14 @@ private suspend fun handleFindJoinPaths(
         optionalString(request, "to_table").getOrElse {
             return it
         }
+    val neighborPage =
+        if (toReference == null) {
+            parseListPageParams(request).getOrElse {
+                return it
+            }
+        } else {
+            null
+        }
     val defaultSchemaArg =
         optionalString(request, "default_schema").getOrElse {
             return it
@@ -404,10 +402,6 @@ private suspend fun handleFindJoinPaths(
         optionalBoolean(request, "foreign_key_only").getOrElse {
             return it
         } == true
-    val pageParams =
-        parseListPageParams(request).getOrElse {
-            return it
-        }
     if (maxHopsArg != null && maxHopsArg !in 1..FIND_JOIN_PATHS_MAX_HOPS) {
         return toolError(
             ERROR_INVALID_ARGUMENTS,
@@ -427,6 +421,7 @@ private suspend fun handleFindJoinPaths(
     val maxHops = (maxHopsArg ?: FIND_JOIN_PATHS_DEFAULT_HOPS)
 
     if (toReference == null) {
+        val pageParams = checkNotNull(neighborPage)
         val edges =
             findDirectJoinEdges(
                 tables,
@@ -451,6 +446,7 @@ private suspend fun handleFindJoinPaths(
         return objectToolResult(result)
     }
 
+    // offset/limit page neighbors only; a path query ignores them, including invalid values.
     val toTable =
         resolveTableReference(toReference, defaultSchema, tables).getOrElse {
             return it

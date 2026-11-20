@@ -6,10 +6,16 @@ import com.safedb.model.PlanBlockingOperation
 import com.safedb.model.PlanJoinEvidence
 import com.safedb.model.PlanOperationKind
 import com.safedb.model.PlanRelationAccess
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 
 internal fun parsePostgresPlan(raw: String): NormalizedQueryPlan? = runCatching {
     val document = planJson.parseToJsonElement(raw)
@@ -418,3 +424,24 @@ private fun findJsonCost(element: JsonElement): Double? =
         is JsonArray -> element.firstNotNullOfOrNull(::findJsonCost)
         else -> null
     }
+
+private val planJson = Json { ignoreUnknownKeys = true }
+
+private fun capPlanRows(rows: Long?, cap: Long?): Long? =
+    if (rows != null && cap != null) minOf(rows, cap) else rows
+
+private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+
+private fun JsonObject.long(key: String): Long? =
+    (this[key] as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() }
+
+private fun JsonObject.double(key: String): Double? = (this[key] as? JsonPrimitive)?.doubleOrNull
+
+private fun JsonObject.boolean(key: String): Boolean? =
+    (this[key] as? JsonPrimitive)?.let {
+        it.booleanOrNull ?: it.contentOrNull?.toBooleanStrictOrNull()
+    }
+
+private fun JsonObject.objectValue(key: String): JsonObject? = this[key] as? JsonObject
+
+private fun JsonObject.arrayValue(key: String): JsonArray? = this[key] as? JsonArray

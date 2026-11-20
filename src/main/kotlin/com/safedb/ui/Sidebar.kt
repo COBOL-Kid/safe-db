@@ -651,20 +651,6 @@ private fun SidebarFade(
     }
 }
 
-internal enum class SidebarUtilityItem {
-    Command,
-    Status,
-    Settings,
-    Theme,
-}
-
-internal fun sidebarCompactUtilityItemsAtStep(step: Int): List<SidebarUtilityItem> =
-    SidebarUtilityItem.entries.take(step.coerceIn(0, SidebarUtilityItem.entries.size))
-
-internal fun sidebarExpandedUtilityItemsAtStep(step: Int): List<SidebarUtilityItem> =
-    listOf(SidebarUtilityItem.Status, SidebarUtilityItem.Settings, SidebarUtilityItem.Theme)
-        .filterIndexed { index, _ -> step >= SidebarRevealStatus + index }
-
 internal fun sidebarRevealSteps(from: Int, to: Int): List<Int> =
     when {
         from < to -> ((from + 1)..to).toList()
@@ -682,8 +668,6 @@ private val NavRailIndicatorWidth = 3.dp
 private val NavRailIconStartGap = 9.dp
 private val NavRailIconSize = 18.dp
 private val NavRailLabelGap = 11.dp
-
-internal fun navButtonIconStartOffset(): Dp = NavRailIndicatorWidth + NavRailIconStartGap
 
 internal fun navButtonLabelStartOffset(): Dp =
     NavRailIndicatorWidth + NavRailIconStartGap + NavRailIconSize + NavRailLabelGap

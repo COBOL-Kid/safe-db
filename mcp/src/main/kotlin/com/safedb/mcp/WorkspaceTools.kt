@@ -49,24 +49,10 @@ internal fun registerWorkspaceTools(
                 properties =
                     buildJsonObject {
                         put("connection_id", connectionIdProperty(optional = true))
-                        put("offset", offsetProperty())
-                        put(
-                            "limit",
-                            boundedLimitProperty(
-                                defaultLimit = LIST_DEFAULT_LIMIT,
-                                maxLimit = LIST_MAX_LIMIT,
-                                noun = "saved queries",
-                            ),
-                        )
+                        putOffsetAndLimit("saved queries")
                     },
             ),
-        outputSchema =
-            objectOutputSchema(listOf("saved_queries", "total_count", "truncated")) {
-                put("saved_queries", arrayProp())
-                put("total_count", intProp())
-                put("truncated", boolProp())
-                put("next_offset", intProp())
-            },
+        outputSchema = pagedListOutputSchema("saved_queries"),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_saved_queries failed") {
