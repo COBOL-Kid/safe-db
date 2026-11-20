@@ -11,8 +11,8 @@
 - A result whose JSONL cache file fails to write still counts toward the result store's 32 MiB cap, using an estimated in-memory size.
 - Saved connections, saved queries, query history, and recipes are guarded by cross-process file locks (`*.lock` files in the data directory), not just in-process locks, so separate processes sharing a store serialize their reads and writes.
 - `safe-db-mcp connections delete` says when the saved queries and query history it removed live in the shared store used by the desktop app.
-- SQL Server queries run with JDBC `autoCommit = false` at `READ_UNCOMMITTED`, restore `LOCK_TIMEOUT` to `-1` afterward. JDBC query, socket, and lock timeouts (error 1222) are reported as "Query timed out after …ms".
-- The desktop sidebar shows "Checking connection…" while it probes a newly selected connection instead of flashing Not connected, and skips reachability probes while the app window is inactive.
+- SQL Server queries run with JDBC `autoCommit = false` at `READ_UNCOMMITTED`, restore `LOCK_TIMEOUT` to `-1` afterward, and discard the pooled connection when that restore fails. JDBC query, socket, and lock timeouts (error 1222) are reported as "Query timed out after …ms".
+- The desktop sidebar shows "Checking connection…" while it probes a newly selected connection instead of flashing Not connected, and skips reachability probes only while no Safe-DB window (main or Explore) is active.
 - SQL Editor and Query Builder say "Running query" while a run is in progress with Risk gate Off, instead of "Assessing query risk".
 - Editing a query, switching connections, or otherwise discarding an in-flight desktop run no longer writes that run to Query History. MCP runs and ordinary completed or failed runs still record as before.
 

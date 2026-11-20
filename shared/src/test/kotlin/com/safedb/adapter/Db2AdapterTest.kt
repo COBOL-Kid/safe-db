@@ -280,26 +280,22 @@ class Db2AdapterTest {
 
     @Test
     fun db2TreatsUndefinedObjectsAsMissingExplainTables() {
-        assertTrue(with(Db2Adapter) { SQLException("no", "42704", 0).isUndefinedObject() })
-        assertTrue(with(Db2Adapter) { SQLException("no", "HY000", -204).isUndefinedObject() })
-        assertTrue(
-            with(Db2Adapter) { SQLException("SQLCODE=-204", "HY000", 0).isUndefinedObject() },
-        )
-        assertTrue(
-            with(Db2Adapter) { SQLException("undefined name", "HY000", 0).isUndefinedObject() },
-        )
-        assertFalse(with(Db2Adapter) { SQLException("other", "HY000", 0).isUndefinedObject() })
-        assertFalse(with(Db2Adapter) { RuntimeException("undefined name").isUndefinedObject() })
+        assertTrue(SQLException("no", "42704", 0).isUndefinedObject())
+        assertTrue(SQLException("no", "HY000", -204).isUndefinedObject())
+        assertTrue(SQLException("SQLCODE=-204", "HY000", 0).isUndefinedObject())
+        assertTrue(SQLException("undefined name", "HY000", 0).isUndefinedObject())
+        assertFalse(SQLException("other", "HY000", 0).isUndefinedObject())
+        assertFalse(RuntimeException("undefined name").isUndefinedObject())
     }
 
     @Test
     fun db2SelectsQuotedAuthExplainPrefixAheadOfSystools() {
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Found("\"APP\"."),
+            LuwExplainPrefix.Found("\"APP\"."),
             Db2Adapter.selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Present,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
             ),
         )
     }
@@ -307,19 +303,19 @@ class Db2AdapterTest {
     @Test
     fun db2UsesSystoolsOnlyWhenAuthExplainTablesAreAbsent() {
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Found("SYSTOOLS."),
+            LuwExplainPrefix.Found("SYSTOOLS."),
             Db2Adapter.selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Absent,
+                ExplainTablePresence.Present,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Missing,
+            LuwExplainPrefix.Missing,
             Db2Adapter.selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
-                Db2Adapter.ExplainTablePresence.Absent,
+                ExplainTablePresence.Absent,
+                ExplainTablePresence.Absent,
             ),
         )
     }
@@ -327,34 +323,34 @@ class Db2AdapterTest {
     @Test
     fun db2LeavesExplainPrefixUnreadableWhenAuthLookupFails() {
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
+            LuwExplainPrefix.Unreadable,
             Db2Adapter.selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Failed,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Failed,
+                ExplainTablePresence.Present,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
+            LuwExplainPrefix.Unreadable,
             Db2Adapter.selectLuwExplainPrefix(
                 null,
-                Db2Adapter.ExplainTablePresence.Present,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
+            LuwExplainPrefix.Unreadable,
             Db2Adapter.selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
-                Db2Adapter.ExplainTablePresence.Failed,
+                ExplainTablePresence.Absent,
+                ExplainTablePresence.Failed,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
+            LuwExplainPrefix.Unreadable,
             Db2Adapter.selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
+                ExplainTablePresence.Absent,
                 null,
             ),
         )
@@ -417,12 +413,12 @@ class Db2AdapterTest {
             listOf(customer, orderId, lineNo),
             Db2Adapter.completeDb2ForeignKeys(
                 listOf(
-                    Db2Adapter.CountedForeignKey(customer, 1),
-                    Db2Adapter.CountedForeignKey(blankOrder, 2),
-                    Db2Adapter.CountedForeignKey(blankLine, 2),
-                    Db2Adapter.CountedForeignKey(partial, 2),
-                    Db2Adapter.CountedForeignKey(orderId, 2),
-                    Db2Adapter.CountedForeignKey(lineNo, 2),
+                    CountedForeignKey(customer, 1),
+                    CountedForeignKey(blankOrder, 2),
+                    CountedForeignKey(blankLine, 2),
+                    CountedForeignKey(partial, 2),
+                    CountedForeignKey(orderId, 2),
+                    CountedForeignKey(lineNo, 2),
                 ),
             ),
         )

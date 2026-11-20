@@ -1,12 +1,10 @@
 package com.safedb.mcp
 
-import com.safedb.service.QueryFailureException
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
 
 internal fun registerQueryTools(server: Server, service: SafeDbService, resultStore: ResultStore) {
@@ -59,16 +57,8 @@ private suspend fun handleRunQuery(
         .getOrElse {
             return it
         }
-    val connectionId =
-        requiredString(request, "connection_id").getOrElse {
-            return it
-        }
-    val sql =
-        requiredString(request, "sql").getOrElse {
-            return it
-        }
-    val defaultSchemaArg =
-        optionalString(request, "default_schema").getOrElse {
+    val args =
+        parseSqlToolArgs(request).getOrElse {
             return it
         }
     val confirmation =
@@ -77,21 +67,16 @@ private suspend fun handleRunQuery(
         }
     return try {
         val resolved =
-            service.runQueryWithSchema(connectionId, confirmation) { connection, schema, settings ->
-                parseSqlSpecOrThrow(sql, defaultSchemaArg, connection, schema, settings)
+            service.runQueryWithSchema(
+                args.connectionId,
+                confirmation,
+            ) { connection, schema, settings ->
+                parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
+                    throw ToolFailure(it)
+                }
             }
         successReceipt(resolved.result, resultStore, resolved.spec, resolved.connection)
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: SqlSpecResolutionException) {
-        toolError(error.errorCode, error.message)
-    } catch (error: QueryFailureException) {
-        mapQueryFailure(error)
-    } catch (error: IllegalArgumentException) {
-        if (error.message == "Connection not found") {
-            toolError(ERROR_NOT_FOUND, "Connection not found")
-        } else {
-            throw error
-        }
+    } catch (error: Exception) {
+        mapSqlToolFailure(error)
     }
 }

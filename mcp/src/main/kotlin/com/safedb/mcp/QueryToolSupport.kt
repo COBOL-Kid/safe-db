@@ -56,18 +56,37 @@ internal suspend fun executeConfirmedQuery(
     }
 }
 
-internal class SqlSpecResolutionException(
-    val errorCode: String,
-    override val message: String,
-) : RuntimeException(message)
+internal data class SqlToolArgs(
+    val connectionId: String,
+    val sql: String,
+    val defaultSchema: String?,
+)
 
-internal fun parseSqlSpecOrThrow(
+internal fun parseSqlToolArgs(request: CallToolRequest): Arg<SqlToolArgs> {
+    val connectionId =
+        requiredString(request, "connection_id").getOrElse {
+            return Arg.Err(it)
+        }
+    val sql =
+        requiredString(request, "sql").getOrElse {
+            return Arg.Err(it)
+        }
+    val defaultSchema =
+        optionalString(request, "default_schema").getOrElse {
+            return Arg.Err(it)
+        }
+    return Arg.Ok(SqlToolArgs(connectionId, sql, defaultSchema))
+}
+
+internal class ToolFailure(val result: CallToolResult) : Exception()
+
+internal fun parseSqlSpec(
     sql: String,
     defaultSchemaArg: String?,
     connection: ConnectionDef,
     schema: Schema,
     settings: Settings,
-): QuerySpec {
+): Arg<QuerySpec> {
     val defaultSchema = defaultSchemaArg ?: settingsDefaultSchema(settings, connection.id)
     return when (
         val parsed =
@@ -80,11 +99,13 @@ internal fun parseSqlSpecOrThrow(
             )
     ) {
         is SqlParseResult.Failure ->
-            throw SqlSpecResolutionException(
-                ERROR_PARSE,
-                parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
+            Arg.Err(
+                toolError(
+                    ERROR_PARSE,
+                    parsed.issues.joinToString(separator = " ") { mcpParseMessage(it) },
+                ),
             )
-        is SqlParseResult.Success -> parsed.spec
+        is SqlParseResult.Success -> Arg.Ok(parsed.spec)
     }
 }
 
@@ -100,30 +121,20 @@ internal suspend fun resolveSqlSpec(
     service: SafeDbService,
     request: CallToolRequest,
 ): Arg<ResolvedSql> {
-    val connectionId =
-        requiredString(request, "connection_id").getOrElse {
-            return Arg.Err(it)
-        }
-    val sql =
-        requiredString(request, "sql").getOrElse {
-            return Arg.Err(it)
-        }
-    val defaultSchemaArg =
-        optionalString(request, "default_schema").getOrElse {
+    val args =
+        parseSqlToolArgs(request).getOrElse {
             return Arg.Err(it)
         }
     val connection =
-        service.listConnections().find { it.id == connectionId }
+        service.listConnections().find { it.id == args.connectionId }
             ?: return Arg.Err(toolError(ERROR_NOT_FOUND, "Connection not found"))
     val schema = service.getSchema(connection.id)
     val settings = service.getSettings()
     val spec =
-        try {
-            parseSqlSpecOrThrow(sql, defaultSchemaArg, connection, schema, settings)
-        } catch (error: SqlSpecResolutionException) {
-            return Arg.Err(toolError(error.errorCode, error.message))
+        parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
+            return Arg.Err(it)
         }
-    return Arg.Ok(ResolvedSql(connectionId, connection, spec, schema, settings))
+    return Arg.Ok(ResolvedSql(args.connectionId, connection, spec, schema, settings))
 }
 
 internal fun mcpParseMessage(issue: SqlIssue): String =
@@ -242,6 +253,20 @@ internal fun mapQueryFailure(failure: QueryFailureException): CallToolResult {
             )
     }
 }
+
+internal fun mapSqlToolFailure(error: Exception): CallToolResult =
+    when (error) {
+        is CancellationException -> throw error
+        is ToolFailure -> error.result
+        is QueryFailureException -> mapQueryFailure(error)
+        is IllegalArgumentException ->
+            if (error.message == "Connection not found") {
+                toolError(ERROR_NOT_FOUND, "Connection not found")
+            } else {
+                throw error
+            }
+        else -> throw error
+    }
 
 internal fun riskSummary(evaluation: QueryRiskEvaluation): QueryRiskSummary {
     val assessment = evaluation.finalAssessment ?: evaluation.staticAssessment

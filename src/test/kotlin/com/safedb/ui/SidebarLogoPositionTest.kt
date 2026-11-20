@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import com.safedb.AppRoute
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.DatabaseReachability
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,7 +26,7 @@ class SidebarLogoPositionTest {
                         route = AppRoute.Home,
                         isDark = false,
                         collapsed = collapsed,
-                        connected = false,
+                        reachability = DatabaseReachability.Disconnected,
                         onCollapsedChange = { collapsed = it },
                         onNavigate = {},
                         onOpenSettings = {},

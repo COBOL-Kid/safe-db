@@ -56,9 +56,9 @@ class ExploreSampleSupportTest {
             )
         val index = SampleIndex(sample)
 
-        assertTrue(matchesMembers(ResultCell.text("NorthEast"), emptySet()))
-        assertTrue(matchesMembers(null, setOf("<null>")))
-        assertFalse(matchesMembers(null, setOf("NorthEast")))
+        assertTrue(pivotCellMatches(ResultCell.text("NorthEast"), emptySet()))
+        assertTrue(pivotCellMatches(null, setOf("<null>")))
+        assertFalse(pivotCellMatches(null, setOf("NorthEast")))
 
         assertTrue(matchesLabelOp("NorthEast", LabelFilterOp.Equals, "northeast"))
         assertTrue(matchesLabelOp("NorthEast", LabelFilterOp.StartsWith, "north"))

@@ -78,34 +78,18 @@ object Db2Adapter {
             }
         }
 
-    internal enum class ExplainTablePresence {
-        Present,
-        Absent,
-        Failed,
-    }
-
-    internal sealed interface LuwExplainPrefix {
-        data class Found(val prefix: String) : LuwExplainPrefix
-
-        data object Missing : LuwExplainPrefix
-
-        data object Unreadable : LuwExplainPrefix
-    }
-
-    internal data class CountedForeignKey(val key: MetadataForeignKey, val columnCount: Int)
-
     // Delimited identifier. Control characters and over-long names are rejected so a
     // CURRENT SQLID or session authorization id cannot break out of the qualifier.
     internal fun quoteDb2Ident(name: String): String? {
         if (name.length > 128 || name.any { it.isISOControl() }) return null
         return "\"${name.replace("\"", "\"\"")}\""
     }
+}
 
-    internal fun Throwable.isUndefinedObject(): Boolean {
-        val sqlException = this as? SQLException ?: return false
-        return sqlException.sqlState == "42704" ||
-            sqlException.errorCode == -204 ||
-            sqlException.message?.contains("-204", ignoreCase = true) == true ||
-            sqlException.message?.contains("undefined name", ignoreCase = true) == true
-    }
+internal fun Throwable.isUndefinedObject(): Boolean {
+    val sqlException = this as? SQLException ?: return false
+    return sqlException.sqlState == "42704" ||
+        sqlException.errorCode == -204 ||
+        sqlException.message?.contains("-204", ignoreCase = true) == true ||
+        sqlException.message?.contains("undefined name", ignoreCase = true) == true
 }

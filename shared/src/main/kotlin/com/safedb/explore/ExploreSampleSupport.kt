@@ -3,11 +3,9 @@ package com.safedb.explore
 import com.safedb.model.QueryResult
 import com.safedb.model.ResultCell
 
-internal fun sampleColumnIndexes(sample: QueryResult): Map<String, Int> =
-    sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
-
-internal class SampleIndex(val sample: QueryResult) {
-    val indexes: Map<String, Int> = sampleColumnIndexes(sample)
+internal class SampleIndex(sample: QueryResult) {
+    private val indexes: Map<String, Int> =
+        sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
 
     fun columnIndex(column: String): Int? = indexes[column]
 
@@ -19,9 +17,6 @@ internal class SampleIndex(val sample: QueryResult) {
     fun cell(row: List<ResultCell>, column: String): ResultCell =
         cellOrNull(row, column) ?: ResultCell.Null
 }
-
-internal fun matchesMembers(cell: ResultCell?, includedKeys: Set<String>): Boolean =
-    includedKeys.isEmpty() || pivotCellMatches(cell, includedKeys)
 
 internal fun matchesLabelOp(text: String, op: LabelFilterOp, value: String): Boolean =
     when (op) {
@@ -41,7 +36,7 @@ internal fun passesPivotFilters(
 ): Boolean = filters.all { filter ->
     when (filter) {
         is PivotFilter.Members ->
-            matchesMembers(sampleIndex.cellOrNull(row, filter.column), filter.includedKeys)
+            pivotCellMatches(sampleIndex.cellOrNull(row, filter.column), filter.includedKeys)
         is PivotFilter.Label ->
             matchesPivotLabelFilter(sampleIndex.cellOrNull(row, filter.column), filter)
         is PivotFilter.Value -> true

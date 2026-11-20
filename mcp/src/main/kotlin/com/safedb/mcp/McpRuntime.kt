@@ -1,21 +1,14 @@
 package com.safedb.mcp
 
 import com.safedb.adapter.ConnectionFailedException
-import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
-import com.safedb.model.HistoryEntry
-import com.safedb.model.QuerySpec
-import com.safedb.model.SavedQuery
-import com.safedb.model.Schema
-import com.safedb.model.Settings
 import com.safedb.model.displayName
 import com.safedb.platform.DesktopPlatform
-import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.secrets.ENV_BACKEND
 import com.safedb.secrets.RequestedBackend
 import com.safedb.secrets.SecretsManager
-import com.safedb.service.QueryRunRequest
+import com.safedb.service.DispatchingSafeDbService
 import com.safedb.service.SafeDbService
 import com.safedb.service.SafeDbServiceImpl
 import com.safedb.store.ConfigStore
@@ -38,7 +31,6 @@ import java.nio.file.Path
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -353,103 +345,30 @@ internal fun createMcpService(
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ): SafeDbService {
     val queryStore = QueryStore.new(dataDir)
-    return DispatchingMcpSafeDbService(
-        delegate =
+    return DispatchingSafeDbService(
+        McpConnectionDeleteService(
             SafeDbServiceImpl(
                 configStore = ConfigStore.new(dataDir),
                 queryStore = queryStore,
                 settingsStore = SettingsStore.new(dataDir),
                 recipeStore = RecipeStore.new(dataDir),
             ),
-        queryStore = queryStore,
-        ioDispatcher = ioDispatcher,
+            queryStore,
+        ),
+        ioDispatcher,
     )
 }
 
 // The desktop app keeps saved queries and history after a connection is removed; MCP and
 // the CLI delete them so run_saved_query cannot report not_found for a deleted connection.
-// All service/store operations are dispatched onto ioDispatcher so file I/O avoids the SDK context.
-private class DispatchingMcpSafeDbService(
+private class McpConnectionDeleteService(
     private val delegate: SafeDbService,
     private val queryStore: QueryStore,
-    private val ioDispatcher: CoroutineDispatcher,
-) : SafeDbService {
-    override suspend fun testConnection(def: ConnectionDef, password: String?) = onIo {
-        delegate.testConnection(def, password)
-    }
-
-    override suspend fun createConnection(def: ConnectionDef, password: String) = onIo {
-        delegate.createConnection(def, password)
-    }
-
-    override suspend fun updateConnection(def: ConnectionDef, password: String?) = onIo {
-        delegate.updateConnection(def, password)
-    }
-
-    override suspend fun listConnections(): List<ConnectionDef> = onIo(delegate::listConnections)
-
-    override suspend fun deleteConnection(id: String) = onIo {
+) : SafeDbService by delegate {
+    override suspend fun deleteConnection(id: String) {
         delegate.deleteConnection(id)
         queryStore.deleteForConnection(id)
     }
-
-    override suspend fun lockCredentials() = onIo(delegate::lockCredentials)
-
-    override suspend fun getSchema(connectionId: String): Schema = onIo {
-        delegate.getSchema(connectionId)
-    }
-
-    override suspend fun runQuery(request: QueryRunRequest) = onIo { delegate.runQuery(request) }
-
-    override suspend fun runQueryWithSchema(
-        connectionId: String,
-        confirmation: QueryExecutionConfirmation?,
-        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
-    ) = onIo { delegate.runQueryWithSchema(connectionId, confirmation, resolveSpec) }
-
-    override suspend fun assessQuery(request: QueryRunRequest) = onIo {
-        delegate.assessQuery(request)
-    }
-
-    override suspend fun assessQueryWithSchema(
-        connectionId: String,
-        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
-    ) = onIo { delegate.assessQueryWithSchema(connectionId, resolveSpec) }
-
-    override suspend fun listSavedQueries(): List<SavedQuery> = onIo(delegate::listSavedQueries)
-
-    override suspend fun saveSavedQuery(query: SavedQuery) = onIo { delegate.saveSavedQuery(query) }
-
-    override suspend fun deleteSavedQuery(id: String) = onIo { delegate.deleteSavedQuery(id) }
-
-    override suspend fun listExploreRecipes(): List<ExploreRecipe> =
-        onIo(delegate::listExploreRecipes)
-
-    override suspend fun saveExploreRecipe(recipe: ExploreRecipe) = onIo {
-        delegate.saveExploreRecipe(recipe)
-    }
-
-    override suspend fun deleteExploreRecipe(id: String) = onIo { delegate.deleteExploreRecipe(id) }
-
-    override suspend fun importExploreRecipe(json: String, nowEpochSec: String) = onIo {
-        delegate.importExploreRecipe(json, nowEpochSec)
-    }
-
-    override suspend fun exportExploreRecipe(recipe: ExploreRecipe) = onIo {
-        delegate.exportExploreRecipe(recipe)
-    }
-
-    override suspend fun listHistory(): List<HistoryEntry> = onIo(delegate::listHistory)
-
-    override suspend fun clearHistory() = onIo(delegate::clearHistory)
-
-    override suspend fun deleteHistoryEntry(id: String) = onIo { delegate.deleteHistoryEntry(id) }
-
-    override suspend fun getSettings(): Settings = onIo(delegate::getSettings)
-
-    override suspend fun saveSettings(settings: Settings) = onIo { delegate.saveSettings(settings) }
-
-    private suspend fun <T> onIo(block: suspend () -> T): T = withContext(ioDispatcher) { block() }
 }
 
 internal fun createSafeDbMcpServer(

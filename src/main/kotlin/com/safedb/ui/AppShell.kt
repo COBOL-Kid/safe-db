@@ -15,11 +15,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.safedb.AppRoute
 import com.safedb.AppState
+import com.safedb.SchemaSelectionIntent
+import com.safedb.SchemaSelectionSource
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QuerySpec
+import com.safedb.model.Settings
 import com.safedb.query.sql.SqlParseResult
+import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.resolveQuerySchemaSelection
 import com.safedb.ui.components.CommandPalette
+import com.safedb.ui.components.ConfirmDialog
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
 import com.safedb.viewmodel.ExploreOrigin
@@ -193,7 +198,6 @@ internal fun AppShellContent(
                             viewModel.schema.invalidateConnection(id)
                             viewModel.settings.clearSchemaSelectionsForConnection(id)
                         },
-                        onSaved = {},
                     )
                 AppRoute.Builder ->
                     BuilderScreen(
@@ -297,3 +301,64 @@ internal fun AppShellContent(
 
 internal fun shouldShowSettingsPanel(requested: Boolean, initialLoading: Boolean): Boolean =
     requested && !initialLoading
+
+internal data class ConnectionSchemaHandlers(
+    val onConnectionSelected: (ConnectionDef) -> Unit,
+    val onSchemaSelected: (String) -> Unit,
+    val onUnavailableSchemaSelection: (SchemaSelectionIntent) -> Unit,
+    val onDismissSchemaHistoryError: () -> Unit,
+)
+
+internal data class PendingConnectionSwitch(
+    val target: ConnectionDef,
+    val thenNavigate: AppRoute?,
+)
+
+internal fun connectionSchemaHandlers(
+    appState: AppState,
+    viewModel: AppViewModel,
+    settings: Settings,
+    activeConnectionId: String?,
+): ConnectionSchemaHandlers =
+    ConnectionSchemaHandlers(
+        onConnectionSelected = { connection ->
+            appState.setActiveConnection(
+                connection.id,
+                resolveConnectionSchemaSelection(connection.id, settings),
+            )
+        },
+        onSchemaSelected = { schema ->
+            activeConnectionId?.let { connectionId ->
+                appState.setActiveSchema(schema)
+                viewModel.settings.rememberLastSchema(connectionId, schema)
+            }
+        },
+        onUnavailableSchemaSelection = { selection ->
+            activeConnectionId?.let { connectionId ->
+                if (selection.source == SchemaSelectionSource.ConnectionHistory) {
+                    viewModel.settings.forgetLastSchema(connectionId)
+                }
+            }
+        },
+        onDismissSchemaHistoryError = viewModel.settings::clearSchemaHistoryError,
+    )
+
+@Composable
+internal fun ConnectionSwitchConfirmDialog(
+    pending: PendingConnectionSwitch?,
+    onConfirm: (PendingConnectionSwitch) -> Unit,
+    onCancel: () -> Unit,
+) {
+    pending?.let { switch ->
+        ConfirmDialog(
+            open = true,
+            title = "Switch connection?",
+            message =
+                "Switching to ${switch.target.name} clears the current query canvas and results. " +
+                    "Saved queries are not affected.",
+            confirmLabel = "Switch and clear",
+            onConfirm = { onConfirm(switch) },
+            onCancel = onCancel,
+        )
+    }
+}

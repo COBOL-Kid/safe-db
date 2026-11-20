@@ -154,10 +154,14 @@ object MssqlAdapter {
                     if (isMssqlTimeout(e)) throw QueryTimedOutException(timeoutMs)
                     throw e
                 } finally {
-                    runCatching {
+                    val restored = runCatching {
                         if (!timedConn.isClosed) {
                             timedConn.createStatement().use { it.execute("SET LOCK_TIMEOUT -1") }
                         }
+                    }
+                    // A session whose lock timeout could not be reset must not be pooled again.
+                    if (restored.isFailure) {
+                        runCatching { dataSource.evictConnection(timedConn) }
                     }
                 }
             }

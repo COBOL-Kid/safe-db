@@ -11,6 +11,20 @@ import java.sql.Statement
 import java.sql.Timestamp
 import kotlin.random.Random
 
+internal enum class ExplainTablePresence {
+    Present,
+    Absent,
+    Failed,
+}
+
+internal sealed interface LuwExplainPrefix {
+    data class Found(val prefix: String) : LuwExplainPrefix
+
+    data object Missing : LuwExplainPrefix
+
+    data object Unreadable : LuwExplainPrefix
+}
+
 internal class Db2TimedJdbc(
     private val conn: Connection,
     private val timeoutSeconds: Int,
@@ -28,9 +42,9 @@ internal fun Db2Adapter.explainLuw(
     // Resolve the EXPLAIN table schema before writing rows, matching explainZos.
     val prefix =
         when (val resolved = timed.resolveLuwExplainPrefix()) {
-            Db2Adapter.LuwExplainPrefix.Unreadable -> return explainTablesUnreadable()
-            Db2Adapter.LuwExplainPrefix.Missing -> return missingLuwExplainTables()
-            is Db2Adapter.LuwExplainPrefix.Found -> resolved.prefix
+            LuwExplainPrefix.Unreadable -> return explainTablesUnreadable()
+            LuwExplainPrefix.Missing -> return missingLuwExplainTables()
+            is LuwExplainPrefix.Found -> resolved.prefix
         }
     val queryNo = Random.nextInt(100_000, Int.MAX_VALUE)
     try {
@@ -107,13 +121,13 @@ internal fun Db2Adapter.explainZos(
     val planTable = "$qualifier.PLAN_TABLE"
     val statementTable = "$qualifier.DSN_STATEMNT_TABLE"
     when (timed.explainTablePresence("SELECT 1 FROM $planTable FETCH FIRST 1 ROW ONLY")) {
-        Db2Adapter.ExplainTablePresence.Absent -> return missingZosPlanTable()
-        Db2Adapter.ExplainTablePresence.Failed ->
+        ExplainTablePresence.Absent -> return missingZosPlanTable()
+        ExplainTablePresence.Failed ->
             return ExplainResult.Unavailable(
                 PlanUnavailableReason.ExecutionFailure,
                 "Db2 PLAN_TABLE could not be read",
             )
-        Db2Adapter.ExplainTablePresence.Present -> Unit
+        ExplainTablePresence.Present -> Unit
     }
     val queryNo = Random.nextInt(100_000, Int.MAX_VALUE)
     try {
@@ -194,21 +208,19 @@ internal fun Db2Adapter.luwExplainDeleteSql(prefix: String, keyed: Boolean): Str
 
 internal fun Db2Adapter.selectLuwExplainPrefix(
     quotedAuthId: String?,
-    authTables: Db2Adapter.ExplainTablePresence,
-    systoolsTables: Db2Adapter.ExplainTablePresence?,
-): Db2Adapter.LuwExplainPrefix {
-    if (quotedAuthId == null) return Db2Adapter.LuwExplainPrefix.Unreadable
+    authTables: ExplainTablePresence,
+    systoolsTables: ExplainTablePresence?,
+): LuwExplainPrefix {
+    if (quotedAuthId == null) return LuwExplainPrefix.Unreadable
     return when (authTables) {
-        Db2Adapter.ExplainTablePresence.Present ->
-            Db2Adapter.LuwExplainPrefix.Found("$quotedAuthId.")
-        Db2Adapter.ExplainTablePresence.Failed -> Db2Adapter.LuwExplainPrefix.Unreadable
-        Db2Adapter.ExplainTablePresence.Absent ->
+        ExplainTablePresence.Present -> LuwExplainPrefix.Found("$quotedAuthId.")
+        ExplainTablePresence.Failed -> LuwExplainPrefix.Unreadable
+        ExplainTablePresence.Absent ->
             when (systoolsTables) {
-                Db2Adapter.ExplainTablePresence.Present ->
-                    Db2Adapter.LuwExplainPrefix.Found("SYSTOOLS.")
-                Db2Adapter.ExplainTablePresence.Absent -> Db2Adapter.LuwExplainPrefix.Missing
-                Db2Adapter.ExplainTablePresence.Failed,
-                null -> Db2Adapter.LuwExplainPrefix.Unreadable
+                ExplainTablePresence.Present -> LuwExplainPrefix.Found("SYSTOOLS.")
+                ExplainTablePresence.Absent -> LuwExplainPrefix.Missing
+                ExplainTablePresence.Failed,
+                null -> LuwExplainPrefix.Unreadable
             }
     }
 }
@@ -247,7 +259,7 @@ private fun missingZosPlanTable(): ExplainResult.Unavailable =
 // EXPLAIN writes under the session authorization ID, then SYSTOOLS. CURRENT SCHEMA does not
 // choose the tables, so currentSchema must not be the probe. SYSTOOLS is probed only after
 // the authorization-id tables are confirmed absent.
-private fun Db2TimedJdbc.resolveLuwExplainPrefix(): Db2Adapter.LuwExplainPrefix {
+private fun Db2TimedJdbc.resolveLuwExplainPrefix(): LuwExplainPrefix {
     val quotedAuthId =
         try {
             sessionAuthId()?.let(Db2Adapter::quoteDb2Ident)
@@ -257,7 +269,7 @@ private fun Db2TimedJdbc.resolveLuwExplainPrefix(): Db2Adapter.LuwExplainPrefix 
     if (quotedAuthId == null) {
         return Db2Adapter.selectLuwExplainPrefix(
             null,
-            Db2Adapter.ExplainTablePresence.Failed,
+            ExplainTablePresence.Failed,
             null,
         )
     }
@@ -266,7 +278,7 @@ private fun Db2TimedJdbc.resolveLuwExplainPrefix(): Db2Adapter.LuwExplainPrefix 
             "SELECT 1 FROM $quotedAuthId.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY",
         )
     val systoolsTables =
-        if (authTables == Db2Adapter.ExplainTablePresence.Absent) {
+        if (authTables == ExplainTablePresence.Absent) {
             explainTablePresence(
                 "SELECT 1 FROM SYSTOOLS.EXPLAIN_INSTANCE FETCH FIRST 1 ROW ONLY",
             )
@@ -327,13 +339,12 @@ private fun Db2TimedJdbc.deleteLuwExplain(
     }
 }
 
-private fun Db2TimedJdbc.explainTablePresence(sql: String): Db2Adapter.ExplainTablePresence =
+private fun Db2TimedJdbc.explainTablePresence(sql: String): ExplainTablePresence =
     try {
         statement().use { stmt -> stmt.executeQuery(sql).use {} }
-        Db2Adapter.ExplainTablePresence.Present
+        ExplainTablePresence.Present
     } catch (e: SQLException) {
-        if (with(Db2Adapter) { e.isUndefinedObject() }) Db2Adapter.ExplainTablePresence.Absent
-        else Db2Adapter.ExplainTablePresence.Failed
+        if (e.isUndefinedObject()) ExplainTablePresence.Absent else ExplainTablePresence.Failed
     }
 
 private fun Db2TimedJdbc.queryLuwStatementCost(

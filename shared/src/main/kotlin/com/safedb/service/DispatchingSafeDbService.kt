@@ -1,4 +1,4 @@
-package com.safedb.viewmodel
+package com.safedb.service
 
 import com.safedb.explore.ExploreRecipe
 import com.safedb.model.ConnectionDef
@@ -8,12 +8,10 @@ import com.safedb.model.SavedQuery
 import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.query.QueryExecutionConfirmation
-import com.safedb.service.QueryRunRequest
-import com.safedb.service.SafeDbService
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
-internal class DispatchingSafeDbService(
+class DispatchingSafeDbService(
     private val delegate: SafeDbService,
     private val ioDispatcher: CoroutineDispatcher,
 ) : SafeDbService {

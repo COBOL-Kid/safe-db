@@ -218,7 +218,7 @@ val verifyUnitTestDiscovery =
         sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
         mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
         minimumDesktopTests.set(406)
-        minimumSharedTests.set(757)
+        minimumSharedTests.set(758)
         minimumMcpTests.set(251)
     }
 

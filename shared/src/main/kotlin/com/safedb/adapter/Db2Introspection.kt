@@ -232,14 +232,16 @@ internal fun Db2Adapter.db2Index(
     )
 }
 
-internal fun Db2Adapter.countedForeignKey(rs: ResultSet): Db2Adapter.CountedForeignKey? {
+internal data class CountedForeignKey(val key: MetadataForeignKey, val columnCount: Int)
+
+internal fun countedForeignKey(rs: ResultSet): CountedForeignKey? {
     val columnCount = rs.getObject("column_count") as? Number ?: return null
-    return Db2Adapter.CountedForeignKey(foreignKeyRow(rs), columnCount.toInt())
+    return CountedForeignKey(foreignKeyRow(rs), columnCount.toInt())
 }
 
 // A partial parent match must not become a shorter key.
 internal fun Db2Adapter.completeDb2ForeignKeys(
-    rows: List<Db2Adapter.CountedForeignKey>,
+    rows: List<CountedForeignKey>,
 ): List<MetadataForeignKey> =
     rows
         .groupBy { row ->

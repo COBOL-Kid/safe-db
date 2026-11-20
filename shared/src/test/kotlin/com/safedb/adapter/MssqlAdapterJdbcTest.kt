@@ -137,6 +137,30 @@ class MssqlAdapterJdbcTest {
     }
 
     @Test
+    fun mssqlExecuteQueryEvictsConnectionWhenLockTimeoutRestoreFails() {
+        val jdbc =
+            script(
+                onQuery = { rows(listOf("id"), listOf(listOf(42L)), listOf("BIGINT")) },
+                onExecute = { sql ->
+                    if (sql == "SET LOCK_TIMEOUT -1") throw SQLException("cannot restore")
+                    null
+                },
+            )
+        val ds = jdbc.dataSource()
+
+        val result =
+            MssqlAdapter.executeQuery(
+                ds,
+                CompiledQuery("SELECT [id] FROM [dbo].[orders]", emptyList()),
+                2_500,
+            )
+
+        assertEquals(42L, assertIs<ResultCell.IntegerCell>(result.rows.single().single()).value)
+        assertEquals(1, ds.evicted.size)
+        assertTrue("exec:SET LOCK_TIMEOUT -1" in jdbc.events)
+    }
+
+    @Test
     fun mssqlExplainRestoresShowplanXmlAndRetriesTransientCleanupFailure() {
         var offAttempts = 0
         val jdbc =

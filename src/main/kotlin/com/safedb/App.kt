@@ -44,20 +44,25 @@ import java.awt.event.WindowEvent
 fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window) {
     val viewModel = remember(appState, service) { AppViewModel(service) }
     DisposableEffect(viewModel) { onDispose(viewModel::close) }
+    // Read through a ref: listeners attached once must see the live Explore window.
+    val exploreWindowRef = remember { mutableStateOf<java.awt.Window?>(null) }
+    val republishWindowActivity = {
+        viewModel.setWindowActive(mainWindow.isActive || exploreWindowRef.value?.isActive == true)
+    }
     DisposableEffect(viewModel, mainWindow) {
-        viewModel.setWindowActive(mainWindow.isActive)
+        republishWindowActivity()
         val listener =
             object : WindowAdapter() {
                 override fun windowActivated(e: WindowEvent?) {
-                    viewModel.setWindowActive(true)
+                    republishWindowActivity()
                 }
 
                 override fun windowDeactivated(e: WindowEvent?) {
-                    viewModel.setWindowActive(false)
+                    republishWindowActivity()
                 }
 
                 override fun windowIconified(e: WindowEvent?) {
-                    viewModel.setWindowActive(false)
+                    republishWindowActivity()
                 }
             }
         mainWindow.addWindowListener(listener)
@@ -161,6 +166,34 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                 state = exploreWindowState,
             ) {
                 LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
+                DisposableEffect(viewModel, window) {
+                    val exploreWindow = window
+                    exploreWindowRef.value = exploreWindow
+                    republishWindowActivity()
+                    val listener =
+                        object : WindowAdapter() {
+                            override fun windowActivated(e: WindowEvent?) {
+                                republishWindowActivity()
+                            }
+
+                            override fun windowDeactivated(e: WindowEvent?) {
+                                republishWindowActivity()
+                            }
+
+                            override fun windowIconified(e: WindowEvent?) {
+                                republishWindowActivity()
+                            }
+                        }
+                    exploreWindow.addWindowListener(listener)
+                    onDispose {
+                        exploreWindow.removeWindowListener(listener)
+                        if (exploreWindowRef.value === exploreWindow) {
+                            exploreWindowRef.value = null
+                        }
+                        // Closing Explore while main is inactive must pause probes.
+                        republishWindowActivity()
+                    }
+                }
                 CompositionLocalProvider(LocalAppWindow provides window) {
                     SafeDbTheme(isDark = useDarkTheme, palette = themePalette) {
                         val exploreBgColor = MaterialTheme.colorScheme.background

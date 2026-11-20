@@ -14,14 +14,13 @@ fun applyExplore(sample: QueryResult, config: ExploreConfig): ExplorePreviewResu
 private class PivotEngine(private val sample: QueryResult, private val config: ExploreConfig) {
     private val sampleIndex = SampleIndex(sample)
     private val warnings = linkedSetOf<String>()
-    private val rowDimensions =
-        config.rowDimensions.filterKnown(sampleIndex.indexes, warnings, "row")
+    private val rowDimensions = config.rowDimensions.filterKnown(sampleIndex, warnings, "row")
     private val columnDimensions =
-        config.columnDimensions.filterKnown(sampleIndex.indexes, warnings, "column")
+        config.columnDimensions.filterKnown(sampleIndex, warnings, "column")
     private val measures =
         config.measures
             .ifEmpty { listOf(PivotMeasure.countRows()) }
-            .filterValid(sampleIndex.indexes, warnings)
+            .filterValid(sampleIndex, warnings)
             .ifEmpty { listOf(PivotMeasure.countRows()) }
 
     // Cache keys must remain unmutated BitSet clones so HashMap hashes/equality never drift;

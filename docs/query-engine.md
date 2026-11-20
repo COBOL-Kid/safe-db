@@ -93,7 +93,7 @@ Postgres `EXPLAIN` row estimates account for a `Limit` node that can stop early 
 | --- | --- | --- |
 | PostgreSQL | `SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED` | Verified TLS keeps pgjdbc trust and client certificates unless a launch profile is set. |
 | MySQL | `SET TRANSACTION READ ONLY, ISOLATION LEVEL READ UNCOMMITTED` | JVM trust, or a launch-profile PKCS12 store. |
-| SQL Server | JDBC `autoCommit = false`, isolation `READ_UNCOMMITTED`, `SET LOCK_TIMEOUT` (restored to `-1` in `finally`); no `BEGIN TRANSACTION` or `SET TRANSACTION READ ONLY` | JVM trust, or a launch-profile PKCS12 store. |
+| SQL Server | JDBC `autoCommit = false`, isolation `READ_UNCOMMITTED`, `SET LOCK_TIMEOUT` (restored to `-1` in `finally`; a failed restore discards the pooled connection); no `BEGIN TRANSACTION` or `SET TRANSACTION READ ONLY` | JVM trust, or a launch-profile PKCS12 store. |
 | Oracle | `SET TRANSACTION READ ONLY` | Verified TCPS uses an Oracle wallet. A generic PKCS12 launch profile is not a substitute. |
 | Db2 | No session SQL. JDBC `autoCommit = false`, `isReadOnly = true`, and isolation `READ UNCOMMITTED` | JVM trust, no wallet. `sslConnection` is a connection property, not part of the connect URL. |
 

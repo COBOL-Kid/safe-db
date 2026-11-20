@@ -12,24 +12,24 @@ internal fun cellKey(rowPath: String, columnPath: String, measureAlias: String):
     "$rowPath|$columnPath|$measureAlias"
 
 internal fun List<PivotDimension>.filterKnown(
-    indexes: Map<String, Int>,
+    sampleIndex: SampleIndex,
     warnings: MutableSet<String>,
     kind: String,
 ): List<PivotDimension> = filter { dimension ->
-    val known = indexes.containsKey(dimension.column)
+    val known = dimension.column in sampleIndex
     if (!known)
         warnings += "Unknown $kind dimension '${displayColumnLabel(dimension.column)}' was ignored"
     known
 }
 
 internal fun List<PivotMeasure>.filterValid(
-    indexes: Map<String, Int>,
+    sampleIndex: SampleIndex,
     warnings: MutableSet<String>,
 ): List<PivotMeasure> = filter { measure ->
     val valid =
         !measure.formula.isNullOrBlank() ||
             measure.fn == MeasureFn.Count ||
-            measure.sourceColumn?.let(indexes::containsKey) == true
+            measure.sourceColumn?.let { it in sampleIndex } == true
     if (!valid) warnings += "Measure '${measure.label}' references an unknown source column"
     valid
 }

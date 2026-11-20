@@ -86,32 +86,6 @@ internal fun Sidebar(
     route: AppRoute,
     isDark: Boolean,
     collapsed: Boolean,
-    connected: Boolean,
-    onCollapsedChange: (Boolean) -> Unit,
-    onNavigate: (AppRoute) -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenPalette: () -> Unit,
-    onToggleTheme: () -> Unit,
-) {
-    Sidebar(
-        route = route,
-        isDark = isDark,
-        collapsed = collapsed,
-        reachability =
-            if (connected) DatabaseReachability.Connected else DatabaseReachability.Disconnected,
-        onCollapsedChange = onCollapsedChange,
-        onNavigate = onNavigate,
-        onOpenSettings = onOpenSettings,
-        onOpenPalette = onOpenPalette,
-        onToggleTheme = onToggleTheme,
-    )
-}
-
-@Composable
-internal fun Sidebar(
-    route: AppRoute,
-    isDark: Boolean,
-    collapsed: Boolean,
     reachability: DatabaseReachability,
     onCollapsedChange: (Boolean) -> Unit,
     onNavigate: (AppRoute) -> Unit,

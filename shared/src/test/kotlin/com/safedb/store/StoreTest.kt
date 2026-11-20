@@ -23,6 +23,9 @@ import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.model.normalizeSettings
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -932,5 +935,84 @@ class StoreTest {
 
         assertTrue(failure.message?.contains("used an unsupported schema") == true)
         assertUnsupportedQuarantine(dir, path)
+    }
+
+    @Test
+    fun separateConfigStoreInstancesSerializeConcurrentReadModifyWrites() {
+        val dir = Files.createTempDirectory("safedb-config-lock-test")
+        val writers = 8
+        val pool = Executors.newFixedThreadPool(writers)
+        val ready = CountDownLatch(writers)
+        val start = CountDownLatch(1)
+
+        try {
+            val futures =
+                (0 until writers).map { idx ->
+                    pool.submit {
+                        val store = ConfigStore.new(dir)
+                        ready.countDown()
+                        assertTrue(start.await(5, TimeUnit.SECONDS))
+                        store.save(sampleConnection("c-$idx"))
+                    }
+                }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            start.countDown()
+            futures.forEach { it.get(15, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdownNow()
+        }
+
+        val ids = ConfigStore.new(dir).list().map { it.id }.toSet()
+        assertEquals((0 until writers).map { "c-$it" }.toSet(), ids)
+        assertTrue(Files.exists(dir.resolve("connections.json.lock")))
+    }
+
+    @Test
+    fun separateQueryStoreInstancesSerializeConcurrentSavedAndHistoryWrites() {
+        val dir = Files.createTempDirectory("safedb-query-lock-test")
+        val writers = 8
+        val pool = Executors.newFixedThreadPool(writers)
+        val ready = CountDownLatch(writers)
+        val start = CountDownLatch(1)
+        val spec = sampleSpec()
+
+        try {
+            val futures =
+                (0 until writers).map { idx ->
+                    pool.submit {
+                        val store = QueryStore.new(dir)
+                        ready.countDown()
+                        assertTrue(start.await(5, TimeUnit.SECONDS))
+                        store.saveQuery(SavedQuery("q-$idx", "Query $idx", "c1", spec, "1"))
+                        store.addHistory(
+                            HistoryEntry(
+                                id = "h-$idx",
+                                connectionId = "c1",
+                                connectionName = "Conn",
+                                spec = spec,
+                                rowCount = idx,
+                                warnings = emptyList(),
+                                timestamp = idx.toString(),
+                            ),
+                        )
+                    }
+                }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            start.countDown()
+            futures.forEach { it.get(15, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdownNow()
+        }
+
+        val reader = QueryStore.new(dir)
+        assertEquals(
+            (0 until writers).map { "q-$it" }.toSet(),
+            reader.listSaved().map { it.id }.toSet(),
+        )
+        assertEquals(
+            (0 until writers).map { "h-$it" }.toSet(),
+            reader.listHistory().map { it.id }.toSet(),
+        )
+        assertTrue(Files.exists(dir.resolve("queries.lock")))
     }
 }

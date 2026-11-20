@@ -60,7 +60,6 @@ fun ConnectionsScreen(
     viewModel: ConnectionsViewModel,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
-    onSaved: () -> Unit,
     openNewConnectionForm: Boolean = false,
     onOpenNewConnectionFormConsumed: () -> Unit = {},
     activeConnectionId: String? = null,
@@ -83,7 +82,6 @@ fun ConnectionsScreen(
         onEditingConnectionChange = { editingConnection = it },
         onDeleted = onDeleted,
         onConnectionChanged = onConnectionChanged,
-        onSaved = onSaved,
         activeConnectionId = activeConnectionId,
         defaultConnectionId = defaultConnectionId,
     )
@@ -98,7 +96,6 @@ internal fun ConnectionsScreenContent(
     onEditingConnectionChange: (ConnectionDef?) -> Unit,
     onDeleted: (String) -> Unit,
     onConnectionChanged: (String) -> Unit,
-    onSaved: () -> Unit,
     activeConnectionId: String? = null,
     defaultConnectionId: String? = null,
 ) {
@@ -197,7 +194,6 @@ internal fun ConnectionsScreenContent(
                         onSaved = { _, _ ->
                             onShowConnectionFormChange(false)
                             onEditingConnectionChange(null)
-                            onSaved()
                         },
                         modifier = Modifier.widthIn(max = 1_020.dp),
                     )

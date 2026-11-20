@@ -551,7 +551,6 @@ private fun renderConnectionsForm(
                     onEditingConnectionChange = {},
                     onDeleted = {},
                     onConnectionChanged = {},
-                    onSaved = {},
                 )
             }
         }

@@ -8,6 +8,7 @@ import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
 import com.safedb.resolveConnectionSchemaSelection
 import com.safedb.resolveQuerySchemaSelection
+import com.safedb.service.DispatchingSafeDbService
 import com.safedb.service.SafeDbService
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CancellationException
