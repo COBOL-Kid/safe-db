@@ -230,7 +230,7 @@ val verifyCoverageRatchet =
         reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
         // Shared floor is unit coverage from `check`. JDBC adapter bodies are covered by
         // integrationTest, which kover ignores.
-        coverageFloors.set(mapOf("desktop" to 91, "shared" to 89))
+        coverageFloors.set(mapOf("desktop" to 92, "shared" to 89))
     }
 
 val verifyMcpCoverageRatchet =

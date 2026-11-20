@@ -2,7 +2,7 @@
 
 `./gradlew check` is enough for most pull requests: desktop, `:shared`, and `:mcp` unit tests, `compileRenderKotlin`, test discovery, Docker harness orchestration, and Kover ratchets.
 
-Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 406 desktop, 758 shared, and 251 MCP tests, with 91% desktop, 89% shared, and 93% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report. The root Kover allowlist includes `com.safedb.launch.*` and `com.safedb.canvas.*`, and attributes split packages by source file (`CsvWriter.kt` in `com.safedb.export` and `SchemaRelationships.kt` in `com.safedb.schema` count under `:shared`, while desktop files in those packages count under desktop). Unknown split-package sourcefiles fail the ratchet.
+Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less builds. `check` requires at least 406 desktop, 758 shared, and 251 MCP tests, with 92% desktop, 89% shared, and 93% MCP line-coverage floors. Inspect JUnit XML if discovery is uncertain. Shared kover ignores `integrationTest`, matching MCP, so the ratchet is the `check` unit report. The root Kover allowlist includes `com.safedb.launch.*` and `com.safedb.canvas.*`, and attributes split packages by source file (`CsvWriter.kt` in `com.safedb.export` and `SchemaRelationships.kt` in `com.safedb.schema` count under `:shared`, while desktop files in those packages count under desktop). Unknown split-package sourcefiles fail the ratchet.
 
 | Command | Use |
 | --- | --- |
