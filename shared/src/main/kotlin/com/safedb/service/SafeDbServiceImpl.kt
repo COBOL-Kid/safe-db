@@ -159,7 +159,14 @@ internal constructor(
 
     override suspend fun runQuery(request: QueryRunRequest): QueryRunResult =
         withQuerySession(request.connectionId) { def, session, settings ->
-            runQueryInSession(def, session, settings, request.spec, request.confirmation)
+            runQueryInSession(
+                def,
+                session,
+                settings,
+                request.spec,
+                request.confirmation,
+                request.historyRecording,
+            )
         }
 
     override suspend fun runQueryWithSchema(
@@ -169,7 +176,15 @@ internal constructor(
     ): ResolvedQueryRun =
         withQuerySession(connectionId) { def, session, settings ->
             val spec = resolveSpec(def, session.schema, settings)
-            val result = runQueryInSession(def, session, settings, spec, confirmation)
+            val result =
+                runQueryInSession(
+                    def,
+                    session,
+                    settings,
+                    spec,
+                    confirmation,
+                    QueryHistoryRecording.Always,
+                )
             ResolvedQueryRun(def, spec, result)
         }
 
@@ -194,6 +209,7 @@ internal constructor(
         settings: Settings,
         spec: QuerySpec,
         confirmation: QueryExecutionConfirmation?,
+        historyRecording: QueryHistoryRecording,
     ): QueryRunResult =
         when (
             val outcome =
@@ -207,25 +223,29 @@ internal constructor(
                 )
         ) {
             is QueryCoreOutcome.Success -> {
-                recordHistory(
-                    def.id,
-                    def.name,
-                    outcome.historySpec,
-                    outcome.result,
-                    null,
-                    outcome.riskEvaluation,
-                )
+                if (historyRecording.shouldRecord()) {
+                    recordHistory(
+                        def.id,
+                        def.name,
+                        outcome.historySpec,
+                        outcome.result,
+                        null,
+                        outcome.riskEvaluation,
+                    )
+                }
                 QueryRunResult(outcome.result, outcome.riskEvaluation)
             }
             is QueryCoreOutcome.Failure -> {
-                recordHistory(
-                    def.id,
-                    def.name,
-                    outcome.error.historySpec ?: spec,
-                    null,
-                    outcome.error,
-                    outcome.error.riskEvaluation,
-                )
+                if (historyRecording.shouldRecord()) {
+                    recordHistory(
+                        def.id,
+                        def.name,
+                        outcome.error.historySpec ?: spec,
+                        null,
+                        outcome.error,
+                        outcome.error.riskEvaluation,
+                    )
+                }
                 throw QueryFailureException(outcome.error)
             }
         }

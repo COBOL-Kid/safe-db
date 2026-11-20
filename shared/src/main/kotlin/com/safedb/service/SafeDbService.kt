@@ -14,10 +14,19 @@ import com.safedb.query.QueryError
 import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.QueryRiskEvaluation
 
+fun interface QueryHistoryRecording {
+    fun shouldRecord(): Boolean
+
+    companion object {
+        val Always: QueryHistoryRecording = QueryHistoryRecording { true }
+    }
+}
+
 data class QueryRunRequest(
     val connectionId: String,
     val spec: QuerySpec,
     val confirmation: QueryExecutionConfirmation? = null,
+    val historyRecording: QueryHistoryRecording = QueryHistoryRecording.Always,
 )
 
 data class QueryRunResult(val queryResult: QueryResult, val riskEvaluation: QueryRiskEvaluation)

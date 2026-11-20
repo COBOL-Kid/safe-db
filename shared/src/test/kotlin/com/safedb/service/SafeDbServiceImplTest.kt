@@ -582,6 +582,84 @@ class SafeDbServiceImplTest {
     }
 
     @Test
+    fun runQuerySkipsHistoryWhenRecordingIsDisabledAfterExecution() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        var record = true
+        val stub = StubRunner()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory =
+                    QuerySessionFactory { _, _ ->
+                        QuerySession(
+                            schema = sampleSchema(),
+                            runner =
+                                object : QueryRunner by stub {
+                                    override suspend fun executeQuery(
+                                        compiled: CompiledQuery,
+                                        timeoutMs: Int,
+                                    ): Outcome<QueryResult> {
+                                        record = false
+                                        return stub.executeQuery(compiled, timeoutMs)
+                                    }
+                                },
+                        )
+                    },
+            )
+
+        val result =
+            service.runQuery(
+                QueryRunRequest(
+                    "c1",
+                    sampleQuerySpec(),
+                    historyRecording = QueryHistoryRecording { record },
+                ),
+            )
+
+        assertEquals(1, result.queryResult.rowCount)
+        assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
+    fun runQuerySkipsFailureHistoryWhenRecordingIsDisabled() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory =
+                    QuerySessionFactory { _, _ ->
+                        QuerySession(schema = sampleSchema(), runner = FailingRunner())
+                    },
+            )
+
+        assertFailsWith<QueryFailureException> {
+            service.runQuery(
+                QueryRunRequest(
+                    "c1",
+                    sampleQuerySpec(),
+                    historyRecording = QueryHistoryRecording { false },
+                ),
+            )
+        }
+
+        assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
     fun createConnectionRejectsUnsupportedVersionWithoutWriting() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")

@@ -957,6 +957,7 @@ class QueryViewModelStateTest {
             scope.advanceUntilIdle()
             assertFalse(query.running)
             assertNotNull(query.discardedRunNotice)
+            assertFalse(service.queryRequests.single().historyRecording.shouldRecord())
 
             // Starting a new run clears discardedRunNotice.
             query.run("c1")

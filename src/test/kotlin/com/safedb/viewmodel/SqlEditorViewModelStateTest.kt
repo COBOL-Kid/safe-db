@@ -507,13 +507,17 @@ class SqlEditorViewModelStateTest {
         val started = CompletableDeferred<Unit>()
         val scope = TestScope(dispatcher)
         val spec = sampleSpec()
+        var inFlightRequest: QueryRunRequest? = null
+        var recordHistoryOnSettle = true
         val viewModel =
             SqlEditorViewModel(
                 service =
                     object : SqlStubService() {
                         override suspend fun runQuery(request: QueryRunRequest): QueryRunResult {
+                            inFlightRequest = request
                             started.complete(Unit)
                             gate.await()
+                            recordHistoryOnSettle = request.historyRecording.shouldRecord()
                             return queryRunResult(sampleResult())
                         }
                     },
@@ -551,6 +555,8 @@ class SqlEditorViewModelStateTest {
         scope.advanceUntilIdle()
         assertFalse(viewModel.running)
         assertNotNull(viewModel.discardedRunNotice)
+        assertFalse(recordHistoryOnSettle)
+        assertFalse(inFlightRequest!!.historyRecording.shouldRecord())
 
         // Starting a new run clears discardedRunNotice.
         viewModel.run("c1", spec.copy(limit = 5), viewModel.text.text)

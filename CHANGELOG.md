@@ -14,6 +14,7 @@
 - SQL Server queries run with JDBC `autoCommit = false` at `READ_UNCOMMITTED`, restore `LOCK_TIMEOUT` to `-1` afterward. JDBC query, socket, and lock timeouts (error 1222) are reported as "Query timed out after …ms".
 - The desktop sidebar shows "Checking connection…" while it probes a newly selected connection instead of flashing Not connected, and skips reachability probes while the app window is inactive.
 - SQL Editor and Query Builder say "Running query" while a run is in progress with Risk gate Off, instead of "Assessing query risk".
+- Editing a query, switching connections, or otherwise discarding an in-flight desktop run no longer writes that run to Query History. MCP runs and ordinary completed or failed runs still record as before.
 
 ## 1.1.2
 
