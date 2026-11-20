@@ -582,6 +582,84 @@ class SafeDbServiceImplTest {
     }
 
     @Test
+    fun runQuerySkipsHistoryWhenRecordingIsDisabledAfterExecution() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        var record = true
+        val stub = StubRunner()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory =
+                    QuerySessionFactory { _, _ ->
+                        QuerySession(
+                            schema = sampleSchema(),
+                            runner =
+                                object : QueryRunner by stub {
+                                    override suspend fun executeQuery(
+                                        compiled: CompiledQuery,
+                                        timeoutMs: Int,
+                                    ): Outcome<QueryResult> {
+                                        record = false
+                                        return stub.executeQuery(compiled, timeoutMs)
+                                    }
+                                },
+                        )
+                    },
+            )
+
+        val result =
+            service.runQuery(
+                QueryRunRequest(
+                    "c1",
+                    sampleQuerySpec(),
+                    historyRecording = QueryHistoryRecording { record },
+                ),
+            )
+
+        assertEquals(1, result.queryResult.rowCount)
+        assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
+    fun runQuerySkipsFailureHistoryWhenRecordingIsDisabled() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory =
+                    QuerySessionFactory { _, _ ->
+                        QuerySession(schema = sampleSchema(), runner = FailingRunner())
+                    },
+            )
+
+        assertFailsWith<QueryFailureException> {
+            service.runQuery(
+                QueryRunRequest(
+                    "c1",
+                    sampleQuerySpec(),
+                    historyRecording = QueryHistoryRecording { false },
+                ),
+            )
+        }
+
+        assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
     fun createConnectionRejectsUnsupportedVersionWithoutWriting() = runBlocking {
         SecretsManager.useStoreForTest(DisabledMemoryStore())
         val dir = Files.createTempDirectory("safedb-service-test")
@@ -702,6 +780,105 @@ class SafeDbServiceImplTest {
 
         assertTrue(failure.message?.contains("unsupported") == true)
         assertEquals(listOf("valid"), queryStore.listHistory().map { it.id })
+    }
+
+    @Test
+    fun runQueryWithSchemaIntrospectsOnceAndRecordsHistory() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
+            )
+
+        val expectedSpec = sampleQuerySpec()
+        var resolvedSchemaTables = 0
+        val resolved =
+            service.runQueryWithSchema("c1") { def, schema, _ ->
+                assertEquals("c1", def.id)
+                resolvedSchemaTables = schema.tables.size
+                expectedSpec
+            }
+
+        assertEquals(1, resolvedSchemaTables)
+        assertEquals("c1", resolved.connection.id)
+        assertEquals(expectedSpec, resolved.spec)
+        assertEquals(RiskGateState.Allowed, resolved.result.riskEvaluation.decision.state)
+        assertEquals(1, adapter.introspectionCount)
+        assertEquals(1, adapter.executeCount)
+        assertEquals(1, adapter.closeCount)
+        assertEquals(1, queryStore.listHistory().size)
+    }
+
+    @Test
+    fun assessQueryWithSchemaIntrospectsOnceWithoutRecordingHistory() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
+            )
+
+        val expectedSpec = sampleQuerySpec()
+        val resolved = service.assessQueryWithSchema("c1") { _, _, _ -> expectedSpec }
+
+        assertEquals("c1", resolved.connection.id)
+        assertEquals(expectedSpec, resolved.spec)
+        assertTrue(resolved.assessment.compiledSql.startsWith("SELECT "))
+        assertEquals(1, adapter.introspectionCount)
+        assertEquals(0, adapter.executeCount)
+        assertEquals(1, adapter.closeCount)
+        assertTrue(queryStore.listHistory().isEmpty())
+    }
+
+    @Test
+    fun runQueryWithSchemaResolveFailureClosesAdapterWithoutHistory() = runBlocking {
+        SecretsManager.useStoreForTest(DisabledMemoryStore())
+        val dir = Files.createTempDirectory("safedb-service-test")
+        val configStore = ConfigStore.new(dir)
+        val queryStore = QueryStore.new(dir)
+        configStore.save(sampleConnection())
+        SecretsManager.savePasswordForDefinition(sampleConnection(), "secret").getOrThrow()
+        val adapter = FakeConnectedAdapter()
+        val service =
+            SafeDbServiceImpl(
+                configStore = configStore,
+                queryStore = queryStore,
+                settingsStore = SettingsStore.new(dir),
+                querySessionFactory = null,
+                adapterFactory = AdapterFactory { _, _ -> adapter },
+            )
+
+        val failure =
+            assertFailsWith<IllegalStateException> {
+                service.runQueryWithSchema("c1") { _, _, _ ->
+                    throw IllegalStateException("parse failed")
+                }
+            }
+
+        assertEquals("parse failed", failure.message)
+        assertEquals(1, adapter.introspectionCount)
+        assertEquals(0, adapter.executeCount)
+        assertEquals(1, adapter.closeCount)
+        assertTrue(queryStore.listHistory().isEmpty())
     }
 }
 

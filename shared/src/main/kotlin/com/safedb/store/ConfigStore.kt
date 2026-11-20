@@ -4,21 +4,22 @@ import com.safedb.model.CURRENT_CONNECTION_VERSION
 import com.safedb.model.ConnectionDef
 import com.safedb.model.SafeDbJson
 import com.safedb.persist.ensurePrivateDir
+import com.safedb.persist.withFileLock
 import java.nio.file.Path
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import kotlinx.serialization.json.JsonElement
 
-class ConfigStore
-private constructor(private val path: Path, private val lock: ReentrantLock = ReentrantLock()) {
+class ConfigStore private constructor(private val path: Path, private val lockPath: Path) {
     companion object {
         fun new(dataDir: Path): ConfigStore {
             ensurePrivateDir(dataDir)
-            return ConfigStore(dataDir.resolve("connections.json"))
+            return ConfigStore(
+                path = dataDir.resolve("connections.json"),
+                lockPath = dataDir.resolve("connections.json.lock"),
+            )
         }
     }
 
-    fun list(): List<ConnectionDef> = lock.withLock { loadConnectionsUnlocked() }
+    fun list(): List<ConnectionDef> = withFileLock(lockPath) { loadConnectionsUnlocked() }
 
     fun get(id: String): ConnectionDef? = list().firstOrNull { it.id == id }
 
@@ -26,7 +27,7 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
         require(def.version == CURRENT_CONNECTION_VERSION) {
             "Unsupported connection version ${def.version}; expected $CURRENT_CONNECTION_VERSION"
         }
-        lock.withLock {
+        withFileLock(lockPath) {
             val connections = loadConnectionsUnlocked().toMutableList()
             val index = connections.indexOfFirst { it.id == def.id }
             if (index >= 0) {
@@ -39,7 +40,9 @@ private constructor(private val path: Path, private val lock: ReentrantLock = Re
     }
 
     fun delete(id: String) {
-        lock.withLock { writeAllUnlocked(loadConnectionsUnlocked().filterNot { it.id == id }) }
+        withFileLock(lockPath) {
+            writeAllUnlocked(loadConnectionsUnlocked().filterNot { it.id == id })
+        }
     }
 
     private fun loadConnectionsUnlocked(): List<ConnectionDef> =

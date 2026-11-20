@@ -10,8 +10,10 @@ import com.safedb.query.QueryConfirmationRequirement
 import com.safedb.query.QueryError
 import com.safedb.query.QueryRiskEvaluation
 import com.safedb.service.QueryFailureException
+import com.safedb.service.QueryHistoryRecording
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -25,7 +27,7 @@ internal class QueryRunController(
     private val scope: CoroutineScope,
     private val onRunFinished: () -> Unit = {},
 ) {
-    private var runGeneration = 0
+    private val runGeneration = AtomicInteger(0)
     private var activeRun: ActiveRun? = null
     private var observedActiveConnection = false
     private var activeConnectionId: String? = null
@@ -45,6 +47,9 @@ internal class QueryRunController(
         private set
 
     var error by mutableStateOf<String?>(null)
+        private set
+
+    var discardedRunNotice by mutableStateOf<String?>(null)
         private set
 
     var riskEvaluation by mutableStateOf<QueryRiskEvaluation?>(null)
@@ -70,11 +75,12 @@ internal class QueryRunController(
         observedActiveConnection = true
         activeConnectionId = request.connectionId
         val executedSpec = request.spec
-        val generation = ++runGeneration
+        val generation = runGeneration.incrementAndGet()
         val run = ActiveRun()
         activeRun = run
         running = true
         error = null
+        discardedRunNotice = null
         results = null
         resultConnectionId = null
         resultSpec = null
@@ -82,12 +88,19 @@ internal class QueryRunController(
         riskEvaluationConnectionId = null
         riskEvaluationSpec = null
         pendingRiskGateState = false
+        // Keep the JDBC call running: adapters ignore coroutine cancellation, and the shared
+        // query slot stays occupied until the session closes. History is skipped instead when
+        // this generation is no longer current (edit, connection switch, or other invalidation).
+        val trackedRequest =
+            request.copy(
+                historyRecording = QueryHistoryRecording { runGeneration.get() == generation },
+            )
         scope.launch {
             var succeeded = false
             var awaitingConfirmation = false
             try {
-                val completed = service.runQuery(request)
-                if (generation == runGeneration) {
+                val completed = service.runQuery(trackedRequest)
+                if (generation == runGeneration.get()) {
                     results = completed.queryResult
                     riskEvaluation = completed.riskEvaluation
                     riskEvaluationConnectionId = request.connectionId
@@ -97,7 +110,7 @@ internal class QueryRunController(
                     succeeded = true
                 }
             } catch (failure: QueryFailureException) {
-                if (generation != runGeneration) return@launch
+                if (generation != runGeneration.get()) return@launch
                 when (val queryError = failure.queryError) {
                     is QueryError.RiskGate -> {
                         pendingRiskGateState = true
@@ -120,15 +133,15 @@ internal class QueryRunController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (generation == runGeneration) error = e.message ?: e.toString()
+                if (generation == runGeneration.get()) error = e.message ?: e.toString()
             } finally {
                 if (activeRun === run) {
                     activeRun = null
                     running = false
                     if (!awaitingConfirmation) onSettled?.invoke(succeeded)
-                    // Refresh is best-effort: success and QueryCore failures record history, while
-                    // early setup failures (connection/password/connect) may not. A single call
-                    // point in finally is intentional.
+                    // Refresh is best-effort: current success and QueryCore failures record
+                    // history, discarded in-flight runs and early setup failures may not. A
+                    // single call point in finally is intentional.
                     onRunFinished()
                 }
             }
@@ -179,7 +192,7 @@ internal class QueryRunController(
         if (observedActiveConnection && activeConnectionId == connectionId) return
         observedActiveConnection = true
         activeConnectionId = connectionId
-        if (running) runGeneration += 1
+        if (running) runGeneration.incrementAndGet()
         results = null
         resultConnectionId = null
         resultSpec = null
@@ -188,6 +201,7 @@ internal class QueryRunController(
         riskEvaluationConnectionId = null
         riskEvaluationSpec = null
         error = null
+        discardedRunNotice = null
         clearPendingConfirmation(settle = true)
     }
 
@@ -200,7 +214,7 @@ internal class QueryRunController(
         if (running) {
             // The service snapshots settings before EXPLAIN/execution. Keep ownership until that
             // call settles, but discard its old-policy completion and require a fresh Run.
-            runGeneration += 1
+            runGeneration.incrementAndGet()
             return
         }
         // A fast run may already have observed the newly persisted gate before this UI callback.
@@ -245,9 +259,20 @@ internal class QueryRunController(
             connectionId == riskEvaluationConnectionId &&
             spec == riskEvaluationSpec
 
+    fun dismissDiscardedRunNotice() {
+        discardedRunNotice = null
+    }
+
+    fun invalidateForEdit() {
+        if (running) {
+            discardedRunNotice = DISCARDED_RUN_NOTICE
+        }
+        invalidateSettledRunFailure()
+    }
+
     fun invalidateSettledRunFailure() {
         if (running) {
-            runGeneration += 1
+            runGeneration.incrementAndGet()
         }
         if (
             error == null &&
@@ -265,11 +290,12 @@ internal class QueryRunController(
     }
 
     fun reset() {
-        runGeneration += 1
+        runGeneration.incrementAndGet()
         results = null
         resultConnectionId = null
         resultSpec = null
         error = null
+        discardedRunNotice = null
         riskEvaluation = null
         riskEvaluationConnectionId = null
         riskEvaluationSpec = null
@@ -285,3 +311,6 @@ internal class QueryRunController(
         if (settle) onSettled?.invoke(false)
     }
 }
+
+private const val DISCARDED_RUN_NOTICE =
+    "Query edited while a run was in progress; the in-flight result will be discarded."

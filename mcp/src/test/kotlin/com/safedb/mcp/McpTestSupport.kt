@@ -25,6 +25,7 @@ import com.safedb.model.TransportSecurity
 import com.safedb.model.TransportSecurityMode
 import com.safedb.persist.restrictToOwnerReadWrite
 import com.safedb.query.QUERY_RISK_SCORE_VERSION
+import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.QueryPlanStatus
 import com.safedb.query.QueryRiskAssessment
 import com.safedb.query.QueryRiskDecision
@@ -32,10 +33,13 @@ import com.safedb.query.QueryRiskEvaluation
 import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
+import com.safedb.service.ConnectionNotFoundException
 import com.safedb.service.FakeSafeDbServiceSupport
 import com.safedb.service.QueryAssessmentResult
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.QueryRunResult
+import com.safedb.service.ResolvedQueryAssessment
+import com.safedb.service.ResolvedQueryRun
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
@@ -90,10 +94,13 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
     var tested: Pair<ConnectionDef, String?>? = null
     var schemaError: Exception? = null
     val runQueryRequests = mutableListOf<QueryRunRequest>()
+    var runQueryWithSchemaCalls = 0
+    var runQueryWithSchemaError: Exception? = null
     var runQueryResult: QueryRunResult? = null
     var runQueryError: Exception? = null
     var runQueryHandler: ((QueryRunRequest) -> QueryRunResult)? = null
     val assessQueryRequests = mutableListOf<QueryRunRequest>()
+    var assessQueryWithSchemaCalls = 0
     var assessQueryResult: QueryAssessmentResult? = null
     var assessQueryError: Exception? = null
     var assessQueryHandler: ((QueryRunRequest) -> QueryAssessmentResult)? = null
@@ -125,9 +132,9 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         schemaCalls += connectionId
         schemaError?.let { throw it }
         if (connections.none { it.id == connectionId }) {
-            throw IllegalArgumentException("Connection not found")
+            throw ConnectionNotFoundException()
         }
-        return schemas[connectionId] ?: throw IllegalArgumentException("Connection not found")
+        return schemas[connectionId] ?: throw ConnectionNotFoundException()
     }
 
     override suspend fun getSettings(): Settings = settings
@@ -145,6 +152,16 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         return runQueryResult ?: throw UnsupportedOperationException("runQuery")
     }
 
+    override suspend fun runQueryWithSchema(
+        connectionId: String,
+        confirmation: QueryExecutionConfirmation?,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryRun {
+        runQueryWithSchemaCalls++
+        runQueryWithSchemaError?.let { throw it }
+        return super.runQueryWithSchema(connectionId, confirmation, resolveSpec)
+    }
+
     override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult {
         assessQueryRequests += request
         assessQueryHandler?.let {
@@ -152,6 +169,14 @@ internal open class RecordingSafeDbService : FakeSafeDbServiceSupport() {
         }
         assessQueryError?.let { throw it }
         return assessQueryResult ?: throw UnsupportedOperationException("assessQuery")
+    }
+
+    override suspend fun assessQueryWithSchema(
+        connectionId: String,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryAssessment {
+        assessQueryWithSchemaCalls++
+        return super.assessQueryWithSchema(connectionId, resolveSpec)
     }
 
     override suspend fun listSavedQueries(): List<SavedQuery> = savedQueries.toList()
@@ -441,7 +466,11 @@ internal suspend fun Client.deleteConnectionConfirmed(connectionId: String): Cal
     )
 }
 
-internal suspend fun withTempMcpClient(service: SafeDbService, block: suspend (Client) -> Unit) {
+internal suspend fun withTempMcpClient(
+    service: SafeDbService,
+    sharesDesktopStore: Boolean = false,
+    block: suspend (Client) -> Unit,
+) {
     val dataDir = Files.createTempDirectory("safedb-mcp")
     try {
         withMcpClient(
@@ -449,6 +478,7 @@ internal suspend fun withTempMcpClient(service: SafeDbService, block: suspend (C
                 service,
                 resultsDir = dataDir.resolve("results"),
                 exportsDir = dataDir.resolve("exports"),
+                sharesDesktopStore = sharesDesktopStore,
             ),
             block,
         )

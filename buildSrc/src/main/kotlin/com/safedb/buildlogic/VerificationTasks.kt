@@ -14,6 +14,7 @@ import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.w3c.dom.Node
 
 abstract class VerifyUnitTestDiscovery : DefaultTask() {
     @get:InputDirectory
@@ -143,6 +144,21 @@ abstract class VerifyIntegrationTestDiscovery : DefaultTask() {
     }
 }
 
+// Filename allowlist for split packages. Unknown names fail the ratchet;
+// never attribute these packages from the package-level LINE counter.
+private val sharedSourceFilesBySplitPackage =
+    mapOf(
+        "com/safedb/export" to setOf("CsvWriter.kt"),
+        "com/safedb/schema" to setOf("SchemaRelationships.kt"),
+    )
+
+private val desktopSourceFilesBySplitPackage =
+    mapOf(
+        "com/safedb/export" to
+            setOf("HtmlReportAssets.kt", "HtmlReportWriter.kt", "VisualizationPngExporter.kt"),
+        "com/safedb/schema" to setOf("SchemaMapGeometry.kt", "SchemaMapGraph.kt"),
+    )
+
 internal fun coverageGroupForPackage(packageName: String): String {
     if (packageName == "com/safedb/mcp" || packageName.startsWith("com/safedb/mcp/")) {
         return "mcp"
@@ -156,6 +172,24 @@ internal fun coverageGroupForPackage(packageName: String): String {
                 packageName == prefix || packageName.startsWith("$prefix/")
             }
     return if (desktop) "desktop" else "shared"
+}
+
+internal fun coverageGroupForSourceFile(packageName: String, sourceFileName: String): String {
+    val sharedFiles = sharedSourceFilesBySplitPackage[packageName]
+    val desktopFiles = desktopSourceFilesBySplitPackage[packageName]
+    if (sharedFiles == null && desktopFiles == null) {
+        return coverageGroupForPackage(packageName)
+    }
+    if (sourceFileName in sharedFiles.orEmpty()) {
+        return "shared"
+    }
+    if (sourceFileName in desktopFiles.orEmpty()) {
+        return "desktop"
+    }
+    error(
+        "Unknown split-package sourcefile $sourceFileName in $packageName " +
+            "fails the coverage ratchet",
+    )
 }
 
 internal data class CoverageRatchetResult(
@@ -181,19 +215,22 @@ internal fun verifyCoverageFloors(
     for (index in 0 until packages.length) {
         val packageNode = packages.item(index)
         val packageName = packageNode.attributes.getNamedItem("name").nodeValue
+        if (
+            packageName in sharedSourceFilesBySplitPackage ||
+                packageName in desktopSourceFilesBySplitPackage
+        ) {
+            check(accumulateSplitPackageSourceFiles(packageNode, packageName, totals)) {
+                "Split package $packageName has no <sourcefile> nodes; " +
+                    "refusing to count its package-level LINE counter"
+            }
+            continue
+        }
         val group = coverageGroupForPackage(packageName)
         val counts =
             checkNotNull(totals[group]) {
                 "Kover report contains $group lines, but no coverage floor is configured"
             }
-        val children = packageNode.childNodes
-        for (childIndex in 0 until children.length) {
-            val child = children.item(childIndex)
-            if (child.nodeName != "counter") continue
-            if (child.attributes.getNamedItem("type").nodeValue != "LINE") continue
-            counts[0] += child.attributes.getNamedItem("covered").nodeValue.toInt()
-            counts[1] += child.attributes.getNamedItem("missed").nodeValue.toInt()
-        }
+        addDirectLineCounters(packageNode, counts)
     }
 
     return floors.toSortedMap().map { (group, floor) ->
@@ -205,6 +242,44 @@ internal fun verifyCoverageFloors(
         }
         result
     }
+}
+
+private fun accumulateSplitPackageSourceFiles(
+    packageNode: Node,
+    packageName: String,
+    totals: Map<String, IntArray>,
+): Boolean {
+    var sawSourceFile = false
+    val children = packageNode.childNodes
+    for (childIndex in 0 until children.length) {
+        val child = children.item(childIndex)
+        if (child.nodeName != "sourcefile") continue
+        sawSourceFile = true
+        val sourceFileName =
+            child.attributes?.getNamedItem("name")?.nodeValue
+                ?: error("Split package $packageName has a <sourcefile> without a name")
+        val group = coverageGroupForSourceFile(packageName, sourceFileName)
+        val counts =
+            checkNotNull(totals[group]) {
+                "Kover report contains $group lines, but no coverage floor is configured"
+            }
+        addDirectLineCounters(child, counts)
+    }
+    return sawSourceFile
+}
+
+private fun addDirectLineCounters(node: Node, counts: IntArray): Boolean {
+    var added = false
+    val children = node.childNodes
+    for (childIndex in 0 until children.length) {
+        val child = children.item(childIndex)
+        if (child.nodeName != "counter") continue
+        if (child.attributes.getNamedItem("type").nodeValue != "LINE") continue
+        counts[0] += child.attributes.getNamedItem("covered").nodeValue.toInt()
+        counts[1] += child.attributes.getNamedItem("missed").nodeValue.toInt()
+        added = true
+    }
+    return added
 }
 
 internal data class IntegrationDiscoveryResult(

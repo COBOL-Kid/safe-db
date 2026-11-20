@@ -23,8 +23,7 @@ private class VisualizationPlanner(
     private val sample: QueryResult,
     private val config: VisualizationConfig,
 ) {
-    private val indexes =
-        sample.columns.mapIndexed { index, column -> column.name to index }.toMap()
+    private val sampleIndex = SampleIndex(sample)
     private val types = sample.columns.associate { it.name to classifyColumn(it.dataType) }
     private val warnings = linkedSetOf<String>()
 
@@ -175,11 +174,11 @@ private class VisualizationPlanner(
         val yMeasure = config.values.single()
         val yColumn = yMeasure.sourceColumn ?: return emptyList()
         return records.mapNotNull { record ->
-            val xValue = record.cell(x.column).decimalOrNull()
-            val yValue = record.cell(yColumn).decimalOrNull()
+            val xValue = resultCellDecimal(record.cell(x.column))
+            val yValue = resultCellDecimal(record.cell(yColumn))
             if (xValue == null || yValue == null) return@mapNotNull null
             val seriesBucket = config.series?.let { bucket(record.cell(it.column), it) }
-            val size = config.size?.let { record.cell(it.column).decimalOrNull()?.toDouble() }
+            val size = config.size?.let { resultCellDecimal(record.cell(it.column))?.toDouble() }
             VisualizationMark(
                 id = "row:${record.index}",
                 xKey = xValue.toPlainString(),
@@ -200,7 +199,7 @@ private class VisualizationPlanner(
     private fun histogramMarks(records: List<ChartRecord>): List<VisualizationMark> {
         val field = config.x ?: return emptyList()
         val values = records.mapNotNull { record ->
-            record.cell(field.column).decimalOrNull()?.let { record to it }
+            resultCellDecimal(record.cell(field.column))?.let { record to it }
         }
         if (values.isEmpty()) return emptyList()
         val configured = field.grouping as? PivotGrouping.NumberBin
@@ -258,23 +257,7 @@ private class VisualizationPlanner(
     }
 
     private fun passesFilters(record: ChartRecord): Boolean =
-        config.filters.all { filter ->
-            val cell = record.cell(filter.column)
-            when (filter) {
-                is PivotFilter.Members ->
-                    filter.includedKeys.isEmpty() || pivotCellMatches(cell, filter.includedKeys)
-                is PivotFilter.Label -> {
-                    val text = cell.text()
-                    when (filter.op) {
-                        LabelFilterOp.Equals -> text.equals(filter.value, ignoreCase = true)
-                        LabelFilterOp.Contains -> text.contains(filter.value, ignoreCase = true)
-                        LabelFilterOp.StartsWith -> text.startsWith(filter.value, ignoreCase = true)
-                        LabelFilterOp.EndsWith -> text.endsWith(filter.value, ignoreCase = true)
-                    }
-                }
-                is PivotFilter.Value -> true
-            }
-        }
+        passesPivotFilters(record.row, config.filters, sampleIndex)
 
     private fun applyValueFilters(marks: List<VisualizationMark>): List<VisualizationMark> {
         var current = marks
@@ -363,7 +346,7 @@ private class VisualizationPlanner(
             val values = cells.mapNotNull(::resultCellDecimal)
             return if (measure.fn == MeasureFn.Min) values.minOrNull() else values.maxOrNull()
         }
-        return aggregateMeasure(cells, measure.fn).decimalOrNull()
+        return resultCellDecimal(aggregateMeasure(cells, measure.fn))
     }
 
     private fun defaultTitle(type: ChartType): String {
@@ -427,14 +410,9 @@ private class VisualizationPlanner(
             blockingMessage = message,
         )
 
-    private fun ChartRecord.cell(column: String): ResultCell =
-        indexes[column]?.let { row.getOrNull(it) } ?: ResultCell.Null
+    private fun ChartRecord.cell(column: String): ResultCell = sampleIndex.cell(row, column)
 }
 
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
-
-private fun ResultCell.decimalOrNull(): BigDecimal? = resultCellDecimal(this)
-
-private fun ResultCell.text(): String = resultCellText(this)
 
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()

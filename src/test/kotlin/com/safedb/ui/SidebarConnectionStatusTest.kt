@@ -9,6 +9,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import com.safedb.AppRoute
 import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.DatabaseReachability
 import kotlin.test.Test
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -16,29 +17,41 @@ import kotlin.test.assertTrue
 class SidebarConnectionStatusTest {
     @Test
     fun `collapsed status light follows reachability`() {
-        var connected by mutableStateOf(false)
-        withSidebar(collapsed = true, connected = { connected }) { scene ->
+        var reachability by mutableStateOf(DatabaseReachability.Disconnected)
+        withSidebar(collapsed = true, reachability = { reachability }) { scene ->
             scene.requireExact("Not connected")
             assertNull(scene.findExact("Connected"))
 
-            connected = true
+            reachability = DatabaseReachability.Checking
+            scene.settle()
+            scene.requireExact("Checking connection…")
+            assertNull(scene.findExact("Not connected"))
+
+            reachability = DatabaseReachability.Connected
             scene.settle()
             scene.requireExact("Connected")
-            assertNull(scene.findExact("Not connected"))
+            assertNull(scene.findExact("Checking connection…"))
         }
     }
 
     @Test
     fun `status tooltip shows after a prior hover in both sidebar modes`() {
         listOf(true, false).forEach { collapsed ->
-            var connected by mutableStateOf(false)
-            withSidebar(collapsed = collapsed, connected = { connected }) { scene ->
+            var reachability by mutableStateOf(DatabaseReachability.Disconnected)
+            withSidebar(collapsed = collapsed, reachability = { reachability }) { scene ->
                 scene.hoverStatus()
                 scene.assertStatusTooltipVisible("Not connected")
                 scene.leaveStatus()
                 scene.settle()
 
-                connected = true
+                reachability = DatabaseReachability.Checking
+                scene.settle()
+                scene.hoverStatus()
+                scene.assertStatusTooltipVisible("Checking connection…")
+                scene.leaveStatus()
+                scene.settle()
+
+                reachability = DatabaseReachability.Connected
                 scene.settle()
                 scene.hoverStatus()
                 scene.assertStatusTooltipVisible("Connected")
@@ -50,7 +63,7 @@ class SidebarConnectionStatusTest {
 
 private fun withSidebar(
     collapsed: Boolean,
-    connected: () -> Boolean,
+    reachability: () -> DatabaseReachability,
     body: (ImageComposeScene) -> Unit,
 ) {
     withComposeScene(
@@ -62,7 +75,7 @@ private fun withSidebar(
                     route = AppRoute.Home,
                     isDark = false,
                     collapsed = collapsed,
-                    connected = connected(),
+                    reachability = reachability(),
                     onCollapsedChange = {},
                     onNavigate = {},
                     onOpenSettings = {},

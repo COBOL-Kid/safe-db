@@ -1,15 +1,12 @@
 package com.safedb.mcp
 
 import com.safedb.query.RiskGateState
-import com.safedb.service.QueryFailureException
-import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
 
 internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
@@ -20,8 +17,10 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
                 "like run_query, resolves result columns, compiles the statement, and returns " +
                 "dialect, columns, compiled_sql, parameter_count, warnings, a slim risk " +
                 "summary, and confirmation_required with reasons when the risk gate would " +
-                "require confirmation. Unknown extra arguments are invalid_arguments. The " +
-                "result includes JSON text and structuredContent with the same object.",
+                "require confirmation. Note: unless the risk gate is Disabled, Oracle and Db2 " +
+                "EXPLAIN write and delete plan-table rows during assessment. Unknown extra " +
+                "arguments are invalid_arguments. The result includes JSON text and " +
+                "structuredContent with the same object.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -53,7 +52,7 @@ internal fun registerAssessQueryTools(server: Server, service: SafeDbService) {
                 put("confirmation_required", boolProp())
                 put("reasons", arrayProp())
             },
-        toolAnnotations = ToolAnnotations(readOnlyHint = true),
+        toolAnnotations = ToolAnnotations(readOnlyHint = false),
     ) { request ->
         runMcpTool("assess_query failed") { handleAssessQuery(service, request) }
     }
@@ -66,33 +65,33 @@ private suspend fun handleAssessQuery(
     requireKnownArguments(request, "connection_id", "sql", "default_schema").getOrElse {
         return it
     }
-    val resolved =
-        resolveSqlSpec(service, request).getOrElse {
+    val args =
+        parseSqlToolArgs(request).getOrElse {
             return it
         }
 
-    return try {
-        val assessment = service.assessQuery(QueryRunRequest(resolved.connectionId, resolved.spec))
-        val risk = assessment.riskEvaluation
-        val receipt =
-            QueryAssessmentReceipt(
-                dialect = resolved.connection.dialect,
-                columns = assessment.columns,
-                compiledSql = assessment.compiledSql,
-                parameterCount = assessment.parameterCount,
-                warnings = assessment.warnings,
-                risk = riskSummary(risk),
-                confirmationRequired = risk.decision.state == RiskGateState.ConfirmationRequired,
-                reasons =
-                    risk.confirmationRequirement
-                        ?.reasons
-                        ?.map { it.message }
-                        ?.takeIf { it.isNotEmpty() },
-            )
-        objectToolResult(receipt)
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: QueryFailureException) {
-        mapQueryFailure(error)
-    }
+    val resolved =
+        service.assessQueryWithSchema(args.connectionId) { connection, schema, settings ->
+            parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
+                throw ToolFailure(it)
+            }
+        }
+    val assessment = resolved.assessment
+    val risk = assessment.riskEvaluation
+    val receipt =
+        QueryAssessmentReceipt(
+            dialect = resolved.connection.dialect,
+            columns = assessment.columns,
+            compiledSql = assessment.compiledSql,
+            parameterCount = assessment.parameterCount,
+            warnings = assessment.warnings,
+            risk = riskSummary(risk),
+            confirmationRequired = risk.decision.state == RiskGateState.ConfirmationRequired,
+            reasons =
+                risk.confirmationRequirement
+                    ?.reasons
+                    ?.map { it.message }
+                    ?.takeIf { it.isNotEmpty() },
+        )
+    return objectToolResult(receipt)
 }

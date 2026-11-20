@@ -1,0 +1,690 @@
+package com.safedb.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.WbSunny
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.safedb.AppRoute
+import com.safedb.ui.theme.ChipShape
+import com.safedb.ui.theme.SafeDbTheme
+import com.safedb.viewmodel.DatabaseReachability
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.delay
+
+@Composable
+internal fun Sidebar(
+    route: AppRoute,
+    isDark: Boolean,
+    collapsed: Boolean,
+    reachability: DatabaseReachability,
+    onCollapsedChange: (Boolean) -> Unit,
+    onNavigate: (AppRoute) -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenPalette: () -> Unit,
+    onToggleTheme: () -> Unit,
+) {
+    val c = SafeDbTheme.colors
+    val navItems =
+        listOf(
+            NavItem(AppRoute.Home, "Home", Icons.Outlined.Home),
+            NavItem(AppRoute.Connections, "Connections", Icons.Outlined.Storage),
+            NavItem(AppRoute.Builder, "Query Builder", Icons.Outlined.AccountTree),
+            NavItem(AppRoute.Sql, "SQL", Icons.Outlined.Code),
+            NavItem(AppRoute.Map, "Map", Icons.Outlined.Hub),
+            NavItem(AppRoute.History, "History", Icons.Outlined.History),
+        )
+    // Keep the content mode stable while the rail changes width. This leaves a clean gap
+    // between the outgoing and incoming fade sequences instead of cross-fading both layouts.
+    var widthCollapsed by remember { mutableStateOf(collapsed) }
+    var layoutCollapsed by remember { mutableStateOf(collapsed) }
+    val sidebarWidth by
+        animateDpAsState(
+            targetValue = if (widthCollapsed) CollapsedSidebarWidth else ExpandedSidebarWidth,
+            animationSpec = tween(durationMillis = SidebarWidthAnimationMillis),
+            label = "sidebarWidth",
+        )
+    var revealStep by remember { mutableIntStateOf(if (collapsed) 0 else SidebarRevealAll) }
+    var compactRevealStep by remember {
+        mutableIntStateOf(if (collapsed) SidebarCompactRevealAll else 0)
+    }
+    var revealInitialized by remember { mutableStateOf(false) }
+
+    LaunchedEffect(collapsed) {
+        if (!revealInitialized) {
+            revealInitialized = true
+            widthCollapsed = collapsed
+            layoutCollapsed = collapsed
+            revealStep = if (collapsed) 0 else SidebarRevealAll
+            compactRevealStep = if (collapsed) SidebarCompactRevealAll else 0
+            return@LaunchedEffect
+        }
+
+        if (collapsed) {
+            if (!layoutCollapsed) {
+                compactRevealStep = 0
+                val hadExpandedContent = revealStep > 0
+                for (step in sidebarRevealSteps(revealStep, 0)) {
+                    revealStep = step
+                    delay(SidebarRevealStaggerMillis.milliseconds)
+                }
+                if (hadExpandedContent) {
+                    delay((SidebarExpandedExitMillis - SidebarRevealStaggerMillis).milliseconds)
+                }
+
+                val widthWasExpanded = !widthCollapsed
+                widthCollapsed = true
+                if (widthWasExpanded) {
+                    delay(SidebarWidthAnimationMillis.milliseconds)
+                }
+                layoutCollapsed = true
+            }
+
+            for (step in sidebarRevealSteps(compactRevealStep, SidebarCompactRevealAll)) {
+                compactRevealStep = step
+                delay(SidebarRevealStaggerMillis.milliseconds)
+            }
+        } else {
+            if (layoutCollapsed) {
+                val hadCompactContent = compactRevealStep > 0
+                for (step in sidebarRevealSteps(compactRevealStep, 0)) {
+                    compactRevealStep = step
+                    delay(SidebarRevealStaggerMillis.milliseconds)
+                }
+                if (hadCompactContent) {
+                    delay((SidebarUtilityFadeOutMillis - SidebarRevealStaggerMillis).milliseconds)
+                }
+                layoutCollapsed = false
+            }
+
+            val widthWasCollapsed = widthCollapsed
+            widthCollapsed = false
+            if (widthWasCollapsed) {
+                delay(SidebarWidthAnimationMillis.milliseconds)
+            }
+
+            for (step in sidebarRevealSteps(revealStep, SidebarRevealAll)) {
+                revealStep = step
+                delay(SidebarRevealStaggerMillis.milliseconds)
+            }
+        }
+    }
+
+    Row(modifier = Modifier.fillMaxHeight()) {
+        Column(
+            modifier =
+                Modifier.width(sidebarWidth).fillMaxHeight().background(c.navigationBackground),
+        ) {
+            SidebarHeader(
+                collapsed = layoutCollapsed,
+                brandVisible = revealStep >= SidebarRevealHeader,
+                onToggleCollapsed = { onCollapsedChange(!collapsed) },
+            )
+
+            Column(
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalAlignment = Alignment.Start,
+            ) {
+                for ((index, item) in navItems.withIndex()) {
+                    NavButton(
+                        item = item,
+                        selected = route == item.route,
+                        collapsed = layoutCollapsed,
+                        labelVisible = revealStep >= SidebarRevealFirstNav + index,
+                        onClick = { onNavigate(item.route) },
+                    )
+                }
+            }
+
+            SidebarUtilities(
+                collapsed = layoutCollapsed,
+                isDark = isDark,
+                reachability = reachability,
+                statusVisible = revealStep >= SidebarRevealStatus,
+                settingsVisible = revealStep >= SidebarRevealSettings,
+                themeVisible = revealStep >= SidebarRevealTheme,
+                compactRevealStep = compactRevealStep,
+                onOpenPalette = onOpenPalette,
+                onOpenSettings = onOpenSettings,
+                onToggleTheme = onToggleTheme,
+            )
+        }
+
+        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(c.navigationBorder))
+    }
+}
+
+@Composable
+private fun SidebarHeader(
+    collapsed: Boolean,
+    brandVisible: Boolean,
+    onToggleCollapsed: () -> Unit,
+) {
+    val c = SafeDbTheme.colors
+    if (collapsed) {
+        Box(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .height(SidebarHeaderHeight)
+                    .clickable(onClick = onToggleCollapsed)
+                    .pointerHoverIcon(PointerIcon.Hand)
+                    .semantics { contentDescription = "Expand sidebar" },
+        ) {
+            // Shared inset so the mark stays put when the header swaps layouts.
+            Box(
+                modifier =
+                    Modifier.align(Alignment.CenterStart).padding(start = SidebarHeaderInset),
+            ) {
+                LogoMark()
+            }
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = c.onNavigationMuted,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp).size(14.dp),
+            )
+        }
+    } else {
+        Row(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .height(SidebarHeaderHeight)
+                    .padding(horizontal = SidebarHeaderInset),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            LogoMark()
+            AnimatedSidebarLabel(visible = brandVisible, modifier = Modifier.weight(1f)) {
+                Column {
+                    Text(
+                        "Safe-DB",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = c.onNavigation,
+                    )
+                    Text(
+                        "read-only explorer",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.onNavigationMuted,
+                    )
+                }
+            }
+            SidebarIconButton(
+                icon = Icons.Filled.ChevronLeft,
+                contentDescription = "Collapse sidebar",
+                onClick = onToggleCollapsed,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SidebarUtilities(
+    collapsed: Boolean,
+    isDark: Boolean,
+    reachability: DatabaseReachability,
+    statusVisible: Boolean,
+    settingsVisible: Boolean,
+    themeVisible: Boolean,
+    compactRevealStep: Int,
+    onOpenPalette: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onToggleTheme: () -> Unit,
+) {
+    val c = SafeDbTheme.colors
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (collapsed) {
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealCommand,
+                modifier = Modifier.size(32.dp),
+            ) { enabled ->
+                SidebarIconButton(
+                    icon = Icons.Outlined.Search,
+                    contentDescription = "Search commands",
+                    enabled = enabled,
+                    onClick = onOpenPalette,
+                )
+            }
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealStatus,
+                modifier = Modifier.size(32.dp),
+            ) {
+                SidebarStatusTooltip(
+                    reachability = reachability,
+                    modifier = Modifier.size(32.dp).clip(ChipShape),
+                ) {
+                    SidebarStatusDot(reachability = reachability, dotSize = 8.dp)
+                }
+            }
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealSettings,
+                modifier = Modifier.size(32.dp),
+            ) { enabled ->
+                SidebarIconButton(
+                    icon = Icons.Outlined.Settings,
+                    contentDescription = "Settings",
+                    enabled = enabled,
+                    onClick = onOpenSettings,
+                )
+            }
+            SidebarFade(
+                visible = compactRevealStep >= SidebarCompactRevealTheme,
+                modifier = Modifier.size(32.dp),
+            ) { enabled ->
+                SidebarIconButton(
+                    icon = if (isDark) Icons.Outlined.WbSunny else Icons.Outlined.DarkMode,
+                    contentDescription = "Toggle theme",
+                    enabled = enabled,
+                    onClick = onToggleTheme,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SidebarFade(visible = statusVisible, modifier = Modifier.weight(1f)) {
+                    SidebarStatusTooltip(
+                        reachability = reachability,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(start = 4.dp),
+                        ) {
+                            SidebarStatusDot(reachability = reachability, dotSize = 7.dp)
+                            // Single-line: during the width animation this slot can shrink to ~0
+                            // wide, and wrapped text would grow tall enough to squeeze the last
+                            // nav rows (Map/History icons visibly shift up).
+                            Column {
+                                Text(
+                                    "Safe Read Mode",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = c.onNavigation,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                )
+                                Text(
+                                    "No-lock · Indexed joins",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = c.onNavigationMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SidebarFade(visible = settingsVisible, modifier = Modifier.size(32.dp)) {
+                        enabled ->
+                        SidebarIconButton(
+                            icon = Icons.Outlined.Settings,
+                            contentDescription = "Settings",
+                            enabled = enabled,
+                            onClick = onOpenSettings,
+                        )
+                    }
+                    SidebarFade(visible = themeVisible, modifier = Modifier.size(32.dp)) { enabled
+                        ->
+                        SidebarIconButton(
+                            icon = if (isDark) Icons.Outlined.WbSunny else Icons.Outlined.DarkMode,
+                            contentDescription = "Toggle theme",
+                            enabled = enabled,
+                            onClick = onToggleTheme,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogoMark() {
+    val c = SafeDbTheme.colors
+    Box(
+        modifier = Modifier.size(34.dp).clip(ChipShape).background(c.actionPrimary),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "sDB",
+            color = c.onActionPrimary,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+internal const val SIDEBAR_STATUS_TAG = "sidebar-status"
+
+@Composable
+private fun SidebarStatusDot(reachability: DatabaseReachability, dotSize: Dp) {
+    val dotColor =
+        when (reachability) {
+            DatabaseReachability.Connected -> SafeDbTheme.colors.success
+            DatabaseReachability.Checking -> SafeDbTheme.colors.warning
+            DatabaseReachability.Disconnected -> MaterialTheme.colorScheme.error
+        }
+    Box(
+        modifier = Modifier.size(dotSize).clip(RoundedCornerShape(50)).background(dotColor),
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SidebarStatusTooltip(
+    reachability: DatabaseReachability,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    // Non-persistent TooltipState.dismiss() hides the popup but does not cancel the mutex
+    // job, so the second hover (the green "Connected" case after a red hover) never shows.
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    LaunchedEffect(hovered) {
+        if (hovered) {
+            tooltipState.show(MutatePriority.UserInput)
+        } else {
+            tooltipState.dismiss()
+        }
+    }
+    TooltipBox(
+        positionProvider =
+            TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(statusLabel(reachability)) } },
+        state = tooltipState,
+        enableUserInput = false,
+    ) {
+        Box(
+            modifier =
+                modifier.hoverable(interactionSource).testTag(SIDEBAR_STATUS_TAG).semantics {
+                    contentDescription = statusLabel(reachability)
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
+    }
+}
+
+private fun statusLabel(reachability: DatabaseReachability): String =
+    when (reachability) {
+        DatabaseReachability.Disconnected -> "Not connected"
+        DatabaseReachability.Checking -> "Checking connection…"
+        DatabaseReachability.Connected -> "Connected"
+    }
+
+@Composable
+private fun SidebarIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val c = SafeDbTheme.colors
+    val background by
+        animateColorAsState(if (enabled && hovered) c.navigationHover else Color.Transparent)
+
+    Box(
+        modifier =
+            Modifier.size(32.dp)
+                .clip(ChipShape)
+                .background(background)
+                .hoverable(interactionSource, enabled = enabled)
+                .clickable(enabled = enabled, onClick = onClick)
+                .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = if (enabled && hovered) c.onNavigation else c.onNavigationMuted,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+private fun NavButton(
+    item: NavItem,
+    selected: Boolean,
+    collapsed: Boolean,
+    labelVisible: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+
+    val c = SafeDbTheme.colors
+    val background by
+        animateColorAsState(
+            when {
+                selected -> c.navigationSelected
+                hovered -> c.navigationHover
+                else -> Color.Transparent
+            },
+        )
+    val content by
+        animateColorAsState(
+            when {
+                selected -> c.actionPrimary
+                hovered -> c.onNavigation
+                else -> c.onNavigationMuted
+            },
+        )
+
+    // Fixed-width rail plus a full-size fade overlay so label show/hide cannot move icons.
+    Box(
+        modifier =
+            Modifier.fillMaxWidth()
+                .height(44.dp)
+                .background(background)
+                .hoverable(interactionSource)
+                .clickable(onClick = onClick)
+                .pointerHoverIcon(PointerIcon.Hand),
+    ) {
+        Row(
+            modifier =
+                Modifier.align(Alignment.CenterStart)
+                    .width(navButtonLabelStartOffset())
+                    .fillMaxHeight(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            Box(
+                modifier =
+                    Modifier.width(NavRailIndicatorWidth)
+                        .fillMaxHeight()
+                        .background(if (selected) c.actionPrimary else Color.Transparent),
+            )
+            Spacer(Modifier.width(NavRailIconStartGap))
+            Icon(
+                item.icon,
+                contentDescription = if (collapsed) item.label else null,
+                tint = content,
+                modifier = Modifier.size(NavRailIconSize),
+            )
+        }
+        Box(
+            modifier =
+                Modifier.align(Alignment.CenterStart)
+                    .fillMaxSize()
+                    .padding(start = navButtonLabelStartOffset(), end = 12.dp)
+                    .clipToBounds(),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            SidebarFade(visible = labelVisible) {
+                Text(
+                    item.label,
+                    color = content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedSidebarLabel(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(tween(120)) + expandHorizontally(tween(160), expandFrom = Alignment.Start),
+        exit = fadeOut(tween(80)) + shrinkHorizontally(tween(120), shrinkTowards = Alignment.Start),
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun SidebarFade(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable (enabled: Boolean) -> Unit,
+) {
+    val opacity by
+        animateFloatAsState(
+            targetValue = if (visible) 1f else 0f,
+            animationSpec =
+                tween(
+                    durationMillis =
+                        if (visible) SidebarUtilityFadeInMillis else SidebarUtilityFadeOutMillis,
+                ),
+            label = "sidebarUtilityOpacity",
+        )
+    val semanticsModifier =
+        if (visible) {
+            Modifier
+        } else {
+            Modifier.clearAndSetSemantics {}
+        }
+
+    Box(modifier = modifier.graphicsLayer { alpha = opacity }.then(semanticsModifier)) {
+        content(visible)
+    }
+}
+
+internal fun sidebarRevealSteps(from: Int, to: Int): List<Int> =
+    when {
+        from < to -> ((from + 1)..to).toList()
+        from > to -> ((from - 1) downTo to).toList()
+        else -> emptyList()
+    }
+
+private data class NavItem(val route: AppRoute, val label: String, val icon: ImageVector)
+
+internal val ExpandedSidebarWidth = 232.dp
+internal val CollapsedSidebarWidth = 72.dp
+private val SidebarHeaderHeight = 78.dp
+private val SidebarHeaderInset = 16.dp
+private val NavRailIndicatorWidth = 3.dp
+private val NavRailIconStartGap = 9.dp
+private val NavRailIconSize = 18.dp
+private val NavRailLabelGap = 11.dp
+
+internal fun navButtonLabelStartOffset(): Dp =
+    NavRailIndicatorWidth + NavRailIconStartGap + NavRailIconSize + NavRailLabelGap
+
+private const val SidebarWidthAnimationMillis = 240
+private const val SidebarRevealStaggerMillis = 55
+private const val SidebarExpandedExitMillis = 120
+private const val SidebarUtilityFadeInMillis = 120
+private const val SidebarUtilityFadeOutMillis = 80
+private const val SidebarRevealHeader = 1
+private const val SidebarRevealFirstNav = 2
+private const val SidebarRevealStatus = 8
+private const val SidebarRevealSettings = 9
+private const val SidebarRevealTheme = 10
+private const val SidebarRevealAll = SidebarRevealTheme
+private const val SidebarCompactRevealCommand = 1
+private const val SidebarCompactRevealStatus = 2
+private const val SidebarCompactRevealSettings = 3
+private const val SidebarCompactRevealTheme = 4
+private const val SidebarCompactRevealAll = SidebarCompactRevealTheme

@@ -145,6 +145,9 @@ class QueryViewModel(
     val error: String?
         get() = runController.error
 
+    val discardedRunNotice: String?
+        get() = runController.discardedRunNotice
+
     val riskEvaluation: QueryRiskEvaluation?
         get() = runController.riskEvaluation
 
@@ -226,7 +229,7 @@ class QueryViewModel(
     }
 
     override fun addTable(tableInfo: TableInfo) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         val alias = "t${aliasCounter++}"
         val offset = canvasTables.size * 30f
         canvasTables.add(
@@ -239,7 +242,7 @@ class QueryViewModel(
 
     fun removeTable(alias: String) {
         if (canvasTables.none { it.alias == alias }) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         canvasTables.removeAll { it.alias == alias }
         selectedColumns = selectedColumns.filterNot { it.startsWith(columnKeyPrefix(alias)) }
         joins.removeAll { it.leftAlias == alias || it.rightAlias == alias }
@@ -269,7 +272,7 @@ class QueryViewModel(
     }
 
     override fun toggleColumn(alias: String, column: String) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         val key = columnKey(alias, column)
         val grouped = groups.any { it.tableAlias == alias && it.column == column }
         if (grouped && key in selectedColumns) {
@@ -304,14 +307,14 @@ class QueryViewModel(
     override fun addJoin(join: JoinSpec) {
         val exists = joins.any { it.matchesJoin(join) }
         if (!exists) {
-            invalidateSettledRunFailure()
+            invalidateForEdit()
             joins.add(join)
         }
     }
 
     fun removeJoin(index: Int) {
         if (index in joins.indices) {
-            invalidateSettledRunFailure()
+            invalidateForEdit()
             joins.removeAt(index)
         }
     }
@@ -319,13 +322,13 @@ class QueryViewModel(
     fun removeJoin(join: JoinSpec) {
         val index = joins.indexOfFirst { it.matchesJoin(join) }
         if (index >= 0) {
-            invalidateSettledRunFailure()
+            invalidateForEdit()
             joins.removeAt(index)
         }
     }
 
     fun addFilter(spec: NewFilterSpec) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         filterGroupState = addFilterLeaf(filters, emptyList(), spec)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
@@ -339,14 +342,14 @@ class QueryViewModel(
         val filter =
             defaultFilterForColumn(tableAlias, columnName, dataType).let { default ->
                 if (op == default.op) default
-                else default.copy(op = op, value = defaultValueFor(op, dataType))
+                else default.copy(op = op, value = buildFilterValue(op, dataType))
             }
         addFilter(filter)
         requestedFilterFocusIdState = filter.id.takeIf { hasTextValueInput(op, dataType) }
     }
 
     fun cycleSort(tableAlias: String, columnName: String) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         val existing = sorts.firstOrNull { it.tableAlias == tableAlias && it.column == columnName }
         sortState =
             when (existing?.direction) {
@@ -373,7 +376,7 @@ class QueryViewModel(
         filters.containsFilter(tableAlias, columnName)
 
     fun setSort(tableAlias: String, columnName: String, direction: SortDirection) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         val existing = sortForColumn(tableAlias, columnName)
         sortState =
             if (existing == null) {
@@ -390,7 +393,7 @@ class QueryViewModel(
 
     fun clearSort(tableAlias: String, columnName: String) {
         if (sortForColumn(tableAlias, columnName) == null) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         sortState = sorts.filterNot { it.tableAlias == tableAlias && it.column == columnName }
     }
 
@@ -402,19 +405,19 @@ class QueryViewModel(
         val conflictKeys =
             distinctSortConflicts.mapTo(mutableSetOf()) { it.tableAlias to it.column }
         if (conflictKeys.isEmpty()) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         sortState = sorts.filterNot { (it.tableAlias to it.column) in conflictKeys }
     }
 
     fun moveSort(fromIndex: Int, toIndex: Int) {
         val moved = sorts.moveItem(fromIndex, toIndex)
         if (moved === sorts) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         sortState = moved
     }
 
     fun toggleGroup(tableAlias: String, columnName: String) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         if (groupForColumn(tableAlias, columnName) == null) {
             if (groups.isEmpty()) {
                 val existingSelections =
@@ -442,7 +445,7 @@ class QueryViewModel(
 
     fun clearGroup(tableAlias: String, columnName: String) {
         if (groupForColumn(tableAlias, columnName) == null) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         val clearsLastGroup = groups.size == 1
         val remainingGroups = groups.filterNot {
             it.tableAlias == tableAlias && it.column == columnName
@@ -461,7 +464,7 @@ class QueryViewModel(
     fun moveGroup(fromIndex: Int, toIndex: Int) {
         val moved = groups.moveItem(fromIndex, toIndex)
         if (moved === groups) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         groupState = moved
     }
 
@@ -480,41 +483,41 @@ class QueryViewModel(
     }
 
     override fun setFilters(group: FilterGroup) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         filterGroupState = ensureFilterNodeIds(group)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     override fun setSorts(sorts: List<SortSpec>) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         sortState = sorts
     }
 
     override fun setGroups(groups: List<GroupSpec>) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         groupState = groups.distinctBy { it.tableAlias to it.column }
     }
 
     override fun setDistinct(distinct: Boolean) {
         if (distinctState == distinct) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         distinctState = distinct
     }
 
     fun addFilterToGroup(groupPath: List<Int>, spec: NewFilterSpec) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         filterGroupState = addFilterLeaf(filters, groupPath, spec)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun addGroupToGroup(groupPath: List<Int>, connector: GroupConnector) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         filterGroupState = addFilterGroup(filters, groupPath, connector)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     fun updateFilter(path: List<Int>, spec: NewFilterSpec) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         val existingId = filterLeafIdAtPath(filters, path)
         val specWithId = spec.copy(id = existingId ?: spec.id.ifEmpty { newNodeId() })
         filterGroupState = updateFilterNode(filters, path, FilterNode.Leaf(specWithId))
@@ -522,7 +525,7 @@ class QueryViewModel(
     }
 
     override fun setConnectorOverrides(map: Map<String, GroupConnector>) {
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         connectorOverrideState = rebuildConnectorOverrides(filters, map)
     }
 
@@ -552,7 +555,7 @@ class QueryViewModel(
             next[key] = connector
         }
         if (next == connectorOverrides) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         connectorOverrideState = next
     }
 
@@ -566,14 +569,14 @@ class QueryViewModel(
 
     fun removeFilterNode(path: List<Int>) {
         if (path.isEmpty()) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         filterGroupState = removeFilterNode(filters, path)
         connectorOverrideState = rebuildConnectorOverrides(filters, connectorOverrides)
     }
 
     override fun setLimit(limit: Int, uncapped: Boolean) {
         if (queryLimit == limit && queryUncapped == uncapped) return
-        invalidateSettledRunFailure()
+        invalidateForEdit()
         queryLimit = limit
         queryUncapped = uncapped
     }
@@ -620,11 +623,15 @@ class QueryViewModel(
     }
 
     fun dismissError() {
-        invalidateSettledRunFailure()
+        runController.invalidateSettledRunFailure()
     }
 
-    private fun invalidateSettledRunFailure() {
-        runController.invalidateSettledRunFailure()
+    fun dismissDiscardedRunNotice() {
+        runController.dismissDiscardedRunNotice()
+    }
+
+    private fun invalidateForEdit() {
+        runController.invalidateForEdit()
     }
 
     fun restoreFromSpec(spec: QuerySpec, schemaTables: List<TableInfo>) {
@@ -639,7 +646,7 @@ class QueryViewModel(
             dataType: String,
         ): FilterSpec {
             val op = FilterOp.Eq
-            val value = defaultValueFor(op, dataType)
+            val value = buildFilterValue(op, dataType)
             return FilterSpec(
                 id = newNodeId(),
                 tableAlias = tableAlias,
@@ -651,13 +658,33 @@ class QueryViewModel(
     }
 }
 
-private fun defaultValueFor(op: FilterOp, dataType: String): FilterValue? {
+internal fun buildFilterValue(
+    op: FilterOp,
+    dataType: String,
+    existing: FilterValue? = null,
+): FilterValue? {
     val kind = literalKindForColumn(dataType)
     return when (op.valueKind()) {
         ValueKind.None -> null
-        ValueKind.Single -> FilterValue.Single(FilterLiteral(kind, ""))
-        ValueKind.List -> FilterValue.ListValue(listOf(FilterLiteral(kind, "")))
-        ValueKind.Pair -> FilterValue.Pair(FilterLiteral(kind, ""), FilterLiteral(kind, ""))
+        ValueKind.Single -> {
+            val text = (existing as? FilterValue.Single)?.literal?.text.orEmpty()
+            FilterValue.Single(FilterLiteral(kind, text))
+        }
+        ValueKind.List -> {
+            val items =
+                (existing as? FilterValue.ListValue)
+                    ?.literals
+                    ?.map { FilterLiteral(kind, it.text) }
+                    .orEmpty()
+            FilterValue.ListValue(items.ifEmpty { listOf(FilterLiteral(kind, "")) })
+        }
+        ValueKind.Pair -> {
+            val pair = existing as? FilterValue.Pair
+            FilterValue.Pair(
+                FilterLiteral(kind, pair?.first?.text.orEmpty()),
+                FilterLiteral(kind, pair?.second?.text.orEmpty()),
+            )
+        }
     }
 }
 

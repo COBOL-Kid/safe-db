@@ -86,6 +86,7 @@ import com.safedb.ui.Sidebar
 import com.safedb.ui.rememberSqlParseResult
 import com.safedb.ui.theme.SafeDbTheme
 import com.safedb.viewmodel.AppViewModel
+import com.safedb.viewmodel.DatabaseReachability
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
 import com.safedb.viewmodel.createExploreSession
@@ -531,7 +532,7 @@ private fun renderConnectionsForm(
                 route = AppRoute.Connections,
                 isDark = isDark,
                 collapsed = false,
-                connected = false,
+                reachability = DatabaseReachability.Disconnected,
                 onCollapsedChange = {},
                 onNavigate = {},
                 onOpenSettings = {},
@@ -550,7 +551,6 @@ private fun renderConnectionsForm(
                     onEditingConnectionChange = {},
                     onDeleted = {},
                     onConnectionChanged = {},
-                    onSaved = {},
                 )
             }
         }

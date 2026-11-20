@@ -203,6 +203,54 @@ class ApplyVisualizationTest {
         assertEquals(emptyList(), preview.warnings)
     }
 
+    @Test
+    fun labelFiltersAndMissingColumnsFilterMarksConsistently() {
+        val labelPreview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values = listOf(VisualizationMeasure("revenue", MeasureFn.Sum, "amount")),
+                    filters =
+                        listOf(
+                            PivotFilter.Label(
+                                "f-region",
+                                "region",
+                                "Region",
+                                LabelFilterOp.Equals,
+                                "west",
+                            ),
+                            PivotFilter.Label(
+                                "f-status",
+                                "status",
+                                "Status",
+                                LabelFilterOp.Contains,
+                                "HIP",
+                            ),
+                        ),
+                ),
+            )
+
+        assertEquals(listOf("shipped"), labelPreview.marks.map { it.xLabel })
+        assertEquals(listOf(30.0), labelPreview.marks.map { it.y })
+
+        val missingColumn =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values = listOf(VisualizationMeasure.countRows()),
+                    filters =
+                        listOf(
+                            PivotFilter.Members("f-missing", "missing", "Missing", setOf("x")),
+                        ),
+                ),
+            )
+        assertEquals("No rows to plot.", missingColumn.blockingMessage)
+    }
+
     private fun sample() =
         QueryResult(
             columns =

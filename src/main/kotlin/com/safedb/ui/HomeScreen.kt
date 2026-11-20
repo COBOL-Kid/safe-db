@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.safedb.AppRoute
+import com.safedb.model.ConnectionDef
 import com.safedb.ui.components.AppCard
 import com.safedb.ui.components.BannerKind
 import com.safedb.ui.components.ConfirmDialog
@@ -64,6 +65,7 @@ fun HomeScreen(
     onOpenSavedQuery: (com.safedb.model.SavedQuery) -> Unit,
 ) {
     val initialLoading by viewModel.initialLoading.collectAsState()
+    val connections by viewModel.connections.connections.collectAsState()
     val savedQueries by viewModel.savedQueries.queries.collectAsState()
     val savedQueryError by viewModel.savedQueries.error.collectAsState()
     var deleteTargetId by remember { mutableStateOf<String?>(null) }
@@ -185,10 +187,11 @@ fun HomeScreen(
                     userScrollEnabled = false,
                 ) {
                     items(savedQueries, key = { it.id }) { query ->
+                        val connectionLabel = connectionName(connections, query.connectionId)
                         SavedQueryCard(
                             query = query,
                             subtitle =
-                                "${viewModel.connections.connectionName(query.connectionId)} · " +
+                                "$connectionLabel · " +
                                     "${query.spec.tables.size} table${if (query.spec.tables.size == 1) "" else "s"}",
                             onOpen = { onOpenSavedQuery(query) },
                             onDelete = { deleteTargetId = query.id },
@@ -203,6 +206,9 @@ fun HomeScreen(
         }
     }
 }
+
+internal fun connectionName(connections: List<ConnectionDef>, id: String): String =
+    connections.firstOrNull { it.id == id }?.name ?: "Unknown"
 
 @Composable
 private fun QuickLinkCard(

@@ -14,13 +14,28 @@ import com.safedb.query.QueryError
 import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.QueryRiskEvaluation
 
+fun interface QueryHistoryRecording {
+    fun shouldRecord(): Boolean
+
+    companion object {
+        val Always: QueryHistoryRecording = QueryHistoryRecording { true }
+    }
+}
+
 data class QueryRunRequest(
     val connectionId: String,
     val spec: QuerySpec,
     val confirmation: QueryExecutionConfirmation? = null,
+    val historyRecording: QueryHistoryRecording = QueryHistoryRecording.Always,
 )
 
 data class QueryRunResult(val queryResult: QueryResult, val riskEvaluation: QueryRiskEvaluation)
+
+data class ResolvedQueryRun(
+    val connection: ConnectionDef,
+    val spec: QuerySpec,
+    val result: QueryRunResult,
+)
 
 data class QueryAssessmentResult(
     val normalizedSpec: QuerySpec,
@@ -31,8 +46,16 @@ data class QueryAssessmentResult(
     val riskEvaluation: QueryRiskEvaluation,
 )
 
+data class ResolvedQueryAssessment(
+    val connection: ConnectionDef,
+    val spec: QuerySpec,
+    val assessment: QueryAssessmentResult,
+)
+
 class QueryFailureException(val queryError: QueryError, val warnings: List<String> = emptyList()) :
     IllegalArgumentException(queryError.message)
+
+class ConnectionNotFoundException : IllegalArgumentException("Connection not found")
 
 internal fun QueryFailureException(coreError: QueryCoreError): QueryFailureException =
     QueryFailureException(coreError.error, coreError.warnings)
@@ -54,7 +77,18 @@ interface SafeDbService {
 
     suspend fun runQuery(request: QueryRunRequest): QueryRunResult
 
+    suspend fun runQueryWithSchema(
+        connectionId: String,
+        confirmation: QueryExecutionConfirmation? = null,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryRun
+
     suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult
+
+    suspend fun assessQueryWithSchema(
+        connectionId: String,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryAssessment
 
     suspend fun listSavedQueries(): List<SavedQuery>
 

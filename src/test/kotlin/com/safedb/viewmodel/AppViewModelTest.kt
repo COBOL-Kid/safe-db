@@ -4,35 +4,15 @@ import com.safedb.explore.ExploreConfig
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.exploreSpecHash
-import com.safedb.model.ColumnInfo
 import com.safedb.model.ConnectionDef
 import com.safedb.model.Dialect
-import com.safedb.model.FilterGroup
-import com.safedb.model.HistoryEntry
 import com.safedb.model.QueryResult
 import com.safedb.model.QueryRiskGate
-import com.safedb.model.QuerySpec
 import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.model.SavedQuery
-import com.safedb.model.Schema
-import com.safedb.model.Settings
 import com.safedb.model.TableInfo
 import com.safedb.model.TableRef
-import com.safedb.query.QUERY_RISK_SCORE_VERSION
-import com.safedb.query.QueryConfirmationCondition
-import com.safedb.query.QueryConfirmationReasonCode
-import com.safedb.query.QueryConfirmationRequirement
-import com.safedb.query.QueryError
-import com.safedb.query.QueryExecutionConfirmation
-import com.safedb.query.QueryRiskAssessment
-import com.safedb.query.QueryRiskDecision
-import com.safedb.query.QueryRiskSeverity
-import com.safedb.query.RiskDecisionReason
-import com.safedb.query.RiskGateState
-import com.safedb.service.FakeSafeDbServiceSupport
-import com.safedb.service.QueryFailureException
-import com.safedb.service.QueryRunRequest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -45,7 +25,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -129,160 +108,6 @@ class AppViewModelTest {
             advanceUntilIdle()
 
             assertTrue(service.locked)
-        }
-
-    @Test
-    fun refreshDatabaseReachabilityClearsPreviousSuccessAndSkipsNullConnection() =
-        runTest(dispatcher) {
-            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
-            val viewModel = AppViewModel(service, dispatcher)
-            try {
-                advanceUntilIdle()
-                assertFalse(viewModel.databaseReachable.value)
-
-                viewModel.refreshDatabaseReachability(testConnection())
-                runCurrent()
-                assertTrue(viewModel.databaseReachable.value)
-                assertEquals(1, service.testConnectionCalls)
-
-                viewModel.refreshDatabaseReachability(null)
-                advanceTimeBy(ReachabilityPollInterval)
-                runCurrent()
-
-                assertFalse(viewModel.databaseReachable.value)
-                assertEquals(1, service.testConnectionCalls)
-            } finally {
-                viewModel.close()
-            }
-        }
-
-    @Test
-    fun refreshDatabaseReachabilityBecomesTrueAfterSuccessfulProbe() =
-        runTest(dispatcher) {
-            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
-            val viewModel = AppViewModel(service, dispatcher)
-            try {
-                advanceUntilIdle()
-
-                viewModel.refreshDatabaseReachability(testConnection())
-                runCurrent()
-
-                assertTrue(viewModel.databaseReachable.value)
-                assertEquals(1, service.testConnectionCalls)
-                assertNull(service.testConnectionPassword)
-            } finally {
-                viewModel.close()
-            }
-        }
-
-    @Test
-    fun refreshDatabaseReachabilityStaysFalseAfterFailedProbe() =
-        runTest(dispatcher) {
-            val service =
-                FakeSafeDbService(
-                    testConnectionOutcome = Result.failure(IllegalStateException("denied")),
-                )
-            val viewModel = AppViewModel(service, dispatcher)
-            try {
-                advanceUntilIdle()
-
-                viewModel.refreshDatabaseReachability(testConnection())
-                runCurrent()
-
-                assertFalse(viewModel.databaseReachable.value)
-                assertEquals(1, service.testConnectionCalls)
-            } finally {
-                viewModel.close()
-            }
-        }
-
-    @Test
-    fun refreshDatabaseReachabilityIgnoresResultFromReplacedConnection() =
-        runTest(dispatcher) {
-            val gate = CompletableDeferred<Unit>()
-            val started = CompletableDeferred<Unit>()
-            val service =
-                FakeSafeDbService(
-                    testConnectionGate = gate,
-                    testConnectionStarted = started,
-                    testConnectionOutcome = Result.success("ok"),
-                )
-            val viewModel = AppViewModel(service, dispatcher)
-            try {
-                advanceUntilIdle()
-
-                viewModel.refreshDatabaseReachability(testConnection())
-                runCurrent()
-                assertTrue(started.isCompleted)
-                assertFalse(viewModel.databaseReachable.value)
-
-                viewModel.refreshDatabaseReachability(null)
-                gate.complete(Unit)
-                advanceTimeBy(ReachabilityPollInterval)
-                runCurrent()
-
-                assertFalse(viewModel.databaseReachable.value)
-                assertEquals(1, service.testConnectionCalls)
-            } finally {
-                viewModel.close()
-            }
-        }
-
-    @Test
-    fun refreshDatabaseReachabilityPollsTheSameConnectionAgain() =
-        runTest(dispatcher) {
-            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
-            val viewModel = AppViewModel(service, dispatcher)
-            try {
-                advanceUntilIdle()
-
-                viewModel.refreshDatabaseReachability(testConnection())
-                runCurrent()
-                assertTrue(viewModel.databaseReachable.value)
-                assertEquals(1, service.testConnectionCalls)
-
-                advanceTimeBy(ReachabilityPollInterval)
-                runCurrent()
-
-                assertEquals(2, service.testConnectionCalls)
-                assertTrue(viewModel.databaseReachable.value)
-                assertNull(service.testConnectionPassword)
-            } finally {
-                viewModel.close()
-            }
-        }
-
-    @Test
-    fun refreshDatabaseReachabilityStaysReachableUntilALaterFailedPollReturns() =
-        runTest(dispatcher) {
-            val service = FakeSafeDbService(testConnectionOutcome = Result.success("ok"))
-            val viewModel = AppViewModel(service, dispatcher)
-            try {
-                advanceUntilIdle()
-
-                viewModel.refreshDatabaseReachability(testConnection())
-                runCurrent()
-                assertTrue(viewModel.databaseReachable.value)
-                assertEquals(1, service.testConnectionCalls)
-
-                val gate = CompletableDeferred<Unit>()
-                service.testConnectionGate = gate
-                service.testConnectionOutcome = Result.failure(IllegalStateException("down"))
-
-                advanceTimeBy(ReachabilityPollInterval)
-                runCurrent()
-
-                assertEquals(2, service.testConnectionCalls)
-                assertTrue(viewModel.databaseReachable.value)
-
-                gate.complete(Unit)
-                runCurrent()
-
-                assertFalse(viewModel.databaseReachable.value)
-                assertEquals(2, service.testConnectionCalls)
-            } finally {
-                viewModel.close()
-            }
         }
 
     @Test
@@ -911,277 +736,131 @@ class AppViewModelTest {
             }
         }
 
-    private fun testConnection() =
-        ConnectionDef(
-            id = "c1",
-            name = "Local",
-            dialect = Dialect.MySql,
-            host = "localhost",
-            port = 3306,
-            database = "test",
-            username = "reader",
-        )
-}
+    @Test
+    fun exploreOriginContextAndRefreshActiveSampleHandleBuilderAndSqlOrigins() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                val connections = listOf(connection)
 
-private class FakeSafeDbService(
-    private val riskGateFirstRun: Boolean = false,
-    private val confirmationRequired: Boolean = false,
-    private val queryGate: CompletableDeferred<Unit>? = null,
-    private val queryStarted: CompletableDeferred<Unit>? = null,
-    private val settingsLoadGate: CompletableDeferred<Unit>? = null,
-    private val connectionsLoadGate: CompletableDeferred<Unit>? = null,
-    private val successfulRiskGate: QueryRiskGate = QueryRiskGate.Standard,
-    private val schemaTables: List<TableInfo> = listOf(sampleTable()),
-    var testConnectionGate: CompletableDeferred<Unit>? = null,
-    private val testConnectionStarted: CompletableDeferred<Unit>? = null,
-    var testConnectionOutcome: Result<String> =
-        Result.failure(UnsupportedOperationException("testConnection")),
-) : FakeSafeDbServiceSupport() {
-    var locked = false
-    var testConnectionCalls = 0
-        private set
-
-    var testConnectionPassword: String? = null
-        private set
-
-    var queryAttempts = 0
-        private set
-
-    var settingsSaveCount = 0
-        private set
-
-    var schemaLoadCount = 0
-        private set
-
-    val recordedHistory = mutableListOf<HistoryEntry>()
-    val recordedSavedQueries = mutableListOf<SavedQuery>()
-    private var historySeq = 0
-    val requiredConfirmation =
-        QueryExecutionConfirmation(
-            connectionId = "c1",
-            connectionFingerprint = "connection-fingerprint",
-            queryFingerprint = "confirmable",
-            conditions =
-                setOf(
-                    QueryConfirmationCondition(
-                        QueryConfirmationReasonCode.PlanUnavailable,
-                        "TimedOut",
-                    ),
-                ),
-        )
-
-    override suspend fun listConnections(): List<ConnectionDef> {
-        connectionsLoadGate?.await()
-        return emptyList()
-    }
-
-    override suspend fun lockCredentials() {
-        locked = true
-    }
-
-    override suspend fun testConnection(def: ConnectionDef, password: String?): String {
-        testConnectionCalls += 1
-        testConnectionPassword = password
-        testConnectionStarted?.complete(Unit)
-        testConnectionGate?.await()
-        return testConnectionOutcome.getOrThrow()
-    }
-
-    override suspend fun getSchema(connectionId: String): Schema {
-        schemaLoadCount += 1
-        return Schema(schemaTables)
-    }
-
-    override suspend fun runQuery(request: QueryRunRequest): com.safedb.service.QueryRunResult {
-        queryAttempts += 1
-        queryStarted?.complete(Unit)
-        queryGate?.await()
-        if (riskGateFirstRun && queryAttempts == 1) {
-            val assessment =
-                QueryRiskAssessment(
-                    scoreVersion = QUERY_RISK_SCORE_VERSION,
-                    queryFingerprint = "blocked",
-                    score = 6,
-                    severity = QueryRiskSeverity.High,
-                    categoryScores = emptyMap(),
-                    signals = emptyList(),
-                    uncertainties = emptyList(),
+                assertFalse(
+                    viewModel.exploreOriginContext("c1", null, connections).sampleRefreshEnabled,
                 )
-            val decision =
-                QueryRiskDecision(
-                    queryFingerprint = "blocked",
-                    state = RiskGateState.Blocked,
-                    effectiveGate = QueryRiskGate.Standard,
-                    blockingBand = QueryRiskSeverity.High,
-                    reasons =
-                        listOf(
-                            RiskDecisionReason(
-                                "risk_gate",
-                                "The query risk gate blocks this query.",
-                            ),
-                        ),
+
+                viewModel.query.addTable(sampleTable())
+                viewModel.query.run("c1")
+                advanceUntilIdle()
+                val builderSample = viewModel.query.currentSample("c1")!!
+
+                viewModel.openExplore(connection, builderSample.spec, builderSample.result)
+                val builderContext =
+                    viewModel.exploreOriginContext("c1", null, connections, ExploreOrigin.Builder)
+                assertTrue(builderContext.sampleRefreshEnabled)
+                assertEquals(builderSample.spec, builderContext.currentSpec)
+
+                viewModel.query.setLimit(40)
+                viewModel.query.run("c1")
+                advanceUntilIdle()
+                viewModel.refreshActiveExploreSample("c1", null, connections)
+                assertEquals(40, viewModel.explore.value?.session?.builderLimit)
+
+                assertFalse(
+                    viewModel.exploreOriginContext("c2", null, connections).sampleRefreshEnabled,
                 )
-            val error =
-                QueryError.RiskGate(
-                    evaluation =
-                        com.safedb.query.QueryRiskEvaluation(
-                            staticAssessment = assessment,
-                            finalAssessment = assessment,
-                            planStatus = com.safedb.query.QueryPlanStatus.Available,
-                            decision = decision,
-                        ),
-                    historySpec = request.spec,
-                )
-            rememberHistory(request, error = error.message)
-            throw QueryFailureException(error)
+                viewModel.refreshActiveExploreSample("c2", null, connections)
+                assertEquals(40, viewModel.explore.value?.session?.builderLimit)
+
+                val sqlSpec = sampleSpec().copy(limit = 15)
+                viewModel.sqlEditor.run("c1", sqlSpec, viewModel.sqlEditor.text.text)
+                advanceUntilIdle()
+                val sqlSample = viewModel.sqlEditor.currentSample("c1", sqlSpec)!!
+                viewModel.openExplore(connection, sqlSpec, sqlSample.result, ExploreOrigin.Sql)
+
+                val sqlContext =
+                    viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
+                assertTrue(sqlContext.sampleRefreshEnabled)
+                assertEquals(sqlSpec, sqlContext.currentSpec)
+
+                val updatedSqlSpec = sampleSpec().copy(limit = 30)
+                viewModel.sqlEditor.run("c1", updatedSqlSpec, viewModel.sqlEditor.text.text)
+                advanceUntilIdle()
+                viewModel.refreshActiveExploreSample("c1", updatedSqlSpec, connections)
+                assertEquals(30, viewModel.explore.value?.session?.builderLimit)
+            } finally {
+                viewModel.close()
+            }
         }
-        if (confirmationRequired && request.confirmation != requiredConfirmation) {
-            val assessment =
-                QueryRiskAssessment(
-                    scoreVersion = QUERY_RISK_SCORE_VERSION,
-                    queryFingerprint = "confirmable",
-                    score = 0,
-                    severity = QueryRiskSeverity.Minimal,
-                    categoryScores = emptyMap(),
-                    signals = emptyList(),
-                    uncertainties = emptyList(),
+
+    @Test
+    fun runRecipeFromExploreSelectsConnectionClosesExploreAndNavigates() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                val connection = testConnection()
+                val sample =
+                    QueryResult(
+                        columns = listOf(ResultColumn("t0__status", "varchar")),
+                        rows = listOf(listOf(ResultCell.text("pending"))),
+                        rowCount = 1,
+                        truncated = false,
+                        warnings = emptyList(),
+                    )
+                viewModel.openExplore(connection, sampleSpec(), sample)
+                assertNotNull(viewModel.explore.value)
+
+                var selectedSchema: String? = null
+                var navigated = false
+                val recipe =
+                    ExploreRecipe(
+                        id = "r-from-explore",
+                        name = "From explore",
+                        createdAt = "1",
+                        updatedAt = "1",
+                        defaultMode = ExploreMode.Pivot,
+                        pivot = ExploreConfig(),
+                        querySpec = sampleSpec(),
+                    )
+
+                viewModel.runRecipeFromExplore(
+                    connection = connection,
+                    recipe = recipe,
+                    onSelectConnection = { selectedSchema = it.schema },
+                    onRestored = { navigated = true },
                 )
-            val reason =
-                RiskDecisionReason(
-                    code = "plan_unavailable",
-                    message = "Query plan assessment is unavailable.",
-                )
-            val requirement = QueryConfirmationRequirement(requiredConfirmation, listOf(reason))
-            val decision =
-                QueryRiskDecision(
-                    queryFingerprint = "confirmable",
-                    state = RiskGateState.ConfirmationRequired,
-                    effectiveGate = QueryRiskGate.Standard,
-                    blockingBand = QueryRiskSeverity.High,
-                    reasons = listOf(reason),
-                )
-            val error =
-                QueryError.ConfirmationRequired(
-                    evaluation =
-                        com.safedb.query.QueryRiskEvaluation(
-                            staticAssessment = assessment,
-                            finalAssessment = assessment,
-                            planStatus = com.safedb.query.QueryPlanStatus.Unavailable,
-                            decision = decision,
-                            confirmationRequirement = requirement,
-                        ),
-                    requirement = requirement,
-                    historySpec = request.spec,
-                )
-            rememberHistory(request, error = error.message)
-            throw QueryFailureException(error)
+                assertNull(viewModel.explore.value)
+                assertEquals("public", selectedSchema)
+
+                advanceUntilIdle()
+                assertTrue(navigated)
+                assertEquals("r-from-explore", viewModel.pendingRecipeRun.value?.recipe?.id)
+            } finally {
+                viewModel.close()
+            }
         }
-        val result =
-            QueryResult(
-                columns = listOf(ResultColumn("name", "varchar")),
-                rows = emptyList(),
-                rowCount = 0,
-                truncated = false,
-                warnings = emptyList(),
-            )
-        val assessment =
-            QueryRiskAssessment(
-                2,
-                "allowed",
-                0,
-                QueryRiskSeverity.Minimal,
-                emptyMap(),
-                emptyList(),
-                emptyList(),
-            )
-        rememberHistory(request, rowCount = result.rowCount)
-        return com.safedb.service.QueryRunResult(
-            result,
-            com.safedb.query.QueryRiskEvaluation(
-                staticAssessment = assessment,
-                finalAssessment = assessment,
-                planStatus = com.safedb.query.QueryPlanStatus.Available,
-                decision =
-                    QueryRiskDecision(
-                        "allowed",
-                        RiskGateState.Allowed,
-                        successfulRiskGate,
-                        QueryRiskSeverity.High,
-                        emptyList(),
-                    ),
-            ),
-        )
-    }
 
-    override suspend fun listSavedQueries(): List<SavedQuery> = recordedSavedQueries.toList()
+    @Test
+    fun settingsLoadDefaultSchemaOptionsReusesSchemaLoadedInAppViewModel() =
+        runTest(dispatcher) {
+            val service = FakeSafeDbService()
+            val viewModel = AppViewModel(service, dispatcher)
+            try {
+                advanceUntilIdle()
+                viewModel.schema.load("c1")
+                advanceUntilIdle()
+                assertEquals(1, service.schemaLoadCount)
 
-    override suspend fun saveSavedQuery(query: SavedQuery) {
-        recordedSavedQueries.removeAll { it.id == query.id }
-        recordedSavedQueries += query
-    }
+                viewModel.settings.loadDefaultSchemaOptions("c1")
+                advanceUntilIdle()
 
-    override suspend fun deleteSavedQuery(id: String) {
-        recordedSavedQueries.removeAll { it.id == id }
-    }
-
-    override suspend fun listHistory(): List<HistoryEntry> = recordedHistory.toList()
-
-    override suspend fun clearHistory() {
-        recordedHistory.clear()
-    }
-
-    override suspend fun deleteHistoryEntry(id: String) {
-        recordedHistory.removeAll { it.id == id }
-    }
-
-    private fun rememberHistory(
-        request: QueryRunRequest,
-        error: String? = null,
-        rowCount: Int = 0,
-    ) {
-        historySeq += 1
-        recordedHistory.add(
-            0,
-            HistoryEntry(
-                id = "h$historySeq",
-                connectionId = request.connectionId,
-                connectionName = "Local",
-                spec = request.spec,
-                rowCount = rowCount,
-                warnings = emptyList(),
-                error = error,
-                timestamp = historySeq.toString(),
-            ),
-        )
-    }
-
-    override suspend fun getSettings(): Settings {
-        settingsLoadGate?.await()
-        return Settings.default()
-    }
-
-    override suspend fun saveSettings(settings: Settings) {
-        settingsSaveCount += 1
-    }
+                assertEquals(listOf("public"), viewModel.settings.defaultSchemaOptions.value)
+                assertEquals(1, service.schemaLoadCount)
+            } finally {
+                viewModel.close()
+            }
+        }
 }
-
-private fun sampleTable() =
-    TableInfo(
-        schema = "public",
-        name = "users",
-        columns =
-            listOf(
-                ColumnInfo("id", "int", nullable = false, isIndexed = true),
-                ColumnInfo("name", "varchar", nullable = false, isIndexed = false),
-            ),
-        indexes = emptyList(),
-    )
-
-private fun sampleSpec() =
-    QuerySpec(
-        tables = listOf(TableRef("public", "users", "saved_t0")),
-        columns = emptyList(),
-        joins = emptyList(),
-        filters = FilterGroup.empty(),
-        limit = 25,
-    )

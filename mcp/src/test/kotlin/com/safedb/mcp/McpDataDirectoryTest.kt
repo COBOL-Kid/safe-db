@@ -1,12 +1,15 @@
 package com.safedb.mcp
 
 import com.safedb.platform.DataDirectory
+import com.safedb.platform.DesktopPlatform
 import com.safedb.platform.DesktopStoreUnavailableException
 import com.safedb.platform.UnsupportedDesktopPlatformException
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class McpDataDirectoryTest {
     @Test
@@ -76,5 +79,12 @@ class McpDataDirectoryTest {
                 McpEnvironment("linux-gnu", "/home/test", xdgDataHome = "   "),
             ),
         )
+    }
+
+    @Test
+    fun sharesDesktopStoreOnlyOnWindows() {
+        assertTrue(McpDataDirectory.sharesDesktopStore(DesktopPlatform.Windows))
+        assertFalse(McpDataDirectory.sharesDesktopStore(DesktopPlatform.MacOs))
+        assertFalse(McpDataDirectory.sharesDesktopStore(DesktopPlatform.Linux))
     }
 }

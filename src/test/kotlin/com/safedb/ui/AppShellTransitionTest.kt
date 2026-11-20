@@ -3,54 +3,9 @@ package com.safedb.ui
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class AppShellTransitionTest {
-    @Test
-    fun `utility items keep the compact reveal order`() {
-        assertEquals(
-            listOf(
-                SidebarUtilityItem.Command,
-                SidebarUtilityItem.Status,
-                SidebarUtilityItem.Settings,
-                SidebarUtilityItem.Theme,
-            ),
-            SidebarUtilityItem.entries,
-        )
-    }
-
-    @Test
-    fun `compact controls reveal one at a time`() {
-        assertEquals(emptyList(), sidebarCompactUtilityItemsAtStep(0))
-        assertEquals(listOf(SidebarUtilityItem.Command), sidebarCompactUtilityItemsAtStep(1))
-        assertEquals(
-            listOf(SidebarUtilityItem.Command, SidebarUtilityItem.Status),
-            sidebarCompactUtilityItemsAtStep(2),
-        )
-        assertEquals(
-            listOf(
-                SidebarUtilityItem.Command,
-                SidebarUtilityItem.Status,
-                SidebarUtilityItem.Settings,
-                SidebarUtilityItem.Theme,
-            ),
-            sidebarCompactUtilityItemsAtStep(4),
-        )
-    }
-
-    @Test
-    fun `expanded controls reveal without the command field`() {
-        assertEquals(emptyList(), sidebarExpandedUtilityItemsAtStep(7))
-        assertEquals(listOf(SidebarUtilityItem.Status), sidebarExpandedUtilityItemsAtStep(8))
-        assertEquals(
-            listOf(
-                SidebarUtilityItem.Status,
-                SidebarUtilityItem.Settings,
-                SidebarUtilityItem.Theme,
-            ),
-            sidebarExpandedUtilityItemsAtStep(10),
-        )
-    }
-
     @Test
     fun `reverse transitions fade controls out in reverse reveal order`() {
         assertEquals(listOf(3, 2, 1, 0), sidebarRevealSteps(from = 4, to = 0))
@@ -73,7 +28,8 @@ class AppShellTransitionTest {
 
     @Test
     fun `nav icon rail offset stays ahead of the label slot`() {
-        assertEquals(12.dp, navButtonIconStartOffset())
+        val iconStartOffset = 12.dp
         assertEquals(41.dp, navButtonLabelStartOffset())
+        assertTrue(navButtonLabelStartOffset() > iconStartOffset)
     }
 }

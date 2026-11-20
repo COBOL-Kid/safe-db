@@ -40,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +69,7 @@ import com.safedb.ui.components.MessageBanner
 import com.safedb.ui.components.PrimaryButton
 import com.safedb.ui.components.SecondaryButton
 import com.safedb.viewmodel.ConnectionsViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 // Leave a little vertical headroom beyond Material's 56 dp minimum. An exact 56 dp constraint
@@ -90,9 +92,12 @@ fun ConnectionForm(
     existingConnection: ConnectionDef? = null,
     onSaved: (ConnectionDef, Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onConnectionChanged: (String) -> Unit = {},
 ) {
     val form = remember(existingConnection?.id) { ConnectionFormState(existingConnection) }
     val scope = rememberCoroutineScope()
+    var mounted by remember { mutableStateOf(true) }
+    DisposableEffect(Unit) { onDispose { mounted = false } }
 
     fun handleTest() {
         val validationError = form.validateForm()
@@ -110,6 +115,8 @@ fun ConnectionForm(
                         form.buildDef(),
                         form.passwordForOperation(),
                     )
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 form.testError = error.message ?: error.toString()
             } finally {
@@ -126,29 +133,27 @@ fun ConnectionForm(
         }
         form.saving = true
         form.formError = null
-        scope.launch {
-            try {
-                val def = form.buildDef()
-                val credentialMaterialChanged =
-                    form.original?.credentialFingerprint()?.let {
-                        it != def.credentialFingerprint()
-                    } ?: true
-                if (form.isEditing) {
-                    connectionsViewModel.updateConnection(def, form.passwordForOperation())
-                } else {
-                    connectionsViewModel.createConnection(
-                        def,
-                        form.passwordForOperation() ?: "",
-                    )
-                }
-                form.password = ""
-                form.showPassword = false
-                onSaved(def, credentialMaterialChanged)
-            } catch (error: Exception) {
-                form.formError = error.message ?: error.toString()
-            } finally {
-                form.saving = false
-            }
+        val def = form.buildDef()
+        val password = form.passwordForOperation()
+        val editing = form.isEditing
+        val credentialMaterialChanged = form.credentialMaterialChanged()
+        connectionsViewModel.saveConnection(
+            def = def,
+            password = password,
+            editing = editing,
+            credentialMaterialChanged = credentialMaterialChanged,
+            onConnectionChanged = onConnectionChanged,
+        ) { outcome ->
+            if (!mounted) return@saveConnection
+            form.saving = false
+            outcome.fold(
+                onSuccess = { saved ->
+                    form.password = ""
+                    form.showPassword = false
+                    onSaved(saved, credentialMaterialChanged)
+                },
+                onFailure = { error -> form.formError = error.message ?: error.toString() },
+            )
         }
     }
 

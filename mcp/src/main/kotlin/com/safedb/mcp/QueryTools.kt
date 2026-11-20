@@ -57,9 +57,22 @@ private suspend fun handleRunQuery(
         .getOrElse {
             return it
         }
-    val resolved =
-        resolveSqlSpec(service, request).getOrElse {
+    val args =
+        parseSqlToolArgs(request).getOrElse {
             return it
         }
-    return executeConfirmedQuery(service, resultStore, resolved.connection, resolved.spec, request)
+    val confirmation =
+        parseConfirmation(request).getOrElse {
+            return it
+        }
+    val resolved =
+        service.runQueryWithSchema(
+            args.connectionId,
+            confirmation,
+        ) { connection, schema, settings ->
+            parseSqlSpec(args.sql, args.defaultSchema, connection, schema, settings).getOrElse {
+                throw ToolFailure(it)
+            }
+        }
+    return successReceipt(resolved.result, resultStore, resolved.spec, resolved.connection)
 }

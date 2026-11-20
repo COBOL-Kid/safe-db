@@ -10,6 +10,10 @@ import com.safedb.model.QueryResult
 import com.safedb.model.Schema
 import com.safedb.model.SortDirection
 import com.zaxxer.hikari.HikariDataSource
+import java.net.SocketTimeoutException
+import java.sql.Connection
+import java.sql.SQLException
+import java.sql.SQLTimeoutException
 
 object MssqlAdapter {
     fun test(dataSource: HikariDataSource): String =
@@ -131,35 +135,45 @@ object MssqlAdapter {
         timeoutMs: Int,
     ): QueryResult =
         dataSource.connection.use { conn ->
-            var queryResult: QueryResult? = null
             withQueryTimeout(conn, timeoutMs) { timedConn ->
                 timedConn.autoCommit = false
-                timedConn.createStatement().use { stmt ->
-                    stmt.execute("BEGIN TRANSACTION")
-                    stmt.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
-                    stmt.execute("SET LOCK_TIMEOUT $timeoutMs")
-                }
-                queryResult =
+                // Let Hikari track DIRTY_BIT_ISOLATION and reset isolation on pool return.
+                timedConn.transactionIsolation = Connection.TRANSACTION_READ_UNCOMMITTED
+                var timeoutError: Exception? = null
+                val result =
                     try {
-                        val result =
+                        timedConn.createStatement().use {
+                            it.execute("SET LOCK_TIMEOUT $timeoutMs")
+                        }
+                        val rows =
                             prepareStatement(timedConn, compiled, Dialect.Mssql).use { ps ->
                                 ps.executeQuery().use { rs ->
                                     decodeQueryResult(rs, compiled.sql, Dialect.Mssql)
                                 }
                             }
-                        timedConn.createStatement().use { it.execute("COMMIT TRANSACTION") }
-                        result
+                        timedConn.commit()
+                        rows
                     } catch (e: Exception) {
-                        runCatching {
-                            timedConn.createStatement().use { it.execute("ROLLBACK TRANSACTION") }
+                        runCatching { timedConn.rollback() }
+                        if (!isMssqlTimeout(e)) throw e
+                        timeoutError = e
+                        null
+                    } finally {
+                        val restored = runCatching {
+                            if (!timedConn.isClosed) {
+                                timedConn.createStatement().use {
+                                    it.execute("SET LOCK_TIMEOUT -1")
+                                }
+                            }
                         }
-                        if (e.message?.contains("timed out", ignoreCase = true) == true) {
-                            throw QueryTimedOutException(timeoutMs)
+                        // A session whose lock timeout could not be reset must not be pooled again.
+                        if (restored.isFailure) {
+                            runCatching { dataSource.evictConnection(timedConn) }
                         }
-                        throw e
                     }
+                timeoutError?.let { throw mssqlQueryTimedOut(timeoutMs, it, timedConn) }
+                checkNotNull(result)
             }
-            queryResult ?: error("query did not produce a result")
         }
 
     fun explain(
@@ -169,10 +183,12 @@ object MssqlAdapter {
     ): ExplainResult =
         dataSource.connection.use { conn ->
             withQueryTimeout(conn, timeoutMs) { timedConn ->
-                timedConn.createStatement().use { it.execute("SET SHOWPLAN_XML ON") }
                 var showplanRestored = false
+                var timeoutError: Exception? = null
                 val xml =
                     try {
+                        // ON shares this finally with OFF so a failed ON cannot return SHOWPLAN on.
+                        timedConn.createStatement().use { it.execute("SET SHOWPLAN_XML ON") }
                         timedConn.createStatement().use { stmt ->
                             buildString {
                                 var hasResult = stmt.execute(mssqlShowplanSql(compiled))
@@ -188,6 +204,10 @@ object MssqlAdapter {
                                 }
                             }
                         }
+                    } catch (e: Exception) {
+                        if (!isMssqlTimeout(e)) throw e
+                        timeoutError = e
+                        null
                     } finally {
                         repeat(3) {
                             if (!showplanRestored) {
@@ -200,20 +220,48 @@ object MssqlAdapter {
                                         .isSuccess
                             }
                         }
+                        if (!showplanRestored) {
+                            runCatching { dataSource.evictConnection(timedConn) }
+                        }
                     }
+                val timedOut = timeoutError
+                if (timedOut != null) throw mssqlQueryTimedOut(timeoutMs, timedOut, timedConn)
                 if (!showplanRestored) {
                     return@withQueryTimeout ExplainResult.Unavailable(
                         com.safedb.model.PlanUnavailableReason.CleanupFailure,
-                        "SQL Server plan session could not restore SHOWPLAN_XML OFF; the dedicated connection was discarded",
+                        "SQL Server plan session could not restore SHOWPLAN_XML OFF; the pooled connection was discarded",
                     )
                 }
-                parseSqlServerPlan(xml)?.let(ExplainResult::Available)
+                parseSqlServerPlan(checkNotNull(xml))?.let(ExplainResult::Available)
                     ?: ExplainResult.Unavailable(
                         com.safedb.model.PlanUnavailableReason.ParseFailure,
                         "Could not normalize SQL Server SHOWPLAN XML",
                     )
             }
         }
+}
+
+internal fun isMssqlTimeout(error: Throwable): Boolean =
+    generateSequence(error) { it.cause }
+        .any { cause ->
+            cause is SQLTimeoutException ||
+                cause is SocketTimeoutException ||
+                (cause is SQLException && cause.errorCode == 1222) ||
+                cause.message?.contains("timed out", ignoreCase = true) == true
+        }
+
+private fun mssqlQueryTimedOut(
+    timeoutMs: Int,
+    error: Throwable,
+    connection: Connection,
+): QueryTimedOutException {
+    // isClosed can throw after a dead socket; that is still a dead connection.
+    val closed = runCatching { connection.isClosed }.getOrDefault(true)
+    val deadConnection =
+        closed ||
+            generateSequence(error) { it.cause }
+                .any { cause -> cause is SQLTimeoutException || cause is SocketTimeoutException }
+    return QueryTimedOutException(timeoutMs, error, deadConnection)
 }
 
 internal fun mssqlShowplanSql(compiled: CompiledQuery): String = buildString {

@@ -9,7 +9,13 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-@Serializable internal data class TableListResult(val tables: List<TableSummary>)
+@Serializable
+internal data class TableListResult(
+    val tables: List<TableSummary>,
+    @SerialName("total_count") val totalCount: Int,
+    val truncated: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
+)
 
 @Serializable
 internal data class TableSummary(
@@ -75,6 +81,9 @@ internal data class JoinPathsResult(
     @SerialName("from_table") val fromTable: String,
     @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("to_table") val toTable: String? = null,
     @EncodeDefault(EncodeDefault.Mode.NEVER) val neighbors: List<JoinStepSummary>? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("total_count") val totalCount: Int? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val truncated: Boolean? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
     @EncodeDefault(EncodeDefault.Mode.NEVER) val paths: List<JoinPathSummary>? = null,
 )
 

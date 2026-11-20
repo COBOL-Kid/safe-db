@@ -4,6 +4,7 @@ import com.safedb.model.Settings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonArray
@@ -25,6 +26,9 @@ class SchemaJoinToolsTest {
             assertEquals("public.orders", parsed.getValue("from_table").jsonPrimitive.content)
             assertFalse(parsed.containsKey("to_table"))
             assertFalse(parsed.containsKey("paths"))
+            assertEquals("1", parsed.getValue("total_count").jsonPrimitive.content)
+            assertEquals("false", parsed.getValue("truncated").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("next_offset"))
             val neighbors = parsed.getValue("neighbors").jsonArray
             assertEquals(1, neighbors.size)
             val step = neighbors.single().jsonObject
@@ -68,6 +72,9 @@ class SchemaJoinToolsTest {
             assertEquals("public.customers", parsed.getValue("from_table").jsonPrimitive.content)
             assertEquals("public.items", parsed.getValue("to_table").jsonPrimitive.content)
             assertFalse(parsed.containsKey("neighbors"))
+            assertFalse(parsed.containsKey("total_count"))
+            assertFalse(parsed.containsKey("truncated"))
+            assertFalse(parsed.containsKey("next_offset"))
             val paths = parsed.getValue("paths").jsonArray
             assertTrue(paths.isNotEmpty())
             val path = paths.first().jsonObject
@@ -92,6 +99,32 @@ class SchemaJoinToolsTest {
                     )
                     .json()
             assertTrue(tooShort.getValue("paths").jsonArray.isEmpty())
+        }
+    }
+
+    @Test
+    fun findJoinPathsWithToTableIgnoresInvalidOffset() = runBlocking {
+        val service = joinService()
+        withTempMcpClient(service) { client ->
+            val result =
+                client.callTool(
+                    "find_join_paths",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "from_table" to "public.customers",
+                        "to_table" to "public.items",
+                        "offset" to -1,
+                    ),
+                )
+            assertNotEquals(true, result.isError)
+            val parsed = result.json()
+            assertEquals("public.customers", parsed.getValue("from_table").jsonPrimitive.content)
+            assertEquals("public.items", parsed.getValue("to_table").jsonPrimitive.content)
+            assertFalse(parsed.containsKey("neighbors"))
+            assertFalse(parsed.containsKey("total_count"))
+            assertFalse(parsed.containsKey("truncated"))
+            assertFalse(parsed.containsKey("next_offset"))
+            assertTrue(parsed.getValue("paths").jsonArray.isNotEmpty())
         }
     }
 
@@ -247,6 +280,71 @@ class SchemaJoinToolsTest {
             val tool = client.listTools().tools.single { it.name == "find_join_paths" }
             assertEquals(true, tool.annotations?.readOnlyHint)
             assertTrue(tool.outputSchema?.properties?.containsKey("from_table") == true)
+        }
+    }
+
+    @Test
+    fun findJoinPathsPaginatesDirectNeighborsAndValidatesOffsetAndLimit() = runBlocking {
+        val service = joinService()
+        withTempMcpClient(service) { client ->
+            val first =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "public.customers",
+                            "offset" to 0,
+                            "limit" to 1,
+                        ),
+                    )
+                    .json()
+            assertEquals(1, first.getValue("neighbors").jsonArray.size)
+            assertEquals("2", first.getValue("total_count").jsonPrimitive.content)
+            assertEquals("true", first.getValue("truncated").jsonPrimitive.content)
+            assertEquals("1", first.getValue("next_offset").jsonPrimitive.content)
+
+            val second =
+                client
+                    .callTool(
+                        "find_join_paths",
+                        mapOf(
+                            "connection_id" to "c1",
+                            "from_table" to "public.customers",
+                            "offset" to 1,
+                            "limit" to 1,
+                        ),
+                    )
+                    .json()
+            assertEquals(1, second.getValue("neighbors").jsonArray.size)
+            assertEquals("2", second.getValue("total_count").jsonPrimitive.content)
+            assertEquals("false", second.getValue("truncated").jsonPrimitive.content)
+            assertFalse(second.containsKey("next_offset"))
+
+            assertError(
+                client.callTool(
+                    "find_join_paths",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "from_table" to "public.customers",
+                        "limit" to 0,
+                    ),
+                ),
+                "invalid_arguments",
+                "limit must be 1 or more",
+            )
+            assertError(
+                client.callTool(
+                    "find_join_paths",
+                    mapOf(
+                        "connection_id" to "c1",
+                        "from_table" to "public.customers",
+                        "offset" to -1,
+                    ),
+                ),
+                "invalid_arguments",
+                "offset must be 0 or more",
+            )
         }
     }
 }

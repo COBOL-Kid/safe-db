@@ -160,7 +160,7 @@ jobs:
           # can leave the package published or let a retry succeed.
           publish_tarball() {
             local tarball="$1" spec attempt
-            spec="$(tar -xOzf "$tarball" package/package.json | node -e 'const p=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(`${p.name}@${p.version}`)')"
+            spec="$(tar -xOzf "$tarball" package/package.json | node -e 'const p=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(p.name+"@"+p.version)')"
             for attempt in 1 2 3; do
               if npm view "$spec" version >/dev/null 2>&1; then
                 echo "$spec is already published; skipping"

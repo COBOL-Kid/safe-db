@@ -20,11 +20,16 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class ConnectionToolsTest {
     @Test
-    fun emptyListReturnsAnEmptyJsonArray() = runBlocking {
+    fun emptyListReturnsEmptyConnectionsObject() = runBlocking {
         withTempMcpClient(RecordingSafeDbService()) { client ->
             val listed = client.callTool("list_connections", emptyMap())
             assertFalse(listed.isError == true)
-            assertEquals(0, Json.parseToJsonElement(listed.text()).jsonArray.size)
+            val body = listed.json()
+            assertEquals(body, listed.structuredContent)
+            assertEquals(0, body.getValue("connections").jsonArray.size)
+            assertEquals("0", body.getValue("total_count").jsonPrimitive.content)
+            assertEquals("false", body.getValue("truncated").jsonPrimitive.content)
+            assertFalse(body.containsKey("next_offset"))
         }
     }
 
@@ -47,7 +52,10 @@ class ConnectionToolsTest {
             assertFalse(text.contains("should-not-leak"))
             assertFalse(text.contains("localhost"))
             assertFalse(text.contains("readonly"))
-            val parsed = Json.parseToJsonElement(text).jsonArray.single().jsonObject
+            val body = Json.parseToJsonElement(text).jsonObject
+            assertEquals("1", body.getValue("total_count").jsonPrimitive.content)
+            assertEquals("false", body.getValue("truncated").jsonPrimitive.content)
+            val parsed = body.getValue("connections").jsonArray.single().jsonObject
             assertEquals("c1", parsed.getValue("id").jsonPrimitive.content)
             assertEquals("Prod", parsed.getValue("name").jsonPrimitive.content)
             assertEquals("MySql", parsed.getValue("dialect").jsonPrimitive.content)
@@ -261,22 +269,42 @@ class ConnectionToolsTest {
     fun listAndDeleteServiceFailuresAreToolErrors() = runBlocking {
         val listService =
             object : RecordingSafeDbService() {
-                override suspend fun listConnections() = error("store read failed")
+                override suspend fun listConnections() =
+                    error("/secret/connections.json read failed")
             }
         withTempMcpClient(listService) { client ->
             val listed = client.callTool("list_connections", emptyMap())
             assertEquals(true, listed.isError)
             val listedBody = listed.json()
             assertEquals("internal", listedBody.getValue("error").jsonPrimitive.content)
-            assertTrue(
-                listedBody.getValue("message").jsonPrimitive.content.contains("store read failed"),
+            assertEquals(
+                "list_connections failed",
+                listedBody.getValue("message").jsonPrimitive.content,
             )
+            assertFalse(listed.text().contains("/secret/connections.json"))
+        }
+
+        val deleteLookupService =
+            object : RecordingSafeDbService() {
+                override suspend fun listConnections() =
+                    error("/secret/connections.json lookup failed")
+            }
+        withTempMcpClient(deleteLookupService) { client ->
+            val lookupFailed = client.callTool("delete_connection", mapOf("connection_id" to "c1"))
+            assertEquals(true, lookupFailed.isError)
+            val lookupBody = lookupFailed.json()
+            assertEquals("internal", lookupBody.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "delete_connection failed",
+                lookupBody.getValue("message").jsonPrimitive.content,
+            )
+            assertFalse(lookupFailed.text().contains("/secret/connections.json"))
         }
 
         val deleteService =
             object : RecordingSafeDbService() {
                 override suspend fun deleteConnection(id: String) {
-                    error("store write failed")
+                    error("/secret/connections.json write failed")
                 }
             }
         deleteService.connections += sampleMcpConnection()
@@ -287,13 +315,75 @@ class ConnectionToolsTest {
             val deletedBody = deleted.json()
             assertEquals("internal", deletedBody.getValue("error").jsonPrimitive.content)
             assertEquals(
-                "store write failed",
+                "delete_connection failed",
                 deletedBody.getValue("message").jsonPrimitive.content,
             )
-            assertFalse(
-                deletedBody.getValue("message").jsonPrimitive.content.contains("should-not-leak"),
-            )
+            assertFalse(deleted.text().contains("/secret/connections.json"))
+            assertFalse(deleted.text().contains("should-not-leak"))
             assertEquals(listOf("c1"), deleteService.connections.map { it.id })
+        }
+    }
+
+    @Test
+    fun listConnectionsPaginatesAndValidatesOffsetAndLimit() = runBlocking {
+        val service = RecordingSafeDbService()
+        repeat(5) { index ->
+            service.connections += sampleMcpConnection(id = "c$index", name = "Conn $index")
+        }
+        withTempMcpClient(service) { client ->
+            val firstPage =
+                client.callTool("list_connections", mapOf("offset" to 1, "limit" to 2)).json()
+            assertEquals(
+                listOf("c1", "c2"),
+                firstPage.getValue("connections").jsonArray.map {
+                    it.jsonObject.getValue("id").jsonPrimitive.content
+                },
+            )
+            assertEquals("5", firstPage.getValue("total_count").jsonPrimitive.content)
+            assertEquals("true", firstPage.getValue("truncated").jsonPrimitive.content)
+            assertEquals("3", firstPage.getValue("next_offset").jsonPrimitive.content)
+
+            val lastPage =
+                client.callTool("list_connections", mapOf("offset" to 3, "limit" to 2)).json()
+            assertEquals(
+                listOf("c3", "c4"),
+                lastPage.getValue("connections").jsonArray.map {
+                    it.jsonObject.getValue("id").jsonPrimitive.content
+                },
+            )
+            assertEquals("5", lastPage.getValue("total_count").jsonPrimitive.content)
+            assertEquals("false", lastPage.getValue("truncated").jsonPrimitive.content)
+            assertFalse(lastPage.containsKey("next_offset"))
+
+            assertError(
+                client.callTool("list_connections", mapOf("limit" to 0)),
+                "invalid_arguments",
+                "limit must be 1 or more",
+            )
+            assertError(
+                client.callTool("list_connections", mapOf("offset" to -1)),
+                "invalid_arguments",
+                "offset must be 0 or more",
+            )
+        }
+    }
+
+    @Test
+    fun deleteConnectionCopyMentionsDesktopAppWhenStoreIsShared() = runBlocking {
+        val service = RecordingSafeDbService()
+        service.connections += sampleMcpConnection(id = "c1", name = "Prod", database = "shop")
+        withTempMcpClient(service, sharesDesktopStore = true) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertTrue(
+                tools.getValue("delete_connection").description.orEmpty().contains("desktop app"),
+            )
+
+            val pending =
+                client.callTool("delete_connection", mapOf("connection_id" to "c1")).json()
+            assertTrue(pending.getValue("message").jsonPrimitive.content.contains("desktop app"))
+            val reasons = pending.getValue("reasons").jsonArray.map { it.jsonPrimitive.content }
+            assertTrue(reasons.all { it.contains("desktop app") })
+            assertTrue(reasons.any { it.contains("saved queries and query history") })
         }
     }
 

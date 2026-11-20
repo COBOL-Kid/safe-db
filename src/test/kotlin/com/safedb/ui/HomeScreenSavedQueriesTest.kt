@@ -122,6 +122,26 @@ class HomeScreenSavedQueriesTest {
             harness.viewModel.close()
         }
     }
+
+    @Test
+    fun savedQueryConnectionNameUpdatesReactivelyWhenConnectionsChange() {
+        val harness = HomeScreenHarness()
+        try {
+            withHomeScreen(harness.viewModel) { scene ->
+                assertNotNull(scene.findContaining("Local MySQL · 1 table"))
+
+                harness.service.connections =
+                    listOf(homeConnection.copy(name = "Production Replica"))
+                harness.viewModel.connections.refresh()
+                scene.settle()
+
+                assertNull(scene.findContaining("Local MySQL · 1 table"))
+                assertNotNull(scene.findContaining("Production Replica · 1 table"))
+            }
+        } finally {
+            harness.viewModel.close()
+        }
+    }
 }
 
 private class HomeScreenHarness(
@@ -138,8 +158,9 @@ private class HomeScreenHarness(
 private class HomeScreenService(private val queries: MutableList<SavedQuery>) :
     FakeSafeDbServiceSupport() {
     val deletedIds = mutableListOf<String>()
+    var connections = listOf(homeConnection)
 
-    override suspend fun listConnections() = listOf(homeConnection)
+    override suspend fun listConnections() = connections
 
     override suspend fun listSavedQueries() = queries.toList()
 

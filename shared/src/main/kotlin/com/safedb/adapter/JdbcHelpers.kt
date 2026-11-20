@@ -563,8 +563,11 @@ private fun readBoundedUtf8(reader: Reader, maxBytes: Int): Pair<String, Boolean
     return out.toString() to (extra >= 0)
 }
 
-class QueryTimedOutException(val timeoutMs: Int) :
-    SQLException("Query timed out after ${timeoutMs}ms")
+class QueryTimedOutException(
+    val timeoutMs: Int,
+    cause: Throwable? = null,
+    val recyclePool: Boolean = false,
+) : SQLException("Query timed out after ${timeoutMs}ms", cause)
 
 fun <T> withQueryTimeout(connection: Connection, timeoutMs: Int, block: (Connection) -> T): T {
     val previous = connection.networkTimeout
@@ -574,6 +577,6 @@ fun <T> withQueryTimeout(connection: Connection, timeoutMs: Int, block: (Connect
     } finally {
         // A socket timeout makes the driver close the connection; restoring on it would throw
         // "Connection is closed" and mask the timeout error.
-        if (!connection.isClosed) connection.setNetworkTimeout({ _ -> }, previous)
+        runCatching { if (!connection.isClosed) connection.setNetworkTimeout({ _ -> }, previous) }
     }
 }

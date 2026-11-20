@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.3
+
+Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.3` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.3-all.jar`; npm packages are stamped 1.1.3 at assemble time.
+
+- SQL Server `SET SHOWPLAN_XML ON` is restored to `OFF` even when enabling SHOWPLAN fails. If that restore fails, the pooled connection is evicted instead of being returned with SHOWPLAN left on.
+- SQL Server lock timeout (error 1222) is still reported as "Query timed out after …ms", but it no longer closes the whole connection pool. The pool is recycled only for a dead connection (a JDBC driver timeout, a socket timeout, or a closed connection).
+- MCP `list_connections`, `list_saved_queries`, and `list_recipes` now return objects (`{connections|saved_queries|recipes: [...], total_count, truncated, next_offset?}`) instead of top-level arrays, and publish `outputSchema` (19 object tools; `list_query_history` stays a text-only array). The `safedb://connections` resource changed the same way, to `{connections, total_count, truncated}`. Clients that read these results as arrays must read the named field instead.
+- MCP `list_connections`, `list_tables`, `find_join_paths` (without `to_table`), `list_saved_queries`, and `list_recipes` accept optional `offset` and `limit` (default 100, cap 200) and report `total_count`, `truncated`, and `next_offset`. The `safedb://connections` and `safedb://connections/{connection_id}/tables` resources return at most 200 entries with `total_count` and `truncated`.
+- MCP `find_join_paths` ignores `offset` and `limit` when `to_table` is set, including invalid values, and still returns `{from_table, to_table, paths}`. Those arguments still page neighbors and reject invalid values when `to_table` is omitted.
+- MCP `apply_recipe` rejects a `field_mapping` key that is not a recipe required field, or a value that is not a result column, with `invalid_arguments` instead of silently falling back to auto-matching. A type-incompatible mapping still falls back, and Oracle/Db2 recipes saved from lowercase columns need `field_mapping` because auto-matching compares column names case-sensitively.
+- MCP `assess_query` reports `readOnlyHint: false` and says so in its description: unless the risk gate is `Disabled`, Oracle and Db2 `EXPLAIN` write and delete plan-table rows.
+- Unexpected MCP tool failures return a generic `<tool> failed` message (for example `run_query failed`) with no internal details; the error class is logged on stderr.
+- A result whose JSONL cache file fails to write still counts toward the result store's 32 MiB cap, using an estimated in-memory size.
+- Saved connections, saved queries, query history, and recipes are guarded by cross-process file locks (`*.lock` files in the data directory), not just in-process locks, so separate processes sharing a store serialize their reads and writes.
+- `safe-db-mcp connections delete` says when the saved queries and query history it removed live in the shared store used by the desktop app.
+- SQL Server queries run with JDBC `autoCommit = false` at `READ_UNCOMMITTED`, restore `LOCK_TIMEOUT` to `-1` afterward, and discard the pooled connection when that restore fails. JDBC query, socket, and lock timeouts (error 1222) are reported as "Query timed out after …ms".
+- The desktop sidebar shows "Checking connection…" while it probes a newly selected connection instead of flashing Not connected, and skips reachability probes only while no Safe-DB window (main or Explore) is active.
+- Query Builder says "Running query · Run unavailable" while a run is in progress with Risk gate Off, instead of "Assessing query risk · Run unavailable".
+- Editing a query, switching connections, or otherwise discarding an in-flight desktop run no longer writes that run to Query History. MCP runs and ordinary completed or failed runs still record as before.
+- Editing a query while a desktop run is in progress shows "Query edited while a run was in progress; the in-flight result will be discarded."
+- Loading a query whose filters are all dropped shows "all filters were dropped (query is now unfiltered)" instead of "some filters were dropped".
+- Escape cancels an armed click-to-join on the Query Builder canvas.
+- MCP `run_query` and `assess_query` read the schema once per call instead of twice.
+
 ## 1.1.2
 
 Desktop app, MCP server (`safe-db-mcp` / `@safe-db/mcp`), and shared query engine. Version is `1.1.2` in `build.gradle.kts`; the MCP fat JAR is `safe-db-mcp-1.1.2-all.jar`; npm packages are stamped 1.1.2 at assemble time.

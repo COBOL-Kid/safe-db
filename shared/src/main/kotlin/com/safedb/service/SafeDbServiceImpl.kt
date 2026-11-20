@@ -14,6 +14,7 @@ import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.query.QueryAssessmentOutcome
 import com.safedb.query.QueryCoreOutcome
+import com.safedb.query.QueryExecutionConfirmation
 import com.safedb.query.QueryRunner
 import com.safedb.query.assessQueryCore
 import com.safedb.query.runQueryCore
@@ -122,7 +123,7 @@ internal constructor(
 
     override suspend fun updateConnection(def: ConnectionDef, password: String?) {
         if (configStore.get(def.id) == null) {
-            throw IllegalArgumentException("Connection not found")
+            throw ConnectionNotFoundException()
         }
         persistConnection(def, password)
     }
@@ -145,8 +146,7 @@ internal constructor(
     }
 
     override suspend fun getSchema(connectionId: String): Schema {
-        val def =
-            configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val def = configStore.get(connectionId) ?: throw ConnectionNotFoundException()
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val adapter = adapterFactory.connect(def, password)
         return try {
@@ -158,75 +158,123 @@ internal constructor(
 
     override suspend fun runQuery(request: QueryRunRequest): QueryRunResult =
         withQuerySession(request.connectionId) { def, session, settings ->
-            when (
-                val outcome =
-                    runQueryCore(
-                        session.runner,
-                        def,
-                        request.spec,
-                        session.schema,
-                        settings,
-                        request.confirmation,
-                    )
-            ) {
-                is QueryCoreOutcome.Success -> {
+            runQueryInSession(
+                def,
+                session,
+                settings,
+                request.spec,
+                request.confirmation,
+                request.historyRecording,
+            )
+        }
+
+    override suspend fun runQueryWithSchema(
+        connectionId: String,
+        confirmation: QueryExecutionConfirmation?,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryRun =
+        withQuerySession(connectionId) { def, session, settings ->
+            val spec = resolveSpec(def, session.schema, settings)
+            val result =
+                runQueryInSession(
+                    def,
+                    session,
+                    settings,
+                    spec,
+                    confirmation,
+                    QueryHistoryRecording.Always,
+                )
+            ResolvedQueryRun(def, spec, result)
+        }
+
+    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult =
+        withQuerySession(request.connectionId) { def, session, settings ->
+            assessQueryInSession(def, session, settings, request.spec)
+        }
+
+    override suspend fun assessQueryWithSchema(
+        connectionId: String,
+        resolveSpec: (ConnectionDef, Schema, Settings) -> QuerySpec,
+    ): ResolvedQueryAssessment =
+        withQuerySession(connectionId) { def, session, settings ->
+            val spec = resolveSpec(def, session.schema, settings)
+            val assessment = assessQueryInSession(def, session, settings, spec)
+            ResolvedQueryAssessment(def, spec, assessment)
+        }
+
+    private suspend fun runQueryInSession(
+        def: ConnectionDef,
+        session: QuerySession,
+        settings: Settings,
+        spec: QuerySpec,
+        confirmation: QueryExecutionConfirmation?,
+        historyRecording: QueryHistoryRecording,
+    ): QueryRunResult =
+        when (
+            val outcome =
+                runQueryCore(
+                    session.runner,
+                    def,
+                    spec,
+                    session.schema,
+                    settings,
+                    confirmation,
+                )
+        ) {
+            is QueryCoreOutcome.Success -> {
+                if (historyRecording.shouldRecord()) {
                     recordHistory(
-                        request.connectionId,
+                        def.id,
                         def.name,
                         outcome.historySpec,
                         outcome.result,
                         null,
                         outcome.riskEvaluation,
                     )
-                    QueryRunResult(outcome.result, outcome.riskEvaluation)
                 }
-                is QueryCoreOutcome.Failure -> {
+                QueryRunResult(outcome.result, outcome.riskEvaluation)
+            }
+            is QueryCoreOutcome.Failure -> {
+                if (historyRecording.shouldRecord()) {
                     recordHistory(
-                        request.connectionId,
+                        def.id,
                         def.name,
-                        outcome.error.historySpec ?: request.spec,
+                        outcome.error.historySpec ?: spec,
                         null,
                         outcome.error,
                         outcome.error.riskEvaluation,
                     )
-                    throw QueryFailureException(outcome.error)
                 }
+                throw QueryFailureException(outcome.error)
             }
         }
 
-    override suspend fun assessQuery(request: QueryRunRequest): QueryAssessmentResult =
-        withQuerySession(request.connectionId) { def, session, settings ->
-            when (
-                val outcome =
-                    assessQueryCore(
-                        session.runner,
-                        def,
-                        request.spec,
-                        session.schema,
-                        settings,
-                    )
-            ) {
-                is QueryAssessmentOutcome.Success -> {
-                    val assessment = outcome.assessment
-                    QueryAssessmentResult(
-                        normalizedSpec = assessment.normalizedSpec,
-                        columns = assessment.columns,
-                        compiledSql = assessment.compiled.sql,
-                        parameterCount = assessment.compiled.params.size,
-                        warnings = assessment.warnings,
-                        riskEvaluation = assessment.riskEvaluation,
-                    )
-                }
-                is QueryAssessmentOutcome.Failure -> throw QueryFailureException(outcome.error)
+    private suspend fun assessQueryInSession(
+        def: ConnectionDef,
+        session: QuerySession,
+        settings: Settings,
+        spec: QuerySpec,
+    ): QueryAssessmentResult =
+        when (val outcome = assessQueryCore(session.runner, def, spec, session.schema, settings)) {
+            is QueryAssessmentOutcome.Success -> {
+                val assessment = outcome.assessment
+                QueryAssessmentResult(
+                    normalizedSpec = assessment.normalizedSpec,
+                    columns = assessment.columns,
+                    compiledSql = assessment.compiled.sql,
+                    parameterCount = assessment.compiled.params.size,
+                    warnings = assessment.warnings,
+                    riskEvaluation = assessment.riskEvaluation,
+                )
             }
+            is QueryAssessmentOutcome.Failure -> throw QueryFailureException(outcome.error)
         }
 
     private suspend fun <T> withQuerySession(
         connectionId: String,
         block: suspend (def: ConnectionDef, session: QuerySession, settings: Settings) -> T,
     ): T {
-        val def =
-            configStore.get(connectionId) ?: throw IllegalArgumentException("Connection not found")
+        val def = configStore.get(connectionId) ?: throw ConnectionNotFoundException()
         val password = SecretsManager.passwordForDefinition(def).getOrThrow()
         val settings = settingsStore.load()
         val session =

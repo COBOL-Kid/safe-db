@@ -38,12 +38,24 @@ internal fun registerMcpResourcesAndPrompts(
         description = "Saved safe-db connections (no secrets)",
         mimeType = APPLICATION_JSON,
     ) { _ ->
+        val page =
+            paginateList(
+                service.listConnections().map { it.toSummary() },
+                offset = 0,
+                limit = LIST_MAX_LIMIT,
+            )
         ReadResourceResult(
             contents =
                 listOf(
                     jsonResource(
                         CONNECTIONS_RESOURCE_URI,
-                        toolJson.encodeToString(service.listConnections().map { it.toSummary() }),
+                        toolJson.encodeToString(
+                            ConnectionListResult(
+                                connections = page.items,
+                                totalCount = page.totalCount,
+                                truncated = page.truncated,
+                            ),
+                        ),
                     ),
                 ),
         )
@@ -62,6 +74,12 @@ internal fun registerMcpResourcesAndPrompts(
             visibleCatalog(service, schemaCache, connectionId, refresh = false).getOrElse {
                 throw McpException(RESOURCE_NOT_FOUND_CODE, "Connection not found")
             }
+        val page =
+            paginateList(
+                tables.map { it.toSummary() },
+                offset = 0,
+                limit = LIST_MAX_LIMIT,
+            )
         ReadResourceResult(
             contents =
                 listOf(
@@ -70,7 +88,13 @@ internal fun registerMcpResourcesAndPrompts(
                             "{connection_id}",
                             connectionId,
                         ),
-                        toolJson.encodeToString(TableListResult(tables.map { it.toSummary() })),
+                        toolJson.encodeToString(
+                            TableListResult(
+                                tables = page.items,
+                                totalCount = page.totalCount,
+                                truncated = page.truncated,
+                            ),
+                        ),
                     ),
                 ),
         )

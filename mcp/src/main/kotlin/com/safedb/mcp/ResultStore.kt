@@ -1,6 +1,7 @@
 package com.safedb.mcp
 
 import com.safedb.model.QueryResult
+import com.safedb.model.ResultCell
 import com.safedb.model.TableRef
 import com.safedb.persist.ensurePrivateDir
 import com.safedb.persist.restrictToOwnerReadWrite
@@ -43,7 +44,7 @@ internal class ResultStore(
         val result: QueryResult,
         val tables: List<TableRef>,
         val artifactFile: Path,
-        val artifactBytes: Long,
+        val accountedBytes: Long,
         val expiresAtMs: Long,
     )
 
@@ -90,7 +91,7 @@ internal class ResultStore(
                         result = result,
                         tables = tables,
                         artifactFile = path,
-                        artifactBytes = artifactBytes ?: 0L,
+                        accountedBytes = artifactBytes ?: estimateResultBytes(result),
                         expiresAtMs = nowMs() + ttlMs,
                     )
                 inserted = true
@@ -152,7 +153,30 @@ internal class ResultStore(
         }
     }
 
-    private fun totalBytesLocked(): Long = entries.values.sumOf { it.artifactBytes }
+    private fun totalBytesLocked(): Long = entries.values.sumOf { it.accountedBytes }
+
+    private fun estimateResultBytes(result: QueryResult): Long {
+        var total = 0L
+        for ((name, dataType) in result.columns) {
+            total += name.toByteArray(Charsets.UTF_8).size
+            total += dataType.toByteArray(Charsets.UTF_8).size
+        }
+        for (row in result.rows) {
+            for (cell in row) {
+                total +=
+                    when (cell) {
+                        ResultCell.Null -> 4L
+                        is ResultCell.BoolCell -> if (cell.value) 4L else 5L
+                        is ResultCell.IntegerCell -> cell.value.toString().length.toLong()
+                        is ResultCell.FloatCell -> cell.value.toString().length.toLong()
+                        is ResultCell.TextCell ->
+                            cell.value.text.toByteArray(Charsets.UTF_8).size.toLong()
+                        is ResultCell.BinaryCell -> cell.value.base64.length.toLong()
+                    }
+            }
+        }
+        return total.coerceAtLeast(1L)
+    }
 
     private fun removeLocked(id: String) {
         val entry = entries.remove(id) ?: return

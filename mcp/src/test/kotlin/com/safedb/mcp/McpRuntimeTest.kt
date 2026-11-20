@@ -3,11 +3,18 @@ package com.safedb.mcp
 import com.safedb.model.SavedQuery
 import com.safedb.platform.DesktopPlatform
 import com.safedb.secrets.SecretsManager
+import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.ContinuationInterceptor
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,8 +22,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -122,6 +132,9 @@ class McpRuntimeTest {
                 "filter_result_rows",
                 "find_join_paths",
                 "get_result_rows",
+                "list_connections",
+                "list_recipes",
+                "list_saved_queries",
                 "list_tables",
                 "pivot_result",
                 "run_query",
@@ -130,13 +143,7 @@ class McpRuntimeTest {
                 "search_catalog",
                 "summarize_result",
             )
-        val arrayTools =
-            setOf(
-                "list_connections",
-                "list_query_history",
-                "list_recipes",
-                "list_saved_queries",
-            )
+        val arrayTools = setOf("list_query_history")
         val service = RecordingSafeDbService()
         service.connections += sampleMcpConnection()
         service.schemas["c1"] = sampleMcpSchema()
@@ -154,6 +161,13 @@ class McpRuntimeTest {
             assertEquals(objectTools + arrayTools, tools.keys)
             objectTools.forEach { name -> assertNotNull(tools.getValue(name).outputSchema, name) }
             arrayTools.forEach { name -> assertNull(tools.getValue(name).outputSchema, name) }
+
+            assertStructuredMatchesText(client.callTool("list_connections", emptyMap()))
+            assertStructuredMatchesText(client.callTool("list_saved_queries", emptyMap()))
+            assertStructuredMatchesText(client.callTool("list_recipes", emptyMap()))
+            assertStructuredMatchesText(
+                client.callTool("list_tables", mapOf("connection_id" to "c1")),
+            )
 
             val saved =
                 client.callTool(
@@ -180,6 +194,65 @@ class McpRuntimeTest {
 
             val deletedConnection = client.deleteConnectionConfirmed("c1")
             assertStructuredMatchesText(deletedConnection)
+        }
+    }
+
+    @Test
+    fun toolDispatchCatchesUncaughtHandlerFailureWithoutLeakingRawMessage() = runBlocking {
+        val server =
+            Server(
+                serverInfo = Implementation(name = "safe-db-test", version = "0"),
+                options =
+                    ServerOptions(
+                        capabilities =
+                            ServerCapabilities(
+                                tools = ServerCapabilities.Tools(listChanged = false),
+                            ),
+                    ),
+            )
+        server.addTool(
+            name = "boom",
+            description = "Throws without runMcpTool",
+            inputSchema = ToolSchema(properties = buildJsonObject {}),
+        ) { _ ->
+            error("/private/store/secret.json failed")
+        }
+        withMcpClient(server) { client ->
+            val result = client.callTool("boom", emptyMap())
+            assertEquals(true, result.isError)
+            val body = result.json()
+            assertEquals("internal", body.getValue("error").jsonPrimitive.content)
+            assertEquals(
+                "Tool 'boom' failed",
+                body.getValue("message").jsonPrimitive.content,
+            )
+            assertFalse(result.text().contains("/private/store/secret.json"))
+        }
+    }
+
+    @Test
+    fun wiredServiceDispatchesStoreCallsOntoConfiguredDispatcher() = runBlocking {
+        val dataDir = Files.createTempDirectory("safedb-mcp-dispatch")
+        val dispatched = AtomicBoolean(false)
+        val recordingDispatcher =
+            object : CoroutineDispatcher() {
+                override fun dispatch(
+                    context: kotlin.coroutines.CoroutineContext,
+                    block: Runnable,
+                ) {
+                    dispatched.set(true)
+                    block.run()
+                }
+            }
+        try {
+            val service = createMcpService(dataDir, ioDispatcher = recordingDispatcher)
+            assertEquals(emptyList(), service.listConnections())
+            assertTrue(dispatched.get())
+            assertFalse(
+                coroutineContext[ContinuationInterceptor] === recordingDispatcher,
+            )
+        } finally {
+            dataDir.toFile().deleteRecursively()
         }
     }
 

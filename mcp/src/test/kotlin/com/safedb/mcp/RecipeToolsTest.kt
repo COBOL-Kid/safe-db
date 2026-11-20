@@ -13,7 +13,6 @@ import com.safedb.model.ResultCell
 import com.safedb.model.ResultColumn
 import com.safedb.service.QueryRunResult
 import io.modelcontextprotocol.kotlin.sdk.client.Client
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -56,7 +55,11 @@ class RecipeToolsTest {
                 requiredFields = emptyList(),
             )
         withTempMcpClient(service) { client ->
-            val body = client.callTool("list_recipes", emptyMap()).jsonArray()
+            val response = client.callJson("list_recipes", emptyMap())
+            assertEquals("2", response.string("total_count"))
+            assertEquals("false", response.string("truncated"))
+            assertFalse(response.containsKey("next_offset"))
+            val body = response.getValue("recipes").jsonArray
             assertEquals(2, body.size)
             val first = body[0].jsonObject
             assertEquals("r1", first.string("id"))
@@ -272,6 +275,38 @@ class RecipeToolsTest {
             assertEquals("4", mapped.string("row_count"))
             assertTrue(mapped.getValue("rows").jsonArray.isNotEmpty())
 
+            val unknownKey =
+                client.callTool(
+                    "apply_recipe",
+                    mapOf(
+                        "result_id" to resultId,
+                        "recipe_id" to "r1",
+                        "field_mapping" to Json.parseToJsonElement("""{"nope":"amount"}"""),
+                    ),
+                )
+            assertError(
+                unknownKey,
+                "invalid_arguments",
+                "Unknown field_mapping key 'nope'. Recipe required fields: amount_total",
+            )
+
+            val unknownColumn =
+                client.callTool(
+                    "apply_recipe",
+                    mapOf(
+                        "result_id" to resultId,
+                        "recipe_id" to "r1",
+                        "field_mapping" to Json.parseToJsonElement("""{"amount_total":"nope"}"""),
+                    ),
+                )
+            assertTrue(unknownColumn.isError == true)
+            assertTrue(
+                unknownColumn
+                    .json()
+                    .string("message")
+                    .startsWith("Unknown column 'nope'. Known columns: "),
+            )
+
             val invalidValue =
                 client.callTool(
                     "apply_recipe",
@@ -418,6 +453,40 @@ class RecipeToolsTest {
             assertEquals(true, tools.getValue("apply_recipe").annotations?.readOnlyHint)
         }
     }
+
+    @Test
+    fun listRecipesPaginatesValidatesAndReflectsSharedStore() = runBlocking {
+        val service = exploreSampleService()
+        repeat(5) { index -> service.exploreRecipes += sampleRecipe(id = "r$index") }
+        withTempMcpClient(service, sharesDesktopStore = true) { client ->
+            val tool = client.listTools().tools.single { it.name == "list_recipes" }
+            assertTrue(tool.description.orEmpty().contains("desktop app"))
+
+            val first = client.callJson("list_recipes", mapOf("offset" to 1, "limit" to 2))
+            assertEquals(
+                listOf("r1", "r2"),
+                first.getValue("recipes").jsonArray.map { it.jsonObject.string("id") },
+            )
+            assertEquals("5", first.string("total_count"))
+            assertEquals("true", first.string("truncated"))
+            assertEquals("3", first.string("next_offset"))
+
+            val last = client.callJson("list_recipes", mapOf("offset" to 3, "limit" to 2))
+            assertEquals("false", last.string("truncated"))
+            assertFalse(last.containsKey("next_offset"))
+
+            assertError(
+                client.callTool("list_recipes", mapOf("limit" to 0)),
+                "invalid_arguments",
+                "limit must be 1 or more",
+            )
+            assertError(
+                client.callTool("list_recipes", mapOf("offset" to -1)),
+                "invalid_arguments",
+                "offset must be 0 or more",
+            )
+        }
+    }
 }
 
 private fun prefixedRecipeQueryResult(): QueryResult =
@@ -476,8 +545,5 @@ private suspend fun storeRecipeResult(client: Client): String {
 
 private suspend fun Client.callJson(name: String, arguments: Map<String, Any?>): JsonObject =
     callTool(name, arguments).json()
-
-private fun CallToolResult.jsonArray(): kotlinx.serialization.json.JsonArray =
-    Json.parseToJsonElement(text()).jsonArray
 
 private fun JsonObject.string(name: String): String = getValue(name).jsonPrimitive.content

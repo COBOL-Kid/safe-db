@@ -1,6 +1,7 @@
 package com.safedb.viewmodel
 
 import com.safedb.model.QueryRiskGate
+import com.safedb.model.Schema
 import com.safedb.model.Settings
 import com.safedb.model.ThemePalette
 import com.safedb.model.normalizeSettings
@@ -14,7 +15,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class SettingsViewModel(private val service: SafeDbService, private val scope: CoroutineScope) {
+class SettingsViewModel(
+    private val service: SafeDbService,
+    private val scope: CoroutineScope,
+    private val cachedSchema: (String) -> Schema? = { null },
+) {
     private var defaultSchemaRequestGeneration = 0
     private var defaultSchemaConnectionId: String? = null
     private val settingsMutationMutex = Mutex()
@@ -104,6 +109,16 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
 
     fun loadDefaultSchemaOptions(connectionId: String) {
         val generation = ++defaultSchemaRequestGeneration
+        val cached = cachedSchema(connectionId)
+        if (cached != null) {
+            val schemas = extractSortedSchemaNames(cached)
+            _defaultSchemaLoading.value = false
+            _defaultSchemaOptions.value = schemas
+            defaultSchemaConnectionId = connectionId
+            _defaultSchemaError.value =
+                if (schemas.isEmpty()) "No schemas containing visible tables were found." else null
+            return
+        }
         scope.launch {
             if (generation != defaultSchemaRequestGeneration) return@launch
             _defaultSchemaLoading.value = true
@@ -111,15 +126,7 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
             _defaultSchemaOptions.value = emptyList()
             defaultSchemaConnectionId = null
             try {
-                val schemas =
-                    service
-                        .getSchema(connectionId)
-                        .tables
-                        .asSequence()
-                        .map { it.schema }
-                        .distinct()
-                        .sortedWith(String.CASE_INSENSITIVE_ORDER)
-                        .toList()
+                val schemas = extractSortedSchemaNames(service.getSchema(connectionId))
                 if (generation != defaultSchemaRequestGeneration) return@launch
                 _defaultSchemaOptions.value = schemas
                 defaultSchemaConnectionId = connectionId
@@ -138,6 +145,14 @@ class SettingsViewModel(private val service: SafeDbService, private val scope: C
             }
         }
     }
+
+    private fun extractSortedSchemaNames(schema: Schema): List<String> =
+        schema.tables
+            .asSequence()
+            .map { it.schema }
+            .distinct()
+            .sortedWith(String.CASE_INSENSITIVE_ORDER)
+            .toList()
 
     fun clearDefaultSchemaOptions() {
         defaultSchemaRequestGeneration += 1

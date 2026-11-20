@@ -2,7 +2,9 @@ package com.safedb.viewmodel
 
 import com.safedb.model.ConnectionDef
 import com.safedb.service.SafeDbService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +56,31 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
         service.updateConnection(def, password)
     }
 
-    fun connectionName(id: String): String =
-        _connections.value.firstOrNull { it.id == id }?.name ?: "Unknown"
+    fun saveConnection(
+        def: ConnectionDef,
+        password: String?,
+        editing: Boolean,
+        credentialMaterialChanged: Boolean,
+        onConnectionChanged: (String) -> Unit = {},
+        onComplete: (Result<ConnectionDef>) -> Unit = {},
+    ): Job = scope.launch {
+        try {
+            val saved =
+                if (editing) {
+                    updateConnection(def, password)
+                    def
+                } else {
+                    createConnection(def, password ?: "")
+                }
+            if (editing && credentialMaterialChanged) {
+                onConnectionChanged(saved.id)
+            }
+            load()
+            onComplete(Result.success(saved))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            onComplete(Result.failure(error))
+        }
+    }
 }

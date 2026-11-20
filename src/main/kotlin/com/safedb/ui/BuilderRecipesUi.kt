@@ -69,6 +69,7 @@ internal fun BuilderRecipeButton(
     var deleting by remember { mutableStateOf<ExploreRecipe?>(null) }
     var renaming by remember { mutableStateOf<ExploreRecipe?>(null) }
     var renameValue by remember { mutableStateOf("") }
+    val appWindow = LocalAppWindow.current
 
     TextButton(onClick = { open = true }) {
         Icon(Icons.Default.Bookmarks, contentDescription = null, modifier = Modifier.size(17.dp))
@@ -191,7 +192,7 @@ internal fun BuilderRecipeButton(
                     )
                     TextButton(
                         onClick = {
-                            chooseRecipeFile(open = true)?.let {
+                            chooseRecipeFile(open = true, parent = appWindow)?.let {
                                 recipesViewModel.import(it.toPath())
                             }
                         },
@@ -285,7 +286,7 @@ internal fun BuilderRecipeButton(
                             }
                             IconButton(
                                 onClick = {
-                                    chooseRecipeFile(false, recipe.name)?.let {
+                                    chooseRecipeFile(false, recipe.name, parent = appWindow)?.let {
                                         recipesViewModel.export(recipe, it.toPath())
                                     }
                                 },

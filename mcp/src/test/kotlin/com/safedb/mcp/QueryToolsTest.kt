@@ -17,6 +17,7 @@ import com.safedb.query.QueryPlanStatus
 import com.safedb.query.QueryRiskSeverity
 import com.safedb.query.RiskDecisionReason
 import com.safedb.query.RiskGateState
+import com.safedb.service.ConnectionNotFoundException
 import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryRunResult
 import java.nio.file.Files
@@ -92,6 +93,7 @@ class QueryToolsTest {
             )
         }
         assertEquals(listOf("c1"), service.schemaCalls)
+        assertEquals(1, service.runQueryWithSchemaCalls)
         assertEquals(1, service.runQueryRequests.size)
         val spec = service.runQueryRequests.single().spec
         assertEquals("customers", spec.tables.single().name)
@@ -300,9 +302,10 @@ class QueryToolsTest {
             assertEquals(true, schemaFailure.isError)
             assertEquals("internal", schemaFailure.json().getValue("error").jsonPrimitive.content)
             assertEquals(
-                "catalog unavailable",
+                "run_query failed",
                 schemaFailure.json().getValue("message").jsonPrimitive.content,
             )
+            assertFalse(schemaFailure.text().contains("catalog unavailable"))
             assertTrue(service.runQueryRequests.isEmpty())
 
             service.schemaError = null
@@ -318,12 +321,28 @@ class QueryToolsTest {
                 executionFailure.json().getValue("error").jsonPrimitive.content,
             )
             assertEquals(
-                "unexpected executor failure",
+                "run_query failed",
                 executionFailure.json().getValue("message").jsonPrimitive.content,
             )
+            assertFalse(executionFailure.text().contains("unexpected executor failure"))
         }
         assertEquals(2, service.schemaCalls.size)
         assertEquals(1, service.runQueryRequests.size)
+    }
+
+    @Test
+    fun connectionNotFoundFromRunQueryWithSchemaIsNotFound() = runBlocking {
+        val service = queryService()
+        service.runQueryWithSchemaError = ConnectionNotFoundException()
+        withTempMcpClient(service) { client ->
+            val missing =
+                client.callTool(
+                    "run_query",
+                    mapOf("connection_id" to "c1", "sql" to "SELECT id FROM public.customers"),
+                )
+            assertError(missing, "not_found", "Connection not found")
+        }
+        assertTrue(service.runQueryRequests.isEmpty())
     }
 
     @Test

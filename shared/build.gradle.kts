@@ -22,8 +22,8 @@ kover {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.core)
 
     implementation("com.zaxxer:HikariCP:7.1.0")
     implementation("org.postgresql:postgresql:42.7.14")
@@ -34,12 +34,12 @@ dependencies {
     implementation("com.github.javakeyring:java-keyring:1.0.4")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.junit.jupiter)
 
     testFixturesImplementation(kotlin("test"))
-    testFixturesImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    testFixturesImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
+    testFixturesImplementation(libs.kotlinx.coroutines.core)
+    testFixturesImplementation(libs.junit.jupiter)
 }
 
 // Dev-only seeding tooling: compiled and run on demand, never packaged into the shipped jar.
@@ -73,15 +73,9 @@ configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(
 
 dependencies {
     add(integrationTest.implementationConfigurationName, kotlin("test"))
-    add(
-        integrationTest.implementationConfigurationName,
-        "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0",
-    )
-    add(integrationTest.implementationConfigurationName, "org.junit.jupiter:junit-jupiter:6.1.3")
-    add(
-        integrationTest.runtimeOnlyConfigurationName,
-        "org.junit.platform:junit-platform-launcher:6.1.3",
-    )
+    add(integrationTest.implementationConfigurationName, libs.kotlinx.coroutines.test)
+    add(integrationTest.implementationConfigurationName, libs.junit.jupiter)
+    add(integrationTest.runtimeOnlyConfigurationName, libs.junit.platform.launcher)
 }
 
 // SeedMysqlTest stays in the standard test source set so it keeps running under `check`.

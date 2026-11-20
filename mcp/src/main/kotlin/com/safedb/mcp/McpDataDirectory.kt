@@ -9,6 +9,9 @@ import java.nio.file.Path
 object McpDataDirectory {
     const val MCP_APP_ID: String = "com.safedb.mcp"
 
+    fun sharesDesktopStore(platform: DesktopPlatform = DesktopPlatform.current()): Boolean =
+        platform == DesktopPlatform.Windows
+
     fun resolve(): Path {
         val dir = pathFor(McpEnvironment.current())
         Files.createDirectories(dir)

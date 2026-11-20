@@ -24,8 +24,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.intOrNull
 
 internal fun parseDimensions(
     array: JsonArray,
@@ -550,11 +548,8 @@ internal fun parseSortDir(obj: JsonObject, path: String): Arg<SortDir> {
     }
 }
 
-internal fun requireKnownKeys(obj: JsonObject, path: String, vararg allowed: String): Arg<Unit> {
-    val extra = obj.keys.filter { it !in allowed }.sorted()
-    if (extra.isEmpty()) return Arg.Ok(Unit)
-    return invalidArgument("unknown field '$path.${extra.first()}'")
-}
+internal fun requireKnownKeys(obj: JsonObject, path: String, vararg allowed: String): Arg<Unit> =
+    requireKnownKeys(obj.keys, allowed) { "unknown field '$path.$it'" }
 
 internal fun JsonObject.optionalStringField(name: String, path: String): Arg<String?> {
     val element = this[name] ?: return Arg.Ok(null)
@@ -566,27 +561,11 @@ internal fun JsonObject.optionalStringField(name: String, path: String): Arg<Str
     return Arg.Ok(primitive.content)
 }
 
-internal fun JsonObject.optionalBooleanField(name: String, path: String): Arg<Boolean?> {
-    val element = this[name] ?: return Arg.Ok(null)
-    if (element is JsonNull) return Arg.Ok(null)
-    val primitive = element as? JsonPrimitive
-    val value = primitive?.takeIf { !it.isString }?.booleanOrNull
-    if (value == null) {
-        return invalidArgument("$path.$name must be a boolean")
-    }
-    return Arg.Ok(value)
-}
+internal fun JsonObject.optionalBooleanField(name: String, path: String): Arg<Boolean?> =
+    decodeOptionalBoolean(this[name], "$path.$name")
 
-internal fun JsonObject.optionalIntField(name: String, path: String): Arg<Int?> {
-    val element = this[name] ?: return Arg.Ok(null)
-    if (element is JsonNull) return Arg.Ok(null)
-    val primitive = element as? JsonPrimitive
-    val value = primitive?.takeIf { !it.isString }?.intOrNull
-    if (value == null) {
-        return invalidArgument("$path.$name must be an integer")
-    }
-    return Arg.Ok(value)
-}
+internal fun JsonObject.optionalIntField(name: String, path: String): Arg<Int?> =
+    decodeOptionalInt(this[name], "$path.$name")
 
 internal fun JsonObject.optionalStringListField(name: String, path: String): Arg<List<String>?> {
     val element = this[name] ?: return Arg.Ok(null)

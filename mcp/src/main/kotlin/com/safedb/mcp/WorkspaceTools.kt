@@ -31,39 +31,57 @@ internal fun registerWorkspaceTools(
     service: SafeDbService,
     resultStore: ResultStore,
     nowMs: () -> Long,
+    sharesDesktopStore: Boolean = false,
 ) {
     val deleteTokens = IssuedTokens()
 
     server.addTool(
         name = "list_saved_queries",
         description =
-            "List saved queries from this MCP store as id, name, connection_id, sql, tables, " +
-                "and created_at. Pass connection_id from list_connections to filter. Run one " +
-                "with run_saved_query, or create one with save_query.",
+            "List saved queries from ${storeLabel(sharesDesktopStore)} as id, name, " +
+                "connection_id, sql, tables, and created_at. Pass connection_id from " +
+                "list_connections to filter. Supports optional offset and limit (default " +
+                "$LIST_DEFAULT_LIMIT, max $LIST_MAX_LIMIT). Returns an object " +
+                "{saved_queries, total_count, truncated, next_offset?}. Run one with " +
+                "run_saved_query, or create one with save_query.",
         inputSchema =
             ToolSchema(
                 properties =
-                    buildJsonObject { put("connection_id", connectionIdProperty(optional = true)) },
+                    buildJsonObject {
+                        put("connection_id", connectionIdProperty(optional = true))
+                        putOffsetAndLimit("saved queries")
+                    },
             ),
+        outputSchema = pagedListOutputSchema("saved_queries"),
         toolAnnotations = ToolAnnotations(readOnlyHint = true),
     ) { request ->
         runMcpTool("list_saved_queries failed") {
-            requireKnownArguments(request, "connection_id").getOrElse {
+            requireKnownArguments(request, "connection_id", "offset", "limit").getOrElse {
                 return@runMcpTool it
             }
             val connectionId =
                 optionalString(request, "connection_id").getOrElse {
                     return@runMcpTool it
                 }
+            val pageParams =
+                parseListPageParams(request).getOrElse {
+                    return@runMcpTool it
+                }
             val connectionsById = service.listConnections().associateBy { it.id }
-            val payload =
-                toolJson.encodeToString(
-                    service
-                        .listSavedQueries()
-                        .filter { connectionId == null || it.connectionId == connectionId }
-                        .map { it.toSummary(connectionsById) },
-                )
-            CallToolResult(content = listOf(TextContent(text = payload)))
+            val filtered =
+                service
+                    .listSavedQueries()
+                    .filter { connectionId == null || it.connectionId == connectionId }
+                    .map { it.toSummary(connectionsById) }
+            val page = paginateList(filtered, pageParams.offset, pageParams.limit)
+            objectToolResult(
+                SavedQueryListResult(
+                    savedQueries = page.items,
+                    totalCount = page.totalCount,
+                    truncated = page.truncated,
+                    nextOffset = page.nextOffset,
+                ),
+            )
         }
     }
 
@@ -125,9 +143,10 @@ internal fun registerWorkspaceTools(
     server.addTool(
         name = "delete_saved_query",
         description =
-            "Delete a saved query by query_id from list_saved_queries. First call returns " +
-                "confirmation_required; show the reasons to the user, then retry with the " +
-                "returned confirmation object. Do not auto-confirm or invent the object.",
+            "Delete a saved query by query_id from list_saved_queries from " +
+                "${storeLabel(sharesDesktopStore)}. First call returns confirmation_required; " +
+                "show the reasons to the user, then retry with the returned confirmation " +
+                "object. Do not auto-confirm or invent the object.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -140,17 +159,19 @@ internal fun registerWorkspaceTools(
         outputSchema = objectOutputSchema(listOf("deleted")) { put("deleted", stringProp()) },
         toolAnnotations = ToolAnnotations(destructiveHint = true),
     ) { request ->
-        handleDeleteSavedQuery(service, deleteTokens, request)
+        runMcpTool("delete_saved_query failed") {
+            handleDeleteSavedQuery(service, deleteTokens, request, sharesDesktopStore)
+        }
     }
 
     server.addTool(
         name = "list_query_history",
         description =
-            "List recent query history from this MCP store as id, connection_id, " +
-                "connection_name, sql, row_count, warnings, optional error, timestamp, and " +
-                "optional risk fields. Pass connection_id to filter. limit defaults to " +
-                "$HISTORY_DEFAULT_LIMIT and caps at $HISTORY_MAX_LIMIT; 0 or negative is " +
-                "invalid_arguments.",
+            "List recent query history from ${storeLabel(sharesDesktopStore)} as id, " +
+                "connection_id, connection_name, sql, row_count, warnings, optional error, " +
+                "timestamp, and optional risk fields. Pass connection_id to filter. limit " +
+                "defaults to $HISTORY_DEFAULT_LIMIT and caps at $HISTORY_MAX_LIMIT; 0 or " +
+                "negative is invalid_arguments.",
         inputSchema =
             ToolSchema(
                 properties =
@@ -239,6 +260,7 @@ private suspend fun handleDeleteSavedQuery(
     service: SafeDbService,
     tokens: IssuedTokens,
     request: CallToolRequest,
+    sharesDesktopStore: Boolean,
 ): CallToolResult {
     requireKnownArguments(request, "query_id", "confirmation").getOrElse {
         return it
@@ -257,7 +279,9 @@ private suspend fun handleDeleteSavedQuery(
         serializer = McpDeleteSavedQueryConfirmation.serializer(),
         confirmedId = { it.queryId },
         tokenOf = { it.token },
-        confirmationRequired = { token -> savedQueryConfirmationRequired(saved, token) },
+        confirmationRequired = { token ->
+            savedQueryConfirmationRequired(saved, token, sharesDesktopStore)
+        },
         failureMessage = "delete_saved_query failed",
     ) {
         service.deleteSavedQuery(queryId)
@@ -333,17 +357,35 @@ private fun HistoryEntry.toSummary(
         riskGateState = riskGateState,
     )
 
-private fun savedQueryConfirmationRequired(saved: SavedQuery, token: String): CallToolResult {
+private fun savedQueryConfirmationRequired(
+    saved: SavedQuery,
+    token: String,
+    sharesDesktopStore: Boolean,
+): CallToolResult {
     val confirmation = McpDeleteSavedQueryConfirmation(saved.id, token)
+    val reason =
+        if (sharesDesktopStore) {
+            "This deletes saved query ${saved.name} (${saved.id}) from the shared safe-db store used by the desktop app as well."
+        } else {
+            "This deletes saved query ${saved.name} (${saved.id})."
+        }
     return toolError(
         ERROR_CONFIRMATION_REQUIRED,
-        "Deleting saved query '${saved.name}' (${saved.id}) removes it from this MCP store. " +
-            "Show the user, then retry with the returned confirmation object; do not " +
-            "auto-confirm.",
-        reasons = listOf("This deletes saved query ${saved.name} (${saved.id})."),
+        "Deleting saved query '${saved.name}' (${saved.id}) removes it from " +
+            "${storeLabel(sharesDesktopStore)}. Show the user, then retry with the returned " +
+            "confirmation object; do not auto-confirm.",
+        reasons = listOf(reason),
         confirmation = toolJson.encodeToJsonElement(confirmation).jsonObject,
     )
 }
+
+@Serializable
+internal data class SavedQueryListResult(
+    @SerialName("saved_queries") val savedQueries: List<SavedQuerySummary>,
+    @SerialName("total_count") val totalCount: Int,
+    val truncated: Boolean,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) @SerialName("next_offset") val nextOffset: Int? = null,
+)
 
 @Serializable
 internal data class SavedQuerySummary(

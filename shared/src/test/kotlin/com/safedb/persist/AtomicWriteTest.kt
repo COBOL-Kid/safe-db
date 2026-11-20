@@ -5,6 +5,10 @@ import java.nio.file.AccessDeniedException
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -107,5 +111,47 @@ class AtomicWriteTest {
                 files.filter { it.fileName.toString().startsWith(".state.json.") }.count()
             },
         )
+    }
+
+    @Test
+    fun withFileLockCreatesAndPreservesLockFileAndSerializesConcurrentThreads() {
+        val dir = Files.createTempDirectory("safedb-lock-test")
+        val lockPath = dir.resolve("nested/data.json.lock")
+        val threads = 6
+        val iterations = 15
+        val active = AtomicInteger(0)
+        val maxActive = AtomicInteger(0)
+        val completed = AtomicInteger(0)
+        val pool = Executors.newFixedThreadPool(threads)
+        val ready = CountDownLatch(threads)
+        val start = CountDownLatch(1)
+
+        try {
+            val futures =
+                (0 until threads).map {
+                    pool.submit {
+                        ready.countDown()
+                        assertTrue(start.await(5, TimeUnit.SECONDS))
+                        repeat(iterations) {
+                            withFileLock(lockPath) {
+                                val now = active.incrementAndGet()
+                                maxActive.accumulateAndGet(now, ::maxOf)
+                                Thread.sleep(2)
+                                completed.incrementAndGet()
+                                active.decrementAndGet()
+                            }
+                        }
+                    }
+                }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            start.countDown()
+            futures.forEach { it.get(15, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdownNow()
+        }
+
+        assertEquals(1, maxActive.get())
+        assertEquals(threads * iterations, completed.get())
+        assertTrue(Files.exists(lockPath))
     }
 }

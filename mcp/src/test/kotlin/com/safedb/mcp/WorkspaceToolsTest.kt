@@ -38,7 +38,11 @@ class WorkspaceToolsTest {
         service.savedQueries += savedQuery("q2", "Remote", "missing", createdAt = "200")
 
         withTempMcpClient(service) { client ->
-            val all = client.callTool("list_saved_queries", emptyMap()).jsonArray()
+            val allResult = client.callJson("list_saved_queries", emptyMap())
+            assertEquals("2", allResult.string("total_count"))
+            assertEquals("false", allResult.string("truncated"))
+            assertFalse(allResult.containsKey("next_offset"))
+            val all = allResult.getValue("saved_queries").jsonArray
             assertEquals(2, all.size)
             val first = all[0].jsonObject
             assertEquals("q1", first.string("id"))
@@ -59,7 +63,10 @@ class WorkspaceToolsTest {
             assertEquals("-- connection not found", second.string("sql"))
 
             val filtered =
-                client.callTool("list_saved_queries", mapOf("connection_id" to "c1")).jsonArray()
+                client
+                    .callJson("list_saved_queries", mapOf("connection_id" to "c1"))
+                    .getValue("saved_queries")
+                    .jsonArray
             assertEquals(1, filtered.size)
             assertEquals("q1", filtered.single().jsonObject.string("id"))
 
@@ -424,7 +431,11 @@ class WorkspaceToolsTest {
         service.historyEntries += historyEntry("h1")
 
         withTempMcpClient(service) { client ->
-            val saved = client.callTool("list_saved_queries", emptyMap()).jsonArray()
+            val saved =
+                client
+                    .callJson("list_saved_queries", emptyMap())
+                    .getValue("saved_queries")
+                    .jsonArray
             assertEquals(2, saved.size)
             val brokenSaved = saved[0].jsonObject
             assertEquals("q-bad", brokenSaved.string("id"))
@@ -446,6 +457,88 @@ class WorkspaceToolsTest {
             assertEquals(
                 specToSql(sampleMcpQuerySpec(), service.connections.single().dialect).unwrap(),
                 healthyHistory.string("sql"),
+            )
+        }
+    }
+
+    @Test
+    fun listSavedQueriesPaginatesAndValidatesOffsetAndLimit() = runBlocking {
+        val service = workspaceService()
+        repeat(5) { index ->
+            service.savedQueries +=
+                savedQuery("q$index", "Query $index", "c1", createdAt = "$index")
+        }
+        withTempMcpClient(service) { client ->
+            val first = client.callJson("list_saved_queries", mapOf("offset" to 1, "limit" to 2))
+            assertEquals(
+                listOf("q1", "q2"),
+                first.getValue("saved_queries").jsonArray.map { it.jsonObject.string("id") },
+            )
+            assertEquals("5", first.string("total_count"))
+            assertEquals("true", first.string("truncated"))
+            assertEquals("3", first.string("next_offset"))
+
+            val last = client.callJson("list_saved_queries", mapOf("offset" to 3, "limit" to 2))
+            assertEquals(
+                listOf("q3", "q4"),
+                last.getValue("saved_queries").jsonArray.map { it.jsonObject.string("id") },
+            )
+            assertEquals("false", last.string("truncated"))
+            assertFalse(last.containsKey("next_offset"))
+
+            assertError(
+                client.callTool("list_saved_queries", mapOf("limit" to 0)),
+                "invalid_arguments",
+                "limit must be 1 or more",
+            )
+            assertError(
+                client.callTool("list_saved_queries", mapOf("offset" to -1)),
+                "invalid_arguments",
+                "offset must be 0 or more",
+            )
+        }
+    }
+
+    @Test
+    fun deleteSavedQueryLookupFailureReturnsSanitizedInternalError() = runBlocking {
+        val service =
+            object : RecordingSafeDbService() {
+                override suspend fun listSavedQueries() =
+                    error("/secret/store/saved_queries.json corrupt")
+            }
+        withTempMcpClient(service) { client ->
+            val result = client.callTool("delete_saved_query", mapOf("query_id" to "q1"))
+            assertError(result, "internal", "delete_saved_query failed")
+            assertFalse(result.text().contains("/secret/store/saved_queries.json"))
+        }
+    }
+
+    @Test
+    fun workspaceToolsReflectSharedDesktopStoreOnWindows() = runBlocking {
+        val service = workspaceService()
+        service.savedQueries += savedQuery("q1", "Customers", "c1")
+        withTempMcpClient(service, sharesDesktopStore = true) { client ->
+            val tools = client.listTools().tools.associateBy { it.name }
+            assertTrue(
+                tools.getValue("list_saved_queries").description.orEmpty().contains("desktop app"),
+            )
+            assertTrue(
+                tools.getValue("list_query_history").description.orEmpty().contains("desktop app"),
+            )
+            assertTrue(
+                tools.getValue("delete_saved_query").description.orEmpty().contains("desktop app"),
+            )
+
+            val pending = client.callTool("delete_saved_query", mapOf("query_id" to "q1")).json()
+            assertTrue(pending.string("message").contains("desktop app"))
+            assertTrue(
+                pending
+                    .getValue("reasons")
+                    .jsonArray
+                    .single()
+                    .jsonPrimitive
+                    .content
+                    .contains("desktop app"),
             )
         }
     }

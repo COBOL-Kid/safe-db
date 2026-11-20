@@ -139,9 +139,9 @@ class Db2AdapterTest {
                 columns = emptyList(),
                 indexes =
                     listOf(
-                        Db2Adapter.db2Index("APP", "ORDERS", "ORDERS_IX", "ID", "U", "A"),
-                        Db2Adapter.db2Index("APP", "ORDERS", "ORDERS_IX", "NOTES", "U", "I"),
-                        Db2Adapter.db2Index(
+                        db2Index("APP", "ORDERS", "ORDERS_IX", "ID", "U", "A"),
+                        db2Index("APP", "ORDERS", "ORDERS_IX", "NOTES", "U", "I"),
+                        db2Index(
                             "APP",
                             "ORDERS",
                             "ORDERS_ZIX",
@@ -174,9 +174,9 @@ class Db2AdapterTest {
                 columns = emptyList(),
                 indexes =
                     listOf(
-                        Db2Adapter.db2Index("APP", "ORDERS", "ORDERS_PK", "ID", "P", "A"),
-                        Db2Adapter.db2Index("APP", "ORDERS", "ORDERS_DESC", "CREATED", "D", "D"),
-                        Db2Adapter.db2Index(
+                        db2Index("APP", "ORDERS", "ORDERS_PK", "ID", "P", "A"),
+                        db2Index("APP", "ORDERS", "ORDERS_DESC", "CREATED", "D", "D"),
+                        db2Index(
                             "APP",
                             "ORDERS",
                             "ORDERS_TEXT",
@@ -185,7 +185,7 @@ class Db2AdapterTest {
                             "A",
                             indexType = "TEXT",
                         ),
-                        Db2Adapter.db2Index(
+                        db2Index(
                             "APP",
                             "ORDERS",
                             "ORDERS_EXPR",
@@ -194,7 +194,7 @@ class Db2AdapterTest {
                             "A",
                             virtual = true,
                         ),
-                        Db2Adapter.db2Index(
+                        db2Index(
                             "APP",
                             "ORDERS",
                             "ORDERS_CLUS",
@@ -280,26 +280,22 @@ class Db2AdapterTest {
 
     @Test
     fun db2TreatsUndefinedObjectsAsMissingExplainTables() {
-        assertTrue(with(Db2Adapter) { SQLException("no", "42704", 0).isUndefinedObject() })
-        assertTrue(with(Db2Adapter) { SQLException("no", "HY000", -204).isUndefinedObject() })
-        assertTrue(
-            with(Db2Adapter) { SQLException("SQLCODE=-204", "HY000", 0).isUndefinedObject() },
-        )
-        assertTrue(
-            with(Db2Adapter) { SQLException("undefined name", "HY000", 0).isUndefinedObject() },
-        )
-        assertFalse(with(Db2Adapter) { SQLException("other", "HY000", 0).isUndefinedObject() })
-        assertFalse(with(Db2Adapter) { RuntimeException("undefined name").isUndefinedObject() })
+        assertTrue(SQLException("no", "42704", 0).isUndefinedObject())
+        assertTrue(SQLException("no", "HY000", -204).isUndefinedObject())
+        assertTrue(SQLException("SQLCODE=-204", "HY000", 0).isUndefinedObject())
+        assertTrue(SQLException("undefined name", "HY000", 0).isUndefinedObject())
+        assertFalse(SQLException("other", "HY000", 0).isUndefinedObject())
+        assertFalse(RuntimeException("undefined name").isUndefinedObject())
     }
 
     @Test
     fun db2SelectsQuotedAuthExplainPrefixAheadOfSystools() {
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Found("\"APP\"."),
-            Db2Adapter.selectLuwExplainPrefix(
+            LuwExplainPrefix.Found("\"APP\"."),
+            selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Present,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
             ),
         )
     }
@@ -307,19 +303,19 @@ class Db2AdapterTest {
     @Test
     fun db2UsesSystoolsOnlyWhenAuthExplainTablesAreAbsent() {
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Found("SYSTOOLS."),
-            Db2Adapter.selectLuwExplainPrefix(
+            LuwExplainPrefix.Found("SYSTOOLS."),
+            selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Absent,
+                ExplainTablePresence.Present,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Missing,
-            Db2Adapter.selectLuwExplainPrefix(
+            LuwExplainPrefix.Missing,
+            selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
-                Db2Adapter.ExplainTablePresence.Absent,
+                ExplainTablePresence.Absent,
+                ExplainTablePresence.Absent,
             ),
         )
     }
@@ -327,34 +323,34 @@ class Db2AdapterTest {
     @Test
     fun db2LeavesExplainPrefixUnreadableWhenAuthLookupFails() {
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
-            Db2Adapter.selectLuwExplainPrefix(
+            LuwExplainPrefix.Unreadable,
+            selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Failed,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Failed,
+                ExplainTablePresence.Present,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
-            Db2Adapter.selectLuwExplainPrefix(
+            LuwExplainPrefix.Unreadable,
+            selectLuwExplainPrefix(
                 null,
-                Db2Adapter.ExplainTablePresence.Present,
-                Db2Adapter.ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
+                ExplainTablePresence.Present,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
-            Db2Adapter.selectLuwExplainPrefix(
+            LuwExplainPrefix.Unreadable,
+            selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
-                Db2Adapter.ExplainTablePresence.Failed,
+                ExplainTablePresence.Absent,
+                ExplainTablePresence.Failed,
             ),
         )
         assertEquals(
-            Db2Adapter.LuwExplainPrefix.Unreadable,
-            Db2Adapter.selectLuwExplainPrefix(
+            LuwExplainPrefix.Unreadable,
+            selectLuwExplainPrefix(
                 "\"APP\"",
-                Db2Adapter.ExplainTablePresence.Absent,
+                ExplainTablePresence.Absent,
                 null,
             ),
         )
@@ -362,7 +358,7 @@ class Db2AdapterTest {
 
     @Test
     fun db2LuwExplainKeyReadsThePlanRowFromExplainStatement() {
-        val sql = Db2Adapter.luwExplainKeySql("\"APP\".")
+        val sql = luwExplainKeySql("\"APP\".")
 
         assertTrue(sql.contains("FROM \"APP\".EXPLAIN_STATEMENT"))
         assertTrue(sql.contains("QUERYNO = ?"))
@@ -373,8 +369,8 @@ class Db2AdapterTest {
 
     @Test
     fun db2LuwExplainDeleteUsesTheInstanceKey() {
-        val keyed = Db2Adapter.luwExplainDeleteSql("SYSTOOLS.", keyed = true)
-        val fallback = Db2Adapter.luwExplainDeleteSql("\"APP\".", keyed = false)
+        val keyed = luwExplainDeleteSql("SYSTOOLS.", keyed = true)
+        val fallback = luwExplainDeleteSql("\"APP\".", keyed = false)
 
         assertEquals(
             "DELETE FROM SYSTOOLS.EXPLAIN_INSTANCE WHERE EXPLAIN_REQUESTER = ? AND " +
@@ -415,14 +411,14 @@ class Db2AdapterTest {
 
         assertEquals(
             listOf(customer, orderId, lineNo),
-            Db2Adapter.completeDb2ForeignKeys(
+            completeDb2ForeignKeys(
                 listOf(
-                    Db2Adapter.CountedForeignKey(customer, 1),
-                    Db2Adapter.CountedForeignKey(blankOrder, 2),
-                    Db2Adapter.CountedForeignKey(blankLine, 2),
-                    Db2Adapter.CountedForeignKey(partial, 2),
-                    Db2Adapter.CountedForeignKey(orderId, 2),
-                    Db2Adapter.CountedForeignKey(lineNo, 2),
+                    CountedForeignKey(customer, 1),
+                    CountedForeignKey(blankOrder, 2),
+                    CountedForeignKey(blankLine, 2),
+                    CountedForeignKey(partial, 2),
+                    CountedForeignKey(orderId, 2),
+                    CountedForeignKey(lineNo, 2),
                 ),
             ),
         )
