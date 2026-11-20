@@ -184,7 +184,7 @@ internal fun Db2Adapter.explainZos(
 
 // Operators, objects, and streams belong to the plan row (EXPLAIN_LEVEL 'P'), not the
 // original-text row ('O') that shares the same EXPLAIN_TIME.
-internal fun Db2Adapter.luwExplainKeySql(prefix: String): String =
+internal fun luwExplainKeySql(prefix: String): String =
     """
     SELECT EXPLAIN_REQUESTER, EXPLAIN_TIME, SOURCE_NAME, SOURCE_SCHEMA, SOURCE_VERSION,
            EXPLAIN_LEVEL, STMTNO, SECTNO
@@ -195,7 +195,7 @@ internal fun Db2Adapter.luwExplainKeySql(prefix: String): String =
     """
         .trimIndent()
 
-internal fun Db2Adapter.luwExplainDeleteSql(prefix: String, keyed: Boolean): String =
+internal fun luwExplainDeleteSql(prefix: String, keyed: Boolean): String =
     if (keyed) {
         "DELETE FROM ${prefix}EXPLAIN_INSTANCE WHERE EXPLAIN_REQUESTER = ? AND " +
             "EXPLAIN_TIME = ? AND SOURCE_NAME = ? AND SOURCE_SCHEMA = ? AND SOURCE_VERSION = ?"
@@ -206,7 +206,7 @@ internal fun Db2Adapter.luwExplainDeleteSql(prefix: String, keyed: Boolean): Str
             "${prefix}EXPLAIN_STATEMENT WHERE QUERYNO = ? AND EXPLAIN_REQUESTER = SESSION_USER)"
     }
 
-internal fun Db2Adapter.selectLuwExplainPrefix(
+internal fun selectLuwExplainPrefix(
     quotedAuthId: String?,
     authTables: ExplainTablePresence,
     systoolsTables: ExplainTablePresence?,
@@ -267,7 +267,7 @@ private fun Db2TimedJdbc.resolveLuwExplainPrefix(): LuwExplainPrefix {
             null
         }
     if (quotedAuthId == null) {
-        return Db2Adapter.selectLuwExplainPrefix(
+        return selectLuwExplainPrefix(
             null,
             ExplainTablePresence.Failed,
             null,
@@ -285,7 +285,7 @@ private fun Db2TimedJdbc.resolveLuwExplainPrefix(): LuwExplainPrefix {
         } else {
             null
         }
-    return Db2Adapter.selectLuwExplainPrefix(quotedAuthId, authTables, systoolsTables)
+    return selectLuwExplainPrefix(quotedAuthId, authTables, systoolsTables)
 }
 
 private fun Db2TimedJdbc.sessionAuthId(): String? =
@@ -299,7 +299,7 @@ private fun Db2TimedJdbc.queryLuwExplainKey(
     prefix: String,
     queryNo: Int,
 ): LuwExplainKey? =
-    prepare(Db2Adapter.luwExplainKeySql(prefix)).use { ps ->
+    prepare(luwExplainKeySql(prefix)).use { ps ->
         ps.setInt(1, queryNo)
         ps.executeQuery().use { rs ->
             if (!rs.next() || rs.getTimestamp(2) == null) return null
@@ -325,7 +325,7 @@ private fun Db2TimedJdbc.deleteLuwExplain(
     queryNo: Int,
     key: LuwExplainKey?,
 ): Result<Unit> = runCatching {
-    prepare(Db2Adapter.luwExplainDeleteSql(prefix, key != null)).use { ps ->
+    prepare(luwExplainDeleteSql(prefix, key != null)).use { ps ->
         if (key != null) {
             ps.setString(1, key.requester)
             ps.setTimestamp(2, key.explainTime)

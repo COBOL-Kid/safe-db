@@ -13,7 +13,7 @@ import java.sql.ResultSet
 private val db2ExcludedSchemas =
     DB2_SYSTEM_SCHEMAS.joinToString(prefix = "('", postfix = "')", separator = "','")
 
-internal fun Db2Adapter.introspectSyscat(conn: Connection): Schema {
+internal fun introspectSyscat(conn: Connection): Schema {
     val tables =
         conn.metadataRows(
             "SELECT TABSCHEMA, TABNAME FROM SYSCAT.TABLES WHERE TYPE = 'T' " +
@@ -97,7 +97,7 @@ internal fun Db2Adapter.introspectSyscat(conn: Connection): Schema {
     return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
 }
 
-internal fun Db2Adapter.introspectSysibm(conn: Connection): Schema {
+internal fun introspectSysibm(conn: Connection): Schema {
     val tables =
         conn.metadataRows(
             "SELECT CREATOR, NAME FROM SYSIBM.SYSTABLES WHERE TYPE = 'T' " +
@@ -187,7 +187,7 @@ internal fun Db2Adapter.introspectSysibm(conn: Connection): Schema {
     return assembleSchema(tables, columns, indexes, foreignKeys, tableSizes)
 }
 
-internal fun Db2Adapter.db2Index(
+internal fun db2Index(
     schema: String,
     table: String,
     name: String,
@@ -240,7 +240,7 @@ internal fun countedForeignKey(rs: ResultSet): CountedForeignKey? {
 }
 
 // A partial parent match must not become a shorter key.
-internal fun Db2Adapter.completeDb2ForeignKeys(
+internal fun completeDb2ForeignKeys(
     rows: List<CountedForeignKey>,
 ): List<MetadataForeignKey> =
     rows

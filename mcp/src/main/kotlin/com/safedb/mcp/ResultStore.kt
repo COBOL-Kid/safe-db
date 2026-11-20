@@ -157,9 +157,9 @@ internal class ResultStore(
 
     private fun estimateResultBytes(result: QueryResult): Long {
         var total = 0L
-        for (column in result.columns) {
-            total += column.name.toByteArray(Charsets.UTF_8).size
-            total += column.dataType.toByteArray(Charsets.UTF_8).size
+        for ((name, dataType) in result.columns) {
+            total += name.toByteArray(Charsets.UTF_8).size
+            total += dataType.toByteArray(Charsets.UTF_8).size
         }
         for (row in result.rows) {
             for (cell in row) {

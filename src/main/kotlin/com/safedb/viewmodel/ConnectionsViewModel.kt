@@ -83,7 +83,4 @@ class ConnectionsViewModel(private val service: SafeDbService, private val scope
             onComplete(Result.failure(error))
         }
     }
-
-    fun connectionName(id: String): String =
-        _connections.value.firstOrNull { it.id == id }?.name ?: "Unknown"
 }

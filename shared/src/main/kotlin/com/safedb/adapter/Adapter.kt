@@ -84,19 +84,18 @@ sealed class Adapter {
     }
 
     data class Postgres(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
-        protected override fun test(dataSource: HikariDataSource): String =
-            PgAdapter.test(dataSource)
+        override fun test(dataSource: HikariDataSource): String = PgAdapter.test(dataSource)
 
-        protected override fun introspect(dataSource: HikariDataSource): Schema =
+        override fun introspect(dataSource: HikariDataSource): Schema =
             PgAdapter.introspect(dataSource)
 
-        protected override fun executeQuery(
+        override fun executeQuery(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
         ): QueryResult = PgAdapter.executeQuery(dataSource, compiled, timeoutMs)
 
-        protected override fun explain(
+        override fun explain(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
@@ -104,19 +103,18 @@ sealed class Adapter {
     }
 
     data class MySql(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
-        protected override fun test(dataSource: HikariDataSource): String =
-            MySqlAdapter.test(dataSource)
+        override fun test(dataSource: HikariDataSource): String = MySqlAdapter.test(dataSource)
 
-        protected override fun introspect(dataSource: HikariDataSource): Schema =
+        override fun introspect(dataSource: HikariDataSource): Schema =
             MySqlAdapter.introspect(dataSource)
 
-        protected override fun executeQuery(
+        override fun executeQuery(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
         ): QueryResult = MySqlAdapter.executeQuery(dataSource, compiled, timeoutMs)
 
-        protected override fun explain(
+        override fun explain(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
@@ -195,19 +193,18 @@ sealed class Adapter {
     }
 
     data class Oracle(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
-        protected override fun test(dataSource: HikariDataSource): String =
-            OracleAdapter.test(dataSource)
+        override fun test(dataSource: HikariDataSource): String = OracleAdapter.test(dataSource)
 
-        protected override fun introspect(dataSource: HikariDataSource): Schema =
+        override fun introspect(dataSource: HikariDataSource): Schema =
             OracleAdapter.introspect(dataSource)
 
-        protected override fun executeQuery(
+        override fun executeQuery(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
         ): QueryResult = OracleAdapter.executeQuery(dataSource, compiled, timeoutMs)
 
-        protected override fun explain(
+        override fun explain(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
@@ -215,19 +212,18 @@ sealed class Adapter {
     }
 
     data class Db2(val dataSource: HikariDataSource) : PooledAdapter(dataSource) {
-        protected override fun test(dataSource: HikariDataSource): String =
-            Db2Adapter.test(dataSource)
+        override fun test(dataSource: HikariDataSource): String = Db2Adapter.test(dataSource)
 
-        protected override fun introspect(dataSource: HikariDataSource): Schema =
+        override fun introspect(dataSource: HikariDataSource): Schema =
             Db2Adapter.introspect(dataSource)
 
-        protected override fun executeQuery(
+        override fun executeQuery(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
         ): QueryResult = Db2Adapter.executeQuery(dataSource, compiled, timeoutMs)
 
-        protected override fun explain(
+        override fun explain(
             dataSource: HikariDataSource,
             compiled: CompiledQuery,
             timeoutMs: Int,
