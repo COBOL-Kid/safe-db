@@ -374,7 +374,7 @@ private fun SidebarUtilities(
                             // nav rows (Map/History icons visibly shift up).
                             Column {
                                 Text(
-                                    "Safe Read Mode",
+                                    statusLabel(reachability),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Medium,
                                     color = c.onNavigation,
@@ -382,7 +382,7 @@ private fun SidebarUtilities(
                                     overflow = TextOverflow.Clip,
                                 )
                                 Text(
-                                    "No-lock · Indexed joins",
+                                    "Read-only · No locks",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = c.onNavigationMuted,
                                     maxLines = 1,
