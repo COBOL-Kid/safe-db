@@ -308,6 +308,20 @@ jobs:
           done < <(find "${work}" -name '*.app' -type d)
           [ -n "${app}" ]
           codesign --verify --deep --strict --verbose=2 "${app}"
+          if [[ ! -s "${app}/Contents/Resources/Assets.car" ]]; then
+            echo "Liquid Glass icon is missing: ${app}/Contents/Resources/Assets.car" >&2
+            exit 1
+          fi
+          python3 - "${app}/Contents/Info.plist" <<'PY'
+          import plistlib
+          import sys
+
+          with open(sys.argv[1], "rb") as f:
+              plist = plistlib.load(f)
+          if plist.get("CFBundleIconName") != "SafeDB":
+              sys.stderr.write(f"CFBundleIconName is {plist.get('CFBundleIconName')!r}, expected 'SafeDB'\n")
+              sys.exit(1)
+          PY
           dylib="${app}/Contents/runtime/Contents/Home/lib/libskiko-macos-arm64.dylib"
           if [[ ! -f "${dylib}" ]]; then
             echo "Skiko arm64 library is not in the JVM lib directory: ${dylib}" >&2
