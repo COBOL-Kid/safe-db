@@ -107,8 +107,6 @@ tasks.register<Test>("integrationTest") {
     useJUnitPlatform { includeTags("integration") }
     logIntegrationFailures()
     shouldRunAfter(tasks.test)
-    // Both suites share the same live databases, so they must not overlap under parallel builds.
-    mustRunAfter(":shared:integrationTest")
 }
 
 // Custom integrationTest is not a friend of main unless associateWith is set, so tests can call
