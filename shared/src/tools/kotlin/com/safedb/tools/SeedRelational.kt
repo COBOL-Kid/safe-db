@@ -289,8 +289,7 @@ internal fun relationalSeedSettings(
 ): SeedSettings {
     fun value(name: String, fallback: String) = env[name] ?: fallback
 
-    fun password(testName: String, dockerName: String, fallback: String) =
-        env[testName] ?: env[dockerName]?.takeIf(String::isNotEmpty) ?: fallback
+    fun password(name: String, fallback: String) = env[name] ?: fallback
 
     return when (dialect) {
         GeneratedSqlDialect.Postgres ->
@@ -304,12 +303,7 @@ internal fun relationalSeedSettings(
                 staticSql = repoRoot.resolve("testdata_postgres.sql"),
                 clientEnvironment =
                     mapOf(
-                        "PGPASSWORD" to
-                            password(
-                                "SAFEDB_TEST_POSTGRES_PASSWORD",
-                                "SAFEDB_DOCKER_POSTGRES_PASSWORD",
-                                "postgres",
-                            ),
+                        "PGPASSWORD" to password("SAFEDB_TEST_POSTGRES_PASSWORD", "postgres"),
                     ),
             )
         GeneratedSqlDialect.Mssql ->
@@ -324,11 +318,7 @@ internal fun relationalSeedSettings(
                 clientEnvironment =
                     mapOf(
                         "SQLCMDPASSWORD" to
-                            password(
-                                "SAFEDB_TEST_MSSQL_PASSWORD",
-                                "SAFEDB_DOCKER_MSSQL_PASSWORD",
-                                "SafeDb_Ssl_Passw0rd!",
-                            ),
+                            password("SAFEDB_TEST_MSSQL_PASSWORD", "SafeDb_Ssl_Passw0rd!"),
                     ),
             )
         GeneratedSqlDialect.Oracle ->

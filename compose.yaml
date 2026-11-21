@@ -9,10 +9,10 @@ services:
     container_name: safedb-test-mysql-connectivity
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${SAFEDB_DOCKER_MYSQL_ROOT_PASSWORD:-safedb-root}
+      MYSQL_ROOT_PASSWORD: safedb-root
       MYSQL_DATABASE: safedb_test
       MYSQL_USER: safedb
-      MYSQL_PASSWORD: ${SAFEDB_DOCKER_MYSQL_PASSWORD:-safedb}
+      MYSQL_PASSWORD: safedb
     ports:
       - "3306:3306"
     volumes:
@@ -30,10 +30,10 @@ services:
     container_name: safedb-test-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${SAFEDB_DOCKER_MYSQL_ROOT_PASSWORD:-safedb-root}
+      MYSQL_ROOT_PASSWORD: safedb-root
       MYSQL_DATABASE: safedb_ssl
       MYSQL_USER: safedb
-      MYSQL_PASSWORD: ${SAFEDB_DOCKER_MYSQL_PASSWORD:-safedb}
+      MYSQL_PASSWORD: safedb
     ports:
       - "3307:3306"
     volumes:
@@ -60,7 +60,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${SAFEDB_DOCKER_POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: safedb_ssl
     ports:
       - "5433:5432"
@@ -96,7 +96,7 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: Developer
-      MSSQL_SA_PASSWORD: ${SAFEDB_DOCKER_MSSQL_PASSWORD:-SafeDb_Ssl_Passw0rd!}
+      MSSQL_SA_PASSWORD: SafeDb_Ssl_Passw0rd!
     ports:
       - "14333:1433"
     volumes:
@@ -119,7 +119,7 @@ services:
       mssql:
         condition: service_healthy
     environment:
-      MSSQL_SA_PASSWORD: ${SAFEDB_DOCKER_MSSQL_PASSWORD:-SafeDb_Ssl_Passw0rd!}
+      MSSQL_SA_PASSWORD: SafeDb_Ssl_Passw0rd!
     volumes:
       - ./docker/test-databases/mssql-init.sh:/usr/local/bin/safedb-mssql-init.sh:ro
       - ./testdata_mssql.sql:/fixtures/testdata_mssql.sql:ro
@@ -131,9 +131,9 @@ services:
     container_name: safedb-test-oracle
     restart: unless-stopped
     environment:
-      ORACLE_PASSWORD: ${SAFEDB_DOCKER_ORACLE_ADMIN_PASSWORD:-SafeDb_Oracle_Passw0rd!}
+      ORACLE_PASSWORD: SafeDb_Oracle_Passw0rd!
       APP_USER: safedb
-      APP_USER_PASSWORD: ${SAFEDB_DOCKER_ORACLE_PASSWORD:-safedb}
+      APP_USER_PASSWORD: safedb
     ports:
       - "1522:1521"
     volumes:
@@ -156,7 +156,7 @@ services:
     environment:
       LICENSE: accept
       DB2INSTANCE: db2inst1
-      DB2INST1_PASSWORD: ${SAFEDB_DOCKER_DB2_PASSWORD:-SafeDb_Db2_Passw0rd!}
+      DB2INST1_PASSWORD: SafeDb_Db2_Passw0rd!
       # LUW database names are at most 8 characters and cannot contain "_".
       DBNAME: SAFEDB
     ports:

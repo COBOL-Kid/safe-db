@@ -20,10 +20,10 @@ object IntegrationAssumptions {
         get() = env["SAFEDB_TEST_MYSQL_PORT"]?.toIntOrNull() ?: 3306
 
     val mysqlUser: String
-        get() = env["SAFEDB_TEST_MYSQL_USER"] ?: "root"
+        get() = env["SAFEDB_TEST_MYSQL_USER"] ?: "safedb"
 
     val mysqlPassword: String
-        get() = env["SAFEDB_TEST_MYSQL_PASSWORD"] ?: ""
+        get() = env["SAFEDB_TEST_MYSQL_PASSWORD"] ?: "safedb"
 
     val mysqlDatabase: String
         get() = env["SAFEDB_TEST_MYSQL_DATABASE"] ?: "safedb_test"
@@ -32,7 +32,7 @@ object IntegrationAssumptions {
         get() = env["SAFEDB_TEST_POSTGRES_HOST"] ?: "localhost"
 
     val postgresPort: Int
-        get() = env["SAFEDB_TEST_POSTGRES_PORT"]?.toIntOrNull() ?: 5432
+        get() = env["SAFEDB_TEST_POSTGRES_PORT"]?.toIntOrNull() ?: 5433
 
     val postgresUser: String
         get() = env["SAFEDB_TEST_POSTGRES_USER"] ?: "postgres"
