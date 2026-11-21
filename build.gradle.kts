@@ -1,4 +1,5 @@
 import com.safedb.buildlogic.ExtractMacSkikoNative
+import com.safedb.buildlogic.WriteVersionResource
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -25,8 +26,8 @@ dependencies {
     implementation(compose.desktop.currentOs)
     "windowsAmd64"(libs.compose.desktop.windows.x64)
     "macAarch64"(libs.compose.desktop.macos.arm64)
-    implementation("org.jetbrains.compose.material3:material3:1.9.0")
-    implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.kotlinx.coroutines.swing)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
@@ -71,16 +72,10 @@ configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.r
 dependencies { add(render.implementationConfigurationName, testFixtures(project(":shared"))) }
 
 val generateAppVersion =
-    tasks.register("generateAppVersion") {
-        val outputDir = layout.buildDirectory.dir("generated/resources/appVersion")
-        val appVersion = provider { version.toString() }
-        inputs.property("version", appVersion)
-        outputs.dir(outputDir)
-        doLast {
-            val file = outputDir.get().file("app-version.txt").asFile
-            file.parentFile.mkdirs()
-            file.writeText(appVersion.get())
-        }
+    tasks.register<WriteVersionResource>("generateAppVersion") {
+        appVersion.set(provider { version.toString() })
+        fileName.set("app-version.txt")
+        outputDir.set(layout.buildDirectory.dir("generated/resources/appVersion"))
     }
 
 sourceSets.named("main") { resources.srcDir(generateAppVersion) }
@@ -195,7 +190,7 @@ compose.desktop {
             appResourcesRootDir.set(layout.projectDirectory.dir("packaging/resources"))
             packageName = "safe-db"
             // The macOS jpackage tool rejects installer versions whose major component is zero.
-            packageVersion = "1.1.3"
+            packageVersion = version.toString()
             vendor = "safe-db"
             description = "Safely explore production databases"
         }

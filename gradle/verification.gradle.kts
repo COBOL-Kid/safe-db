@@ -66,6 +66,12 @@ tasks.named("check") {
     )
 }
 
+fun requireDialectFromEnv(dialect: String): Provider<Boolean> =
+    providers
+        .environmentVariable("SAFEDB_TEST_REQUIRE_$dialect")
+        .map { it.equals("true", ignoreCase = true) }
+        .orElse(false)
+
 val verifyIntegrationTestDiscovery =
     tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {
         group = "verification"
@@ -78,36 +84,11 @@ val verifyIntegrationTestDiscovery =
         mcpResultsDirectory.set(
             project(":mcp").layout.buildDirectory.dir("test-results/integrationTest"),
         )
-        requireMysql.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_MYSQL")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requirePostgres.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_POSTGRES")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requireMssql.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_MSSQL")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requireOracle.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_ORACLE")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requireDb2.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_DB2")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
+        requireMysql.set(requireDialectFromEnv("MYSQL"))
+        requirePostgres.set(requireDialectFromEnv("POSTGRES"))
+        requireMssql.set(requireDialectFromEnv("MSSQL"))
+        requireOracle.set(requireDialectFromEnv("ORACLE"))
+        requireDb2.set(requireDialectFromEnv("DB2"))
     }
 
 tasks.register("integrationTest") {
