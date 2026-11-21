@@ -45,11 +45,21 @@ Use the wrapper, never system Gradle. Do not run `run` alongside daemon-less bui
 
 The root `integrationTest` task runs both the shared JDBC suite and the MCP integration suite. The MCP suite always exercises the packaged shadow JAR over stdio; its per-dialect packaged cases (MySQL, PostgreSQL, SQL Server, Oracle, and Db2) skip when their engine is unavailable. Required MySQL verification checks the shared and MCP JUnit reports separately, so shared MySQL cases cannot hide a missing or skipped MCP case. PostgreSQL-only runs require shared PostgreSQL coverage but do not require the MCP MySQL case.
 
-Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true`, `SAFEDB_TEST_REQUIRE_POSTGRES=true`, `SAFEDB_TEST_REQUIRE_MSSQL=true`, `SAFEDB_TEST_REQUIRE_ORACLE=true`, and `SAFEDB_TEST_REQUIRE_DB2=true` to require configured engines. Each engine has matching `SAFEDB_TEST_{MYSQL,POSTGRES,MSSQL,ORACLE,DB2}_{HOST,PORT,USER,PASSWORD,DATABASE}` variables; MySQL also accepts optional `SAFEDB_TEST_MYSQL_DOCKER`. Reproduce the required MySQL job with:
+Integration tests use `SAFEDB_TEST_REQUIRE_MYSQL=true`, `SAFEDB_TEST_REQUIRE_POSTGRES=true`, `SAFEDB_TEST_REQUIRE_MSSQL=true`, `SAFEDB_TEST_REQUIRE_ORACLE=true`, and `SAFEDB_TEST_REQUIRE_DB2=true` to require configured engines. Each engine has matching `SAFEDB_TEST_{MYSQL,POSTGRES,MSSQL,ORACLE,DB2}_{HOST,PORT,USER,PASSWORD,DATABASE}` variables; MySQL also accepts optional `SAFEDB_TEST_MYSQL_DOCKER`. The disposable `compose.yaml` stack uses fixed, checked-in credentials, and the test defaults match it, so `./gradlew integrationTest` needs no `SAFEDB_TEST_*` variables after `scripts/docker_test_databases.sh up`:
+
+| Engine | Host port | Database | User | Password |
+| --- | --- | --- | --- | --- |
+| MySQL (`mysql-connectivity`) | 3306 | `safedb_test` | `safedb` (root: `safedb-root`) | `safedb` |
+| PostgreSQL | 5433 | `safedb_test` | `postgres` | `postgres` |
+| SQL Server | 14333 | `safedb_ssl` | `sa` | `SafeDb_Ssl_Passw0rd!` |
+| Oracle | 1522 | `FREEPDB1` | `safedb` (admin: `SafeDb_Oracle_Passw0rd!`) | `safedb` |
+| Db2 | 50000 | `SAFEDB` | `db2inst1` | `SafeDb_Db2_Passw0rd!` |
+
+Reproduce the required MySQL CI job, which uses a passwordless `root` MySQL service, with:
 
 ```sh
-scripts/seed_mysql.sh --static
-SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true ./gradlew integrationTest --stacktrace
+SAFEDB_TEST_MYSQL_USER=root SAFEDB_TEST_MYSQL_PASSWORD= scripts/seed_mysql.sh --static
+SAFEDB_KEYCHAIN_BACKEND=disabled SAFEDB_TEST_REQUIRE_MYSQL=true SAFEDB_TEST_MYSQL_USER=root SAFEDB_TEST_MYSQL_PASSWORD= ./gradlew integrationTest --stacktrace
 ```
 
 `scripts/verify_ssl_compat.sh` expects pre-provisioned TLS endpoints and profiles under `/tmp/safedb-ssl` unless `SAFEDB_SSL_ROOT` is set; it calls `:shared:integrationTest` directly and, by default, writes its report beneath that fixture root. It is not a substitute for the normal optional JDBC suite.
@@ -70,7 +80,7 @@ Postgres, SQL Server, and Db2 put the bulk tables in extra schemas (`analytics` 
 
 Load on first boot: Compose `mysql-connectivity` (port 3306) and `postgres` (port 5433) run the SQL files. `scripts/docker_test_databases.sh up` also seeds SQL Server, Oracle, and Db2. Reload MySQL or Postgres without recreating the stack with `scripts/seed_mysql.sh --static` and `scripts/seed_postgres.sh --static`. Reload SQL Server, Oracle, and Db2 with `scripts/docker_test_databases.sh seed` (same as `scripts/seed_{mssql,oracle,db2}.sh --static`). `seed` does not reload MySQL or Postgres.
 
-PostgreSQL and SQL Server fixture seeders resolve passwords from the explicit `SAFEDB_TEST_*_PASSWORD`, then the matching `SAFEDB_DOCKER_*_PASSWORD`, then the development default. `scripts/docker_test_databases.sh certs` is an offline operation and refuses to replace certificates while project services are running; use `reset` to rotate certificates and recreate an active stack safely.
+PostgreSQL and SQL Server fixture seeders use the explicit `SAFEDB_TEST_*_PASSWORD` when set, otherwise the `compose.yaml` password. `scripts/docker_test_databases.sh certs` is an offline operation and refuses to replace certificates while project services are running; use `reset` to rotate certificates and recreate an active stack safely.
 
 ## CI
 

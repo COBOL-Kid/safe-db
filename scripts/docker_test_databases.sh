@@ -7,11 +7,11 @@ SSL_ROOT="${SAFEDB_SSL_ROOT:-$ROOT/.docker/safedb-ssl}"
 export SAFEDB_SSL_ROOT="$SSL_ROOT"
 COMPOSE=(docker compose --project-directory "$ROOT" --file "$ROOT/compose.yaml")
 TRUST_PASSWORD="safedb-test-trust"
-MYSQL_PASSWORD="${SAFEDB_DOCKER_MYSQL_PASSWORD:-safedb}"
-POSTGRES_PASSWORD="${SAFEDB_DOCKER_POSTGRES_PASSWORD:-postgres}"
-MSSQL_PASSWORD="${SAFEDB_DOCKER_MSSQL_PASSWORD:-SafeDb_Ssl_Passw0rd!}"
-ORACLE_PASSWORD="${SAFEDB_DOCKER_ORACLE_PASSWORD:-safedb}"
-DB2_PASSWORD="${SAFEDB_DOCKER_DB2_PASSWORD:-SafeDb_Db2_Passw0rd!}"
+MYSQL_PASSWORD="safedb"
+POSTGRES_PASSWORD="postgres"
+MSSQL_PASSWORD='SafeDb_Ssl_Passw0rd!'
+ORACLE_PASSWORD="safedb"
+DB2_PASSWORD='SafeDb_Db2_Passw0rd!'
 
 usage() {
   cat <<'EOF'

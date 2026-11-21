@@ -3,6 +3,7 @@ compose-multiplatform = "1.12.2"
 kotlinx-serialization-json = "1.13.0"
 kotlinx-coroutines = "1.11.0"
 junit = "6.1.3"
+mcp-sdk = "0.16.0"
 
 [libraries]
 compose-desktop-windows-x64 = { module = "org.jetbrains.compose.desktop:desktop-jvm-windows-x64", version.ref = "compose-multiplatform" }
@@ -13,3 +14,15 @@ kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version = "1.9.0" }
+compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version = "1.7.3" }
+hikaricp = { module = "com.zaxxer:HikariCP", version = "7.1.0" }
+jdbc-postgresql = { module = "org.postgresql:postgresql", version = "42.7.14" }
+jdbc-mysql = { module = "com.mysql:mysql-connector-j", version = "26.10.0" }
+jdbc-mssql = { module = "com.microsoft.sqlserver:mssql-jdbc", version = "13.6.2.jre11" }
+jdbc-oracle = { module = "com.oracle.database.jdbc:ojdbc11", version = "23.26.4.0.0" }
+jdbc-db2 = { module = "com.ibm.db2:jcc", version = "12.1.5.0" }
+java-keyring = { module = "com.github.javakeyring:java-keyring", version = "1.0.4" }
+mcp-sdk-server = { module = "io.modelcontextprotocol:kotlin-sdk-server", version.ref = "mcp-sdk" }
+mcp-sdk-client = { module = "io.modelcontextprotocol:kotlin-sdk-client", version.ref = "mcp-sdk" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version = "2.0.20" }

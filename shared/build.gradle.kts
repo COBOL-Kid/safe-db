@@ -1,3 +1,5 @@
+import com.safedb.buildlogic.logIntegrationFailures
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
@@ -25,13 +27,13 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 
-    implementation("com.zaxxer:HikariCP:7.1.0")
-    implementation("org.postgresql:postgresql:42.7.14")
-    implementation("com.mysql:mysql-connector-j:26.10.0")
-    implementation("com.microsoft.sqlserver:mssql-jdbc:13.6.2.jre11")
-    implementation("com.oracle.database.jdbc:ojdbc11:23.26.4.0.0")
-    implementation("com.ibm.db2:jcc:12.1.5.0")
-    implementation("com.github.javakeyring:java-keyring:1.0.4")
+    implementation(libs.hikaricp)
+    implementation(libs.jdbc.postgresql)
+    implementation(libs.jdbc.mysql)
+    implementation(libs.jdbc.mssql)
+    implementation(libs.jdbc.oracle)
+    implementation(libs.jdbc.db2)
+    implementation(libs.java.keyring)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
@@ -96,13 +98,7 @@ tasks.register<Test>("integrationTest") {
     testClassesDirs = integrationTest.output.classesDirs
     classpath = integrationTest.runtimeClasspath
     useJUnitPlatform { includeTags("integration") }
-    testLogging {
-        events("failed", "skipped")
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-        showExceptions = true
-        showCauses = true
-        showStackTraces = true
-    }
+    logIntegrationFailures()
     shouldRunAfter(tasks.test)
 }
 

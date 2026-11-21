@@ -1,3 +1,5 @@
+import com.safedb.buildlogic.logIntegrationFailures
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
@@ -43,12 +45,12 @@ kover {
 dependencies {
     implementation(project(":shared"))
     implementation(libs.kotlinx.serialization.json)
-    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.16.0")
-    implementation("org.slf4j:slf4j-simple:2.0.20")
+    implementation(libs.mcp.sdk.server)
+    implementation(libs.slf4j.simple)
 
     testImplementation(kotlin("test"))
     testImplementation(testFixtures(project(":shared")))
-    testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.16.0")
+    testImplementation(libs.mcp.sdk.client)
     testImplementation(libs.kotlinx.coroutines.test)
 }
 
@@ -72,26 +74,17 @@ dependencies {
         integrationTest.implementationConfigurationName,
         testFixtures(project(":shared")),
     )
-    add(
-        integrationTest.implementationConfigurationName,
-        "io.modelcontextprotocol:kotlin-sdk-client:0.16.0",
-    )
+    add(integrationTest.implementationConfigurationName, libs.mcp.sdk.client)
     add(integrationTest.implementationConfigurationName, libs.kotlinx.coroutines.test)
     add(integrationTest.implementationConfigurationName, libs.junit.jupiter)
     add(integrationTest.runtimeOnlyConfigurationName, libs.junit.platform.launcher)
 }
 
 val generateMcpVersion =
-    tasks.register("generateMcpVersion") {
-        val outputDir = layout.buildDirectory.dir("generated/resources/mcpVersion")
-        val mcpVersion = provider { version.toString() }
-        inputs.property("version", mcpVersion)
-        outputs.dir(outputDir)
-        doLast {
-            val file = outputDir.get().file("mcp-version.txt").asFile
-            file.parentFile.mkdirs()
-            file.writeText(mcpVersion.get())
-        }
+    tasks.register<com.safedb.buildlogic.WriteVersionResource>("generateMcpVersion") {
+        appVersion.set(provider { version.toString() })
+        fileName.set("mcp-version.txt")
+        outputDir.set(layout.buildDirectory.dir("generated/resources/mcpVersion"))
     }
 
 sourceSets.named("main") { resources.srcDir(generateMcpVersion) }
@@ -112,13 +105,7 @@ tasks.register<Test>("integrationTest") {
     classpath = integrationTest.runtimeClasspath
     systemProperty("safedb.mcp.shadowJar", mcpShadowJarFile.get().asFile.absolutePath)
     useJUnitPlatform { includeTags("integration") }
-    testLogging {
-        events("failed", "skipped")
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-        showExceptions = true
-        showCauses = true
-        showStackTraces = true
-    }
+    logIntegrationFailures()
     shouldRunAfter(tasks.test)
 }
 

@@ -1,8 +1,5 @@
 import com.safedb.buildlogic.ExtractMacSkikoNative
-import com.safedb.buildlogic.VerifyCoverageRatchet
-import com.safedb.buildlogic.VerifyIntegrationTestDiscovery
-import com.safedb.buildlogic.VerifyUnitTestDiscovery
-import com.safedb.buildlogic.splitSeedTaskArgs
+import com.safedb.buildlogic.WriteVersionResource
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -29,8 +26,8 @@ dependencies {
     implementation(compose.desktop.currentOs)
     "windowsAmd64"(libs.compose.desktop.windows.x64)
     "macAarch64"(libs.compose.desktop.macos.arm64)
-    implementation("org.jetbrains.compose.material3:material3:1.9.0")
-    implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.kotlinx.coroutines.swing)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
@@ -75,16 +72,10 @@ configurations[render.runtimeOnlyConfigurationName].extendsFrom(configurations.r
 dependencies { add(render.implementationConfigurationName, testFixtures(project(":shared"))) }
 
 val generateAppVersion =
-    tasks.register("generateAppVersion") {
-        val outputDir = layout.buildDirectory.dir("generated/resources/appVersion")
-        val appVersion = provider { version.toString() }
-        inputs.property("version", appVersion)
-        outputs.dir(outputDir)
-        doLast {
-            val file = outputDir.get().file("app-version.txt").asFile
-            file.parentFile.mkdirs()
-            file.writeText(appVersion.get())
-        }
+    tasks.register<WriteVersionResource>("generateAppVersion") {
+        appVersion.set(provider { version.toString() })
+        fileName.set("app-version.txt")
+        outputDir.set(layout.buildDirectory.dir("generated/resources/appVersion"))
     }
 
 sourceSets.named("main") { resources.srcDir(generateAppVersion) }
@@ -199,7 +190,7 @@ compose.desktop {
             appResourcesRootDir.set(layout.projectDirectory.dir("packaging/resources"))
             packageName = "safe-db"
             // The macOS jpackage tool rejects installer versions whose major component is zero.
-            packageVersion = "1.1.3"
+            packageVersion = version.toString()
             vendor = "safe-db"
             description = "Safely explore production databases"
         }
@@ -208,188 +199,8 @@ compose.desktop {
 
 tasks.test { useJUnitPlatform() }
 
-val verifyUnitTestDiscovery =
-    tasks.register<VerifyUnitTestDiscovery>("verifyUnitTestDiscovery") {
-        group = "verification"
-        description =
-            "Fails when JVM unit tests are missing from JUnit XML or contain failures or skips."
-        dependsOn(tasks.test, ":shared:test", ":mcp:test")
-        desktopResults.set(layout.buildDirectory.dir("test-results/test"))
-        sharedResults.set(project(":shared").layout.buildDirectory.dir("test-results/test"))
-        mcpResults.set(project(":mcp").layout.buildDirectory.dir("test-results/test"))
-        minimumDesktopTests.set(406)
-        minimumSharedTests.set(758)
-        minimumMcpTests.set(251)
-    }
+// Applied scripts have no type-safe accessors, so plugin DSL stays above. Dev tasks need the
+// render source set, which is created before these scripts run.
+apply(from = "gradle/verification.gradle.kts")
 
-val verifyCoverageRatchet =
-    tasks.register<VerifyCoverageRatchet>("verifyCoverageRatchet") {
-        group = "verification"
-        description = "Enforces checked-in line coverage floors for desktop and shared logic."
-        dependsOn("koverXmlReport")
-        reportFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
-        // Shared floor is unit coverage from `check`. JDBC adapter bodies are covered by
-        // integrationTest, which kover ignores.
-        coverageFloors.set(mapOf("desktop" to 92, "shared" to 89))
-    }
-
-val verifyMcpCoverageRatchet =
-    tasks.register<VerifyCoverageRatchet>("verifyMcpCoverageRatchet") {
-        group = "verification"
-        description = "Enforces the checked-in MCP line coverage floor."
-        dependsOn(":mcp:koverXmlReportUnit")
-        reportFile.set(project(":mcp").layout.buildDirectory.file("reports/kover/reportUnit.xml"))
-        coverageFloors.set(mapOf("mcp" to 93))
-    }
-
-tasks.named("koverVerify") { dependsOn(verifyCoverageRatchet, verifyMcpCoverageRatchet) }
-
-val testDockerDatabaseHarness =
-    tasks.register<Exec>("testDockerDatabaseHarness") {
-        group = "verification"
-        description = "Tests Docker database harness orchestration without live containers."
-        workingDir = projectDir
-        commandLine("bash", "scripts/test_docker_test_databases.sh")
-        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
-    }
-
-val testAssertConveyorSite =
-    tasks.register<Exec>("testAssertConveyorSite") {
-        group = "verification"
-        description = "Tests Conveyor site assertions against fixture files."
-        workingDir = projectDir
-        commandLine("bash", "scripts/test_assert_conveyor_site.sh")
-        onlyIf { !System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
-    }
-
-tasks.check {
-    dependsOn(
-        "compileRenderKotlin",
-        verifyUnitTestDiscovery,
-        testDockerDatabaseHarness,
-        testAssertConveyorSite,
-        "koverVerify",
-    )
-}
-
-val verifyIntegrationTestDiscovery =
-    tasks.register<VerifyIntegrationTestDiscovery>("verifyIntegrationTestDiscovery") {
-        group = "verification"
-        description =
-            "Ensures required JDBC and MCP integration suites executed instead of silently skipping."
-        dependsOn(":shared:integrationTest", ":mcp:integrationTest")
-        sharedResultsDirectory.set(
-            project(":shared").layout.buildDirectory.dir("test-results/integrationTest"),
-        )
-        mcpResultsDirectory.set(
-            project(":mcp").layout.buildDirectory.dir("test-results/integrationTest"),
-        )
-        requireMysql.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_MYSQL")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requirePostgres.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_POSTGRES")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requireMssql.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_MSSQL")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requireOracle.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_ORACLE")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-        requireDb2.set(
-            providers
-                .environmentVariable("SAFEDB_TEST_REQUIRE_DB2")
-                .map { it.equals("true", ignoreCase = true) }
-                .orElse(false),
-        )
-    }
-
-tasks.register("integrationTest") {
-    group = "verification"
-    description = "Runs :shared JDBC and :mcp integration tests."
-    dependsOn(verifyIntegrationTestDiscovery)
-}
-
-// Resolved lazily from inside task configuration blocks, after :shared has been evaluated.
-fun sharedToolsRuntimeClasspath(): FileCollection =
-    project(":shared")
-        .extensions
-        .getByType<SourceSetContainer>()
-        .getByName("tools")
-        .runtimeClasspath
-
-fun seedTaskArgs(taskName: String): List<String> {
-    val propertyName = "${taskName}Args"
-    return splitSeedTaskArgs(providers.gradleProperty(propertyName).orElse("").get(), propertyName)
-}
-
-tasks.register<JavaExec>("seedMysql") {
-    group = "safe-db"
-    description = "Seed the local safe-db MySQL test database."
-    classpath = sharedToolsRuntimeClasspath()
-    mainClass.set("com.safedb.tools.SeedMysqlKt")
-    workingDir = projectDir
-    args(seedTaskArgs("seedMysql"))
-}
-
-fun registerRelationalSeedTask(
-    taskName: String,
-    dialect: String,
-) {
-    tasks.register<JavaExec>(taskName) {
-        group = "safe-db"
-        description = "Seed the local safe-db $dialect test database."
-        classpath = sharedToolsRuntimeClasspath()
-        mainClass.set("com.safedb.tools.SeedRelationalKt")
-        workingDir = projectDir
-        args(dialect, *seedTaskArgs(taskName).toTypedArray())
-    }
-}
-
-registerRelationalSeedTask("seedPostgres", "postgres")
-
-registerRelationalSeedTask("seedMssql", "mssql")
-
-registerRelationalSeedTask("seedOracle", "oracle")
-
-registerRelationalSeedTask("seedDb2", "db2")
-
-tasks.register<JavaExec>("renderPreview") {
-    group = "safe-db"
-    description = "Render main screens headlessly to /tmp/safedb-preview for visual checks."
-    classpath = render.runtimeClasspath
-    mainClass.set("com.safedb.tools.RenderPreviewKt")
-}
-
-tasks.register<JavaExec>("renderReportExport") {
-    group = "safe-db"
-    description = "Export a genuine Explore HTML report to /tmp/safedb-preview/report."
-    classpath = render.runtimeClasspath
-    mainClass.set("com.safedb.tools.RenderReportExportKt")
-}
-
-tasks.register<JavaExec>("renderHeroFrames") {
-    group = "safe-db"
-    description = "Render the query-builder build-up sequence to /tmp/safedb-preview/hero."
-    classpath = render.runtimeClasspath
-    mainClass.set("com.safedb.tools.HeroFramesKt")
-}
-
-tasks.register<JavaExec>("renderThemeGallery") {
-    group = "safe-db"
-    description = "Render the color scheme picker and Connections screen for every scheme."
-    classpath = render.runtimeClasspath
-    mainClass.set("com.safedb.tools.RenderThemeGalleryKt")
-}
+apply(from = "gradle/dev-tasks.gradle.kts")
