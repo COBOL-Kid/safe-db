@@ -580,7 +580,9 @@ class HtmlReportWriterTest {
         val shownPreview = applyVisualization(sample, shownConfig, session().baseSpec.tables)
         val shownChart = buildChartSection(shownPreview, shownConfig)
         assertEquals(listOf("3.6M", "1.6M"), shownChart.shapes.map { it.label })
-        assertTrue(shownChart.shapes.all { it.lx != null && it.ly != null && it.labelTone == "light" })
+        assertTrue(
+            shownChart.shapes.all { it.lx != null && it.ly != null && it.labelTone == "light" },
+        )
         assertTrue(REPORT_JS.contains("bar-label"))
     }
 
@@ -622,7 +624,8 @@ class HtmlReportWriterTest {
                     ),
             )
         val singlePreview = applyVisualization(sample, singleConfig, session.baseSpec.tables)
-        val singleTable = assertNotNull(buildVisualizationReport(session, singlePreview, singleConfig).table)
+        val singleTable =
+            assertNotNull(buildVisualizationReport(session, singlePreview, singleConfig).table)
 
         assertEquals(
             listOf("Status", "Measure", "Value", "Source rows"),
@@ -630,11 +633,15 @@ class HtmlReportWriterTest {
         )
         assertTrue(singleTable.columns[2].numeric)
         assertEquals(3_624_326.7, singleTable.rows.first().cells[2].n)
-        assertTrue(singleTable.rows.first().cells[2].t.contains("3,624,326.7") || singleTable.rows.first().cells[2].t.contains("3.624.326,7"))
+        assertTrue(
+            singleTable.rows.first().cells[2].t.contains("3,624,326.7") ||
+                singleTable.rows.first().cells[2].t.contains("3.624.326,7"),
+        )
 
         val multiConfig = singleConfig.copy(series = VisualizationField("t0__region", "Region"))
         val multiPreview = applyVisualization(sample, multiConfig, session.baseSpec.tables)
-        val multiTable = assertNotNull(buildVisualizationReport(session, multiPreview, multiConfig).table)
+        val multiTable =
+            assertNotNull(buildVisualizationReport(session, multiPreview, multiConfig).table)
 
         assertEquals(
             listOf("Status", "Series", "Measure", "Value", "Source rows"),

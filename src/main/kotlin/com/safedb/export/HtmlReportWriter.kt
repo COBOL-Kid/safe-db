@@ -486,16 +486,15 @@ internal fun buildChartSection(
 
     val valueSpan = (geometry.yMax - geometry.yMin).takeIf { it > 0.0 } ?: 1.0
     val tickValues = geometry.valueTicks.ifEmpty { listOf(geometry.yMin, geometry.yMax) }
-    val valueTicks =
-        tickValues.map { value ->
-            val fraction = ((value - geometry.yMin) / valueSpan).toFloat().coerceIn(0f, 1f)
-            HtmlAxisTick(
-                pos =
-                    if (horizontal) (plot.left + plot.width * fraction).rounded()
-                    else (plot.bottom - plot.height * fraction).rounded(),
-                label = compactNumber(value),
-            )
-        }
+    val valueTicks = tickValues.map { value ->
+        val fraction = ((value - geometry.yMin) / valueSpan).toFloat().coerceIn(0f, 1f)
+        HtmlAxisTick(
+            pos =
+                if (horizontal) (plot.left + plot.width * fraction).rounded()
+                else (plot.bottom - plot.height * fraction).rounded(),
+            label = compactNumber(value),
+        )
+    }
     val categories = preview.marks.distinctBy { it.xKey }
     val centered =
         categories

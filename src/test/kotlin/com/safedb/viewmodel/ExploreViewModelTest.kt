@@ -582,9 +582,7 @@ class ExploreViewModelTest {
         assertTrue(csv.readText().contains("Status,Measure,Value,Source rows"))
         assertTrue(csv.readText().contains("pending"))
 
-        viewModel.updateVisualization {
-            it.copy(series = VisualizationField("t0__id", "Order"))
-        }
+        viewModel.updateVisualization { it.copy(series = VisualizationField("t0__id", "Order")) }
         val seriesCsv = createTempFile(suffix = ".csv")
         viewModel.saveVisualizationCsv(seriesCsv)
         assertTrue(seriesCsv.readText().contains("Status,Series,Measure,Value,Source rows"))
@@ -665,11 +663,12 @@ class ExploreViewModelTest {
             )
         val viewModel =
             ExploreViewModel(createExploreSession(connection(), joinedSpec, joinedSample))
-        val drill = viewModel.sourceRowsFor(
-            viewModel.preview.layout.rowEntries.first().pathKey,
-            viewModel.preview.layout.columnLeaves.single().pathKey,
-            viewModel.config.measures.single().alias,
-        )
+        val drill =
+            viewModel.sourceRowsFor(
+                viewModel.preview.layout.rowEntries.first().pathKey,
+                viewModel.preview.layout.columnLeaves.single().pathKey,
+                viewModel.config.measures.single().alias,
+            )
         val csv = createTempFile(suffix = ".csv")
 
         viewModel.saveDrillResultCsv(drill, csv)

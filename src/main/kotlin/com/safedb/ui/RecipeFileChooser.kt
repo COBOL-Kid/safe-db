@@ -19,9 +19,7 @@ internal fun chooseRecipeFile(
                 suggestedFileName = if (open) null else "$safeName.safedb-recipe.json",
                 extensionFilter = FileNameExtensionFilter("Safe-DB recipes (*.json)", "json"),
             )
-            .apply {
-                dialogTitle = if (open) "Import Explore recipe" else "Export Explore recipe"
-            }
+            .apply { dialogTitle = if (open) "Import Explore recipe" else "Export Explore recipe" }
     val result = if (open) chooser.showOpenDialog(parent) else chooser.showSaveDialog(parent)
     if (result != JFileChooser.APPROVE_OPTION) return null
     val selected = chooser.selectedFile

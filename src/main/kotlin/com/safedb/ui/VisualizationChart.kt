@@ -152,8 +152,7 @@ internal fun visualizationValueAxis(
 internal fun visualizationValueRange(
     preview: VisualizationPreview,
     config: VisualizationConfig,
-): ClosedFloatingPointRange<Double> =
-    visualizationValueAxis(preview, config).let { it.min..it.max }
+): ClosedFloatingPointRange<Double> = visualizationValueAxis(preview, config).let { it.min..it.max }
 
 private fun stackedValueSpans(
     marks: List<VisualizationMark>,

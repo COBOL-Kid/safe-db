@@ -1,7 +1,6 @@
 package com.safedb.ui
 
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.safedb.explore.BarArrangement
 import com.safedb.explore.BarOrientation
@@ -535,21 +534,25 @@ class VisualizationChartTest {
                     ),
             )
 
-        withComposeScene(width = 480, height = 900, content = {
-            SafeDbTheme(isDark = false) {
-                VisualizationConfigPanel(
-                    config = config,
-                    sample = sample,
-                    tables = emptyList(),
-                    fields = fields,
-                    memberOptionsFor = { emptyList() },
-                    onConfigChange = { config = it },
-                    onApplyTemplate = { config = it },
-                    onReset = {},
-                    onHide = {},
-                )
-            }
-        }) { scene ->
+        withComposeScene(
+            width = 480,
+            height = 900,
+            content = {
+                SafeDbTheme(isDark = false) {
+                    VisualizationConfigPanel(
+                        config = config,
+                        sample = sample,
+                        tables = emptyList(),
+                        fields = fields,
+                        memberOptionsFor = { emptyList() },
+                        onConfigChange = { config = it },
+                        onApplyTemplate = { config = it },
+                        onReset = {},
+                        onHide = {},
+                    )
+                }
+            },
+        ) { scene ->
             val addValueNode = scene.requireContaining("Add value")
             scene.click(addValueNode.boundsInRoot.center)
             scene.settle()

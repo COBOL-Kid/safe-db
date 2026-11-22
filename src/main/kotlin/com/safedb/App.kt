@@ -155,7 +155,8 @@ fun App(appState: AppState, service: SafeDbService, mainWindow: java.awt.Window)
                 LaunchedEffect(window) { window.minimumSize = Dimension(920, 560) }
                 LaunchedEffect(window, explore) {
                     if (window.extendedState and java.awt.Frame.ICONIFIED != 0) {
-                        window.extendedState = window.extendedState and java.awt.Frame.ICONIFIED.inv()
+                        window.extendedState =
+                            window.extendedState and java.awt.Frame.ICONIFIED.inv()
                     }
                     window.toFront()
                     window.requestFocus()
