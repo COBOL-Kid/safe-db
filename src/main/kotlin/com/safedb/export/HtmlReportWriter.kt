@@ -1,6 +1,5 @@
 package com.safedb.export
 
-import androidx.compose.ui.graphics.Color
 import com.safedb.explore.BarOrientation
 import com.safedb.explore.ChartType
 import com.safedb.explore.ExplorePreviewResult
@@ -19,7 +18,6 @@ import com.safedb.ui.PlotInsets
 import com.safedb.ui.barValueLabelText
 import com.safedb.ui.categoryLabelIndices
 import com.safedb.ui.compactNumber
-import com.safedb.ui.contrastingBarLabelColor
 import com.safedb.ui.visualizationGeometry
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
@@ -132,7 +130,6 @@ internal data class HtmlChartShape(
     val label: String? = null,
     val lx: Double? = null,
     val ly: Double? = null,
-    val labelTone: String? = null,
 )
 
 @Serializable internal data class HtmlAxisTick(val pos: Double, val label: String)
@@ -341,7 +338,7 @@ internal fun buildVisualizationReport(
         source = buildSourceTable(session),
         chart = buildChartSection(preview, config),
         table =
-            if (preview.exportResult != null) buildVisualizationTableSection(preview, config)
+            if (preview.marks.isNotEmpty()) buildVisualizationTableSection(preview, config)
             else null,
     )
 
@@ -399,13 +396,14 @@ internal fun buildChartSection(
     val plot = geometry.plot
     val multiSeries = preview.series.size > 1
     val seriesIndex = preview.series.mapIndexed { index, series -> series.key to index }.toMap()
+    val marksById = preview.marks.associateBy { it.id }
 
     val shapes = mutableListOf<HtmlChartShape>()
     when (chartType) {
         ChartType.Bar,
         ChartType.Histogram ->
             geometry.regions.mapTo(shapes) { region ->
-                val mark = preview.marks.first { it.id == region.markId }
+                val mark = marksById.getValue(region.markId)
                 val seriesIdx = seriesIndex[mark.seriesKey] ?: 0
                 val labelText = if (config.showLabels) barValueLabelText(mark, config) else null
                 val fitsLabel =
@@ -430,7 +428,6 @@ internal fun buildChartSection(
                         } else {
                             null
                         },
-                    labelTone = if (fitsLabel) htmlSeriesLabelTone(seriesIdx) else null,
                 )
             }
         ChartType.Line -> {
@@ -469,7 +466,7 @@ internal fun buildChartSection(
         ChartType.Scatter ->
             // Reversed for the same reason as line circles: first mark wins overlaps.
             geometry.regions.asReversed().mapTo(shapes) { region ->
-                val mark = preview.marks.first { it.id == region.markId }
+                val mark = marksById.getValue(region.markId)
                 HtmlChartShape(
                     kind = "circle",
                     cx = region.bounds.center.x.rounded(),
@@ -485,16 +482,16 @@ internal fun buildChartSection(
     }
 
     val valueSpan = (geometry.yMax - geometry.yMin).takeIf { it > 0.0 } ?: 1.0
-    val tickValues = geometry.valueTicks.ifEmpty { listOf(geometry.yMin, geometry.yMax) }
-    val valueTicks = tickValues.map { value ->
-        val fraction = ((value - geometry.yMin) / valueSpan).toFloat().coerceIn(0f, 1f)
-        HtmlAxisTick(
-            pos =
-                if (horizontal) (plot.left + plot.width * fraction).rounded()
-                else (plot.bottom - plot.height * fraction).rounded(),
-            label = compactNumber(value),
-        )
-    }
+    val valueTicks =
+        geometry.valueTicks.map { value ->
+            val fraction = ((value - geometry.yMin) / valueSpan).toFloat().coerceIn(0f, 1f)
+            HtmlAxisTick(
+                pos =
+                    if (horizontal) (plot.left + plot.width * fraction).rounded()
+                    else (plot.bottom - plot.height * fraction).rounded(),
+                label = compactNumber(value),
+            )
+        }
     val categories = preview.marks.distinctBy { it.xKey }
     val centered =
         categories
@@ -540,54 +537,20 @@ internal fun buildVisualizationTableSection(
     config: VisualizationConfig,
 ): HtmlTableSection {
     val includeSeries = config.series != null
-    if (preview.chartType == ChartType.Scatter) {
-        val includeSize = config.size != null
-        val labels = buildList {
+    val isScatter = preview.chartType == ChartType.Scatter
+    val includeSize = isScatter && config.size != null
+    val labels = buildList {
+        if (isScatter) {
             add(config.x?.label ?: "X")
             add(config.values.firstOrNull()?.label ?: "Y")
             if (includeSeries) add("Series")
             if (includeSize) add("Size")
-            add("Source rows")
+        } else {
+            add(config.x?.label ?: "Category")
+            if (includeSeries) add("Series")
+            add("Measure")
+            add("Value")
         }
-        val rows =
-            preview.marks.map { mark ->
-                HtmlTableRow(
-                    cells =
-                        buildList {
-                            val xVal = mark.xValue
-                            add(
-                                HtmlCell(
-                                    mark.xLabel.ifBlank { xVal?.toString().orEmpty() },
-                                    xVal?.takeIf(Double::isFinite),
-                                ),
-                            )
-                            add(HtmlCell(mark.formattedY, mark.y.takeIf(Double::isFinite)))
-                            if (includeSeries) add(HtmlCell(mark.seriesLabel))
-                            if (includeSize) {
-                                val sizeVal = mark.size
-                                add(
-                                    HtmlCell(
-                                        sizeVal?.toString().orEmpty(),
-                                        sizeVal?.takeIf(Double::isFinite),
-                                    ),
-                                )
-                            }
-                            val count = mark.sourceRowIndices.size
-                            add(HtmlCell(count.toString(), count.toDouble()))
-                        },
-                )
-            }
-        return HtmlTableSection(
-            columns = columnsWithNumericFlags(labels, rows),
-            rows = rows,
-            sortable = true,
-        )
-    }
-    val labels = buildList {
-        add(config.x?.label ?: "Category")
-        if (includeSeries) add("Series")
-        add("Measure")
-        add("Value")
         add("Source rows")
     }
     val rows =
@@ -595,12 +558,25 @@ internal fun buildVisualizationTableSection(
             HtmlTableRow(
                 cells =
                     buildList {
-                        add(HtmlCell(mark.xLabel))
-                        if (includeSeries) add(HtmlCell(mark.seriesLabel))
-                        add(HtmlCell(mark.measureLabel))
-                        add(HtmlCell(mark.formattedY, mark.y.takeIf(Double::isFinite)))
-                        val count = mark.sourceRowIndices.size
-                        add(HtmlCell(count.toString(), count.toDouble()))
+                        if (isScatter) {
+                            add(
+                                finiteNumericCell(
+                                    mark.xLabel.ifBlank { mark.xValue?.toString().orEmpty() },
+                                    mark.xValue,
+                                ),
+                            )
+                            add(finiteNumericCell(mark.formattedY, mark.y))
+                            if (includeSeries) add(HtmlCell(mark.seriesLabel))
+                            if (includeSize) {
+                                add(finiteNumericCell(mark.size?.toString().orEmpty(), mark.size))
+                            }
+                        } else {
+                            add(HtmlCell(mark.xLabel))
+                            if (includeSeries) add(HtmlCell(mark.seriesLabel))
+                            add(HtmlCell(mark.measureLabel))
+                            add(finiteNumericCell(mark.formattedY, mark.y))
+                        }
+                        add(sourceRowCountCell(mark.sourceRowIndices.size))
                     },
             )
         }
@@ -610,6 +586,11 @@ internal fun buildVisualizationTableSection(
         sortable = true,
     )
 }
+
+private fun finiteNumericCell(text: String, value: Double?): HtmlCell =
+    HtmlCell(text, value?.takeIf(Double::isFinite))
+
+private fun sourceRowCountCell(count: Int): HtmlCell = HtmlCell(count.toString(), count.toDouble())
 
 internal fun tableSectionFrom(result: QueryResult): HtmlTableSection {
     val rows =
@@ -686,23 +667,6 @@ private fun markTooltip(mark: VisualizationMark, multiSeries: Boolean): String =
     append('\n')
     val rows = mark.sourceRowIndices.size
     append("$rows contributing row${if (rows == 1) "" else "s"}")
-}
-
-private val HTML_SERIES_COLORS =
-    listOf(
-        Color(0xFF2F6FED),
-        Color(0xFFE8863A),
-        Color(0xFF2E9E6B),
-        Color(0xFFD05574),
-        Color(0xFF8A63D2),
-        Color(0xFF3AA5B9),
-        Color(0xFFC2A032),
-        Color(0xFF7A7F8A),
-    )
-
-private fun htmlSeriesLabelTone(seriesIndex: Int): String {
-    val color = HTML_SERIES_COLORS[seriesIndex % HTML_SERIES_COLORS.size]
-    return if (contrastingBarLabelColor(color) == Color.White) "light" else "dark"
 }
 
 private fun estimatedLabelWidth(label: String): Float = label.length * 7f + 4f

@@ -13,7 +13,7 @@ import com.safedb.service.QueryFailureException
 import com.safedb.service.QueryHistoryRecording
 import com.safedb.service.QueryRunRequest
 import com.safedb.service.SafeDbService
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -27,8 +27,7 @@ internal class QueryRunController(
     private val scope: CoroutineScope,
     private val onRunFinished: () -> Unit = {},
 ) {
-    private val runGeneration = AtomicInteger(0)
-    private var nextRunId = 0L
+    private val runGeneration = AtomicLong(0L)
     private var activeRun: ActiveRun? = null
     private var observedActiveConnection = false
     private var activeConnectionId: String? = null
@@ -38,12 +37,10 @@ internal class QueryRunController(
     private var pendingConfirmationRequest: QueryRunRequest? = null
     private var pendingConfirmationOnSettled: ((Boolean) -> Unit)? = null
 
-    var results by mutableStateOf<QueryResult?>(null)
-        private set
+    private var settledSample by mutableStateOf<BuilderQuerySample?>(null)
 
-    private var resultConnectionId by mutableStateOf<String?>(null)
-    private var resultSpec by mutableStateOf<QuerySpec?>(null)
-    private var resultRunId by mutableStateOf(0L)
+    val results: QueryResult?
+        get() = settledSample?.result
 
     var running by mutableStateOf(false)
         private set
@@ -83,10 +80,7 @@ internal class QueryRunController(
         running = true
         error = null
         discardedRunNotice = null
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        resultRunId = 0L
+        settledSample = null
         riskEvaluation = null
         riskEvaluationConnectionId = null
         riskEvaluationSpec = null
@@ -104,13 +98,17 @@ internal class QueryRunController(
             try {
                 val completed = service.runQuery(trackedRequest)
                 if (generation == runGeneration.get()) {
-                    results = completed.queryResult
+                    settledSample =
+                        BuilderQuerySample(
+                            connectionId = request.connectionId,
+                            spec = executedSpec,
+                            result = completed.queryResult,
+                            stale = false,
+                            runId = generation,
+                        )
                     riskEvaluation = completed.riskEvaluation
                     riskEvaluationConnectionId = request.connectionId
                     riskEvaluationSpec = request.spec
-                    resultConnectionId = request.connectionId
-                    resultSpec = executedSpec
-                    resultRunId = ++nextRunId
                     succeeded = true
                 }
             } catch (failure: QueryFailureException) {
@@ -174,31 +172,16 @@ internal class QueryRunController(
         currentSpec: QuerySpec?,
         allowStaleLimit: Boolean = false,
     ): BuilderQuerySample? {
-        if (connectionId == null || resultConnectionId != connectionId) return null
-        val result = results ?: return null
-        val executedSpec = resultSpec ?: return null
-        if (currentSpec == executedSpec) {
-            return BuilderQuerySample(
-                connectionId,
-                executedSpec,
-                result,
-                stale = false,
-                runId = resultRunId,
-            )
-        }
+        val sample = settledSample ?: return null
+        if (connectionId == null || sample.connectionId != connectionId) return null
+        if (currentSpec == sample.spec) return sample
         if (
             allowStaleLimit &&
                 currentSpec != null &&
-                currentSpec.copy(limit = executedSpec.limit, uncapped = executedSpec.uncapped) ==
-                    executedSpec
+                currentSpec.copy(limit = sample.spec.limit, uncapped = sample.spec.uncapped) ==
+                    sample.spec
         ) {
-            return BuilderQuerySample(
-                connectionId,
-                executedSpec,
-                result,
-                stale = true,
-                runId = resultRunId,
-            )
+            return sample.copy(stale = true)
         }
         return null
     }
@@ -209,10 +192,7 @@ internal class QueryRunController(
         observedActiveConnection = true
         activeConnectionId = connectionId
         if (running) runGeneration.incrementAndGet()
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        resultRunId = 0L
+        settledSample = null
         pendingRiskGateState = false
         riskEvaluation = null
         riskEvaluationConnectionId = null
@@ -308,10 +288,7 @@ internal class QueryRunController(
 
     fun reset() {
         runGeneration.incrementAndGet()
-        results = null
-        resultConnectionId = null
-        resultSpec = null
-        resultRunId = 0L
+        settledSample = null
         error = null
         discardedRunNotice = null
         riskEvaluation = null

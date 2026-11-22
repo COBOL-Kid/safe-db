@@ -100,7 +100,7 @@ class VisualizationChartTest {
                 ((0.0 - geometry.yMin) / (geometry.yMax - geometry.yMin) * geometry.plot.height)
                     .toFloat()
 
-        assertEquals(-30.0, visualizationValueRange(preview, config).start)
+        assertEquals(-30.0, visualizationValueAxis(preview, config).min)
         assertEquals(-30.0, geometry.yMin)
         assertTrue(first.height > 0f && first.top < first.bottom)
         assertTrue(second.height > 0f && second.top < second.bottom)
@@ -426,6 +426,17 @@ class VisualizationChartTest {
         val flat = niceValueAxis(5.0, 5.0)
         assertTrue(flat.max > flat.min)
         assertTrue(flat.ticks.size >= 2)
+
+        val largeFlat = niceValueAxis(1e18, 1e18)
+        assertTrue(largeFlat.max > largeFlat.min)
+        assertTrue(largeFlat.ticks.all(Double::isFinite))
+
+        val nonFinite = niceValueAxis(Double.NaN, Double.POSITIVE_INFINITY)
+        assertEquals(listOf(0.0, 0.25, 0.5, 0.75, 1.0), nonFinite.ticks)
+
+        val overflowSpan = niceValueAxis(-1e308, 1e308)
+        assertTrue(overflowSpan.max > overflowSpan.min)
+        assertTrue(overflowSpan.ticks.all(Double::isFinite))
     }
 
     @Test

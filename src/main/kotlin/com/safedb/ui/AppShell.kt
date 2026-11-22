@@ -218,12 +218,7 @@ internal fun AppShellContent(
                         onOpenExplore = {
                             val sample = viewModel.query.currentSample(activeConnection?.id)
                             if (activeConnection != null && sample != null) {
-                                viewModel.openExplore(
-                                    activeConnection,
-                                    sample.spec,
-                                    sample.result,
-                                    sampleRunId = sample.runId,
-                                )
+                                viewModel.openExplore(activeConnection, sample)
                             }
                         },
                         onOpenSettings = appState::openSettings,
@@ -238,13 +233,7 @@ internal fun AppShellContent(
                             } else {
                                 val sample = viewModel.query.currentSample(targetConnection.id)
                                 if (sample != null) {
-                                    viewModel.openExploreRecipe(
-                                        targetConnection,
-                                        sample.spec,
-                                        sample.result,
-                                        recipe,
-                                        sampleRunId = sample.runId,
-                                    )
+                                    viewModel.openExploreRecipe(targetConnection, sample, recipe)
                                 }
                             }
                         },
@@ -269,13 +258,7 @@ internal fun AppShellContent(
                         onOpenExplore = { sample ->
                             val target = connections.firstOrNull { it.id == sample.connectionId }
                             if (target != null) {
-                                viewModel.openExplore(
-                                    target,
-                                    sample.spec,
-                                    sample.result,
-                                    ExploreOrigin.Sql,
-                                    sampleRunId = sample.runId,
-                                )
+                                viewModel.openExplore(target, sample, ExploreOrigin.Sql)
                             }
                         },
                         onOpenConnections = { appState.navigate(AppRoute.Connections) },

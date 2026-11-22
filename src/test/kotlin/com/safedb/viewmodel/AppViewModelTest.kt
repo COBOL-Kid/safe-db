@@ -755,11 +755,18 @@ class AppViewModelTest {
                 advanceUntilIdle()
                 val builderSample = viewModel.query.currentSample("c1")!!
 
-                viewModel.openExplore(connection, builderSample.spec, builderSample.result)
+                viewModel.openExplore(connection, builderSample)
                 val builderContext =
                     viewModel.exploreOriginContext("c1", null, connections, ExploreOrigin.Builder)
                 assertTrue(builderContext.sampleRefreshEnabled)
                 assertEquals(builderSample.spec, builderContext.currentSpec)
+                assertFalse(
+                    viewModel.explore.value!!.isStale(
+                        builderContext.currentSpec,
+                        "c1",
+                        builderContext.latestSampleRunId,
+                    ),
+                )
 
                 viewModel.query.setLimit(40)
                 viewModel.query.run("c1")
@@ -777,13 +784,7 @@ class AppViewModelTest {
                 viewModel.sqlEditor.run("c1", sqlSpec, viewModel.sqlEditor.text.text)
                 advanceUntilIdle()
                 val sqlSample = viewModel.sqlEditor.currentSample("c1", sqlSpec)!!
-                viewModel.openExplore(
-                    connection,
-                    sqlSpec,
-                    sqlSample.result,
-                    ExploreOrigin.Sql,
-                    sampleRunId = sqlSample.runId,
-                )
+                viewModel.openExplore(connection, sqlSample, ExploreOrigin.Sql)
 
                 val sqlContext =
                     viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
@@ -802,8 +803,13 @@ class AppViewModelTest {
                 advanceUntilIdle()
                 val rerunContext =
                     viewModel.exploreOriginContext("c1", sqlSpec, connections, ExploreOrigin.Sql)
-                assertTrue(
-                    viewModel.explore.value!!.hasNewerSample(rerunContext.latestSampleRunId),
+                assertEquals(
+                    SampleStaleness.NewerSample,
+                    viewModel.explore.value!!.staleness(
+                        rerunContext.currentSpec,
+                        "c1",
+                        rerunContext.latestSampleRunId,
+                    ),
                 )
                 assertTrue(
                     viewModel.explore.value!!.isStale(

@@ -169,8 +169,18 @@ class ExploreViewModelTest {
 
         assertFalse(viewModel.isStale(baseSpec))
         assertFalse(viewModel.isStale(baseSpec, "c1"))
+        // Untracked sessions (sampleRunId == null) must stay fresh even when latestSampleRunId is
+        // set.
+        assertEquals(
+            SampleStaleness.Fresh,
+            viewModel.staleness(baseSpec, "c1", latestSampleRunId = 4L),
+        )
+        assertFalse(viewModel.isStale(baseSpec, "c1", latestSampleRunId = 4L))
+        assertEquals(SampleStaleness.ConnectionChanged, viewModel.staleness(baseSpec, "c2"))
         assertTrue(viewModel.isStale(baseSpec, "c2"))
+        assertEquals(SampleStaleness.SpecChanged, viewModel.staleness(baseSpec.copy(limit = 250)))
         assertTrue(viewModel.isStale(baseSpec.copy(limit = 250)))
+        assertEquals(SampleStaleness.SpecChanged, viewModel.staleness(null))
         assertTrue(viewModel.isStale(null))
 
         val runVm =
@@ -178,9 +188,16 @@ class ExploreViewModelTest {
                 createExploreSession(connection(), baseSpec, sampleResult()),
                 sampleRunId = 3L,
             )
+        assertEquals(
+            SampleStaleness.Fresh,
+            runVm.staleness(baseSpec, "c1", latestSampleRunId = null),
+        )
+        assertEquals(SampleStaleness.Fresh, runVm.staleness(baseSpec, "c1", latestSampleRunId = 3L))
         assertFalse(runVm.isStale(baseSpec, "c1", latestSampleRunId = 3L))
-        assertFalse(runVm.hasNewerSample(3L))
-        assertTrue(runVm.hasNewerSample(4L))
+        assertEquals(
+            SampleStaleness.NewerSample,
+            runVm.staleness(baseSpec, "c1", latestSampleRunId = 4L),
+        )
         assertTrue(runVm.isStale(baseSpec, "c1", latestSampleRunId = 4L))
     }
 

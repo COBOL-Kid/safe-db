@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import com.safedb.explore.ExploreMode
 import com.safedb.explore.ExploreRecipe
 import com.safedb.explore.PivotFilter
-import com.safedb.explore.exploreSpecHash
 import com.safedb.model.ConnectionDef
 import com.safedb.model.QueryResult
 import com.safedb.model.QuerySpec
@@ -60,8 +59,8 @@ import com.safedb.ui.theme.ToolbarHeaderVerticalPadding
 import com.safedb.viewmodel.ExploreOrigin
 import com.safedb.viewmodel.ExploreViewModel
 import com.safedb.viewmodel.RecipesViewModel
+import com.safedb.viewmodel.SampleStaleness
 import java.io.File
-import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
@@ -88,12 +87,10 @@ fun ExploreWindowContent(
         remember(session.sample.columns, session.baseSpec.tables) {
             buildExploreFieldOptions(session.sample, session.baseSpec.tables)
         }
-    val stale = viewModel.isStale(currentSpec, activeConnectionId, latestSampleRunId)
-    val connectionStale = activeConnectionId != session.connectionId
-    val newerSampleAvailable =
-        viewModel.hasNewerSample(latestSampleRunId) &&
-            currentSpec != null &&
-            exploreSpecHash(currentSpec) == session.baseSpecHash
+    val staleness =
+        remember(viewModel, currentSpec, activeConnectionId, latestSampleRunId) {
+            viewModel.staleness(currentSpec, activeConnectionId, latestSampleRunId)
+        }
     var drillResult by remember { mutableStateOf<QueryResult?>(null) }
     var pivotRailVisible by remember { mutableStateOf(true) }
     var worksheetRailVisible by remember { mutableStateOf(true) }
@@ -161,11 +158,9 @@ fun ExploreWindowContent(
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             ExploreStaleSampleWarning(
-                stale = stale,
+                staleness = staleness,
                 origin = origin,
                 sampleRefreshEnabled = sampleRefreshEnabled,
-                connectionStale = connectionStale,
-                newerSampleAvailable = newerSampleAvailable,
                 onRefreshSample = onRefreshSample,
             )
             ExplorePreviewErrorBanner(viewModel.previewError(activeMode))
@@ -462,14 +457,12 @@ private fun ExploreModeSelector(
 
 @Composable
 private fun ExploreStaleSampleWarning(
-    stale: Boolean,
+    staleness: SampleStaleness,
     origin: ExploreOrigin,
     sampleRefreshEnabled: Boolean,
-    connectionStale: Boolean,
-    newerSampleAvailable: Boolean,
     onRefreshSample: (() -> Unit)?,
 ) {
-    if (!stale) return
+    if (staleness == SampleStaleness.Fresh) return
     // Refresh pulls from whichever surface opened this window, so the instructions have to name it
     // — telling a SQL-origin user to re-run in Builder never produces a sample and leaves Refresh
     // off.
@@ -481,20 +474,31 @@ private fun ExploreStaleSampleWarning(
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         MessageBanner(
             text =
-                when {
-                    connectionStale ->
+                when (staleness) {
+                    SampleStaleness.Fresh -> ""
+                    SampleStaleness.ConnectionChanged ->
                         "The active connection changed. Reopen Explore from the query you " +
                             "want to inspect; Refresh cannot update this sample."
-                    newerSampleAvailable && sampleRefreshEnabled ->
-                        "Newer $surface results are available. Refresh the Explore sample to load them."
-                    sampleRefreshEnabled ->
-                        "The $surface query changed. Refresh the Explore sample from the latest $surface results."
-                    else ->
-                        "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore."
+                    SampleStaleness.NewerSample ->
+                        if (sampleRefreshEnabled) {
+                            "Newer $surface results are available. Refresh the Explore sample to load them."
+                        } else {
+                            "Newer $surface results are available. Reopen Explore from $surface to inspect them."
+                        }
+                    SampleStaleness.SpecChanged ->
+                        if (sampleRefreshEnabled) {
+                            "The $surface query changed. Refresh the Explore sample from the latest $surface results."
+                        } else {
+                            "The $surface query changed. Re-run the query in $surface, then refresh or reopen Explore."
+                        }
                 },
             kind = BannerKind.WARNING,
             action =
-                if (!connectionStale && sampleRefreshEnabled && onRefreshSample != null) {
+                if (
+                    staleness != SampleStaleness.ConnectionChanged &&
+                        sampleRefreshEnabled &&
+                        onRefreshSample != null
+                ) {
                     { PrimaryButton(onClick = onRefreshSample) { Text("Refresh sample") } }
                 } else null,
         )
@@ -604,24 +608,19 @@ private fun chooseExportFile(
     extension: String,
     parent: java.awt.Component? = null,
 ): java.nio.file.Path? {
-    val safeName =
-        connectionLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty {
-            "explore"
-        }
-    val chooser =
-        createAppFileChooser(
-                suggestedFileName = "explore-$safeName.$extension",
-                extensionFilter =
-                    FileNameExtensionFilter(
-                        "${extension.uppercase()} files (*.$extension)",
-                        extension,
-                    ),
-            )
-            .apply { dialogTitle = "Export Explore ${extension.uppercase()}" }
-    val result = chooser.showSaveDialog(parent)
-    if (result != JFileChooser.APPROVE_OPTION) return null
-    val file = chooser.selectedFile
-    rememberChooserDirectory(file)
+    val safeName = sanitizeFileNameSegment(connectionLabel, "explore")
+    val file =
+        chooseAppFile(
+            open = false,
+            title = "Export Explore ${extension.uppercase()}",
+            suggestedFileName = "explore-$safeName.$extension",
+            extensionFilter =
+                FileNameExtensionFilter(
+                    "${extension.uppercase()} files (*.$extension)",
+                    extension,
+                ),
+            parent = parent,
+        ) ?: return null
     return if (file.extension.equals(extension, ignoreCase = true)) file.toPath()
     else File("${file.path}.$extension").toPath()
 }

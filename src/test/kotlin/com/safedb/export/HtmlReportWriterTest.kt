@@ -580,10 +580,123 @@ class HtmlReportWriterTest {
         val shownPreview = applyVisualization(sample, shownConfig, session().baseSpec.tables)
         val shownChart = buildChartSection(shownPreview, shownConfig)
         assertEquals(listOf("3.6M", "1.6M"), shownChart.shapes.map { it.label })
-        assertTrue(
-            shownChart.shapes.all { it.lx != null && it.ly != null && it.labelTone == "light" },
+        assertTrue(shownChart.shapes.all { it.lx != null && it.ly != null })
+        assertTrue(REPORT_CSS.contains("--s0-label: #ffffff;"))
+        assertTrue(REPORT_CSS.contains("--s1-label: #0f172a;"))
+        assertTrue(REPORT_CSS.contains("svg.chart text.label-s0 { fill: var(--s0-label); }"))
+        assertTrue(REPORT_JS.contains("'bar-label label-' + seriesClass"))
+    }
+
+    @Test
+    fun visualizationChartPositionsVerticalLabelsOmitsTinyBarsAndAssignsSeriesIndices() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__status", "varchar"),
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__amount", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Alpha"),
+                            ResultCell.text("A-Series"),
+                            ResultCell.float(1_000_000.0),
+                        ),
+                        listOf(
+                            ResultCell.text("Alpha"),
+                            ResultCell.text("B-Series"),
+                            ResultCell.float(500_000.0),
+                        ),
+                        listOf(
+                            ResultCell.text("Tiny"),
+                            ResultCell.text("A-Series"),
+                            ResultCell.float(1.0),
+                        ),
+                    ),
+                rowCount = 3,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val config =
+            VisualizationConfig(
+                chartType = ChartType.Bar,
+                x = VisualizationField("t0__status", "Status"),
+                values = listOf(VisualizationMeasure("sum", MeasureFn.Sum, "t0__amount")),
+                series = VisualizationField("t0__region", "Region"),
+                barOrientation = BarOrientation.Vertical,
+                showLabels = true,
+            )
+        val preview = applyVisualization(sample, config, session().baseSpec.tables)
+        val chart = buildChartSection(preview, config)
+        val labeled = chart.shapes.filter { it.label != null }
+        assertEquals(2, labeled.size)
+        // Vertical bar labels sit near the top of the bar (top + 10.0), and Tiny bar is omitted.
+        assertTrue(labeled.all { shape -> shape.ly == shape.y!! + 10.0 })
+        assertEquals(listOf(0, 1), labeled.map { it.series })
+        assertNull(chart.shapes.last().label)
+    }
+
+    @Test
+    fun visualizationScatterTableOmitsUnsetSeriesAndSizeAndIncludesThemWhenConfigured() {
+        val sample =
+            QueryResult(
+                columns =
+                    listOf(
+                        ResultColumn("t0__region", "varchar"),
+                        ResultColumn("t0__qty", "decimal"),
+                        ResultColumn("t0__amount", "decimal"),
+                        ResultColumn("t0__weight", "decimal"),
+                    ),
+                rows =
+                    listOf(
+                        listOf(
+                            ResultCell.text("Europe"),
+                            ResultCell.float(12.5),
+                            ResultCell.float(400.0),
+                            ResultCell.float(3.0),
+                        ),
+                    ),
+                rowCount = 1,
+                truncated = false,
+                warnings = emptyList(),
+            )
+        val session = session().copy(sample = sample)
+        val plainConfig =
+            VisualizationConfig(
+                chartType = ChartType.Scatter,
+                x = VisualizationField("t0__qty", "Qty"),
+                values =
+                    listOf(
+                        VisualizationMeasure(
+                            "amt",
+                            MeasureFn.Sum,
+                            "t0__amount",
+                            "Amount",
+                            aggregate = false,
+                        ),
+                    ),
+            )
+        val plainPreview = applyVisualization(sample, plainConfig, session.baseSpec.tables)
+        val plainTable =
+            assertNotNull(buildVisualizationReport(session, plainPreview, plainConfig).table)
+        assertEquals(listOf("Qty", "Amount", "Source rows"), plainTable.columns.map { it.label })
+        assertEquals(listOf(true, true, true), plainTable.columns.map { it.numeric })
+
+        val fullConfig =
+            plainConfig.copy(
+                series = VisualizationField("t0__region", "Region"),
+                size = VisualizationField("t0__weight", "Weight"),
+            )
+        val fullPreview = applyVisualization(sample, fullConfig, session.baseSpec.tables)
+        val fullTable =
+            assertNotNull(buildVisualizationReport(session, fullPreview, fullConfig).table)
+        assertEquals(
+            listOf("Qty", "Amount", "Series", "Size", "Source rows"),
+            fullTable.columns.map { it.label },
         )
-        assertTrue(REPORT_JS.contains("bar-label"))
+        assertEquals(listOf(true, true, false, true, true), fullTable.columns.map { it.numeric })
     }
 
     @Test

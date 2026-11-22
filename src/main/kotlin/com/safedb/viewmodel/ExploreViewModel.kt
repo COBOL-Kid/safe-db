@@ -48,6 +48,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class SampleStaleness {
+    Fresh,
+    ConnectionChanged,
+    SpecChanged,
+    NewerSample,
+}
+
 class ExploreViewModel(
     val session: ExploreSession,
     initialConfig: ExploreConfig? = null,
@@ -56,7 +63,7 @@ class ExploreViewModel(
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     initialRecipe: ExploreRecipe? = null,
-    val sampleRunId: Long = 0L,
+    val sampleRunId: Long? = null,
 ) {
     private val defaultConfig = ExploreConfig.defaultFor(session.sample, session.baseSpec.tables)
 
@@ -371,20 +378,28 @@ class ExploreViewModel(
         )
     }
 
-    fun hasNewerSample(latestSampleRunId: Long?): Boolean =
-        latestSampleRunId != null && latestSampleRunId > 0L && latestSampleRunId != sampleRunId
-
     // A null spec means the origin screen has nothing runnable right now, which matches no executed
     // query.
+    fun staleness(
+        currentSpec: QuerySpec?,
+        currentConnectionId: String? = session.connectionId,
+        latestSampleRunId: Long? = null,
+    ): SampleStaleness =
+        when {
+            currentConnectionId != session.connectionId -> SampleStaleness.ConnectionChanged
+            currentSpec == null || exploreSpecHash(currentSpec) != session.baseSpecHash ->
+                SampleStaleness.SpecChanged
+            sampleRunId != null && latestSampleRunId != null && latestSampleRunId != sampleRunId ->
+                SampleStaleness.NewerSample
+            else -> SampleStaleness.Fresh
+        }
+
     fun isStale(
         currentSpec: QuerySpec?,
         currentConnectionId: String? = session.connectionId,
         latestSampleRunId: Long? = null,
     ): Boolean =
-        currentConnectionId != session.connectionId ||
-            currentSpec == null ||
-            exploreSpecHash(currentSpec) != session.baseSpecHash ||
-            hasNewerSample(latestSampleRunId)
+        staleness(currentSpec, currentConnectionId, latestSampleRunId) != SampleStaleness.Fresh
 
     fun savePreviewCsv(path: Path) {
         val formattedRows = preview.layout.formattedRows
@@ -515,7 +530,7 @@ class ExploreViewModel(
         saveResultCsv(labeled, path)
     }
 
-    fun saveResultCsv(result: QueryResult, path: Path) {
+    private fun saveResultCsv(result: QueryResult, path: Path) {
         executeExport("Exported ${result.rowCount} row${if (result.rowCount == 1) "" else "s"}") {
             Files.newOutputStream(path).use { output -> writeQueryResultCsv(result, output) }
         }

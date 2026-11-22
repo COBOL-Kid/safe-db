@@ -80,10 +80,12 @@ internal data class VisualizationGeometry(
     // xKey -> center along the category axis: x for vertical bars/line/scatter, y for horizontal
     // bars.
     val categoryCenters: Map<String, Float> = emptyMap(),
-    val valueTicks: List<Double> = emptyList(),
+    val valueTicks: List<Double> = DefaultValueAxis.ticks,
 )
 
 internal data class NiceValueAxis(val min: Double, val max: Double, val ticks: List<Double>)
+
+private val DefaultValueAxis = NiceValueAxis(0.0, 1.0, listOf(0.0, 0.25, 0.5, 0.75, 1.0))
 
 internal data class PlotInsets(
     val left: Float = 72f,
@@ -98,10 +100,13 @@ internal fun niceValueAxis(
     targetIntervals: Int = 4,
 ): NiceValueAxis {
     if (!rawMin.isFinite() || !rawMax.isFinite()) {
-        return NiceValueAxis(0.0, 1.0, listOf(0.0, 0.25, 0.5, 0.75, 1.0))
+        return DefaultValueAxis
     }
-    val hi = if (rawMax <= rawMin) rawMin + 1.0 else rawMax
+    val hi = if (rawMax <= rawMin) rawMin + max(1.0, abs(rawMin) * 1e-6) else rawMax
     val roughStep = (hi - rawMin) / targetIntervals.coerceAtLeast(1)
+    if (!roughStep.isFinite() || roughStep <= 0.0) {
+        return DefaultValueAxis
+    }
     val magnitude = 10.0.pow(floor(log10(roughStep)))
     val fraction = roughStep / magnitude
     val niceFraction =
@@ -129,30 +134,21 @@ internal fun visualizationValueAxis(
     preview: VisualizationPreview,
     config: VisualizationConfig,
 ): NiceValueAxis {
-    if (preview.marks.isEmpty()) return niceValueAxis(0.0, 1.0)
+    if (preview.marks.isEmpty()) return DefaultValueAxis
     val stacked =
         preview.chartType == ChartType.Bar && config.barArrangement == BarArrangement.Stacked
-    val grouped = preview.marks.groupBy { it.xKey }
-    val rawMin =
-        if (stacked) {
-            grouped.minOf { (_, marks) -> marks.sumOf { min(0.0, it.y) } }
-        } else {
-            preview.marks.minOf { min(0.0, it.y) }
-        }
-    val rawMax =
-        if (stacked) {
-            grouped.maxOf { (_, marks) -> marks.sumOf { max(0.0, it.y) } }
-        } else {
-            preview.marks.maxOf { max(0.0, it.y) }
-        }
+    val rawMin: Double
+    val rawMax: Double
+    if (stacked) {
+        val grouped = preview.marks.groupBy { it.xKey }
+        rawMin = grouped.minOf { (_, marks) -> marks.sumOf { min(0.0, it.y) } }
+        rawMax = grouped.maxOf { (_, marks) -> marks.sumOf { max(0.0, it.y) } }
+    } else {
+        rawMin = preview.marks.minOf { min(0.0, it.y) }
+        rawMax = preview.marks.maxOf { max(0.0, it.y) }
+    }
     return niceValueAxis(rawMin, rawMax)
 }
-
-// Exposed so the chart can build tick strings (and measure them) before the plot rect exists.
-internal fun visualizationValueRange(
-    preview: VisualizationPreview,
-    config: VisualizationConfig,
-): ClosedFloatingPointRange<Double> = visualizationValueAxis(preview, config).let { it.min..it.max }
 
 private fun stackedValueSpans(
     marks: List<VisualizationMark>,
@@ -609,11 +605,7 @@ private fun PlotChart(
 
             clipRect {
                 val valueSpan = (geometry.yMax - geometry.yMin).takeIf { it > 0.0 } ?: 1.0
-                val ticks =
-                    geometry.valueTicks.ifEmpty {
-                        List(5) { tick -> geometry.yMin + valueSpan * tick / 4f }
-                    }
-                ticks.forEach { value ->
+                geometry.valueTicks.forEach { value ->
                     val fraction = ((value - geometry.yMin) / valueSpan).toFloat().coerceIn(0f, 1f)
                     val label =
                         fitted(compactNumber(value), valueTickMaxWidth(horizontalBars, plot, gapPx))
@@ -862,11 +854,14 @@ private fun PlotChart(
     }
 }
 
+private val DarkBarLabelColor = Color(0xFF0F172A)
+private val DarkBarLabelLuminance = DarkBarLabelColor.luminance()
+
 internal fun contrastingBarLabelColor(barColor: Color): Color {
     val lum = barColor.luminance()
     val whiteContrast = (1.0f + 0.05f) / (lum + 0.05f)
-    val darkContrast = (lum + 0.05f) / (0.007f + 0.05f)
-    return if (whiteContrast >= darkContrast) Color.White else Color(0xFF0F172A)
+    val darkContrast = (lum + 0.05f) / (DarkBarLabelLuminance + 0.05f)
+    return if (whiteContrast >= darkContrast) Color.White else DarkBarLabelColor
 }
 
 internal fun barValueLabelText(mark: VisualizationMark, config: VisualizationConfig): String {

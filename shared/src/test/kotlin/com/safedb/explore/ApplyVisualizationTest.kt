@@ -66,6 +66,29 @@ class ApplyVisualizationTest {
 
     @Test
     fun scatterUsesRawRowsAndOptionalSize() {
+        val plainScatter =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Scatter,
+                    x = VisualizationField("amount"),
+                    values =
+                        listOf(
+                            VisualizationMeasure(
+                                "score",
+                                MeasureFn.Sum,
+                                "score",
+                                "Score",
+                                aggregate = false,
+                            ),
+                        ),
+                ),
+            )
+        assertEquals(
+            listOf("amount", "Score", "Source rows"),
+            plainScatter.exportResult!!.columns.map { it.name },
+        )
+
         val preview =
             applyVisualization(
                 sample(),
@@ -82,6 +105,7 @@ class ApplyVisualizationTest {
                                 aggregate = false,
                             ),
                         ),
+                    series = VisualizationField("region"),
                     size = VisualizationField("amount"),
                 ),
             )
@@ -91,6 +115,12 @@ class ApplyVisualizationTest {
         assertEquals(10.0, preview.marks.first().xValue)
         assertEquals(1.0, preview.marks.first().y)
         assertEquals(10.0, preview.marks.first().size)
+        val scatterExport = preview.exportResult!!
+        assertEquals(
+            listOf("amount", "Score", "Series", "Size", "Source rows"),
+            scatterExport.columns.map { it.name },
+        )
+        assertEquals(ResultCell.FloatCell(10.0), scatterExport.rows.first()[3])
     }
 
     @Test
@@ -107,6 +137,12 @@ class ApplyVisualizationTest {
         assertEquals(listOf(10.0, 20.0, 30.0), preview.marks.map { it.xValue })
         assertEquals(listOf(1.0, 1.0, 2.0), preview.marks.map { it.y })
         assertEquals(4, preview.marks.sumOf { it.sourceRowIndices.size })
+        val export = preview.exportResult!!
+        assertEquals("integer", export.columns[2].dataType)
+        assertEquals(
+            listOf(1L, 1L, 2L).map(ResultCell::IntegerCell),
+            export.rows.map { it[2] },
+        )
     }
 
     @Test
@@ -334,6 +370,66 @@ class ApplyVisualizationTest {
             listOf("status", "Series", "Measure", "Value", "Source rows"),
             preview.exportResult!!.columns.map { it.name },
         )
+    }
+
+    @Test
+    fun groupedBarsDefaultValueSortUsesCategoryTotalAndTopNPrunesSeries() {
+        val scrambled =
+            sample()
+                .copy(
+                    rows =
+                        listOf(
+                            row("Europe", "Enterprise", "2026-01-01", 50, 1),
+                            row("Europe", "SMB", "2026-01-01", 10, 1),
+                            row("Asia", "Enterprise", "2026-01-02", 20, 1),
+                            row("Asia", "SMB", "2026-01-02", 80, 1),
+                            row("Americas", "Startup", "2026-01-03", 30, 1),
+                        ),
+                    rowCount = 5,
+                )
+        val preview =
+            applyVisualization(
+                scrambled,
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values = listOf(VisualizationMeasure("revenue", MeasureFn.Sum, "amount")),
+                    series = VisualizationField("region"),
+                    sort = VisualizationSort(VisualizationSortTarget.Value, SortDir.Desc),
+                    topN = 2,
+                ),
+            )
+
+        // Asia total = 100, Europe total = 60, Americas total = 30 (pruned by topN = 2).
+        assertEquals(listOf("Asia", "Europe"), preview.categories)
+        assertEquals(listOf("Enterprise", "SMB"), preview.series.map { it.label })
+    }
+
+    @Test
+    fun mixedFormatMultiMeasureExportUsesTextColumnAndFormattedCells() {
+        val preview =
+            applyVisualization(
+                sample(),
+                VisualizationConfig(
+                    chartType = ChartType.Bar,
+                    x = VisualizationField("status"),
+                    values =
+                        listOf(
+                            VisualizationMeasure("revenue", MeasureFn.Sum, "amount", "Revenue"),
+                            VisualizationMeasure(
+                                "score_fmt",
+                                MeasureFn.Sum,
+                                "score",
+                                "Score",
+                                numberFormat =
+                                    PivotNumberFormat(NumberFormatKind.Number, decimals = 1),
+                            ),
+                        ),
+                ),
+            )
+        val export = preview.exportResult!!
+        assertEquals("text", export.columns[2].dataType)
+        assertTrue(export.rows.all { it[2] is ResultCell.TextCell })
     }
 
     private fun sample() =

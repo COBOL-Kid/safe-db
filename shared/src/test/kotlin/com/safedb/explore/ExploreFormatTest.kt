@@ -71,6 +71,38 @@ class ExploreFormatTest {
         assertEquals("9007199254740993", fmt("9007199254740993", format))
     }
 
+    @Test
+    fun groupedAutoFormatHonorsLocaleStripsTrailingZerosAndUsesHalfEven() {
+        assertEquals(
+            "1,234,567.5",
+            formatGroupedAutoNumber(
+                BigDecimal("1234567.500"),
+                createGroupedAutoDecimalFormat(Locale.US),
+            ),
+        )
+        assertEquals(
+            "1.234.567,5",
+            formatGroupedAutoNumber(
+                BigDecimal("1234567.500"),
+                createGroupedAutoDecimalFormat(Locale.GERMANY),
+            ),
+        )
+        assertEquals(
+            "0.12345678",
+            formatGroupedAutoNumber(
+                BigDecimal("0.123456785"),
+                createGroupedAutoDecimalFormat(Locale.US),
+            ),
+        )
+        assertEquals(
+            "0.1234568",
+            formatGroupedAutoNumber(
+                BigDecimal("0.123456795"),
+                createGroupedAutoDecimalFormat(Locale.US),
+            ),
+        )
+    }
+
     private fun fmt(
         value: String,
         format: PivotNumberFormat,

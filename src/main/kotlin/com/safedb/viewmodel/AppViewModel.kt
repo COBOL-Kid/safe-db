@@ -166,10 +166,16 @@ class AppViewModel(
 
     fun openExplore(
         connection: ConnectionDef,
+        sample: BuilderQuerySample,
+        origin: ExploreOrigin = ExploreOrigin.Builder,
+    ) = openExplore(connection, sample.spec, sample.result, origin, sample.runId)
+
+    fun openExplore(
+        connection: ConnectionDef,
         spec: QuerySpec,
         sample: QueryResult,
         origin: ExploreOrigin = ExploreOrigin.Builder,
-        sampleRunId: Long = 0L,
+        sampleRunId: Long? = null,
     ) {
         _explore.value?.close()
         _exploreOrigin.value = origin
@@ -184,10 +190,16 @@ class AppViewModel(
 
     fun openExploreRecipe(
         connection: ConnectionDef,
+        sample: BuilderQuerySample,
+        recipe: ExploreRecipe,
+    ) = openExploreRecipe(connection, sample.spec, sample.result, recipe, sample.runId)
+
+    fun openExploreRecipe(
+        connection: ConnectionDef,
         spec: QuerySpec,
         sample: QueryResult,
         recipe: ExploreRecipe,
-        sampleRunId: Long = 0L,
+        sampleRunId: Long? = null,
     ) {
         _explore.value?.close()
         // Recipes replay through the builder pipeline, so the session refreshes from the builder.
@@ -244,12 +256,7 @@ class AppViewModel(
                 ExploreOrigin.Builder -> query.currentSample(activeConnectionId)
                 ExploreOrigin.Sql -> sqlEditor.currentSample(activeConnectionId, sqlSpec)
             } ?: return
-        refreshExploreSample(
-            connection,
-            latestSample.spec,
-            latestSample.result,
-            sampleRunId = latestSample.runId,
-        )
+        refreshExploreSample(connection, latestSample)
     }
 
     internal fun runRecipeFromExplore(
@@ -323,23 +330,20 @@ class AppViewModel(
             activeConnection != null && sample != null && !sample.stale -> {
                 if (pending.specHash != exploreSpecHash(sample.spec)) return
                 _pendingRecipeRun.value = null
-                openExploreRecipe(
-                    activeConnection,
-                    sample.spec,
-                    sample.result,
-                    pending.recipe,
-                    sampleRunId = sample.runId,
-                )
+                openExploreRecipe(activeConnection, sample, pending.recipe)
             }
             !query.running && query.error != null -> _pendingRecipeRun.value = null
         }
     }
 
+    fun refreshExploreSample(connection: ConnectionDef, sample: BuilderQuerySample) =
+        refreshExploreSample(connection, sample.spec, sample.result, sample.runId)
+
     fun refreshExploreSample(
         connection: ConnectionDef,
         spec: QuerySpec,
         sample: QueryResult,
-        sampleRunId: Long = 0L,
+        sampleRunId: Long? = null,
     ) {
         val current = _explore.value ?: return
         if (current.session.connectionId != connection.id) return

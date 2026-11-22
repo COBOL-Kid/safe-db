@@ -10,8 +10,6 @@ import com.safedb.model.isTemporal
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
 import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.sqrt
@@ -29,6 +27,7 @@ private class VisualizationPlanner(
     private val sampleIndex = SampleIndex(sample)
     private val types = sample.columns.associate { it.name to classifyColumn(it.dataType) }
     private val warnings = linkedSetOf<String>()
+    private val autoDecimalFormat by lazy { createGroupedAutoDecimalFormat() }
 
     fun apply(): VisualizationPreview {
         if (!config.isConfigured())
@@ -231,7 +230,7 @@ private class VisualizationPlanner(
                 xValue = lower.toDouble(),
                 y = grouped.size.toDouble(),
                 formattedY =
-                    formatVisualizationNumber(grouped.size.toBigDecimal(), PivotNumberFormat()),
+                    formatGroupedAutoNumber(grouped.size.toBigDecimal(), autoDecimalFormat),
                 seriesKey = "count",
                 seriesLabel = "Count",
                 measureAlias = "count",
@@ -338,7 +337,7 @@ private class VisualizationPlanner(
                     }
                 VisualizationSortTarget.Category ->
                     groups.sortedBy { it.first().xLabel.lowercase() }
-                VisualizationSortTarget.Value -> groups.sortedBy { it.firstOrNull()?.y ?: 0.0 }
+                VisualizationSortTarget.Value -> groups.sortedBy { group -> group.sumOf { it.y } }
             }.let { if (config.sort.dir == SortDir.Desc) it.reversed() else it }
         val limited = if (type == ChartType.Bar) sorted.take(config.topN) else sorted
         if (type == ChartType.Bar && groups.size > limited.size) {
@@ -382,64 +381,69 @@ private class VisualizationPlanner(
 
     private fun exportResult(type: ChartType, marks: List<VisualizationMark>): QueryResult {
         val includeSeries = config.series != null
-        val measuresByAlias = config.values.associateBy { it.alias }
-        val allAuto = config.values.all { it.numberFormat.kind == NumberFormatKind.Auto }
-        val columns =
-            if (type == ChartType.Scatter) {
-                listOf(
-                    ResultColumn(config.x?.label ?: "X", "decimal"),
-                    ResultColumn(config.values.single().label, "decimal"),
-                    ResultColumn("Series", "text"),
-                    ResultColumn("Size", "decimal"),
-                    ResultColumn("Source rows", "integer"),
-                )
-            } else {
-                buildList {
-                    add(ResultColumn(config.x?.label ?: "Category", "text"))
-                    if (includeSeries) add(ResultColumn("Series", "text"))
-                    add(ResultColumn("Measure", "text"))
-                    add(
-                        ResultColumn(
-                            "Value",
-                            when {
-                                type == ChartType.Histogram -> "integer"
-                                allAuto -> "decimal"
-                                else -> "text"
-                            },
-                        ),
-                    )
-                    add(ResultColumn("Source rows", "integer"))
-                }
+        if (type == ChartType.Scatter) {
+            val includeSize = config.size != null
+            val columns = buildList {
+                add(ResultColumn(config.x?.label ?: "X", "decimal"))
+                add(ResultColumn(config.values.single().label, "decimal"))
+                if (includeSeries) add(ResultColumn("Series", "text"))
+                if (includeSize) add(ResultColumn("Size", "decimal"))
+                add(ResultColumn("Source rows", "integer"))
             }
-        val rows = marks.map { mark ->
-            if (type == ChartType.Scatter) {
-                listOf(
-                    ResultCell.FloatCell(mark.xValue ?: 0.0),
-                    ResultCell.FloatCell(mark.y),
-                    ResultCell.text(mark.seriesLabel),
-                    mark.size?.let(ResultCell::FloatCell) ?: ResultCell.Null,
-                    ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()),
-                )
-            } else {
-                val measure = measuresByAlias[mark.measureAlias]
-                val isAuto = measure == null || measure.numberFormat.kind == NumberFormatKind.Auto
-                val valueCell =
-                    when {
-                        type == ChartType.Histogram -> ResultCell.IntegerCell(mark.y.toLong())
-                        isAuto -> ResultCell.FloatCell(mark.y)
-                        else -> ResultCell.text(mark.formattedY)
-                    }
+            val rows = marks.map { mark ->
                 buildList {
-                    add(ResultCell.text(mark.xLabel))
+                    add(ResultCell.FloatCell(mark.xValue ?: 0.0))
+                    add(ResultCell.FloatCell(mark.y))
                     if (includeSeries) add(ResultCell.text(mark.seriesLabel))
-                    add(ResultCell.text(mark.measureLabel))
-                    add(valueCell)
+                    if (includeSize) {
+                        add(mark.size?.let(ResultCell::FloatCell) ?: ResultCell.Null)
+                    }
                     add(ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()))
                 }
+            }
+            return QueryResult(columns, rows, rows.size, sample.truncated, warnings.toList())
+        }
+        val allAuto = config.values.all { it.numberFormat.kind == NumberFormatKind.Auto }
+        val columns = buildList {
+            add(ResultColumn(config.x?.label ?: "Category", "text"))
+            if (includeSeries) add(ResultColumn("Series", "text"))
+            add(ResultColumn("Measure", "text"))
+            add(
+                ResultColumn(
+                    "Value",
+                    when {
+                        type == ChartType.Histogram -> "integer"
+                        allAuto -> "decimal"
+                        else -> "text"
+                    },
+                ),
+            )
+            add(ResultColumn("Source rows", "integer"))
+        }
+        val rows = marks.map { mark ->
+            val valueCell =
+                when {
+                    type == ChartType.Histogram -> ResultCell.IntegerCell(mark.y.toLong())
+                    allAuto -> ResultCell.FloatCell(mark.y)
+                    else -> ResultCell.text(mark.formattedY)
+                }
+            buildList {
+                add(ResultCell.text(mark.xLabel))
+                if (includeSeries) add(ResultCell.text(mark.seriesLabel))
+                add(ResultCell.text(mark.measureLabel))
+                add(valueCell)
+                add(ResultCell.IntegerCell(mark.sourceRowIndices.size.toLong()))
             }
         }
         return QueryResult(columns, rows, rows.size, sample.truncated, warnings.toList())
     }
+
+    private fun formatVisualizationNumber(value: BigDecimal, format: PivotNumberFormat): String =
+        if (format.kind == NumberFormatKind.Auto) {
+            formatGroupedAutoNumber(value, autoDecimalFormat)
+        } else {
+            formatExploreNumber(value, format)
+        }
 
     private fun blocked(message: String, type: ChartType? = null) =
         VisualizationPreview(
@@ -455,11 +459,3 @@ private class VisualizationPlanner(
 private data class ChartRecord(val index: Int, val row: List<ResultCell>)
 
 private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
-
-private fun formatVisualizationNumber(value: BigDecimal, format: PivotNumberFormat): String {
-    if (format.kind != NumberFormatKind.Auto) return formatExploreNumber(value, format)
-    val symbols = DecimalFormatSymbols.getInstance(Locale.getDefault())
-    return DecimalFormat("#,##0.########", symbols)
-        .apply { roundingMode = RoundingMode.HALF_EVEN }
-        .format(value)
-}

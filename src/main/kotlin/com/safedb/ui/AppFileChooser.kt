@@ -13,7 +13,28 @@ val LocalAppWindow = staticCompositionLocalOf<Window?> { null }
 
 private var lastChooserDirectory: File? = null
 
-internal fun createAppFileChooser(
+internal fun sanitizeFileNameSegment(raw: String, fallback: String): String =
+    raw.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { fallback }
+
+internal fun chooseAppFile(
+    open: Boolean,
+    title: String,
+    suggestedFileName: String? = null,
+    extensionFilter: FileNameExtensionFilter? = null,
+    parent: Component? = null,
+): File? {
+    val chooser =
+        createAppFileChooser(suggestedFileName, extensionFilter).apply { dialogTitle = title }
+    val result = if (open) chooser.showOpenDialog(parent) else chooser.showSaveDialog(parent)
+    if (result != JFileChooser.APPROVE_OPTION) return null
+    val selected = chooser.selectedFile ?: return null
+    (selected.parentFile ?: chooser.currentDirectory)
+        ?.takeIf { it.isDirectory }
+        ?.let { lastChooserDirectory = it }
+    return selected
+}
+
+private fun createAppFileChooser(
     suggestedFileName: String? = null,
     extensionFilter: FileNameExtensionFilter? = null,
 ): JFileChooser =
@@ -30,7 +51,3 @@ internal fun createAppFileChooser(
                 fileFilter = extensionFilter
             }
         }
-
-internal fun rememberChooserDirectory(file: File?) {
-    file?.parentFile?.takeIf { it.isDirectory }?.let { lastChooserDirectory = it }
-}

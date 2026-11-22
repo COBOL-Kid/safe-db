@@ -1,5 +1,33 @@
 package com.safedb.export
 
+import androidx.compose.ui.graphics.Color
+import com.safedb.ui.contrastingBarLabelColor
+
+internal val HTML_SERIES_COLORS =
+    listOf(
+        "#2f6fed" to Color(0xFF2F6FED),
+        "#e8863a" to Color(0xFFE8863A),
+        "#2e9e6b" to Color(0xFF2E9E6B),
+        "#d05574" to Color(0xFFD05574),
+        "#8a63d2" to Color(0xFF8A63D2),
+        "#3aa5b9" to Color(0xFF3AA5B9),
+        "#c2a032" to Color(0xFFC2A032),
+        "#7a7f8a" to Color(0xFF7A7F8A),
+    )
+
+private val SERIES_CSS_VARS =
+    HTML_SERIES_COLORS.mapIndexed { i, (hex, color) ->
+            val labelHex =
+                if (contrastingBarLabelColor(color) == Color.White) "#ffffff" else "#0f172a"
+            "      --s$i: $hex; --s$i-label: $labelHex;"
+        }
+        .joinToString("\n")
+
+private val SERIES_CSS_RULES =
+    HTML_SERIES_COLORS.indices.joinToString("\n") { i ->
+        "    .fill-s$i { fill: var(--s$i); } .stroke-s$i { stroke: var(--s$i); } svg.chart text.label-s$i { fill: var(--s$i-label); }"
+    }
+
 // Invariant styling/behavior for the exported report. All data-dependent content is embedded as
 // JSON and rendered by REPORT_JS via createElement/textContent, never innerHTML.
 internal val REPORT_CSS =
@@ -8,8 +36,7 @@ internal val REPORT_CSS =
       --bg: #f7f8fa; --surface: #ffffff; --surface-alt: #eef0f4; --text: #1c1f26;
       --text-muted: #5c6370; --border: #d8dce3; --accent: #2f6fed; --accent-soft: #e3ecfd;
       --warn-bg: #fdf3d7; --warn-text: #6b5416; --error: #b3261e;
-      --s0: #2f6fed; --s1: #e8863a; --s2: #2e9e6b; --s3: #d05574;
-      --s4: #8a63d2; --s5: #3aa5b9; --s6: #c2a032; --s7: #7a7f8a;
+$SERIES_CSS_VARS
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -70,12 +97,7 @@ internal val REPORT_CSS =
     svg .shape.drill { cursor: pointer; }
     svg .shape:hover { opacity: 0.75; }
     svg.chart text.bar-label { pointer-events: none; font-weight: 500; }
-    svg.chart text.bar-label-light { fill: #ffffff; }
-    svg.chart text.bar-label-dark { fill: #0f172a; }
-    .fill-s0 { fill: var(--s0); } .fill-s1 { fill: var(--s1); } .fill-s2 { fill: var(--s2); } .fill-s3 { fill: var(--s3); }
-    .fill-s4 { fill: var(--s4); } .fill-s5 { fill: var(--s5); } .fill-s6 { fill: var(--s6); } .fill-s7 { fill: var(--s7); }
-    .stroke-s0 { stroke: var(--s0); } .stroke-s1 { stroke: var(--s1); } .stroke-s2 { stroke: var(--s2); } .stroke-s3 { stroke: var(--s3); }
-    .stroke-s4 { stroke: var(--s4); } .stroke-s5 { stroke: var(--s5); } .stroke-s6 { stroke: var(--s6); } .stroke-s7 { stroke: var(--s7); }
+$SERIES_CSS_RULES
     .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0; font-size: 13px; }
     .legend .chip { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
     .kpi {
@@ -109,7 +131,7 @@ internal val REPORT_JS =
     const REPORT = JSON.parse(document.getElementById('report-data').textContent);
     const app = document.getElementById('app');
     const dialog = document.getElementById('drill');
-    const SERIES_COUNT = 8;
+    const SERIES_COUNT = ${HTML_SERIES_COLORS.size};
 
     function el(tag, cls, text) {
       const node = document.createElement(tag);
@@ -421,7 +443,7 @@ internal val REPORT_JS =
         }
         svg.appendChild(node);
         if (shape.label && shape.lx !== undefined && shape.ly !== undefined) {
-          const labelNode = svgEl('text', { x: shape.lx, y: shape.ly, 'text-anchor': 'middle', 'dominant-baseline': 'central' }, 'bar-label bar-label-' + (shape.labelTone || 'light'));
+          const labelNode = svgEl('text', { x: shape.lx, y: shape.ly, 'text-anchor': 'middle', 'dominant-baseline': 'central' }, 'bar-label label-' + seriesClass);
           labelNode.textContent = shape.label;
           svg.appendChild(labelNode);
         }
